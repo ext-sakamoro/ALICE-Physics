@@ -83,7 +83,7 @@ fn main() {
         substeps: SUBSTEPS,
         gravity: Vec3Fix::from_int(0, GRAVITY, 0),
         // No frame damping, so the fall follows `v = g·h·n` exactly.
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);

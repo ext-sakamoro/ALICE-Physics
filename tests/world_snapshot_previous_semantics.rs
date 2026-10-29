@@ -2,10 +2,12 @@
 //! identifier restores only if this build lists it in
 //! `PREVIOUS_PHYSICS_SEMANTICS_IDS`; every other identifier is refused.
 //!
-//! The list is empty since `alice-det-math` 0.5.2 at 39507d1b: its clamp
-//! moved Law output bits, so this build is not shown to reproduce data
+//! No 3.x identifier is listed since `alice-det-math` 0.5.2 at 39507d1b: its
+//! clamp moved Law output bits, so this build is not shown to reproduce data
 //! stamped with an identifier of an earlier generation, and the two 3.x
 //! fixtures below are refused naming both identifiers, the target unchanged.
+//! (The list is empty: the one later identifier it held, `88cf6f85…`, left it
+//! when the stepping changed; see `tests/world_snapshot_xv_88cf6f85.rs`.)
 //! An earlier identifier comes back only with a cross-version oracle (a
 //! snapshot written by that release, restored and stepped here, bit-equal to
 //! that release's own steps).
@@ -22,7 +24,7 @@
 //! and steps written by the published `alice-physics` 3.1.0 (a crate that
 //! depends on `alice-physics = "=3.1.0"` from crates.io and calls
 //! `snapshot_world`): 2136 bytes, sha256 `43eeb4be…`, semantics identifier
-//! `79ca5297…` (the 3.1.0 release value, the first entry of
+//! `79ca5297…` (the 3.1.0 release value, once the first entry of
 //! `PREVIOUS_PHYSICS_SEMANTICS_IDS`) and `law_id` `bb5c15c7…`, both printed by
 //! that build.
 //!
@@ -71,6 +73,18 @@ fn scene() -> PhysicsWorld {
     let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(-3, 6, 2), Fix128::ONE);
     b.velocity = Vec3Fix::from_int(1, 4, -2);
     w.add_body(b);
+    w
+}
+
+/// `scene()` as the writing builds held it: their world damping field was a
+/// velocity retention per step, 0.99 by default, where this build's field is
+/// a rate per second (0 by default). `law_id` encodes the field's value
+/// (row 5), so the writers' `law_id` is reproduced only from the value they
+/// held; the field is set to that raw value to recompute it, not used as a
+/// rate.
+fn writer_scene() -> PhysicsWorld {
+    let mut w = scene();
+    w.config.damping_rate = Fix128::from_ratio(99, 100);
     w
 }
 
@@ -125,11 +139,29 @@ fn the_fixture_header_is_what_the_writer_printed() {
     // this build's identifier is another one, so the blob is from an
     // earlier semantics, not this one
     assert_ne!(hex(&PHYSICS_SEMANTICS_ID), WRITER_SEMANTICS);
-    // and the header law_id is the scene's rule under the writer's semantics
+    // and the header law_id is the scene's rule under the writer's semantics,
+    // with the world damping field holding the value the writer held
+    // (retention 0.99 per step; this build's own `scene()` holds rate 0
+    // there, so it gives another id)
     assert_eq!(
+        hex(&writer_scene().law_id(&unhex(WRITER_SEMANTICS))),
+        WRITER_LAW_ID
+    );
+    assert_ne!(
         hex(&scene().law_id(&unhex(WRITER_SEMANTICS))),
         WRITER_LAW_ID
     );
+    assert_eq!(&BLOB[80 + 64..80 + 80], &retention_bytes()[..]);
+}
+
+/// The bytes of the retention 0.99 per step as the writers stored it in the
+/// world damping slot (payload offset 64: `substeps`, `iterations` and
+/// `gravity` come first; `hi` then `lo`, little-endian).
+fn retention_bytes() -> Vec<u8> {
+    let r = Fix128::from_ratio(99, 100);
+    let mut b = r.hi.to_le_bytes().to_vec();
+    b.extend_from_slice(&r.lo.to_le_bytes());
+    b
 }
 
 #[test]
@@ -142,15 +174,24 @@ fn the_released_3_1_0_fixture_header_is_what_the_writer_printed() {
     );
     assert_eq!(hex(&BLOB_3_1_0[LAW_AT..LAW_AT + 32]), WRITER_3_1_0_LAW_ID);
     assert_ne!(hex(&PHYSICS_SEMANTICS_ID), WRITER_3_1_0_SEMANTICS);
+    // the header law_id is the scene's rule under 3.1.0's semantics, with
+    // the world damping field holding the value 3.1.0 held (see
+    // `writer_scene`); the frozen blob is not re-derived from this build's
+    // writer, whose damping field now holds a rate
     assert_eq!(
+        hex(&writer_scene().law_id(&unhex(WRITER_3_1_0_SEMANTICS))),
+        WRITER_3_1_0_LAW_ID
+    );
+    assert_ne!(
         hex(&scene().law_id(&unhex(WRITER_3_1_0_SEMANTICS))),
         WRITER_3_1_0_LAW_ID
     );
+    assert_eq!(&BLOB_3_1_0[80 + 64..80 + 80], &retention_bytes()[..]);
 }
 
 /// Every way of restoring `blob` (the plain restore, and the checked one with no expected id,
-/// the target's own `law_id` and the header's own, under both legacy policies) refuses it as a
-/// semantics mismatch naming `stored` and this build's identifier, and leaves the target unchanged
+/// the target's own `law_id` and the header's own, under both legacy policies, and the legacy
+/// damping reader with the writer's step) refuses it as a semantics mismatch naming `stored` and this build's identifier, and leaves the target unchanged
 fn refused_every_way(blob: &[u8], stored: &str) -> usize {
     let want = || WorldSnapshotError::SemanticsMismatch {
         stored: unhex(stored),
@@ -177,6 +218,14 @@ fn refused_every_way(blob: &[u8], stored: &str) -> usize {
             compared += 1;
         }
     }
+    // the blob holds damping as the retention 0.99 per step: the reader that
+    // converts it with the writer's step (`dt()`) refuses it for its
+    // semantics too, before reading the payload
+    let mut target = scene();
+    let before = target.snapshot_world();
+    assert_eq!(target.restore_world_legacy_damping(blob, dt()), Err(want()));
+    assert_eq!(target.snapshot_world(), before);
+    compared += 1;
     compared
 }
 
@@ -184,13 +233,13 @@ fn refused_every_way(blob: &[u8], stored: &str) -> usize {
 /// this build's and no cross-version oracle covers it
 #[test]
 fn a_blob_of_the_3_0_semantics_is_refused() {
-    assert_eq!(refused_every_way(BLOB, WRITER_SEMANTICS), 7);
+    assert_eq!(refused_every_way(BLOB, WRITER_SEMANTICS), 8);
 }
 
 /// The blob the published 3.1.0 wrote (`79ca5297…`) is refused for the same reason
 #[test]
 fn a_blob_of_the_released_3_1_0_semantics_is_refused() {
-    assert_eq!(refused_every_way(BLOB_3_1_0, WRITER_3_1_0_SEMANTICS), 7);
+    assert_eq!(refused_every_way(BLOB_3_1_0, WRITER_3_1_0_SEMANTICS), 8);
 }
 
 /// An identifier that is neither this build's nor a listed earlier one is

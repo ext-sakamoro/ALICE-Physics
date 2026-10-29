@@ -43,6 +43,10 @@ use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody, SolverC
 use alice_physics_core::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
 use alice_physics_core::vehicle::{EngineConfig, Vehicle, VehicleConfig, WheelConfig};
 
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, engine_retention};
+
 const DT60: f64 = 1.0 / 60.0;
 
 fn r(n: i64, d: i64) -> Fix128 {
@@ -95,7 +99,7 @@ fn solver_config_default_projectile_matches_discrete_closed_form_and_is_substep_
         PhysicsConfig::default(),
         "PhysicsConfig is an alias of SolverConfig"
     );
-    let (d, vx0) = (default.damping.to_f64(), 3.0);
+    let (d, vx0) = ((-default.damping_rate.to_f64() * DT60).exp(), 3.0);
     let mut x_ref = 0.0;
     let mut vx = vx0;
     for _ in 0..60 {
@@ -150,48 +154,63 @@ fn sleep_config_default_body_at_rest_sleeps_after_frames_to_sleep_not_before() {
     );
 
     // No gravity so "at rest" is exact and the idle counter is the only clock.
-    let mut world = PhysicsWorld::new(PhysicsConfig {
-        gravity: Vec3Fix::ZERO,
-        ..PhysicsConfig::default()
-    });
-    world.set_sleep_config(sleep);
-    let still = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-    let mut mover = RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE);
-    mover.velocity = Vec3Fix::from_int(1, 0, 0); // 1 m/s ≫ 0.01 m/s threshold
-    let mover = world.add_body(mover);
+    // Run at the default damping rate 0 and at the old 0.99-per-frame loss as
+    // a rate: the sleep clock must not depend on it, and the mover follows
+    // v = v₀ d^70 with `d` the engine's own `Fix128` factor (`d = 1` at rate
+    // 0, so v stays exactly 1 m/s; ≈ 0.495 m/s at the old rate).
+    for rate in both_rates() {
+        let mut world = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        });
+        world.set_sleep_config(sleep);
+        let still = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let mut mover = RigidBody::new_dynamic(Vec3Fix::from_int(5, 0, 0), Fix128::ONE);
+        mover.velocity = Vec3Fix::from_int(1, 0, 0); // 1 m/s ≫ 0.01 m/s threshold
+        let mover = world.add_body(mover);
 
-    for frame in 1..frames_to_sleep {
+        for frame in 1..frames_to_sleep {
+            world.step(dt60());
+            assert!(
+                !world.is_sleeping(still),
+                "rate {rate:?}: resting body slept at frame {frame} < frames_to_sleep {frames_to_sleep}"
+            );
+        }
         world.step(dt60());
         assert!(
-            !world.is_sleeping(still),
-            "resting body slept at frame {frame} < frames_to_sleep {frames_to_sleep}"
+            world.is_sleeping(still),
+            "rate {rate:?}: resting body still awake after {frames_to_sleep} idle frames"
+        );
+        assert!(
+            !world.is_sleeping(mover),
+            "rate {rate:?}: 1 m/s body must not sleep (threshold {} m/s)",
+            sleep.linear_threshold.to_f64()
+        );
+        // Sleeping body is frozen; the mover is not
+        for _ in 0..10 {
+            world.step(dt60());
+        }
+        assert_eq!(
+            world.bodies[still].position,
+            Vec3Fix::ZERO,
+            "rate {rate:?}: sleeping body moved"
+        );
+        let frames = (frames_to_sleep + 10) as i32;
+        let want = engine_retention(rate, dt60()).to_f64().powi(frames);
+        let vx = world.bodies[mover].velocity.x.to_f64();
+        // tolerance 1e-9: `d` is the engine's factor, so the only difference
+        // is the 2⁻⁶⁴ truncation of 70 Fix128 products (≲ 1e-17) and the f64
+        // power (≲ 70 ulp ≈ 1.6e-14)
+        assert!(
+            (vx - want).abs() < 1e-9,
+            "rate {rate:?}: mover vx = {vx}, expected d^{frames} = {want} (tol 1e-9)"
+        );
+        assert!(
+            world.active_body_count() == 1,
+            "rate {rate:?}: one active body expected"
         );
     }
-    world.step(dt60());
-    assert!(
-        world.is_sleeping(still),
-        "resting body still awake after {frames_to_sleep} idle frames"
-    );
-    assert!(
-        !world.is_sleeping(mover),
-        "1 m/s body must not sleep (threshold {} m/s)",
-        sleep.linear_threshold.to_f64()
-    );
-    // Sleeping body is frozen; the mover is not (damping 0.99^60 = 0.55 of 1 m/s)
-    for _ in 0..10 {
-        world.step(dt60());
-    }
-    assert_eq!(
-        world.bodies[still].position,
-        Vec3Fix::ZERO,
-        "sleeping body moved"
-    );
-    let vx = world.bodies[mover].velocity.x.to_f64();
-    assert!(
-        vx > 0.4 && vx < 0.6,
-        "mover vx = {vx}, expected 0.99^70 = 0.495 ± 0.1"
-    );
-    assert!(world.active_body_count() == 1, "one active body expected");
 
     // Ordinary scenario: a ball resting on a static support (default gravity)
     // sleeps too, no earlier than frames_to_sleep and within a settling bound.
@@ -735,7 +754,7 @@ fn engine_config_default_full_throttle_accelerates_by_closed_form_first_frame() 
     // 93 m/s): the world damping, not aero drag, limits the default car.
     let (c_d, d) = (
         vehicle_cfg.aero_drag.to_f64(),
-        PhysicsConfig::default().damping.to_f64(),
+        (-PhysicsConfig::default().damping_rate.to_f64() * DT60).exp(),
     );
     let mut v_ref = 0.0;
     for _ in 0..121 {

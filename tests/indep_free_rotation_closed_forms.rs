@@ -91,7 +91,7 @@ fn advance(w: &mut PhysicsWorld, e: Entry) {
 fn world(backend: SolverBackend, substeps: usize) -> PhysicsWorld {
     PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         solver_backend: backend,
         ..PhysicsConfig::default()

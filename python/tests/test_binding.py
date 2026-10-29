@@ -28,15 +28,16 @@ def test_version_is_the_crate_version():
 
 
 def test_free_fall_matches_the_pinned_closed_form():
-    # dynamic body at y = 10, mass 1, 60 steps of 1/60 s, default config:
-    # y = 10 - 4.1406 = 5.8594 (the frame-damping closed form the FFI golden pins)
+    # dynamic body at y = 10, mass 1, 60 steps of 1/60 s, default config (no damping):
+    # 480 substeps of h = 1/480 under g = 10, y = 10 - g h^2 n(n+1)/2 = 479/96
+    # (the closed form the FFI golden pins)
     w = ap.PhysicsWorld()
     b = w.add_dynamic_body(0.0, 10.0, 0.0, 1.0)
     for _ in range(60):
         w.step(1.0 / 60.0)
     x, y, z = w.get_position(b)
     assert (x, z) == (0.0, 0.0), (x, z)
-    assert abs(y - 5.8594) < 1e-3, y
+    assert abs(y - 479.0 / 96.0) < 1e-9, y
 
 
 def test_a_static_body_does_not_move():

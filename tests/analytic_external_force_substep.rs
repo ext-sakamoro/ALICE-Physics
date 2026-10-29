@@ -75,7 +75,7 @@ fn f(x: Fix128) -> f64 {
 fn world(substeps: usize, mass: Fix128, y0: Fix128) -> (PhysicsWorld, usize) {
     let config = PhysicsConfig {
         substeps,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut w = PhysicsWorld::new(config);

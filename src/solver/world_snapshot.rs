@@ -190,6 +190,15 @@ pub enum WorldSnapshotError {
         /// The identifier the caller expected.
         expected: [u8; 32],
     },
+    /// A version 1 to 5 blob holds damping as a velocity retention per step
+    /// other than 1 (no damping). Version 6 holds a rate per second, and a
+    /// retention becomes a rate only with the step it was applied per
+    /// (`c = −ln(retention) / step`), which the blob does not record: read it
+    /// with [`PhysicsWorld::restore_world_legacy_damping`] and that step.
+    LegacyDampingNeedsStep {
+        /// The retention per step stored in the blob (the first one found).
+        retention: Fix128,
+    },
 }
 
 /// Whether [`PhysicsWorld::restore_world_checked`] reads a version 1 to 3
@@ -256,6 +265,11 @@ impl core::fmt::Display for WorldSnapshotError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Truncated => write!(f, "world snapshot is truncated"),
+            Self::LegacyDampingNeedsStep { retention } => write!(
+                f,
+                "world snapshot of version 1 to 5 holds a damping retention per step of {}: read it with restore_world_legacy_damping and the step it was applied per",
+                retention.to_f64()
+            ),
             Self::Unpinned => write!(
                 f,
                 "world snapshot of version 1 to 3 carries no identifiers: read it with restore_world_checked and LegacyPolicy::AcceptUnpinned"
@@ -520,7 +534,7 @@ fn w_config(w: &mut W, c: &SolverConfig) {
     w.usize(c.substeps);
     w.usize(c.iterations);
     w.vec3(c.gravity);
-    w.fix(c.damping);
+    w.fix(c.damping_rate);
     w.fix(c.warm_start_factor);
     w.u8(match c.solver_backend {
         SolverBackend::Xpbd => 0,
@@ -528,13 +542,34 @@ fn w_config(w: &mut W, c: &SolverConfig) {
     });
 }
 
-fn r_config(r: &mut R<'_>) -> Res<SolverConfig> {
+/// A damping value as stored: a rate per second from version 6, a retention
+/// per step before. A retention of exactly 1 (no damping) is rate 0; any other
+/// becomes `−ln(retention) / step` with the caller's `legacy_step`, and without
+/// one the blob is refused ([`WorldSnapshotError::LegacyDampingNeedsStep`]).
+fn r_damping(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<Fix128> {
+    let stored = r.fix()?;
+    if version >= 6 {
+        return Ok(stored);
+    }
+    if stored == Fix128::ONE {
+        return Ok(Fix128::ZERO);
+    }
+    match legacy_step {
+        Some(step) if step > Fix128::ZERO && stored > Fix128::ZERO && stored < Fix128::ONE => {
+            Ok(-stored.ln() / step)
+        }
+        Some(_) => Err(WorldSnapshotError::InvalidValue { section: "damping" }),
+        None => Err(WorldSnapshotError::LegacyDampingNeedsStep { retention: stored }),
+    }
+}
+
+fn r_config(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<SolverConfig> {
     const S: &str = "config";
     Ok(SolverConfig {
         substeps: r.usize(S)?,
         iterations: r.usize(S)?,
         gravity: r.vec3()?,
-        damping: r.fix()?,
+        damping_rate: r_damping(r, version, legacy_step)?,
         warm_start_factor: r.fix()?,
         solver_backend: match r.u8()? {
             0 => SolverBackend::Xpbd,
@@ -556,8 +591,8 @@ fn w_body(w: &mut W, b: &RigidBody) {
     w.fix(b.restitution);
     w.fix(b.friction);
     w.fix(b.gravity_scale);
-    w.fix(b.linear_damping);
-    w.fix(b.angular_damping);
+    w.fix(b.linear_damping_rate);
+    w.fix(b.angular_damping_rate);
     w.bool(b.is_sensor);
     w.u8(b.body_type as u8);
     match b.kinematic_target {
@@ -570,7 +605,7 @@ fn w_body(w: &mut W, b: &RigidBody) {
     }
 }
 
-fn r_body(r: &mut R<'_>) -> Res<RigidBody> {
+fn r_body(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<RigidBody> {
     const S: &str = "bodies";
     Ok(RigidBody {
         position: r.vec3()?,
@@ -584,8 +619,8 @@ fn r_body(r: &mut R<'_>) -> Res<RigidBody> {
         restitution: r.fix()?,
         friction: r.fix()?,
         gravity_scale: r.fix()?,
-        linear_damping: r.fix()?,
-        angular_damping: r.fix()?,
+        linear_damping_rate: r_damping(r, version, legacy_step)?,
+        angular_damping_rate: r_damping(r, version, legacy_step)?,
         is_sensor: r.bool(S)?,
         body_type: match r.u8()? {
             0 => BodyType::Dynamic,
@@ -1631,7 +1666,11 @@ impl PhysicsWorld {
     /// [`crate::world_participant::ParticipantFault::Panicked`]), which a
     /// version 4 blob cannot hold; a reader of version 4 refuses a version 5
     /// blob by its version.
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 5;
+    /// Version 6 holds damping as rates per second
+    /// ([`SolverConfig::damping_rate`], [`RigidBody::linear_damping_rate`],
+    /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
+    /// retentions per step; see [`Self::restore_world_legacy_damping`].
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 6;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -2110,7 +2149,41 @@ impl PhysicsWorld {
         expected_law_id: Option<&[u8; 32]>,
         legacy: LegacyPolicy,
     ) -> Result<LawCheck, WorldSnapshotError> {
-        let d = decode(data)?;
+        self.restore_world_checked_with(data, expected_law_id, legacy, None)
+    }
+
+    /// [`Self::restore_world`] for a version 1 to 5 blob whose damping was a
+    /// velocity retention per step: each retention `r` other than 1 becomes the
+    /// rate `−ln(r) / step_dt` per second ([`SolverConfig::damping_rate`] and
+    /// the bodies' rates), `step_dt` being the step the writer applied it per.
+    /// A version 1 to 3 blob is read as [`LegacyPolicy::AcceptUnpinned`].
+    ///
+    /// The restored world damps by the same law as the run that wrote the blob
+    /// (the same loss per second at that step), but stepping it does **not**
+    /// continue that run bit for bit: the stepping semantics changed in the
+    /// same release as the damping. The blob is a new starting state.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::restore_world_checked`], and
+    /// [`WorldSnapshotError::InvalidValue`] (`"damping"`) for a non-positive
+    /// `step_dt` or a stored retention not in `(0, 1]`.
+    pub fn restore_world_legacy_damping(
+        &mut self,
+        data: &[u8],
+        step_dt: Fix128,
+    ) -> Result<LawCheck, WorldSnapshotError> {
+        self.restore_world_checked_with(data, None, LegacyPolicy::AcceptUnpinned, Some(step_dt))
+    }
+
+    fn restore_world_checked_with(
+        &mut self,
+        data: &[u8],
+        expected_law_id: Option<&[u8; 32]>,
+        legacy: LegacyPolicy,
+        legacy_step: Option<Fix128>,
+    ) -> Result<LawCheck, WorldSnapshotError> {
+        let d = decode(data, legacy_step)?;
         let check = law_check(d.ids, expected_law_id, |s| self.law_id(s))?;
         if check == LawCheck::Unpinned && legacy == LegacyPolicy::RequirePinned {
             return Err(WorldSnapshotError::Unpinned);
@@ -2359,7 +2432,7 @@ fn decode_header(data: &[u8]) -> Res<(u16, usize, usize, Option<SnapshotIds>)> {
     Ok((version, header, body_end, ids))
 }
 
-fn decode(data: &[u8]) -> Res<Decoded> {
+fn decode(data: &[u8], legacy_step: Option<Fix128>) -> Res<Decoded> {
     let (version, header, body_end, ids) = decode_header(data)?;
     if let Some((semantics_id, _)) = ids {
         if semantics_id != PHYSICS_SEMANTICS_ID
@@ -2376,7 +2449,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         data: &data[..body_end],
         pos: header,
     };
-    let mut d = decode_payload(&mut r, version)?;
+    let mut d = decode_payload(&mut r, version, legacy_step)?;
     d.ids = ids;
     if r.pos != body_end {
         return Err(WorldSnapshotError::TrailingBytes {
@@ -2387,13 +2460,13 @@ fn decode(data: &[u8]) -> Res<Decoded> {
     Ok(d)
 }
 
-fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
-    let config = r_config(r)?;
+fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<Decoded> {
+    let config = r_config(r, version, legacy_step)?;
 
     let n = r.len("bodies", 1)?;
     let mut bodies = Vec::with_capacity(n);
     for _ in 0..n {
-        bodies.push(r_body(r)?);
+        bodies.push(r_body(r, version, legacy_step)?);
     }
 
     let n = r.len("distance_constraints", 160)?;
@@ -3699,7 +3772,15 @@ mod tests {
         let mut w = super::W(Vec::new());
         super::w_config(&mut w, &SolverConfig::default());
         *w.0.last_mut().expect("backend tag") = 2;
-        assert_eq!(super::r_config(&mut reader(&w.0)).err(), inv("config"));
+        assert_eq!(
+            super::r_config(
+                &mut reader(&w.0),
+                PhysicsWorld::WORLD_SNAPSHOT_VERSION,
+                None
+            )
+            .err(),
+            inv("config")
+        );
         // empty input is truncation, not a value error
         assert_eq!(
             super::r_shape(&mut reader(&[])).err(),
@@ -3795,9 +3876,11 @@ mod tests {
         assert_eq!(super::header_len(3), 16);
         assert_eq!(super::header_len(4), 80);
         assert_eq!(super::header_len(5), 80);
+        assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &5u16.to_le_bytes());
+        assert_eq!(&b[4..6], &6u16.to_le_bytes());
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -3916,13 +3999,15 @@ mod tests {
             })
         );
 
+        // the version after the current one
+        let next = PhysicsWorld::WORLD_SNAPSHOT_VERSION + 1;
         let mut x = blob.clone();
-        x[4..6].copy_from_slice(&6u16.to_le_bytes());
+        x[4..6].copy_from_slice(&next.to_le_bytes());
         assert_eq!(
             t.restore_world(&reseal(x)),
             Err(WorldSnapshotError::UnsupportedVersion {
-                found: 6,
-                supported: 5
+                found: next,
+                supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION
             })
         );
         // a version 4 header cut inside its identifiers
@@ -3947,17 +4032,65 @@ mod tests {
         );
     }
 
-    /// The version 3 form of a version 4 blob (same payload, 16-byte header)
-    /// restores to the same world and reports `Unpinned`.
+    /// The `variant_world` blob in the form an older writer (`version` 1 to 5)
+    /// gave it: the current payload with every damping slot (the config's and
+    /// each body's linear and angular one) holding `retention` per step where
+    /// version 6 holds a rate per second, under a 16-byte header for version
+    /// 1 to 3 and the current 80-byte one (identifiers kept) for 4 and 5.
+    ///
+    /// The slots are found by writing the same world with a sentinel rate in
+    /// each and taking the offsets where the sentinel's bytes appear; their
+    /// count is checked, so a slot the writer moves or adds cannot be missed.
+    /// `variant_world` itself holds rate 0 everywhere, so with `retention` 1
+    /// the result is a faithful older blob of exactly that world.
+    fn legacy_form(version: u16, retention: Fix128) -> Vec<u8> {
+        assert!((1..=5).contains(&version));
+        let plain = variant_world().snapshot_world();
+        let mut marked = variant_world();
+        let sentinel = fx(987_654_321, 1_000_003);
+        marked.config.damping_rate = sentinel;
+        for b in &mut marked.bodies {
+            b.linear_damping_rate = sentinel;
+            b.angular_damping_rate = sentinel;
+        }
+        let slots = 1 + 2 * marked.bodies.len();
+        let marked = marked.snapshot_world();
+        assert_eq!(marked.len(), plain.len());
+        let bytes = |x: Fix128| {
+            let mut w = super::W(Vec::new());
+            w.fix(x);
+            w.0
+        };
+        let (needle, with) = (bytes(sentinel), bytes(retention));
+        let mut payload = plain[80..].to_vec();
+        let hits: Vec<usize> = marked[80..]
+            .windows(16)
+            .enumerate()
+            .filter(|(_, w)| *w == needle.as_slice())
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(hits.len(), slots, "damping slots found: {hits:?}");
+        for at in hits {
+            assert!(
+                payload[at..at + 16].iter().all(|&x| x == 0),
+                "slot holds rate 0"
+            );
+            payload[at..at + 16].copy_from_slice(&with);
+        }
+        let mut b = plain[..super::header_len(version)].to_vec();
+        b[4..6].copy_from_slice(&version.to_le_bytes());
+        b.extend_from_slice(&payload);
+        reseal(b)
+    }
+
+    /// The version 3 form of the blob (16-byte header, damping as retention
+    /// 1 = none, which is what a version 3 writer stored for an undamped
+    /// world) restores to the same world and reports `Unpinned`.
     #[test]
     fn version_3_form_is_unpinned() {
         use super::LawCheck;
-        let src = variant_world();
-        let blob = src.snapshot_world();
-        let mut v3 = blob[..16].to_vec();
-        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
-        v3.extend_from_slice(&blob[80..]);
-        let v3 = reseal(v3);
+        let blob = variant_world().snapshot_world();
+        let v3 = legacy_form(3, Fix128::ONE);
         let mut t = PhysicsWorld::new(SolverConfig::default());
         assert_eq!(
             t.restore_world_checked(
@@ -3976,12 +4109,8 @@ mod tests {
     #[test]
     fn version_3_form_is_refused_unless_accepted() {
         use super::{LegacyPolicy, WorldSnapshotError};
-        let src = variant_world();
-        let blob = src.snapshot_world();
-        let mut v3 = blob[..16].to_vec();
-        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
-        v3.extend_from_slice(&blob[80..]);
-        let v3 = reseal(v3);
+        let blob = variant_world().snapshot_world();
+        let v3 = legacy_form(3, Fix128::ONE);
         let mut t = PhysicsWorld::new(SolverConfig::default());
         let before = t.snapshot_world();
         assert_eq!(t.restore_world(&v3), Err(WorldSnapshotError::Unpinned));
@@ -4000,6 +4129,136 @@ mod tests {
         assert!(WorldSnapshotError::Unpinned
             .to_string()
             .contains("restore_world_checked"));
+    }
+
+    // Damping across the version 6 boundary. oracle: version 6 stores the
+    // rates per second as given; versions 1 to 5 stored a retention r per
+    // step, which is the rate −ln(r)/dt for the step dt it was applied per
+    // (e^(−c·dt) = r), checked against the value computed apart, not the reader's formula.
+
+    /// Distinct non-zero rates in the config and in every body survive a
+    /// version 6 round trip unchanged, and the blob holds them as given.
+    #[test]
+    fn version_6_round_trip_keeps_damping_rates() {
+        let mut src = variant_world();
+        src.config.damping_rate = fx(3, 10);
+        for (i, b) in src.bodies.iter_mut().enumerate() {
+            let i = i as i64;
+            b.linear_damping_rate = fx(2 * i + 1, 7);
+            b.angular_damping_rate = fx(2 * i + 2, 11);
+        }
+        let blob = src.snapshot_world();
+        assert_eq!(&blob[4..6], &6u16.to_le_bytes());
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("version 6 restores");
+        assert_eq!(t.config.damping_rate, fx(3, 10));
+        for (i, b) in t.bodies.iter().enumerate() {
+            let i = i as i64;
+            assert_eq!(b.linear_damping_rate, fx(2 * i + 1, 7));
+            assert_eq!(b.angular_damping_rate, fx(2 * i + 2, 11));
+        }
+        assert_eq!(digest(&mut t), digest(&mut src));
+        assert_eq!(t.snapshot_world(), blob);
+    }
+
+    /// A version 5 blob of an undamped world (retention 1 everywhere) reads
+    /// as rate 0 through every reader, with no step needed.
+    #[test]
+    fn version_5_undamped_reads_as_rate_zero() {
+        use super::LawCheck;
+        let blob = variant_world().snapshot_world();
+        let v5 = legacy_form(5, Fix128::ONE);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(t.restore_world(&v5), Ok(()));
+        assert_eq!(t.config.damping_rate, Fix128::ZERO);
+        assert!(t.bodies.iter().all(
+            |b| b.linear_damping_rate == Fix128::ZERO && b.angular_damping_rate == Fix128::ZERO
+        ));
+        assert_eq!(t.snapshot_world(), blob);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            t.restore_world_legacy_damping(&v5, fx(1, 60)),
+            Ok(LawCheck::SemanticsVerified)
+        );
+        assert_eq!(t.snapshot_world(), blob);
+    }
+
+    /// A version 5 blob with a retention other than 1 is refused by every
+    /// reader that has no step, naming the retention, and the target is left
+    /// as it was.
+    #[test]
+    fn version_5_damped_is_refused_without_a_step() {
+        use super::LegacyPolicy;
+        let r = fx(99, 100);
+        let v5 = legacy_form(5, r);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        let before = digest(&mut t);
+        let refused = WorldSnapshotError::LegacyDampingNeedsStep { retention: r };
+        assert_eq!(t.restore_world(&v5), Err(refused));
+        assert_eq!(
+            t.restore_world_checked(&v5, None, LegacyPolicy::AcceptUnpinned),
+            Err(refused)
+        );
+        assert_eq!(digest(&mut t), before, "a refused blob changed the target");
+        assert!(refused.to_string().contains("restore_world_legacy_damping"));
+        // a version 3 blob too
+        assert_eq!(
+            t.restore_world_checked(&legacy_form(3, r), None, LegacyPolicy::AcceptUnpinned),
+            Err(refused)
+        );
+        assert_eq!(digest(&mut t), before);
+    }
+
+    /// `restore_world_legacy_damping` converts every retention r to the rate
+    /// −ln(r)/dt; the rest of the world is the one that was written. Version 3
+    /// reads as `Unpinned`; a non-positive step is refused.
+    #[test]
+    fn version_5_damped_is_converted_with_the_step() {
+        use super::LawCheck;
+        let (r, dt) = (fx(99, 100), fx(1, 60));
+        let v5 = legacy_form(5, r);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            t.restore_world_legacy_damping(&v5, dt),
+            Ok(LawCheck::SemanticsVerified)
+        );
+        let c = t.config.damping_rate;
+        // independent: −ln(0.99)·60 computed apart (libm is barred here)
+        let want = 0.603_020_151_210_086_5; // −ln(0.99)·60, closed form
+        assert!(
+            (c.to_f64() - want).abs() < 1e-12,
+            "rate {} ≠ {want}",
+            c.to_f64()
+        );
+        assert!(t
+            .bodies
+            .iter()
+            .all(|b| b.linear_damping_rate == c && b.angular_damping_rate == c));
+        // every other field is the written world's
+        let mut expect = variant_world();
+        expect.config.damping_rate = c;
+        for b in &mut expect.bodies {
+            b.linear_damping_rate = c;
+            b.angular_damping_rate = c;
+        }
+        assert_eq!(digest(&mut t), digest(&mut expect));
+
+        let mut u = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            u.restore_world_legacy_damping(&legacy_form(3, r), dt),
+            Ok(LawCheck::Unpinned)
+        );
+        assert_eq!(digest(&mut u), digest(&mut expect));
+
+        let mut z = PhysicsWorld::new(SolverConfig::default());
+        let before = digest(&mut z);
+        for bad in [Fix128::ZERO, -dt] {
+            assert_eq!(
+                z.restore_world_legacy_damping(&v5, bad),
+                Err(WorldSnapshotError::InvalidValue { section: "damping" })
+            );
+        }
+        assert_eq!(digest(&mut z), before);
     }
 
     /// Ids of the impulse-cache test: distinctive byte patterns (so their

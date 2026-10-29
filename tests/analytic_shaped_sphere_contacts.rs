@@ -344,7 +344,7 @@ fn turning_a_parked_static_shape_re_boxes_it() {
         // no gravity and no damping: the ball keeps its speed until it hits
         let mut w = PhysicsWorld::new(SolverConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..SolverConfig::default()
         });
         w.set_sleep_skip(skip);

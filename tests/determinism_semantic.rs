@@ -63,7 +63,7 @@ fn gravity_config(g_y: i64) -> PhysicsConfig {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(g_y), Fix128::ZERO),
-        damping: Fix128::ONE, // no damping
+        damping_rate: Fix128::ZERO, // no damping
         ..Default::default()
     }
 }
@@ -73,7 +73,7 @@ fn zero_gravity_config() -> PhysicsConfig {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     }
 }

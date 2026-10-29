@@ -20,7 +20,7 @@ fn dt() -> Fix128 {
 /// Default gravity and substeps, no frame damping so velocity carries exactly.
 fn undamped() -> PhysicsConfig {
     let c = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     assert_eq!(c.substeps, 8, "closed forms below assume 8 substeps");

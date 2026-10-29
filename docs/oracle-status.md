@@ -6,20 +6,21 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5898 |
-| 🔴 Red by design | 70 |
+| 🟢 Not ignored (run by CI) | 5906 |
+| 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5994** |
+| **Total** | **6003** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (70)
+## 🔴 Red by design (71)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
+- `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
@@ -109,12 +110,13 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (3)
+## ⚠️ Known defects without an id (4)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
+- `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
@@ -150,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5898)
+## 🟢 Not ignored (5906)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -546,7 +548,9 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
+| `analytic_damping_rate.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
+| `analytic_shaped_static_contact.rs` | 4 |
 | `analytic_slider_reaction_limit.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
@@ -571,6 +575,7 @@ Per-file counts (the test names are in `tests/`):
 | `world_ccd_off_bit_identity.rs` | 4 |
 | `world_participant_errors.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
+| `world_snapshot_xv_88cf6f85.rs` | 4 |
 | `analytic_axial_support.rs` | 3 |
 | `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
@@ -602,7 +607,6 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
-| `world_snapshot_xv_88cf6f85.rs` | 3 |
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
@@ -622,7 +626,6 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_to_fem_stress.rs` | 2 |
 | `participant_panic_leaves_world_faulted.rs` | 2 |
 | `poisoned_world_fault.rs` | 2 |
-| `tgs_joints_static_colliders.rs` | 2 |
 | `vehicle_update_bits.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |
@@ -637,6 +640,7 @@ Per-file counts (the test names are in `tests/`):
 | `c_world_fault_codes.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
 | `law_check_cast.rs` | 1 |
+| `tgs_joints_static_colliders.rs` | 1 |
 
 ---
 

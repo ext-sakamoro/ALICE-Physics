@@ -28,7 +28,7 @@ fn falling_body_in_a_wind_zone_approaches_the_closed_form_terminal_velocity() {
     // unrelated decay term that would corrupt this closed form, so it is
     // disabled here; everything else is PhysicsConfig::default().
     let config = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);
