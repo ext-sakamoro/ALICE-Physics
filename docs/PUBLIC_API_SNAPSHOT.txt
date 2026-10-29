@@ -4366,7 +4366,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::ffi::AliceFix128Raw
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::ffi::AliceFix128Raw
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::ffi::AliceFix128Raw
 #[repr(C)] pub struct alice_physics_core::ffi::AlicePhysicsConfig
-pub alice_physics_core::ffi::AlicePhysicsConfig::damping: f64
+pub alice_physics_core::ffi::AlicePhysicsConfig::damping_rate: f64
 pub alice_physics_core::ffi::AlicePhysicsConfig::gravity_x: f64
 pub alice_physics_core::ffi::AlicePhysicsConfig::gravity_y: f64
 pub alice_physics_core::ffi::AlicePhysicsConfig::gravity_z: f64
@@ -10442,6 +10442,8 @@ pub alice_physics_core::prelude::WorldSnapshotError::InvalidValue::section: &'st
 pub alice_physics_core::prelude::WorldSnapshotError::LawIdMismatch
 pub alice_physics_core::prelude::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
 pub alice_physics_core::prelude::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
+pub alice_physics_core::prelude::WorldSnapshotError::LegacyDampingNeedsStep
+pub alice_physics_core::prelude::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantState
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -13541,6 +13543,7 @@ pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_legacy_damping(&mut self, &[u8], alice_physics_core::math::Fix128) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
@@ -13948,7 +13951,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::raycast::RayHit
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::raycast::RayHit
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::raycast::RayHit
 #[repr(C, align(64))] pub struct alice_physics_core::prelude::RigidBody
-pub alice_physics_core::prelude::RigidBody::angular_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::RigidBody::angular_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::RigidBody::angular_velocity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::RigidBody::body_type: alice_physics_core::solver::BodyType
 pub alice_physics_core::prelude::RigidBody::friction: alice_physics_core::math::Fix128
@@ -13957,7 +13960,7 @@ pub alice_physics_core::prelude::RigidBody::inv_inertia: alice_physics_core::mat
 pub alice_physics_core::prelude::RigidBody::inv_mass: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::RigidBody::is_sensor: bool
 pub alice_physics_core::prelude::RigidBody::kinematic_target: core::option::Option<(alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix)>
-pub alice_physics_core::prelude::RigidBody::linear_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::RigidBody::linear_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::RigidBody::position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::RigidBody::prev_position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::RigidBody::prev_rotation: alice_physics_core::math::QuatFix
@@ -13984,10 +13987,10 @@ pub fn alice_physics_core::solver::RigidBody::set_position(&mut self, alice_phys
 pub fn alice_physics_core::solver::RigidBody::set_rotation(&mut self, alice_physics_core::math::QuatFix)
 pub fn alice_physics_core::solver::RigidBody::set_velocity(&mut self, alice_physics_core::math::Vec3Fix)
 pub fn alice_physics_core::solver::RigidBody::speed(&self) -> alice_physics_core::math::Fix128
-pub const fn alice_physics_core::solver::RigidBody::with_angular_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_angular_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_friction(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_gravity_scale(self, alice_physics_core::math::Fix128) -> Self
-pub const fn alice_physics_core::solver::RigidBody::with_linear_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_linear_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_restitution(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_rotation(self, alice_physics_core::math::QuatFix) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_sensor(self, bool) -> Self
@@ -18234,6 +18237,8 @@ pub alice_physics_core::solver::WorldSnapshotError::InvalidValue::section: &'sta
 pub alice_physics_core::solver::WorldSnapshotError::LawIdMismatch
 pub alice_physics_core::solver::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
 pub alice_physics_core::solver::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
+pub alice_physics_core::solver::WorldSnapshotError::LegacyDampingNeedsStep
+pub alice_physics_core::solver::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantState
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -18506,6 +18511,7 @@ pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_legacy_damping(&mut self, &[u8], alice_physics_core::math::Fix128) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
@@ -18568,7 +18574,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::solver::PhysicsWorld
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::solver::PhysicsWorld
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics_core::solver::PhysicsWorld
 #[repr(C, align(64))] pub struct alice_physics_core::solver::RigidBody
-pub alice_physics_core::solver::RigidBody::angular_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::solver::RigidBody::angular_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::RigidBody::angular_velocity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::solver::RigidBody::body_type: alice_physics_core::solver::BodyType
 pub alice_physics_core::solver::RigidBody::friction: alice_physics_core::math::Fix128
@@ -18577,7 +18583,7 @@ pub alice_physics_core::solver::RigidBody::inv_inertia: alice_physics_core::math
 pub alice_physics_core::solver::RigidBody::inv_mass: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::RigidBody::is_sensor: bool
 pub alice_physics_core::solver::RigidBody::kinematic_target: core::option::Option<(alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix)>
-pub alice_physics_core::solver::RigidBody::linear_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::solver::RigidBody::linear_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::RigidBody::position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::solver::RigidBody::prev_position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::solver::RigidBody::prev_rotation: alice_physics_core::math::QuatFix
@@ -18604,10 +18610,10 @@ pub fn alice_physics_core::solver::RigidBody::set_position(&mut self, alice_phys
 pub fn alice_physics_core::solver::RigidBody::set_rotation(&mut self, alice_physics_core::math::QuatFix)
 pub fn alice_physics_core::solver::RigidBody::set_velocity(&mut self, alice_physics_core::math::Vec3Fix)
 pub fn alice_physics_core::solver::RigidBody::speed(&self) -> alice_physics_core::math::Fix128
-pub const fn alice_physics_core::solver::RigidBody::with_angular_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_angular_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_friction(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_gravity_scale(self, alice_physics_core::math::Fix128) -> Self
-pub const fn alice_physics_core::solver::RigidBody::with_linear_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_linear_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_restitution(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_rotation(self, alice_physics_core::math::QuatFix) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_sensor(self, bool) -> Self
@@ -18631,7 +18637,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::solver::RigidBody
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::solver::RigidBody
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::solver::RigidBody
 pub struct alice_physics_core::solver::SolverConfig
-pub alice_physics_core::solver::SolverConfig::damping: alice_physics_core::math::Fix128
+pub alice_physics_core::solver::SolverConfig::damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::SolverConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::solver::SolverConfig::iterations: usize
 pub alice_physics_core::solver::SolverConfig::solver_backend: alice_physics_core::solver::SolverBackend
@@ -22009,6 +22015,8 @@ pub alice_physics_core::WorldSnapshotError::InvalidValue::section: &'static str
 pub alice_physics_core::WorldSnapshotError::LawIdMismatch
 pub alice_physics_core::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
 pub alice_physics_core::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
+pub alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep
+pub alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
 pub alice_physics_core::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::WorldSnapshotError::ParticipantState
 pub alice_physics_core::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -25184,6 +25192,7 @@ pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_legacy_damping(&mut self, &[u8], alice_physics_core::math::Fix128) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
@@ -25613,7 +25622,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::raycast::RayHit
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::raycast::RayHit
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::raycast::RayHit
 #[repr(C, align(64))] pub struct alice_physics_core::RigidBody
-pub alice_physics_core::RigidBody::angular_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::RigidBody::angular_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::RigidBody::angular_velocity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::RigidBody::body_type: alice_physics_core::solver::BodyType
 pub alice_physics_core::RigidBody::friction: alice_physics_core::math::Fix128
@@ -25622,7 +25631,7 @@ pub alice_physics_core::RigidBody::inv_inertia: alice_physics_core::math::Vec3Fi
 pub alice_physics_core::RigidBody::inv_mass: alice_physics_core::math::Fix128
 pub alice_physics_core::RigidBody::is_sensor: bool
 pub alice_physics_core::RigidBody::kinematic_target: core::option::Option<(alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix)>
-pub alice_physics_core::RigidBody::linear_damping: alice_physics_core::math::Fix128
+pub alice_physics_core::RigidBody::linear_damping_rate: alice_physics_core::math::Fix128
 pub alice_physics_core::RigidBody::position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::RigidBody::prev_position: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::RigidBody::prev_rotation: alice_physics_core::math::QuatFix
@@ -25649,10 +25658,10 @@ pub fn alice_physics_core::solver::RigidBody::set_position(&mut self, alice_phys
 pub fn alice_physics_core::solver::RigidBody::set_rotation(&mut self, alice_physics_core::math::QuatFix)
 pub fn alice_physics_core::solver::RigidBody::set_velocity(&mut self, alice_physics_core::math::Vec3Fix)
 pub fn alice_physics_core::solver::RigidBody::speed(&self) -> alice_physics_core::math::Fix128
-pub const fn alice_physics_core::solver::RigidBody::with_angular_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_angular_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_friction(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_gravity_scale(self, alice_physics_core::math::Fix128) -> Self
-pub const fn alice_physics_core::solver::RigidBody::with_linear_damping(self, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::solver::RigidBody::with_linear_damping_rate(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_restitution(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_rotation(self, alice_physics_core::math::QuatFix) -> Self
 pub const fn alice_physics_core::solver::RigidBody::with_sensor(self, bool) -> Self

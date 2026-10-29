@@ -43,7 +43,7 @@ fn config(substeps: usize) -> SolverConfig {
     SolverConfig {
         substeps,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: SolverBackend::Xpbd,
         ..SolverConfig::default()
     }

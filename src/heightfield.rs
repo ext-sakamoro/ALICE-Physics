@@ -78,7 +78,7 @@ impl HeightField {
     }
 
     /// World-space to grid coordinates (fractional)
-    fn world_to_grid(&self, world_pos: Vec3Fix) -> (Fix128, Fix128) {
+    pub(crate) fn world_to_grid(&self, world_pos: Vec3Fix) -> (Fix128, Fix128) {
         let local_x = world_pos.x - self.origin.x;
         let local_z = world_pos.z - self.origin.z;
 

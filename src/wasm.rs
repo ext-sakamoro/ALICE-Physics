@@ -73,7 +73,9 @@ impl WasmPhysicsWorld {
                 Fix128::from_f64(gravity_y),
                 Fix128::from_f64(gravity_z),
             ),
-            damping: Fix128::from_ratio(99, 100),
+            // the per-second rate equal to the retention 0.99 per step this
+            // binding used before the rate, at its 60 steps per second
+            damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
             ..Default::default()
         };
         Self {

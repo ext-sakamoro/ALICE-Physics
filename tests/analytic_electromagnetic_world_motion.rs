@@ -79,7 +79,7 @@ fn run_charged_body(
 fn no_gravity_world() -> PhysicsWorld {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);

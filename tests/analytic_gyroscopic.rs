@@ -64,7 +64,7 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn cfg(backend: SolverBackend) -> PhysicsConfig {
     PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: SUBSTEPS,
         solver_backend: backend,
         ..PhysicsConfig::default()
@@ -455,13 +455,17 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// leaves every body of this scene on its previous path; re-recorded when
 /// XPBD began keeping the predicted velocity of bodies the solve did not move,
 /// `v = v_pred + Δx_corr / h`, and again when it began keeping the predicted
-/// angular velocity of bodies the solve did not turn).
-const GOLDEN_ISOTROPIC_XPBD: u64 = 0x4ea6_501e_e672_97d9;
+/// angular velocity of bodies the solve did not turn; and again, with the TGS
+/// value, when damping became a rate per second with default 0, where the
+/// scene's default config had damped every body by a retention 0.99 per step).
+const GOLDEN_ISOTROPIC_XPBD: u64 = 0xd71a_9ec7_2f28_de10;
 // The TGS value was re-recorded when the TGS orientation integrator became
 // the exact exponential map, and again when an isotropic inverse inertia
 // became the plain product `c·τ` (no rotation round trip), which changes the
-// spinning colliding spheres of the TGS contact solve in the last bits.
-const GOLDEN_ISOTROPIC_TGS: u64 = 0x645f_6a73_cb85_0486;
+// spinning colliding spheres of the TGS contact solve in the last bits; and
+// again when damping became a rate per second with default 0 (from
+// 0x645f_6a73_cb85_0486).
+const GOLDEN_ISOTROPIC_TGS: u64 = 0x1a0f_d8bc_aa9f_069e;
 
 /// oracle: `I_b = s·1 ⇒ ω × (s ω) = 0`, so adding the term must leave every
 /// bit of an isotropic scene unchanged (likewise bodies the term does not
@@ -482,9 +486,10 @@ fn d_isotropic_and_exempt_bodies_are_bit_identical_to_before() {
     }
 }
 
-/// Same scene under `step_parallel`; equal to the serial XPBD value.
+/// Same scene under `step_parallel`; equal to the serial XPBD value (a copy of
+/// `GOLDEN_ISOTROPIC_XPBD`, re-pinned with it).
 #[cfg(feature = "parallel")]
-const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0x4ea6_501e_e672_97d9;
+const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0xd71a_9ec7_2f28_de10;
 
 #[cfg(feature = "parallel")]
 #[test]

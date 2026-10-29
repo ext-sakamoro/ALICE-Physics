@@ -24,7 +24,7 @@ fn build() -> Scenario<FlatGround> {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     // The default frame damping keeps 0.99 of the velocity per frame (a
     // 0.6 /s drag at 60 Hz); the vehicle model carries its own resistances.
-    world.config.damping = Fix128::ONE;
+    world.config.damping_rate = Fix128::ZERO;
     let mut sc = Scenario::new(
         world,
         FlatGround {

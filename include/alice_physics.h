@@ -45,7 +45,7 @@ typedef struct {
     double gravity_x;
     double gravity_y;
     double gravity_z;
-    double damping;
+    double damping_rate; /* 1/s, 0 = none: velocity *= exp(-damping_rate*dt) per step */
 } AlicePhysicsConfig;
 
 /** Body info snapshot (read-only) */

@@ -721,7 +721,7 @@ fn world_glider_settles_on_the_closed_form_glide_path() {
     let theta = alpha_star - gamma;
     let mass = 2.0;
     let config = SolverConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     };
     let g = -config.gravity.y.to_f64();

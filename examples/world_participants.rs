@@ -98,7 +98,7 @@ fn world() -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 4,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     });
     w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
