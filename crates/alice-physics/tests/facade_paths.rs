@@ -1425,6 +1425,7 @@ use alice_physics::solver::StageWork as _;
 use alice_physics::solver::TgsCacheStats as _;
 use alice_physics::solver::WorldCcdConfig as _;
 use alice_physics::solver::WorldSnapshotError as _;
+use alice_physics::solver::STATE_DIGEST_DOMAIN as _;
 use alice_physics::spatial as _;
 use alice_physics::spatial::SpatialGrid as _;
 use alice_physics::speculative_contact as _;
@@ -1860,10 +1861,11 @@ use alice_physics::PHYSICS_SEMANTICS_ID as _;
 use alice_physics::PHYSICS_SEMANTICS_PINS as _;
 use alice_physics::PREVIOUS_PHYSICS_SEMANTICS_IDS as _;
 use alice_physics::SIMD_WIDTH as _;
+use alice_physics::STATE_DIGEST_DOMAIN as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1845 paths, checked at compile time
+    // 1847 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
