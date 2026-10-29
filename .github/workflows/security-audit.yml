@@ -392,7 +392,7 @@ jobs:
             echo "::error::The generated snapshot differs from docs/PUBLIC_API_SNAPSHOT.txt."
             echo "::error::"
             echo "::error::If this drift is intentional, regenerate the baseline with:"
-            echo "::error::  cargo +nightly public-api --features \"std,simd,parallel,ffi,gpu-solver-bridge\" --simplified > docs/PUBLIC_API_SNAPSHOT.txt"
+            echo "::error::  cargo +nightly-2026-09-26 public-api --features \"std,simd,parallel,ffi,gpu-solver-bridge\" --simplified > docs/PUBLIC_API_SNAPSHOT.txt"
             echo "::error::and commit the diff alongside the API change so the PR reviewer sees the delta."
             exit 1
           fi

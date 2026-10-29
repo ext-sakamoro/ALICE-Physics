@@ -134,19 +134,31 @@ jobs:
     name: Full preflight + release test suite
     needs: inputs
     if: inputs.suite == 'full' || inputs.suite == 'both'
-    runs-on: ubuntu-latest
+    # arm64: the architecture the public API snapshot (docs/PUBLIC_API_SNAPSHOT.txt) and the developers'
+    # machines use; the x86_64-only SIMD items would make the snapshot differ on an x86_64 runner
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.sha }}
           fetch-depth: 0
+      # the python ci.yml's test job uses (scripts/test_land.py tells the runner's system python from the one
+      # running it, and finds the interpreter's directory apart from git's)
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
       # rust-toolchain.toml pins the toolchain; rustup installs it on the first cargo call
       - name: Toolchain and the tools the full preflight needs
         run: |
           rustup show active-toolchain
           rustup component add rust-analyzer
-          rustup target add wasm32-wasip1 wasm32-unknown-unknown
+          # wasm: the wasm steps; x86_64-unknown-linux-gnu: g2_comparisons.py type-checks the x86_64 SIMD paths
+          # with --target (on this arm64 runner it is not the host)
+          rustup target add wasm32-wasip1 wasm32-unknown-unknown x86_64-unknown-linux-gnu
+          # the MSRV lanes (cargo +1.85 / +1.87) and the public API snapshot (cargo +nightly-2026-09-26
+          # public-api, the nightly of security-audit.yml); the full run fails where a quick run would skip them
+          rustup toolchain install 1.85 1.87 nightly-2026-09-26 --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v5
         with:
@@ -159,7 +171,36 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,cargo-mutants,wasm-bindgen@${{ steps.wbg.outputs.version }}
+          # cargo-mutants: the version ci.yml installs; cargo-public-api: the version security-audit.yml installs
+          tool: cargo-deny,cargo-mutants@27.1.0,cargo-public-api@0.52.0,wasm-bindgen@${{ steps.wbg.outputs.version }}
+      # actionlint and the shellcheck it runs: the versions of .github/linter-pins (the ones the local preflight
+      # requires), each upstream release archive checked against its pinned sha256 before it is used
+      # (install-action has no actionlint; the apt shellcheck is another version)
+      - name: actionlint + shellcheck at .github/linter-pins (sha256-checked)
+        run: |
+          arch=$(uname -m)
+          pin() { awk -v t="$1" -v a="$arch" '$1 == t && $3 == a { print $2, $4 }' .github/linter-pins; }
+          read -r av asha <<< "$(pin actionlint)"
+          read -r sv ssha <<< "$(pin shellcheck)"
+          [ -n "$av" ] && [ -n "$asha" ] && [ -n "$sv" ] && [ -n "$ssha" ] || { echo "::error::.github/linter-pins lacks a row for $arch"; exit 1; }
+          bin="$HOME/.local/bin"; mkdir -p "$bin"
+          case $arch in x86_64) ala=amd64 ;; aarch64) ala=arm64 ;; *) echo "::error::no actionlint build for $arch"; exit 1 ;; esac
+          f="actionlint_${av}_linux_${ala}.tar.gz"
+          curl -fsSL -o "/tmp/$f" "https://github.com/rhysd/actionlint/releases/download/v${av}/$f"
+          echo "$asha  /tmp/$f" | sha256sum -c -
+          tar -xzf "/tmp/$f" -C "$bin" actionlint
+          g="shellcheck-v${sv}.linux.${arch}.tar.gz"
+          curl -fsSL -o "/tmp/$g" "https://github.com/koalaman/shellcheck/releases/download/v${sv}/$g"
+          echo "$ssha  /tmp/$g" | sha256sum -c -
+          tar -xzf "/tmp/$g" -C /tmp && cp "/tmp/shellcheck-v${sv}/shellcheck" "$bin/shellcheck"
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/actionlint" -version | head -1
+          "$bin/shellcheck" --version | sed -n 2p
+      # every program and toolchain the full preflight calls is here before its first step runs (a missing
+      # one otherwise surfaces dozens of steps in): read from scripts/preflight.sh itself, so a new tool
+      # there is checked without a list to keep; 0 read = fail
+      - name: Every tool the full preflight calls is installed
+        run: python3 scripts/test_preflight_tools_check.py && python3 scripts/preflight_tools_check.py
       - name: scripts/preflight.sh (full)
         run: bash scripts/preflight.sh 2>&1 | tee preflight.log; exit "${PIPESTATUS[0]}"
       - name: cargo test --release --workspace
@@ -170,7 +211,9 @@ jobs:
           passed=$(grep -E '^test result: ' test.log | sed -E 's/.* ([0-9]+) passed.*/\1/' | awk '{s+=$1} END {print s+0}')
           lines=$(grep -c '^test result: ' test.log || true)
           echo "release suite: $lines result line(s), $passed test(s) passed" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "${lines:-0}" -gt 0 ] && [ "${passed:-0}" -gt 0 ] || { echo "::error::no test ran (0 result lines or 0 passed)"; exit 1; }
+          if [ "${lines:-0}" -eq 0 ] || [ "${passed:-0}" -eq 0 ]; then
+            echo "::error::no test ran (0 result lines or 0 passed)"; exit 1
+          fi
           if grep -q '^test result: FAILED' test.log; then echo "::error::a test failed"; exit 1; fi
       - name: Preflight summary
         if: always()

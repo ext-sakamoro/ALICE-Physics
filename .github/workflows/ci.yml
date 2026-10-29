@@ -997,6 +997,8 @@ jobs:
           python3 scripts/workflow_timeouts.py
           # the pass / fail rules of verify.yml's mutant jobs
           python3 scripts/test_verify_mutants_check.py
+          # the reading of the programs, toolchains and targets the preflight calls (verify.yml, preflight)
+          python3 scripts/test_preflight_tools_check.py
 
   feature-powerset:
     if: github.event_name != 'schedule'

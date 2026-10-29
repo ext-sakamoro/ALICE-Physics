@@ -22,8 +22,9 @@ from `pub` to `pub(crate)` and mark others `#[deprecated]` before v1.0 stable.
 ## Regenerating
 
 ```bash
-# Requires nightly toolchain for rustdoc JSON output
-cargo +nightly public-api \
+# the nightly and cargo-public-api versions security-audit.yml pins (another nightly prints
+# another surface): rustup toolchain install nightly-2026-09-26; cargo install cargo-public-api --locked --version 0.52.0
+cargo +nightly-2026-09-26 public-api \
   --features "std,simd,parallel,ffi,gpu-solver-bridge" \
   --simplified \
   > docs/PUBLIC_API_SNAPSHOT.txt
@@ -35,7 +36,7 @@ producing a shorter and more human-readable diff.
 ## Diff between versions
 
 ```bash
-cargo +nightly public-api diff \
+cargo +nightly-2026-09-26 public-api diff \
   --features "std,simd,parallel,ffi,gpu-solver-bridge" \
   0.14.0-preview.4 0.14.0-preview.5
 ```
