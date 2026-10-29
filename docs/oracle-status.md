@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5905 |
+| 🟢 Not ignored (run by CI) | 5906 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6001** |
+| **Total** | **6002** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5905)
+## 🟢 Not ignored (5906)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -475,6 +475,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_orbit_nbody.rs` | 8 |
 | `mat3_inverse_range.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
+| `state_digest.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
 | `analytic_electromagnetic_wiring.rs` | 7 |
@@ -493,7 +494,6 @@ Per-file counts (the test names are in `tests/`):
 | `fsi_advanced_sub_iteration.rs` | 7 |
 | `indep_aero_rotor.rs` | 7 |
 | `mesh_quality.rs` | 7 |
-| `state_digest.rs` | 7 |
 | `trimesh_raycast_bruteforce.rs` | 7 |
 | `wm07_reset_and_rollback_contract.rs` | 7 |
 | `world_snapshot_previous_semantics.rs` | 7 |
