@@ -186,6 +186,21 @@ HOOKS_HOME: Path | None = None  # (None: the account's home from the user databa
 HOOKS_HOW = "set the account's global core.hooksPath to the hooks checkout's hooks/git-hooks"
 
 
+# the gate's environment is built from this allowlist only (2026-10-30): the caller's environment never reaches it, so
+# no escape hatch of the gate (ALICE_PREFLIGHT_SKIP and the others, and any added later) can be set from outside a
+# landing; what the gate needs to run: PATH (git, python3), HOME (from the user database: its config and caches),
+# the locale and the temporary directory
+GATE_ENV_KEYS = ("PATH", "LANG", "TMPDIR", "USER", "LOGNAME")
+
+
+def gate_env() -> dict[str, str]:
+    """the environment of the pre-push gate: clean_env() narrowed to GATE_ENV_KEYS and LC_*, with HOME from the user
+    database"""
+    env = {k: v for k, v in clean_env().items() if k in GATE_ENV_KEYS or k.startswith("LC_")}
+    env["HOME"] = str(hooks_home())
+    return env
+
+
 def hooks_home() -> Path:
     home = account_home()
     return HOOKS_HOME or Path(home if home else os.path.expanduser("~"))
@@ -1186,7 +1201,7 @@ class Lander:
         try:
             r = subprocess.run([sys.executable, str(gate), self.remote, url], input="".join(f"{ln}\n" for ln in lines),
                                cwd=self.root, capture_output=True, text=True, timeout=1800,
-                               env={**clean_env(), "HOME": str(hooks_home())})
+                               env=gate_env())
         except (OSError, subprocess.SubprocessError) as e:
             raise LandError(f"the pre-push gate could not run ({type(e).__name__}: {e}): nothing pushed") from None
         for line in (r.stdout + r.stderr).splitlines():
