@@ -381,7 +381,7 @@ whole world (`snapshotWorld` / `restoreWorld`, `snapshot_world` / `restore_world
 `alice_physics_world_snapshot` / `alice_physics_world_restore`: joints, constraints, static
 colliders and materials too, under the build's semantics and law identifiers; a refused blob is
 named by its `WorldSnapshotError` kind and leaves the world unchanged). `stateDigest` (32 bytes,
-SHA-256 of the length-prefixed domain `alice-physics/state-digest/v1` and the whole-world snapshot)
+SHA-256 of 32 fixed domain bytes, themselves the SHA-256 of `alice-physics/state-digest/v1`, followed by the whole-world snapshot)
 and `lawId` (the world's rules under this build's semantics) let a replay or a shared solution be
 checked by its result; the order bodies, joints and colliders were added in is part of the state.
 CI checks the C ABI against its consumers
