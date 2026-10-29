@@ -106,6 +106,7 @@ python3 scripts/test_fuzz_targets.py
 python3 scripts/fuzz_targets.py --check
 python3 scripts/test_semver_checked.py
 python3 scripts/test_semver_baseline_has.py
+python3 scripts/test_ci_base.py
 python3 scripts/test_ansi.py
 python3 scripts/test_changed_paths.py
 python3 scripts/changed_paths.py sync

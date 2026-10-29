@@ -163,6 +163,8 @@ jobs:
         run: python scripts/test_semver_checked.py
       - name: Semver baseline package reader (tests)
         run: python scripts/test_semver_baseline_has.py
+      - name: Baseline selector (tests)
+        run: python scripts/test_ci_base.py
       - name: Escape-sequence stripping for tool output (tests)
         run: python scripts/test_ansi.py
       - name: Clippy configuration of the library code (tests)

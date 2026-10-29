@@ -32,6 +32,8 @@ on:
       - 'scripts/semver_checked.py'
       - 'scripts/semver_baseline_has.py'
       - 'scripts/test_semver_baseline_has.py'
+      - 'scripts/ci_base.py'
+      - 'scripts/test_ci_base.py'
       - 'scripts/ansi.py'
       - 'scripts/line_coverage_ratchet.py'
       - 'scripts/line-coverage-baseline.txt'
@@ -407,7 +409,8 @@ jobs:
     # 2026-09-14 v1.0 Item C 有効化: continue-on-error 解除、hard-gate
     # モードに移行 breaking API 変更を含む PR はここで block される
     # crates.io baseline との比較も可能だが、preview 版どうしの比較は
-    # noise 多いため引き続き git baseline (main~1) で比較
+    # noise 多いため git の baseline で比較 (main への push は push 前の main、他は origin/main との
+    # merge-base、scripts/ci_base.py が決める)
     steps:
       - uses: actions/checkout@v5
         with:
@@ -433,33 +436,43 @@ jobs:
       # The count is read by scripts/semver_checked.py (ANSI codes stripped, a
       # missing or zero count prints `::error::` and fails); colour is also off
       # for this step so the log reads plainly.
+      - name: Baseline selector (tests)
+        run: python3 scripts/test_ci_base.py
       - name: Run cargo semver-checks
         shell: bash
         env:
           CARGO_TERM_COLOR: never
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          # the baseline: on a push to main the commit main stood at before the push, so a push of several
+          # commits compares all of them (HEAD~1 compared only the last); elsewhere the merge-base with
+          # origin/main (scripts/ci_base.py, shared with the other ALICE crates; it fails rather than guess)
+          git fetch --quiet origin main
+          base=$(python3 scripts/ci_base.py --event "$EVENT" --ref "$REF" --before "$BEFORE")
           # both published packages: the facade (alice-physics) and the engine
           # (alice-physics-core); a package the baseline does not have yet (the commit
           # that introduces it) is reported, and at least one package must be compared
           compared=0
           for pkg in alice-physics alice-physics-core; do
             set +e
-            python3 scripts/semver_baseline_has.py HEAD~1 "$pkg"
+            python3 scripts/semver_baseline_has.py "$base" "$pkg"
             has=$?
             set -e
             if [ "$has" -eq 2 ]; then
-              echo "::error::the baseline HEAD~1 could not be read"
+              echo "::error::the baseline $base could not be read"
               exit 1
             fi
             if [ "$has" -eq 1 ]; then
-              echo "::notice::$pkg is not a package at HEAD~1 (introduced by this commit): nothing to compare it with"
-              echo "### cargo semver-checks: $pkg is new at this commit (no baseline)" >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice::$pkg is not a package at the baseline $base (introduced since): nothing to compare it with"
+              echo "### cargo semver-checks: $pkg is new since the baseline (none to compare)" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
             set +e
             cargo semver-checks check-release \
               --package "$pkg" \
-              --baseline-rev "HEAD~1" \
+              --baseline-rev "$base" \
               --only-explicit-features \
               --features "std,simd,parallel,ffi,gpu-solver-bridge" 2>&1 | tee "semver-$pkg.txt"
             rc=${PIPESTATUS[0]}
@@ -472,7 +485,7 @@ jobs:
             fi
             compared=$((compared + 1))
             {
-              echo "### cargo semver-checks ($pkg): $checked checks against HEAD~1 (exit $rc)"
+              echo "### cargo semver-checks ($pkg): $checked checks against $base (exit $rc)"
               grep -E 'Summary|FAIL|requires new' "semver-$pkg.txt" || true
             } >> "$GITHUB_STEP_SUMMARY"
             if [ "$rc" -ne 0 ]; then
@@ -480,7 +493,7 @@ jobs:
             fi
           done
           if [ "$compared" -eq 0 ]; then
-            echo "::error::cargo semver-checks compared no package (neither is a package at HEAD~1)"
+            echo "::error::cargo semver-checks compared no package (neither is a package at the baseline $base)"
             exit 1
           fi
 

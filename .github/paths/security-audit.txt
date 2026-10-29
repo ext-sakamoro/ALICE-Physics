@@ -29,6 +29,10 @@ scripts/semver_checked.py
 # and decides which packages have a baseline with semver_baseline_has.py
 scripts/semver_baseline_has.py
 scripts/test_semver_baseline_has.py
+# and names its baseline with ci_base.py (the commit main stood at before a push to main, else the
+# merge-base with origin/main), whose tests run first
+scripts/ci_base.py
+scripts/test_ci_base.py
 scripts/ansi.py
 # the coverage job: the ratchet and its baseline
 scripts/line_coverage_ratchet.py
