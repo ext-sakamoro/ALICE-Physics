@@ -102,3 +102,68 @@ test("refused arguments return undefined / false and change nothing", () => {
   assert.equal(w.staticColliderCount(), 0);
   assert.equal(w.bodyCount(), 2);
 });
+
+// oracle: SHA-256 over the BE u64 length of "alice-physics/state-digest/v1", the domain, then
+// snapshotWorld(), recomputed with WebCrypto (an implementation independent of the crate's)
+async function digestOf(snapshot) {
+  const domain = new TextEncoder().encode("alice-physics/state-digest/v1");
+  const len = new Uint8Array(8);
+  new DataView(len.buffer).setBigUint64(0, BigInt(domain.length), false);
+  const all = new Uint8Array(8 + domain.length + snapshot.length);
+  all.set(len, 0);
+  all.set(domain, 8);
+  all.set(snapshot, 8 + domain.length);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", all));
+}
+
+const jointedScene = () => {
+  const w = world();
+  w.addStaticPlane(0, 1, 0, 0);
+  const a = w.addDynamicBody(0, 5, 0, 1);
+  const b = w.addDynamicBody(1, 5, 0, 2);
+  w.addBallJoint(a, b, [0, 0, 0, -1, 0, 0]);
+  return w;
+};
+
+test("stateDigest is SHA-256 of the domain and snapshotWorld (WebCrypto recomputation)", async () => {
+  const w = jointedScene();
+  for (let i = 0; i < 30; i++) w.step(DT);
+  const d = w.stateDigest();
+  assert.equal(d.length, 32);
+  assert.deepEqual(Array.from(d), Array.from(await digestOf(w.snapshotWorld())));
+  assert.equal(w.lawId().length, 32);
+});
+
+test("restoreWorld brings back joints that deserializeState drops, with the same digest", () => {
+  const w = jointedScene();
+  for (let i = 0; i < 20; i++) w.step(DT);
+  const blob = w.snapshotWorld();
+  const digest = Array.from(w.stateDigest());
+  const fresh = world();
+  fresh.restoreWorld(blob);
+  assert.equal(fresh.jointCount(), 1);
+  assert.deepEqual(Array.from(fresh.stateDigest()), digest);
+  for (let i = 0; i < 40; i++) {
+    w.step(DT);
+    fresh.step(DT);
+  }
+  assert.deepEqual(Array.from(fresh.stateDigest()), Array.from(w.stateDigest()));
+});
+
+test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
+  const w = jointedScene();
+  const before = Array.from(w.stateDigest());
+  const blob = jointedScene().snapshotWorld();
+  blob[blob.length - 20] ^= 1;
+  assert.throws(() => w.restoreWorld(blob), (e) => e instanceof Error && e.name === "ChecksumMismatch");
+  assert.throws(() => w.restoreWorld(new Uint8Array(3)), (e) => e.name === "Truncated");
+  assert.deepEqual(Array.from(w.stateDigest()), before);
+});
+
+test("one impulse changes the digest, the same calls do not", () => {
+  const a = jointedScene();
+  const b = jointedScene();
+  assert.deepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
+  b.applyImpulse(0, 0, 1, 0);
+  assert.notDeepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
+});

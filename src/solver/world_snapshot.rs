@@ -252,6 +252,56 @@ impl core::fmt::Display for Hex<'_> {
     }
 }
 
+impl WorldSnapshotError {
+    /// The variant's name, stable across releases: the bindings report a refused
+    /// restore by it (the JavaScript error's `name`, the Python exception's first word).
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Truncated => "Truncated",
+            Self::Unpinned => "Unpinned",
+            Self::BadMagic => "BadMagic",
+            Self::UnsupportedVersion { .. } => "UnsupportedVersion",
+            Self::ReservedNotZero => "ReservedNotZero",
+            Self::TrailingBytes { .. } => "TrailingBytes",
+            Self::ChecksumMismatch { .. } => "ChecksumMismatch",
+            Self::InvalidValue { .. } => "InvalidValue",
+            Self::DanglingIndex { .. } => "DanglingIndex",
+            Self::SdfFieldCountMismatch { .. } => "SdfFieldCountMismatch",
+            Self::CallbackCountMismatch { .. } => "CallbackCountMismatch",
+            Self::ParticipantMismatch(_) => "ParticipantMismatch",
+            Self::ParticipantState { .. } => "ParticipantState",
+            Self::FieldState(_) => "FieldState",
+            Self::SemanticsMismatch { .. } => "SemanticsMismatch",
+            Self::LawIdMismatch { .. } => "LawIdMismatch",
+        }
+    }
+
+    /// The variant as a number for the C ABI, in declaration order from 1 (0 is
+    /// success there); a number is never reused for another variant.
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        match self {
+            Self::Truncated => 1,
+            Self::Unpinned => 2,
+            Self::BadMagic => 3,
+            Self::UnsupportedVersion { .. } => 4,
+            Self::ReservedNotZero => 5,
+            Self::TrailingBytes { .. } => 6,
+            Self::ChecksumMismatch { .. } => 7,
+            Self::InvalidValue { .. } => 8,
+            Self::DanglingIndex { .. } => 9,
+            Self::SdfFieldCountMismatch { .. } => 10,
+            Self::CallbackCountMismatch { .. } => 11,
+            Self::ParticipantMismatch(_) => 12,
+            Self::ParticipantState { .. } => 13,
+            Self::FieldState(_) => 14,
+            Self::SemanticsMismatch { .. } => 15,
+            Self::LawIdMismatch { .. } => 16,
+        }
+    }
+}
+
 impl core::fmt::Display for WorldSnapshotError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -1612,6 +1662,10 @@ struct Decoded {
 /// kept apart from body indices so the blob is the same on 32- and 64-bit targets.
 const SDF_STATIC_TAG: u8 = 0;
 
+/// Domain separation of [`PhysicsWorld::state_digest`], published so that an
+/// independent implementation can reproduce a digest byte for byte.
+pub const STATE_DIGEST_DOMAIN: &[u8] = b"alice-physics/state-digest/v1";
+
 impl PhysicsWorld {
     /// Magic of a [`Self::snapshot_world`] blob (`b"APWS"`, distinct from
     /// [`Self::STATE_MAGIC`] of the rollback blob).
@@ -1966,6 +2020,31 @@ impl PhysicsWorld {
         fnv1a_fold(&mut hash, &data);
         data.extend_from_slice(&hash.to_le_bytes());
         data
+    }
+
+    /// SHA-256 of [`Self::snapshot_world`]: one value that two runs agree on
+    /// exactly when their worlds are in the same state under the same rules,
+    /// for a replay or a shared solution to be checked by its result.
+    ///
+    /// The input is the length of [`STATE_DIGEST_DOMAIN`] as a big-endian `u64`,
+    /// the domain, then the snapshot bytes (so an independent implementation can
+    /// recompute it from `snapshot_world` with any SHA-256). The snapshot's header
+    /// holds [`crate::PHYSICS_SEMANTICS_ID`] and [`Self::law_id`], so the digest
+    /// also names the arithmetic and the rules. It covers what the snapshot covers
+    /// (see the field table there): not SDF field code, joint motors, contact hooks
+    /// or participants' code, none of which is data.
+    ///
+    /// The order bodies, joints and colliders were added in is part of the state:
+    /// their indices are the ids the caller holds, and the step visits them in that
+    /// order, so the same scene added in another order has another digest.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update((STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
+        h.update(STATE_DIGEST_DOMAIN);
+        h.update(self.snapshot_world());
+        h.finalize().into()
     }
 
     /// Build a new world from a [`Self::snapshot_world`] blob.

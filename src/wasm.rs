@@ -387,6 +387,44 @@ impl WasmPhysicsWorld {
         self.inner.deserialize_state(data)
     }
 
+    /// The whole world as bytes ([`PhysicsWorld::snapshot_world`]): bodies,
+    /// joints, constraints, static colliders, materials and the rest, under the
+    /// header's semantics and law identifiers. `serializeState` keeps body
+    /// motion only; this is the one to rewind a scene with joints.
+    #[wasm_bindgen(js_name = "snapshotWorld")]
+    pub fn snapshot_world(&self) -> Vec<u8> {
+        self.inner.snapshot_world()
+    }
+
+    /// Restore the whole world from [`Self::snapshot_world`]'s bytes. A refused
+    /// blob throws an `Error` whose `name` is the [`WorldSnapshotError`] variant
+    /// (`"SemanticsMismatch"` for a blob another build wrote, `"ChecksumMismatch"`,
+    /// `"Truncated"`, ...) and leaves the world unchanged.
+    ///
+    /// [`WorldSnapshotError`]: crate::solver::WorldSnapshotError
+    #[wasm_bindgen(js_name = "restoreWorld")]
+    pub fn restore_world(&mut self, data: &[u8]) -> Result<(), JsValue> {
+        self.inner.restore_world(data).map_err(|e| {
+            let err = js_sys::Error::new(&e.to_string());
+            err.set_name(e.kind());
+            err.into()
+        })
+    }
+
+    /// SHA-256 of the world snapshot ([`PhysicsWorld::state_digest`], 32 bytes):
+    /// equal for two worlds exactly when their state and rules are equal.
+    #[wasm_bindgen(js_name = "stateDigest")]
+    pub fn state_digest(&self) -> Vec<u8> {
+        self.inner.state_digest().to_vec()
+    }
+
+    /// The world's law identifier under this build's semantics
+    /// ([`PhysicsWorld::law_id`] with [`crate::PHYSICS_SEMANTICS_ID`], 32 bytes).
+    #[wasm_bindgen(js_name = "lawId")]
+    pub fn law_id(&self) -> Vec<u8> {
+        self.inner.law_id(&crate::PHYSICS_SEMANTICS_ID).to_vec()
+    }
+
     // ========================================================================
     // Raycast
     // ========================================================================

@@ -194,6 +194,21 @@ uint8_t alice_physics_state_deserialize(AlicePhysicsWorld* world, const uint8_t*
 /** Free a serialized state buffer. */
 void alice_physics_state_free(uint8_t* data, uint32_t len);
 
+/** The whole world as bytes (bodies, joints, constraints, static colliders, materials, under the
+ *  header's semantics and law identifiers). Caller must free with alice_physics_state_free. */
+uint8_t* alice_physics_world_snapshot(const AlicePhysicsWorld* world, uint32_t* out_len);
+
+/** Restore the whole world from alice_physics_world_snapshot's bytes. Returns 0 on success; a refused
+ *  blob returns the WorldSnapshotError code (1 to 16, e.g. 15 = SemanticsMismatch) and leaves the
+ *  world unchanged; 255 for a null pointer or a zero length. */
+uint32_t alice_physics_world_restore(AlicePhysicsWorld* world, const uint8_t* data, uint32_t len);
+
+/** Write the SHA-256 state digest of the world snapshot (32 bytes) to out. Returns 1, or 0 on a null pointer. */
+uint8_t alice_physics_state_digest(const AlicePhysicsWorld* world, uint8_t* out);
+
+/** Write the world's law identifier under this build's semantics (32 bytes) to out. Returns 1, or 0 on a null pointer. */
+uint8_t alice_physics_law_id(const AlicePhysicsWorld* world, uint8_t* out);
+
 /* ========================================================================== */
 /* Collision radius, shapes, static colliders, joints                          */
 /* ========================================================================== */
