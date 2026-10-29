@@ -103,6 +103,7 @@ were introduced during that release window.
 - `scripts/entropy_guard.py` と `scripts/allow_reason_guard.py` の `src/privacy.rs` の許可を外した (本番の code で時計と OS の乱数を読む箇所は 0 件、許可の表は空)
 
 ### Fixed
+- `scripts/ci_base.py` と `scripts/test_ci_base.py` (共有 file、canonical は ALICE-DetMath): git の出力を UTF-8 で読む (`encoding="utf-8"`、これまでは locale の code page で Windows の cp1252 では非 ASCII で止まった) 試験は locale を cp1252 にした子 interpreter で非 ASCII の commit 件名を読む
 - ビューア (`web/`): body が床を突き抜けて落ち続けていた (4 秒後には画面に球が残らない) 床を静的な body 1 つ (`addStaticBody(0, -1, 0)`) から平面の当たり判定 `addStaticPlane(0, 1, 0, 0)` (描いている床 y = 0) にした 球の当たり判定の半径を描いている半径 0.5 に揃えた (`setCollisionRadius`) 床が body でなくなったので mesh と body の番号のずれ (+1) を外した `Web viewer` の smoke が 1200 step 後に全 body が床か別の body の上で止まっていることを確かめる
 - `trimesh::ray_triangle` / `TriMesh::raycast` / `TriMesh::occluded`: 2 つの三角形が共有する辺や頂点をちょうど通る ray が、丸めで両方の三角形の外に出て閉じた mesh を素通りしていた 例 `examples/trimesh_shadow_rays.rs` の床から屋根への 384 本のうち影になる 64 本 (どれも格子の対角を通る) を 0 本と数えていた 判定を厳密にして直した (上の Changed) 閉じた mesh の共有の辺と頂点を通る ray が当たる試験 `rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it`
 

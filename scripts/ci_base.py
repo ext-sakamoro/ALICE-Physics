@@ -28,7 +28,7 @@ ZERO = "0" * 40
 
 
 def git(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], capture_output=True, text=True)
+    return subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
 
 
 def ci_base(event: str, ref: str, before: str) -> tuple[str, str]:

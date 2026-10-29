@@ -31,7 +31,7 @@ class CiBase(unittest.TestCase):
 
     def git(self, *args: str) -> str:
         return subprocess.run(["git", *args], cwd=self.d, env=self.env, check=True, capture_output=True,
-                              text=True).stdout.strip()
+                              text=True, encoding="utf-8").stdout.strip()
 
     def commit(self) -> str:
         self.n += 1
@@ -52,6 +52,36 @@ class CiBase(unittest.TestCase):
             os.environ.clear()
             os.environ.update(saved)
         return rc, out.getvalue(), err.getvalue()
+
+    def test_git_output_is_read_as_utf_8_whatever_the_locale(self):
+        # a Windows runner's locale code page is cp1252: git's UTF-8 output (a ref, a message, a path)
+        # must not be decoded with it. A child interpreter outside UTF-8 mode with the locale encoding
+        # set to cp1252 reads a non-ASCII commit subject through ci_base.git(); the same call without an
+        # encoding (the control) must come back different, or the locale was not in effect (it raises on
+        # POSIX; on Windows the reader thread dies and the result has no output)
+        subject = "ブランチ — naïve"
+        (self.d / "f").write_text("x", encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", subject)
+        child = (
+            "import locale, subprocess, sys\n"
+            "locale.getencoding = lambda: 'cp1252'\n"
+            f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+            "import ci_base\n"
+            "cmd = ['git', 'log', '-1', '--format=%s']\n"
+            "try:\n"
+            "    out = subprocess.run(cmd, capture_output=True, text=True).stdout\n"
+            "except UnicodeDecodeError:\n"
+            "    out = None\n"
+            "control = '<undecodable>' if out is None else out.strip()\n"
+            "sys.stdout.buffer.write((control + '\\n' + ci_base.git(*cmd[1:]).stdout.strip()).encode('utf-8'))\n"
+        )
+        r = subprocess.run([sys.executable, "-X", "utf8=0", "-B", "-c", child], cwd=self.d, env=self.env,
+                           capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        control, got = r.stdout.decode("utf-8").split("\n")
+        self.assertNotEqual(control, subject, "the cp1252 locale did not take effect (vacuous)")
+        self.assertEqual(got, subject)
 
     def test_a_push_to_main_of_two_commits_uses_main_before_the_push(self):
         before = self.commit()
