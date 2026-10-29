@@ -167,3 +167,14 @@ test("one impulse changes the digest, the same calls do not", () => {
   b.applyImpulse(0, 0, 1, 0);
   assert.notDeepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
 });
+
+// golden (regenerated on purpose only, with the Rust test that pins the same two values,
+// tests/state_digest.rs GOLDEN_STATE_DIGEST / GOLDEN_LAW_ID): the jointed scene after 120 steps
+// must give these exact bytes in WebAssembly as on every native platform
+test("the jointed scene's digest and law id are the golden the native platforms compute", () => {
+  const w = jointedScene();
+  for (let i = 0; i < 120; i++) w.step(DT);
+  const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  assert.equal(hex(w.stateDigest()), "03f37fd6f8944cc59b22bfc34a0b9cceaf0118eb2569e7769348ef06c01ce399");
+  assert.equal(hex(w.lawId()), "fa916a29691fb926a39073ef014f04bd42e0a6a001efe80c1d54efde621059fb");
+});
