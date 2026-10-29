@@ -172,6 +172,8 @@ from pathlib import Path
 log = Path(__file__).resolve().parent.parent / "gate.log"
 with log.open("a") as f:
     f.write("ARGV " + " ".join(sys.argv[1:]) + "\\n" + sys.stdin.read())
+with (log.parent / "gate-env.log").open("a") as f:
+    f.write(" ".join(sorted(os.environ)) + "\\n")
 sys.exit(int(os.environ.get("GATE_STAND_IN_RC", (Path(__file__).resolve().parent / "rc").read_text().strip()
              if (Path(__file__).resolve().parent / "rc").exists() else "0")))
 """
@@ -1822,6 +1824,23 @@ class GlobalGate(Isolated):
             land.hooks_tool("hooks/git_pre_push.py")
         self.assertIn("outside", str(e.exception))
 
+    def test_no_hatch_of_the_caller_reaches_the_gate(self):
+        # (2026-10-30: ALICE_PREFLIGHT_SKIP=1 before land.py passed the gate's receipt step) the gate gets an allowlisted
+        # environment: no known escape hatch, and no future one, gets through
+        hatches = ("ALICE_PREFLIGHT_SKIP", "ALICE_WIRING_SKIP", "ALICE_VERSION_GATE_SKIP", "COMMIT_IDENTITY_SKIP",
+                   "IDENTICAL_COPIES_SKIP", "FUTURE_GATE_SKIP", "ALICE_SIBLING_CACHE")
+        for k in hatches:
+            os.environ[k] = "1"
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in hatches])
+        self.land_b().land()
+        seen = (self.cc / "gate-env.log").read_text().split()
+        for k in hatches:
+            self.assertNotIn(k, seen, f"{k} reached the gate")
+        self.assertTrue({"PATH", "HOME"} <= set(seen), seen)
+        for k in seen:
+            self.assertTrue(k in land.GATE_ENV_KEYS or k == "HOME" or k.startswith("LC_") or k == "__CF_USER_TEXT_ENCODING",
+                            f"{k} is not on the gate's allowlist")
+
     def test_the_preflight_runs_through_run_preflight_fast(self):
         lander = self.r.lander()
         land.Lander.run_preflight(lander)
@@ -2374,7 +2393,7 @@ def call_sites(source: str) -> tuple[int, list[str]]:
     sites, bad = 0, []
 
     def built_by_clean_env(v) -> bool:
-        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env", "law_state_env"):
+        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env", "law_state_env", "gate_env"):
             return True
         # Lander.child_env() returns {**clean_env(cargo=True), ...} (checked in test_every_call_site_is_wrapped)
         if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "child_env" \
