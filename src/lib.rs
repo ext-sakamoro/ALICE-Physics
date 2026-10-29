@@ -974,7 +974,7 @@ pub use solver::TgsCacheStats;
 pub use solver::{
     BodyAttachments, BodyType, ContactConstraint, DistanceConstraint, LawCheck, LegacyPolicy,
     PhysicsConfig, PhysicsWorld, RigidBody, SnapshotIds, SolverBackend, StageWork, WorldCcdConfig,
-    WorldSnapshotError, STATE_DIGEST_DOMAIN,
+    WorldSnapshotError,
 };
 pub use spatial::SpatialGrid;
 #[cfg(feature = "std")]
