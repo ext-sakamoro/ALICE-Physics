@@ -4514,10 +4514,12 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_get_rotation(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceQuat) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_get_velocity(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_observe(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceBodyObservation) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_angular_velocity(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_collision_radius(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_friction(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_position(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_restitution(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_rotation(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceQuat) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_shape(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AlicePhysicsShape) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_velocity(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_clear_last_error()

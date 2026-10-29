@@ -58,7 +58,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 54 of 207 items) | 54 / 121 / 9 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 54 of 207 items) | 54 / 121 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
@@ -188,14 +188,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 ### C ABI (`--features ffi`)
 
-`src/ffi.rs` exports 60 `extern "C"` functions. Which consumers declare or call each one:
+`src/ffi.rs` exports 62 `extern "C"` functions. Which consumers declare or call each one:
 
 | Consumer | Functions used | Missing |
 |----------|---------------:|---------|
-| C header | 60 / 60 | — |
-| bindings header | 60 / 60 | — |
-| Unity C# | 60 / 60 | — |
-| Unreal Engine plugin | 44 / 60 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_restore`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
+| C header | 62 / 62 | — |
+| bindings header | 62 / 62 | — |
+| Unity C# | 62 / 62 | — |
+| Unreal Engine plugin | 44 / 62 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_body_set_angular_velocity`, `alice_physics_body_set_rotation`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_restore`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
@@ -205,6 +205,8 @@ Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 | Unreal Engine plugin | `alice_physics_body_get_info` | AliceBodyInfo has no Blueprint struct; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_get_position_fix128_raw` | Blueprint has no 128-bit integer type; determinism checks call the C ABI from C++ |
 | Unreal Engine plugin | `alice_physics_body_observe` | AliceBodyObservation has no Blueprint struct; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_body_set_angular_velocity` | not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_body_set_rotation` | not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_law_id` | a 32-byte identifier has no Blueprint type yet; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_state_digest` | a 32-byte digest has no Blueprint type yet; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_cast_capsule` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |

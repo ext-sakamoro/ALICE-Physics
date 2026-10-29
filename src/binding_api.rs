@@ -121,10 +121,12 @@ pub(crate) fn set_collision_radius(w: &mut PhysicsWorld, body: usize, radius: f6
     }
 }
 
-/// Set a body's orientation to the quaternion `(x, y, z, w)`, normalised.
-/// `false` for an unknown body, a non-finite component or the zero
-/// quaternion. The previous orientation the step integrates from is set too,
-/// so the change does not read as an angular velocity.
+/// Set a body's orientation to the quaternion `(x, y, z, w)`, normalised, through
+/// [`RigidBody::set_rotation`] (which also sets the previous orientation the parking
+/// check and continuous collision read, so the change is not a motion). `false` for an
+/// unknown body, a non-finite component or the zero quaternion.
+///
+/// [`RigidBody::set_rotation`]: crate::solver::RigidBody::set_rotation
 pub(crate) fn set_rotation(
     w: &mut PhysicsWorld,
     body: usize,
@@ -135,8 +137,7 @@ pub(crate) fn set_rotation(
 ) -> bool {
     match (unit_quat(x, y, z, qw), w.bodies.get_mut(body)) {
         (Some(q), Some(b)) => {
-            b.rotation = q;
-            b.prev_rotation = q;
+            b.set_rotation(q);
             true
         }
         _ => false,
@@ -589,6 +590,8 @@ mod tests {
         let h = core::f64::consts::FRAC_1_SQRT_2;
         assert!(set_rotation(&mut w, 0, 0.0, h, 0.0, h)); // a quarter turn about y
         let q = w.bodies[0].rotation;
+        // the engine's own setter contract: the previous orientation is the new one too
+        assert_eq!(w.bodies[0].prev_rotation, q);
         w.step(Fix128::from_ratio(1, 60));
         let b = &w.bodies[0];
         assert_eq!(b.angular_velocity, Vec3Fix::ZERO);

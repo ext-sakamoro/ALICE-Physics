@@ -373,8 +373,8 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | Python | `src/python.rs` | `--features python` (maturin, commands below); `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |
 | WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer (built with the commands below) |
 
-The bindings cover what you need to build and step a scene (bodies, collision radius and shapes,
-static colliders, joints, impulses, state serialization), not every module: the standalone modules
+The bindings cover what you need to build and step a scene (bodies, their orientation and angular
+velocity, collision radius and shapes, static colliders, joints, impulses, state serialization), not every module: the standalone modules
 in the table above are Rust only. Two state forms are bound: body motion only
 (`serializeState` / `serialize_state` / `alice_physics_state_serialize`, for rollback) and the
 whole world (`snapshotWorld` / `restoreWorld`, `snapshot_world` / `restore_world`,
