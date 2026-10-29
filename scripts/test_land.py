@@ -1844,7 +1844,8 @@ class GlobalGate(Isolated):
     def test_the_preflight_runs_through_run_preflight_fast(self):
         lander = self.r.lander()
         land.Lander.run_preflight(lander)
-        self.assertEqual((self.cc / "run-preflight.log").read_text().split(), [str(lander.root), "--fast", "--class", "land"])
+        self.assertEqual((self.cc / "run-preflight.log").read_text().split(),
+                         [Path(lander.root).as_posix(), "--fast", "--class", "land"])
 
 
 class WaitEvidence(Isolated):

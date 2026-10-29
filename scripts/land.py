@@ -1190,7 +1190,9 @@ class Lander:
         tree that the pre-push gate asks for (one preflight, the same standard as a plain push)"""
         self.preflight_runs += 1
         runner = hooks_tool("scripts/run-preflight.sh")
-        self.sh("bash", str(runner), str(self.root), "--fast", "--class", "land")
+        # (POSIX-form paths: bash on Windows reads `C:\\…` as an escape, and run-preflight.sh finds its siblings by
+        # dirname "$0"; git and Git Bash both take `C:/…`)
+        self.sh("bash", runner.as_posix(), Path(self.root).as_posix(), "--fast", "--class", "land")
 
     def run_gate(self, lines: list[str]) -> None:
         """the hooks checkout's git pre-push gate (hooks/git_pre_push.py, not the git-hooks/ wrapper: that also runs the
