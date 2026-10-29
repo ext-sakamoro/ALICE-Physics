@@ -100,7 +100,7 @@ jobs:
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -100
+              echo; echo "### missed"; head -100 mutants.out/missed.txt 2>/dev/null
             else
               echo "no output (build failed?)"
             fi
@@ -235,7 +235,7 @@ jobs:
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
+              echo; echo "### missed"; head -50 mutants.out/missed.txt 2>/dev/null
             else
               echo "no output (build failed?)"
             fi

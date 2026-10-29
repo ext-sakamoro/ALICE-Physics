@@ -46,7 +46,25 @@ print_skip_summary() {
   fi
 }
 
+step "the targets the preflight needs are installed (scripts/preflight_tools_check.py)"
+# a --target a later step (or a script it runs) passes fails here in the first minute, not in that step
+python3 scripts/test_preflight_tools_check.py
+python3 scripts/preflight_tools_check.py --only targets
+
 step "actionlint (workflow YAML)"
+# the versions of .github/linter-pins (CI's verify.yml installs the same): actionlint passes every run:
+# block to shellcheck, and another shellcheck version reports other findings
+want_al=$(awk '$1 == "actionlint" { print $2; exit }' .github/linter-pins)
+want_sc=$(awk '$1 == "shellcheck" { print $2; exit }' .github/linter-pins)
+have_al=$(actionlint -version 2>/dev/null | head -1)
+have_sc=$(shellcheck --version 2>/dev/null | awk '/^version:/ { print $2 }')
+if [ -z "$want_al" ] || [ -z "$want_sc" ]; then
+  echo ".github/linter-pins lacks the actionlint or the shellcheck row" >&2; exit 1
+fi
+if [ "$have_al" != "$want_al" ] || [ "$have_sc" != "$want_sc" ]; then
+  echo "workflow linters differ from .github/linter-pins: actionlint ${have_al:-missing} (want $want_al), shellcheck ${have_sc:-missing} (want $want_sc)" >&2
+  exit 1
+fi
 actionlint .github/workflows/*.yml
 
 step "workflow-timeouts (every job has timeout-minutes; CI job actionlint)"
@@ -302,17 +320,19 @@ python3 scripts/no_std_consumer.py
 python3 scripts/test_binding_build_commands.py
 python3 scripts/binding_build_commands.py --check
 
-step "public API snapshot (needs nightly + cargo-public-api)"
-if cargo +nightly public-api --version >/dev/null 2>&1; then
+# the nightly of security-audit.yml's public-api-diff job (and scripts/ledgers.py): another
+# nightly prints another surface, so an unpinned one compares a different command
+step "public API snapshot (needs nightly-2026-09-26 + cargo-public-api)"
+if cargo +nightly-2026-09-26 public-api --version >/dev/null 2>&1; then
   tmp=$(mktemp)
-  cargo +nightly public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
+  cargo +nightly-2026-09-26 public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
   if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
     echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
     exit 1
   fi
   rm -f "$tmp"
 else
-  echo "skip: cargo +nightly public-api not installed" >&2
+  echo "skip: cargo +nightly-2026-09-26 public-api not installed" >&2
 fi
 
 # Cheap, failure-prone gates run first so a red shows up in minutes, not after
