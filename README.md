@@ -402,6 +402,13 @@ build in Chrome through that mode (the bodies rest on the floor, two loads of a 
 another seed differs), and the `Web viewer` workflow runs the same on every change to the engine,
 the package or the viewer.
 
+`scripts/build_neutral_pkg.sh <out-dir> <private-dir>` builds the same package with no name of the
+engine in it, for a product that ships it under its own name: exports, glue identifiers and paths are
+renamed or overwritten with names keyed by an HMAC key from the macOS Keychain, the files are named by
+their content hash, and the build fails unless a leak check (SHA-256 token hashes, copyable into the
+consumer) finds nothing and the renamed package gives the same positions, rotations, state digest and
+law identifier, bit for bit, as the package it was made from.
+
 ## Performance
 
 Measured with `cargo bench --bench physics_bench` (criterion, release profile)
