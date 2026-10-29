@@ -91,11 +91,14 @@ fn insertion_order_is_part_of_the_state() {
     assert_eq!(x.state_digest(), z.state_digest());
 }
 
+/// A change made to a world before its digest is compared.
+type Change = Box<dyn Fn(&mut PhysicsWorld)>;
+
 /// One change per class of what a replay depends on: each must move the digest.
 #[test]
 fn every_parameter_a_replay_depends_on_changes_the_digest() {
     let base = scene().state_digest();
-    let changes: Vec<(&str, Box<dyn Fn(&mut PhysicsWorld)>)> = vec![
+    let changes: Vec<(&str, Change)> = vec![
         (
             "body position",
             Box::new(|w| w.bodies[0].position = v(0, 6, 0)),
