@@ -349,6 +349,21 @@ def pinned_git() -> str:
     return _PINNED["git"]
 
 
+def bash_program(is_windows: bool | None = None) -> str:
+    """the bash that runs land.py's shell children (run-preflight.sh, scip_index.sh): Git's bash, found next to the
+    pinned git, on Windows (System32's bash.exe is the WSL launcher, which runs no script: refused), `bash` on the
+    fixed PATH elsewhere"""
+    if is_windows is None:
+        is_windows = os.name == "nt"
+    if not is_windows:
+        return "bash"
+    found = find_bash(pinned_git(), is_windows=True)
+    if found is None:
+        raise LandError("no Git bash next to the pinned git (System32's bash.exe is the WSL launcher): install Git for "
+                        "Windows with its bash")
+    return found
+
+
 def git_argv() -> list[str]:
     """the start of every git command line: the pinned git and the forced config"""
     return [*(TOOL_OVERRIDE.get("git") or [pinned_git()]), *FORCED_GIT_CONFIG]
@@ -553,6 +568,7 @@ def identity_problem(name: str, email: str) -> str | None:
 # (the preflight's stale check reads the same list)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS  # noqa: E402
+from bash_path import find_bash  # noqa: E402
 # lists that both sides mostly add to: a conflict is merged by merge_append(),
 # which keeps lines both sides added and a line one side rewrote, and stops when
 # both sides changed the same lines. A union merge is not used: it keeps the old
@@ -1192,7 +1208,7 @@ class Lander:
         runner = hooks_tool("scripts/run-preflight.sh")
         # (POSIX-form paths: bash on Windows reads `C:\\…` as an escape, and run-preflight.sh finds its siblings by
         # dirname "$0"; git and Git Bash both take `C:/…`)
-        self.sh("bash", runner.as_posix(), Path(self.root).as_posix(), "--fast", "--class", "land")
+        self.sh(bash_program(), runner.as_posix(), Path(self.root).as_posix(), "--fast", "--class", "land")
 
     def run_gate(self, lines: list[str]) -> None:
         """the hooks checkout's git pre-push gate (hooks/git_pre_push.py, not the git-hooks/ wrapper: that also runs the
@@ -1223,7 +1239,7 @@ class Lander:
         self.sh("cargo", "clippy", "-q", "--all-targets", "--features", NATIVE, "--", "-D", "warnings")
 
     def regenerate(self) -> None:
-        self.sh("bash", "scripts/scip_index.sh")
+        self.sh(bash_program(), "scripts/scip_index.sh")
         for _, argv, _ in WRITERS:
             self.sh(sys.executable, *argv[1:])
         self.regenerate_public_api()
@@ -2227,7 +2243,15 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
                 _sh.rmtree(d, ignore_errors=True)
         elif step == "bash":
             if os.name == "nt":
-                skip("bash", "no bash child on Windows (preflight and scip_index run on POSIX)")
+                # the bash land.py starts its shell children with (Git's, never System32's WSL launcher)
+                try:
+                    exe = bash_program()
+                except LandError as e:
+                    executed += 1
+                    failed += 1
+                    lines.append(f"FAIL bash: {e}")
+                    continue
+                run("bash", [exe, "--version"])
                 continue
             exe = shutil.which("bash", path=path)
             run("bash", [exe or "bash", "--version"])
