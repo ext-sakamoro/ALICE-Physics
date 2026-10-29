@@ -56,13 +56,13 @@ def _jointed_scene():
 
 
 def test_state_digest_is_sha256_of_the_domain_and_the_snapshot():
-    # oracle: hashlib over the BE u64 length of the domain, the domain, then snapshot_world()
+    # oracle: hashlib over the 32 domain bytes (the SHA-256 of the domain text), then snapshot_world()
     import hashlib
     w = _jointed_scene()
     for _ in range(30):
         w.step(1.0 / 60.0)
-    domain = b"alice-physics/state-digest/v1"
-    want = hashlib.sha256(len(domain).to_bytes(8, "big") + domain + bytes(w.snapshot_world())).digest()
+    domain = hashlib.sha256(b"alice-physics/state-digest/v1").digest()
+    want = hashlib.sha256(domain + bytes(w.snapshot_world())).digest()
     assert bytes(w.state_digest()) == want
     assert len(bytes(w.law_id())) == 32
 

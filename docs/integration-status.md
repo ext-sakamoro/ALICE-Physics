@@ -7,9 +7,9 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
+| L0 | not reached by any non-test code, examples included | 32 |
 | L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2571 |
-| live | reached without examples (crate-internal roots or a binding) | 667 |
+| live | reached without examples (crate-internal roots or a binding) | 666 |
 | | **total** | **3269** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
@@ -19,13 +19,14 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (30)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/law_id.rs::LAW_ID_DOMAIN`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -59,11 +60,12 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (32)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/law_id.rs::LAW_ID_DOMAIN`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`

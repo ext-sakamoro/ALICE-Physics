@@ -2018,17 +2018,23 @@ impl PhysicsWorld {
         data
     }
 
-    /// Domain separation of [`Self::state_digest`], published so that an
-    /// independent implementation can reproduce a digest byte for byte.
-    pub const STATE_DIGEST_DOMAIN: &'static [u8] = b"alice-physics/state-digest/v1";
+    /// Domain separation of [`Self::state_digest`]: 32 fixed bytes, the SHA-256 of
+    /// the text `alice-physics/state-digest/v1` computed once. The bytes, not the text,
+    /// are in the binary, so a build that must not carry the engine's name can keep
+    /// this constant unchanged and still compute the same digests.
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = [
+        0x32, 0x6a, 0xa2, 0xe0, 0xcf, 0x7a, 0xeb, 0x00, 0x8a, 0x8c, 0x0b, 0x14, 0xb7, 0x26, 0x2a,
+        0x61, 0x91, 0xfb, 0x4d, 0x1e, 0x1f, 0xdb, 0xe4, 0x56, 0x27, 0x36, 0xb9, 0xf3, 0x0f, 0x83,
+        0x85, 0x0e,
+    ];
 
     /// SHA-256 of [`Self::snapshot_world`]: one value that two runs agree on
     /// exactly when their worlds are in the same state under the same rules,
     /// for a replay or a shared solution to be checked by its result.
     ///
-    /// The input is the length of [`Self::STATE_DIGEST_DOMAIN`] as a big-endian `u64`,
-    /// the domain, then the snapshot bytes (so an independent implementation can
-    /// recompute it from `snapshot_world` with any SHA-256). The snapshot's header
+    /// The input is the 32 bytes of [`Self::STATE_DIGEST_DOMAIN`] followed by the
+    /// snapshot bytes: `SHA-256(STATE_DIGEST_DOMAIN ‖ snapshot_world())`, which an
+    /// independent implementation recomputes with any SHA-256. The snapshot's header
     /// holds [`crate::PHYSICS_SEMANTICS_ID`] and [`Self::law_id`], so the digest
     /// also names the arithmetic and the rules. It covers what the snapshot covers
     /// (see the field table there): not SDF field code, joint motors, contact hooks
@@ -2041,7 +2047,6 @@ impl PhysicsWorld {
     pub fn state_digest(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
-        h.update((Self::STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
         h.update(Self::STATE_DIGEST_DOMAIN);
         h.update(self.snapshot_world());
         h.finalize().into()

@@ -33,6 +33,28 @@ use sha2::{Digest, Sha256};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+/// The bytes of [`LAW_ID_DOMAIN`], which [`PhysicsWorld::law_id`] hashes.
+///
+/// They are stored masked (each byte XOR `0xA5` XOR `i·0x3B`) and unmasked here at run
+/// time behind `black_box`, so the compiler cannot fold the text back into the binary and a
+/// build distributed without the engine's name does not carry it in this string. This is
+/// obfuscation of a constant for distribution, not a security property: anyone can unmask
+/// it, and the published domain is [`LAW_ID_DOMAIN`]. The hashed bytes are exactly that
+/// constant (tested), so every law identifier is unchanged.
+#[inline(never)]
+fn law_id_domain() -> [u8; 23] {
+    const MASKED: [u8; 23] = [
+        0xc4, 0xf2, 0xba, 0x77, 0x2c, 0xaf, 0xb7, 0x50, 0x04, 0xc5, 0x82, 0x4f, 0x12, 0x75, 0xf3,
+        0xb1, 0x62, 0x63, 0xea, 0xa0, 0x16, 0x04, 0x86,
+    ];
+    let mask = core::hint::black_box(0xA5u8);
+    let mut out = MASKED;
+    for (i, b) in out.iter_mut().enumerate() {
+        *b ^= mask ^ (i as u8).wrapping_mul(0x3B);
+    }
+    out
+}
+
 /// The canonical byte encoding of a world's law, written into a hasher.
 struct Encoder(Sha256);
 
@@ -254,7 +276,7 @@ impl PhysicsWorld {
     #[must_use]
     pub fn law_id(&self, semantics_id: &[u8; 32]) -> [u8; 32] {
         let mut e = Encoder(Sha256::new());
-        e.bytes(LAW_ID_DOMAIN);
+        e.bytes(&law_id_domain());
         e.bytes(WORLD_LAW_KIND);
         e.0.update(semantics_id);
 
@@ -440,5 +462,13 @@ mod semantics_decoder {
     #[should_panic(expected = "not a lower-case hex digit")]
     fn hex32_refuses_an_upper_case_digit() {
         let _ = hex32("ABababababababababababababababababababababababababababababababab");
+    }
+}
+
+#[cfg(test)]
+mod domain_tests {
+    #[test]
+    fn the_unmasked_domain_is_the_published_law_id_domain() {
+        assert_eq!(&super::law_id_domain()[..], super::LAW_ID_DOMAIN);
     }
 }

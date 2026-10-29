@@ -13450,7 +13450,7 @@ pub alice_physics_core::prelude::PhysicsWorld::material_table: alice_physics_cor
 pub alice_physics_core::prelude::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::prelude::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: [u8; 32]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
@@ -18420,7 +18420,7 @@ pub alice_physics_core::solver::PhysicsWorld::material_table: alice_physics_core
 pub alice_physics_core::solver::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::solver::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: [u8; 32]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
@@ -25103,7 +25103,7 @@ pub alice_physics_core::PhysicsWorld::material_table: alice_physics_core::materi
 pub alice_physics_core::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: [u8; 32]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>

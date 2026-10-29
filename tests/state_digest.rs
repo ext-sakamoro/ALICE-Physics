@@ -1,8 +1,8 @@
 //! `PhysicsWorld::state_digest`: what it covers, its encoding, and that the
 //! whole-world snapshot it hashes round-trips byte for byte.
 //!
-//! oracle: the digest's definition in its doc (SHA-256 over the BE u64 length
-//! of `PhysicsWorld::STATE_DIGEST_DOMAIN`, the domain, then `snapshot_world`), recomputed here
+//! oracle: the digest's definition in its doc (SHA-256 over the 32 domain bytes,
+//! `PhysicsWorld::STATE_DIGEST_DOMAIN`, then `snapshot_world`), recomputed here
 //! with `sha2` directly; the JavaScript test recomputes it with WebCrypto and the
 //! Python test with hashlib, each from the snapshot bytes.
 
@@ -40,14 +40,14 @@ fn dt() -> Fix128 {
 fn the_digest_is_sha256_of_the_domain_and_the_snapshot() {
     let w = scene();
     let mut h = Sha256::new();
-    h.update((PhysicsWorld::STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
     h.update(PhysicsWorld::STATE_DIGEST_DOMAIN);
     h.update(w.snapshot_world());
     let want: [u8; 32] = h.finalize().into();
     assert_eq!(w.state_digest(), want);
+    // the domain is the SHA-256 of its text, written as bytes (the text itself is not in the binary)
     assert_eq!(
         PhysicsWorld::STATE_DIGEST_DOMAIN,
-        b"alice-physics/state-digest/v1"
+        <[u8; 32]>::from(Sha256::digest(b"alice-physics/state-digest/v1"))
     );
 }
 
@@ -235,8 +235,36 @@ fn hex(b: &[u8]) -> String {
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
 const GOLDEN_STATE_DIGEST: &str =
-    "03f37fd6f8944cc59b22bfc34a0b9cceaf0118eb2569e7769348ef06c01ce399";
+    "00a655bbdb1d71a777e155523da9f1854aac921a06767a26b3826873194a4304";
 const GOLDEN_LAW_ID: &str = "fa916a29691fb926a39073ef014f04bd42e0a6a001efe80c1d54efde621059fb";
+
+/// The digest of `binding_scene` under the first definition of the digest, whose domain was the
+/// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
+/// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
+/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
+const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
+    "03f37fd6f8944cc59b22bfc34a0b9cceaf0118eb2569e7769348ef06c01ce399";
+
+#[test]
+fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
+    let w = binding_scene();
+    let snap = w.snapshot_world();
+    let text = b"alice-physics/state-digest/v1";
+    let mut old = Sha256::new();
+    old.update((text.len() as u64).to_be_bytes());
+    old.update(text);
+    old.update(&snap);
+    assert_eq!(hex(&old.finalize()), GOLDEN_STATE_DIGEST_TEXT_DOMAIN);
+    let mut new = Sha256::new();
+    new.update(PhysicsWorld::STATE_DIGEST_DOMAIN);
+    new.update(&snap);
+    assert_eq!(hex(&new.finalize()), GOLDEN_STATE_DIGEST);
+    assert_eq!(hex(&w.state_digest()), GOLDEN_STATE_DIGEST);
+    assert_eq!(
+        hex(&PhysicsWorld::STATE_DIGEST_DOMAIN),
+        "326aa2e0cf7aeb008a8c0b14b7262a6191fb4d1e1fdbe4562736b9f30f83850e"
+    );
+}
 
 #[test]
 fn the_digest_of_the_binding_scene_is_the_golden_on_every_platform() {

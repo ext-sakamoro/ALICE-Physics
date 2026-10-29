@@ -17,3 +17,9 @@ path = "alice_physics_core::semantics::PHYSICS_SEMANTICS_ID"
 previous = "alice_physics_core::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS"
 # the 3.1.0 value (79ca5297) is not kept: alice-det-math 0.5.2 changed the clamp, which moved Law
 # output bits, and no cross-version oracle covers a 3.1.0 snapshot yet; 4.0.0 is a major release
+
+[[id]]
+# the domain of PhysicsWorld::state_digest: a stored digest (a replay or a shared solution checked
+# against it) is computed from it, so it moves only as an identifier does (a breaking version, both
+# values in CHANGELOG.md); tests/state_digest.rs pins its bytes and the golden digest it gives
+path = "alice_physics_core::PhysicsWorld::STATE_DIGEST_DOMAIN"

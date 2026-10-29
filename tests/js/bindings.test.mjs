@@ -103,16 +103,14 @@ test("refused arguments return undefined / false and change nothing", () => {
   assert.equal(w.bodyCount(), 2);
 });
 
-// oracle: SHA-256 over the BE u64 length of "alice-physics/state-digest/v1", the domain, then
+// oracle: SHA-256 over the 32 domain bytes (themselves the SHA-256 of "alice-physics/state-digest/v1"), then
 // snapshotWorld(), recomputed with WebCrypto (an implementation independent of the crate's)
 async function digestOf(snapshot) {
-  const domain = new TextEncoder().encode("alice-physics/state-digest/v1");
-  const len = new Uint8Array(8);
-  new DataView(len.buffer).setBigUint64(0, BigInt(domain.length), false);
-  const all = new Uint8Array(8 + domain.length + snapshot.length);
-  all.set(len, 0);
-  all.set(domain, 8);
-  all.set(snapshot, 8 + domain.length);
+  const text = new TextEncoder().encode("alice-physics/state-digest/v1");
+  const domain = new Uint8Array(await crypto.subtle.digest("SHA-256", text));
+  const all = new Uint8Array(domain.length + snapshot.length);
+  all.set(domain, 0);
+  all.set(snapshot, domain.length);
   return new Uint8Array(await crypto.subtle.digest("SHA-256", all));
 }
 
@@ -175,6 +173,6 @@ test("the jointed scene's digest and law id are the golden the native platforms 
   const w = jointedScene();
   for (let i = 0; i < 120; i++) w.step(DT);
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  assert.equal(hex(w.stateDigest()), "03f37fd6f8944cc59b22bfc34a0b9cceaf0118eb2569e7769348ef06c01ce399");
+  assert.equal(hex(w.stateDigest()), "00a655bbdb1d71a777e155523da9f1854aac921a06767a26b3826873194a4304");
   assert.equal(hex(w.lawId()), "fa916a29691fb926a39073ef014f04bd42e0a6a001efe80c1d54efde621059fb");
 });
