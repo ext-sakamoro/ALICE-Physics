@@ -193,6 +193,8 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern byte alice_physics_body_get_velocity(IntPtr world, uint bodyId, out AliceVec3 velocity);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_velocity(IntPtr world, uint bodyId, AliceVec3 velocity);
         [DllImport(DLL)] public static extern byte alice_physics_body_get_rotation(IntPtr world, uint bodyId, out AliceQuat rotation);
+        [DllImport(DLL)] public static extern byte alice_physics_body_set_rotation(IntPtr world, uint bodyId, AliceQuat rotation);
+        [DllImport(DLL)] public static extern byte alice_physics_body_set_angular_velocity(IntPtr world, uint bodyId, AliceVec3 angularVelocity);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_restitution(IntPtr world, uint bodyId, double restitution);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_friction(IntPtr world, uint bodyId, double friction);
         [DllImport(DLL)] public static extern byte alice_physics_body_get_position_fix128_raw(IntPtr world, uint bodyId, out AliceVec3Fix128Raw position);
@@ -405,6 +407,20 @@ namespace AlicePhysics
             AliceQuat rot;
             Native.alice_physics_body_get_rotation(_ptr, bodyId, out rot);
             return rot.ToQuaternion();
+        }
+
+        /// <summary>Set body orientation (normalised). False for an unknown body or the zero quaternion.</summary>
+        public bool SetBodyRotation(uint bodyId, AliceQuat rotation)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_body_set_rotation(_ptr, bodyId, rotation) != 0;
+        }
+
+        /// <summary>Set body angular velocity (world frame, rad/s). False for an unknown body.</summary>
+        public bool SetBodyAngularVelocity(uint bodyId, Vector3 angularVelocity)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_body_set_angular_velocity(_ptr, bodyId, AliceVec3.FromVector3(angularVelocity)) != 0;
         }
 
         /// <summary>Set body restitution (bounciness).</summary>

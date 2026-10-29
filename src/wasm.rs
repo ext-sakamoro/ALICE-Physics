@@ -247,6 +247,21 @@ impl WasmPhysicsWorld {
         }
     }
 
+    /// Set a body's orientation to the quaternion `(qx, qy, qz, qw)`
+    /// (normalised in `Fix128`). `false` for an unknown body, a non-finite
+    /// component or the zero quaternion.
+    #[wasm_bindgen(js_name = "setRotation")]
+    pub fn set_rotation(&mut self, body_id: usize, qx: f64, qy: f64, qz: f64, qw: f64) -> bool {
+        binding_api::set_rotation(&mut self.inner, body_id, qx, qy, qz, qw)
+    }
+
+    /// Set a body's angular velocity (world frame, radians per second).
+    /// `false` for an unknown body or a non-finite component.
+    #[wasm_bindgen(js_name = "setAngularVelocity")]
+    pub fn set_angular_velocity(&mut self, body_id: usize, wx: f64, wy: f64, wz: f64) -> bool {
+        binding_api::set_angular_velocity(&mut self.inner, body_id, wx, wy, wz)
+    }
+
     /// Apply impulse at center of mass.
     #[wasm_bindgen(js_name = "applyImpulse")]
     pub fn apply_impulse(&mut self, body_id: usize, ix: f64, iy: f64, iz: f64) {

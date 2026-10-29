@@ -85,6 +85,27 @@ def test_restore_world_brings_back_the_joint_and_refuses_with_its_kind():
     assert bytes(fresh.state_digest()) == before
 
 
+def test_set_rotation_normalises_and_refuses():
+    w = ap.PhysicsWorld()
+    b = w.add_dynamic_body(0.0, 5.0, 0.0, 1.0)
+    w.set_rotation(b, 0.0, 0.0, 2.0, 0.0)
+    q = np.asarray(w.observe_body(b)[2])  # (position, velocity, rotation (x, y, z, w), ...)
+    assert np.allclose(q, [0.0, 0.0, 1.0, 0.0], atol=1e-12), q
+    for bad in ((0.0, 0.0, 0.0, 0.0), (math.nan, 0.0, 0.0, 1.0)):
+        try:
+            w.set_rotation(b, *bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad} was accepted")
+    try:
+        w.set_angular_velocity(99, 0.0, 0.0, 1.0)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("an unknown body was accepted")
+
+
 def test_serialized_state_replays_bit_for_bit():
     a = ap.PhysicsWorld()
     for i in range(4):

@@ -140,6 +140,12 @@ uint8_t alice_physics_body_set_velocity(AlicePhysicsWorld* world, uint32_t body_
 /** Get body rotation. Returns 1 on success. */
 uint8_t alice_physics_body_get_rotation(const AlicePhysicsWorld* world, uint32_t body_id, AliceQuat* out);
 
+/** Set body orientation (normalised). Returns 1, or 0 for an unknown body, a non-finite component or the zero quaternion. */
+uint8_t alice_physics_body_set_rotation(AlicePhysicsWorld* world, uint32_t body_id, AliceQuat rotation);
+
+/** Set body angular velocity (world frame, rad/s). Returns 1, or 0 for an unknown body or a non-finite component. */
+uint8_t alice_physics_body_set_angular_velocity(AlicePhysicsWorld* world, uint32_t body_id, AliceVec3 angular_velocity);
+
 /** Set body restitution (bounciness, 0.0-1.0). Returns 1 on success. */
 uint8_t alice_physics_body_set_restitution(AlicePhysicsWorld* world, uint32_t body_id, double restitution);
 

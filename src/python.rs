@@ -139,6 +139,35 @@ impl PyPhysicsWorld {
         Ok(())
     }
 
+    /// Set a body's orientation to the quaternion (qx, qy, qz, qw), normalised.
+    /// IndexError for an unknown body, ValueError for a non-finite component or
+    /// the zero quaternion.
+    fn set_rotation(&mut self, body_id: usize, qx: f64, qy: f64, qz: f64, qw: f64) -> PyResult<()> {
+        if body_id >= self.inner.bodies.len() {
+            return Err(PyIndexError::new_err("body_id out of range"));
+        }
+        if crate::binding_api::set_rotation(&mut self.inner, body_id, qx, qy, qz, qw) {
+            Ok(())
+        } else {
+            Err(PyValueError::new_err(
+                "the rotation must be a finite, non-zero quaternion",
+            ))
+        }
+    }
+
+    /// Set a body's angular velocity (world frame, radians per second).
+    /// IndexError for an unknown body, ValueError for a non-finite component.
+    fn set_angular_velocity(&mut self, body_id: usize, wx: f64, wy: f64, wz: f64) -> PyResult<()> {
+        if body_id >= self.inner.bodies.len() {
+            return Err(PyIndexError::new_err("body_id out of range"));
+        }
+        if crate::binding_api::set_angular_velocity(&mut self.inner, body_id, wx, wy, wz) {
+            Ok(())
+        } else {
+            Err(PyValueError::new_err("the angular velocity must be finite"))
+        }
+    }
+
     /// Set positions for all bodies from a NumPy (N, 3) array.
     ///
     /// GIL released during the update.

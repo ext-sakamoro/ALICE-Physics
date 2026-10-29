@@ -20,3 +20,5 @@ unreal alice_physics_world_snapshot not wrapped yet: the component rewinds with 
 unreal alice_physics_world_restore not wrapped yet: the component rewinds with alice_physics_state_deserialize; a Blueprint wrapper waits for an Unreal build in CI to check it
 unreal alice_physics_state_digest a 32-byte digest has no Blueprint type yet; C++ code in a project calls the C ABI directly
 unreal alice_physics_law_id a 32-byte identifier has no Blueprint type yet; C++ code in a project calls the C ABI directly
+unreal alice_physics_body_set_rotation not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly
+unreal alice_physics_body_set_angular_velocity not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly

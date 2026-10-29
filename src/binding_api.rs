@@ -121,6 +121,46 @@ pub(crate) fn set_collision_radius(w: &mut PhysicsWorld, body: usize, radius: f6
     }
 }
 
+/// Set a body's orientation to the quaternion `(x, y, z, w)`, normalised.
+/// `false` for an unknown body, a non-finite component or the zero
+/// quaternion. The previous orientation the step integrates from is set too,
+/// so the change does not read as an angular velocity.
+pub(crate) fn set_rotation(
+    w: &mut PhysicsWorld,
+    body: usize,
+    x: f64,
+    y: f64,
+    z: f64,
+    qw: f64,
+) -> bool {
+    match (unit_quat(x, y, z, qw), w.bodies.get_mut(body)) {
+        (Some(q), Some(b)) => {
+            b.rotation = q;
+            b.prev_rotation = q;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Set a body's angular velocity (world frame, radians per second). `false`
+/// for an unknown body or a non-finite component.
+pub(crate) fn set_angular_velocity(
+    w: &mut PhysicsWorld,
+    body: usize,
+    x: f64,
+    y: f64,
+    z: f64,
+) -> bool {
+    match (vec3(x, y, z), w.bodies.get_mut(body)) {
+        (Some(v), Some(b)) => {
+            b.angular_velocity = v;
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Drop a body's own collision radius (it falls back to the world default).
 pub(crate) fn clear_collision_radius(w: &mut PhysicsWorld, body: usize) -> bool {
     if body >= w.bodies.len() {
@@ -508,5 +548,81 @@ mod tests {
         assert_eq!(o.angular_velocity, arr(r.angular_velocity));
         assert_eq!((o.sleeping, o.in_contact), (r.sleeping, r.in_contact));
         assert!(observe_body(&w, 2).is_none());
+    }
+
+    fn free_world() -> PhysicsWorld {
+        // no gravity and no damping (the default keeps 0.99 of the velocity per step), so the
+        // closed forms below hold; the damping field becomes a per-second rate in a coming change
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            ..PhysicsConfig::default()
+        });
+        w.add_body(RigidBody::new_dynamic(vf(0.0, 0.0, 0.0), Fix128::ONE));
+        w
+    }
+
+    // oracle: a quaternion is normalised (0, 0, 2, 0) -> (0, 0, 1, 0); the zero
+    // quaternion, a non-finite component and an unknown body are refused
+    #[test]
+    fn set_rotation_normalises_and_refuses_what_is_not_a_rotation() {
+        let mut w = free_world();
+        assert!(set_rotation(&mut w, 0, 0.0, 0.0, 2.0, 0.0));
+        let q = w.bodies[0].rotation;
+        assert!(
+            (q.z.to_f64() - 1.0).abs() < 1e-15 && q.w.to_f64().abs() < 1e-15,
+            "{q:?}"
+        );
+        assert!(!set_rotation(&mut w, 0, 0.0, 0.0, 0.0, 0.0));
+        assert!(!set_rotation(&mut w, 0, f64::NAN, 0.0, 0.0, 1.0));
+        assert!(!set_rotation(&mut w, 1, 0.0, 0.0, 0.0, 1.0));
+        assert!(!set_angular_velocity(&mut w, 1, 0.0, 0.0, 1.0));
+        assert!(!set_angular_velocity(&mut w, 0, f64::INFINITY, 0.0, 0.0));
+        assert_eq!(w.bodies[0].rotation, q, "a refused call changed the body");
+    }
+
+    // oracle: setting the orientation is not a turn; with no angular velocity the
+    // body keeps the orientation it was given over a step (prev_rotation is set too)
+    #[test]
+    fn a_set_rotation_does_not_read_as_an_angular_velocity() {
+        let mut w = free_world();
+        let h = core::f64::consts::FRAC_1_SQRT_2;
+        assert!(set_rotation(&mut w, 0, 0.0, h, 0.0, h)); // a quarter turn about y
+        let q = w.bodies[0].rotation;
+        w.step(Fix128::from_ratio(1, 60));
+        let b = &w.bodies[0];
+        assert_eq!(b.angular_velocity, Vec3Fix::ZERO);
+        assert!(
+            (b.rotation.y.to_f64() - q.y.to_f64()).abs() < 1e-12,
+            "{:?} vs {q:?}",
+            b.rotation
+        );
+        assert!((b.rotation.w.to_f64() - q.w.to_f64()).abs() < 1e-12);
+    }
+
+    // oracle (closed form): a free body spinning at pi rad/s about z for 1 s turns
+    // by pi, q = (0, 0, sin(pi/2), cos(pi/2)) = (0, 0, 1, 0), and keeps its spin
+    #[test]
+    fn an_angular_velocity_turns_a_free_body_by_omega_t() {
+        let mut w = free_world();
+        assert!(set_angular_velocity(
+            &mut w,
+            0,
+            0.0,
+            0.0,
+            core::f64::consts::PI
+        ));
+        for _ in 0..60 {
+            w.step(Fix128::from_ratio(1, 60));
+        }
+        let b = &w.bodies[0];
+        let q = b.rotation;
+        let angle = 2.0 * q.z.to_f64().abs().atan2(q.w.to_f64().abs());
+        assert!(
+            (angle - core::f64::consts::PI).abs() < 1e-3,
+            "turned {angle} rad, want pi ({q:?})"
+        );
+        assert!(q.x.to_f64().abs() < 1e-9 && q.y.to_f64().abs() < 1e-9);
+        assert!((b.angular_velocity.z.to_f64() - core::f64::consts::PI).abs() < 1e-6);
     }
 }

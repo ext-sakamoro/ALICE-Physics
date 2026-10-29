@@ -97,6 +97,8 @@ uint8_t  alice_physics_body_set_position(AlicePhysicsWorldHandle world, uint32_t
 uint8_t  alice_physics_body_get_velocity(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3* out);
 uint8_t  alice_physics_body_set_velocity(AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3 velocity);
 uint8_t  alice_physics_body_get_rotation(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceQuat* out);
+uint8_t  alice_physics_body_set_rotation(AlicePhysicsWorldHandle world, uint32_t body_id, AliceQuat rotation);
+uint8_t  alice_physics_body_set_angular_velocity(AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3 angular_velocity);
 uint8_t  alice_physics_body_set_restitution(AlicePhysicsWorldHandle world, uint32_t body_id, double restitution);
 uint8_t  alice_physics_body_set_friction(AlicePhysicsWorldHandle world, uint32_t body_id, double friction);
 uint8_t  alice_physics_body_get_position_fix128_raw(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceVec3Fix128Raw* out);
@@ -241,6 +243,8 @@ public:
     bool GetVelocity(uint32_t Id, AliceVec3& Out) const { return alice_physics_body_get_velocity(Handle, Id, &Out) != 0; }
     bool SetVelocity(uint32_t Id, AliceVec3 Vel) { return alice_physics_body_set_velocity(Handle, Id, Vel) != 0; }
     bool GetRotation(uint32_t Id, AliceQuat& Out) const { return alice_physics_body_get_rotation(Handle, Id, &Out) != 0; }
+    bool SetRotation(uint32_t Id, AliceQuat Rot) { return alice_physics_body_set_rotation(Handle, Id, Rot) != 0; }
+    bool SetAngularVelocity(uint32_t Id, AliceVec3 W) { return alice_physics_body_set_angular_velocity(Handle, Id, W) != 0; }
     bool SetRestitution(uint32_t Id, double R) { return alice_physics_body_set_restitution(Handle, Id, R) != 0; }
     bool SetFriction(uint32_t Id, double F) { return alice_physics_body_set_friction(Handle, Id, F) != 0; }
 

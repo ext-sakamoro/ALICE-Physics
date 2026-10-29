@@ -807,6 +807,53 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
     })
 }
 
+/// Set a body's orientation (normalised in `Fix128`). Returns 1, or 0 for an
+/// unknown body, a non-finite component or the zero quaternion.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_rotation(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    rotation: AliceQuat,
+) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) => u8::from(crate::binding_api::set_rotation(
+            w,
+            body_id as usize,
+            rotation.x,
+            rotation.y,
+            rotation.z,
+            rotation.w,
+        )),
+        None => 0,
+    })
+}
+
+/// Set a body's angular velocity (world frame, radians per second). Returns 1,
+/// or 0 for an unknown body or a non-finite component.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_angular_velocity(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    angular_velocity: AliceVec3,
+) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) => u8::from(crate::binding_api::set_angular_velocity(
+            w,
+            body_id as usize,
+            angular_velocity.x,
+            angular_velocity.y,
+            angular_velocity.z,
+        )),
+        None => 0,
+    })
+}
+
 /// Get body rotation as quaternion.
 ///
 /// # Safety
