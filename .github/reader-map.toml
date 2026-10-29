@@ -1,0 +1,150 @@
+# Every tracked file -> the jobs that read it on a ci/** push (scripts/reader_map_check.py).
+# A path filter shows that a workflow started; this map says which job reads a file, and the
+# check holds each claim to the job: `evidence` must appear in the job's steps or in a script
+# under scripts/ that the job runs. Patterns are the path gate's syntax (scripts/changed_paths.py).
+
+[[entry]]
+name = "Rust sources, manifests and toolchain"
+paths = ["src/**", "crates/**", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "clippy.toml", ".cargo/**", "deny.toml"]
+readers = ["ci.yml:test", "ci.yml:clippy", "ci.yml:msrv"]
+evidence = "cargo"
+
+[[entry]]
+name = "integration tests"
+paths = ["tests/**"]
+readers = ["ci.yml:test"]
+evidence = "cargo test"
+
+[[entry]]
+name = "examples"
+paths = ["examples/**"]
+readers = ["ci.yml:examples"]
+evidence = "run_examples.py"
+
+[[entry]]
+name = "benches"
+paths-list = "bench-gate"
+paths = ["benches/**"]
+readers = ["bench-gate.yml:instruction-counts"]
+evidence = "bench"
+
+[[entry]]
+name = "fuzz targets"
+paths = ["fuzz/**"]
+readers = ["fuzz.yml:build-all"]
+evidence = "fuzz"
+
+[[entry]]
+name = "web viewer"
+paths = ["web/**"]
+readers = ["web.yml:smoke"]
+evidence = "npm"
+
+[[entry]]
+name = "Python binding"
+paths = ["python/**"]
+readers = ["python-binding.yml:wheel"]
+evidence = "python/tests"
+
+[[entry]]
+name = "scripts (each must be run by a ci/** job, directly or through another script)"
+paths = ["scripts/*"]
+scripts = true
+
+[[entry]]
+name = "documents and top-level text (the public-vocabulary and README / CHANGELOG checks read every tracked text file)"
+paths = ["docs/**", "README.md", "README_JP.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md", "TRADEMARK_NOTICE", "LICENSE-Proprietary", ".public-text.toml", ".gitignore", ".github/dependabot.yml"]
+readers = ["ci.yml:test"]
+evidence = "docs_lint.py"
+
+[[entry]]
+name = "line endings and attributes"
+paths = [".gitattributes"]
+readers = ["eol.yml:eol"]
+evidence = "check_eol.py"
+
+[[entry]]
+name = "workflows (actionlint, job timeouts, the trigger table)"
+paths = [".github/workflows/**"]
+readers = ["ci.yml:actionlint"]
+evidence = "workflow_timeouts.py"
+
+[[entry]]
+name = "path gate lists"
+paths = [".github/paths/**"]
+readers = ["bench-gate.yml:changes", "fuzz.yml:changes"]
+evidence = ".github/paths/"
+
+[[entry]]
+name = "evidence classes and this map"
+paths = [".github/ci-evidence.toml", ".github/reader-map.toml"]
+readers = ["ci.yml:actionlint"]
+evidence = "reader_map_check.py"
+
+[[entry]]
+name = "library clippy configuration"
+paths = [".github/clippy-lib/**", "scripts/clippy-lib-canary/**"]
+readers = ["ci.yml:clippy"]
+evidence = "clippy-lib"
+
+[[entry]]
+name = "the no-outer-fneg-of-fma lint and its allowlist"
+paths = ["tools/no-outer-fneg-of-fma/**", "scripts/no-outer-fneg-of-fma-allowlist.toml"]
+readers = ["ci.yml:test"]
+evidence = "no-outer-fneg-of-fma"
+
+[[entry]]
+name = "G2 rewrite scanner"
+paths = ["scripts/g2-rewrite-scan/**"]
+readers = ["g2-comparisons.yml:g2-comparisons"]
+evidence = "g2-rewrite-scan"
+
+[[entry]]
+name = "cfg item lister"
+paths = ["scripts/cfg-items/**"]
+readers = ["ci.yml:test"]
+evidence = "cfg-items"
+
+[[entry]]
+name = "no_std consumer"
+paths = ["consumers/**"]
+readers = ["ci.yml:test"]
+evidence = "consumers/no_std"
+
+[[entry]]
+name = "ALICE-Law conformance declaration"
+paths = ["conformance/**", "alice-law-conformance.toml"]
+readers = ["ci.yml:test"]
+evidence = "alice-law-conformance.toml"
+
+[[entry]]
+name = "C header and language bindings"
+paths = ["include/**", "bindings/**"]
+readers = ["ci.yml:facade-artifacts"]
+evidence = "include/"
+
+[[entry]]
+name = "ALICE-Law shared-file and G11 table pins"
+paths = [".github/shared-files-pin", ".github/g11-table-pin"]
+readers = ["ci.yml:test"]
+evidence = "shared-files-pin"
+
+[[entry]]
+name = "public text checker pin"
+paths = [".github/public-text-pin"]
+readers = ["public-text.yml:public-text"]
+evidence = "public-text-pin"
+
+[[entry]]
+name = "Unreal plugin (the C ABI consumer the facade check reads)"
+paths = ["unreal-plugin/**"]
+readers = ["ci.yml:clippy"]
+evidence = "unreal-plugin"
+
+[[entry]]
+name = "fma probes: every probe is run against its expected verdict by the tests of the syntax-tree check"
+paths = ["tools/fneg-fma-ir-probes/**"]
+readers = ["ci.yml:test"]
+crate-tests = "tools/no-outer-fneg-of-fma"
+evidence = "fneg-fma-ir-probes"
+read-ext = "rs"

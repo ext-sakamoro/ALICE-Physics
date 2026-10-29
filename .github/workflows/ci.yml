@@ -997,6 +997,11 @@ jobs:
           python3 scripts/workflow_timeouts.py
           # the pass / fail rules of verify.yml's mutant jobs
           python3 scripts/test_verify_mutants_check.py
+          # the oracle of the affected-test selector (preflight --fast, which land.py runs before a landing)
+          python3 scripts/test_affected_tests.py
+          # every tracked file has a ci/** job that reads it (.github/reader-map.toml)
+          python3 scripts/test_reader_map_check.py
+          python3 scripts/reader_map_check.py
 
   feature-powerset:
     if: github.event_name != 'schedule'

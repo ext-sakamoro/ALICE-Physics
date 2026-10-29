@@ -16,6 +16,9 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: `.github/reader-map.toml` と `scripts/reader_map_check.py` (試験 `scripts/test_reader_map_check.py`、ci.yml の actionlint job と preflight で実行) を追加 tracked な全 file に、ci/** で走る job のうちそれを読むものを書き、検査器がその主張を job の段 (またはその job が走らせる・import する scripts/ の file) の中の証拠の文字列で確かめる 対応の無い file・何にも当たらない項目・存在しない job・ci/** で走らない job・証拠の無い job で失敗し、scripts/ は file ごとに、job が走らせるか、走らせた script が名を挙げる data であることを見る tool crate の試験が読む file (`tools/fneg-fma-ir-probes`) は、その crate の `cargo test` を走らせる job と、crate の source がその場所を名指すことで読み手とする 読まない file は `[[unread]]` に理由 (12 文字以上) を書いて数え、黙って通さない 走査 0 件でも失敗
+- CI: affected-test selector の試験 (`scripts/test_affected_tests.py`、preflight --fast の対象の選び方) を ci.yml の actionlint job でも走らせる (land.py が着地の前に --fast を走らせるため)
+
 - CI: `verify.yml` を追加 (手動起動だけ、push / schedule では走らない) ci/** の branch にある 1 commit について、full = `scripts/preflight.sh` の全段 + `cargo test --release --workspace`、mutants = その commit の差分 (merge-base か指定の base から) の変異試験を runner で走らせる 入力の SHA は 40 桁かつ ci/** の branch から辿れるものだけを受け、test の結果行が 0 件・src の変更があるのに変異が 0 件・見逃した変異が 1 件でもあれば失敗にする cargo-mutants の終了 code が結果 (0 / 2 / 3) でない時 (誤った --features 等)、1 shard の run で計画が空でないのに変異 0 件の時、feature 軸のどれかで試した変異が 0 件の時も失敗にする (`scripts/verify_mutants_check.py`、試験 `scripts/test_verify_mutants_check.py`) 同じ SHA につき 1 度に 1 run (concurrency は SHA ごと)、変異 job は 1 run につき同時 4 本まで、最初に main の CI が queued の間 (最大 30 分) 待つ 分類は schedule-only (`.github/ci-evidence.toml`、`docs/CI_TRIGGERS.md`)
 - **Breaking:** `PHYSICS_SEMANTICS_ID` が `88cf6f85` から `31eb4ab8` に動いた (pin `"secondary chain"` を加えた、他の pin は動いていない) `PREVIOUS_PHYSICS_SEMANTICS_IDS` に `88cf6f85…` を加えた: その識別子の snapshot は restore でき、同じ bit に進む (`tests/world_snapshot_xv_88cf6f85.rs`: `b672ff2e` の build が書いた snapshot をここで進めると、その build 自身の step と byte 単位で一致、また今の pin から `"secondary chain"` を除いた畳み込みが `88cf6f85…` になる) 3.x の識別子 `79ca5297` / `d4422f82` からの移動も同じ理由 `PHYSICS_SEMANTICS_BY_DET_MATH` の各行を畳み直した snapshot の header に識別子が入る golden (三体・車両) と、参加者の `law_id` を pin し直した (状態は不変)
 - **破壊的変更:** `TriMesh::raycast` は同じ t で複数の三角形に当たる時、index が最小の三角形を返す (これまでは BVH の候補の順で最後のもの) 同点でない当たりは従来と bit 一致 (全三角形の総当たりとの一致を `tests/trimesh_raycast_bruteforce.rs` で確認) `PHYSICS_SEMANTICS_ID` が覆う golden に `TriMesh::raycast` を通るものは無い (`trimesh_probe` は `collide_sphere`、`continuous collision` は box) ので識別子は動かない
@@ -96,6 +99,7 @@ were introduced during that release window.
 - `tests/float_environment.rs` (ALICE-DB と同一): round-to-nearest-even と subnormal が flush されないことを実行時に確かめる test test job で debug と release の両方を、ALICE-DB と同じ中身の `scripts/run_tests.sh` を通して `float_environment=2` で実行する (片方を `#[ignore]` にする・cfg で外す・名前を変えると step が失敗する) `alice-law-conformance.toml` の G14 を fail-known から pass にした
 
 ### Removed
+- `scripts/wasm_exports.mjs` (2026-10-13 の build の比較に使った補助、wasm の export の比較は `scripts/facade_wasm_check.py` が行う、どこからも呼ばれていなかった)
 
 - **Breaking:** `multi_world` (`MultiWorld` / `Portal`、prelude の再公開を含む)、`replay` (`ReplayRecorder` / `ReplayPlayer`)、`db_bridge` (`PhysicsMetricsSink`) と `replay` feature、`alice-db` への依存を外した (ALICE-Physics の責務分割) body を world の間で移す部品は上の `remove_body_with_attachments` / `add_body_with_attachments` で残る 例 `multi_world_management` / `multi_world_faults` / `replay_recording` / `replay_in_memory` / `db_bridge_roundtrip` と、それらの試験も外した `cargo deny` / `cargo audit` の bincode と rkyv の ignore (`alice-db` 経由) も外した
 

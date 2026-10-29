@@ -57,6 +57,8 @@ python3 scripts/check_eol.py
 python3 scripts/test_workflow_timeouts.py
 python3 scripts/workflow_timeouts.py
 python3 scripts/test_verify_mutants_check.py
+python3 scripts/test_reader_map_check.py
+python3 scripts/reader_map_check.py
 
 step "cargo fmt --check (every workspace member)"
 cargo fmt --all -- --check
