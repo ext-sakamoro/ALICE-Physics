@@ -1872,6 +1872,8 @@ class GlobalGate(Isolated):
         # the second shell child (regenerate's scip_index.sh) also goes through bash_program: on Windows a plain
         # `bash` is System32's WSL launcher; the first child started is stopped there (no index is built)
         lander = self.r.lander()  # (built first: it runs git itself)
+        lander.scip_dir = Path(tempfile.mkdtemp(prefix="land-scip-test-"))
+        self.addCleanup(shutil.rmtree, lander.scip_dir, True)
         old = land.bash_program
         given: list[str] = []
 
@@ -1904,6 +1906,87 @@ class GlobalGate(Isolated):
         land.Lander.run_preflight(lander)
         self.assertEqual((self.cc / "run-preflight.log").read_text().split(),
                          [Path(lander.root).as_posix(), "--fast", "--class", "land"])
+
+
+SCIP_READERS = ("integration_levels.py", "scip_reach.py", "audit_refs.py")
+
+
+class ScipOutsideTarget(Isolated):
+    """land.py keeps the SCIP index out of the repository's target/: scip_index.sh writes into the landing's own
+    temporary directory and every reader is given it with --scip (2026-10-31: the index in target/scip made target/
+    without CACHEDIR.TAG, and run-preflight refused the landing's own target as not cargo's)"""
+
+    def record(self, lander):
+        """the real regenerate and run_checks on `lander`, every child recorded and none started"""
+        started: list[list[str]] = []
+        real_run = land.subprocess.run
+
+        def run(cmd, *a, **k):
+            started.append([str(x) for x in cmd])
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        land.subprocess.run = run
+        self.addCleanup(setattr, land.subprocess, "run", real_run)
+        lander.regenerate_public_api = lambda: None
+        lander.check_changelog = lambda: None
+        land.Lander.regenerate(lander)
+        land.Lander.run_checks(lander)
+        land.subprocess.run = real_run
+        return started
+
+    def test_the_index_goes_to_the_landing_s_own_directory_and_every_reader_is_told(self):
+        lander = self.r.lander()
+        scip = Path(tempfile.mkdtemp(prefix="land-scip-test-"))
+        self.addCleanup(shutil.rmtree, scip, True)
+        lander.scip_dir = scip
+        started = self.record(lander)
+        idx = [c for c in started if c[-2:-1] == ["scripts/scip_index.sh"] or "scripts/scip_index.sh" in c]
+        self.assertEqual(len(idx), 1, started)
+        self.assertEqual(idx[0][-1], scip.as_posix(), "scip_index.sh wrote to its default (target/scip)")
+        readers = [c for c in started if any(c_i.endswith(r) for c_i in c for r in SCIP_READERS)]
+        self.assertGreaterEqual(len(readers), 4, readers)  # (two writers and two checks)
+        for c in readers:
+            with self.subTest(cmd=" ".join(c[1:3])):
+                self.assertIn("--scip", c)
+                self.assertEqual(c[c.index("--scip") + 1], scip.as_posix())
+        self.assertFalse(any("target" in Path(x).parts for c in started for x in c), started)
+        self.assertFalse((lander.root / "target").exists(), "target/ was made before the preflight")
+
+    def test_no_index_directory_is_a_refusal_not_target_scip(self):
+        lander = self.r.lander()
+        lander.scip_dir = None
+        with self.assertRaises(land.LandError):
+            self.record(lander)
+
+    def test_the_index_directory_is_the_landing_s_and_goes_on_failure(self):
+        lander = self.r.lander()
+        seen = []
+        with self.assertRaises(RuntimeError):
+            with land.Lander.own_copy(lander):
+                seen.append(lander.scip_dir)
+                self.assertTrue(lander.scip_dir.is_dir())
+                self.assertNotIn(Path(lander.root).resolve(), lander.scip_dir.resolve().parents,
+                                 "the index directory is inside the landing's tree")
+                raise RuntimeError("a landing that fails")
+        self.assertFalse(seen[0].exists(), "the index directory outlived a failed landing")
+        self.assertIsNone(lander.scip_dir)
+
+    def test_no_reader_in_land_s_call_path_falls_back_to_target_scip(self):
+        # static: every call of a SCIP reader in land.py names --scip, and every ledger writer that reads the index is
+        # marked so (ledgers.WRITERS, needs_index), which is how regenerate gives it --scip; 0 call sites is a failure
+        src = (REAL_ROOT / "scripts" / "land.py").read_text(encoding="utf-8")
+        sites = [ln for ln in src.splitlines() if any(f'"scripts/{r}"' in ln for r in SCIP_READERS)]
+        self.assertGreater(len(sites), 0, "no SCIP reader call site found in land.py (the test compared nothing)")
+        for ln in sites:
+            with self.subTest(line=ln.strip()):
+                self.assertIn("--scip", ln)
+        from ledgers import WRITERS
+        writers = [(name, argv, needs) for name, argv, needs in WRITERS if any(r in " ".join(argv) for r in SCIP_READERS)]
+        self.assertGreater(len(writers), 0, "no ledger writer reads the index (the test compared nothing)")
+        for name, argv, needs in writers:
+            with self.subTest(writer=name):
+                self.assertTrue(needs, f"{name} reads the index but is not marked as needing it (no --scip)")
+        self.assertNotIn('"scripts/scip_index.sh")', src, "scip_index.sh is started without an output directory")
 
 
 class BashProgram(unittest.TestCase):

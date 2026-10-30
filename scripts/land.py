@@ -1166,10 +1166,15 @@ class Lander:
         self.checkout_git("worktree", "add", "-q", "--detach", wt, self.source_sha)
         self.record.append(f"source SHA: {self.source_sha} (the checkout's HEAD at the start)")
         self.root = Path(wt)
+        # the SCIP index lives beside the working copy, not in its target/ (target/ is the preflight's receipt build,
+        # which run-preflight refuses to reuse when something other than cargo made it: 2026-10-31); it goes with d
+        self.scip_dir = Path(d) / "scip"
+        self.scip_dir.mkdir()
         try:
             yield
         finally:
             self.root = self.checkout
+            self.scip_dir = None
             subprocess.run([*self.git_argv, "worktree", "remove", "--force", wt], cwd=self.checkout,
                            capture_output=True, env=self.git_env)
             subprocess.run([*self.git_argv, "worktree", "prune"], cwd=self.checkout, capture_output=True,
@@ -1238,10 +1243,19 @@ class Lander:
         # dead code that only the lint (not a plain check) refuses
         self.sh("cargo", "clippy", "-q", "--all-targets", "--features", NATIVE, "--", "-D", "warnings")
 
+    def scip(self) -> str:
+        """the landing's SCIP index directory (own_copy makes it outside the working copy's target/); without one the
+        landing stops instead of letting a reader fall back to target/scip"""
+        d = getattr(self, "scip_dir", None)
+        if d is None:
+            raise LandError("no SCIP index directory (the landing makes one beside its working copy)")
+        return Path(d).as_posix()
+
     def regenerate(self) -> None:
-        self.sh(bash_program(), "scripts/scip_index.sh")
-        for _, argv, _ in WRITERS:
-            self.sh(sys.executable, *argv[1:])
+        scip = self.scip()
+        self.sh(bash_program(), "scripts/scip_index.sh", scip)
+        for _, argv, needs_index in WRITERS:
+            self.sh(sys.executable, *argv[1:], *(["--scip", scip] if needs_index else []))
         self.regenerate_public_api()
 
     def regenerate_public_api(self) -> None:
@@ -1253,10 +1267,11 @@ class Lander:
         (self.root / "docs/PUBLIC_API_SNAPSHOT.txt").write_text(r.stdout, encoding="utf-8")
 
     def run_checks(self) -> None:
-        for cmd in ([sys.executable, "scripts/integration_levels.py", "--check"],
+        scip = self.scip()
+        for cmd in ([sys.executable, "scripts/integration_levels.py", "--check", "--scip", scip],
                     [sys.executable, "scripts/readme_sync.py", "--check"],
                     [sys.executable, "scripts/docs_lint.py", "--check"],
-                    [sys.executable, "scripts/scip_reach.py", "--check-baseline"],
+                    [sys.executable, "scripts/scip_reach.py", "--check-baseline", "--scip", scip],
                     [sys.executable, "scripts/gen-oracle-status.py", "--check"],
                     [sys.executable, "scripts/wiring_guard.py"],
                     [sys.executable, "scripts/coverage_check.py"]):
