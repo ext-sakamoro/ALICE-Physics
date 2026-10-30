@@ -565,7 +565,7 @@ fn split_children(vs: [u32; 4], a: u32, b: u32, mid: u32) -> [[u32; 4]; 2] {
 fn lattice_cells(min: [f32; 3], max: [f32; 3], cell: f32) -> [i32; 3] {
     let count = |a: usize| {
         let q = (f64::from(max[a]) - f64::from(min[a])) / f64::from(cell);
-        crate::det_math::raw_clamp64((q * (1.0 + 1e-6)).floor(), 1.0, f64::from(i32::MAX)) as i32
+        crate::det_math::clamp64((q * (1.0 + 1e-6)).floor(), 1.0, f64::from(i32::MAX)) as i32
     };
     [count(0), count(1), count(2)]
 }
@@ -761,7 +761,10 @@ impl WarpedLattice {
                     if s0 == 0.0 {
                         continue;
                     }
-                    let mut best: Option<(f32, [f32; 3])> = None;
+                    // the nearest crossing: alice-det-math's `Select` (ALICE-Law G2), the first
+                    // equal to the G2 minimum (a distance here is a square root, never -0 or NaN
+                    // past the snap test)
+                    let mut best = crate::det_math::Select::least();
                     for d in Self::neighbour_offsets() {
                         let n = [ix + d[0], iy + d[1], iz + d[2]];
                         if n.iter().zip(counts).any(|(&c, limit)| c < 0 || c >= limit) {
@@ -783,11 +786,11 @@ impl WarpedLattice {
                         let dy = at[1] - p[1];
                         let dz = at[2] - p[2];
                         let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                        if dist < snap_distance && best.is_none_or(|(b, _)| dist < b) {
-                            best = Some((dist, at));
+                        if dist < snap_distance {
+                            best.offer(dist, at);
                         }
                     }
-                    if let Some((_, at)) = best {
+                    if let Some((_, at)) = best.into_inner() {
                         nodes[here] = (at, 0.0);
                     }
                 }

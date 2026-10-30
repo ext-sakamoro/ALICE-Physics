@@ -4,9 +4,13 @@
 //! result's bits for the operand pairs the Law fixes: maximumNumber /
 //! minimumNumber give `+0` for the max and `-0` for the min of an equal pair
 //! of zeros in either order, and the other operand when one operand is NaN.
-//! A clamp follows alice-det-math's clamp instead (the owner of the clamp
-//! Law): it compares, so `-0` against a `+0` bound stays `-0`, and a NaN in
-//! any argument gives the canonical quiet NaN. The classes are listed in
+//! A clamp follows alice-det-math's clamp (`clamp` / `clamp64`, the owner of
+//! the clamp Law): `min(max(x, low), high)` with the G2 max and min, so `-0`
+//! against a `+0` low bound gives `+0`, and a NaN `x` gives the canonical quiet
+//! NaN. A selection (a min or max by value that keeps a payload) follows
+//! alice-det-math's `Select`: the first offer equal to the G2 maximum (or
+//! minimum) of the values that are not NaN, so `+0` is above `-0`, a tie keeps
+//! the first and a NaN is never selected. The classes are listed in
 //! `alice-law-conformance.toml` under `[G2]`.
 //!
 //! Where an entry point fixes one operand (`max(x, +0)`, `max(x, eps)`), only
@@ -214,27 +218,62 @@ fn class7_clamp_with_a_zero_bound_follows_det_math_clamp() {
     assert_eq!(got, want, "{got:08x?}");
 }
 
-/// Class: clamp with a zero bound, through the std `f64::clamp` of a
-/// probability. alice-det-math has no 64-bit clamp yet, so this site still
-/// uses the std clamp: it agrees with the det-math rule for `-0` and for the
-/// canonical NaN, and a non-canonical NaN payload is not checked here (the
-/// std clamp passes it through)
+/// Class: clamp with a zero bound, 64-bit (alice-det-math `clamp64`), at every
+/// f64 clamp site whose result an entry point shows and can differ: a `+0` low
+/// bound turns `-0` into `+0`, a NaN of any payload or sign becomes the
+/// canonical quiet NaN. Not shown: `heatmap_to_rgba` (8-bit colours, where no
+/// zero sign or NaN payload survives), `estimate_proportion` (below) and the
+/// tetrahedral grid size in `sdf_fem_mesh` (the low bound is 1 and the result
+/// is cast to `i32`, where a NaN is 0 either way).
 #[test]
 #[allow(
     deprecated,
-    reason = "RandomizedResponse::with_probability is the public entry point of this f64 clamp site"
+    reason = "RandomizedResponse and Rappor are the public entry points of these f64 clamp sites"
 )]
-fn class7_f64_clamp_agrees_with_det_math_0_5_rule_where_it_can() {
-    use alice_physics_core::privacy::RandomizedResponse;
+fn class7_f64_clamp_follows_det_math_clamp64() {
+    use alice_physics_core::anomaly::EwmaDetector;
+    use alice_physics_core::privacy::{RandomizedResponse, Rappor};
+    let nans = [
+        f64::NAN,
+        f64::from_bits(0x7ff8_0000_0000_0001),
+        f64::from_bits(0xfff8_0000_0000_0000),
+        f64::from_bits(0x7ff0_0000_0000_0001),
+    ];
+    let mut checked = 0;
+    // RandomizedResponse::with_probability: clamp(p, 0, 1)
     let p = |x: f64| {
         RandomizedResponse::with_probability(black_box(x), 1)
             .p_true()
             .to_bits()
     };
-    assert_eq!(p(-0.0), NEG64);
+    assert_eq!(p(-0.0), POS64);
     assert_eq!(p(0.0), POS64);
-    assert_eq!(p(f64::NAN), CANONICAL_NAN64);
     assert_eq!(p(1.5), 1.0f64.to_bits());
+    for n in nans {
+        assert_eq!(p(n), CANONICAL_NAN64, "{:016x}", n.to_bits());
+        checked += 1;
+    }
+    // RandomizedResponse::estimate_proportion (clamp(true_rate, 0, 1)) is not checked: it
+    // refuses p outside (0, 1], and for p in it the numerator 0.5·p + (k/n − 0.5) is never
+    // -0 (a sum is -0 only when both terms are) and never NaN, so the clamp gives the same
+    // bits whichever rule it follows
+    // EwmaDetector::new / set_alpha: clamp(alpha, 0.001, 1)
+    for n in nans {
+        assert_eq!(
+            EwmaDetector::new(black_box(n), 3.0).alpha().to_bits(),
+            CANONICAL_NAN64
+        );
+        let mut d = EwmaDetector::new(0.5, 3.0);
+        d.set_alpha(black_box(n));
+        assert_eq!(d.alpha().to_bits(), CANONICAL_NAN64);
+        checked += 2;
+    }
+    // Rappor::with_seed: clamp(f, 0, 0.5), clamp(p, 0, 1), clamp(q, 0, 1); the fields show
+    // only through Debug, which prints the zero sign
+    let r = format!("{:?}", Rappor::with_seed(black_box(-0.0), -0.0, -0.0, 1));
+    assert!(r.contains("f: 0.0, p: 0.0, q: 0.0"), "{r}");
+    checked += 1;
+    assert_eq!(checked, 13);
 }
 
 /// A field that answers a scripted sequence of distances, one per call, with
@@ -280,15 +319,17 @@ fn select(distances: &[f32]) -> (u32, f32) {
 
 /// Class: selection (argmax with a payload), `SdfCharacter`'s best sample,
 /// both the loop sample and the final sample of a run that did not converge.
-/// The rule (alice-law-conformance.toml [G2]): the first strict maximum is
-/// kept, a NaN distance is never selected, and a tie keeps the first, so of
-/// `-0` and `+0` the earlier one stays
+/// The rule (alice-det-math `Select::greatest`): the first offer equal to the
+/// G2 maximum of the distances that are not NaN, so `+0` is above `-0`, a tie
+/// keeps the first, a NaN is never selected, and with no distance that is not
+/// NaN the start position stays with `-inf`
 #[test]
-fn selection_keeps_the_first_strict_maximum_and_never_a_nan() {
+fn selection_follows_det_math_select() {
     let nan = f32::NAN;
-    let cases: [(&[f32], u32, f32); 8] = [
+    let cases: [(&[f32], u32, f32); 9] = [
         (&[0.5, 0.5, 0.5], 0.5f32.to_bits(), 0.0),
-        (&[-0.0, 0.0, -1.0], NEG, 0.0),
+        (&[-0.0, 0.0, -1.0], POS, 1.0),
+        (&[-1.0, -0.0, 0.0], POS, 2.0),
         (&[0.0, -0.0, -1.0], POS, 0.0),
         (&[nan, -1.0, -2.0], (-1.0f32).to_bits(), 1.0),
         (&[-2.0, nan, -1.0], (-1.0f32).to_bits(), 2.0),
@@ -301,5 +342,161 @@ fn selection_keeps_the_first_strict_maximum_and_never_a_nan() {
         assert_eq!(select(distances), (bits, y), "{distances:?}");
         checked += 1;
     }
-    assert_eq!(checked, 8);
+    assert_eq!(checked, 9);
+}
+
+/// The world field of two static colliders with the given constant distances
+fn world_distance(a: f32, b: f32) -> u32 {
+    use alice_physics_core::math::{QuatFix, Vec3Fix};
+    use alice_physics_core::sdf_collider::SdfCollider;
+    use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
+    let mut world = PhysicsWorld::new(SolverConfig::default());
+    for d in [a, b] {
+        world.add_sdf_collider(SdfCollider::new_static(
+            Box::new(Constant(d)),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+    }
+    world.sdf_field().distance(0.0, 0.0, 0.0).to_bits()
+}
+
+/// Class: selection (argmin with a payload), the nearest collider of the world
+/// field (alice-det-math `Select::least`): `-0` is below `+0` in either order and
+/// a NaN distance is never selected while another is not NaN (minimumNumber: a
+/// NaN operand yields the other). When every collider answers NaN the distance is
+/// the canonical NaN (minimumNumber(NaN, NaN)), not +inf: +inf means no collider
+#[test]
+fn nearest_collider_follows_det_math_select() {
+    let nan = f32::NAN;
+    let cases = [
+        (0.0, -0.0, NEG),
+        (-0.0, 0.0, NEG),
+        (0.5, 0.5, 0.5f32.to_bits()),
+        (nan, 1.0, 1.0f32.to_bits()),
+        (1.0, nan, 1.0f32.to_bits()),
+        (nan, nan, CANONICAL_NAN),
+        (f32::from_bits(0xffc0_0001), nan, CANONICAL_NAN),
+    ];
+    for (a, b, want) in cases {
+        assert_eq!(world_distance(a, b), want, "{a:?} {b:?}");
+    }
+}
+
+/// A field that answers scripted distances and normals, one per call each
+struct ScriptedNormals {
+    distances: Vec<f32>,
+    normals: Vec<(f32, f32, f32)>,
+    next_distance: std::sync::atomic::AtomicUsize,
+    next_normal: std::sync::atomic::AtomicUsize,
+}
+
+impl SdfField for ScriptedNormals {
+    fn distance(&self, _x: f32, _y: f32, _z: f32) -> f32 {
+        let i = self
+            .next_distance
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        black_box(self.distances[i])
+    }
+    fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+        let i = self
+            .next_normal
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.normals[i]
+    }
+}
+
+/// Class: selection (argmax with a payload), the deepest sample of an SDF
+/// contact manifold (alice-det-math `Select::greatest`): of samples with equal
+/// depth the first in sample order is kept. A 3 × 3 grid where samples 2 and 6
+/// are equally deepest, marked by their normals (+x and +z); the manifold lists
+/// the deepest contact first
+#[test]
+fn deepest_manifold_sample_follows_det_math_select() {
+    use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+    use alice_physics_core::sdf_collider::SdfCollider;
+    use alice_physics_core::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
+    let mut distances = vec![0.0]; // the probe
+    let mut normals = vec![(0.0, 1.0, 0.0)];
+    for k in 0..9 {
+        distances.push(if k == 2 || k == 6 { -0.5 } else { 0.5 });
+        normals.push(match k {
+            2 => (1.0, 0.0, 0.0),
+            6 => (0.0, 0.0, 1.0),
+            _ => (0.0, 1.0, 0.0),
+        });
+    }
+    let field = ScriptedNormals {
+        distances,
+        normals,
+        next_distance: std::sync::atomic::AtomicUsize::new(0),
+        next_normal: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let collider = SdfCollider::new_static(Box::new(field), Vec3Fix::ZERO, QuatFix::IDENTITY);
+    let config = ManifoldConfig {
+        samples_per_axis: 3,
+        sample_radius: 0.5,
+        max_contacts: 4,
+        min_depth: 0.001,
+    };
+    let m = generate_sdf_manifold(Vec3Fix::ZERO, Fix128::ONE, &collider, &config);
+    assert_eq!(m.contacts.len(), 4);
+    let n = m.contacts[0].normal;
+    assert_eq!(
+        (n.x.to_f32(), n.y.to_f32(), n.z.to_f32()),
+        (1.0, 0.0, 0.0),
+        "the first of the two deepest samples"
+    );
+}
+
+/// The world field at a query point that is not finite: NaN distance and NaN
+/// normal (the point is refused before its conversion to fixed point, which
+/// would read NaN as 0), and +inf with the up normal only when there is no
+/// collider at all
+#[test]
+fn world_field_propagates_an_invalid_query_or_distance() {
+    use alice_physics_core::math::{QuatFix, Vec3Fix};
+    use alice_physics_core::sdf_collider::SdfCollider;
+    use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
+    let mut world = PhysicsWorld::new(SolverConfig::default());
+    let empty = world.sdf_field();
+    assert_eq!(empty.distance(f32::NAN, 0.0, 0.0), f32::INFINITY);
+    assert_eq!(
+        empty.distance_and_normal(0.0, 0.0, 0.0),
+        (f32::INFINITY, (0.0, 1.0, 0.0))
+    );
+    world.add_sdf_collider(SdfCollider::new_static(
+        Box::new(Constant(1.0)),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    ));
+    let field = world.sdf_field();
+    let mut checked = 0;
+    for q in [
+        [f32::NAN, 0.0, 0.0],
+        [0.0, f32::INFINITY, 0.0],
+        [0.0, 0.0, f32::NEG_INFINITY],
+    ] {
+        assert_eq!(
+            field.distance(q[0], q[1], q[2]).to_bits(),
+            CANONICAL_NAN,
+            "{q:?}"
+        );
+        let (d, (nx, ny, nz)) = field.distance_and_normal(q[0], q[1], q[2]);
+        assert!(
+            d.is_nan() && nx.is_nan() && ny.is_nan() && nz.is_nan(),
+            "{q:?}"
+        );
+        checked += 1;
+    }
+    // every collider NaN: the same as an invalid query
+    let mut nan_world = PhysicsWorld::new(SolverConfig::default());
+    nan_world.add_sdf_collider(SdfCollider::new_static(
+        Box::new(Constant(f32::NAN)),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    ));
+    let (d, (nx, _, _)) = nan_world.sdf_field().distance_and_normal(0.0, 0.0, 0.0);
+    assert!(d.is_nan() && nx.is_nan());
+    assert_eq!(checked, 3);
 }

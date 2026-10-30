@@ -471,7 +471,7 @@ impl EwmaDetector {
     #[must_use]
     pub fn new(alpha: f64, threshold_k: f64) -> Self {
         Self {
-            alpha: crate::det_math::raw_clamp64(alpha, 0.001, 1.0),
+            alpha: crate::det_math::clamp64(alpha, 0.001, 1.0),
             ewma: 0.0,
             ewma_var: 0.0,
             threshold_k: non_negative(threshold_k),
@@ -570,7 +570,7 @@ impl EwmaDetector {
     /// Set smoothing factor
     #[inline]
     pub fn set_alpha(&mut self, alpha: f64) {
-        self.alpha = crate::det_math::raw_clamp64(alpha, 0.001, 1.0);
+        self.alpha = crate::det_math::clamp64(alpha, 0.001, 1.0);
     }
 
     /// Get threshold multiplier

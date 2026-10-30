@@ -58,9 +58,6 @@ src/fracture.rs	modify_distance	crack . length < 1e-5	1	f32	predicate	an if cond
 src/fracture.rs	modify_distance	d < width * 2.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/fracture.rs	propagate_cracks	crack . length >= max_len	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/gpu_sdf.rs	extract_contacts	penetration > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/lib.rs	raw_clamp64	lo <= hi	1	f64	predicate	an assertion: checks an invariant, chooses no value
-src/lib.rs	raw_clamp64	y < lo	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
-src/lib.rs	raw_clamp64	y > hi	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
 src/math.rs	from_f64	f < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/particle.rs	probe	d >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/phase_change.rs	accumulate_offsets	liquid_flow > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
@@ -120,10 +117,8 @@ src/sdf_ccd.rs	ray_march_sdf	dist < config . tolerance	1	f32	predicate	an if con
 src/sdf_ccd.rs	sphere_trace_sdf_field	gap <= config . tolerance	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	ground_contact	distance > self . ground_probe_epsilon	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	is_grounded	c . up_alignment >= self . ground_up_threshold	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
-src/sdf_character.rs	nearest	d < b	1	f32	select	argmin of the distance (`is_none_or(|..| d < b)` keeps the nearer candidate): a selection of an element, not a value; a NaN distance is never kept (d < b is false)
 src/sdf_character.rs	resolve	along > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/sdf_character.rs	resolve	along >= self . ground_up_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/sdf_character.rs	resolve	d > best_distance	2	f32	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as selection: f32 argmax with a payload (best_position): the first strict maximum is kept, a NaN distance is never selected, ties keep the first (rule in alice-law-conformance.toml [G2]); moves to the alice-det-math argmax when it exists
 src/sdf_character.rs	resolve	d >= self . radius	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	resolve	nx * up [0] + ny * up [1] + nz * up [2] < self . min_up_alignment	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	snap_to_walkable_ground	along > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
@@ -144,7 +139,6 @@ src/sdf_collider.rs	update_cache	s . abs () < 1e-10	1	f32	predicate	an if condit
 src/sdf_collider.rs	with_scale	s . abs () < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_destruction.rs	destruction_from_impact	min_radius <= max_radius	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_destruction.rs	distance	destruction . smooth_factor > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/sdf_fem_mesh.rs	build	dist < b	1	f32	select	argmin of the snap distance (`best.is_none_or(|(b, _)| dist < b)`): a selection of an element, not a value; a NaN distance is never kept
 src/sdf_fem_mesh.rs	build	dist < snap_distance	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/sdf_fem_mesh.rs	build	s0 < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_fem_mesh.rs	build	s1 < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
@@ -152,7 +146,7 @@ src/sdf_fem_mesh.rs	crossing_vertex	denom . abs () < 1.0e-9	1	f32	predicate	an i
 src/sdf_fem_mesh.rs	crossing_vertex	t <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_fem_mesh.rs	crossing_vertex	t >= 1.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_fem_mesh.rs	edge_to_split	len_sq <= limit_sq	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/sdf_fem_mesh.rs	edge_to_split	len_sq > blen	1	f32	select	argmax of the squared edge length (`better = len_sq > blen || (len_sq == blen && key < bkey)`, then `best = Some(..)`): a selection of an edge; len_sq is a fused sum of squares (+0 or more, no signed-zero tie), an equal length goes to the smaller edge key (a total order), and a NaN length never replaces the incumbent
+src/sdf_fem_mesh.rs	edge_to_split	len_sq > blen	1	f32	select	argmax of the squared edge length (`better = len_sq > blen || (len_sq == blen && key < bkey)`, then `best = Some(..)`): a selection of an edge; len_sq is a fused sum of squares (+0 or more, no signed-zero tie), an equal length goes to the smaller edge key (a total order), and a NaN length never replaces the incumbent; an ordering, not alice-det-math Select: the order is (length, then the smaller edge key), a total order, so two tetrahedra sharing a face pick the same edge whatever order the edges are visited (Select keeps the first of equal lengths instead)
 src/sdf_fem_mesh.rs	generate	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
 src/sdf_fem_mesh.rs	generate	sdf . distance (p [0] , p [1] , p [2]) <= 0.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
 src/sdf_fem_mesh.rs	generate_marching_tets	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
@@ -166,7 +160,6 @@ src/sdf_manifold.rs	build_tangent_frame	nx . abs () < 0.9	1	f32	predicate	an if 
 src/sdf_manifold.rs	generate_sdf_manifold	half > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_manifold.rs	generate_sdf_manifold	penetration > config . min_depth	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_manifold.rs	generate_sdf_manifold	radius_f32 - world_dist <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/sdf_manifold.rs	reduce_manifold	a . 1 partial_cmp b . 1	1	f32	select	argmax by depth (`max_by` with `partial_cmp`, NaN read as Equal): a selection of an element, not a value; with ties max_by keeps the last, the order of the contacts fixes it
 src/sdf_sph.rs	compute_accelerations	d < self . config . repel_range	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_sph.rs	compute_accelerations	r_sq < 1.0e-8	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/sdf_sph.rs	compute_accelerations	r_sq >= h * h	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it

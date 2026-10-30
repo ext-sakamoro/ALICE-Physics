@@ -249,12 +249,14 @@ fn reduce_manifold(candidates: &[(Contact, f32)], max_contacts: usize) -> Vec<Co
 
     let mut selected: Vec<usize> = Vec::with_capacity(max_contacts);
 
-    // 1. Deepest point
-    let deepest_idx = candidates
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.1.partial_cmp(&b.1).unwrap_or(core::cmp::Ordering::Equal))
-        .map_or(0, |(i, _)| i);
+    // 1. Deepest point: alice-det-math's `Select` (ALICE-Law G2), the first candidate equal
+    // to the G2 maximum of the depths (a tie keeps the earlier sample; a NaN depth never
+    // becomes a candidate, the `> min_depth` test refuses it)
+    let mut deepest = crate::det_math::Select::greatest();
+    for (i, (_, depth)) in candidates.iter().enumerate() {
+        deepest.offer(*depth, i);
+    }
+    let deepest_idx = deepest.into_inner().map_or(0, |(_, i)| i);
     selected.push(deepest_idx);
 
     // 2. Furthest from deepest

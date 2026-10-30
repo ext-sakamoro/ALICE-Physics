@@ -338,28 +338,14 @@ pub mod det_math {
     // code (`.github/clippy-lib/clippy.toml`)
     pub(crate) use alice_det_math::metric::clamp;
 
-    /// The f64 clamp sites call this one function: alice-det-math has no 64-bit
-    /// clamp yet, and `f64::clamp` is banned in library code. It does what
-    /// `f64::clamp` does, step for step (the bounds asserted ordered, which also
-    /// refuses a NaN bound, then the two comparisons, so a NaN `x` passes through
-    /// with its payload), unlike alice-det-math's 32-bit clamp. Listed in
-    /// `scripts/g2-rewrite-sites.tsv` (ALICE-Law G2 counts it as a pending site);
-    /// it moves to the 64-bit clamp of alice-det-math when that exists
-    #[inline]
-    pub(crate) fn raw_clamp64(x: f64, lo: f64, hi: f64) -> f64 {
-        assert!(
-            lo <= hi,
-            "lo > hi, or a bound is NaN: lo = {lo:?}, hi = {hi:?}"
-        );
-        let mut y = x;
-        if y < lo {
-            y = lo;
-        }
-        if y > hi {
-            y = hi;
-        }
-        y
-    }
+    /// The 64-bit form of the same clamp (alice-det-math `clamp64`, the same rule as
+    /// [`clamp`]); `f64::clamp` is banned in library code
+    pub(crate) use alice_det_math::clamp64;
+    // A selection (a min or max by value that keeps a payload: an argmin / argmax) follows
+    // alice-det-math's `Select` (ALICE-Law G2, owned by alice-det-math): the first offer
+    // equal to the G2 maximum (or minimum) of the values that are not NaN, so `+0` is
+    // above `-0`, a tie keeps the first and a NaN is never selected
+    pub(crate) use alice_det_math::Select;
 
     #[cfg(test)]
     mod max_min_tests {

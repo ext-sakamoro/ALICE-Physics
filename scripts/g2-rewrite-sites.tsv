@@ -159,9 +159,6 @@ src/joint_extra.rs	weld_turns	expr	four > eighth	fixed-point	operands are Fix128
 src/joint_extra.rs	weld_turns	expr	relative > floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/layer_adhesion.rs	min_fos	assign	fos < worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/lib.rs	<module>	macro	delegate	macro-scanned	body parsed and scanned: wrapper functions that forward to alice-det-math, no comparison
-src/lib.rs	raw_clamp64	assign	y < lo	pending	f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
-src/lib.rs	raw_clamp64	assign	y > hi	pending	f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
-src/lib.rs	raw_clamp64	raw	raw_clamp64	pending	stand-in for the 64-bit clamp alice-det-math does not have yet, written as f64::clamp is without calling it (the f64 clamp sites call this function)
 src/linear_elastic_fem.rs	conjugate_gradient	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/linear_elastic_fem.rs	conjugate_gradient	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/linear_elastic_fem.rs	max_abs	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
@@ -222,7 +219,6 @@ src/quadratic_elastic_fem.rs	solve_quadratic	assign	residual_norm < best_residua
 src/quadratic_elastic_fem.rs	solve_quadratic	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t0 > t_min	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t1 < t_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/sdf_character.rs	resolve	assign	d > best_distance	selection	f32 argmax with a payload (best_position): the first strict maximum is kept, a NaN distance is never selected, ties keep the first (rule in alice-law-conformance.toml [G2]); moves to the alice-det-math argmax when it exists
 src/sdf_manifold.rs	reduce_manifold	assign	area > best_area	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	d > best_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	q > hull	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN

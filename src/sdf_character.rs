@@ -318,14 +318,14 @@ impl SdfCharacter {
         } else {
             None
         };
-        let mut best_position = pos;
-        let mut best_distance = f32::NEG_INFINITY;
+        // The best sample: alice-det-math's `Select` (ALICE-Law G2), the first sample equal
+        // to the G2 maximum of the distances that are not NaN (`+0` above `-0`, a tie keeps
+        // the earlier sample); none (every distance NaN) keeps the start with `-inf`
+        let start = pos;
+        let mut best = crate::det_math::Select::greatest();
         while iterations < self.max_iterations {
             let d = field.distance(pos[0], pos[1], pos[2]);
-            if d > best_distance {
-                best_distance = d;
-                best_position = pos;
-            }
+            best.offer(d, pos);
             if d >= self.radius {
                 converged = true;
                 break;
@@ -366,11 +366,10 @@ impl SdfCharacter {
             // sample too few — and that final push is exactly the one
             // that can have made things worse.
             let d = field.distance(pos[0], pos[1], pos[2]);
-            if d > best_distance {
-                best_distance = d;
-                best_position = pos;
-            }
+            best.offer(d, pos);
         }
+        let (best_distance, best_position) =
+            best.into_inner().unwrap_or((f32::NEG_INFINITY, start));
         (
             MoveOutcome {
                 position: pos,
@@ -729,27 +728,56 @@ pub struct WorldSdfField<'a> {
     colliders: &'a [crate::sdf_collider::SdfCollider],
 }
 
+/// The answer of [`WorldSdfField::nearest`]
+#[cfg(feature = "std")]
+enum Nearest {
+    /// No collider
+    Empty,
+    /// A query point that is not finite, or every collider answered NaN
+    Invalid,
+    /// The collider index, the point in its local frame and the world distance
+    Hit(usize, (f32, f32, f32), f32),
+}
+
 #[cfg(feature = "std")]
 impl WorldSdfField<'_> {
     /// The nearest collider at a world point and its world distance.
-    fn nearest(&self, x: f32, y: f32, z: f32) -> Option<(usize, (f32, f32, f32), f32)> {
+    ///
+    /// alice-det-math's `Select` (ALICE-Law G2): the first collider equal to the G2
+    /// minimum of the distances that are not NaN (`-0` below `+0`, a tie keeps the
+    /// earlier collider). [`Nearest::Invalid`] for a query point that is not finite
+    /// (refused before the conversion to fixed point, which reads NaN as 0) or when
+    /// every collider answers NaN (minimumNumber(NaN, NaN) is NaN);
+    /// [`Nearest::Empty`] only when there is no collider.
+    fn nearest(&self, x: f32, y: f32, z: f32) -> Nearest {
+        if self.colliders.is_empty() {
+            return Nearest::Empty;
+        }
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Nearest::Invalid;
+        }
         let p = crate::math::Vec3Fix::from_f32(x, y, z);
-        let mut best: Option<(usize, (f32, f32, f32), f32)> = None;
+        let mut best = crate::det_math::Select::least();
         for (i, c) in self.colliders.iter().enumerate() {
             let (lx, ly, lz) = c.world_to_local(p);
             let d = c.field.distance(lx, ly, lz) * c.frame().scale_f32();
-            if best.is_none_or(|(_, _, b)| d < b) {
-                best = Some((i, (lx, ly, lz), d));
-            }
+            best.offer(d, (i, (lx, ly, lz)));
         }
-        best
+        best.into_inner()
+            .map_or(Nearest::Invalid, |(d, (i, local))| {
+                Nearest::Hit(i, local, d)
+            })
     }
 }
 
 #[cfg(feature = "std")]
 impl SdfField for WorldSdfField<'_> {
     fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.nearest(x, y, z).map_or(f32::INFINITY, |(_, _, d)| d)
+        match self.nearest(x, y, z) {
+            Nearest::Hit(_, _, d) => d,
+            Nearest::Empty => f32::INFINITY,
+            Nearest::Invalid => f32::NAN,
+        }
     }
 
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
@@ -758,12 +786,13 @@ impl SdfField for WorldSdfField<'_> {
 
     fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {
         match self.nearest(x, y, z) {
-            Some((i, (lx, ly, lz), d)) => {
+            Nearest::Hit(i, (lx, ly, lz), d) => {
                 let c = &self.colliders[i];
                 let (nx, ny, nz) = c.field.normal(lx, ly, lz);
                 (d, c.local_normal_to_world(nx, ny, nz).to_f32())
             }
-            None => (f32::INFINITY, (0.0, 1.0, 0.0)),
+            Nearest::Empty => (f32::INFINITY, (0.0, 1.0, 0.0)),
+            Nearest::Invalid => (f32::NAN, (f32::NAN, f32::NAN, f32::NAN)),
         }
     }
 }

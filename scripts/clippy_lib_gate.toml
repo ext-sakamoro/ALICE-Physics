@@ -33,7 +33,7 @@ reason = "passes a NaN payload through and panics on a NaN or inverted bound; us
 
 [[method]]
 path = "f64::clamp"
-reason = "alice-det-math has no 64-bit clamp yet; call crate::det_math::raw_clamp64, the one named site"
+reason = "passes a NaN payload through and panics on a NaN or inverted bound; use crate::det_math::clamp64 (alice-det-math's clamp64, the owner of the clamp Law)"
 
 [[form]]
 text = "a.max(b)"
