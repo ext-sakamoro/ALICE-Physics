@@ -100,13 +100,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # README.md / README_JP.md / docs/MODULES.md vs Cargo.toml and src/lib.rs
-      # (features, MSRV, dependency versions, example, module list, links).
-      # Run on every OS so a locale or path difference in the checker itself
-      # shows up here rather than as a silent pass.
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
+      # python 3.11 and the rust-toolchain.toml toolchain, the setup verify.yml's full job shares
+      # (.github/actions/physics-setup); the checkers below run on every OS so a locale or path
+      # difference in a checker shows up here rather than as a silent pass (the step name is the one
+      # scripts/test_land.py looks for before the landing tests)
+      - name: Install Rust toolchain
+        uses: ./.github/actions/physics-setup
       - name: README sync checker (tests)
         run: python scripts/test_readme_sync.py
       - name: README sync (docs agree with Cargo.toml and src/)
@@ -281,10 +280,7 @@ jobs:
       - name: C ABI declared by every consumer or listed with a reason
         run: python scripts/integration_levels.py --no-index --check
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # after the toolchain: land.py's children find cargo / rustc in the cargo directory, which
+      # after the toolchain (installed by the setup above): land.py's children find cargo / rustc in the cargo directory, which
       # some runner images have only once the toolchain is installed (scripts/test_land.py
       # checks this order)
       - name: Landing script (tests)
@@ -307,8 +303,6 @@ jobs:
           else
             env -i HOME="$HOME" USER="${USER:-runner}" LAND_CARGO_DIR="$cargo_dir" PATH=/usr/bin:/bin "$py" scripts/land.py --env-smoke
           fi
-
-      - uses: Swatinem/rust-cache@v2
 
       # Cargo.lock is committed: every job builds the same dependency versions
       # the oracle ledger records, and a Cargo.toml change without its lock
