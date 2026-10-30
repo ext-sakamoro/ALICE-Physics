@@ -29,6 +29,10 @@ on:
       - '.gitignore'
       - 'README.md'
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
+      - 'docs/PUBLIC_API_SNAPSHOT.x86_64.txt'
+      - 'scripts/public_api_arch_check.py'
+      - 'scripts/test_public_api_arch_check.py'
+      - 'scripts/ledgers.py'
       - 'scripts/semver_checked.py'
       - 'scripts/semver_baseline_has.py'
       - 'scripts/test_semver_baseline_has.py'
@@ -329,15 +333,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run == 'true'
     name: cargo-public-api (surface snapshot verification)
-    # macos-latest (aarch64) を採用: SIMD items (`Fix128::sub_simd` /
-    # `Vec3Fix::cross_simd` / `dot_batch_4` / `Fix128::pack_pair` 等) は
-    # `#[cfg(target_arch = "x86_64")]` gate 経由で x86_64 のみに存在、
-    # Linux x86_64 CI runner で snapshot regenerate すると Mac aarch64
-    # 開発環境の baseline と乖離して drift 誤検知が発生する
-    # Mac aarch64 runner に統一することで開発者環境と snapshot 生成環境を
-    # 一致させ、SIMD platform-specific items は「x86_64-only feature」として
-    # snapshot 対象外にする (regression detection の目的には aarch64
-    # baseline で十分、x86_64 SIMD path の変更は独立の #[cfg] gate で管理)
+    # 公開 API の snapshot は arch ごとに 1 本 (scripts/ledgers.py の PUBLIC_API_SNAPSHOTS):
+    # `#[cfg(target_arch = "x86_64")]` の SIMD method (`Fix128::add_simd` / `sub_simd` /
+    # `Vec3Fix::cross_simd` / `dot_batch_4`) は x86_64 の 1 本にだけある 両方を --target で
+    # 作るので runner の arch に依らず両方を比べる (rustdoc の JSON は target の std だけを要し、
+    # linker は要らない) scripts/public_api_arch_check.py が、両方があり x86_64 の 1 本に
+    # x86_64 だけの項目が入っていることを確かめる
     runs-on: macos-latest
     timeout-minutes: 15
     # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
@@ -371,6 +372,7 @@ jobs:
         with:
           toolchain: nightly-2026-09-26
           components: rustc-dev
+          targets: aarch64-unknown-linux-gnu,x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: public-api-macos
@@ -378,25 +380,29 @@ jobs:
       - name: Install cargo-public-api (version pin、上の comment 参照)
         run: cargo install cargo-public-api --locked --version 0.52.0
 
-      - name: Generate current snapshot
+      - name: Both snapshots exist and the x86_64 one has the x86_64-only items (tests and check)
         run: |
-          cargo +nightly-2026-09-26 public-api \
-            --features "std,simd,parallel,ffi,gpu-solver-bridge" \
-            --simplified \
-            > /tmp/current-api.txt
+          python3 scripts/test_public_api_arch_check.py
+          python3 scripts/public_api_arch_check.py
 
-      - name: Diff against docs/PUBLIC_API_SNAPSHOT.txt
+      - name: Generate the current snapshots (aarch64 and x86_64)
         run: |
-          if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt /tmp/current-api.txt; then
-            echo "::error::Public API surface drift detected."
-            echo "::error::The generated snapshot differs from docs/PUBLIC_API_SNAPSHOT.txt."
-            echo "::error::"
-            echo "::error::If this drift is intentional, regenerate the baseline with:"
-            echo "::error::  cargo +nightly-2026-09-26 public-api --features \"std,simd,parallel,ffi,gpu-solver-bridge\" --simplified > docs/PUBLIC_API_SNAPSHOT.txt"
+          cargo +nightly-2026-09-26 public-api --target aarch64-unknown-linux-gnu --features "std,simd,parallel,ffi,gpu-solver-bridge" --simplified > "$RUNNER_TEMP/aarch64.txt"
+          cargo +nightly-2026-09-26 public-api --target x86_64-unknown-linux-gnu --features "std,simd,parallel,ffi,gpu-solver-bridge" --simplified > "$RUNNER_TEMP/x86_64.txt"
+
+      - name: Diff against docs/PUBLIC_API_SNAPSHOT.txt (aarch64) and docs/PUBLIC_API_SNAPSHOT.x86_64.txt
+        run: |
+          drift=0
+          diff -u docs/PUBLIC_API_SNAPSHOT.txt "$RUNNER_TEMP/aarch64.txt" || drift=1
+          diff -u docs/PUBLIC_API_SNAPSHOT.x86_64.txt "$RUNNER_TEMP/x86_64.txt" || drift=1
+          if [ "$drift" -ne 0 ]; then
+            echo "::error::Public API surface drift detected (diff above)."
+            echo "::error::If this drift is intentional, regenerate both snapshots with: python3 scripts/ledgers.py --write"
+            echo "::error::(it runs cargo +nightly-2026-09-26 public-api --target <each target> --features \"std,simd,parallel,ffi,gpu-solver-bridge\" --simplified)"
             echo "::error::and commit the diff alongside the API change so the PR reviewer sees the delta."
             exit 1
           fi
-          echo "✓ Public API snapshot matches docs/PUBLIC_API_SNAPSHOT.txt"
+          echo "✓ Public API snapshots match (aarch64, x86_64)"
 
   semver-checks:
     needs: changes

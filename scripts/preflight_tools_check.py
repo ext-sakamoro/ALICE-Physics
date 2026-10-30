@@ -8,7 +8,7 @@ needs are read from scripts/preflight.sh itself, so a new tool there is checked 
               paths), `command -v X`, `( cd … && X`, `$(X …`
   toolchains  `cargo +<toolchain>`
   targets     `--target <triple>` in the preflight and in the scripts/*.py it runs (not the tests), except those it installs
-              itself (`rustup target add`)
+              itself (`rustup target add`, for the default toolchain: not `--toolchain <x>`)
   public API  `cargo +<toolchain> public-api` (the cargo subcommand of that toolchain)
 
   python3 scripts/preflight_tools_check.py                 # all of it (verify.yml's full job)
@@ -53,7 +53,16 @@ def needs(root: Path) -> tuple[set[str], set[str], set[str], str | None]:
                       if (root / "scripts" / n).is_file() and not n.startswith("test_")]
     # (a test's fixtures name targets of their own cases, not ones the preflight builds for)
     # (a target the preflight installs itself with `rustup target add` is not needed beforehand)
-    added = {t for line in re.findall(r"rustup target add ([^\n|;&)]+)", code) for t in line.split()}
+    # (`rustup target add --toolchain <x> ...` adds them to that toolchain only: they cover the
+    # `cargo +<x> ... --target` lines and no other)
+    added = {t for line in re.findall(r"rustup target add ([^\n|;&)]+)", code) if "--toolchain" not in line
+             for t in line.split()}
+    added_to: dict[str, set[str]] = {}
+    for chain, rest in re.findall(r"rustup target add --toolchain (\S+) ([^\n|;&)>]+)", code):
+        added_to.setdefault(chain, set()).update(rest.split())
+    own = [line for line in code.splitlines()
+           if (m := re.search(r"cargo \+(\S+) ", line)) and set(TARGET.findall(line)) <= added_to.get(m.group(1), set())]
+    texts = ["\n".join(line for line in code.splitlines() if line not in own)] + texts[1:]
     targets = {t for x in texts for t in TARGET.findall(x)} - added
     api = re.search(r"cargo \+([0-9a-z.-]+) public-api", code)
     return tools, chains, targets, api.group(1) if api else None

@@ -134,9 +134,9 @@ jobs:
     name: Full preflight + release test suite
     needs: inputs
     if: inputs.suite == 'full' || inputs.suite == 'both'
-    # arm64: the architecture the public API snapshot (docs/PUBLIC_API_SNAPSHOT.txt) and the developers'
-    # machines use; the x86_64-only SIMD items would make the snapshot differ on an x86_64 runner
-    runs-on: ubuntu-24.04-arm
+    # x86_64, the platform of ci.yml's test and web.yml's smoke (Google Chrome has no Linux arm64 build);
+    # the public API snapshots are compared for both architectures on any host (scripts/ledgers.py)
+    runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v5

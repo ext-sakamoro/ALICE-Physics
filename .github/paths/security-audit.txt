@@ -24,6 +24,10 @@ rust-toolchain.toml
 README.md
 # public-api-diff compares with the committed snapshot
 docs/PUBLIC_API_SNAPSHOT.txt
+docs/PUBLIC_API_SNAPSHOT.x86_64.txt
+scripts/public_api_arch_check.py
+scripts/test_public_api_arch_check.py
+scripts/ledgers.py
 # semver-checks reads its log with semver_checked.py, which imports ansi.py
 scripts/semver_checked.py
 # and decides which packages have a baseline with semver_baseline_has.py
