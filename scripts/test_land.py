@@ -1843,14 +1843,30 @@ class GlobalGate(Isolated):
 
     def test_the_preflight_starts_the_bash_bash_program_names(self):
         # (on Windows that is Git's bash, not System32's WSL launcher: the call must go through bash_program)
-        stub = self.r.dir / "bash-stub"
-        stub.write_text(f"#!/bin/sh\necho stub >> {self.r.dir / 'stub.log'}\nexec bash \"$@\"\n")
-        stub.chmod(0o755)
+        # the program started is the one bash_program() returned: a wrapper records each answer and returns the real one
+        # (a stand-in shell script would not start on Windows, CreateProcess runs no `#!` file)
         old = land.bash_program
-        land.bash_program = lambda *a, **k: str(stub)
+        given: list[str] = []
+
+        def recorded(*a, **k):
+            given.append(shutil.which(old(*a, **k)) or old(*a, **k))  # (absolute, so a bare `bash` is told apart)
+            return given[-1]
+
+        started: list[str] = []
+        real_run = land.subprocess.run
+
+        def run(cmd, *a, **k):
+            started.append(list(cmd)[0])
+            return real_run(cmd, *a, **k)
+
+        land.bash_program = recorded
         self.addCleanup(setattr, land, "bash_program", old)
+        land.subprocess.run = run
+        self.addCleanup(setattr, land.subprocess, "run", real_run)
         land.Lander.run_preflight(self.r.lander())
-        self.assertTrue((self.r.dir / "stub.log").exists(), "the preflight did not start bash_program()'s bash")
+        self.assertTrue(given, "the preflight did not ask bash_program() for its bash")
+        self.assertIn(given[-1], started, "the preflight did not start bash_program()'s bash")
+        self.assertTrue((self.cc / "run-preflight.log").exists(), "the preflight runner did not run")
 
     def test_the_preflight_runs_through_run_preflight_fast(self):
         lander = self.r.lander()
