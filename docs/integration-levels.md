@@ -29,7 +29,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 11 / 4 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `force` | step | 6 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `force` | step | 6 / 1 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 7 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -96,7 +96,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `electromagnetic` | standalone (step 5 of 12 items) | 5 / 0 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
 | `erosion` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `euler_fv` | standalone | 0 / 0 / 0 / 32 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |

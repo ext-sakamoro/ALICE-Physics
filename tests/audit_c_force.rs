@@ -8,9 +8,8 @@
 //! `ForceField::Magnetic` code comment, toward the dipole on the axis); explosion `F = strength (1 - d/R)^n` away
 //! from the centre; `dv = F / m * dt`.
 
-use alice_physics_core::force::{
-    apply_force_fields, compute_force, ForceField, ForceFieldInstance,
-};
+use alice_physics_core::force::apply_force_fields;
+use alice_physics_core::force::{compute_force, ForceField, ForceFieldInstance};
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
 
@@ -160,7 +159,7 @@ fn apply_force_fields_changes_velocity_by_signed_force_over_mass_times_dt() {
         RigidBody::new(Vec3Fix::from_int(-2, 0, 0), Fix128::from_int(2)),
     ];
     let fields = [ForceFieldInstance::new(magnet())];
-    apply_force_fields(&fields, &mut bodies, Fix128::from_ratio(1, 8));
+    apply_force_fields(&fields, &[], &[], &mut bodies, Fix128::from_ratio(1, 8));
     close(
         arr(bodies[0].velocity),
         [-7.8125, 0.0, 0.0],
@@ -176,7 +175,7 @@ fn apply_force_fields_changes_velocity_by_signed_force_over_mass_times_dt() {
 
     let mut bodies = vec![RigidBody::new(v3(3.0, 0.0, -1.0), Fix128::from_int(2))];
     let fields = [ForceFieldInstance::new(vortex([0.0, 1.0, 0.0]))];
-    apply_force_fields(&fields, &mut bodies, Fix128::from_ratio(1, 8));
+    apply_force_fields(&fields, &[], &[], &mut bodies, Fix128::from_ratio(1, 8));
     // F = 5 * (y x x) = (0, 0, -5); dv = -5 / 2 / 8
     close(
         arr(bodies[0].velocity),
@@ -216,7 +215,13 @@ fn explosion_force_points_away_from_the_centre_with_signed_velocity_change() {
         RigidBody::new(v3(5.0, 1.0, 1.0), Fix128::ONE),
         RigidBody::new(v3(-3.0, 1.0, 1.0), Fix128::ONE),
     ];
-    apply_force_fields(&[ForceFieldInstance::new(field)], &mut bodies, fx(0.5));
+    apply_force_fields(
+        &[ForceFieldInstance::new(field)],
+        &[],
+        &[],
+        &mut bodies,
+        fx(0.5),
+    );
     // |F| = 64 * (1/2)^2 = 16, dv = 8 along +x and -x
     close(arr(bodies[0].velocity), [8.0, 0.0, 0.0], 1e-12, "+x body");
     close(arr(bodies[1].velocity), [-8.0, 0.0, 0.0], 1e-12, "-x body");
