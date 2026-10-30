@@ -117,7 +117,7 @@ LOCAL_ONLY: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (r"cargo \+1\.87 test --features neural --lib",)),
     "cargo +nightly-2026-09-26 public-api --version": (
         "non-gating", "probes whether cargo-public-api is installed before the snapshot step",
-        (r"cargo \+nightly-2026-09-26 public-api --features \S+ --simplified",)),
+        (r"cargo \+nightly-2026-09-26 public-api --features \S+ --simplified --target \S+",)),
     "python3 scripts/affected_tests.py --features std,simd,parallel,ffi,gpu-solver-bridge --run": (
         "non-gating", "runs the tests of the changed modules only (--fast); CI runs the whole suites",
         (r"cargo test", r"cargo test --features parallel")),

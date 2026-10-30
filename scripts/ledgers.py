@@ -37,6 +37,7 @@ GENERATED = (
     "docs/oracle-status.md",
     "docs/wiring-status.md",
     "docs/PUBLIC_API_SNAPSHOT.txt",
+    "docs/PUBLIC_API_SNAPSHOT.x86_64.txt",
     "docs/coverage/status.md",
 )
 # hand-written, with a generated column (Integration) that the regeneration
@@ -59,10 +60,20 @@ OUTPUTS: dict[str, tuple[str, ...]] = {
     "oracle status": ("docs/oracle-status.md",),
     "wiring status": ("docs/wiring-status.md",),
     "coverage status": ("docs/coverage/status.md",),
-    "public API": ("docs/PUBLIC_API_SNAPSHOT.txt",),
+    "public API": ("docs/PUBLIC_API_SNAPSHOT.txt", "docs/PUBLIC_API_SNAPSHOT.x86_64.txt"),
 }
 INDEX = ["bash", "scripts/scip_index.sh"]
-PUBLIC_API = ["cargo", f"+{NIGHTLY}", "public-api", "--features", NATIVE, "--simplified"]
+# the public API of each architecture, in its own file: `#[cfg(target_arch = ...)]` items (the x86_64
+# SIMD methods) are in one and not the other. Both are generated with --target on any host (rustdoc's
+# JSON needs the target's standard library, not a linker), so every machine compares both
+PUBLIC_API_SNAPSHOTS: tuple[tuple[str, str], ...] = (
+    ("aarch64-unknown-linux-gnu", "docs/PUBLIC_API_SNAPSHOT.txt"),
+    ("x86_64-unknown-linux-gnu", "docs/PUBLIC_API_SNAPSHOT.x86_64.txt"),
+)
+
+
+def public_api_argv(target: str) -> list[str]:
+    return ["cargo", f"+{NIGHTLY}", "public-api", "--target", target, "--features", NATIVE, "--simplified"]
 # generated parts checked in place (README tables, version strings, target lists)
 CHECK_ONLY: tuple[tuple[str, list[str]], ...] = (
     ("README f32 module row", [PY, "scripts/f32_modules.py", "--check"]),
@@ -80,15 +91,22 @@ def have_index_tool() -> bool:
 
 
 def have_public_api_tool(root: Path) -> bool:
+    """cargo-public-api runs on the pinned nightly, and that nightly has every snapshot's target"""
     r = subprocess.run(["cargo", f"+{NIGHTLY}", "public-api", "--version"], cwd=root, capture_output=True)
-    return r.returncode == 0
+    if r.returncode != 0:
+        return False
+    t = subprocess.run(["rustup", "target", "list", "--installed", "--toolchain", NIGHTLY],
+                       capture_output=True, text=True)
+    return t.returncode == 0 and {target for target, _ in PUBLIC_API_SNAPSHOTS} <= set(t.stdout.split())
 
 
 def write_public_api(root: Path) -> None:
-    r = subprocess.run(PUBLIC_API, cwd=root, capture_output=True, text=True)
-    if r.returncode != 0 or not r.stdout.strip():
-        raise RuntimeError(f"cargo +{NIGHTLY} public-api failed: {r.stderr.strip()[-300:]}")
-    (root / "docs/PUBLIC_API_SNAPSHOT.txt").write_text(r.stdout, encoding="utf-8")
+    for target, path in PUBLIC_API_SNAPSHOTS:
+        r = subprocess.run(public_api_argv(target), cwd=root, capture_output=True, text=True)
+        if r.returncode != 0 or not r.stdout.strip():
+            raise RuntimeError(f"cargo +{NIGHTLY} public-api --target {target} failed "
+                               f"(rustup target add --toolchain {NIGHTLY} {target}): {r.stderr.strip()[-300:]}")
+        (root / path).write_text(r.stdout, encoding="utf-8")
 
 
 def regenerate(root: Path, allow_missing: bool) -> tuple[list[str], list[str], list[str]]:
@@ -122,9 +140,11 @@ def regenerate(root: Path, allow_missing: bool) -> tuple[list[str], list[str], l
         except RuntimeError as e:
             errors.append(f"public API: {e}")
     elif allow_missing:
-        skipped.append(f"public API (cargo +{NIGHTLY} public-api not installed)")
+        skipped.append(f"public API (cargo +{NIGHTLY} public-api or its targets not installed: "
+                       + f"rustup target add --toolchain {NIGHTLY} " + " ".join(t for t, _ in PUBLIC_API_SNAPSHOTS) + ")")
     else:
-        errors.append(f"public API: cargo +{NIGHTLY} public-api not installed")
+        errors.append(f"public API: cargo +{NIGHTLY} public-api or its targets not installed ("
+                      + f"rustup target add --toolchain {NIGHTLY} " + " ".join(t for t, _ in PUBLIC_API_SNAPSHOTS) + ")")
     return errors, skipped, ran
 
 

@@ -567,7 +567,7 @@ def identity_problem(name: str, email: str) -> str | None:
 # the generated files, the generators and the toolchain pins live in ledgers.py
 # (the preflight's stale check reads the same list)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS  # noqa: E402
+from ledgers import GENERATED, NATIVE, NIGHTLY, PUBLIC_API_SNAPSHOTS, SEMI_GENERATED, WRITERS, public_api_argv  # noqa: E402
 from bash_path import find_bash  # noqa: E402
 # lists that both sides mostly add to: a conflict is merged by merge_append(),
 # which keeps lines both sides added and a line one side rewrote, and stops when
@@ -953,8 +953,8 @@ def blank_integration(text: str) -> str:
 DOCS_RE = re.compile(r"^(docs/|README[^/]*\.md$|CHANGELOG\.md$)")
 # ledgers land.py rebuilds from the tree and checks locally after every rebase (run_checks):
 # a main commit that only rewrote them cannot make the landed tree's ledgers stale.
-# docs/PUBLIC_API_SNAPSHOT.txt is not here: it depends on the toolchain and the platform and
-# only CI's public-api job compares it
+# the public API snapshots (docs/PUBLIC_API_SNAPSHOT*.txt) are not here: they depend on the pinned
+# nightly and cargo-public-api, and CI's public-api job compares them
 LOCAL_LEDGERS = frozenset(("docs/integration-status.md", "docs/integration-levels.md",
                            "docs/oracle-status.md", "docs/wiring-status.md", "docs/coverage/status.md"))
 
@@ -1259,12 +1259,13 @@ class Lander:
         self.regenerate_public_api()
 
     def regenerate_public_api(self) -> None:
-        r = subprocess.run(["cargo", f"+{NIGHTLY}", "public-api", "--features", NATIVE, "--simplified"],
-                           cwd=self.root, capture_output=True, text=True, env=clean_env(cargo=True))
-        if r.returncode != 0 or not r.stdout.strip():
-            raise LandError(f"cargo +{NIGHTLY} public-api failed (install the toolchain and cargo-public-api): "
-                            f"{r.stderr.strip()[-300:]}")
-        (self.root / "docs/PUBLIC_API_SNAPSHOT.txt").write_text(r.stdout, encoding="utf-8")
+        for target, path in PUBLIC_API_SNAPSHOTS:
+            r = subprocess.run(public_api_argv(target), cwd=self.root, capture_output=True, text=True,
+                               env=clean_env(cargo=True))
+            if r.returncode != 0 or not r.stdout.strip():
+                raise LandError(f"cargo +{NIGHTLY} public-api --target {target} failed (install the toolchain, "
+                                f"its {target} target and cargo-public-api): {r.stderr.strip()[-300:]}")
+            (self.root / path).write_text(r.stdout, encoding="utf-8")
 
     def run_checks(self) -> None:
         scip = self.scip()

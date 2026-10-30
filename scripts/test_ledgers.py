@@ -177,5 +177,33 @@ def main() -> int:
     return 0 if ok else 1
 
 
+class PublicApiTool(unittest.TestCase):
+    """the snapshots are built for every target of PUBLIC_API_SNAPSHOTS: the tool counts as installed only
+    when the pinned nightly has all of them (else --check fails, or skips them with --allow-missing-tools)"""
+
+    def run_with(self, version_rc: int, installed: str) -> bool:
+        def fake(argv, **_kw):
+            if "public-api" in argv:
+                return mock.Mock(returncode=version_rc, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout=installed, stderr="")
+        with mock.patch.object(g.subprocess, "run", fake):
+            return g.have_public_api_tool(Path("."))
+
+    def test_every_target_of_the_pinned_nightly_is_needed(self):
+        both = "\n".join(t for t, _ in g.PUBLIC_API_SNAPSHOTS) + "\naarch64-apple-darwin\n"
+        self.assertTrue(self.run_with(0, both))
+        self.assertFalse(self.run_with(0, g.PUBLIC_API_SNAPSHOTS[0][0] + "\n"), "one target missing")
+        self.assertFalse(self.run_with(1, both), "cargo-public-api missing")
+
+    def test_one_file_per_target_and_each_built_with_its_target(self):
+        self.assertEqual(len({p for _, p in g.PUBLIC_API_SNAPSHOTS}), len(g.PUBLIC_API_SNAPSHOTS))
+        self.assertIn("docs/PUBLIC_API_SNAPSHOT.txt", g.GENERATED)
+        for target, path in g.PUBLIC_API_SNAPSHOTS:
+            self.assertIn(path, g.GENERATED)
+            self.assertIn(path, g.OUTPUTS["public API"])
+            argv = g.public_api_argv(target)
+            self.assertEqual(argv[argv.index("--target") + 1], target)
+
+
 if __name__ == "__main__":
     sys.exit(main())
