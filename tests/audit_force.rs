@@ -13,9 +13,8 @@
     reason = "analytic reference: f64 explosion falloff 100 * (1 - d/R)^n with fractional n for force fields"
 )]
 
-use alice_physics_core::force::{
-    apply_force_fields, compute_force, ForceField, ForceFieldInstance,
-};
+use alice_physics_core::force::apply_force_fields;
+use alice_physics_core::force::{compute_force, ForceField, ForceFieldInstance};
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::particle::{Particle, ParticleSystem};
 use alice_physics_core::solver::RigidBody;
@@ -417,7 +416,7 @@ fn apply_adds_force_times_inverse_mass_times_dt_to_the_velocity() {
     ];
     let mut bodies = [RigidBody::new_dynamic(Vec3Fix::ZERO, fx(4.0))];
     bodies[0].velocity = v3(1.0, 1.0, 1.0);
-    apply_force_fields(&fields, &mut bodies, fx(0.5));
+    apply_force_fields(&fields, &[], &[], &mut bodies, fx(0.5));
     // F = (10, -4, 0); a = F / 4; dv = a * 0.5
     assert!(close(
         arr(bodies[0].velocity),
@@ -425,7 +424,7 @@ fn apply_adds_force_times_inverse_mass_times_dt_to_the_velocity() {
         1e-12
     ));
     // a second step accumulates linearly
-    apply_force_fields(&fields, &mut bodies, fx(0.5));
+    apply_force_fields(&fields, &[], &[], &mut bodies, fx(0.5));
     assert!(close(
         arr(bodies[0].velocity),
         [1.0 + 2.5, 1.0 - 1.0, 1.0],
@@ -443,7 +442,7 @@ fn static_bodies_are_not_accelerated() {
         RigidBody::new_static(Vec3Fix::ZERO),
         RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
     ];
-    apply_force_fields(&fields, &mut bodies, fx(1.0));
+    apply_force_fields(&fields, &[], &[], &mut bodies, fx(1.0));
     assert_eq!(arr(bodies[0].velocity), [0.0; 3]);
     assert!(close(arr(bodies[1].velocity), [10.0, 0.0, 0.0], 1e-12));
 }
@@ -458,25 +457,25 @@ fn affected_bodies_and_enabled_filter_the_fields() {
     // only body 1
     let only1 = [ForceFieldInstance::new(wind).with_affected_bodies(vec![1])];
     let mut b = [mk(), mk(), mk()];
-    apply_force_fields(&only1, &mut b, fx(1.0));
+    apply_force_fields(&only1, &[], &[], &mut b, fx(1.0));
     assert_eq!(arr(b[0].velocity), [0.0; 3]);
     assert!(close(arr(b[1].velocity), [8.0, 0.0, 0.0], 1e-12));
     assert_eq!(arr(b[2].velocity), [0.0; 3]);
     // an empty list affects nobody
     let none = [ForceFieldInstance::new(wind).with_affected_bodies(Vec::new())];
     let mut b = [mk(), mk()];
-    apply_force_fields(&none, &mut b, fx(1.0));
+    apply_force_fields(&none, &[], &[], &mut b, fx(1.0));
     assert!(b.iter().all(|x| arr(x.velocity) == [0.0; 3]));
     // disabled
     let mut off = ForceFieldInstance::new(wind);
     off.enabled = false;
     let mut b = [mk()];
-    apply_force_fields(&[off], &mut b, fx(1.0));
+    apply_force_fields(&[off], &[], &[], &mut b, fx(1.0));
     assert_eq!(arr(b[0].velocity), [0.0; 3]);
     // no filter = everybody
     let all = [ForceFieldInstance::new(wind)];
     let mut b = [mk(), mk()];
-    apply_force_fields(&all, &mut b, fx(1.0));
+    apply_force_fields(&all, &[], &[], &mut b, fx(1.0));
     assert!(b
         .iter()
         .all(|x| close(arr(x.velocity), [8.0, 0.0, 0.0], 1e-12)));
@@ -490,7 +489,7 @@ fn field_force_is_evaluated_at_the_velocity_before_the_step() {
     })];
     let mut b = [RigidBody::new_dynamic(Vec3Fix::ZERO, fx(2.0))];
     b[0].velocity = v3(4.0, 0.0, 0.0);
-    apply_force_fields(&fields, &mut b, fx(0.25));
+    apply_force_fields(&fields, &[], &[], &mut b, fx(0.25));
     assert!(close(arr(b[0].velocity), [4.0 - 1.0, 0.0, 0.0], 1e-12));
 }
 
