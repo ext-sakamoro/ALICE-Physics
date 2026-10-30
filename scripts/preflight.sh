@@ -320,6 +320,13 @@ python3 scripts/no_std_consumer.py
 python3 scripts/test_binding_build_commands.py
 python3 scripts/binding_build_commands.py --check
 
+step "lib builds of ci.yml / test and feature-powerset (std only, default, parallel, the README's C commands, std + wasm)"
+cargo build --lib --no-default-features --features "std"
+cargo build --lib
+cargo build --lib --features "parallel"
+python3 scripts/binding_build_commands.py --run c
+cargo check --lib --no-default-features --features std,wasm
+
 # the nightly of security-audit.yml's public-api-diff job (and scripts/ledgers.py): another
 # nightly prints another surface, so an unpinned one compares a different command
 step "public API snapshot (needs nightly-2026-09-26 + cargo-public-api)"
