@@ -122,7 +122,7 @@ python3 scripts/package_git_patches.py args >/dev/null
 # of every fuzz target in fuzz.yml; their log readers and target list are tested above
 
 step "identifier moves (G9, against the published release)"
-python3 scripts/test_id_move_check.py
+CARGO_TERM_COLOR=always python3 scripts/test_id_move_check.py
 python3 scripts/id_move_check.py
 
 step "docs lint (public vocabulary / CHANGELOG structure)"
