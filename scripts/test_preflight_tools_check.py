@@ -79,6 +79,17 @@ class ToolsCheck(unittest.TestCase):
                              targets=lambda: [], public_api=lambda tc: False)
         self.assertEqual(gone, ["target x86_64-unknown-linux-gnu"])
 
+    def test_a_target_added_to_another_toolchain_is_still_needed(self):
+        d = repo(preflight=PREFLIGHT + "rustup target add --toolchain nightly-2026-09-26 x86_64-unknown-linux-gnu\n")
+        self.assertEqual(pt.needs(d)[2], {"x86_64-unknown-linux-gnu"}, "it is added to the nightly, not the default")
+
+    def test_a_target_the_preflight_adds_to_a_toolchain_covers_that_toolchains_lines_only(self):
+        pf = PREFLIGHT + ("rustup target add --toolchain nightly-2026-09-26 aarch64-unknown-linux-gnu\n"
+                          "cargo +nightly-2026-09-26 public-api --target aarch64-unknown-linux-gnu\n")
+        self.assertEqual(pt.needs(repo(preflight=pf))[2], {"x86_64-unknown-linux-gnu"})
+        pf = PREFLIGHT + "cargo +nightly-2026-09-26 public-api --target aarch64-unknown-linux-gnu\n"
+        self.assertIn("aarch64-unknown-linux-gnu", pt.needs(repo(preflight=pf))[2], "not added: needed")
+
     def test_a_toolchain_name_must_match_whole(self):
         gone, _ = pt.missing(repo(), only="toolchains", toolchains=lambda: "1.850-x\nnightly-2026-09-26-x\nnightly-x\n")
         self.assertEqual(gone, ["toolchain 1.85"])

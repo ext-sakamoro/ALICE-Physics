@@ -50,6 +50,11 @@ step "the targets the preflight needs are installed (scripts/preflight_tools_che
 # a --target a later step (or a script it runs) passes fails here in the first minute, not in that step
 python3 scripts/test_preflight_tools_check.py
 python3 scripts/preflight_tools_check.py --only targets
+# the targets of the pinned nightly the public API snapshots are built for (scripts/ledgers.py --check
+# below builds them too, before the snapshot step); added here once, when that nightly is installed
+if rustup toolchain list 2>/dev/null | grep -q '^nightly-2026-09-26'; then
+  rustup target add --toolchain nightly-2026-09-26 aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu >/dev/null
+fi
 
 step "actionlint (workflow YAML)"
 # the versions of .github/linter-pins (CI's verify.yml installs the same): actionlint passes every run:
@@ -328,16 +333,24 @@ python3 scripts/binding_build_commands.py --run c
 cargo check --lib --no-default-features --features std,wasm
 
 # the nightly of security-audit.yml's public-api-diff job (and scripts/ledgers.py): another
-# nightly prints another surface, so an unpinned one compares a different command
-step "public API snapshot (needs nightly-2026-09-26 + cargo-public-api)"
+# nightly prints another surface, so an unpinned one compares a different command. One snapshot
+# per architecture (scripts/ledgers.py PUBLIC_API_SNAPSHOTS: the x86_64 SIMD methods are only in
+# the x86_64 one), each generated with --target, so both are compared on any host
+step "public API snapshots, aarch64 and x86_64 (needs nightly-2026-09-26 with both targets + cargo-public-api)"
+python3 scripts/test_public_api_arch_check.py
+python3 scripts/public_api_arch_check.py
 if cargo +nightly-2026-09-26 public-api --version >/dev/null 2>&1; then
-  tmp=$(mktemp)
-  cargo +nightly-2026-09-26 public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
-  if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
-    echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
+  tmp=$(mktemp -d)
+  cargo +nightly-2026-09-26 public-api --target aarch64-unknown-linux-gnu --features "$NATIVE" --simplified > "$tmp/aarch64.txt" 2>/dev/null
+  cargo +nightly-2026-09-26 public-api --target x86_64-unknown-linux-gnu --features "$NATIVE" --simplified > "$tmp/x86_64.txt" 2>/dev/null
+  drift=0
+  diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp/aarch64.txt" || drift=1
+  diff -u docs/PUBLIC_API_SNAPSHOT.x86_64.txt "$tmp/x86_64.txt" || drift=1
+  rm -rf "$tmp"
+  if [[ $drift -ne 0 ]]; then
+    echo "public API drift: regenerate both snapshots with python3 scripts/ledgers.py --write (diff above)" >&2
     exit 1
   fi
-  rm -f "$tmp"
 else
   echo "skip: cargo +nightly-2026-09-26 public-api not installed" >&2
 fi

@@ -10,7 +10,15 @@ support the v1.0 roadmap Items **B** (public API surface freeze) and **C**
 - [`PUBLIC_API_SNAPSHOT.txt`](PUBLIC_API_SNAPSHOT.txt) — text listing of every
   public item (module / struct / enum / fn / const / trait / type alias / impl)
   exposed by the crate under the recommended native feature set
-  (`std,simd,parallel,ffi,gpu-solver-bridge`).
+  (`std,simd,parallel,ffi,gpu-solver-bridge`), for `aarch64-unknown-linux-gnu`.
+- [`PUBLIC_API_SNAPSHOT.x86_64.txt`](PUBLIC_API_SNAPSHOT.x86_64.txt) — the same for
+  `x86_64-unknown-linux-gnu`. It also lists the items under
+  `#[cfg(target_arch = "x86_64")]` (the SIMD methods `Fix128::add_simd` / `sub_simd`,
+  `Vec3Fix::cross_simd` / `dot_batch_4`), which the aarch64 file does not have.
+
+Both are generated with `--target`, so any host compares both (rustdoc's JSON needs the
+target's standard library, not a linker). `scripts/public_api_arch_check.py` checks that
+both exist and that every architecture-only `pub` item of `src/` is in its file.
 
 ## Baseline
 
@@ -23,11 +31,13 @@ from `pub` to `pub(crate)` and mark others `#[deprecated]` before v1.0 stable.
 
 ```bash
 # the nightly and cargo-public-api versions security-audit.yml pins (another nightly prints
-# another surface): rustup toolchain install nightly-2026-09-26; cargo install cargo-public-api --locked --version 0.52.0
-cargo +nightly-2026-09-26 public-api \
-  --features "std,simd,parallel,ffi,gpu-solver-bridge" \
-  --simplified \
-  > docs/PUBLIC_API_SNAPSHOT.txt
+# another surface), with both targets:
+#   rustup toolchain install nightly-2026-09-26
+#   rustup target add --toolchain nightly-2026-09-26 aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
+#   cargo install cargo-public-api --locked --version 0.52.0
+python3 scripts/ledgers.py --write   # every ledger, both snapshots among them
+# or one snapshot: cargo +nightly-2026-09-26 public-api --target <target> \
+#   --features "std,simd,parallel,ffi,gpu-solver-bridge" --simplified > <its file>
 ```
 
 `--simplified` removes disambiguating type qualifiers where they are unambiguous,
