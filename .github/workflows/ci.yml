@@ -151,10 +151,12 @@ jobs:
           python scripts/binding_build_commands.py --check
       - name: Facade checker (tests)
         run: python scripts/test_facade_check.py
-      - name: Preflight runs every cargo test of ci.yml (tests and check)
+      - name: Preflight and the landing workflows run the same commands (tests and check)
         run: |
           python scripts/test_preflight_ci_parity.py
           python scripts/preflight_ci_parity.py
+      - name: Affected-test selector (tests)
+        run: python scripts/test_affected_tests.py
       - name: Fuzz target list (tests and check)
         run: |
           python scripts/test_fuzz_targets.py
@@ -751,6 +753,9 @@ jobs:
 
       - name: Clippy (default features, lib + all targets)
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy (core, native feature set, all targets)
+        run: cargo clippy --all-targets --features "std,simd,parallel,ffi,gpu-solver-bridge" -- -D warnings
 
       - name: Clippy (the facade, native feature set, all targets)
         run: cargo clippy -p alice-physics --all-targets --features "std,simd,parallel,ffi,gpu-solver-bridge" -- -D warnings
