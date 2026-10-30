@@ -1,0 +1,100 @@
+name: Physics setup
+description: >-
+  The toolchain, python and tools a job of this repository needs, in one place: verify.yml's full job and
+  ci.yml's test job set up through it, so a tool added for one is not missing from the other (verify's full
+  job went red five times on a setup step the other job had and it lacked)
+inputs:
+  python:
+    description: the python of actions/setup-python ('' = none)
+    default: '3.11'
+  toolchains:
+    description: rustup toolchains besides the one of rust-toolchain.toml (space separated, minimal profile)
+    default: ''
+  targets:
+    description: rustup targets of the rust-toolchain.toml toolchain (space separated)
+    default: ''
+  components:
+    description: rustup components of the rust-toolchain.toml toolchain (space separated)
+    default: ''
+  node:
+    description: the node of actions/setup-node ('' = none)
+    default: ''
+  tools:
+    description: >-
+      taiki-e/install-action tools (comma separated, each with its version); `wasm-bindgen@lock` is the
+      wasm-bindgen of Cargo.lock ('' = none)
+    default: ''
+  linters:
+    description: "'true': actionlint and shellcheck at the versions of .github/linter-pins, sha256-checked (Linux)"
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - if: inputs.python != ''
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python }}
+    # rust-toolchain.toml names the toolchain and its components: install exactly that one (an older
+    # rustup without the argument-less install installs it on `rustup show`)
+    - name: Rust toolchain of rust-toolchain.toml
+      shell: bash
+      env:
+        TOOLCHAINS: ${{ inputs.toolchains }}
+        TARGETS: ${{ inputs.targets }}
+        COMPONENTS: ${{ inputs.components }}
+      run: |
+        rustup toolchain install 2>/dev/null || rustup show active-toolchain
+        rustup show active-toolchain
+        if [ -n "$COMPONENTS" ]; then read -ra c <<< "$COMPONENTS"; rustup component add "${c[@]}"; fi
+        if [ -n "$TARGETS" ]; then read -ra t <<< "$TARGETS"; rustup target add "${t[@]}"; fi
+        if [ -n "$TOOLCHAINS" ]; then read -ra x <<< "$TOOLCHAINS"; rustup toolchain install "${x[@]}" --profile minimal; fi
+        cargo --version
+    - uses: Swatinem/rust-cache@v2
+    - if: inputs.node != ''
+      uses: actions/setup-node@v5
+      with:
+        node-version: ${{ inputs.node }}
+    - name: Tool list (wasm-bindgen of Cargo.lock)
+      if: inputs.tools != ''
+      id: tools
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        tools=$TOOLS
+        if [[ ",$tools," == *",wasm-bindgen@lock,"* ]]; then
+          v=$(awk '/^\[\[package\]\]/{p=0} $0=="name = \"wasm-bindgen\""{p=1} p&&/^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "::error::no wasm-bindgen in Cargo.lock"; exit 1; }
+          tools=${tools//wasm-bindgen@lock/wasm-bindgen@$v}
+        fi
+        echo "list=$tools" >> "$GITHUB_OUTPUT"
+    - if: inputs.tools != ''
+      uses: taiki-e/install-action@v2
+      with:
+        tool: ${{ steps.tools.outputs.list }}
+    # install-action has no actionlint, and the apt shellcheck is another version (actionlint passes every
+    # run: block to shellcheck, and another version reports other findings): the upstream release archives
+    # of .github/linter-pins, each checked against its sha256 before it is used
+    - name: actionlint + shellcheck at .github/linter-pins (sha256-checked)
+      if: inputs.linters == 'true'
+      shell: bash
+      run: |
+        [ "$RUNNER_OS" = "Linux" ] || { echo "::error::the pinned linters are Linux builds (runner: $RUNNER_OS)"; exit 1; }
+        arch=$(uname -m)
+        pin() { awk -v t="$1" -v a="$arch" '$1 == t && $3 == a { print $2, $4 }' .github/linter-pins; }
+        read -r av asha <<< "$(pin actionlint)"
+        read -r sv ssha <<< "$(pin shellcheck)"
+        [ -n "$av" ] && [ -n "$asha" ] && [ -n "$sv" ] && [ -n "$ssha" ] || { echo "::error::.github/linter-pins lacks a row for $arch"; exit 1; }
+        bin="$HOME/.local/bin"; mkdir -p "$bin"
+        case $arch in x86_64) ala=amd64 ;; aarch64) ala=arm64 ;; *) echo "::error::no actionlint build for $arch"; exit 1 ;; esac
+        f="actionlint_${av}_linux_${ala}.tar.gz"
+        curl -fsSL -o "$RUNNER_TEMP/$f" "https://github.com/rhysd/actionlint/releases/download/v${av}/$f"
+        echo "$asha  $RUNNER_TEMP/$f" | sha256sum -c -
+        tar -xzf "$RUNNER_TEMP/$f" -C "$bin" actionlint
+        g="shellcheck-v${sv}.linux.${arch}.tar.gz"
+        curl -fsSL -o "$RUNNER_TEMP/$g" "https://github.com/koalaman/shellcheck/releases/download/v${sv}/$g"
+        echo "$ssha  $RUNNER_TEMP/$g" | sha256sum -c -
+        tar -xzf "$RUNNER_TEMP/$g" -C "$RUNNER_TEMP" && cp "$RUNNER_TEMP/shellcheck-v${sv}/shellcheck" "$bin/shellcheck"
+        echo "$bin" >> "$GITHUB_PATH"
+        "$bin/actionlint" -version | head -1
+        "$bin/shellcheck" --version | sed -n 2p
