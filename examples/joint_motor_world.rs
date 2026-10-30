@@ -16,7 +16,13 @@ use alice_physics_core::motor::PdController;
 use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
-    let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    // The default world has no damping (rate 0); the coast-down below needs some,
+    // so the world sets 0.6 per second (about what a 0.99 retention per 1/60 s step
+    // was: -ln(0.99) * 60 = 0.603).
+    let mut world = PhysicsWorld::new(PhysicsConfig {
+        damping_rate: Fix128::from_ratio(3, 5),
+        ..PhysicsConfig::default()
+    });
     let dt = Fix128::from_ratio(1, 60);
 
     // wheel on a hinge (axis z), held by a static frame
@@ -45,7 +51,7 @@ fn main() {
     );
     assert!(spun > Fix128::from_int(2));
 
-    // stiffer gain, then off: the wheel coasts down under the frame damping
+    // stiffer gain, then off: the wheel coasts down under the world damping
     if let Some(m) = world.joint_motor_mut(motor) {
         m.controller.kp = Fix128::from_int(4);
     }

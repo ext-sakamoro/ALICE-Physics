@@ -1142,4 +1142,216 @@ mod tests {
             }
         }
     }
+
+    /// A compound of one sphere of radius `r` at the body origin: its lowest point
+    /// along any direction is unique (a box's face has many).
+    fn ball(r: Fix128) -> BodyCollider {
+        let mut c = CompoundShape::new();
+        c.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, r),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        BodyCollider::Compound(c)
+    }
+
+    fn ground_plane() -> StaticCollider {
+        StaticCollider::Plane(PlaneCollider::new(Vec3Fix::UNIT_Y, Fix128::ZERO))
+    }
+
+    fn tri(a: [i64; 3], b: [i64; 3], c: [i64; 3]) -> crate::trimesh::Triangle {
+        crate::trimesh::Triangle {
+            v0: Vec3Fix::from_int(a[0], a[1], a[2]),
+            v1: Vec3Fix::from_int(b[0], b[1], b[2]),
+            v2: Vec3Fix::from_int(c[0], c[1], c[2]),
+        }
+    }
+
+    /// The square `[-10, 10]^2` at `y = 0` as two triangles, normals up.
+    fn floor_mesh() -> StaticCollider {
+        StaticCollider::TriMesh(TriMesh::from_triangles(vec![
+            tri([-10, 0, -10], [-10, 0, 10], [10, 0, 10]),
+            tri([-10, 0, -10], [10, 0, 10], [10, 0, -10]),
+        ]))
+    }
+
+    /// A unit cube (half 1/2) sunk 1/4 into the plane `y = 0` from either side
+    /// meets it 1/4 deep with the normal on its own side; clear of it, no contact.
+    #[test]
+    fn a_box_meets_a_two_sided_plane_on_its_own_side() {
+        let c = cube(fx(1, 2));
+        let up = c
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 4), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &ground_plane(),
+            )
+            .expect("sunk from above");
+        assert_eq!(up.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(up.depth, fx(1, 4));
+        let down = c
+            .static_contact(
+                v(Fix128::ZERO, -fx(1, 4), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &ground_plane(),
+            )
+            .expect("sunk from below");
+        assert_eq!(down.normal, -Vec3Fix::UNIT_Y);
+        assert_eq!(down.depth, fx(1, 4));
+        assert!(c
+            .static_contact(
+                Vec3Fix::from_int(0, 2, 0),
+                QuatFix::IDENTITY,
+                &ground_plane()
+            )
+            .is_none());
+    }
+
+    /// A box sunk into a mesh's face meets it exactly as a plane: the face normal
+    /// on the box's side and the depth below the face. Above the face, or away
+    /// from the mesh (no BVH candidate), there is no contact.
+    #[test]
+    fn a_box_meets_a_mesh_face_exactly() {
+        let c = cube(fx(1, 2));
+        let mesh = floor_mesh();
+        let up = c
+            .static_contact(v(fx(1, 3), fx(1, 4), fx(2, 7)), QuatFix::IDENTITY, &mesh)
+            .expect("on the face");
+        assert_eq!(up.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(up.depth, fx(1, 4));
+        let down = c
+            .static_contact(v(fx(1, 3), -fx(1, 4), fx(2, 7)), QuatFix::IDENTITY, &mesh)
+            .expect("under the face");
+        assert_eq!(down.normal, -Vec3Fix::UNIT_Y);
+        assert_eq!(down.depth, fx(1, 4));
+        // the box straddles the face's plane only when sunk: 1/2 above is clear
+        // although its box touches the triangle's
+        assert!(c
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 2), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &mesh
+            )
+            .is_none());
+        assert!(c
+            .static_contact(Vec3Fix::from_int(50, 0, 0), QuatFix::IDENTITY, &mesh)
+            .is_none());
+    }
+
+    /// A ball beside a triangle's edge, its lowest point projecting outside the
+    /// triangle, is met at the edge (GJK/EPA): depth `r − d` where `d` is the
+    /// distance from the centre to the edge line, along the centre's offset.
+    #[test]
+    fn a_ball_beside_a_triangle_edge_meets_the_edge() {
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            [0, 0, 0],
+            [0, 0, 4],
+            [4, 0, 0],
+        )]));
+        let r = fx(1, 2);
+        // centre (−1/5, 3/10, 1): the edge x = y = 0 is at d = √(1/25 + 9/100)
+        let hit = ball(r)
+            .static_contact(
+                v(-fx(1, 5), fx(3, 10), Fix128::ONE),
+                QuatFix::IDENTITY,
+                &mesh,
+            )
+            .expect("the edge is within r");
+        let d = (0.04_f64 + 0.09).sqrt();
+        assert_near(hit.depth, 0.5 - d, 1e-6, "edge depth");
+        let n = [-0.2 / d, 0.3 / d, 0.0];
+        assert_vec_near(hit.normal, n, 1e-6, "edge normal");
+    }
+
+    /// A degenerate (zero-area) triangle has no face: the ball is left to GJK/EPA
+    /// against the segment it is, and is met there.
+    #[test]
+    fn a_degenerate_triangle_is_met_as_its_segment() {
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            [0, 0, 0],
+            [2, 0, 0],
+            [4, 0, 0],
+        )]));
+        let hit = ball(fx(1, 2))
+            .static_contact(
+                v(Fix128::ONE, fx(3, 10), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &mesh,
+            )
+            .expect("the segment is within r");
+        assert_near(hit.depth, 0.2, 1e-6, "segment depth");
+        assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-6, "segment normal");
+    }
+
+    /// The deepest of several pieces is the contact: a dumbbell tilted so its
+    /// right ball sits lower meets the plane at that ball's depth.
+    #[test]
+    fn the_deepest_piece_is_the_static_contact() {
+        // body origin at y = 1/4; balls (radius 1/2) at local x = ±2 turned by a
+        // about z: heights 1/4 ∓ 2 sin a for the right and left ball
+        let a = fx(1, 10);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, -a);
+        let hit = dumbbell()
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 4), Fix128::ZERO),
+                turn,
+                &ground_plane(),
+            )
+            .expect("both balls sunk");
+        let deeper = 0.5 - (0.25 - 2.0 * 0.1_f64.sin());
+        assert_near(hit.depth, deeper, 1e-9, "the lower ball's depth");
+        assert!(hit.point_a.x > Fix128::ZERO, "{hit:?}");
+    }
+
+    /// A box sunk into a flat height field meets it at the tangent plane; above
+    /// it, beyond the grid's two-cell margin on each side, or on an empty or
+    /// zero-spacing field there is no contact.
+    #[test]
+    fn a_box_meets_a_height_field_inside_its_grid_only() {
+        let field = |w: u32, d: u32, spacing: Fix128| {
+            StaticCollider::HeightField(HeightField::flat(
+                w,
+                d,
+                spacing,
+                Vec3Fix::ZERO,
+                Fix128::ZERO,
+            ))
+        };
+        let c = cube(fx(1, 2));
+        let grid = field(5, 5, Fix128::ONE);
+        let hit = c
+            .static_contact(
+                v(Fix128::from_int(2), fx(1, 4), Fix128::from_int(2)),
+                QuatFix::IDENTITY,
+                &grid,
+            )
+            .expect("inside the grid");
+        assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-12, "field normal");
+        assert_near(hit.depth, 0.25, 1e-12, "field depth");
+        assert!(c
+            .static_contact(Vec3Fix::from_int(2, 3, 2), QuatFix::IDENTITY, &grid)
+            .is_none());
+        // the grid spans 0..4 in x and z; the margin is 2 cells
+        for (x, z) in [(-10, 2), (20, 2), (2, -10), (2, 20)] {
+            assert!(
+                c.static_contact(
+                    v(Fix128::from_int(x), fx(1, 4), Fix128::from_int(z)),
+                    QuatFix::IDENTITY,
+                    &grid
+                )
+                .is_none(),
+                "({x}, {z}) is outside the grid"
+            );
+        }
+        let at = v(Fix128::ZERO, fx(1, 4), Fix128::ZERO);
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(0, 5, Fix128::ONE))
+            .is_none());
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(5, 0, Fix128::ONE))
+            .is_none());
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(5, 5, Fix128::ZERO))
+            .is_none());
+    }
 }
