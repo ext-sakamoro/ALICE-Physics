@@ -3572,6 +3572,52 @@ impl core::marker::Unpin for alice_physics_core::electromagnetic::ChargedBody
 impl core::marker::UnsafeUnpin for alice_physics_core::electromagnetic::ChargedBody
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::electromagnetic::ChargedBody
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::electromagnetic::ChargedBody
+pub struct alice_physics_core::electromagnetic::DipoleSample
+pub alice_physics_core::electromagnetic::DipoleSample::field: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::electromagnetic::DipoleSample::jacobian: [alice_physics_core::math::Vec3Fix; 3]
+impl alice_physics_core::electromagnetic::DipoleSample
+pub const alice_physics_core::electromagnetic::DipoleSample::ZERO: Self
+impl core::clone::Clone for alice_physics_core::electromagnetic::DipoleSample
+pub fn alice_physics_core::electromagnetic::DipoleSample::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::electromagnetic::DipoleSample
+impl core::cmp::PartialEq for alice_physics_core::electromagnetic::DipoleSample
+pub fn alice_physics_core::electromagnetic::DipoleSample::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::electromagnetic::DipoleSample
+pub fn alice_physics_core::electromagnetic::DipoleSample::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::electromagnetic::DipoleSample
+impl core::marker::StructuralPartialEq for alice_physics_core::electromagnetic::DipoleSample
+impl core::ops::arith::Add for alice_physics_core::electromagnetic::DipoleSample
+pub type alice_physics_core::electromagnetic::DipoleSample::Output = alice_physics_core::electromagnetic::DipoleSample
+pub fn alice_physics_core::electromagnetic::DipoleSample::add(self, Self) -> Self
+impl core::marker::Freeze for alice_physics_core::electromagnetic::DipoleSample
+impl core::marker::Send for alice_physics_core::electromagnetic::DipoleSample
+impl core::marker::Sync for alice_physics_core::electromagnetic::DipoleSample
+impl core::marker::Unpin for alice_physics_core::electromagnetic::DipoleSample
+impl core::marker::UnsafeUnpin for alice_physics_core::electromagnetic::DipoleSample
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::electromagnetic::DipoleSample
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::electromagnetic::DipoleSample
+pub struct alice_physics_core::electromagnetic::MagneticResponse
+pub alice_physics_core::electromagnetic::MagneticResponse::chi_eff: alice_physics_core::math::Fix128
+pub alice_physics_core::electromagnetic::MagneticResponse::saturation_magnetization: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::electromagnetic::MagneticResponse
+pub fn alice_physics_core::electromagnetic::MagneticResponse::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::electromagnetic::MagneticResponse
+impl core::cmp::PartialEq for alice_physics_core::electromagnetic::MagneticResponse
+pub fn alice_physics_core::electromagnetic::MagneticResponse::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::electromagnetic::MagneticResponse
+pub fn alice_physics_core::electromagnetic::MagneticResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::StructuralPartialEq for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::Freeze for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::Send for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::Sync for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::Unpin for alice_physics_core::electromagnetic::MagneticResponse
+impl core::marker::UnsafeUnpin for alice_physics_core::electromagnetic::MagneticResponse
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::electromagnetic::MagneticResponse
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::electromagnetic::MagneticResponse
+pub fn alice_physics_core::electromagnetic::dipole_sample(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> alice_physics_core::electromagnetic::DipoleSample
+pub fn alice_physics_core::electromagnetic::induced_dipole_energy(alice_physics_core::math::Vec3Fix, &alice_physics_core::electromagnetic::MagneticResponse, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::electromagnetic::induced_dipole_force(&alice_physics_core::electromagnetic::DipoleSample, &alice_physics_core::electromagnetic::MagneticResponse, alice_physics_core::math::Fix128) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::electromagnetic::lorentz_force(alice_physics_core::electromagnetic::ChargedBody, &alice_physics_core::solver::RigidBody, &alice_physics_core::electromagnetic::EmSource) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::electromagnetic::lorentz_force_sum(alice_physics_core::electromagnetic::ChargedBody, &alice_physics_core::solver::RigidBody, &[alice_physics_core::electromagnetic::EmSource]) -> alice_physics_core::math::Vec3Fix
 pub mod alice_physics_core::ellipsoid
@@ -4880,6 +4926,13 @@ pub alice_physics_core::force::ForceField::Explosion::center: alice_physics_core
 pub alice_physics_core::force::ForceField::Explosion::falloff_power: alice_physics_core::math::Fix128
 pub alice_physics_core::force::ForceField::Explosion::radius: alice_physics_core::math::Fix128
 pub alice_physics_core::force::ForceField::Explosion::strength: alice_physics_core::math::Fix128
+pub alice_physics_core::force::ForceField::InducedDipole
+pub alice_physics_core::force::ForceField::InducedDipole::density: alice_physics_core::math::Fix128
+pub alice_physics_core::force::ForceField::InducedDipole::material: alice_physics_core::material::MaterialId
+pub alice_physics_core::force::ForceField::InducedDipole::moment: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::force::ForceField::InducedDipole::position: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::force::ForceField::InducedDipole::radius: alice_physics_core::math::Fix128
+pub alice_physics_core::force::ForceField::InducedDipole::response: alice_physics_core::electromagnetic::MagneticResponse
 pub alice_physics_core::force::ForceField::Magnetic
 pub alice_physics_core::force::ForceField::Magnetic::moment: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::force::ForceField::Magnetic::position: alice_physics_core::math::Vec3Fix
@@ -4928,9 +4981,10 @@ impl core::marker::Unpin for alice_physics_core::force::ForceFieldInstance
 impl core::marker::UnsafeUnpin for alice_physics_core::force::ForceFieldInstance
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::force::ForceFieldInstance
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::force::ForceFieldInstance
-pub fn alice_physics_core::force::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::force::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &[alice_physics_core::material::MaterialId], &[core::option::Option<alice_physics_core::math::Fix128>], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::force::compute_force(&alice_physics_core::force::ForceField, &alice_physics_core::solver::RigidBody) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::force::field_force_at(&alice_physics_core::force::ForceField, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::force::induced_dipole_fields_agree(&[alice_physics_core::force::ForceFieldInstance]) -> bool
 pub mod alice_physics_core::fracture
 pub struct alice_physics_core::fracture::Crack
 pub alice_physics_core::fracture::Crack::active: bool
@@ -10051,6 +10105,13 @@ pub alice_physics_core::prelude::ForceField::Explosion::center: alice_physics_co
 pub alice_physics_core::prelude::ForceField::Explosion::falloff_power: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::ForceField::Explosion::radius: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::ForceField::Explosion::strength: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::ForceField::InducedDipole
+pub alice_physics_core::prelude::ForceField::InducedDipole::density: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::ForceField::InducedDipole::material: alice_physics_core::material::MaterialId
+pub alice_physics_core::prelude::ForceField::InducedDipole::moment: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::prelude::ForceField::InducedDipole::position: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::prelude::ForceField::InducedDipole::radius: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::ForceField::InducedDipole::response: alice_physics_core::electromagnetic::MagneticResponse
 pub alice_physics_core::prelude::ForceField::Magnetic
 pub alice_physics_core::prelude::ForceField::Magnetic::moment: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::ForceField::Magnetic::position: alice_physics_core::math::Vec3Fix
@@ -13534,6 +13595,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::substep_with_bridge<B: alice_ph
 pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
+pub fn alice_physics_core::solver::PhysicsWorld::try_add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> core::result::Result<usize, alice_physics_core::error::PhysicsError>
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
@@ -15249,7 +15311,7 @@ impl<S: alice_physics_core::collider::Support> alice_physics_core::collider::Sup
 pub fn alice_physics_core::collider::ScaledShape<S>::support(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::prelude::apply_cloth_boundary_to_fluid(&[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::prelude::apply_fluid_forces_to_cloth(&alice_physics_core::cloth_fluid::ClothFluidCoupling, &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
-pub fn alice_physics_core::prelude::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::prelude::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &[alice_physics_core::material::MaterialId], &[core::option::Option<alice_physics_core::math::Fix128>], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::prelude::batch_raycast(&[alice_physics_core::query::BatchRayQuery], &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<alice_physics_core::query::ShapeCastHit>>
 pub const fn alice_physics_core::prelude::batch_size() -> usize
 pub fn alice_physics_core::prelude::batch_sphere_cast(&[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<alice_physics_core::query::ShapeCastHit>>
@@ -18499,6 +18561,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::substep_with_bridge<B: alice_ph
 pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
+pub fn alice_physics_core::solver::PhysicsWorld::try_add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> core::result::Result<usize, alice_physics_core::error::PhysicsError>
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
@@ -21473,6 +21536,13 @@ pub alice_physics_core::ForceField::Explosion::center: alice_physics_core::math:
 pub alice_physics_core::ForceField::Explosion::falloff_power: alice_physics_core::math::Fix128
 pub alice_physics_core::ForceField::Explosion::radius: alice_physics_core::math::Fix128
 pub alice_physics_core::ForceField::Explosion::strength: alice_physics_core::math::Fix128
+pub alice_physics_core::ForceField::InducedDipole
+pub alice_physics_core::ForceField::InducedDipole::density: alice_physics_core::math::Fix128
+pub alice_physics_core::ForceField::InducedDipole::material: alice_physics_core::material::MaterialId
+pub alice_physics_core::ForceField::InducedDipole::moment: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::ForceField::InducedDipole::position: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::ForceField::InducedDipole::radius: alice_physics_core::math::Fix128
+pub alice_physics_core::ForceField::InducedDipole::response: alice_physics_core::electromagnetic::MagneticResponse
 pub alice_physics_core::ForceField::Magnetic
 pub alice_physics_core::ForceField::Magnetic::moment: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::ForceField::Magnetic::position: alice_physics_core::math::Vec3Fix
@@ -25177,6 +25247,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::substep_with_bridge<B: alice_ph
 pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
+pub fn alice_physics_core::solver::PhysicsWorld::try_add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> core::result::Result<usize, alice_physics_core::error::PhysicsError>
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
 impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
@@ -27007,7 +27078,7 @@ pub fn alice_physics_core::collider::ScaledShape<S>::support(&self, alice_physic
 pub fn alice_physics_core::aabb_plane_toi(&alice_physics_core::collider::AABB, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::ccd::TOI>
 pub fn alice_physics_core::apply_cloth_boundary_to_fluid(&[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::apply_fluid_forces_to_cloth(&alice_physics_core::cloth_fluid::ClothFluidCoupling, &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
-pub fn alice_physics_core::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &[alice_physics_core::material::MaterialId], &[core::option::Option<alice_physics_core::math::Fix128>], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::batch_raycast(&[alice_physics_core::query::BatchRayQuery], &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<alice_physics_core::query::ShapeCastHit>>
 pub const fn alice_physics_core::batch_size() -> usize
 pub fn alice_physics_core::batch_sphere_cast(&[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<alice_physics_core::query::ShapeCastHit>>

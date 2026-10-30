@@ -520,16 +520,13 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
 
 /// Apply all force fields to all bodies for one timestep
 ///
-/// Without the bodies' materials, [`ForceField::InducedDipole`] pulls nothing; the world steps
-/// with [`apply_force_fields_with_materials`].
-pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody], dt: Fix128) {
-    apply_force_fields_with_materials(fields, &[], &[], bodies, dt);
-}
-
-/// [`apply_force_fields`] with the material and the collision radius of each body (`materials[i]`
-/// and `radii[i]` for body `i`), so the magnets ([`ForceField::InducedDipole`]) pull the bodies of
-/// the material they name, each no nearer than its own contact distance
-pub fn apply_force_fields_with_materials(
+/// `materials[i]` and `radii[i]` are the material and the collision radius of body `i`: the
+/// magnets ([`ForceField::InducedDipole`]) pull the bodies of the material they name, each no
+/// nearer than its own contact distance. A body past the end of `materials` is of
+/// [`crate::material::DEFAULT_MATERIAL`] (the convention of
+/// [`PhysicsWorld::combined_material`](crate::solver::PhysicsWorld::combined_material) for a body
+/// missing from the world's table) and one past the end of `radii` has no radius.
+pub fn apply_force_fields(
     fields: &[ForceFieldInstance],
     materials: &[crate::material::MaterialId],
     radii: &[Option<Fix128>],
@@ -545,7 +542,7 @@ pub fn apply_force_fields_with_materials(
     }
 }
 
-/// The velocity [`apply_force_fields_with_materials`] gives body `body_idx` (`body` itself is
+/// The velocity [`apply_force_fields`] gives body `body_idx` (`body` itself is
 /// not changed): `v + (Σ F · inv_mass) · dt` over the fields that affect it, the magnets naming
 /// its material counted together ([`magnet_force`]).
 #[must_use]
@@ -565,14 +562,16 @@ pub(crate) fn force_field_velocity(
         }
         total_force = total_force + compute_force(&field_inst.field, body);
     }
-    if let Some(&material) = materials.get(body_idx) {
-        let body_radius = radii
-            .get(body_idx)
-            .copied()
-            .flatten()
-            .unwrap_or(Fix128::ZERO);
-        total_force = total_force + magnet_force(fields, material, body_radius, body_idx, body);
-    }
+    let material = materials
+        .get(body_idx)
+        .copied()
+        .unwrap_or(crate::material::DEFAULT_MATERIAL);
+    let body_radius = radii
+        .get(body_idx)
+        .copied()
+        .flatten()
+        .unwrap_or(Fix128::ZERO);
+    total_force = total_force + magnet_force(fields, material, body_radius, body_idx, body);
 
     // F = ma, a = F * inv_mass, v += a * dt
     let acceleration = total_force * body.inv_mass;
@@ -728,7 +727,7 @@ mod tests {
         let mut bodies = vec![RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
 
         let dt = Fix128::from_ratio(1, 60);
-        apply_force_fields(&fields, &mut bodies, dt);
+        apply_force_fields(&fields, &[], &[], &mut bodies, dt);
 
         // Velocity should have increased in X
         assert!(
@@ -861,7 +860,7 @@ mod tests {
 
         let mut bodies = vec![RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE)];
         let dt = Fix128::from_ratio(1, 60);
-        apply_force_fields(&fields, &mut bodies, dt);
+        apply_force_fields(&fields, &[], &[], &mut bodies, dt);
 
         assert!(
             bodies[0].velocity.x > Fix128::ZERO,
@@ -954,7 +953,7 @@ mod tests {
 
         let mut bodies = vec![RigidBody::new(Vec3Fix::from_int(3, 0, 0), Fix128::ONE)];
         let dt = Fix128::from_ratio(1, 60);
-        apply_force_fields(&fields, &mut bodies, dt);
+        apply_force_fields(&fields, &[], &[], &mut bodies, dt);
 
         assert!(
             bodies[0].velocity.x.abs() > Fix128::ZERO,

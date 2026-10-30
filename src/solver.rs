@@ -2741,7 +2741,7 @@ impl PhysicsWorld {
     ///
     /// # Errors
     ///
-    /// [`PhysicsError::InvalidConfiguration`] when `field` is a
+    /// [`crate::error::PhysicsError::InvalidConfiguration`] when `field` is a
     /// [`crate::ForceField::InducedDipole`] whose response or density differs from another
     /// magnet naming the same material (each carries a copy of that material's magnetic
     /// properties); the field is not added.
@@ -3471,7 +3471,7 @@ impl PhysicsWorld {
                 }
             } else {
                 self.stage_work.force_field_bodies += self.bodies.len() as u64;
-                crate::force::apply_force_fields_with_materials(
+                crate::force::apply_force_fields(
                     &self.force_fields,
                     &self.body_materials,
                     &self.body_collision_radii,
@@ -3973,7 +3973,7 @@ impl PhysicsWorld {
         // Phase 1: Apply force fields (identical call to `step`), then
         // advance kinematic targets before contacts are detected below.
         if !self.force_fields.is_empty() {
-            crate::force::apply_force_fields_with_materials(
+            crate::force::apply_force_fields(
                 &self.force_fields,
                 &self.body_materials,
                 &self.body_collision_radii,
@@ -4341,7 +4341,7 @@ impl PhysicsWorld {
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
-            crate::force::apply_force_fields_with_materials(
+            crate::force::apply_force_fields(
                 &self.force_fields,
                 &self.body_materials,
                 &self.body_collision_radii,
@@ -5604,7 +5604,7 @@ impl PhysicsWorld {
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
-            crate::force::apply_force_fields_with_materials(
+            crate::force::apply_force_fields(
                 &self.force_fields,
                 &self.body_materials,
                 &self.body_collision_radii,

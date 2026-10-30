@@ -20,9 +20,10 @@
 use alice_physics_core::electromagnetic::{
     dipole_sample, induced_dipole_energy, induced_dipole_force, MagneticResponse,
 };
+use alice_physics_core::force::apply_force_fields;
 use alice_physics_core::{
-    Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig, PhysicsWorld, RigidBody,
-    Vec3Fix,
+    material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
+    PhysicsWorld, RigidBody, Vec3Fix,
 };
 
 fn fx(n: i64, d: i64) -> Fix128 {
@@ -411,4 +412,57 @@ fn two_magnets_naming_one_material_must_carry_the_same_response() {
         "restore refuses the disagreeing fields"
     );
     assert!(target.restore_world(&good).is_ok());
+}
+
+/// Outside a world, `apply_force_fields` takes each body's material and radius; a body past the
+/// end of the tables is of the default material, as in the world. A magnet naming the default
+/// material pulls such a body exactly as it pulls a body listed with the default material, and a
+/// magnet naming another material does not pull it. With the world's own tables the slice form
+/// gives the world's kick.
+#[test]
+fn a_body_missing_from_the_tables_is_of_the_default_material() {
+    let at = Vec3Fix::from_int(0, -1, 0);
+    let (w, b, metal) = world_with_ball(false, at, Vec3Fix::ZERO);
+    let dt = fx(1, 60);
+    let pull_default = magnet(Vec3Fix::ZERO, Vec3Fix::from_int(0, 1, 0), DEFAULT_MATERIAL);
+    let pull_metal = magnet(Vec3Fix::ZERO, Vec3Fix::from_int(0, 1, 0), metal);
+
+    let (mut listed, mut missing) = (w.bodies.clone(), w.bodies.clone());
+    let default_table = vec![DEFAULT_MATERIAL; w.bodies.len()];
+    apply_force_fields(
+        std::slice::from_ref(&pull_default),
+        &default_table,
+        &[],
+        &mut listed,
+        dt,
+    );
+    apply_force_fields(&[pull_default], &[], &[], &mut missing, dt);
+    assert_eq!(missing[b].velocity, listed[b].velocity);
+    assert_ne!(
+        missing[b].velocity,
+        Vec3Fix::ZERO,
+        "the default-material magnet pulled"
+    );
+
+    let mut untouched = w.bodies.clone();
+    apply_force_fields(
+        std::slice::from_ref(&pull_metal),
+        &[],
+        &[],
+        &mut untouched,
+        dt,
+    );
+    assert_eq!(
+        untouched[b].velocity,
+        Vec3Fix::ZERO,
+        "a metal magnet does not pull it"
+    );
+
+    let mut sliced = w.bodies.clone();
+    apply_force_fields(&[pull_metal], &w.body_materials, &[], &mut sliced, dt);
+    assert_ne!(
+        sliced[b].velocity,
+        Vec3Fix::ZERO,
+        "the metal magnet pulled the metal ball"
+    );
 }
