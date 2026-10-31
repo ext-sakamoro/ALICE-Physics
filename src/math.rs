@@ -137,10 +137,15 @@ impl Fix128 {
     ///
     /// For a finite value: inside `[-2^63, 2^63)` the integer part and the 64-bit fraction,
     /// truncated toward zero; below the range [`Self::MIN`], at or above it [`Self::MAX`] (the
-    /// sign is kept). A NaN gives [`Self::ZERO`] and `∓∞` gives [`Self::MIN`] / [`Self::MAX`]. A
-    /// boundary that receives floats from outside uses [`Self::try_from_f64`], which refuses both.
+    /// sign is kept). A NaN or infinite value is a caller error: debug builds panic; release
+    /// builds give [`Self::ZERO`] for NaN and [`Self::MIN`] / [`Self::MAX`] for `∓∞`. A boundary
+    /// that receives floats from outside uses [`Self::try_from_f64`], which refuses both.
     #[must_use]
     pub fn from_f64(f: f64) -> Self {
+        debug_assert!(
+            f.is_finite(),
+            "Fix128::from_f64 of the non-finite value {f}: use Fix128::try_from_f64 where floats arrive"
+        );
         Self::saturating_from_f64(f)
     }
 

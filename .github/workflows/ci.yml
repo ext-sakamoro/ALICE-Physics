@@ -923,6 +923,11 @@ jobs:
         run: python3 scripts/test_g2_rewrite_check.py
       - name: G2 comparison rewrites (every max / min written as a comparison is reviewed by type)
         run: python3 scripts/g2_rewrite_check.py
+      # a float to Fix128 conversion that can see a NaN or an infinity has to say how it handles it
+      - name: Float to Fix128 conversion sites (test first)
+        run: python3 scripts/test_fix_conversion_sites.py
+      - name: Float to Fix128 conversion sites (every conversion in library code is reviewed by class)
+        run: python3 scripts/fix_conversion_sites.py --min-sites 80
       # every binding parameter carrying floats has a row the three binding tests drive
       - name: Binding float parameters (test first)
         run: python3 scripts/test_binding_float_entries.py

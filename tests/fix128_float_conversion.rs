@@ -122,7 +122,24 @@ fn try_from_refuses_non_finite_and_out_of_range_values() {
     );
 }
 
-/// The stated values for non-finite input: `∓∞` saturate with their sign, NaN gives zero
+/// A non-finite value given to `from_f64` is a caller error, refused in debug builds
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "non-finite")]
+fn from_f64_refuses_nan_in_debug() {
+    let _ = Fix128::from_f64(std::hint::black_box(f64::NAN));
+}
+
+/// The same in debug builds for `-∞`, the value whose conversion used to wrap
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "non-finite")]
+fn from_f64_refuses_negative_infinity_in_debug() {
+    let _ = Fix128::from_f64(std::hint::black_box(f64::NEG_INFINITY));
+}
+
+/// In release builds the stated values: `∓∞` saturate with their sign, NaN gives zero
+#[cfg(not(debug_assertions))]
 #[test]
 fn from_f64_of_non_finite_values_in_release() {
     assert_eq!(
