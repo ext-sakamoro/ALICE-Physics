@@ -26,7 +26,6 @@ use std::hint::black_box;
 const POS: u32 = 0x0000_0000;
 const NEG: u32 = 0x8000_0000;
 const POS64: u64 = 0;
-const NEG64: u64 = 0x8000_0000_0000_0000;
 const CANONICAL_NAN: u32 = 0x7fc0_0000;
 const CANONICAL_NAN64: u64 = 0x7ff8_0000_0000_0000;
 
