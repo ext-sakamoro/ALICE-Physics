@@ -4911,7 +4911,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::fluid_netcode::FluidSnaps
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::fluid_netcode::FluidSnapshot
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::fluid_netcode::FluidSnapshot
 pub mod alice_physics_core::force
-pub enum alice_physics_core::force::ForceField
+#[non_exhaustive] pub enum alice_physics_core::force::ForceField
 pub alice_physics_core::force::ForceField::Buoyancy
 pub alice_physics_core::force::ForceField::Buoyancy::density: alice_physics_core::math::Fix128
 pub alice_physics_core::force::ForceField::Buoyancy::drag: alice_physics_core::math::Fix128
@@ -10090,7 +10090,7 @@ impl core::marker::Unpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::marker::UnsafeUnpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint_extra::ExtraJoint
-pub enum alice_physics_core::prelude::ForceField
+#[non_exhaustive] pub enum alice_physics_core::prelude::ForceField
 pub alice_physics_core::prelude::ForceField::Buoyancy
 pub alice_physics_core::prelude::ForceField::Buoyancy::density: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::ForceField::Buoyancy::drag: alice_physics_core::math::Fix128
@@ -21521,7 +21521,7 @@ impl core::marker::Unpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::marker::UnsafeUnpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint_extra::ExtraJoint
-pub enum alice_physics_core::ForceField
+#[non_exhaustive] pub enum alice_physics_core::ForceField
 pub alice_physics_core::ForceField::Buoyancy
 pub alice_physics_core::ForceField::Buoyancy::density: alice_physics_core::math::Fix128
 pub alice_physics_core::ForceField::Buoyancy::drag: alice_physics_core::math::Fix128

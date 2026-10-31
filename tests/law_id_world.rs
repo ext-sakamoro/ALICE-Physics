@@ -5,7 +5,7 @@
 //! written out independently here (`spec`). It encodes the values the test
 //! sets (a `Laws` description), not values read back from the world, and is
 //! checked against the default world and against a world that sets every
-//! covered field to a value other than its default (all seven force field
+//! covered field to a value other than its default (all eight force field
 //! kinds, a limited and a disabled field, pair overrides, a material whose
 //! frictions differ, continuous collision, a participant, a participant that
 //! declares a semantics identifier). One golden value, taken with an all-zero
@@ -17,6 +17,7 @@
 #![cfg(feature = "std")]
 
 use alice_physics_core::coupling_medium::DragMedium;
+use alice_physics_core::electromagnetic::MagneticResponse;
 use alice_physics_core::force::{ForceField, ForceFieldInstance};
 use alice_physics_core::law_id::{LAW_ID_DOMAIN, WORLD_LAW_KIND};
 use alice_physics_core::material::{CombineRule, MaterialId, PhysicsMaterial};
@@ -201,6 +202,17 @@ impl Laws {
                     position: v3(3, 1, 4),
                     moment: v3(1, 5, 9),
                     strength: fx(2, 7),
+                }),
+                ForceFieldInstance::new(ForceField::InducedDipole {
+                    position: v3(2, 7, 1),
+                    moment: v3(8, 2, 8),
+                    radius: fx(1, 50),
+                    material: 1,
+                    response: MagneticResponse {
+                        chi_eff: fx(5, 2),
+                        saturation_magnetization: fx(1_600_000, 1),
+                    },
+                    density: fx(7800, 1),
                 }),
                 disabled,
             ],
@@ -446,6 +458,7 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
                 s.fix(response.saturation_magnetization);
                 s.fix(density);
             }
+            other => panic!("no documented encoding for {other:?}"),
         }
     }
 
@@ -562,6 +575,7 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
             b"vortex" => 2 * VEC3 + 2 * FIX,
             b"explosion" => VEC3 + 3 * FIX,
             b"magnetic" => 2 * VEC3 + FIX,
+            b"induced-dipole" => 2 * VEC3 + FIX + 8 + 3 * FIX,
             other => panic!("no documented field tag {other:?}"),
         };
         r.skip(params);

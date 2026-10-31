@@ -3740,6 +3740,72 @@ mod tests {
         );
     }
 
+    /// A magnet is written with force field tag 7, the smallest tag no earlier kind uses, and the
+    /// snapshot version did not move. The release before magnets (`21be64af`) refused tag 7 as an
+    /// unknown kind (`r_force_field(&[7])` was `InvalidValue { section: "force_fields" }` there),
+    /// so that release refuses a snapshot holding a magnet instead of misreading it, and needs no
+    /// new version to do so.
+    #[test]
+    fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
+        let v = Vec3Fix::from_int;
+        let one = Fix128::ONE;
+        let older = [
+            ForceField::Directional {
+                direction: v(1, 0, 0),
+                strength: one,
+            },
+            ForceField::Point {
+                center: v(0, 1, 0),
+                strength: one,
+                repulsive: false,
+                max_force: one,
+            },
+            ForceField::Drag { coefficient: one },
+            ForceField::Buoyancy {
+                surface_y: one,
+                density: one,
+                drag: one,
+            },
+            ForceField::Vortex {
+                center: v(0, 0, 1),
+                axis: v(0, 1, 0),
+                strength: one,
+                falloff_radius: one,
+            },
+            ForceField::Explosion {
+                center: v(1, 1, 1),
+                strength: one,
+                radius: one,
+                falloff_power: one,
+            },
+            ForceField::Magnetic {
+                position: v(0, 3, 0),
+                moment: v(0, 1, 0),
+                strength: one,
+            },
+        ];
+        let tag = |f: ForceField| {
+            let mut w = super::W(Vec::new());
+            super::w_force_field(&mut w, &ForceFieldInstance::new(f));
+            w.0[0]
+        };
+        let older_tags: Vec<u8> = older.into_iter().map(tag).collect();
+        assert_eq!(older_tags, (0..7).collect::<Vec<u8>>(), "the earlier kinds");
+        let magnet = tag(ForceField::InducedDipole {
+            position: v(0, 0, 0),
+            moment: v(0, 1, 0),
+            radius: one,
+            material: 1,
+            response: crate::electromagnetic::MagneticResponse {
+                chi_eff: one,
+                saturation_magnetization: one,
+            },
+            density: one,
+        });
+        assert_eq!(magnet, 7, "the first tag after the earlier kinds");
+    }
+
     /// The fault codec round-trips every variant.
     #[test]
     fn fault_codec_round_trips_every_variant() {

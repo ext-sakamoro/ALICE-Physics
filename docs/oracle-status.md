@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5915 |
+| 🟢 Not ignored (run by CI) | 5916 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6011** |
+| **Total** | **6012** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5915)
+## 🟢 Not ignored (5916)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -430,6 +430,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_flip_scatter.rs` | 9 |
 | `analytic_laminate_failure_wiring.rs` | 9 |
 | `analytic_magnet_induced_dipole.rs` | 9 |
+| `analytic_magnet_world.rs` | 9 |
 | `analytic_material_wiring.rs` | 9 |
 | `analytic_quadratic_fem.rs` | 9 |
 | `analytic_quadratic_hyperelastic.rs` | 9 |
@@ -453,7 +454,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_fillet_stress_wiring.rs` | 8 |
 | `analytic_fluid_block_wiring.rs` | 8 |
 | `analytic_ik_physics_bridge_wiring.rs` | 8 |
-| `analytic_magnet_world.rs` | 8 |
 | `analytic_math_util_wiring.rs` | 8 |
 | `analytic_metric_broadphase.rs` | 8 |
 | `analytic_netcode_prediction.rs` | 8 |
