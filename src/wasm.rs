@@ -19,6 +19,11 @@
 //! - State serialization for rollback netcode
 //! - Raycast queries (closest-hit, all-hits, any-hit)
 //!
+//! A non-finite float argument (NaN, ±∞) is refused: the methods that had no
+//! failure value throw an `Error` naming the method and the parameter
+//! (`step: dt is not finite`), and the world is not changed. Before, such a
+//! value was converted (NaN to zero, ±∞ to the nearest end of `Fix128`).
+//!
 //! Author: Moroya Sakamoto
 
 use wasm_bindgen::prelude::*;
@@ -32,6 +37,12 @@ use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 #[cfg(test)]
 use crate::solver::BodyType;
+
+/// A refused argument as the error JavaScript sees thrown, with the one wording
+/// the bindings share (`step: dt is not finite`)
+fn refused(e: binding_api::NotFinite) -> JsError {
+    JsError::new(&e.to_string())
+}
 
 // ============================================================================
 // WasmPhysicsWorld
@@ -64,21 +75,20 @@ impl WasmPhysicsWorld {
         gravity_z: f64,
         substeps: u32,
         iterations: u32,
-    ) -> Self {
+    ) -> Result<WasmPhysicsWorld, JsError> {
+        let gravity =
+            binding_api::checked_vec3("withConfig", "gravity", gravity_x, gravity_y, gravity_z)
+                .map_err(refused)?;
         let config = PhysicsConfig {
             substeps: substeps as usize,
             iterations: iterations as usize,
-            gravity: Vec3Fix::new(
-                Fix128::from_f64(gravity_x),
-                Fix128::from_f64(gravity_y),
-                Fix128::from_f64(gravity_z),
-            ),
+            gravity,
             damping: Fix128::from_ratio(99, 100),
             ..Default::default()
         };
-        Self {
+        Ok(Self {
             inner: PhysicsWorld::new(config),
-        }
+        })
     }
 
     // ========================================================================
@@ -87,38 +97,32 @@ impl WasmPhysicsWorld {
 
     /// Add a dynamic body at (x, y, z) with given mass. Returns body index.
     #[wasm_bindgen(js_name = "addDynamicBody")]
-    pub fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::new(
-                Fix128::from_f64(x),
-                Fix128::from_f64(y),
-                Fix128::from_f64(z),
-            ),
-            Fix128::from_f64(mass),
-        );
-        self.inner.add_body(body)
+    pub fn add_dynamic_body(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        mass: f64,
+    ) -> Result<usize, JsError> {
+        let p =
+            binding_api::checked_vec3("addDynamicBody", "position", x, y, z).map_err(refused)?;
+        let m = binding_api::checked("addDynamicBody", "mass", mass).map_err(refused)?;
+        Ok(self.inner.add_body(RigidBody::new_dynamic(p, m)))
     }
 
     /// Add a static (immovable) body at (x, y, z). Returns body index.
     #[wasm_bindgen(js_name = "addStaticBody")]
-    pub fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_static(Vec3Fix::new(
-            Fix128::from_f64(x),
-            Fix128::from_f64(y),
-            Fix128::from_f64(z),
-        ));
-        self.inner.add_body(body)
+    pub fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> Result<usize, JsError> {
+        let p = binding_api::checked_vec3("addStaticBody", "position", x, y, z).map_err(refused)?;
+        Ok(self.inner.add_body(RigidBody::new_static(p)))
     }
 
     /// Add a kinematic body at (x, y, z). Returns body index.
     #[wasm_bindgen(js_name = "addKinematicBody")]
-    pub fn add_kinematic_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_kinematic(Vec3Fix::new(
-            Fix128::from_f64(x),
-            Fix128::from_f64(y),
-            Fix128::from_f64(z),
-        ));
-        self.inner.add_body(body)
+    pub fn add_kinematic_body(&mut self, x: f64, y: f64, z: f64) -> Result<usize, JsError> {
+        let p =
+            binding_api::checked_vec3("addKinematicBody", "position", x, y, z).map_err(refused)?;
+        Ok(self.inner.add_body(RigidBody::new_kinematic(p)))
     }
 
     /// Number of bodies in the world.
@@ -132,14 +136,18 @@ impl WasmPhysicsWorld {
     // ========================================================================
 
     /// Step the simulation by dt seconds.
-    pub fn step(&mut self, dt: f64) {
-        self.inner.step(Fix128::from_f64(dt));
+    pub fn step(&mut self, dt: f64) -> Result<(), JsError> {
+        self.inner
+            .step(binding_api::checked("step", "dt", dt).map_err(refused)?);
+        Ok(())
     }
 
     /// Step the simulation N times with fixed dt (batch stepping).
     #[wasm_bindgen(js_name = "stepN")]
-    pub fn step_n(&mut self, dt: f64, steps: u32) {
-        self.inner.step_n(steps as usize, Fix128::from_f64(dt));
+    pub fn step_n(&mut self, dt: f64, steps: u32) -> Result<(), JsError> {
+        let dt = binding_api::checked("stepN", "dt", dt).map_err(refused)?;
+        self.inner.step_n(steps as usize, dt);
+        Ok(())
     }
 
     // ========================================================================
@@ -225,62 +233,77 @@ impl WasmPhysicsWorld {
 
     /// Set a body's position.
     #[wasm_bindgen(js_name = "setPosition")]
-    pub fn set_position(&mut self, body_id: usize, x: f64, y: f64, z: f64) {
+    pub fn set_position(&mut self, body_id: usize, x: f64, y: f64, z: f64) -> Result<(), JsError> {
+        let v = binding_api::checked_vec3("setPosition", "position", x, y, z).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.position = Vec3Fix::new(
-                Fix128::from_f64(x),
-                Fix128::from_f64(y),
-                Fix128::from_f64(z),
-            );
+            body.position = v;
         }
+        Ok(())
     }
 
     /// Set a body's velocity.
     #[wasm_bindgen(js_name = "setVelocity")]
-    pub fn set_velocity(&mut self, body_id: usize, vx: f64, vy: f64, vz: f64) {
+    pub fn set_velocity(
+        &mut self,
+        body_id: usize,
+        vx: f64,
+        vy: f64,
+        vz: f64,
+    ) -> Result<(), JsError> {
+        let v =
+            binding_api::checked_vec3("setVelocity", "velocity", vx, vy, vz).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.velocity = Vec3Fix::new(
-                Fix128::from_f64(vx),
-                Fix128::from_f64(vy),
-                Fix128::from_f64(vz),
-            );
+            body.velocity = v;
         }
+        Ok(())
     }
 
     /// Apply impulse at center of mass.
     #[wasm_bindgen(js_name = "applyImpulse")]
-    pub fn apply_impulse(&mut self, body_id: usize, ix: f64, iy: f64, iz: f64) {
+    pub fn apply_impulse(
+        &mut self,
+        body_id: usize,
+        ix: f64,
+        iy: f64,
+        iz: f64,
+    ) -> Result<(), JsError> {
+        let i =
+            binding_api::checked_vec3("applyImpulse", "impulse", ix, iy, iz).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.apply_impulse(Vec3Fix::new(
-                Fix128::from_f64(ix),
-                Fix128::from_f64(iy),
-                Fix128::from_f64(iz),
-            ));
+            body.apply_impulse(i);
         }
+        Ok(())
     }
 
     /// Set a body's restitution (bounciness, 0.0-1.0).
     #[wasm_bindgen(js_name = "setRestitution")]
-    pub fn set_restitution(&mut self, body_id: usize, restitution: f64) {
+    pub fn set_restitution(&mut self, body_id: usize, restitution: f64) -> Result<(), JsError> {
+        let v =
+            binding_api::checked("setRestitution", "restitution", restitution).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.restitution = Fix128::from_f64(restitution);
+            body.restitution = v;
         }
+        Ok(())
     }
 
     /// Set a body's friction coefficient.
     #[wasm_bindgen(js_name = "setFriction")]
-    pub fn set_friction(&mut self, body_id: usize, friction: f64) {
+    pub fn set_friction(&mut self, body_id: usize, friction: f64) -> Result<(), JsError> {
+        let v = binding_api::checked("setFriction", "friction", friction).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.friction = Fix128::from_f64(friction);
+            body.friction = v;
         }
+        Ok(())
     }
 
     /// Set a body's gravity scale.
     #[wasm_bindgen(js_name = "setGravityScale")]
-    pub fn set_gravity_scale(&mut self, body_id: usize, scale: f64) {
+    pub fn set_gravity_scale(&mut self, body_id: usize, scale: f64) -> Result<(), JsError> {
+        let v = binding_api::checked("setGravityScale", "scale", scale).map_err(refused)?;
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.gravity_scale = Fix128::from_f64(scale);
+            body.gravity_scale = v;
         }
+        Ok(())
     }
 
     /// Set kinematic target position and rotation.
@@ -295,22 +318,19 @@ impl WasmPhysicsWorld {
         qy: f64,
         qz: f64,
         qw: f64,
-    ) {
+    ) -> Result<(), JsError> {
+        const E: &str = "setKinematicTarget";
+        let p = binding_api::checked_vec3(E, "position", x, y, z).map_err(refused)?;
+        let r = QuatFix {
+            x: binding_api::checked(E, "rotation", qx).map_err(refused)?,
+            y: binding_api::checked(E, "rotation", qy).map_err(refused)?,
+            z: binding_api::checked(E, "rotation", qz).map_err(refused)?,
+            w: binding_api::checked(E, "rotation", qw).map_err(refused)?,
+        };
         if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.set_kinematic_target(
-                Vec3Fix::new(
-                    Fix128::from_f64(x),
-                    Fix128::from_f64(y),
-                    Fix128::from_f64(z),
-                ),
-                QuatFix {
-                    x: Fix128::from_f64(qx),
-                    y: Fix128::from_f64(qy),
-                    z: Fix128::from_f64(qz),
-                    w: Fix128::from_f64(qw),
-                },
-            );
+            body.set_kinematic_target(p, r);
         }
+        Ok(())
     }
 
     // ========================================================================
@@ -319,36 +339,42 @@ impl WasmPhysicsWorld {
 
     /// Set velocities for all bodies from flat array [vx,vy,vz, ...].
     #[wasm_bindgen(js_name = "setVelocitiesBatch")]
-    pub fn set_velocities_batch(&mut self, data: &[f64]) {
+    pub fn set_velocities_batch(&mut self, data: &[f64]) -> Result<(), JsError> {
         let n = self.inner.bodies.len();
         if data.len() < n * 3 {
-            return;
+            return Ok(());
         }
-        for (i, body) in self.inner.bodies.iter_mut().enumerate() {
-            body.velocity = Vec3Fix::new(
-                Fix128::from_f64(data[i * 3]),
-                Fix128::from_f64(data[i * 3 + 1]),
-                Fix128::from_f64(data[i * 3 + 2]),
-            );
+        // every value is checked before any body changes: a refused batch changes nothing
+        let velocities = data[..n * 3]
+            .chunks_exact(3)
+            .map(|v| binding_api::checked_vec3("setVelocitiesBatch", "data", v[0], v[1], v[2]))
+            .collect::<Result<Vec<Vec3Fix>, _>>()
+            .map_err(refused)?;
+        for (body, v) in self.inner.bodies.iter_mut().zip(velocities) {
+            body.velocity = v;
         }
+        Ok(())
     }
 
     /// Apply impulses in batch. Data is flat [body_id, ix, iy, iz, ...].
     #[wasm_bindgen(js_name = "applyImpulsesBatch")]
-    pub fn apply_impulses_batch(&mut self, data: &[f64]) {
+    pub fn apply_impulses_batch(&mut self, data: &[f64]) -> Result<(), JsError> {
         let n_bodies = self.inner.bodies.len();
-        for chunk in data.chunks_exact(4) {
-            let body_id = chunk[0] as usize;
-            if body_id >= n_bodies {
-                continue;
+        // every impulse is checked before any body changes: a refused batch changes nothing
+        let impulses = data
+            .chunks_exact(4)
+            .map(|c| {
+                binding_api::checked_vec3("applyImpulsesBatch", "data", c[1], c[2], c[3])
+                    .map(|i| (c[0] as usize, i))
+            })
+            .collect::<Result<Vec<(usize, Vec3Fix)>, _>>()
+            .map_err(refused)?;
+        for (body_id, impulse) in impulses {
+            if body_id < n_bodies {
+                self.inner.bodies[body_id].apply_impulse(impulse);
             }
-            let impulse = Vec3Fix::new(
-                Fix128::from_f64(chunk[1]),
-                Fix128::from_f64(chunk[2]),
-                Fix128::from_f64(chunk[3]),
-            );
-            self.inner.bodies[body_id].apply_impulse(impulse);
         }
+        Ok(())
     }
 
     // ========================================================================
@@ -357,12 +383,10 @@ impl WasmPhysicsWorld {
 
     /// Set world gravity.
     #[wasm_bindgen(js_name = "setGravity")]
-    pub fn set_gravity(&mut self, x: f64, y: f64, z: f64) {
-        self.inner.config.gravity = Vec3Fix::new(
-            Fix128::from_f64(x),
-            Fix128::from_f64(y),
-            Fix128::from_f64(z),
-        );
+    pub fn set_gravity(&mut self, x: f64, y: f64, z: f64) -> Result<(), JsError> {
+        self.inner.config.gravity =
+            binding_api::checked_vec3("setGravity", "gravity", x, y, z).map_err(refused)?;
+        Ok(())
     }
 
     /// Set number of substeps per frame.
@@ -408,25 +432,18 @@ impl WasmPhysicsWorld {
         dz: f64,
         max_distance: f64,
         body_radius: f64,
-    ) -> Vec<f64> {
-        let origin = Vec3Fix::new(
-            Fix128::from_f64(ox),
-            Fix128::from_f64(oy),
-            Fix128::from_f64(oz),
-        );
-        let direction = Vec3Fix::new(
-            Fix128::from_f64(dx),
-            Fix128::from_f64(dy),
-            Fix128::from_f64(dz),
-        );
+    ) -> Result<Vec<f64>, JsError> {
+        const E: &str = "raycast";
+        let origin = binding_api::checked_vec3(E, "origin", ox, oy, oz).map_err(refused)?;
+        let direction = binding_api::checked_vec3(E, "direction", dx, dy, dz).map_err(refused)?;
+        let max_t = binding_api::checked(E, "maxDistance", max_distance).map_err(refused)?;
+        let br = binding_api::checked(E, "bodyRadius", body_radius).map_err(refused)?;
         let dir_len = direction.length();
         if dir_len.is_zero() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let dir_norm = direction / dir_len;
         let ray = Ray::new(origin, dir_norm);
-        let max_t = Fix128::from_f64(max_distance);
-        let br = Fix128::from_f64(body_radius);
 
         let mut best_t = max_t;
         let mut result = Vec::new();
@@ -448,7 +465,7 @@ impl WasmPhysicsWorld {
             }
         }
 
-        result
+        Ok(result)
     }
 
     // ------------------------------------------------------------------
@@ -837,16 +854,16 @@ mod tests {
 
     #[test]
     fn test_world_with_config() {
-        let world = WasmPhysicsWorld::with_config(0.0, -9.81, 0.0, 4, 8);
+        let world = WasmPhysicsWorld::with_config(0.0, -9.81, 0.0, 4, 8).unwrap();
         assert_eq!(world.body_count(), 0);
     }
 
     #[test]
     fn test_add_bodies() {
         let mut world = WasmPhysicsWorld::new();
-        let d = world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
-        let s = world.add_static_body(0.0, 0.0, 0.0);
-        let k = world.add_kinematic_body(5.0, 0.0, 0.0);
+        let d = world.add_dynamic_body(0.0, 10.0, 0.0, 1.0).unwrap();
+        let s = world.add_static_body(0.0, 0.0, 0.0).unwrap();
+        let k = world.add_kinematic_body(5.0, 0.0, 0.0).unwrap();
         assert_eq!(d, 0);
         assert_eq!(s, 1);
         assert_eq!(k, 2);
@@ -856,9 +873,9 @@ mod tests {
     #[test]
     fn test_body_type() {
         let mut world = WasmPhysicsWorld::new();
-        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
-        world.add_static_body(0.0, 0.0, 0.0);
-        world.add_kinematic_body(0.0, 0.0, 0.0);
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0).unwrap();
+        world.add_static_body(0.0, 0.0, 0.0).unwrap();
+        world.add_kinematic_body(0.0, 0.0, 0.0).unwrap();
         assert_eq!(world.get_body_type(0), BodyType::Dynamic as u8);
         assert_eq!(world.get_body_type(1), BodyType::Static as u8);
         assert_eq!(world.get_body_type(2), BodyType::Kinematic as u8);
@@ -868,10 +885,10 @@ mod tests {
     #[test]
     fn test_step_gravity() {
         let mut world = WasmPhysicsWorld::new();
-        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
+        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0).unwrap();
 
         for _ in 0..60 {
-            world.step(1.0 / 60.0);
+            world.step(1.0 / 60.0).unwrap();
         }
 
         let positions = world.get_positions();
@@ -881,8 +898,8 @@ mod tests {
     #[test]
     fn test_batch_getters() {
         let mut world = WasmPhysicsWorld::new();
-        world.add_static_body(1.0, 2.0, 3.0);
-        world.add_static_body(4.0, 5.0, 6.0);
+        world.add_static_body(1.0, 2.0, 3.0).unwrap();
+        world.add_static_body(4.0, 5.0, 6.0).unwrap();
 
         let pos = world.get_positions();
         assert_eq!(pos.len(), 6);
@@ -902,15 +919,15 @@ mod tests {
     #[test]
     fn test_set_position_velocity() {
         let mut world = WasmPhysicsWorld::new();
-        world.set_gravity(0.0, 0.0, 0.0);
-        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+        world.set_gravity(0.0, 0.0, 0.0).unwrap();
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0).unwrap();
 
-        world.set_position(0, 5.0, 6.0, 7.0);
+        world.set_position(0, 5.0, 6.0, 7.0).unwrap();
         let pos = world.get_positions();
         assert!((pos[0] - 5.0).abs() < 1e-10);
         assert!((pos[1] - 6.0).abs() < 1e-10);
 
-        world.set_velocity(0, 1.0, 0.0, 0.0);
+        world.set_velocity(0, 1.0, 0.0, 0.0).unwrap();
         let vel = world.get_velocities();
         assert!((vel[0] - 1.0).abs() < 1e-10);
     }
@@ -918,23 +935,23 @@ mod tests {
     #[test]
     fn test_state_serialization() {
         let mut world = WasmPhysicsWorld::new();
-        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0);
+        world.add_dynamic_body(0.0, 10.0, 0.0, 1.0).unwrap();
 
         for _ in 0..30 {
-            world.step(1.0 / 60.0);
+            world.step(1.0 / 60.0).unwrap();
         }
 
         let state = world.serialize_state();
         assert!(!state.is_empty());
 
         for _ in 0..30 {
-            world.step(1.0 / 60.0);
+            world.step(1.0 / 60.0).unwrap();
         }
         let pos_after = world.get_positions();
 
         world.deserialize_state(&state);
         for _ in 0..30 {
-            world.step(1.0 / 60.0);
+            world.step(1.0 / 60.0).unwrap();
         }
         let pos_restored = world.get_positions();
 
@@ -947,11 +964,11 @@ mod tests {
     #[test]
     fn test_impulse_batch() {
         let mut world = WasmPhysicsWorld::new();
-        world.set_gravity(0.0, 0.0, 0.0);
-        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+        world.set_gravity(0.0, 0.0, 0.0).unwrap();
+        world.add_dynamic_body(0.0, 0.0, 0.0, 1.0).unwrap();
 
-        world.apply_impulses_batch(&[0.0, 10.0, 0.0, 0.0]);
-        world.step(1.0 / 60.0);
+        world.apply_impulses_batch(&[0.0, 10.0, 0.0, 0.0]).unwrap();
+        world.step(1.0 / 60.0).unwrap();
 
         let pos = world.get_positions();
         assert!(pos[0] > 0.0, "Impulse should move body, x={}", pos[0]);
@@ -960,10 +977,12 @@ mod tests {
     #[test]
     fn test_raycast_miss() {
         let mut world = WasmPhysicsWorld::new();
-        world.add_static_body(100.0, 0.0, 0.0);
+        world.add_static_body(100.0, 0.0, 0.0).unwrap();
 
         // Ray pointing away from body
-        let result = world.raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0);
+        let result = world
+            .raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0)
+            .unwrap();
         assert!(result.is_empty(), "Should miss body at x=100");
     }
 
@@ -977,8 +996,8 @@ mod tests {
         let f = Fix128::from_f64;
         let mut w = WasmPhysicsWorld::new();
         let mut r = PhysicsWorld::new(PhysicsConfig::default());
-        w.add_static_body(0.0, 0.0, 0.0);
-        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0);
+        w.add_static_body(0.0, 0.0, 0.0).unwrap();
+        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0).unwrap();
         r.add_body(RigidBody::new_static(Vec3Fix::ZERO));
         r.add_body(RigidBody::new_dynamic(
             Vec3Fix::from_int(2, 0, 0),
@@ -1024,8 +1043,8 @@ mod tests {
         assert_eq!((w.joint_count(), w.static_collider_count()), (2, 1));
 
         for _ in 0..30 {
-            w.step(1.0 / 60.0);
-            r.step(Fix128::from_ratio(1, 60));
+            w.step(1.0 / 60.0).unwrap();
+            r.step(Fix128::from_ratio(1, 60)).unwrap();
         }
         for (a, b) in w.inner.bodies.iter().zip(&r.bodies) {
             assert_eq!(
@@ -1040,8 +1059,8 @@ mod tests {
     #[test]
     fn binding_calls_refuse_bad_arguments_without_touching_the_world() {
         let mut w = WasmPhysicsWorld::new();
-        w.add_static_body(0.0, 0.0, 0.0);
-        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0);
+        w.add_static_body(0.0, 0.0, 0.0).unwrap();
+        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0).unwrap();
         assert!(!w.set_collision_radius(1, 0.0));
         assert!(!w.set_collision_radius(9, 1.0));
         assert!(!w.clear_collision_radius(9));
@@ -1109,8 +1128,8 @@ mod tests {
         use crate::static_collider::StaticCollider;
         let f = Fix128::from_f64;
         let mut w = WasmPhysicsWorld::new();
-        assert_eq!(w.add_static_body(0.0, 0.0, 10.0), 0);
-        assert_eq!(w.add_dynamic_body(0.0, 0.0, 20.0, 1.0), 1);
+        assert_eq!(w.add_static_body(0.0, 0.0, 10.0).unwrap(), 0);
+        assert_eq!(w.add_dynamic_body(0.0, 0.0, 20.0, 1.0).unwrap(), 1);
         assert!(w.set_collision_radius(0, 1.0));
         assert!(w.set_collision_radius(1, 1.0));
         assert_eq!(w.add_static_plane(0.0, 1.0, 0.0, -2.0), Some(0));
@@ -1251,7 +1270,7 @@ mod tests {
     #[test]
     fn observe_body_matches_the_rust_api() {
         let (mut w, mut r) = query_twins();
-        w.set_velocity(1, 1.0, 2.0, 3.0);
+        w.set_velocity(1, 1.0, 2.0, 3.0).unwrap();
         r.bodies[1].velocity = Vec3Fix::new(
             Fix128::from_f64(1.0),
             Fix128::from_f64(2.0),
@@ -1261,8 +1280,8 @@ mod tests {
             w.observe_body(1),
             vec![0.0, 0.0, 20.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         );
-        w.step(1.0 / 60.0);
-        r.step(Fix128::from_f64(1.0 / 60.0));
+        w.step(1.0 / 60.0).unwrap();
+        r.step(Fix128::from_f64(1.0 / 60.0)).unwrap();
         for i in 0..2 {
             let o = r.observe_body(i).unwrap();
             let b = |x: bool| if x { 1.0 } else { 0.0 };
