@@ -12,7 +12,7 @@
 
 use crate::binding_api;
 use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
-use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::math::{QuatFix, Vec3Fix};
 use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 // ============================================================================
@@ -1892,6 +1892,7 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::math::Fix128;
 
     #[test]
     fn version_string_matches_cargo_pkg_version() {
