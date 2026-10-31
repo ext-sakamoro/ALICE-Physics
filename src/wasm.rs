@@ -1044,7 +1044,7 @@ mod tests {
 
         for _ in 0..30 {
             w.step(1.0 / 60.0).unwrap();
-            r.step(Fix128::from_ratio(1, 60)).unwrap();
+            r.step(Fix128::from_ratio(1, 60));
         }
         for (a, b) in w.inner.bodies.iter().zip(&r.bodies) {
             assert_eq!(
@@ -1281,7 +1281,7 @@ mod tests {
             vec![0.0, 0.0, 20.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         );
         w.step(1.0 / 60.0).unwrap();
-        r.step(Fix128::from_f64(1.0 / 60.0)).unwrap();
+        r.step(Fix128::from_f64(1.0 / 60.0));
         for i in 0..2 {
             let o = r.observe_body(i).unwrap();
             let b = |x: bool| if x { 1.0 } else { 0.0 };

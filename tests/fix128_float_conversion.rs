@@ -19,8 +19,12 @@ fn a_finite_value_below_the_range_saturates_to_the_lowest() {
     let two63 = 9_223_372_036_854_775_808.0f64;
     for f in [-1e19, -two63 * 2.0, -f64::MAX, -(two63 + 2048.0)] {
         assert_eq!(Fix128::from_f64(f), LOWEST, "{f:e}");
-        assert_eq!(Fix128::from_f32(f as f32), LOWEST, "{f:e} as f32");
+        // -f64::MAX as f32 is -inf, which is not a finite value
+        if (f as f32).is_finite() {
+            assert_eq!(Fix128::from_f32(f as f32), LOWEST, "{f:e} as f32");
+        }
     }
+    assert_eq!(Fix128::from_f32(-f32::MAX), LOWEST);
     // the end itself is exact
     assert_eq!(Fix128::from_f64(-two63), LOWEST);
 }
@@ -31,8 +35,12 @@ fn a_finite_value_at_or_above_the_range_saturates_to_the_highest() {
     let two63 = 9_223_372_036_854_775_808.0f64;
     for f in [two63, 1e19, f64::MAX] {
         assert_eq!(Fix128::from_f64(f), HIGHEST, "{f:e}");
-        assert_eq!(Fix128::from_f32(f as f32), HIGHEST, "{f:e} as f32");
+        // f64::MAX as f32 is +inf, which is not a finite value
+        if (f as f32).is_finite() {
+            assert_eq!(Fix128::from_f32(f as f32), HIGHEST, "{f:e} as f32");
+        }
     }
+    assert_eq!(Fix128::from_f32(f32::MAX), HIGHEST);
 }
 
 /// Inside the range nothing changes: the integer part and the 64-bit fraction
