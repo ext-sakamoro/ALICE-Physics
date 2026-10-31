@@ -57,6 +57,28 @@
 //! (`if condition`, `while condition`, `match guard`, `match scrutinee`, `boolean operand`,
 //! `closure body`, `let binding`, `index`, `return value`, `assertion`, `macro argument`
 //! or `expression`). A summary `scanned <files> <comparisons>` goes to stderr.
+//!
+//! `g2-rewrite-scan --float-to-fix <dir>...` lists every float to fixed-point conversion in the
+//! non-test code (the inventory scripts/fix_conversion_sites.py reviews): a call of
+//! `Fix128::from_f64` / `from_f32`, `Vec3Fix::from_f32` / `from_f64` or `Self::` of those, the
+//! same named as a function value (`.map(Fix128::from_f64)`), and the same inside the arguments
+//! of a macro invocation. One line per site:
+//! `file<TAB>enclosing fn<TAB>callee<TAB>form<TAB>arguments<TAB>kind<TAB>line`, the enclosing fn
+//! as `Type::name` inside an `impl`, the form `call`, `fn-value`, `macro-body` (a
+//! `macro_rules!` whose rules name a conversion) or `macro-unparsed`, the arguments in
+//! normalized token form joined by ` , `, and the kind `constant` when every argument is a
+//! literal or a named constant (`UPPER_CASE`), or arithmetic and casts of those, else `value`.
+//!
+//! `g2-rewrite-scan --binding-floats <file or dir>...` lists every binding entry point with a
+//! parameter that carries floats (scripts/binding_float_entries.py checks the list against
+//! the cases of the test that passes each one a non-finite value): a function with an `extern`
+//! ABI or `#[wasm_bindgen]` / `#[pyfunction]`, a `pub` method of a `#[wasm_bindgen]` impl and
+//! every method of a `#[pymethods]` impl, outside `#[cfg(test)]`. A `*mut` / `&mut`
+//! parameter (an out-parameter) is not listed. One line per parameter:
+//! `file<TAB>entry<TAB>parameter<TAB>type`, the entry as `Type::method` for a method, the
+//! parameter type in token form; a parameter carries floats when its type names `f64`, `f32`,
+//! `AliceVec3`, `AliceQuat`, `AlicePhysicsConfig`, `AlicePhysicsShape` or `PyReadonlyArray2`,
+//! or a type alias of the same file defined with one of those (or with such an alias).
 
 use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 use quote::ToTokens;
@@ -888,6 +910,331 @@ impl<'ast> Visit<'ast> for Comparisons<'_> {
     }
 }
 
+/// The float to `Fix128` constructors the `--float-to-fix` mode lists
+const FLOAT_TO_FIX: [&str; 2] = ["from_f64", "from_f32"];
+
+/// The types whose `from_f64` / `from_f32` turn a float into fixed point
+const FIX_TYPES: [&str; 3] = ["Fix128", "Vec3Fix", "Self"];
+
+/// Whether `e` has a value known when the code is written: literals, named constants
+/// (`UPPER_CASE` paths, `f64::consts::PI`), and `-`, `+`, `*`, `/`, `as` of those
+fn is_constant(e: &Expr) -> bool {
+    match strip(e) {
+        Expr::Lit(_) => true,
+        Expr::Unary(u) if matches!(u.op, UnOp::Neg(_)) => is_constant(&u.expr),
+        Expr::Binary(b) => {
+            matches!(
+                b.op,
+                BinOp::Add(_) | BinOp::Sub(_) | BinOp::Mul(_) | BinOp::Div(_)
+            ) && is_constant(&b.left)
+                && is_constant(&b.right)
+        }
+        Expr::Cast(c) => is_constant(&c.expr),
+        Expr::Path(p) => p.path.segments.last().is_some_and(|s| {
+            let n = s.ident.to_string();
+            n.chars().any(|c| c.is_ascii_uppercase())
+                && n.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        }),
+        _ => false,
+    }
+}
+
+/// The `Type::from_f64` / `Type::from_f32` named by `p`, if it is one
+fn float_to_fix_callee(p: &syn::Path) -> Option<String> {
+    let n = p.segments.len();
+    if n < 2 {
+        return None;
+    }
+    let (ty, f) = (&p.segments[n - 2].ident, &p.segments[n - 1].ident);
+    let (ty, f) = (ty.to_string(), f.to_string());
+    (FIX_TYPES.contains(&ty.as_str()) && FLOAT_TO_FIX.contains(&f.as_str()))
+        .then(|| format!("{ty}::{f}"))
+}
+
+/// Every float to fixed-point conversion in non-test code (`--float-to-fix`)
+struct Conversions<'a> {
+    file: &'a str,
+    current_fn: String,
+    /// the `impl` type of the function being visited, empty outside an `impl`
+    current_impl: String,
+    out: Vec<String>,
+}
+
+impl Conversions<'_> {
+    fn enter(&mut self, name: String, attrs: &[syn::Attribute], body: impl FnOnce(&mut Self)) {
+        if is_cfg_test(attrs) {
+            return;
+        }
+        let name = if self.current_impl.is_empty() {
+            name
+        } else {
+            format!("{}::{name}", self.current_impl)
+        };
+        let saved = std::mem::replace(&mut self.current_fn, name);
+        body(self);
+        self.current_fn = saved;
+    }
+
+    fn emit(&mut self, callee: &str, form: &str, args: &str, kind: &str, line: usize) {
+        self.out.push(format!(
+            "{}\t{}\t{callee}\t{form}\t{args}\t{kind}\t{line}",
+            self.file, self.current_fn
+        ));
+    }
+}
+
+impl<'ast> Visit<'ast> for Conversions<'_> {
+    fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
+        if !is_cfg_test(&m.attrs) {
+            visit::visit_item_mod(self, m);
+        }
+    }
+    fn visit_item_impl(&mut self, i: &'ast syn::ItemImpl) {
+        if is_cfg_test(&i.attrs) {
+            return;
+        }
+        let ty = match &*i.self_ty {
+            syn::Type::Path(p) => p
+                .path
+                .segments
+                .last()
+                .map(|s| s.ident.to_string())
+                .unwrap_or_default(),
+            t => t.to_token_stream().to_string(),
+        };
+        let saved = std::mem::replace(&mut self.current_impl, ty);
+        visit::visit_item_impl(self, i);
+        self.current_impl = saved;
+    }
+    fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
+        let saved = std::mem::take(&mut self.current_impl);
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_item_fn(s, f)
+        });
+        self.current_impl = saved;
+    }
+    fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_impl_item_fn(s, f)
+        });
+    }
+    fn visit_trait_item_fn(&mut self, f: &'ast syn::TraitItemFn) {
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_trait_item_fn(s, f)
+        });
+    }
+    fn visit_item_const(&mut self, c: &'ast syn::ItemConst) {
+        self.enter(format!("const {}", c.ident), &c.attrs, |s| {
+            visit::visit_item_const(s, c)
+        });
+    }
+    fn visit_item_static(&mut self, c: &'ast syn::ItemStatic) {
+        self.enter(format!("static {}", c.ident), &c.attrs, |s| {
+            visit::visit_item_static(s, c)
+        });
+    }
+    fn visit_item_macro(&mut self, m: &'ast syn::ItemMacro) {
+        if is_cfg_test(&m.attrs) {
+            return;
+        }
+        if m.mac.path.is_ident("macro_rules") {
+            // a conversion inside a rule body has no parsed arguments: named in the row
+            let text = m.mac.tokens.to_string();
+            if FLOAT_TO_FIX.iter().any(|f| text.contains(f)) {
+                let name = m
+                    .ident
+                    .as_ref()
+                    .map_or_else(|| "<unnamed>".to_string(), ToString::to_string);
+                let line = m.mac.path.segments[0].ident.span().start().line;
+                self.out.push(format!(
+                    "{}\tmacro {name}\t-\tmacro-body\t-\tvalue\t{line}",
+                    self.file
+                ));
+            }
+            return;
+        }
+        self.visit_macro(&m.mac);
+    }
+    fn visit_macro(&mut self, m: &'ast syn::Macro) {
+        let parser = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated;
+        if let Ok(args) = syn::parse::Parser::parse2(parser, m.tokens.clone()) {
+            for a in &args {
+                self.visit_expr(a);
+            }
+        } else if FLOAT_TO_FIX
+            .iter()
+            .any(|f| m.tokens.to_string().contains(f))
+        {
+            // arguments that do not parse as expressions but name a conversion
+            let line = m
+                .path
+                .segments
+                .last()
+                .map_or(0, |s| s.ident.span().start().line);
+            let name = m.path.to_token_stream().to_string();
+            self.emit("-", "macro-unparsed", &name, "value", line);
+        }
+    }
+    fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
+        if let Expr::Path(p) = &*c.func {
+            if let Some(callee) = float_to_fix_callee(&p.path) {
+                let line = p.path.segments[0].ident.span().start().line;
+                let args: Vec<String> = c.args.iter().map(norm).collect();
+                let kind = if c.args.iter().all(is_constant) {
+                    "constant"
+                } else {
+                    "value"
+                };
+                self.emit(&callee, "call", &args.join(" , "), kind, line);
+                for a in &c.args {
+                    self.visit_expr(a);
+                }
+                return;
+            }
+        }
+        visit::visit_expr_call(self, c);
+    }
+    fn visit_expr_path(&mut self, p: &'ast syn::ExprPath) {
+        // `Fix128::from_f64` named without a call: a function value (`.map(Fix128::from_f64)`)
+        if let Some(callee) = float_to_fix_callee(&p.path) {
+            let line = p.path.segments[0].ident.span().start().line;
+            self.emit(&callee, "fn-value", "-", "value", line);
+        }
+    }
+}
+
+/// The parameter types a binding entry receives floats through
+const FLOAT_TYPES: [&str; 7] = [
+    "f64",
+    "f32",
+    "AliceVec3",
+    "AliceQuat",
+    "AlicePhysicsConfig",
+    "AlicePhysicsShape",
+    "PyReadonlyArray2",
+];
+
+fn has_attr(attrs: &[syn::Attribute], name: &str) -> bool {
+    attrs
+        .iter()
+        .any(|a| a.path().segments.last().is_some_and(|s| s.ident == name))
+}
+
+/// The type aliases of `file` whose definition names a float type (directly or through
+/// another such alias), so a parameter typed `Vec3Arg` for `(f64, f64, f64)` is seen
+fn float_aliases(file: &syn::File) -> BTreeSet<String> {
+    let mut found: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let before = found.len();
+        for item in &file.items {
+            if let syn::Item::Type(t) = item {
+                let rhs = t.ty.to_token_stream().to_string();
+                let names_float = rhs
+                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .any(|w| FLOAT_TYPES.contains(&w) || found.contains(w));
+                if names_float {
+                    found.insert(t.ident.to_string());
+                }
+            }
+        }
+        if found.len() == before {
+            return found;
+        }
+    }
+}
+
+/// Every binding entry point with a float parameter (`--binding-floats`)
+struct BindingFloats<'a> {
+    file: &'a str,
+    /// this file's aliases of float-carrying types
+    aliases: BTreeSet<String>,
+    /// the `impl` type when the impl is exported, and whether it is `#[pymethods]`
+    /// (every method exported) rather than `#[wasm_bindgen]` (its `pub` methods)
+    exported_impl: Option<(String, bool)>,
+    out: Vec<String>,
+}
+
+impl BindingFloats<'_> {
+    fn emit(&mut self, name: &str, sig: &syn::Signature) {
+        for input in &sig.inputs {
+            let syn::FnArg::Typed(t) = input else {
+                continue;
+            };
+            let ty = t.ty.to_token_stream().to_string();
+            // an out-parameter receives values, it does not hand any in
+            if matches!(&*t.ty, syn::Type::Ptr(p) if p.mutability.is_some())
+                || matches!(&*t.ty, syn::Type::Reference(r) if r.mutability.is_some())
+            {
+                continue;
+            }
+            let words: BTreeSet<&str> = ty
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .collect();
+            if FLOAT_TYPES.iter().any(|f| words.contains(f))
+                || self.aliases.iter().any(|a| words.contains(a.as_str()))
+            {
+                let param = t.pat.to_token_stream().to_string();
+                self.out
+                    .push(format!("{}\t{name}\t{param}\t{ty}", self.file));
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for BindingFloats<'_> {
+    fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
+        if !is_cfg_test(&m.attrs) {
+            visit::visit_item_mod(self, m);
+        }
+    }
+    fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
+        if is_cfg_test(&f.attrs) {
+            return;
+        }
+        let exported = f.sig.abi.is_some()
+            || has_attr(&f.attrs, "wasm_bindgen")
+            || has_attr(&f.attrs, "pyfunction");
+        if exported {
+            self.emit(&f.sig.ident.to_string(), &f.sig);
+        }
+    }
+    fn visit_item_impl(&mut self, i: &'ast syn::ItemImpl) {
+        if is_cfg_test(&i.attrs) {
+            return;
+        }
+        if !(has_attr(&i.attrs, "wasm_bindgen") || has_attr(&i.attrs, "pymethods")) {
+            return;
+        }
+        let ty = match &*i.self_ty {
+            syn::Type::Path(p) => p
+                .path
+                .segments
+                .last()
+                .map(|s| s.ident.to_string())
+                .unwrap_or_default(),
+            t => t.to_token_stream().to_string(),
+        };
+        let saved = self
+            .exported_impl
+            .replace((ty, has_attr(&i.attrs, "pymethods")));
+        visit::visit_item_impl(self, i);
+        self.exported_impl = saved;
+    }
+    fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
+        if is_cfg_test(&f.attrs) {
+            return;
+        }
+        let Some((ty, python)) = self.exported_impl.clone() else {
+            return;
+        };
+        // a wasm_bindgen impl exports its `pub` methods; a pymethods impl every method
+        if python || matches!(f.vis, syn::Visibility::Public(_)) {
+            self.emit(&format!("{ty}::{}", f.sig.ident), &f.sig);
+        }
+    }
+}
+
 fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -907,6 +1254,14 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let comparisons = args.first().is_some_and(|a| a == "--comparisons");
     if comparisons {
+        args.remove(0);
+    }
+    let float_to_fix = args.first().is_some_and(|a| a == "--float-to-fix");
+    if float_to_fix {
+        args.remove(0);
+    }
+    let binding_floats = args.first().is_some_and(|a| a == "--binding-floats");
+    if binding_floats {
         args.remove(0);
     }
     let dirs: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
@@ -935,6 +1290,34 @@ fn main() {
             }
         };
         let rel = path.to_string_lossy().replace('\\', "/");
+        if binding_floats {
+            let mut b = BindingFloats {
+                file: &rel,
+                aliases: float_aliases(&ast),
+                exported_impl: None,
+                out: Vec::new(),
+            };
+            b.visit_file(&ast);
+            findings += b.out.len();
+            for line in b.out {
+                println!("{line}");
+            }
+            continue;
+        }
+        if float_to_fix {
+            let mut c = Conversions {
+                file: &rel,
+                current_fn: "<module>".to_string(),
+                current_impl: String::new(),
+                out: Vec::new(),
+            };
+            c.visit_file(&ast);
+            findings += c.out.len();
+            for line in c.out {
+                println!("{line}");
+            }
+            continue;
+        }
         if comparisons {
             let mut c = Comparisons {
                 file: &rel,

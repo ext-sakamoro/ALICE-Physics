@@ -31,6 +31,62 @@ pub(crate) fn finite(x: f64) -> Option<Fix128> {
     x.is_finite().then(|| Fix128::from_f64(x))
 }
 
+/// Why a binding refused a float argument: the entry point and the parameter.
+///
+/// Its text (`step: dt is not finite`) is the one message the three bindings
+/// give: the C ABI through `alice_physics_last_error`, WebAssembly as the
+/// thrown error and Python as the `ValueError`. Before, such a value was
+/// converted (NaN to zero, ±∞ to the nearest end of `Fix128`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NotFinite {
+    /// The name the host calls (`alice_physics_world_step`, `step`).
+    pub(crate) entry: &'static str,
+    /// The parameter that was not finite.
+    pub(crate) param: &'static str,
+}
+
+impl core::fmt::Display for NotFinite {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}: {} is not finite", self.entry, self.param)
+    }
+}
+
+/// `x` in fixed point, or the refusal naming `entry` and `param`.
+pub(crate) fn checked(
+    entry: &'static str,
+    param: &'static str,
+    x: f64,
+) -> Result<Fix128, NotFinite> {
+    finite(x).ok_or(NotFinite { entry, param })
+}
+
+/// `x` (an `f32`) in fixed point, or the refusal naming `entry` and `param`:
+/// for a binding that narrows to `f32` first, so a finite `f64` beyond the
+/// `f32` range (narrowed to ±∞) is refused too.
+#[cfg(feature = "python")]
+pub(crate) fn checked_f32(
+    entry: &'static str,
+    param: &'static str,
+    x: f32,
+) -> Result<Fix128, NotFinite> {
+    if x.is_finite() {
+        Ok(Fix128::from_f32(x))
+    } else {
+        Err(NotFinite { entry, param })
+    }
+}
+
+/// The vector in fixed point, or the refusal naming `entry` and `param`.
+pub(crate) fn checked_vec3(
+    entry: &'static str,
+    param: &'static str,
+    x: f64,
+    y: f64,
+    z: f64,
+) -> Result<Vec3Fix, NotFinite> {
+    vec3(x, y, z).ok_or(NotFinite { entry, param })
+}
+
 /// A finite value greater than zero.
 pub(crate) fn positive(x: f64) -> Option<Fix128> {
     (x.is_finite() && x > 0.0).then(|| Fix128::from_f64(x))

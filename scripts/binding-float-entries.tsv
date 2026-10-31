@@ -1,0 +1,233 @@
+# Binding entry points with a float parameter, from g2-rewrite-scan --binding-floats (scripts/binding_float_entries.py)
+# file<TAB>entry<TAB>parameter<TAB>type: every row is a case of the binding's test that passes it NaN and ±inf and sees the explicit refusal (src/ffi.rs: Rust, src/wasm.rs: tests/js, src/python.rs: python/tests)
+src/ffi.rs	alice_physics_world_create_with_config	config	AlicePhysicsConfig
+src/ffi.rs	alice_physics_world_step	dt	f64
+src/ffi.rs	alice_physics_world_step_n	dt	f64
+src/ffi.rs	alice_physics_world_set_velocities_batch	data	* const f64
+src/ffi.rs	alice_physics_body_apply_impulses_batch	data	* const f64
+src/ffi.rs	alice_physics_body_add_dynamic	position	AliceVec3
+src/ffi.rs	alice_physics_body_add_dynamic	mass	f64
+src/ffi.rs	alice_physics_body_add_static	position	AliceVec3
+src/ffi.rs	alice_physics_body_add_sensor	position	AliceVec3
+src/ffi.rs	alice_physics_body_set_position	position	AliceVec3
+src/ffi.rs	alice_physics_body_set_velocity	velocity	AliceVec3
+src/ffi.rs	alice_physics_body_set_restitution	restitution	f64
+src/ffi.rs	alice_physics_body_set_friction	friction	f64
+src/ffi.rs	alice_physics_body_apply_impulse	impulse	AliceVec3
+src/ffi.rs	alice_physics_body_apply_impulse_at	impulse	AliceVec3
+src/ffi.rs	alice_physics_body_apply_impulse_at	point	AliceVec3
+src/ffi.rs	alice_physics_world_set_gravity	x	f64
+src/ffi.rs	alice_physics_world_set_gravity	y	f64
+src/ffi.rs	alice_physics_world_set_gravity	z	f64
+src/ffi.rs	alice_physics_body_set_collision_radius	radius	f64
+src/ffi.rs	alice_physics_body_add_shaped	shape	AlicePhysicsShape
+src/ffi.rs	alice_physics_body_add_shaped	density	f64
+src/ffi.rs	alice_physics_body_add_shaped	position	AliceVec3
+src/ffi.rs	alice_physics_body_set_shape	shape	AlicePhysicsShape
+src/ffi.rs	alice_physics_static_add_plane	normal	AliceVec3
+src/ffi.rs	alice_physics_static_add_plane	offset	f64
+src/ffi.rs	alice_physics_static_add_heightfield	heights	* const f64
+src/ffi.rs	alice_physics_static_add_heightfield	spacing	f64
+src/ffi.rs	alice_physics_static_add_heightfield	origin	AliceVec3
+src/ffi.rs	alice_physics_static_add_trimesh	vertices	* const f64
+src/ffi.rs	alice_physics_joint_add_ball	anchor_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_ball	anchor_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_hinge	anchor_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_hinge	anchor_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_hinge	axis_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_hinge	axis_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_fixed	anchor_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_fixed	anchor_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_fixed	relative_rotation	AliceQuat
+src/ffi.rs	alice_physics_joint_add_slider	axis	AliceVec3
+src/ffi.rs	alice_physics_joint_add_slider	anchor_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_slider	anchor_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_spring	anchor_a	AliceVec3
+src/ffi.rs	alice_physics_joint_add_spring	anchor_b	AliceVec3
+src/ffi.rs	alice_physics_joint_add_spring	rest_length	f64
+src/ffi.rs	alice_physics_joint_add_spring	stiffness	f64
+src/ffi.rs	alice_physics_joint_add_spring	damping	f64
+src/ffi.rs	alice_physics_world_cast_ray	origin	AliceVec3
+src/ffi.rs	alice_physics_world_cast_ray	direction	AliceVec3
+src/ffi.rs	alice_physics_world_cast_ray	max_t	f64
+src/ffi.rs	alice_physics_world_cast_sphere	center	AliceVec3
+src/ffi.rs	alice_physics_world_cast_sphere	radius	f64
+src/ffi.rs	alice_physics_world_cast_sphere	direction	AliceVec3
+src/ffi.rs	alice_physics_world_cast_sphere	max_t	f64
+src/ffi.rs	alice_physics_world_cast_capsule	a	AliceVec3
+src/ffi.rs	alice_physics_world_cast_capsule	b	AliceVec3
+src/ffi.rs	alice_physics_world_cast_capsule	radius	f64
+src/ffi.rs	alice_physics_world_cast_capsule	direction	AliceVec3
+src/ffi.rs	alice_physics_world_cast_capsule	max_t	f64
+src/ffi.rs	alice_physics_world_overlap_sphere	center	AliceVec3
+src/ffi.rs	alice_physics_world_overlap_sphere	radius	f64
+src/python.rs	PyPhysicsWorld::add_dynamic_body	x	f64
+src/python.rs	PyPhysicsWorld::add_dynamic_body	y	f64
+src/python.rs	PyPhysicsWorld::add_dynamic_body	z	f64
+src/python.rs	PyPhysicsWorld::add_dynamic_body	mass	f64
+src/python.rs	PyPhysicsWorld::add_static_body	x	f64
+src/python.rs	PyPhysicsWorld::add_static_body	y	f64
+src/python.rs	PyPhysicsWorld::add_static_body	z	f64
+src/python.rs	PyPhysicsWorld::step	dt	f64
+src/python.rs	PyPhysicsWorld::step_n	dt	f64
+src/python.rs	PyPhysicsWorld::set_velocity	vx	f64
+src/python.rs	PyPhysicsWorld::set_velocity	vy	f64
+src/python.rs	PyPhysicsWorld::set_velocity	vz	f64
+src/python.rs	PyPhysicsWorld::set_positions_batch	data	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::add_bodies_batch	data	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::set_velocities_batch	data	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::apply_impulses_batch	data	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::set_collision_radius	radius	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	a	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	b	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	c	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	density	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	x	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	y	f64
+src/python.rs	PyPhysicsWorld::add_shaped_body	z	f64
+src/python.rs	PyPhysicsWorld::set_body_shape	a	f64
+src/python.rs	PyPhysicsWorld::set_body_shape	b	f64
+src/python.rs	PyPhysicsWorld::set_body_shape	c	f64
+src/python.rs	PyPhysicsWorld::add_static_plane	nx	f64
+src/python.rs	PyPhysicsWorld::add_static_plane	ny	f64
+src/python.rs	PyPhysicsWorld::add_static_plane	nz	f64
+src/python.rs	PyPhysicsWorld::add_static_plane	offset	f64
+src/python.rs	PyPhysicsWorld::add_static_heightfield	heights	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::add_static_heightfield	spacing	f64
+src/python.rs	PyPhysicsWorld::add_static_heightfield	origin	(f64 , f64 , f64)
+src/python.rs	PyPhysicsWorld::add_static_trimesh	vertices	PyReadonlyArray2 < f64 >
+src/python.rs	PyPhysicsWorld::add_ball_joint	anchor_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_ball_joint	anchor_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_hinge_joint	anchor_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_hinge_joint	anchor_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_hinge_joint	axis_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_hinge_joint	axis_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_fixed_joint	anchor_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_fixed_joint	anchor_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_fixed_joint	relative_rotation	(f64 , f64 , f64 , f64)
+src/python.rs	PyPhysicsWorld::add_slider_joint	axis	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_slider_joint	anchor_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_slider_joint	anchor_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_spring_joint	anchor_a	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_spring_joint	anchor_b	Vec3Arg
+src/python.rs	PyPhysicsWorld::add_spring_joint	rest_length	f64
+src/python.rs	PyPhysicsWorld::add_spring_joint	stiffness	f64
+src/python.rs	PyPhysicsWorld::add_spring_joint	damping	f64
+src/python.rs	PyPhysicsWorld::cast_ray	origin	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_ray	direction	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_ray	max_t	f64
+src/python.rs	PyPhysicsWorld::cast_sphere	center	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_sphere	radius	f64
+src/python.rs	PyPhysicsWorld::cast_sphere	direction	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_sphere	max_t	f64
+src/python.rs	PyPhysicsWorld::cast_capsule	a	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_capsule	b	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_capsule	radius	f64
+src/python.rs	PyPhysicsWorld::cast_capsule	direction	Vec3Arg
+src/python.rs	PyPhysicsWorld::cast_capsule	max_t	f64
+src/python.rs	PyPhysicsWorld::overlap_sphere	center	Vec3Arg
+src/python.rs	PyPhysicsWorld::overlap_sphere	radius	f64
+src/python.rs	PyDeterministicSimulation::add_body	x	f64
+src/python.rs	PyDeterministicSimulation::add_body	y	f64
+src/python.rs	PyDeterministicSimulation::add_body	z	f64
+src/python.rs	PyDeterministicSimulation::add_body	mass	f64
+src/python.rs	PyDeterministicSimulation::advance_frame	inputs	Vec < (u8 , f64 , f64 , f64 , u32) >
+src/python.rs	encode_frame_input	move_x	f64
+src/python.rs	encode_frame_input	move_y	f64
+src/python.rs	encode_frame_input	move_z	f64
+src/python.rs	encode_frame_input	aim_x	f64
+src/python.rs	encode_frame_input	aim_y	f64
+src/python.rs	encode_frame_input	aim_z	f64
+src/wasm.rs	WasmPhysicsWorld::with_config	gravity_x	f64
+src/wasm.rs	WasmPhysicsWorld::with_config	gravity_y	f64
+src/wasm.rs	WasmPhysicsWorld::with_config	gravity_z	f64
+src/wasm.rs	WasmPhysicsWorld::add_dynamic_body	x	f64
+src/wasm.rs	WasmPhysicsWorld::add_dynamic_body	y	f64
+src/wasm.rs	WasmPhysicsWorld::add_dynamic_body	z	f64
+src/wasm.rs	WasmPhysicsWorld::add_dynamic_body	mass	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_body	x	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_body	y	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_body	z	f64
+src/wasm.rs	WasmPhysicsWorld::add_kinematic_body	x	f64
+src/wasm.rs	WasmPhysicsWorld::add_kinematic_body	y	f64
+src/wasm.rs	WasmPhysicsWorld::add_kinematic_body	z	f64
+src/wasm.rs	WasmPhysicsWorld::step	dt	f64
+src/wasm.rs	WasmPhysicsWorld::step_n	dt	f64
+src/wasm.rs	WasmPhysicsWorld::set_position	x	f64
+src/wasm.rs	WasmPhysicsWorld::set_position	y	f64
+src/wasm.rs	WasmPhysicsWorld::set_position	z	f64
+src/wasm.rs	WasmPhysicsWorld::set_velocity	vx	f64
+src/wasm.rs	WasmPhysicsWorld::set_velocity	vy	f64
+src/wasm.rs	WasmPhysicsWorld::set_velocity	vz	f64
+src/wasm.rs	WasmPhysicsWorld::apply_impulse	ix	f64
+src/wasm.rs	WasmPhysicsWorld::apply_impulse	iy	f64
+src/wasm.rs	WasmPhysicsWorld::apply_impulse	iz	f64
+src/wasm.rs	WasmPhysicsWorld::set_restitution	restitution	f64
+src/wasm.rs	WasmPhysicsWorld::set_friction	friction	f64
+src/wasm.rs	WasmPhysicsWorld::set_gravity_scale	scale	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	x	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	y	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	z	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	qx	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	qy	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	qz	f64
+src/wasm.rs	WasmPhysicsWorld::set_kinematic_target	qw	f64
+src/wasm.rs	WasmPhysicsWorld::set_velocities_batch	data	& [f64]
+src/wasm.rs	WasmPhysicsWorld::apply_impulses_batch	data	& [f64]
+src/wasm.rs	WasmPhysicsWorld::set_gravity	x	f64
+src/wasm.rs	WasmPhysicsWorld::set_gravity	y	f64
+src/wasm.rs	WasmPhysicsWorld::set_gravity	z	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	ox	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	oy	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	oz	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	dx	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	dy	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	dz	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	max_distance	f64
+src/wasm.rs	WasmPhysicsWorld::raycast	body_radius	f64
+src/wasm.rs	WasmPhysicsWorld::cast_ray	origin	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_ray	direction	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_ray	max_t	f64
+src/wasm.rs	WasmPhysicsWorld::cast_sphere	center	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_sphere	radius	f64
+src/wasm.rs	WasmPhysicsWorld::cast_sphere	direction	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_sphere	max_t	f64
+src/wasm.rs	WasmPhysicsWorld::cast_capsule	a	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_capsule	b	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_capsule	radius	f64
+src/wasm.rs	WasmPhysicsWorld::cast_capsule	direction	& [f64]
+src/wasm.rs	WasmPhysicsWorld::cast_capsule	max_t	f64
+src/wasm.rs	WasmPhysicsWorld::overlap_sphere	center	& [f64]
+src/wasm.rs	WasmPhysicsWorld::overlap_sphere	radius	f64
+src/wasm.rs	WasmPhysicsWorld::set_collision_radius	radius	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	a	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	b	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	c	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	density	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	x	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	y	f64
+src/wasm.rs	WasmPhysicsWorld::add_shaped_body	z	f64
+src/wasm.rs	WasmPhysicsWorld::set_body_shape	a	f64
+src/wasm.rs	WasmPhysicsWorld::set_body_shape	b	f64
+src/wasm.rs	WasmPhysicsWorld::set_body_shape	c	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_plane	nx	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_plane	ny	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_plane	nz	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_plane	offset	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_heightfield	heights	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_static_heightfield	spacing	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_heightfield	ox	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_heightfield	oy	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_heightfield	oz	f64
+src/wasm.rs	WasmPhysicsWorld::add_static_trimesh	vertices	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_ball_joint	anchors	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_hinge_joint	anchors	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_hinge_joint	axes	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_fixed_joint	anchors	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_fixed_joint	relative_rotation	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_slider_joint	axis	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_slider_joint	anchors	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_spring_joint	anchors	& [f64]
+src/wasm.rs	WasmPhysicsWorld::add_spring_joint	rest_length	f64
+src/wasm.rs	WasmPhysicsWorld::add_spring_joint	stiffness	f64
+src/wasm.rs	WasmPhysicsWorld::add_spring_joint	damping	f64

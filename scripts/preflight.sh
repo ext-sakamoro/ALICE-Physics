@@ -196,6 +196,9 @@ python3 scripts/test_no_private_minmax.py
 python3 scripts/no_private_minmax.py
 python3 scripts/test_g2_rewrite_check.py
 python3 scripts/g2_rewrite_check.py
+# binding の float 引数は全部表にあり、表の全行を 3 binding の試験が NaN / ±inf で叩く
+python3 scripts/test_binding_float_entries.py
+python3 scripts/binding_float_entries.py --min-rows 200
 # g2-comparisons.yml と対: 比較を全部 compiler の型で判定し、浮動小数点の比較は全部 select / predicate の行を持つ
 python3 scripts/test_g2_comparisons.py
 python3 scripts/g2_comparisons.py

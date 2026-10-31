@@ -133,10 +133,17 @@ mod guard {
 
 use guard::{ffi_guard, ffi_guard_world, writable};
 
-/// Most recent panic message caught at the FFI boundary on this thread, as a
-/// heap-allocated C string, or null when there is none. Free it with
-/// [`alice_physics_string_free`]. Reading takes the message (a second call
-/// returns null until the next error).
+/// Most recent error message recorded on this thread, as a heap-allocated C
+/// string, or null when there is none: a panic caught at the FFI boundary, a
+/// refused argument (`alice-physics: <entry>: <param> is not finite`), a
+/// faulted world or a fault raised during a step. Free it with
+/// [`alice_physics_string_free`].
+///
+/// Each thread has its own message. It stays until it is read (reading takes
+/// it: a second call returns null until the next error), cleared with
+/// [`alice_physics_clear_last_error`], or replaced by a later error on the
+/// same thread. A successful call does not clear it, so read it right after
+/// the call that returned its failure value, or clear it before that call.
 #[no_mangle]
 pub extern "C" fn alice_physics_last_error() -> *mut std::os::raw::c_char {
     ffi_guard(std::ptr::null_mut(), || match guard::take_last_error() {
@@ -237,14 +244,6 @@ pub struct AliceBodyInfo {
 // ============================================================================
 
 impl AliceVec3 {
-    fn to_vec3fix(self) -> Vec3Fix {
-        Vec3Fix::new(
-            Fix128::from_f64(self.x),
-            Fix128::from_f64(self.y),
-            Fix128::from_f64(self.z),
-        )
-    }
-
     fn from_vec3fix(v: Vec3Fix) -> Self {
         Self {
             x: v.x.to_f64(),
@@ -285,15 +284,24 @@ pub extern "C" fn alice_physics_world_create_with_config(
     config: AlicePhysicsConfig,
 ) -> *mut PhysicsWorld {
     ffi_guard(std::ptr::null_mut(), || {
+        const E: &str = "alice_physics_world_create_with_config";
+        let (Some(gravity), Some(damping)) = (
+            arg(binding_api::checked_vec3(
+                E,
+                "config.gravity",
+                config.gravity_x,
+                config.gravity_y,
+                config.gravity_z,
+            )),
+            arg(binding_api::checked(E, "config.damping", config.damping)),
+        ) else {
+            return std::ptr::null_mut();
+        };
         let solver_config = SolverConfig {
             substeps: config.substeps as usize,
             iterations: config.iterations as usize,
-            gravity: Vec3Fix::new(
-                Fix128::from_f64(config.gravity_x),
-                Fix128::from_f64(config.gravity_y),
-                Fix128::from_f64(config.gravity_z),
-            ),
-            damping: Fix128::from_f64(config.damping),
+            gravity,
+            damping,
             ..Default::default()
         };
         let world = PhysicsWorld::new(solver_config);
@@ -317,7 +325,8 @@ pub unsafe extern "C" fn alice_physics_world_destroy(world: *mut PhysicsWorld) {
 /// Step the simulation by dt seconds (as f64, converted to Fix128).
 ///
 /// Returns 1 when the step ran without a fault, 0 otherwise: a null pointer,
-/// a world already faulted (the step is refused and changes nothing), a fault
+/// a non-finite `dt` (refused, nothing changes), a world already faulted (the
+/// step is refused and changes nothing), a fault
 /// raised during the step (a participant failed; the step ran to its end), or
 /// a panic (the world is then faulted). `alice_physics_last_error` says which,
 /// and `alice_physics_world_fault` gives the world's fault.
@@ -330,7 +339,10 @@ pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: 
         let Some(w) = writable(world) else {
             return 0;
         };
-        step_result(w.try_step(Fix128::from_f64(dt)))
+        let Some(dt) = arg(binding_api::checked("alice_physics_world_step", "dt", dt)) else {
+            return 0;
+        };
+        step_result(w.try_step(dt))
     })
 }
 
@@ -363,7 +375,9 @@ pub unsafe extern "C" fn alice_physics_world_step_n(
         let Some(w) = writable(world) else {
             return 0;
         };
-        let dt_fix = Fix128::from_f64(dt);
+        let Some(dt_fix) = arg(binding_api::checked("alice_physics_world_step_n", "dt", dt)) else {
+            return 0;
+        };
         for _ in 0..steps {
             if step_result(w.try_step(dt_fix)) == 0 {
                 return 0;
@@ -505,12 +519,26 @@ pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
             return 0;
         }
         let buf = std::slice::from_raw_parts(data, n * 3);
-        for (i, body) in w.bodies.iter_mut().enumerate() {
-            body.velocity = Vec3Fix::new(
-                Fix128::from_f64(buf[i * 3]),
-                Fix128::from_f64(buf[i * 3 + 1]),
-                Fix128::from_f64(buf[i * 3 + 2]),
-            );
+        // every value is checked before any body changes: a refused batch changes nothing
+        let Some(velocities) = buf
+            .chunks_exact(3)
+            .map(|v| {
+                binding_api::checked_vec3(
+                    "alice_physics_world_set_velocities_batch",
+                    "data",
+                    v[0],
+                    v[1],
+                    v[2],
+                )
+            })
+            .collect::<Result<Vec<Vec3Fix>, _>>()
+            .map_err(|e| guard::set_last_error(format!("alice-physics: {e}")))
+            .ok()
+        else {
+            return 0;
+        };
+        for (body, v) in w.bodies.iter_mut().zip(velocities) {
+            body.velocity = v;
         }
         1
     })
@@ -538,18 +566,29 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
         }
         let buf = std::slice::from_raw_parts(data, count as usize);
         let n_bodies = w.bodies.len();
-
-        for chunk in buf.chunks_exact(4) {
-            let body_id = chunk[0] as usize;
-            if body_id >= n_bodies {
-                continue;
+        // every impulse is checked before any body changes: a refused batch changes nothing
+        let Some(impulses) = buf
+            .chunks_exact(4)
+            .map(|c| {
+                binding_api::checked_vec3(
+                    "alice_physics_body_apply_impulses_batch",
+                    "data",
+                    c[1],
+                    c[2],
+                    c[3],
+                )
+                .map(|i| (c[0] as usize, i))
+            })
+            .collect::<Result<Vec<(usize, Vec3Fix)>, _>>()
+            .map_err(|e| guard::set_last_error(format!("alice-physics: {e}")))
+            .ok()
+        else {
+            return 0;
+        };
+        for (body_id, impulse) in impulses {
+            if body_id < n_bodies {
+                w.bodies[body_id].apply_impulse(impulse);
             }
-            let impulse = Vec3Fix::new(
-                Fix128::from_f64(chunk[1]),
-                Fix128::from_f64(chunk[2]),
-                Fix128::from_f64(chunk[3]),
-            );
-            w.bodies[body_id].apply_impulse(impulse);
         }
         1
     })
@@ -571,7 +610,14 @@ pub unsafe extern "C" fn alice_physics_body_add_dynamic(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_dynamic(position.to_vec3fix(), Fix128::from_f64(mass));
+            const E: &str = "alice_physics_body_add_dynamic";
+            let (Some(p), Some(m)) = (
+                vec3_named(E, "position", &position),
+                arg(binding_api::checked(E, "mass", mass)),
+            ) else {
+                return u32::MAX;
+            };
+            let body = RigidBody::new_dynamic(p, m);
             w.add_body(body) as u32
         }
         None => u32::MAX,
@@ -589,7 +635,10 @@ pub unsafe extern "C" fn alice_physics_body_add_static(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_static(position.to_vec3fix());
+            let Some(p) = vec3_named("alice_physics_body_add_static", "position", &position) else {
+                return u32::MAX;
+            };
+            let body = RigidBody::new_static(p);
             w.add_body(body) as u32
         }
         None => u32::MAX,
@@ -607,7 +656,10 @@ pub unsafe extern "C" fn alice_physics_body_add_sensor(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_sensor(position.to_vec3fix());
+            let Some(p) = vec3_named("alice_physics_body_add_sensor", "position", &position) else {
+                return u32::MAX;
+            };
+            let body = RigidBody::new_sensor(p);
             w.add_body(body) as u32
         }
         None => u32::MAX,
@@ -750,10 +802,13 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.position = position.to_vec3fix();
-                1
-            }
+            Some(b) => match vec3_named("alice_physics_body_set_position", "position", &position) {
+                Some(v) => {
+                    b.position = v;
+                    1
+                }
+                None => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -797,10 +852,13 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.velocity = velocity.to_vec3fix();
-                1
-            }
+            Some(b) => match vec3_named("alice_physics_body_set_velocity", "velocity", &velocity) {
+                Some(v) => {
+                    b.velocity = v;
+                    1
+                }
+                None => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -844,10 +902,17 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.restitution = Fix128::from_f64(restitution);
-                1
-            }
+            Some(b) => match arg(binding_api::checked(
+                "alice_physics_body_set_restitution",
+                "restitution",
+                restitution,
+            )) {
+                Some(v) => {
+                    b.restitution = v;
+                    1
+                }
+                None => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -866,10 +931,17 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.friction = Fix128::from_f64(friction);
-                1
-            }
+            Some(b) => match arg(binding_api::checked(
+                "alice_physics_body_set_friction",
+                "friction",
+                friction,
+            )) {
+                Some(v) => {
+                    b.friction = v;
+                    1
+                }
+                None => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -888,10 +960,13 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.apply_impulse(impulse.to_vec3fix());
-                1
-            }
+            Some(b) => match vec3_named("alice_physics_body_apply_impulse", "impulse", &impulse) {
+                Some(i) => {
+                    b.apply_impulse(i);
+                    1
+                }
+                None => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -911,10 +986,16 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.apply_impulse_at(impulse.to_vec3fix(), point.to_vec3fix());
-                1
-            }
+            Some(b) => match (
+                vec3_named("alice_physics_body_apply_impulse_at", "impulse", &impulse),
+                vec3_named("alice_physics_body_apply_impulse_at", "point", &point),
+            ) {
+                (Some(i), Some(p)) => {
+                    b.apply_impulse_at(i, p);
+                    1
+                }
+                _ => 0,
+            },
             None => 0,
         },
         None => 0,
@@ -954,8 +1035,13 @@ pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
 
 /// Set gravity on an existing world.
 ///
+/// There is no return value: a null or faulted world, or a non-finite
+/// component (`alice-physics: alice_physics_world_set_gravity: gravity is not
+/// finite`, recorded for [`alice_physics_last_error`]), leaves the gravity as
+/// it was.
+///
 /// # Safety
-/// `world` must be a valid pointer from `alice_physics_world_create*`.
+/// `world` must be null or a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_gravity(
     world: *mut PhysicsWorld,
@@ -965,11 +1051,17 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
 ) {
     ffi_guard_world(world, (), || {
         if let Some(w) = writable(world) {
-            w.config.gravity = Vec3Fix::new(
-                Fix128::from_f64(x),
-                Fix128::from_f64(y),
-                Fix128::from_f64(z),
-            );
+            // no return value: a refused gravity leaves the world's, and the
+            // reason is recorded for `alice_physics_last_error`
+            if let Some(g) = arg(binding_api::checked_vec3(
+                "alice_physics_world_set_gravity",
+                "gravity",
+                x,
+                y,
+                z,
+            )) {
+                w.config.gravity = g;
+            }
         }
     })
 }
@@ -1121,6 +1213,18 @@ impl AlicePhysicsShape {
 
 fn vec3_arg(v: &AliceVec3) -> Option<Vec3Fix> {
     binding_api::vec3(v.x, v.y, v.z)
+}
+
+/// The argument, or `None` with the refusal (`<entry>: <param> is not finite`)
+/// recorded for `alice_physics_last_error`.
+fn arg<T>(r: Result<T, binding_api::NotFinite>) -> Option<T> {
+    r.map_err(|e| guard::set_last_error(format!("alice-physics: {e}")))
+        .ok()
+}
+
+/// `v` in fixed point, or `None` with the refusal recorded.
+fn vec3_named(entry: &'static str, param: &'static str, v: &AliceVec3) -> Option<Vec3Fix> {
+    arg(binding_api::checked_vec3(entry, param, v.x, v.y, v.z))
 }
 
 fn index_result(r: Option<usize>) -> u32 {
@@ -1805,7 +1909,7 @@ mod tests {
             Fix128::from_f64(3.75),
         );
         let c = AliceVec3::from_vec3fix(original);
-        let back = c.to_vec3fix();
+        let back = vec3_arg(&c).unwrap();
         assert_eq!(original.x.hi, back.x.hi);
         assert_eq!(original.y.hi, back.y.hi);
         assert_eq!(original.z.hi, back.z.hi);
@@ -2255,9 +2359,21 @@ mod tests {
                 1.0,
             );
             assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
-            // NaN / infinite dt is clamped by Fix128::from_f64, not a panic
-            assert_eq!(alice_physics_world_step(world, f64::NAN), 1);
-            assert_eq!(alice_physics_world_step(world, f64::INFINITY), 1);
+            // a non-finite dt is refused with the failure code, and the world is unchanged
+            // (no step, no fault): before, it was converted (NaN to zero, ±∞ saturated)
+            let before = (*world).serialize_state();
+            for dt in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                guard::clear_last_error();
+                assert_eq!(alice_physics_world_step(world, dt), 0, "step {dt}");
+                assert_eq!(
+                    guard::take_last_error().as_deref(),
+                    Some("alice-physics: alice_physics_world_step: dt is not finite")
+                );
+                assert_eq!(alice_physics_world_step_n(world, dt, 3), 0, "step_n {dt}");
+                assert_eq!((*world).serialize_state(), before, "dt {dt}");
+                assert!((*world).fault().is_none(), "dt {dt}");
+            }
+            assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
             // garbage state
             let junk = [0xFFu8; 13];
             assert_eq!(alice_physics_state_deserialize(world, junk.as_ptr(), 13), 0);
@@ -3039,6 +3155,385 @@ mod tests {
                 "a refusal must not come from a caught panic"
             );
             alice_physics_world_destroy(world);
+        }
+    }
+
+    // ---- every float parameter refuses a non-finite value ----------------
+
+    /// The binding entry points with a float parameter (scripts/binding_float_entries.py
+    /// keeps the table equal to a syntax-tree scan of the bindings)
+    const FLOAT_ENTRIES: &str = include_str!("../scripts/binding-float-entries.tsv");
+
+    /// What one call left behind
+    struct Outcome {
+        /// the call returned its success value (not the failure sentinel)
+        succeeded: bool,
+        /// the message `alice_physics_last_error` would give after the call
+        error: Option<String>,
+        /// the world was faulted by the call (a panic caught at the boundary)
+        faulted: bool,
+    }
+
+    /// One call of `entry` on a fresh scene, every float argument finite except `param`,
+    /// which is `bad` when given (a vector carries it in `x`); `None` for an entry or
+    /// parameter this table of cases does not know
+    unsafe fn float_case(entry: &str, param: &str, bad: Option<f64>) -> Option<Outcome> {
+        let x = |name: &str, good: f64| {
+            if name == param {
+                bad.unwrap_or(good)
+            } else {
+                good
+            }
+        };
+        let v = |name: &str, good: [f64; 3]| AliceVec3 {
+            x: x(name, good[0]),
+            y: good[1],
+            z: good[2],
+        };
+        let q = |name: &str| AliceQuat {
+            x: x(name, 0.0),
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+        };
+        let shape = |name: &str| AlicePhysicsShape {
+            kind: binding_api::SHAPE_BOX,
+            a: x(name, 0.5),
+            b: 0.5,
+            c: 0.5,
+        };
+        // two unit-radius bodies on the z axis, a ray from z = -5 along +z hits body 0
+        let w = alice_physics_world_create();
+        alice_physics_body_add_dynamic(
+            w,
+            AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            1.0,
+        );
+        alice_physics_body_add_dynamic(
+            w,
+            AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 5.0,
+            },
+            1.0,
+        );
+        alice_physics_body_set_collision_radius(w, 0, 1.0);
+        alice_physics_body_set_collision_radius(w, 1, 1.0);
+        guard::clear_last_error();
+        // SAFETY: plain-data out-parameters (numbers only), written by the call on a hit
+        let mut hit: AliceQueryHit = std::mem::zeroed();
+        let ok_u8 = |r: u8| r == 1;
+        let ok_u32 = |r: u32| r != u32::MAX;
+        let succeeded = match (entry, param) {
+            ("alice_physics_world_create_with_config", "config") => {
+                let c = AlicePhysicsConfig {
+                    substeps: 4,
+                    iterations: 8,
+                    gravity_x: x("config", 0.0),
+                    gravity_y: -9.81,
+                    gravity_z: 0.0,
+                    damping: 0.99,
+                };
+                let made = alice_physics_world_create_with_config(c);
+                alice_physics_world_destroy(made);
+                !made.is_null()
+            }
+            ("alice_physics_world_step", "dt") => {
+                ok_u8(alice_physics_world_step(w, x("dt", 1.0 / 60.0)))
+            }
+            ("alice_physics_world_step_n", "dt") => {
+                ok_u8(alice_physics_world_step_n(w, x("dt", 1.0 / 60.0), 2))
+            }
+            ("alice_physics_world_set_velocities_batch", "data") => {
+                let d = [x("data", 1.0), 0.0, 0.0, 0.0, 0.0, 0.0];
+                ok_u8(alice_physics_world_set_velocities_batch(w, d.as_ptr(), 6))
+            }
+            ("alice_physics_body_apply_impulses_batch", "data") => {
+                let d = [0.0, x("data", 1.0), 0.0, 0.0];
+                ok_u8(alice_physics_body_apply_impulses_batch(w, d.as_ptr(), 4))
+            }
+            ("alice_physics_body_add_dynamic", "position" | "mass") => ok_u32(
+                alice_physics_body_add_dynamic(w, v("position", [0.0, 2.0, 0.0]), x("mass", 1.0)),
+            ),
+            ("alice_physics_body_add_static", "position") => ok_u32(alice_physics_body_add_static(
+                w,
+                v("position", [0.0, 2.0, 0.0]),
+            )),
+            ("alice_physics_body_add_sensor", "position") => ok_u32(alice_physics_body_add_sensor(
+                w,
+                v("position", [0.0, 2.0, 0.0]),
+            )),
+            ("alice_physics_body_add_shaped", "shape" | "density" | "position") => {
+                ok_u32(alice_physics_body_add_shaped(
+                    w,
+                    shape("shape"),
+                    x("density", 1.0),
+                    v("position", [0.0, 2.0, 0.0]),
+                ))
+            }
+            ("alice_physics_body_set_shape", "shape") => {
+                ok_u8(alice_physics_body_set_shape(w, 0, shape("shape")))
+            }
+            ("alice_physics_body_set_collision_radius", "radius") => ok_u8(
+                alice_physics_body_set_collision_radius(w, 0, x("radius", 0.5)),
+            ),
+            ("alice_physics_body_set_position", "position") => ok_u8(
+                alice_physics_body_set_position(w, 0, v("position", [1.0, 0.0, 0.0])),
+            ),
+            ("alice_physics_body_set_velocity", "velocity") => ok_u8(
+                alice_physics_body_set_velocity(w, 0, v("velocity", [1.0, 0.0, 0.0])),
+            ),
+            ("alice_physics_body_set_restitution", "restitution") => ok_u8(
+                alice_physics_body_set_restitution(w, 0, x("restitution", 0.5)),
+            ),
+            ("alice_physics_body_set_friction", "friction") => {
+                ok_u8(alice_physics_body_set_friction(w, 0, x("friction", 0.5)))
+            }
+            ("alice_physics_body_apply_impulse", "impulse") => ok_u8(
+                alice_physics_body_apply_impulse(w, 0, v("impulse", [1.0, 0.0, 0.0])),
+            ),
+            ("alice_physics_body_apply_impulse_at", "impulse" | "point") => {
+                ok_u8(alice_physics_body_apply_impulse_at(
+                    w,
+                    0,
+                    v("impulse", [1.0, 0.0, 0.0]),
+                    v("point", [0.0, 1.0, 0.0]),
+                ))
+            }
+            ("alice_physics_joint_add_ball", "anchor_a" | "anchor_b") => {
+                ok_u32(alice_physics_joint_add_ball(
+                    w,
+                    0,
+                    1,
+                    v("anchor_a", [0.0, 0.0, 0.0]),
+                    v("anchor_b", [0.0, 0.0, 0.0]),
+                ))
+            }
+            ("alice_physics_joint_add_fixed", "anchor_a" | "anchor_b" | "relative_rotation") => {
+                ok_u32(alice_physics_joint_add_fixed(
+                    w,
+                    0,
+                    1,
+                    v("anchor_a", [0.0, 0.0, 0.0]),
+                    v("anchor_b", [0.0, 0.0, 0.0]),
+                    q("relative_rotation"),
+                ))
+            }
+            ("alice_physics_joint_add_hinge", "anchor_a" | "anchor_b" | "axis_a" | "axis_b") => {
+                ok_u32(alice_physics_joint_add_hinge(
+                    w,
+                    0,
+                    1,
+                    v("anchor_a", [0.0, 0.0, 0.0]),
+                    v("anchor_b", [0.0, 0.0, 0.0]),
+                    v("axis_a", [0.0, 1.0, 0.0]),
+                    v("axis_b", [0.0, 1.0, 0.0]),
+                ))
+            }
+            ("alice_physics_joint_add_slider", "axis" | "anchor_a" | "anchor_b") => {
+                ok_u32(alice_physics_joint_add_slider(
+                    w,
+                    0,
+                    1,
+                    v("axis", [1.0, 0.0, 0.0]),
+                    v("anchor_a", [0.0, 0.0, 0.0]),
+                    v("anchor_b", [0.0, 0.0, 0.0]),
+                ))
+            }
+            (
+                "alice_physics_joint_add_spring",
+                "anchor_a" | "anchor_b" | "rest_length" | "stiffness" | "damping",
+            ) => ok_u32(alice_physics_joint_add_spring(
+                w,
+                0,
+                1,
+                v("anchor_a", [0.0, 0.0, 0.0]),
+                v("anchor_b", [0.0, 0.0, 0.0]),
+                x("rest_length", 1.0),
+                x("stiffness", 10.0),
+                x("damping", 0.1),
+            )),
+            ("alice_physics_static_add_heightfield", "heights" | "spacing" | "origin") => {
+                let h = [x("heights", 0.0), 0.0, 0.0, 0.0];
+                ok_u32(alice_physics_static_add_heightfield(
+                    w,
+                    h.as_ptr(),
+                    2,
+                    2,
+                    x("spacing", 1.0),
+                    v("origin", [0.0, -5.0, 0.0]),
+                ))
+            }
+            ("alice_physics_static_add_plane", "normal" | "offset") => ok_u32(
+                alice_physics_static_add_plane(w, v("normal", [0.0, 1.0, 0.0]), x("offset", -10.0)),
+            ),
+            ("alice_physics_static_add_trimesh", "vertices") => {
+                let vs = [
+                    x("vertices", 0.0),
+                    -5.0,
+                    0.0,
+                    1.0,
+                    -5.0,
+                    0.0,
+                    0.0,
+                    -5.0,
+                    1.0,
+                ];
+                let ix = [0u32, 1, 2];
+                ok_u32(alice_physics_static_add_trimesh(
+                    w,
+                    vs.as_ptr(),
+                    3,
+                    ix.as_ptr(),
+                    3,
+                ))
+            }
+            ("alice_physics_world_cast_ray", "origin" | "direction" | "max_t") => {
+                ok_u8(alice_physics_world_cast_ray(
+                    w,
+                    v("origin", [0.0, 0.0, -5.0]),
+                    v("direction", [0.0, 0.0, 1.0]),
+                    x("max_t", 100.0),
+                    ALICE_PHYSICS_NO_BODY,
+                    &mut hit,
+                ))
+            }
+            ("alice_physics_world_cast_sphere", "center" | "radius" | "direction" | "max_t") => {
+                ok_u8(alice_physics_world_cast_sphere(
+                    w,
+                    v("center", [0.0, 0.0, -5.0]),
+                    x("radius", 0.5),
+                    v("direction", [0.0, 0.0, 1.0]),
+                    x("max_t", 100.0),
+                    ALICE_PHYSICS_NO_BODY,
+                    &mut hit,
+                ))
+            }
+            ("alice_physics_world_cast_capsule", "a" | "b" | "radius" | "direction" | "max_t") => {
+                ok_u8(alice_physics_world_cast_capsule(
+                    w,
+                    v("a", [0.0, 0.0, -5.0]),
+                    v("b", [0.0, 0.1, -5.0]),
+                    x("radius", 0.5),
+                    v("direction", [0.0, 0.0, 1.0]),
+                    x("max_t", 100.0),
+                    ALICE_PHYSICS_NO_BODY,
+                    &mut hit,
+                ))
+            }
+            ("alice_physics_world_overlap_sphere", "center" | "radius") => {
+                let n = alice_physics_world_overlap_sphere(
+                    w,
+                    v("center", [0.0, 0.0, 0.0]),
+                    x("radius", 0.5),
+                    ALICE_PHYSICS_NO_BODY,
+                    std::ptr::null_mut(),
+                    0,
+                );
+                n != u32::MAX && n >= 1
+            }
+            ("alice_physics_world_set_gravity", "x" | "y" | "z") => {
+                alice_physics_world_set_gravity(w, x("x", 0.0), x("y", -1.0), x("z", 0.0));
+                (*w).config.gravity
+                    == Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-1), Fix128::ZERO)
+            }
+            _ => {
+                alice_physics_world_destroy(w);
+                return None;
+            }
+        };
+        let faulted = (*w).fault().is_some();
+        alice_physics_world_destroy(w);
+        Some(Outcome {
+            succeeded,
+            error: guard::take_last_error(),
+            faulted,
+        })
+    }
+
+    /// oracle: each float parameter of every C entry point in the table, given NaN, +∞ or
+    /// -∞, reaches the explicit check: the call returns its failure value, the world is
+    /// not faulted, and the only message recorded is a refusal, never a caught panic (the
+    /// debug assertion of `Fix128::from_f64`); the same call with a finite value succeeds
+    #[test]
+    fn every_float_parameter_refuses_a_non_finite_value() {
+        let mut compared = 0;
+        let mut unknown = Vec::new();
+        for row in FLOAT_ENTRIES
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
+            let cols: Vec<&str> = row.split('\t').collect();
+            if cols[0] != "src/ffi.rs" {
+                continue;
+            }
+            let (entry, param) = (cols[1], cols[2]);
+            // SAFETY: each case builds and destroys its own world
+            let Some(good) = (unsafe { float_case(entry, param, None) }) else {
+                unknown.push(format!("{entry} {param}"));
+                continue;
+            };
+            assert!(
+                good.succeeded && !good.faulted && good.error.is_none(),
+                "{entry} {param}: the finite call must succeed ({:?})",
+                good.error
+            );
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                // SAFETY: as above
+                let r = unsafe { float_case(entry, param, Some(bad)) }.unwrap();
+                assert!(!r.succeeded, "{entry} {param} = {bad}: accepted");
+                assert!(!r.faulted, "{entry} {param} = {bad}: the world was faulted");
+                assert!(
+                    r.error
+                        .as_deref()
+                        .is_none_or(|e| e.contains(" is not finite") && !e.contains("panic")),
+                    "{entry} {param} = {bad}: {:?}",
+                    r.error
+                );
+                compared += 1;
+            }
+        }
+        assert!(unknown.is_empty(), "rows without a case: {unknown:?}");
+        assert!(compared > 0, "no C entry was compared");
+    }
+
+    /// oracle (the documented lifetime of `alice_physics_last_error`): a refusal records
+    /// its message on this thread only; a successful call does not clear it; reading
+    /// takes it; a later error replaces it
+    #[test]
+    fn last_error_is_per_thread_kept_across_success_and_taken_by_reading() {
+        unsafe {
+            let w = alice_physics_world_create();
+            alice_physics_clear_last_error();
+            alice_physics_world_set_gravity(w, f64::NAN, 0.0, 0.0);
+            let other = std::thread::spawn(guard::take_last_error).join().unwrap();
+            assert_eq!(other, None, "another thread sees no message");
+            assert_eq!(alice_physics_world_step(w, 1.0 / 60.0), 1);
+            let read = |p: *mut std::os::raw::c_char| {
+                let s = (!p.is_null())
+                    .then(|| std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned());
+                alice_physics_string_free(p);
+                s
+            };
+            assert_eq!(
+                read(alice_physics_last_error()).as_deref(),
+                Some("alice-physics: alice_physics_world_set_gravity: gravity is not finite"),
+                "kept across the successful step"
+            );
+            assert_eq!(read(alice_physics_last_error()), None, "reading took it");
+            alice_physics_world_set_gravity(w, f64::NAN, 0.0, 0.0);
+            assert_eq!(alice_physics_world_step(w, f64::INFINITY), 0);
+            assert_eq!(
+                read(alice_physics_last_error()).as_deref(),
+                Some("alice-physics: alice_physics_world_step: dt is not finite"),
+                "the later error replaced the earlier one"
+            );
+            alice_physics_world_destroy(w);
         }
     }
 }

@@ -923,6 +923,11 @@ jobs:
         run: python3 scripts/test_g2_rewrite_check.py
       - name: G2 comparison rewrites (every max / min written as a comparison is reviewed by type)
         run: python3 scripts/g2_rewrite_check.py
+      # every binding parameter carrying floats has a row the three binding tests drive
+      - name: Binding float parameters (test first)
+        run: python3 scripts/test_binding_float_entries.py
+      - name: Binding float parameters (the table equals the bindings' code)
+        run: python3 scripts/binding_float_entries.py --min-rows 200
       # clippy refuses a reasonless allow (Cargo.toml); this judges the reasons
       - name: Allow reason guard (test first)
         run: python3 scripts/test_allow_reason_guard.py

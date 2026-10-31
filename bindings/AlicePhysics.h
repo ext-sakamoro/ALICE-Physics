@@ -180,7 +180,8 @@ uint8_t  alice_physics_body_observe(const AlicePhysicsWorldHandle world, uint32_
 // --- Version ---
 const char* alice_physics_version();
 
-// --- Panic isolation: most recent caught panic message (take semantics) ---
+// --- Most recent error on this thread (a caught panic or a refused non-finite
+//     argument; take semantics, kept across successful calls) ---
 char*    alice_physics_last_error(void);
 void     alice_physics_clear_last_error(void);
 void     alice_physics_string_free(char* s);

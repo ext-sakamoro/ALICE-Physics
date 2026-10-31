@@ -89,8 +89,14 @@ AlicePhysicsWorld* alice_physics_world_create_with_config(AlicePhysicsConfig con
 void alice_physics_world_destroy(AlicePhysicsWorld* world);
 
 /** Step the simulation by dt seconds. Returns 1 when the step ran without a
- * fault, 0 otherwise (null world, a faulted world: refused and unchanged, a
- * fault raised during the step, or a panic: the world is then faulted). */
+ * fault, 0 otherwise (null world, a non-finite dt or a faulted world: refused
+ * and unchanged, a fault raised during the step, or a panic: the world is then
+ * faulted).
+ *
+ * Every float argument of this API is checked: a NaN or an infinity is
+ * refused with the function's failure value (0, UINT32_MAX or NULL) and the
+ * message "alice-physics: <function>: <parameter> is not finite" for
+ * alice_physics_last_error, and nothing changes. */
 uint8_t alice_physics_world_step(AlicePhysicsWorld* world, double dt);
 
 /** The world's recorded fault: 0 none, 1 participant, 2 rigid overflow,
@@ -175,7 +181,9 @@ uint8_t alice_physics_body_apply_impulses_batch(AlicePhysicsWorld* world, const 
 /** Get default physics config. */
 AlicePhysicsConfig alice_physics_config_default(void);
 
-/** Set gravity on an existing world. */
+/** Set gravity on an existing world. A null or faulted world, or a
+ *  non-finite component (recorded for alice_physics_last_error), leaves the
+ *  gravity as it was. */
 void alice_physics_world_set_gravity(AlicePhysicsWorld* world, double x, double y, double z);
 
 /** Set substeps on an existing world. */
@@ -307,12 +315,16 @@ const char* alice_physics_version(void);
  * documented sentinel (0 / UINT32_MAX / NULL) instead of aborting the host.
  * The panic message is kept per thread: */
 
-/** Most recent panic message on this thread (heap string, take semantics: a
- *  second call returns NULL until the next error), or NULL. Free with
- *  alice_physics_string_free. */
+/** Most recent error message on this thread (a caught panic, a refused
+ *  argument, a faulted world), or NULL. Heap string, free with
+ *  alice_physics_string_free. Each thread has its own message; it stays until
+ *  it is read (reading takes it: a second call returns NULL until the next
+ *  error), cleared, or replaced by a later error on the same thread. A
+ *  successful call does not clear it: read it right after the call that
+ *  returned its failure value, or clear it before that call. */
 char* alice_physics_last_error(void);
 
-/** Discard the most recent panic message on this thread. */
+/** Discard the most recent error message on this thread. */
 void alice_physics_clear_last_error(void);
 
 /** Free a string returned by alice_physics_last_error (NULL is a no-op). */

@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- **破壊的変更 (C ABI):** float の引数に NaN / ±∞ を渡すと、その関数の失敗の値 (`0` / `UINT32_MAX` / `NULL`) を返し、何も変えない (これまでは変換していた: NaN は 0、±∞ は `Fix128` の端) 理由は `alice_physics_last_error` に `alice-physics: <関数>: <引数> is not finite` で残る 戻り値の無い `alice_physics_world_set_gravity` は重力を変えず理由だけ残す 関数の signature は変わらない (15 関数が新しく確かめる: `alice_physics_world_step` / `_step_n` / `_create_with_config` / `_set_gravity` / `_set_velocities_batch` / `alice_physics_body_add_dynamic` / `_add_static` / `_add_sensor` / `_set_position` / `_set_velocity` / `_set_restitution` / `_set_friction` / `_apply_impulse` / `_apply_impulse_at` / `_apply_impulses_batch`、batch は全部を確かめてから書く) `alice_physics_last_error` の doc に寿命を書いた (thread ごと、読むと消える、後の error が置き換える、成功した呼び出しでは消えない)
 - 共有の file 4 つ (`.github/workflows/eol.yml` / `.github/workflows/public-text.yml` / `scripts/shared_files.sh` / `scripts/test_shared_files.py`) を ALICE-Law 40973a8a の表が計画した bytes にした (workflow は actions の版の更新)
 - shared-files と G11 の表の pin を ALICE-Law 40973a8a に上げた (識別子の移動の検査器の新しい bytes を表が計画した版)
 - 新しく足した associated const の識別子の扱い (ALICE-Law G9 の共有の検査器 `scripts/id_move_check.py` と試験を新しい bytes にした): 新しく足した associated const の識別子 (`Type::NAME`) を、base の probe の E0599 から読んだ item 名と型名が path の最後の 2 段と一致し、他の compile error が無い時だけ新しい識別子として受ける (それ以外は従来どおり error)
