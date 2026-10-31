@@ -38,6 +38,27 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 // Fix128 (I64F64) - 128-bit Fixed-Point Number
 // ============================================================================
 
+/// `2^63`, one past the largest integer part of a [`Fix128`]
+const TWO_POW_63: f64 = 9_223_372_036_854_775_808.0;
+
+/// Why a float has no [`Fix128`] ([`Fix128::try_from_f64`])
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatToFixError {
+    /// NaN or infinite
+    NotFinite,
+    /// Finite, outside `[-2^63, 2^63)`
+    OutOfRange,
+}
+
+impl core::fmt::Display for FloatToFixError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::NotFinite => "the value is NaN or infinite",
+            Self::OutOfRange => "the value is outside the range of Fix128, [-2^63, 2^63)",
+        })
+    }
+}
+
 /// 128-bit fixed-point number (64 integer bits, 64 fractional bits)
 ///
 /// Internal representation: `value = raw / 2^64`
@@ -66,6 +87,18 @@ impl Fix128 {
 
     /// Negative one (-1.0)
     pub const NEG_ONE: Self = Self { hi: -1, lo: 0 };
+
+    /// The smallest value, `-2^63`
+    pub const MIN: Self = Self {
+        hi: i64::MIN,
+        lo: 0,
+    };
+
+    /// The largest value, `2^63 - 2^-64`
+    pub const MAX: Self = Self {
+        hi: i64::MAX,
+        lo: u64::MAX,
+    };
 
     /// Pi (π) - precomputed to full precision
     /// π ≈ 3.14159265358979323846...
@@ -101,8 +134,45 @@ impl Fix128 {
     }
 
     /// Create from f64 (for initialization only, not deterministic!)
+    ///
+    /// For a finite value: inside `[-2^63, 2^63)` the integer part and the 64-bit fraction,
+    /// truncated toward zero; below the range [`Self::MIN`], at or above it [`Self::MAX`] (the
+    /// sign is kept). A NaN gives [`Self::ZERO`] and `∓∞` gives [`Self::MIN`] / [`Self::MAX`]. A
+    /// boundary that receives floats from outside uses [`Self::try_from_f64`], which refuses both.
     #[must_use]
     pub fn from_f64(f: f64) -> Self {
+        Self::saturating_from_f64(f)
+    }
+
+    /// `f` as a `Fix128`, or why it has none: [`FloatToFixError::NotFinite`] for NaN and `±∞`,
+    /// [`FloatToFixError::OutOfRange`] outside `[-2^63, 2^63)`. Otherwise the same value as
+    /// [`Self::from_f64`].
+    pub fn try_from_f64(f: f64) -> Result<Self, FloatToFixError> {
+        if !f.is_finite() {
+            return Err(FloatToFixError::NotFinite);
+        }
+        if !(-TWO_POW_63..TWO_POW_63).contains(&f) {
+            return Err(FloatToFixError::OutOfRange);
+        }
+        Ok(Self::saturating_from_f64(f))
+    }
+
+    /// [`Self::try_from_f64`] for an `f32`.
+    pub fn try_from_f32(f: f32) -> Result<Self, FloatToFixError> {
+        Self::try_from_f64(f64::from(f))
+    }
+
+    /// The conversion behind [`Self::from_f64`]: saturating at both ends, NaN to zero.
+    fn saturating_from_f64(f: f64) -> Self {
+        if f.is_nan() {
+            return Self::ZERO;
+        }
+        if f < -TWO_POW_63 {
+            return Self::MIN;
+        }
+        if f >= TWO_POW_63 {
+            return Self::MAX;
+        }
         let hi = f as i64; // truncation toward zero
         let frac = f - (hi as f64);
         let abs_frac = frac.abs();
@@ -1160,8 +1230,18 @@ impl Vec3Fix {
         }
     }
 
-    /// Create from f32 components (for SDF bridge)
-    /// Create from f32 components (for SDF bridge, not deterministic!)
+    /// [`Fix128::try_from_f32`] of each component: the first component that has no
+    /// `Fix128` gives the error
+    pub fn try_from_f32(x: f32, y: f32, z: f32) -> Result<Self, FloatToFixError> {
+        Ok(Self {
+            x: Fix128::try_from_f32(x)?,
+            y: Fix128::try_from_f32(y)?,
+            z: Fix128::try_from_f32(z)?,
+        })
+    }
+
+    /// Create from f32 components (for SDF bridge, not deterministic!): [`Fix128::from_f32`]
+    /// of each, so a non-finite component is a caller error (see [`Fix128::from_f64`])
     #[inline]
     #[must_use]
     pub fn from_f32(x: f32, y: f32, z: f32) -> Self {

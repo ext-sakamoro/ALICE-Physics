@@ -61,7 +61,9 @@ src/gpu_sdf.rs	extract_contacts	penetration > 0.0	1	f32	predicate	an if conditio
 src/lib.rs	raw_clamp64	lo <= hi	1	f64	predicate	an assertion: checks an invariant, chooses no value
 src/lib.rs	raw_clamp64	y < lo	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
 src/lib.rs	raw_clamp64	y > hi	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
-src/math.rs	from_f64	f < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/math.rs	saturating_from_f64	f < - TWO_POW_63	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/math.rs	saturating_from_f64	f < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/math.rs	saturating_from_f64	f >= TWO_POW_63	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/particle.rs	probe	d >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/phase_change.rs	accumulate_offsets	liquid_flow > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/phase_change.rs	accumulate_offsets	phase_val >= 0.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison

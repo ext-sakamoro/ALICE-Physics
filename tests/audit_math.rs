@@ -221,7 +221,7 @@ fn f64_and_f32_conversions() {
 /// from_f64 / from_f32 of non-finite and out-of-range values must not produce a silent plausible number
 /// (and must not panic in debug builds).
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30) return huge arbitrary values or overflow-panic (hi - 1 on hi = i64::MIN in debug); no saturation/validation contract documented"]
+#[ignore = "known defect: AUD-A-S1W5-018: partly fixed: `Fix128::from_f64` of -1e30 and -inf now saturates to `Fix128::MIN` (tests/fix128_float_conversion.rs), and a NaN panics in debug builds; in release builds a NaN still gives ZERO. Closes when no float to Fix128 site converts an unchecked value (scripts/fix-conversion-sites.tsv has no pending-* row)"]
 fn from_f64_non_finite_and_out_of_range_are_not_silently_plausible() {
     let nan = std::panic::catch_unwind(|| Fix128::from_f64(f64::NAN));
     assert!(
