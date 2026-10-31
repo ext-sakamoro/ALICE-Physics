@@ -11,6 +11,27 @@ zero = "scripts/test_clippy_lib_gate.py::Judge.test_no_forms_and_a_clean_exit_ar
 shared = ["scripts/clippy_lib_gate.py", "scripts/test_clippy_lib_gate.py"]
 
 [[row]]
+gate = "G2"
+checker = "scripts/clippy_lib_gate.py"
+canary = "scripts/test_clippy_lib_gate.py::Judge.test_a_missing_diagnostic_is_red"
+zero = "scripts/test_clippy_lib_gate.py::Judge.test_no_forms_and_a_clean_exit_are_red"
+shared = ["scripts/clippy_lib_gate.py", "scripts/test_clippy_lib_gate.py"]
+
+[[row]]
+gate = "G2"
+checker = "scripts/g2_comparisons.py"
+canary = "scripts/test_g2_comparisons.py::Judge.test_a_float_comparison_without_a_row"
+zero = "scripts/test_g2_comparisons.py::Judge.test_no_comparison_found"
+shared = "n/a: this crate's compiler-typed inventory of every ordering comparison in its own src/; no other crate carries it"
+
+[[row]]
+gate = "G2"
+checker = "scripts/g2_rewrite_check.py"
+canary = "scripts/test_g2_rewrite_check.py::G2RewriteCheck.test_each_form_is_flagged_until_reviewed"
+zero = "scripts/test_g2_rewrite_check.py::G2RewriteCheck.test_an_empty_tree_and_a_tree_without_sites_fail"
+shared = "n/a: this crate's table of max / min written as comparisons over its own src/; no other crate carries it"
+
+[[row]]
 gate = "G3"
 checker = "tools/no-outer-fneg-of-fma/src/main.rs"
 canary = "tools/no-outer-fneg-of-fma/src/main.rs::parenthesised_outer_negation_is_caught"
