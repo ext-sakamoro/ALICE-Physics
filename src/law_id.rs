@@ -253,7 +253,9 @@ impl PhysicsWorld {
     /// (coefficient), `buoyancy` (surface_y, density, drag), `vortex` (center
     /// `Vec3Fix`, axis `Vec3Fix`, strength, falloff_radius), `explosion`
     /// (center `Vec3Fix`, strength, radius, falloff_power), `magnetic`
-    /// (position `Vec3Fix`, moment `Vec3Fix`, strength); every parameter not
+    /// (position `Vec3Fix`, moment `Vec3Fix`, strength), `induced-dipole`
+    /// (position `Vec3Fix`, moment `Vec3Fix`, radius, material `u64`,
+    /// chi_eff, saturation_magnetization, density); every parameter not
     /// marked otherwise is a `Fix128`. A step rule is the tag
     /// `follow-substep`, `fixed` followed by its `dt` (`Fix128`), or
     /// `subcycle`. A port is its id (`u32`) followed by the tag `read`,
@@ -457,5 +459,110 @@ mod semantics_decoder {
     #[should_panic(expected = "not a lower-case hex digit")]
     fn hex32_refuses_an_upper_case_digit() {
         let _ = hex32("ABababababababababababababababababababababababababababababababab");
+    }
+}
+
+// The induced-dipole arm of the force field encoding: its identifier is pinned, and it is told
+// apart from the neighbouring arm (a fixed dipole at the same place) and by each of its parameters.
+#[cfg(all(test, feature = "std"))]
+mod induced_dipole_arm {
+    use crate::electromagnetic::MagneticResponse;
+    use crate::force::{ForceField, ForceFieldInstance};
+    use crate::math::{Fix128, Vec3Fix};
+    use crate::solver::{PhysicsConfig, PhysicsWorld};
+
+    fn hex(b: &[u8; 32]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    fn magnet() -> ForceField {
+        ForceField::InducedDipole {
+            position: Vec3Fix::from_int(1, 2, 3),
+            moment: Vec3Fix::from_int(0, 1, 0),
+            radius: Fix128::from_ratio(1, 100),
+            material: 1,
+            response: MagneticResponse {
+                chi_eff: Fix128::from_int(3),
+                saturation_magnetization: Fix128::from_int(1_700_000),
+            },
+            density: Fix128::from_int(7850),
+        }
+    }
+
+    /// The law identifier (all-zero semantics identifier) of a default world with `field` added
+    fn id_with(field: ForceField) -> [u8; 32] {
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        w.add_force_field(ForceFieldInstance::new(field));
+        w.law_id(&[0; 32])
+    }
+
+    // Recorded from this encoder when the arm was added, so it pins the bytes against later
+    // change; that the bytes follow the documented table is checked by the separate encoder in
+    // `tests/law_id_world.rs`, which builds them from the table alone.
+    const GOLDEN_INDUCED_DIPOLE_LAW_ID: &str =
+        "89c566611af48a9d0eeaca0fcf42dffa87959549f5cc69de4aba77c81829eef5";
+
+    #[test]
+    fn golden_law_id_of_a_world_with_one_magnet() {
+        assert_eq!(hex(&id_with(magnet())), GOLDEN_INDUCED_DIPOLE_LAW_ID);
+    }
+
+    /// A fixed dipole at the same position with the same moment is another law, and so is each
+    /// parameter of the magnet changed on its own
+    #[test]
+    fn the_arm_differs_from_its_neighbour_and_each_parameter_moves_it() {
+        let ForceField::InducedDipole {
+            position, moment, ..
+        } = magnet()
+        else {
+            unreachable!()
+        };
+        let with = |f: &dyn Fn(&mut ForceField)| {
+            let mut m = magnet();
+            f(&mut m);
+            id_with(m)
+        };
+        let set = |g: fn(
+            &mut Vec3Fix,
+            &mut Vec3Fix,
+            &mut Fix128,
+            &mut u16,
+            &mut MagneticResponse,
+            &mut Fix128,
+        )| {
+            with(&move |m: &mut ForceField| {
+                if let ForceField::InducedDipole {
+                    position,
+                    moment,
+                    radius,
+                    material,
+                    response,
+                    density,
+                } = m
+                {
+                    g(position, moment, radius, material, response, density);
+                }
+            })
+        };
+        let all = [
+            id_with(magnet()),
+            id_with(ForceField::Magnetic {
+                position,
+                moment,
+                strength: Fix128::ONE,
+            }),
+            set(|p, _, _, _, _, _| p.x = p.x + Fix128::ONE),
+            set(|_, m, _, _, _, _| m.z = Fix128::ONE),
+            set(|_, _, r, _, _, _| *r = *r + *r),
+            set(|_, _, _, mat, _, _| *mat = 2),
+            set(|_, _, _, _, resp, _| resp.chi_eff = Fix128::from_int(2)),
+            set(|_, _, _, _, resp, _| resp.saturation_magnetization = Fix128::from_int(1_600_000)),
+            set(|_, _, _, _, _, d| *d = Fix128::from_int(7800)),
+        ];
+        for i in 0..all.len() {
+            for j in i + 1..all.len() {
+                assert_ne!(all[i], all[j], "cases {i} and {j} share a law id");
+            }
+        }
     }
 }

@@ -10,7 +10,11 @@ use crate::solver::RigidBody;
 use alloc::vec::Vec;
 
 /// Force field type
+///
+/// New kinds of field may be added in a minor release, so a `match` outside this crate needs a
+/// wildcard arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ForceField {
     /// Constant directional force (e.g., wind)
     Directional {
@@ -1097,5 +1101,224 @@ mod tests {
             "{f:?}"
         );
         assert!(f.y.is_zero() && f.z.is_zero());
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod magnet_tests {
+    use super::*;
+    use crate::electromagnetic::magnet_test_support::{steel, v};
+    use crate::electromagnetic::{dipole_sample, induced_dipole_force};
+    use crate::material::DEFAULT_MATERIAL;
+
+    const STEEL: crate::material::MaterialId = 3;
+
+    fn density() -> Fix128 {
+        Fix128::from_int(7850)
+    }
+
+    /// A magnet at `position` with moment `m`, its own radius 1 cm, naming `material`
+    fn magnet(position: Vec3Fix, m: Vec3Fix, material: crate::material::MaterialId) -> ForceField {
+        ForceField::InducedDipole {
+            position,
+            moment: m,
+            radius: Fix128::from_ratio(1, 100),
+            material,
+            response: steel(),
+            density: density(),
+        }
+    }
+
+    /// A 7.85 g body (volume 1e-6 m³ at the steel density) at `at`
+    fn ball(at: Vec3Fix) -> RigidBody {
+        RigidBody::new_dynamic(at, Fix128::from_ratio(785, 100_000))
+    }
+
+    /// The pull the law gives a body of volume 1e-6 m³ where the field sample is `s`
+    fn law(s: DipoleSample) -> Vec3Fix {
+        induced_dipole_force(
+            &s,
+            &steel(),
+            Fix128::ONE / (ball(Vec3Fix::ZERO).inv_mass * density()),
+        )
+    }
+
+    use crate::electromagnetic::DipoleSample;
+
+    /// `got` equals the non-zero `want` to 1e-9 of its length (the contact point is found through
+    /// a square root, so it is not exact)
+    fn near(got: Vec3Fix, want: Vec3Fix) {
+        let scale = want.length().to_f64();
+        assert!(scale > 0.0, "{want:?}");
+        let d = (got - want).length().to_f64();
+        assert!(d <= 1e-9 * scale, "{got:?} vs {want:?}");
+    }
+
+    /// Nearer than the contact distance (magnet radius + body radius = 1.5 cm) the field is taken
+    /// at the contact distance along the same direction; beyond it, at the body; at the magnet's
+    /// centre (no direction) at the body itself, where a dipole has no field
+    #[test]
+    fn the_field_is_taken_no_nearer_than_the_contact_distance() {
+        let m = v(0, 1, 0, 1);
+        let fields = [ForceFieldInstance::new(magnet(Vec3Fix::ZERO, m, STEEL))];
+        let r_body = Fix128::from_ratio(5, 1000);
+        let inside = ball(v(3, 4, 0, 1000)); // 5 mm along (0.6, 0.8, 0)
+        let got = magnet_force(&fields, STEEL, r_body, 0, &inside);
+        near(got, law(dipole_sample(Vec3Fix::ZERO, m, v(9, 12, 0, 1000))));
+        let outside = ball(v(0, 3, 0, 100));
+        let got = magnet_force(&fields, STEEL, r_body, 0, &outside);
+        assert_eq!(got, law(dipole_sample(Vec3Fix::ZERO, m, v(0, 3, 0, 100))));
+        let centre = ball(Vec3Fix::ZERO);
+        assert_eq!(
+            magnet_force(&fields, STEEL, r_body, 0, &centre),
+            Vec3Fix::ZERO
+        );
+    }
+
+    /// Two magnets naming one material add their samples before the response: in saturation the
+    /// pull is not the sum of the two pulls
+    #[test]
+    fn magnets_of_one_material_add_their_fields_before_the_response() {
+        let (a, b) = (v(0, 0, 0, 1), v(4, 0, 0, 100));
+        let m = v(0, 50, 0, 1);
+        let fields = [
+            ForceFieldInstance::new(magnet(a, m, STEEL)),
+            ForceFieldInstance::new(magnet(b, m, STEEL)),
+        ];
+        let p = v(2, 3, 0, 100);
+        let got = magnet_force(&fields, STEEL, Fix128::ZERO, 0, &ball(p));
+        let (sa, sb) = (dipole_sample(a, m, p), dipole_sample(b, m, p));
+        assert_eq!(got, law(sa + sb));
+        assert_ne!(got, law(sa) + law(sb));
+    }
+
+    /// A magnet pulls only the bodies of its material that it affects, and nothing pulls a body
+    /// of infinite mass or through a non-positive density
+    #[test]
+    fn a_magnet_pulls_only_affected_bodies_of_its_material_with_mass() {
+        let m = v(0, 1, 0, 1);
+        let p = v(0, 3, 0, 100);
+        let f = ForceFieldInstance::new(magnet(Vec3Fix::ZERO, m, STEEL));
+        let pull = magnet_force(core::slice::from_ref(&f), STEEL, Fix128::ZERO, 0, &ball(p));
+        assert_ne!(pull, Vec3Fix::ZERO);
+        assert_eq!(
+            magnet_force(
+                core::slice::from_ref(&f),
+                STEEL + 1,
+                Fix128::ZERO,
+                0,
+                &ball(p)
+            ),
+            Vec3Fix::ZERO
+        );
+        let limited = f.clone().with_affected_bodies(vec![1]);
+        assert_eq!(
+            magnet_force(
+                core::slice::from_ref(&limited),
+                STEEL,
+                Fix128::ZERO,
+                0,
+                &ball(p)
+            ),
+            Vec3Fix::ZERO
+        );
+        assert_eq!(
+            magnet_force(&[limited], STEEL, Fix128::ZERO, 1, &ball(p)),
+            pull
+        );
+        assert_eq!(
+            magnet_force(
+                core::slice::from_ref(&f),
+                STEEL,
+                Fix128::ZERO,
+                0,
+                &RigidBody::new_static(p)
+            ),
+            Vec3Fix::ZERO
+        );
+        let mut thin = magnet(Vec3Fix::ZERO, m, STEEL);
+        if let ForceField::InducedDipole { density, .. } = &mut thin {
+            *density = Fix128::ZERO;
+        }
+        assert_eq!(
+            magnet_force(
+                &[ForceFieldInstance::new(thin)],
+                STEEL,
+                Fix128::ZERO,
+                0,
+                &ball(p)
+            ),
+            Vec3Fix::ZERO
+        );
+    }
+
+    /// Through the velocity update: a body past the end of the material table is of the default
+    /// material and one past the end of the radii (or with `None`) has no radius; the magnet adds
+    /// nothing to `compute_force`, it is counted once, by the material
+    #[test]
+    fn missing_table_entries_are_the_default_material_and_no_radius() {
+        let m = v(0, 1, 0, 1);
+        let p = v(0, 12, 0, 1000); // 1.2 cm: inside 1 cm + 5 mm, outside 1 cm
+        let dt = Fix128::from_ratio(1, 1000);
+        let body = ball(p);
+        let fields = [ForceFieldInstance::new(magnet(
+            Vec3Fix::ZERO,
+            m,
+            DEFAULT_MATERIAL,
+        ))];
+        assert_eq!(compute_force(&fields[0].field, &body), Vec3Fix::ZERO);
+        let dv = |materials: &[crate::material::MaterialId], radii: &[Option<Fix128>]| {
+            force_field_velocity(&fields, materials, radii, 0, &body, dt) - body.velocity
+        };
+        let at_body = law(dipole_sample(Vec3Fix::ZERO, m, p)) * body.inv_mass * dt;
+        assert_ne!(at_body, Vec3Fix::ZERO);
+        assert_eq!(dv(&[], &[]), at_body);
+        assert_eq!(dv(&[DEFAULT_MATERIAL], &[None]), at_body);
+        assert_eq!(dv(&[STEEL], &[]), Vec3Fix::ZERO);
+        let clamped = law(dipole_sample(Vec3Fix::ZERO, m, v(0, 15, 0, 1000))) * body.inv_mass * dt;
+        near(dv(&[], &[Some(Fix128::from_ratio(5, 1000))]), clamped);
+        assert_ne!(clamped, at_body);
+    }
+
+    /// Magnets naming one material must carry one response and density; different materials
+    /// may differ, and other fields do not take part
+    #[test]
+    fn induced_dipole_copies_of_one_material_must_agree() {
+        let m = v(0, 1, 0, 1);
+        let mut other = magnet(v(1, 0, 0, 1), m, STEEL);
+        if let ForceField::InducedDipole { response, .. } = &mut other {
+            response.chi_eff = Fix128::from_int(2);
+        }
+        let wind = ForceFieldInstance::new(ForceField::Drag {
+            coefficient: Fix128::ONE,
+        });
+        let same = ForceFieldInstance::new(magnet(Vec3Fix::ZERO, m, STEEL));
+        assert!(induced_dipole_fields_agree(&[]));
+        assert!(induced_dipole_fields_agree(&[
+            same.clone(),
+            wind.clone(),
+            same.clone()
+        ]));
+        assert!(!induced_dipole_fields_agree(&[
+            same.clone(),
+            wind.clone(),
+            ForceFieldInstance::new(other)
+        ]));
+        if let ForceField::InducedDipole { material, .. } = &mut other {
+            *material = STEEL + 1;
+        }
+        assert!(induced_dipole_fields_agree(&[
+            same,
+            wind,
+            ForceFieldInstance::new(other)
+        ]));
+        let mut denser = magnet(Vec3Fix::ZERO, m, STEEL);
+        if let ForceField::InducedDipole { density, .. } = &mut denser {
+            *density = Fix128::from_int(8000);
+        }
+        assert!(!induced_dipole_fields_agree(&[
+            ForceFieldInstance::new(magnet(Vec3Fix::ZERO, m, STEEL)),
+            ForceFieldInstance::new(denser),
+        ]));
     }
 }

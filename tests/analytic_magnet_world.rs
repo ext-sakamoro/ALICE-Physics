@@ -15,7 +15,10 @@
 //! the energy `½mv² + U` drifts only by the integrator's error, which halves when the step halves.
 //!
 //! oracle (state): a magnet and a magnetised body are part of the world's snapshot; restoring at
-//! mid-run continues the same trail to the bit, and two runs are identical.
+//! mid-run continues the same trail to the bit, and two runs are identical. A snapshot written
+//! before magnets existed (format 5, the seven older kinds of field) is read and written again to
+//! the same bytes and steps to the bits that release stepped to, and a world without magnets is
+//! written exactly as before.
 
 use alice_physics_core::electromagnetic::{
     dipole_sample, induced_dipole_energy, induced_dipole_force, MagneticResponse,
@@ -464,5 +467,118 @@ fn a_body_missing_from_the_tables_is_of_the_default_material() {
         sliced[b].velocity,
         Vec3Fix::ZERO,
         "the metal magnet pulled the metal ball"
+    );
+}
+
+/// A world with one force field of each kind that existed before magnets, one filtered to two
+/// bodies and one disabled, so every part of a field instance is written.
+fn older_kinds_world() -> PhysicsWorld {
+    let v = Vec3Fix::from_int;
+    let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    for i in 0..3 {
+        w.add_body(RigidBody::new_dynamic(v(i, 2, 0), fx(3, 2)));
+    }
+    let fields = [
+        ForceField::Directional {
+            direction: v(1, 0, 0),
+            strength: fx(5, 2),
+        },
+        ForceField::Point {
+            center: v(0, 1, 0),
+            strength: fx(7, 3),
+            repulsive: true,
+            max_force: fx(40, 1),
+        },
+        ForceField::Drag {
+            coefficient: fx(1, 10),
+        },
+        ForceField::Buoyancy {
+            surface_y: fx(1, 2),
+            density: fx(1000, 1),
+            drag: fx(3, 10),
+        },
+        ForceField::Vortex {
+            center: v(0, 0, 1),
+            axis: v(0, 1, 0),
+            strength: fx(9, 4),
+            falloff_radius: fx(6, 1),
+        },
+        ForceField::Explosion {
+            center: v(1, 1, 1),
+            strength: fx(50, 1),
+            radius: fx(4, 1),
+            falloff_power: fx(2, 1),
+        },
+        ForceField::Magnetic {
+            position: v(0, 3, 0),
+            moment: v(0, 1, 0),
+            strength: fx(11, 5),
+        },
+    ];
+    for (k, f) in fields.into_iter().enumerate() {
+        let mut inst = ForceFieldInstance::new(f);
+        if k == 1 {
+            inst.affected_bodies = Some(vec![0, 2]);
+        }
+        if k == 5 {
+            inst.enabled = false;
+        }
+        w.add_force_field(inst);
+    }
+    w
+}
+
+/// `older_kinds_world()` written by `snapshot_world` with the build at `21be64af`, the release
+/// before magnets (format 5); `…_b.bin` is the same world stepped 30 times by `1/60` by that build.
+/// The writer printed stepping semantics `31eb4ab8…`; both files are 2726 bytes, `a` sha256
+/// `27fe42cf…` and `b` sha256 `7da9cf74…`.
+const OLDER_KINDS_A: &[u8] =
+    include_bytes!("fixtures/world_snapshot_xv_21be64af_force_fields_a.bin");
+const OLDER_KINDS_B: &[u8] =
+    include_bytes!("fixtures/world_snapshot_xv_21be64af_force_fields_b.bin");
+
+/// Adding magnets did not change the format or the stepping of worlds without one: such a world
+/// is written to the bytes the earlier release wrote; those bytes are read back and written again
+/// unchanged, with every field, its filter and its switch in place; and restored and stepped 30
+/// times here they give the bytes the earlier release's own 30 steps gave.
+#[test]
+fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
+    assert_eq!(
+        older_kinds_world().snapshot_world(),
+        OLDER_KINDS_A,
+        "a world without magnets is written as before"
+    );
+
+    let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    w.restore_world(OLDER_KINDS_A)
+        .expect("the earlier snapshot restores");
+    assert_eq!(w.snapshot_world(), OLDER_KINDS_A, "written back unchanged");
+    assert_eq!(w.force_fields.len(), 7);
+    let expected = older_kinds_world();
+    for (k, (got, want)) in w
+        .force_fields
+        .iter()
+        .zip(&expected.force_fields)
+        .enumerate()
+    {
+        assert_eq!(
+            format!("{:?}", got.field),
+            format!("{:?}", want.field),
+            "field {k}"
+        );
+        assert_eq!(got.affected_bodies, want.affected_bodies, "filter {k}");
+        assert_eq!(got.enabled, want.enabled, "switch {k}");
+    }
+    assert_eq!(w.force_fields[1].affected_bodies, Some(vec![0, 2]));
+    assert!(!w.force_fields[5].enabled);
+
+    for _ in 0..30 {
+        w.step(fx(1, 60));
+    }
+    assert_ne!(OLDER_KINDS_B, OLDER_KINDS_A, "the bodies moved");
+    assert_eq!(
+        w.snapshot_world(),
+        OLDER_KINDS_B,
+        "30 steps here are the earlier release's 30 steps, to the bit"
     );
 }
