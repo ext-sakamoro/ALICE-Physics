@@ -418,3 +418,247 @@ mod tests {
         assert_eq!(f.x, Fix128::from_int(3));
     }
 }
+
+/// Values the unit tests of the magnet law share (this module and [`crate::force`])
+#[cfg(test)]
+pub(crate) mod magnet_test_support {
+    use super::MagneticResponse;
+    use crate::math::{Fix128, Vec3Fix};
+
+    /// Soft steel: `chi_eff = 3`, `M_s = 1.7e6` A/m
+    pub(crate) fn steel() -> MagneticResponse {
+        MagneticResponse {
+            chi_eff: Fix128::from_int(3),
+            saturation_magnetization: Fix128::from_int(1_700_000),
+        }
+    }
+
+    /// `(x, y, z) / denom` as a vector
+    pub(crate) fn v(x: i64, y: i64, z: i64, denom: i64) -> Vec3Fix {
+        Vec3Fix::new(
+            Fix128::from_ratio(x, denom),
+            Fix128::from_ratio(y, denom),
+            Fix128::from_ratio(z, denom),
+        )
+    }
+
+    /// `got` within `rel` of `want` (relative to `scale`, the size of the quantity compared)
+    pub(crate) fn close(got: Fix128, want: f64, scale: f64, rel: f64) -> bool {
+        (got.to_f64() - want).abs() <= rel * scale
+    }
+}
+
+#[cfg(test)]
+mod magnet_tests {
+    use super::magnet_test_support::{close, steel, v};
+    use super::*;
+
+    /// `μ0` in f64, as the code takes it
+    const MU0: f64 = 1.256_637_061_4e-6;
+
+    /// The point-dipole field at three points of known geometry (`m = ẑ`, `r = 0.1` m, so
+    /// `μ0/4π · |m|/r³ = 1e-4` T): on the axis `2e-4 ẑ`, on the equator `−1e-4 ẑ`, and at
+    /// `r̂ = (0.6, 0, 0.8)`, where `m·r̂ = 0.8`, `1e-4·(3·0.8·r̂ − ẑ) = (1.44e-4, 0, 0.92e-4)`.
+    #[test]
+    fn the_dipole_field_at_three_points_of_known_geometry() {
+        let m = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
+        for (point, want) in [
+            (v(0, 0, 1, 10), [0.0, 0.0, 2e-4]),
+            (v(1, 0, 0, 10), [0.0, 0.0, -1e-4]),
+            (v(6, 0, 8, 100), [1.44e-4, 0.0, 0.92e-4]),
+        ] {
+            let b = dipole_sample(Vec3Fix::ZERO, m, point).field;
+            for (got, want) in [b.x, b.y, b.z].into_iter().zip(want) {
+                assert!(close(got, want, 2e-4, 1e-12), "{point:?}: {b:?}");
+            }
+        }
+        // shifting the magnet and the point together leaves the field unchanged
+        let shift = v(3, -7, 2, 1);
+        let moved = dipole_sample(shift, m, shift + v(6, 0, 8, 100)).field;
+        assert!(close(moved.x, 1.44e-4, 2e-4, 1e-12) && close(moved.z, 0.92e-4, 2e-4, 1e-12));
+    }
+
+    /// `jacobian[j]` is `∂B/∂x_j`: it matches the central difference of the field, and is
+    /// symmetric and traceless (a curl- and divergence-free field)
+    #[test]
+    fn the_jacobian_is_the_derivative_of_the_field_symmetric_and_traceless() {
+        let (pos, m) = (v(1, 2, -1, 100), v(3, 5, -2, 10));
+        let p = v(4, -2, 5, 100);
+        let s = dipole_sample(pos, m, p);
+        let h = Fix128::from_ratio(1, 1_000_000);
+        let axes = [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z];
+        let comp = |u: Vec3Fix, i: usize| [u.x, u.y, u.z][i].to_f64();
+        let scale = (0..3)
+            .flat_map(|j| (0..3).map(move |i| (i, j)))
+            .map(|(i, j)| comp(s.jacobian[j], i).abs())
+            .fold(0.0, f64::max);
+        assert!(scale > 0.0);
+        for (j, axis) in axes.iter().enumerate() {
+            let plus = dipole_sample(pos, m, p + *axis * h).field;
+            let minus = dipole_sample(pos, m, p - *axis * h).field;
+            for i in 0..3 {
+                let fd = (comp(plus, i) - comp(minus, i)) / 2e-6;
+                let got = comp(s.jacobian[j], i);
+                assert!(
+                    (got - fd).abs() <= 1e-6 * scale,
+                    "dB_{i}/dx_{j}: {got} vs {fd}"
+                );
+                let mirror = comp(s.jacobian[i], j);
+                assert!(
+                    (got - mirror).abs() <= 1e-15 * scale,
+                    "not symmetric at ({i}, {j})"
+                );
+            }
+        }
+        // the three diagonal entries are each of the size of `scale` and cancel, so the sum keeps
+        // the rounding of each (measured 3.7e-15 of `scale` here); 1e-13 still fails any error in a
+        // term of the closed form, which moves the trace by a fraction of `scale`
+        let trace = comp(s.jacobian[0], 0) + comp(s.jacobian[1], 1) + comp(s.jacobian[2], 2);
+        assert!(
+            trace.abs() <= 1e-13 * scale,
+            "trace {trace} of scale {scale}"
+        );
+    }
+
+    /// `J = Jᵀ` at points all around a dipole of a tilted moment (the field is curl-free): each
+    /// pair of mirrored entries agrees to the rounding of the closed form, 1e-15 of the largest entry
+    #[test]
+    fn the_jacobian_is_symmetric_all_around_the_dipole() {
+        let m = v(-2, 7, 3, 10);
+        let mut compared = 0;
+        for point in [
+            v(5, 0, 0, 100),
+            v(0, -5, 0, 100),
+            v(0, 0, 5, 100),
+            v(3, 4, -12, 100),
+            v(-7, 1, 2, 1000),
+            v(9, -9, 9, 10),
+        ] {
+            let s = dipole_sample(v(1, 1, 1, 1000), m, v(1, 1, 1, 1000) + point);
+            let e = |i: usize, j: usize| {
+                [s.jacobian[j].x, s.jacobian[j].y, s.jacobian[j].z][i].to_f64()
+            };
+            let scale = (0..9).map(|k| e(k / 3, k % 3).abs()).fold(0.0, f64::max);
+            assert!(scale > 0.0, "{point:?}");
+            for (i, j) in [(0, 1), (0, 2), (1, 2)] {
+                assert!(
+                    (e(i, j) - e(j, i)).abs() <= 1e-15 * scale,
+                    "{point:?}: ({i}, {j})"
+                );
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 18);
+    }
+
+    /// At the dipole itself there is no field, and samples add field by field and column by column
+    #[test]
+    fn no_field_at_the_dipole_and_samples_add_componentwise() {
+        let m = v(1, 2, 3, 1);
+        assert_eq!(
+            dipole_sample(v(1, 1, 1, 1), m, v(1, 1, 1, 1)),
+            DipoleSample::ZERO
+        );
+        let a = dipole_sample(Vec3Fix::ZERO, m, v(1, 0, 0, 10));
+        let b = dipole_sample(v(0, 1, 0, 10), m, v(1, 0, 0, 10));
+        let sum = a + b;
+        assert_eq!(sum.field, a.field + b.field);
+        for j in 0..3 {
+            assert_eq!(sum.jacobian[j], a.jacobian[j] + b.jacobian[j]);
+        }
+        assert_eq!(a + DipoleSample::ZERO, a);
+    }
+
+    /// `B_s = μ0·M_s/χ_eff` (about 0.712 T for steel); a body with no susceptibility or no
+    /// saturation magnetisation (zero or negative) does not magnetise
+    #[test]
+    fn the_saturation_field_and_the_bodies_that_do_not_magnetise() {
+        let b_s = steel().saturation_field().unwrap();
+        assert!(close(b_s, MU0 * 1.7e6 / 3.0, 1.0, 1e-12), "{b_s:?}");
+        let field = v(1, 0, 0, 1);
+        let sample = DipoleSample {
+            field,
+            jacobian: [v(1, 0, 0, 1); 3],
+        };
+        for (chi, ms) in [(0, 1_700_000), (3, 0), (-3, 1_700_000), (3, -1)] {
+            let r = MagneticResponse {
+                chi_eff: Fix128::from_int(chi),
+                saturation_magnetization: Fix128::from_int(ms),
+            };
+            assert_eq!(r.saturation_field(), None, "({chi}, {ms})");
+            assert_eq!(induced_dipole_energy(field, &r, Fix128::ONE), Fix128::ZERO);
+            assert_eq!(
+                induced_dipole_force(&sample, &r, Fix128::ONE),
+                Vec3Fix::ZERO
+            );
+        }
+    }
+
+    /// The energy below saturation is `−χ_eff·V·|B|²/(2μ0)` and above it
+    /// `−M_s·V·|B| + M_s·V·B_s/2`; at `|B| = B_s` the two agree (the linear branch is taken)
+    #[test]
+    fn the_energy_in_the_linear_and_the_saturated_regime() {
+        let volume = Fix128::from_ratio(1, 1_000_000);
+        let b_s = MU0 * 1.7e6 / 3.0;
+        // |B| = 0.1 T along an oblique direction: |(0.06, 0, 0.08)| = 0.1
+        let linear = induced_dipole_energy(v(6, 0, 8, 100), &steel(), volume);
+        let want = -3.0 * 1e-6 * 0.01 / (2.0 * MU0);
+        assert!(
+            close(linear, want, want.abs(), 1e-9),
+            "{linear:?} vs {want}"
+        );
+        // |B| = 1 T
+        let saturated = induced_dipole_energy(v(0, 1, 0, 1), &steel(), volume);
+        let want = -1.7e6 * 1e-6 + 1.7e6 * 1e-6 * b_s / 2.0;
+        assert!(
+            close(saturated, want, want.abs(), 1e-9),
+            "{saturated:?} vs {want}"
+        );
+        // exactly at the saturation field both formulas give −M_s·V·B_s/2
+        let at = induced_dipole_energy(
+            Vec3Fix::new(
+                steel().saturation_field().unwrap(),
+                Fix128::ZERO,
+                Fix128::ZERO,
+            ),
+            &steel(),
+            volume,
+        );
+        let want = -1.7e6 * 1e-6 * b_s / 2.0;
+        assert!(close(at, want, want.abs(), 1e-9), "{at:?} vs {want}");
+    }
+
+    /// The force is `(χ_eff·V/μ0)·JᵀB` below saturation and `M_s·V·JᵀB/|B|` above it, for a
+    /// sample written by hand (`J = diag(2, −1, −1)` T/m, traceless)
+    #[test]
+    fn the_force_in_the_linear_and_the_saturated_regime() {
+        let volume = Fix128::from_ratio(1, 1_000_000);
+        let jacobian = [v(2, 0, 0, 1), v(0, -1, 0, 1), v(0, 0, -1, 1)];
+        // B = (0.1, 0.05, 0) T: JᵀB = (0.2, −0.05, 0)
+        let linear = induced_dipole_force(
+            &DipoleSample {
+                field: v(10, 5, 0, 100),
+                jacobian,
+            },
+            &steel(),
+            volume,
+        );
+        let k = 3.0 * 1e-6 / MU0;
+        assert!(close(linear.x, k * 0.2, k * 0.2, 1e-9), "{linear:?}");
+        assert!(close(linear.y, -k * 0.05, k * 0.2, 1e-9), "{linear:?}");
+        assert!(linear.z.is_zero());
+        // B = (1.2, 1.6, 0) T, |B| = 2: JᵀB = (2.4, −1.6, 0), scaled by M_s·V/|B| = 0.85 (|B| ≠ 1
+        // so that the division by |B| shows)
+        let saturated = induced_dipole_force(
+            &DipoleSample {
+                field: v(12, 16, 0, 10),
+                jacobian,
+            },
+            &steel(),
+            volume,
+        );
+        assert!(close(saturated.x, 0.85 * 2.4, 2.04, 1e-9), "{saturated:?}");
+        assert!(close(saturated.y, -0.85 * 1.6, 2.04, 1e-9), "{saturated:?}");
+        assert!(saturated.z.is_zero());
+    }
+}
