@@ -1514,4 +1514,50 @@ mod tests {
         let mut m = one_tet_mesh(1.0);
         let _ = m.try_refine_conforming(0.0, 4);
     }
+
+    /// A field given by its values at the corners of one unit cell at the origin
+    /// (every other corner is outside at 1.0)
+    fn corner_values(table: [([f32; 3], f32); 3]) -> ClosureSdf {
+        ClosureSdf::new(
+            move |x, y, z| {
+                let at = [x, y, z];
+                table
+                    .iter()
+                    .find(|(p, _)| *p == at)
+                    .map_or(1.0, |&(_, v)| v)
+            },
+            |_x, _y, _z| (1.0, 0.0, 0.0),
+        )
+    }
+
+    /// With two crossings inside the snap distance, a corner moves onto the nearer:
+    /// the corner (0,0,0) at +1/8 has a crossing at t = (1/8)/(1/8 + 7/8) = 1/8 towards
+    /// (1,0,0) and at t = (1/8)/(1/8 + 3/8) = 1/4 towards (0,1,0), both under
+    /// 0.3 · cell, so it lands on (1/8, 0, 0) (the farther would be (0, 1/4, 0))
+    #[test]
+    fn a_corner_snaps_to_the_nearer_of_two_crossings() {
+        // the nearer crossing is offered first, so taking the last or the farther is red
+        let sdf = corner_values([
+            ([0.0, 0.0, 0.0], 0.125),
+            ([1.0, 0.0, 0.0], -0.875),
+            ([0.0, 1.0, 0.0], -0.375),
+        ]);
+        let lattice = WarpedLattice::build(&sdf, [0.0; 3], 1.0, [1, 1, 1]);
+        assert_eq!(lattice.position([0, 0, 0]), [0.125, 0.0, 0.0]);
+        assert_eq!(lattice.value([0, 0, 0]), 0.0);
+    }
+
+    /// Two crossings at the same distance: the corner takes the one towards the first
+    /// neighbour offset in the order dz, dy, dx from -1 to 1, here (1,0,0) before (0,1,0)
+    #[test]
+    fn equal_crossings_take_the_first_neighbour_offset() {
+        let sdf = corner_values([
+            ([0.0, 0.0, 0.0], 0.125),
+            ([1.0, 0.0, 0.0], -0.875),
+            ([0.0, 1.0, 0.0], -0.875),
+        ]);
+        let lattice = WarpedLattice::build(&sdf, [0.0; 3], 1.0, [1, 1, 1]);
+        assert_eq!(lattice.position([0, 0, 0]), [0.125, 0.0, 0.0]);
+        assert_eq!(lattice.value([0, 0, 0]), 0.0);
+    }
 }
