@@ -21,6 +21,28 @@ use crate::netcode::{
 };
 use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
+// A non-finite float argument (NaN, ±∞, or a finite value beyond the f32 range
+// for the arguments this binding narrows to f32) raises ValueError naming the
+// method and the parameter (`step: dt is not finite`), and nothing changes.
+// Before, such a value was converted (NaN to zero, ±∞ to the nearest end).
+
+/// A refused argument as the `ValueError` Python sees, with the one wording
+/// the bindings share
+fn refused(e: binding_api::NotFinite) -> PyErr {
+    PyValueError::new_err(e.to_string())
+}
+
+/// `(x, y, z)` narrowed to `f32` as this binding has always done, or the refusal
+fn vec3_f32(entry: &'static str, param: &'static str, x: f64, y: f64, z: f64) -> PyResult<Vec3Fix> {
+    let c = |v: f64| binding_api::checked_f32(entry, param, v as f32).map_err(refused);
+    Ok(Vec3Fix::new(c(x)?, c(y)?, c(z)?))
+}
+
+/// `x` in fixed point, or the refusal
+fn scalar(entry: &'static str, param: &'static str, x: f64) -> PyResult<Fix128> {
+    binding_api::checked(entry, param, x).map_err(refused)
+}
+
 // ============================================================================
 // PyPhysicsWorld — Core physics world
 // ============================================================================
@@ -46,40 +68,40 @@ impl PyPhysicsWorld {
     /// Add a dynamic rigid body at position (x, y, z) with given mass.
     ///
     /// Returns the body index.
-    fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-            Fix128::from_f64(mass),
-        );
-        self.inner.add_body(body)
+    fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> PyResult<usize> {
+        let p = vec3_f32("add_dynamic_body", "position", x, y, z)?;
+        let m = scalar("add_dynamic_body", "mass", mass)?;
+        Ok(self.inner.add_body(RigidBody::new_dynamic(p, m)))
     }
 
     /// Add a static (immovable) body at position (x, y, z).
     ///
     /// Returns the body index.
-    fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_static(Vec3Fix::from_f32(x as f32, y as f32, z as f32));
-        self.inner.add_body(body)
+    fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> PyResult<usize> {
+        let p = vec3_f32("add_static_body", "position", x, y, z)?;
+        Ok(self.inner.add_body(RigidBody::new_static(p)))
     }
 
     /// Step the simulation by dt seconds.
     ///
     /// GIL is released during the physics computation for full parallelism.
-    fn step(&mut self, py: Python<'_>, dt: f64) {
-        let dt_fix = Fix128::from_f64(dt);
+    fn step(&mut self, py: Python<'_>, dt: f64) -> PyResult<()> {
+        let dt_fix = scalar("step", "dt", dt)?;
         py.detach(|| {
             self.inner.step(dt_fix);
         });
+        Ok(())
     }
 
     /// Step the simulation N times with fixed dt (batch stepping).
     ///
     /// GIL released for the entire batch — ideal for training loops.
-    fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) {
-        let dt_fix = Fix128::from_f64(dt);
+    fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) -> PyResult<()> {
+        let dt_fix = scalar("step_n", "dt", dt)?;
         py.detach(|| {
             self.inner.step_n(steps, dt_fix);
         });
+        Ok(())
     }
 
     /// Get all body positions as a NumPy (N, 3) float64 array.
@@ -135,7 +157,7 @@ impl PyPhysicsWorld {
                 "body_id out of range",
             ));
         }
-        self.inner.bodies[body_id].velocity = Vec3Fix::from_f32(vx as f32, vy as f32, vz as f32);
+        self.inner.bodies[body_id].velocity = vec3_f32("set_velocity", "velocity", vx, vy, vz)?;
         Ok(())
     }
 
@@ -164,13 +186,15 @@ impl PyPhysicsWorld {
         // Collect positions before GIL release
         let positions: Vec<Vec3Fix> = (0..n)
             .map(|i| {
-                Vec3Fix::from_f32(
-                    array[[i, 0]] as f32,
-                    array[[i, 1]] as f32,
-                    array[[i, 2]] as f32,
+                vec3_f32(
+                    "set_positions_batch",
+                    "data",
+                    array[[i, 0]],
+                    array[[i, 1]],
+                    array[[i, 2]],
                 )
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         py.detach(|| {
             for (i, pos) in positions.into_iter().enumerate() {
@@ -218,24 +242,27 @@ impl PyPhysicsWorld {
         let n = shape[0];
 
         // Gather parameters from NumPy while GIL is held
-        let params: Vec<(f32, f32, f32, f64)> = (0..n)
+        // every row is checked before any body is added: a refused batch adds none
+        let params: Vec<(Vec3Fix, Fix128)> = (0..n)
             .map(|i| {
-                (
-                    array[[i, 0]] as f32,
-                    array[[i, 1]] as f32,
-                    array[[i, 2]] as f32,
-                    array[[i, 3]],
-                )
+                Ok((
+                    vec3_f32(
+                        "add_bodies_batch",
+                        "data",
+                        array[[i, 0]],
+                        array[[i, 1]],
+                        array[[i, 2]],
+                    )?,
+                    scalar("add_bodies_batch", "data", array[[i, 3]])?,
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         // Release GIL for body creation and world insertion
         let indices = py.detach(|| {
             let mut out = Vec::with_capacity(n);
-            for &(x, y, z, mass) in &params {
-                let body =
-                    RigidBody::new_dynamic(Vec3Fix::from_f32(x, y, z), Fix128::from_f64(mass));
-                out.push(self.inner.add_body(body));
+            for &(p, mass) in &params {
+                out.push(self.inner.add_body(RigidBody::new_dynamic(p, mass)));
             }
             out
         });
@@ -272,12 +299,15 @@ impl PyPhysicsWorld {
         // Collect velocities before GIL release
         let velocities: Vec<Vec3Fix> = (0..n)
             .map(|i| {
-                let vx = array[[i, 0]];
-                let vy = array[[i, 1]];
-                let vz = array[[i, 2]];
-                Vec3Fix::from_f32(vx as f32, vy as f32, vz as f32)
+                vec3_f32(
+                    "set_velocities_batch",
+                    "data",
+                    array[[i, 0]],
+                    array[[i, 1]],
+                    array[[i, 2]],
+                )
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         py.detach(|| {
             for (i, vel) in velocities.into_iter().enumerate() {
@@ -309,12 +339,13 @@ impl PyPhysicsWorld {
         let impulses: Vec<(usize, Vec3Fix)> = (0..m)
             .map(|i| {
                 let body_id = array[[i, 0]] as usize;
-                let ix = array[[i, 1]];
-                let iy = array[[i, 2]];
-                let iz = array[[i, 3]];
-                (body_id, Vec3Fix::from_f32(ix as f32, iy as f32, iz as f32))
+                let (ix, iy, iz) = (array[[i, 1]], array[[i, 2]], array[[i, 3]]);
+                Ok((
+                    body_id,
+                    vec3_f32("apply_impulses_batch", "data", ix, iy, iz)?,
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         // Validate body IDs
         let body_count = self.inner.bodies.len();
@@ -865,12 +896,10 @@ impl PyDeterministicSimulation {
     }
 
     /// Add a dynamic body. Returns body index.
-    fn add_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-            Fix128::from_f64(mass),
-        );
-        self.inner.add_body(body)
+    fn add_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> PyResult<usize> {
+        let p = vec3_f32("add_body", "position", x, y, z)?;
+        let m = scalar("add_body", "mass", mass)?;
+        Ok(self.inner.add_body(RigidBody::new_dynamic(p, m)))
     }
 
     /// Assign a player to control a body.
@@ -885,21 +914,26 @@ impl PyDeterministicSimulation {
     ///
     /// Returns:
     ///     Checksum (u64) for desync detection
-    fn advance_frame(&mut self, py: Python<'_>, inputs: Vec<(u8, f64, f64, f64, u32)>) -> u64 {
+    fn advance_frame(
+        &mut self,
+        py: Python<'_>,
+        inputs: Vec<(u8, f64, f64, f64, u32)>,
+    ) -> PyResult<u64> {
+        // every input is checked before the frame advances: a refused frame changes nothing
         let frame_inputs: Vec<FrameInput> = inputs
             .iter()
             .map(|&(pid, mx, my, mz, act)| {
-                FrameInput::new(pid)
-                    .with_movement(Vec3Fix::from_f32(mx as f32, my as f32, mz as f32))
-                    .with_actions(act)
+                Ok(FrameInput::new(pid)
+                    .with_movement(vec3_f32("advance_frame", "inputs", mx, my, mz)?)
+                    .with_actions(act))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         let checksum = py.detach(|| {
             self.inner
                 .advance_frame_with_applicator(&frame_inputs, &DefaultInputApplicator::default())
         });
-        checksum.0
+        Ok(checksum.0)
     }
 
     /// Save a snapshot for rollback. Returns the frame number.
@@ -996,16 +1030,18 @@ fn encode_frame_input(
     aim_x: f64,
     aim_y: f64,
     aim_z: f64,
-) -> Vec<u8> {
+) -> PyResult<Vec<u8>> {
     let input = FrameInput::new(player_id)
-        .with_movement(Vec3Fix::from_f32(
-            move_x as f32,
-            move_y as f32,
-            move_z as f32,
-        ))
+        .with_movement(vec3_f32(
+            "encode_frame_input",
+            "move",
+            move_x,
+            move_y,
+            move_z,
+        )?)
         .with_actions(actions)
-        .with_aim(Vec3Fix::from_f32(aim_x as f32, aim_y as f32, aim_z as f32));
-    input.to_wire().to_vec()
+        .with_aim(vec3_f32("encode_frame_input", "aim", aim_x, aim_y, aim_z)?);
+    Ok(input.to_wire().to_vec())
 }
 
 /// Decode a FrameInput from its wire form (`FrameInput::from_wire`).

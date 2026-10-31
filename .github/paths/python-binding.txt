@@ -10,6 +10,8 @@ rust-toolchain.toml
 # maturin puts the manifest's `readme` into the wheel metadata
 README.md
 python/**
+# the rows test_every_float_parameter_refuses_a_non_finite_value drives
+scripts/binding-float-entries.tsv
 # the changes and gate jobs
 scripts/changed_paths.py
 .github/workflows/python-binding.yml
