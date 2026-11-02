@@ -13,7 +13,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# macOS /bin/bash 3.2 exits 0 when `set -u` stops the script while an EXIT trap is set, so the
+# trap itself turns any stop before the last line into a failure
+finished=0
+cleanup() {
+  rm -rf "$work"
+  if [ "$finished" != 1 ]; then echo "neutral_repro_check: stopped before the comparison ended" >&2; exit 1; fi
+}
+trap cleanup EXIT
 
 build() {
   local n=$1
@@ -25,7 +32,8 @@ build() {
 
 # one line per compared item: "<item> <sha256>"
 digest() {
-  local n=$1 dir="$work/out$n/pkg"
+  local n=$1
+  local dir="$work/out$n/pkg"
   python3 -I - "$dir" "$dir.tokens.json" "$work/private$n/name-map.json" <<'EOF'
 import hashlib, io, sys, zipfile
 from pathlib import Path
@@ -58,6 +66,7 @@ digest 2 > "$work/d2"
 compared=$(wc -l < "$work/d1" | tr -d ' ')
 if [ "$compared" = 0 ] || [ ! -s "$work/d2" ]; then
   echo "neutral_repro_check: compared nothing" >&2
+  finished=1
   exit 2
 fi
 differ=0
@@ -67,4 +76,5 @@ while read -r item h1; do
 done < "$work/d1"
 [ "$(wc -l < "$work/d2" | tr -d ' ')" = "$compared" ] || { echo "the two builds have different file sets"; differ=$((differ + 1)); }
 echo "neutral repro check: $compared items compared, $differ different"
+finished=1
 [ "$differ" = 0 ]
