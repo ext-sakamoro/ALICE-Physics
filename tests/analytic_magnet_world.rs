@@ -66,7 +66,7 @@ fn config(gravity: bool) -> PhysicsConfig {
     if !gravity {
         c.gravity = Vec3Fix::ZERO;
     }
-    c.damping = Fix128::ONE;
+    c.damping_rate = Fix128::ZERO;
     c
 }
 
@@ -528,14 +528,14 @@ fn older_kinds_world() -> PhysicsWorld {
     w
 }
 
-/// `older_kinds_world()` written by `snapshot_world` with the build at `21be64af`, the release
-/// before magnets (format 5); `…_b.bin` is the same world stepped 30 times by `1/60` by that build.
-/// The writer printed stepping semantics `31eb4ab8…`; both files are 2726 bytes, `a` sha256
-/// `27fe42cf…` and `b` sha256 `7da9cf74…`.
+/// `older_kinds_world()` written by `snapshot_world` with the build just before magnets (format 6,
+/// the per-second damping rates); `…_b.bin` is the same world stepped 30 times by `1/60` by that
+/// build. The writer printed stepping semantics `e90000da…`; both files are 2726 bytes, `a` sha256
+/// `49bdd103…` and `b` sha256 `693394f7…`.
 const OLDER_KINDS_A: &[u8] =
-    include_bytes!("fixtures/world_snapshot_xv_21be64af_force_fields_a.bin");
+    include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_a.bin");
 const OLDER_KINDS_B: &[u8] =
-    include_bytes!("fixtures/world_snapshot_xv_21be64af_force_fields_b.bin");
+    include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_b.bin");
 
 /// Adding magnets did not change the format or the stepping of worlds without one: such a world
 /// is written to the bytes the earlier release wrote; those bytes are read back and written again

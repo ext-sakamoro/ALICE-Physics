@@ -19,7 +19,7 @@ use alice_physics_core::{
 fn main() {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);

@@ -500,7 +500,7 @@ mod induced_dipole_arm {
     // change; that the bytes follow the documented table is checked by the separate encoder in
     // `tests/law_id_world.rs`, which builds them from the table alone.
     const GOLDEN_INDUCED_DIPOLE_LAW_ID: &str =
-        "89c566611af48a9d0eeaca0fcf42dffa87959549f5cc69de4aba77c81829eef5";
+        "be8669587f4b8a709f3e8586752192269d6b347eb169cee319370bf291a28cf1";
 
     #[test]
     fn golden_law_id_of_a_world_with_one_magnet() {
