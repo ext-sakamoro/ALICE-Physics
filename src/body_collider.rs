@@ -700,7 +700,9 @@ fn centre_on_boundary_normal(reference: Vec3Fix, tri: &crate::trimesh::Triangle)
 /// A ball against the boundary of a triangle (its edges and corners, and the whole of
 /// a triangle with no area), in closed form: the closest point of the three edges, the
 /// depth `r - d` to it and the normal along the offset, where GJK/EPA stops once its
-/// polytope is within 2^-16 and leaves the normal up to 0.45 degrees off. Edges are
+/// polytope is within 2^-16 and leaves the normal up to about `sqrt(2 · 2^-16 / d)`
+/// radians off, `d` being the distance from the centre to the triangle (0.45 degrees at
+/// `d = 0.5`, more for a deeper contact). Edges are
 /// taken in order and a later one must be strictly closer, so a tie has one answer.
 fn ball_triangle_boundary_contact(
     ball: Sphere,

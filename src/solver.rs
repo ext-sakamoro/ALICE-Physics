@@ -4658,15 +4658,16 @@ impl PhysicsWorld {
 
     /// Apply global and per-body velocity damping **once per frame**.
     ///
-    /// `SolverConfig::damping` / `RigidBody::linear_damping` /
-    /// `RigidBody::angular_damping` are velocity-retention factors per
-    /// `step()` call. Before 1.2.0 they were multiplied in every substep, so
-    /// the default `substeps: 8, damping: 0.99` gave every body a terminal
-    /// velocity of `g * h * d / (1 - d)` with `h = dt / substeps` — about
-    /// 2 m/s under default gravity — and doubling `substeps` halved the fall
-    /// speed. A precision parameter must not change the physics, so damping
-    /// now runs after the substep loop, on the velocities derived by the last
-    /// `update_velocities`. Static / kinematic / sleeping bodies are skipped.
+    /// `SolverConfig::damping_rate` / `RigidBody::linear_damping_rate` /
+    /// `RigidBody::angular_damping_rate` are rates per second (1/s): a body's
+    /// velocity is multiplied by `exp(−(c_world + c_body) · dt)` once per
+    /// `step()` call, so the decay per second does not depend on `dt` or on
+    /// `substeps`. Before 1.2.0 the old per-step retention factors were
+    /// multiplied in every substep, which made the terminal velocity depend on
+    /// `substeps`; a precision parameter must not change the physics, so
+    /// damping runs after the substep loop, on the velocities derived by the
+    /// last `update_velocities`. Static / kinematic / sleeping bodies are
+    /// skipped.
     fn apply_frame_damping(&mut self, dt: Fix128) {
         let world = self.config.damping_rate;
         // `exp(−c·dt)`: exactly 1 for no damping (no rounding of an undamped
