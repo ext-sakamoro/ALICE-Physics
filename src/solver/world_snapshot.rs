@@ -3822,13 +3822,13 @@ mod tests {
     }
 
     /// A magnet is written with force field tag 7, the smallest tag no earlier kind uses, and the
-    /// snapshot version did not move. The release before magnets (`21be64af`) refused tag 7 as an
-    /// unknown kind (`r_force_field(&[7])` was `InvalidValue { section: "force_fields" }` there),
+    /// snapshot version did not move for it (6 is the version the per-second damping rates
+    /// set). The release before magnets (`21be64af`) refused tag 7 as an unknown kind (`r_force_field(&[7])` was `InvalidValue { section: "force_fields" }` there),
     /// so that release refuses a snapshot holding a magnet instead of misreading it, and needs no
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
