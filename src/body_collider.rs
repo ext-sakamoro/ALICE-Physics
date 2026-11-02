@@ -1556,6 +1556,9 @@ mod tests {
         .expect("on the segment");
         let e = Vec3Fix::from_int(3, 1, 4).normalize();
         assert!(hit.normal.dot(e).abs() < fx(1, 1_000_000_000));
+        // the longest edge is (-6, -2, -8), least along Y: e x Y = (8, 0, -6), and Y is
+        // chosen only when X is not least against both of the others
+        assert_vec_near(hit.normal, [0.8, 0.0, -0.6], 1e-15, "built from Y");
         assert_near(hit.normal.length(), 1.0, 1e-15, "unit");
         // the longest edge decides, not the first: v0 = v1 leaves v1-v2 to be used
         let repeated = tri([1, 0, 0], [1, 0, 0], [1, 4, 0]);
@@ -1573,6 +1576,35 @@ mod tests {
             ball_triangle_boundary_contact(ball_at(Vec3Fix::from_int(1, 1, 1)), reference, &point)
                 .expect("on the point");
         assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
+    }
+
+    /// The side of the face is measured from the face's plane, not from the origin, and
+    /// a reference in that plane has the normal as the corners wind it. The plane is
+    /// `y = 5` with winding normal +Y.
+    #[test]
+    fn a_centre_on_an_edge_takes_the_side_from_the_plane_of_the_face() {
+        let t = tri([0, 5, 0], [2, 5, 0], [0, 5, -2]);
+        let ball = Sphere::new(Vec3Fix::from_int(1, 5, 0), fx(1, 2));
+        let below = Vec3Fix::from_int(0, 1, 0);
+        let hit = ball_triangle_boundary_contact(ball, below, &t).expect("on the edge");
+        assert_eq!(hit.normal, -Vec3Fix::UNIT_Y);
+        let in_plane = Vec3Fix::from_int(5, 5, 5);
+        let hit = ball_triangle_boundary_contact(ball, in_plane, &t).expect("on the edge");
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
+    }
+
+    /// Two edges at the same distance at different points: the earlier edge keeps it.
+    /// The centre (1, 0, 1) is 1 from (1, 0, 0) on v0-v1 and 1 from (0, 0, 1) on v2-v0;
+    /// v1-v2 is farther, at sqrt(2).
+    #[test]
+    fn a_tie_between_edges_goes_to_the_earlier_edge() {
+        let t = tri([0, 0, 0], [4, 0, 0], [0, 0, 4]);
+        let ball = Sphere::new(Vec3Fix::from_int(1, 0, 1), Fix128::from_int(2));
+        let hit =
+            ball_triangle_boundary_contact(ball, Vec3Fix::ZERO, &t).expect("within the radius");
+        assert_eq!(hit.point_b, Vec3Fix::from_int(1, 0, 0));
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Z);
+        assert_eq!(hit.depth, Fix128::ONE);
     }
 
     /// A centre on the boundary of a triangle with area takes the face's normal on the
