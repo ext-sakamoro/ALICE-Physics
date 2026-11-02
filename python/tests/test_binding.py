@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import pathlib
 import re
+import struct
 import sys
 import traceback
 
@@ -30,14 +31,16 @@ def test_version_is_the_crate_version():
 def test_free_fall_matches_the_pinned_closed_form():
     # dynamic body at y = 10, mass 1, 60 steps of 1/60 s, default config (no damping):
     # 480 substeps of h = 1/480 under g = 10, y = 10 - g h^2 n(n+1)/2 = 479/96
-    # (the closed form the FFI golden pins)
+    # (the closed form the FFI golden pins). The binding returns f32, so y is that
+    # value rounded to f32: compare with the f32 nearest 479/96, exactly.
     w = ap.PhysicsWorld()
     b = w.add_dynamic_body(0.0, 10.0, 0.0, 1.0)
     for _ in range(60):
         w.step(1.0 / 60.0)
     x, y, z = w.get_position(b)
     assert (x, z) == (0.0, 0.0), (x, z)
-    assert abs(y - 479.0 / 96.0) < 1e-9, y
+    want = struct.unpack("<f", struct.pack("<f", 479.0 / 96.0))[0]
+    assert y == want, (y, want)
 
 
 def test_a_static_body_does_not_move():

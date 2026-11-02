@@ -12,9 +12,7 @@
 #[cfg(feature = "std")]
 use crate::box_collider::OrientedBox;
 use crate::collider::{contact, gjk, Contact, Sphere, Support, AABB};
-#[cfg(feature = "std")]
-use crate::compound::ShapeRef;
-use crate::compound::{CompoundChild, CompoundShape};
+use crate::compound::{CompoundChild, CompoundShape, ShapeRef};
 use crate::heightfield::HeightField;
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 use crate::plane_collider::PlaneCollider;
@@ -60,6 +58,37 @@ impl Support for Piece<'_> {
                 position,
                 rotation,
             } => child.support_world(direction, *position, *rotation),
+        }
+    }
+}
+
+impl Piece<'_> {
+    /// This piece as a ball, when it is one: a compound's sphere child, or an
+    /// ellipsoid with equal semi-axes.
+    fn as_ball(&self) -> Option<Sphere> {
+        match self {
+            Self::Shape(PosedShape {
+                shape: Shape::Ellipsoid { radii },
+                position,
+                ..
+            }) if radii.x == radii.y && radii.y == radii.z => Some(Sphere::new(*position, radii.x)),
+            Self::Child {
+                child,
+                position,
+                rotation,
+            } => match &child.shape {
+                ShapeRef::Sphere(sphere) => {
+                    let body_rot = rotation.unit_rotation();
+                    let child_rot = body_rot.mul(child.local_rotation);
+                    let child_pos = *position + body_rot.rotate_vec(child.local_position);
+                    Some(Sphere::new(
+                        child_pos + child_rot.rotate_vec(sphere.center),
+                        sphere.radius,
+                    ))
+                }
+                _ => None,
+            },
+            Self::Shape(_) => None,
         }
     }
 }
@@ -548,7 +577,10 @@ fn mesh_piece_contact(
         let hit = match triangle_face_contact(piece, reference, triangle) {
             Face::Clear => None,
             Face::Hit(c) => Some(c),
-            Face::Outside => contact(piece, &TriangleSupport(triangle)),
+            Face::Outside => match piece.as_ball() {
+                Some(ball) => ball_triangle_boundary_contact(ball, reference, triangle),
+                None => contact(piece, &TriangleSupport(triangle)),
+            },
         };
         if let Some(hit) = hit {
             if hit.depth > Fix128::ZERO && best.is_none_or(|d| hit.depth > d.depth) {
@@ -612,6 +644,95 @@ fn triangle_face_contact(
     } else {
         Face::Outside
     }
+}
+
+/// The point of the segment `a`-`b` closest to `p`; `a` when the segment has no length.
+fn closest_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
+    let e = b - a;
+    let len2 = e.length_squared();
+    if len2.is_zero() {
+        return a;
+    }
+    let t = (p - a).dot(e) / len2;
+    if t <= Fix128::ZERO {
+        a
+    } else if t >= Fix128::ONE {
+        b
+    } else {
+        a + e * t
+    }
+}
+
+/// The normal of a ball whose centre lies on the triangle's boundary, where the offset
+/// to the closest point has no direction: the face's on the reference's side; for a
+/// triangle with no area, perpendicular to its longest edge, built from the unit axis
+/// least along that edge (the first such, in the order X, Y, Z); for a triangle that
+/// is a single point, +Y.
+fn centre_on_boundary_normal(reference: Vec3Fix, tri: &crate::trimesh::Triangle) -> Vec3Fix {
+    let n = tri.unit_normal();
+    if !n.length_squared().is_zero() {
+        return if (reference - tri.v0).dot(n) < Fix128::ZERO {
+            -n
+        } else {
+            n
+        };
+    }
+    let mut edge = tri.v1 - tri.v0;
+    for e in [tri.v2 - tri.v1, tri.v0 - tri.v2] {
+        if e.length_squared() > edge.length_squared() {
+            edge = e;
+        }
+    }
+    if edge.length_squared().is_zero() {
+        return Vec3Fix::UNIT_Y;
+    }
+    let (x, y, z) = (edge.x.abs(), edge.y.abs(), edge.z.abs());
+    let axis = if x <= y && x <= z {
+        Vec3Fix::UNIT_X
+    } else if y <= z {
+        Vec3Fix::UNIT_Y
+    } else {
+        Vec3Fix::UNIT_Z
+    };
+    edge.cross(axis).normalize()
+}
+
+/// A ball against the boundary of a triangle (its edges and corners, and the whole of
+/// a triangle with no area), in closed form: the closest point of the three edges, the
+/// depth `r - d` to it and the normal along the offset, where GJK/EPA stops once its
+/// polytope is within 2^-16 and leaves the normal up to 0.45 degrees off. Edges are
+/// taken in order and a later one must be strictly closer, so a tie has one answer.
+fn ball_triangle_boundary_contact(
+    ball: Sphere,
+    reference: Vec3Fix,
+    tri: &crate::trimesh::Triangle,
+) -> Option<Contact> {
+    let c = ball.center;
+    let mut closest = closest_on_segment(tri.v0, tri.v1, c);
+    let mut best = (c - closest).length_squared();
+    for (p, q) in [(tri.v1, tri.v2), (tri.v2, tri.v0)] {
+        let on_edge = closest_on_segment(p, q, c);
+        let d2 = (c - on_edge).length_squared();
+        if d2 < best {
+            best = d2;
+            closest = on_edge;
+        }
+    }
+    let d = best.sqrt();
+    if d >= ball.radius {
+        return None;
+    }
+    let normal = if d.is_zero() {
+        centre_on_boundary_normal(reference, tri)
+    } else {
+        (c - closest).rescaled_direction().normalize()
+    };
+    Some(Contact {
+        depth: ball.radius - d,
+        normal,
+        point_a: c - normal * ball.radius,
+        point_b: closest,
+    })
 }
 
 /// A convex piece against a height field, at the tangent plane under its lowest
@@ -1141,5 +1262,483 @@ mod tests {
                 assert_near(got.depth, unit.depth.to_f64(), 1e-6, name);
             }
         }
+    }
+
+    /// A compound of one sphere of radius `r` at the body origin: its lowest point
+    /// along any direction is unique (a box's face has many).
+    fn ball(r: Fix128) -> BodyCollider {
+        let mut c = CompoundShape::new();
+        c.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, r),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        BodyCollider::Compound(c)
+    }
+
+    fn ground_plane() -> StaticCollider {
+        StaticCollider::Plane(PlaneCollider::new(Vec3Fix::UNIT_Y, Fix128::ZERO))
+    }
+
+    fn tri(a: [i64; 3], b: [i64; 3], c: [i64; 3]) -> crate::trimesh::Triangle {
+        crate::trimesh::Triangle {
+            v0: Vec3Fix::from_int(a[0], a[1], a[2]),
+            v1: Vec3Fix::from_int(b[0], b[1], b[2]),
+            v2: Vec3Fix::from_int(c[0], c[1], c[2]),
+        }
+    }
+
+    /// The square `[-10, 10]^2` at `y = 0` as two triangles, normals up.
+    fn floor_mesh() -> StaticCollider {
+        StaticCollider::TriMesh(TriMesh::from_triangles(vec![
+            tri([-10, 0, -10], [-10, 0, 10], [10, 0, 10]),
+            tri([-10, 0, -10], [10, 0, 10], [10, 0, -10]),
+        ]))
+    }
+
+    /// A unit cube (half 1/2) sunk 1/4 into the plane `y = 0` from either side
+    /// meets it 1/4 deep with the normal on its own side; clear of it, no contact.
+    #[test]
+    fn a_box_meets_a_two_sided_plane_on_its_own_side() {
+        let c = cube(fx(1, 2));
+        let up = c
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 4), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &ground_plane(),
+            )
+            .expect("sunk from above");
+        assert_eq!(up.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(up.depth, fx(1, 4));
+        let down = c
+            .static_contact(
+                v(Fix128::ZERO, -fx(1, 4), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &ground_plane(),
+            )
+            .expect("sunk from below");
+        assert_eq!(down.normal, -Vec3Fix::UNIT_Y);
+        assert_eq!(down.depth, fx(1, 4));
+        assert!(c
+            .static_contact(
+                Vec3Fix::from_int(0, 2, 0),
+                QuatFix::IDENTITY,
+                &ground_plane()
+            )
+            .is_none());
+    }
+
+    /// A box sunk into a mesh's face meets it exactly as a plane: the face normal
+    /// on the box's side and the depth below the face. Above the face, or away
+    /// from the mesh (no BVH candidate), there is no contact.
+    #[test]
+    fn a_box_meets_a_mesh_face_exactly() {
+        let c = cube(fx(1, 2));
+        let mesh = floor_mesh();
+        let up = c
+            .static_contact(v(fx(1, 3), fx(1, 4), fx(2, 7)), QuatFix::IDENTITY, &mesh)
+            .expect("on the face");
+        assert_eq!(up.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(up.depth, fx(1, 4));
+        let down = c
+            .static_contact(v(fx(1, 3), -fx(1, 4), fx(2, 7)), QuatFix::IDENTITY, &mesh)
+            .expect("under the face");
+        assert_eq!(down.normal, -Vec3Fix::UNIT_Y);
+        assert_eq!(down.depth, fx(1, 4));
+        // the box straddles the face's plane only when sunk: 1/2 above is clear
+        // although its box touches the triangle's
+        assert!(c
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 2), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &mesh
+            )
+            .is_none());
+        assert!(c
+            .static_contact(Vec3Fix::from_int(50, 0, 0), QuatFix::IDENTITY, &mesh)
+            .is_none());
+    }
+
+    /// A ball beside a triangle's edge, its lowest point projecting outside the
+    /// triangle, is met at the edge: depth `r − d` where `d` is the
+    /// distance from the centre to the edge line, along the centre's offset.
+    #[test]
+    fn a_ball_beside_a_triangle_edge_meets_the_edge() {
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            [0, 0, 0],
+            [0, 0, 4],
+            [4, 0, 0],
+        )]));
+        let r = fx(1, 2);
+        // centre (−1/5, 3/10, 1): the edge x = y = 0 is at d = √(1/25 + 9/100)
+        let hit = ball(r)
+            .static_contact(
+                v(-fx(1, 5), fx(3, 10), Fix128::ONE),
+                QuatFix::IDENTITY,
+                &mesh,
+            )
+            .expect("the edge is within r");
+        let d = (0.04_f64 + 0.09).sqrt();
+        assert_near(hit.depth, 0.5 - d, 1e-15, "edge depth");
+        let n = [-0.2 / d, 0.3 / d, 0.0];
+        assert_vec_near(hit.normal, n, 1e-15, "edge normal");
+    }
+
+    /// A degenerate (zero-area) triangle has no face: the ball is met on the
+    /// segment it is.
+    #[test]
+    fn a_degenerate_triangle_is_met_as_its_segment() {
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            [0, 0, 0],
+            [2, 0, 0],
+            [4, 0, 0],
+        )]));
+        let hit = ball(fx(1, 2))
+            .static_contact(
+                v(Fix128::ONE, fx(3, 10), Fix128::ZERO),
+                QuatFix::IDENTITY,
+                &mesh,
+            )
+            .expect("the segment is within r");
+        assert_near(hit.depth, 0.2, 1e-15, "segment depth");
+        assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-15, "segment normal");
+    }
+
+    /// A ball off a triangle in a general orientation, each case built so the closest
+    /// point is known without computing it: the centre is `q + o`, with `q` on an edge or
+    /// a corner and `o` in the normal cone there (`o · (p - q) <= 0` for every corner
+    /// `p`, checked below). Depth `r - |o|`, normal `o / |o|`. The f64 reference is good
+    /// to about 1e-15 at these sizes and Fix128 rounds at 2^-64, so 1e-14 is the bound.
+    #[test]
+    fn a_ball_off_a_general_triangle_is_met_at_the_known_closest_point() {
+        let corners = [[1_i64, 2, -1], [4, 3, 0], [2, 5, 3]];
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            corners[0], corners[1], corners[2],
+        )]));
+        // twice q (to stay in integers), then o before its scale of 1/10
+        let cases: [([i64; 3], [i64; 3]); 6] = [
+            ([5, 5, -1], [1, -3, 0]),  // edge v0-v1
+            ([6, 8, 3], [1, 1, 0]),    // edge v1-v2
+            ([3, 7, 2], [-3, 1, 0]),   // edge v2-v0
+            ([2, 4, -2], [-1, -1, 0]), // corner v0
+            ([8, 6, 0], [1, 0, -1]),   // corner v1
+            ([4, 10, 6], [0, 1, 1]),   // corner v2
+        ];
+        let r = 0.5_f64;
+        for (twice_q, o) in cases {
+            for p in corners {
+                let dot: i64 = (0..3).map(|i| o[i] * (2 * p[i] - twice_q[i])).sum();
+                assert!(dot <= 0, "{o:?} is not in the normal cone at {twice_q:?}");
+            }
+            let centre = v(
+                fx(5 * twice_q[0] + o[0], 10),
+                fx(5 * twice_q[1] + o[1], 10),
+                fx(5 * twice_q[2] + o[2], 10),
+            );
+            let hit = ball(fx(1, 2))
+                .static_contact(centre, QuatFix::IDENTITY, &mesh)
+                .expect("the closest point is within r");
+            let o = o.map(|c| c as f64 / 10.0);
+            let d = (o[0] * o[0] + o[1] * o[1] + o[2] * o[2]).sqrt();
+            let what = format!("q/2 {twice_q:?}");
+            assert_near(hit.depth, r - d, 1e-14, &what);
+            assert_vec_near(hit.normal, [o[0] / d, o[1] / d, o[2] / d], 1e-14, &what);
+            let q = [
+                twice_q[0] as f64 / 2.0,
+                twice_q[1] as f64 / 2.0,
+                twice_q[2] as f64 / 2.0,
+            ];
+            assert_vec_near(hit.point_b, q, 1e-14, &what);
+            let n = hit.normal;
+            let surface = centre - n * fx(1, 2);
+            assert_eq!(hit.point_a, surface, "{what}");
+        }
+    }
+
+    /// An ellipsoid with equal semi-axes is a ball, and goes the same way as a sphere
+    /// child; one with unequal semi-axes is not one.
+    #[test]
+    fn only_a_round_piece_is_a_ball() {
+        let radii = |a: i64, b: i64| Shape::Ellipsoid {
+            radii: Vec3Fix::from_int(a, b, a),
+        };
+        let at = Vec3Fix::from_int(1, 2, 3);
+        let piece = |shape| {
+            Piece::Shape(PosedShape {
+                shape,
+                position: at,
+                rotation: QuatFix::IDENTITY,
+            })
+        };
+        let round = piece(radii(2, 2)).as_ball().expect("round");
+        assert_eq!((round.center, round.radius), (at, Fix128::from_int(2)));
+        assert!(piece(radii(2, 3)).as_ball().is_none());
+        // one pair equal is not enough, whichever pair
+        for radii in [Vec3Fix::from_int(2, 2, 3), Vec3Fix::from_int(3, 2, 2)] {
+            assert!(piece(Shape::Ellipsoid { radii }).as_ball().is_none());
+        }
+        assert!(piece(radii(3, 2)).as_ball().is_none());
+        assert!(piece(Shape::Box {
+            half_extents: Vec3Fix::from_int(1, 1, 1)
+        })
+        .as_ball()
+        .is_none());
+    }
+
+    /// A sphere child is placed by the body's pose, its local offset and turn, and the
+    /// sphere's own centre: the same point its support mapping is about.
+    #[test]
+    fn a_sphere_child_as_a_ball_sits_where_its_support_says() {
+        let mut c = CompoundShape::new();
+        c.add_sphere(
+            Sphere::new(Vec3Fix::from_int(1, 0, 0), fx(1, 2)),
+            Vec3Fix::from_int(0, 2, 0),
+            QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI),
+        );
+        let position = Vec3Fix::from_int(3, 0, -1);
+        let rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::HALF_PI);
+        let piece = Piece::Child {
+            child: &c.children[0],
+            position,
+            rotation,
+        };
+        let b = piece.as_ball().expect("a sphere child");
+        // +X in the child turns to +Y, offset (0, 3, 0) in the body; the body's quarter
+        // turn about X takes that to (0, 0, 3). The quarter turns are built from a
+        // rounded sine, measured off by 1.1e-14 here, so the bound is 1e-12
+        assert_vec_near(b.center, [3.0, 0.0, 2.0], 1e-12, "centre");
+        let top = piece.support(Vec3Fix::UNIT_X);
+        assert_vec_near(top, [3.5, 0.0, 2.0], 1e-12, "support about the centre");
+        assert_eq!(b.radius, fx(1, 2));
+    }
+
+    /// A centre exactly on the segment of an area-free triangle has no offset direction:
+    /// the normal is fixed by the edge alone, unit and perpendicular to it, the same
+    /// bits each time, and the depth is the whole radius.
+    #[test]
+    fn a_centre_on_a_degenerate_triangle_has_one_normal() {
+        let r = fx(1, 2);
+        let reference = Vec3Fix::ZERO;
+        let along_x = tri([0, 0, 0], [2, 0, 0], [4, 0, 0]);
+        let ball_at = |c: Vec3Fix| Sphere::new(c, r);
+        let hit = ball_triangle_boundary_contact(
+            ball_at(Vec3Fix::from_int(1, 0, 0)),
+            reference,
+            &along_x,
+        )
+        .expect("on the segment");
+        assert_eq!(hit.depth, r);
+        // the longest edge is v2-v0, so the edge runs along -X
+        assert_eq!(hit.normal, (-Vec3Fix::UNIT_X).cross(Vec3Fix::UNIT_Y));
+        // the axis is the one least along the edge, whichever that is
+        let along_y = tri([0, 0, 0], [0, 2, 0], [0, 4, 0]);
+        let hit = ball_triangle_boundary_contact(
+            ball_at(Vec3Fix::from_int(0, 1, 0)),
+            reference,
+            &along_y,
+        )
+        .expect("on the segment");
+        assert_eq!(hit.normal, (-Vec3Fix::UNIT_Y).cross(Vec3Fix::UNIT_X));
+        let along_z = tri([0, 0, 0], [0, 0, 2], [0, 0, 4]);
+        let hit = ball_triangle_boundary_contact(
+            ball_at(Vec3Fix::from_int(0, 0, 1)),
+            reference,
+            &along_z,
+        )
+        .expect("on the segment");
+        assert_eq!(hit.normal, (-Vec3Fix::UNIT_Z).cross(Vec3Fix::UNIT_X));
+        let along_xz = tri([0, 0, 0], [3, 1, 4], [6, 2, 8]);
+        let hit = ball_triangle_boundary_contact(
+            ball_at(Vec3Fix::from_int(3, 1, 4)),
+            reference,
+            &along_xz,
+        )
+        .expect("on the segment");
+        let e = Vec3Fix::from_int(3, 1, 4).normalize();
+        assert!(hit.normal.dot(e).abs() < fx(1, 1_000_000_000));
+        assert_near(hit.normal.length(), 1.0, 1e-15, "unit");
+        // the longest edge decides, not the first: v0 = v1 leaves v1-v2 to be used
+        let repeated = tri([1, 0, 0], [1, 0, 0], [1, 4, 0]);
+        let hit = ball_triangle_boundary_contact(
+            ball_at(Vec3Fix::from_int(1, 2, 0)),
+            reference,
+            &repeated,
+        )
+        .expect("on the segment");
+        assert_eq!(hit.point_b, Vec3Fix::from_int(1, 2, 0));
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Y.cross(Vec3Fix::UNIT_X));
+        // one point: +Y
+        let point = tri([1, 1, 1], [1, 1, 1], [1, 1, 1]);
+        let hit =
+            ball_triangle_boundary_contact(ball_at(Vec3Fix::from_int(1, 1, 1)), reference, &point)
+                .expect("on the point");
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
+    }
+
+    /// A centre on the boundary of a triangle with area takes the face's normal on the
+    /// reference's side.
+    #[test]
+    fn a_centre_on_a_real_edge_takes_the_face_on_the_reference_side() {
+        let t = tri([0, 0, 0], [0, 0, 4], [4, 0, 0]);
+        let ball = Sphere::new(Vec3Fix::from_int(2, 0, 0), fx(1, 2));
+        let above = Vec3Fix::from_int(0, 3, 0);
+        let hit = ball_triangle_boundary_contact(ball, above, &t).expect("on the edge");
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(hit.depth, fx(1, 2));
+        let below = Vec3Fix::from_int(0, -3, 0);
+        let hit = ball_triangle_boundary_contact(ball, below, &t).expect("on the edge");
+        assert_eq!(hit.normal, -Vec3Fix::UNIT_Y);
+    }
+
+    /// A ball just out of reach of the boundary, or exactly touching it, has no contact.
+    #[test]
+    fn a_ball_at_or_past_its_radius_from_the_boundary_has_no_contact() {
+        let t = tri([0, 0, 0], [2, 0, 0], [4, 0, 0]);
+        let r = fx(1, 2);
+        let reference = Vec3Fix::ZERO;
+        let touching = Sphere::new(v(Fix128::ONE, r, Fix128::ZERO), r);
+        assert!(ball_triangle_boundary_contact(touching, reference, &t).is_none());
+        let past = Sphere::new(v(Fix128::ONE, fx(6, 10), Fix128::ZERO), r);
+        assert!(ball_triangle_boundary_contact(past, reference, &t).is_none());
+        let within = Sphere::new(v(Fix128::ONE, fx(4, 10), Fix128::ZERO), r);
+        assert!(ball_triangle_boundary_contact(within, reference, &t).is_some());
+    }
+
+    /// Past the end of an edge the closest point clamps to the corner, and a segment
+    /// with no length is its one point.
+    #[test]
+    fn the_closest_point_on_a_segment_clamps_to_its_ends() {
+        let a = Vec3Fix::from_int(1, 0, 0);
+        let b = Vec3Fix::from_int(3, 0, 0);
+        assert_eq!(closest_on_segment(a, b, Vec3Fix::from_int(0, 1, 0)), a);
+        assert_eq!(closest_on_segment(a, b, Vec3Fix::from_int(5, 1, 0)), b);
+        assert_eq!(closest_on_segment(a, b, a), a);
+        assert_eq!(closest_on_segment(a, b, b), b);
+        assert_eq!(
+            closest_on_segment(a, b, Vec3Fix::from_int(2, 7, 0)),
+            Vec3Fix::from_int(2, 0, 0)
+        );
+        assert_eq!(closest_on_segment(a, a, b), a);
+    }
+
+    /// GJK/EPA run out of their 64 iterations on a ball very near a segment (measured at
+    /// all four offsets here), and then return their best upper bound, not a converged
+    /// depth; the normal is not bounded on this exit (measured up to 11 degrees off at
+    /// 1/10000, and arbitrary at 1/100000). A piece that is not a ball can take this exit,
+    /// so its depth is pinned: never short of the true depth by more than the threshold,
+    /// and no more than the radius and the threshold.
+    #[test]
+    fn epa_out_of_iterations_returns_an_upper_bound() {
+        const EPA_THRESHOLD: f64 = 1.0 / 65536.0;
+        let t = tri([0, 0, 0], [2, 0, 0], [4, 0, 0]);
+        for den in [100_i64, 1_000, 10_000, 100_000] {
+            let ball = Sphere::new(v(Fix128::ONE, fx(1, den), Fix128::ZERO), fx(1, 2));
+            let hit = contact(&ball, &TriangleSupport(&t)).expect("overlap");
+            let want = 0.5 - 1.0 / den as f64;
+            let got = hit.depth.to_f64();
+            assert!(got >= want - EPA_THRESHOLD, "1/{den}: {got} vs {want}");
+            assert!(got <= 0.5 + EPA_THRESHOLD, "1/{den}: {got} vs {want}");
+        }
+    }
+
+    /// A piece that is not a ball stays on GJK/EPA at an edge, which stops once its
+    /// polytope is within 2^-16: a capsule along Z, its side over the edge x = y = 0.
+    /// Depth `r - d`, the capsule's flat side keeps the normal exact to the same bound.
+    #[test]
+    fn a_capsule_beside_a_triangle_edge_stays_within_the_epa_threshold() {
+        const EPA_THRESHOLD: f64 = 1.0 / 65536.0;
+        let mesh = StaticCollider::TriMesh(TriMesh::from_triangles(vec![tri(
+            [0, 0, 0],
+            [0, 0, 4],
+            [4, 0, 0],
+        )]));
+        let mut c = CompoundShape::new();
+        c.add_capsule(
+            Capsule::new(
+                Vec3Fix::from_int(0, 0, -1),
+                Vec3Fix::from_int(0, 0, 1),
+                fx(1, 2),
+            ),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        let collider = BodyCollider::Compound(c);
+        let hit = collider
+            .static_contact(v(-fx(1, 5), fx(3, 10), fx(2, 1)), QuatFix::IDENTITY, &mesh)
+            .expect("the edge is within r");
+        let d = (0.04_f64 + 0.09).sqrt();
+        assert_near(hit.depth, 0.5 - d, EPA_THRESHOLD, "capsule depth");
+    }
+
+    /// The deepest of several pieces is the contact: a dumbbell tilted so its
+    /// right ball sits lower meets the plane at that ball's depth.
+    #[test]
+    fn the_deepest_piece_is_the_static_contact() {
+        // body origin at y = 1/4; balls (radius 1/2) at local x = ±2 turned by a
+        // about z: heights 1/4 ∓ 2 sin a for the right and left ball
+        let a = fx(1, 10);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, -a);
+        let hit = dumbbell()
+            .static_contact(
+                v(Fix128::ZERO, fx(1, 4), Fix128::ZERO),
+                turn,
+                &ground_plane(),
+            )
+            .expect("both balls sunk");
+        let deeper = 0.5 - (0.25 - 2.0 * 0.099_833_416_646_828_15); // sin(1/10)
+        assert_near(hit.depth, deeper, 1e-9, "the lower ball's depth");
+        assert!(hit.point_a.x > Fix128::ZERO, "{hit:?}");
+    }
+
+    /// A box sunk into a flat height field meets it at the tangent plane; above
+    /// it, beyond the grid's two-cell margin on each side, or on an empty or
+    /// zero-spacing field there is no contact.
+    #[test]
+    fn a_box_meets_a_height_field_inside_its_grid_only() {
+        let field = |w: u32, d: u32, spacing: Fix128| {
+            StaticCollider::HeightField(HeightField::flat(
+                w,
+                d,
+                spacing,
+                Vec3Fix::ZERO,
+                Fix128::ZERO,
+            ))
+        };
+        let c = cube(fx(1, 2));
+        let grid = field(5, 5, Fix128::ONE);
+        let hit = c
+            .static_contact(
+                v(Fix128::from_int(2), fx(1, 4), Fix128::from_int(2)),
+                QuatFix::IDENTITY,
+                &grid,
+            )
+            .expect("inside the grid");
+        assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-12, "field normal");
+        assert_near(hit.depth, 0.25, 1e-12, "field depth");
+        assert!(c
+            .static_contact(Vec3Fix::from_int(2, 3, 2), QuatFix::IDENTITY, &grid)
+            .is_none());
+        // the grid spans 0..4 in x and z; the margin is 2 cells
+        for (x, z) in [(-10, 2), (20, 2), (2, -10), (2, 20)] {
+            assert!(
+                c.static_contact(
+                    v(Fix128::from_int(x), fx(1, 4), Fix128::from_int(z)),
+                    QuatFix::IDENTITY,
+                    &grid
+                )
+                .is_none(),
+                "({x}, {z}) is outside the grid"
+            );
+        }
+        let at = v(Fix128::ZERO, fx(1, 4), Fix128::ZERO);
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(0, 5, Fix128::ONE))
+            .is_none());
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(5, 0, Fix128::ONE))
+            .is_none());
+        assert!(c
+            .static_contact(at, QuatFix::IDENTITY, &field(5, 5, Fix128::ZERO))
+            .is_none());
     }
 }
