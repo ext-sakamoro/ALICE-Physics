@@ -406,8 +406,9 @@ the package or the viewer.
 engine in it, for a product that ships it under its own name: exports, glue identifiers and paths are
 renamed or overwritten with names keyed by an HMAC key from the macOS Keychain, the files are named by
 their content hash, and the build fails unless a leak check (SHA-256 token hashes, copyable into the
-consumer) finds nothing and the renamed package gives the same positions, rotations, state digest and
-law identifier, bit for bit, as the package it was made from.
+consumer) finds nothing, every overwritten engine string that the source uses as a literal is on a
+reviewed list and none is hashed, and the renamed package gives the same positions, rotations and
+serialized state (`serializeState`), bit for bit, as the package it was made from.
 
 ## Performance
 

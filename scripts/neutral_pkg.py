@@ -232,7 +232,7 @@ def identifier_hashes(names: set[str]) -> list[str]:
 
 
 def process(src: Path, out: Path, key: bytes, names: list[str], extra_tokens: list[str],
-            identifiers: set[str] = frozenset()) -> dict:
+            identifiers: set[str] = frozenset(), review=None) -> dict:
     files = {k: src / f for k, f in (("js", "p.js"), ("wasm", "p_bg.wasm"), ("dts", "p.d.ts"))}
     for f in files.values():
         if not f.is_file():
@@ -262,9 +262,15 @@ def process(src: Path, out: Path, key: bytes, names: list[str], extra_tokens: li
             # uses (a solver tag hashed into a law identifier, an error kind returned to the caller),
             # and changing those would change behaviour
             # and the engine's own identifiers that appear as text (error kinds, field labels in
-            # error messages): exact case only, never an ordinary word (`distinctive`); the caller
-            # checks they are not hash inputs (see the build script)
+            # error messages): exact case only, never an ordinary word (`distinctive`); `review`
+            # (check_data_literals) refuses any of them the engine source uses as a string literal
+            # unless it is on the reviewed list
             in_data = sorted(i for i in identifiers if distinctive(i) and i.encode("utf-8") in p)
+            if in_data:
+                if review is None:
+                    raise InputError(f"{len(in_data)} engine identifiers in the wasm data and no reviewed list "
+                                     "(--source-root and --data-literals)")
+                review(in_data)
             p, scrubbed = scrub(p, names, key, in_data)
             data_names = {i: neutral(key, i) for i in in_data}
         new_secs.append((sid, p))
@@ -295,6 +301,64 @@ def process(src: Path, out: Path, key: bytes, names: list[str], extra_tokens: li
                        "sensitive": identifier_hashes(set(api) | set(identifiers))}}
 
 
+class CheckError(Exception):
+    pass
+
+
+# a line that hands its string to one of these is a hash input: overwriting the string would
+# change a value computed from it
+HASH_MARK = re.compile(r"hash|law_?id|digest|sha256|checksum|fingerprint", re.I)
+
+
+def literal_uses(sources: dict[str, str], ident: str) -> list[tuple[str, int, str]]:
+    """(file, line number, line) for every exact string literal `"ident"` in the sources"""
+    lit = f'"{ident}"'
+    return [(f, n, line) for f, text in sorted(sources.items())
+            for n, line in enumerate(text.splitlines(), 1) if lit in line]
+
+
+def read_reviewed(text: str) -> set[tuple[str, str]]:
+    """the reviewed list: `<identifier> <file> <role ...>` per line, `#` comments"""
+    out = set()
+    for n, line in enumerate(text.splitlines(), 1):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            raise InputError(f"reviewed list line {n}: want <identifier> <file> <role>")
+        out.add((parts[0], parts[1]))
+    if not out:
+        raise InputError("the reviewed list is empty")
+    return out
+
+
+def check_data_literals(in_data: list[str], sources: dict[str, str], reviewed: set[tuple[str, str]]) -> dict:
+    """refuse to overwrite an engine identifier the source uses as a string literal unless that
+    (identifier, file) is on the reviewed list, and refuse a literal on a line that hashes it;
+    a listed pair with no such literal is refused too (the list must not go stale). Identifiers
+    with no literal come from derived text (Debug output, panic locations) and pass."""
+    if not sources:
+        raise InputError("no engine source read (nothing to compare the wasm data with)")
+    used = set()
+    errors = []
+    for ident in in_data:
+        for f, n, line in literal_uses(sources, ident):
+            used.add((ident, f))
+            if HASH_MARK.search(line):
+                errors.append(f"{f}:{n}: {ident!r} is a hash input")
+    errors += [f"{f}: {i!r} is a string literal there and not on the reviewed list" for i, f in sorted(used - reviewed)]
+    errors += [f"reviewed list: {i!r} in {f} is not an overwritten literal (stale line)" for i, f in sorted(reviewed - used)]
+    if errors:
+        raise CheckError("; ".join(errors))
+    return {"checked": len(in_data), "literals": len(used)}
+
+
+def read_sources(root: Path) -> dict[str, str]:
+    files = sorted(p for d in ("src", "crates") if (root / d).is_dir() for p in (root / d).rglob("*.rs"))
+    return {p.relative_to(root).as_posix(): p.read_text(encoding="utf-8") for p in files}
+
+
 def write_private(path: Path, mapping: dict[str, str]) -> None:
     """the name map, readable by its owner only (mode 600, also when the file existed)"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -314,16 +378,33 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--token", action="append", default=[], help="an extra token the leak check refuses")
     ap.add_argument("--identifiers", help="a public-API listing whose crate items the package must not name")
     ap.add_argument("--crate", default="alice_physics_core", help="the crate path prefix in --identifiers")
+    ap.add_argument("--source-root", help="the engine repository: its .rs files are compared with the wasm data")
+    ap.add_argument("--data-literals", help="the reviewed list of engine string literals the package may overwrite")
     ap.add_argument("--key-service", default="p-artifact-key")
     ap.add_argument("--key-account", default="k1")
     a = ap.parse_args(argv)
     try:
         key = keychain_key(a.key_service, a.key_account)
         ids = snapshot_identifiers(Path(a.identifiers).read_text(encoding="utf-8"), a.crate) if a.identifiers else set()
-        r = process(Path(a.src), Path(a.out), key, a.name, a.token, ids)
+        review = None
+        seen = {}
+        if a.source_root or a.data_literals:
+            if not (a.source_root and a.data_literals):
+                raise InputError("--source-root and --data-literals go together")
+            sources = read_sources(Path(a.source_root))
+            reviewed = read_reviewed(Path(a.data_literals).read_text(encoding="utf-8"))
+
+            def review(in_data):
+                seen.update(check_data_literals(in_data, sources, reviewed))
+        r = process(Path(a.src), Path(a.out), key, a.name, a.token, ids, review)
+    except CheckError as e:
+        print(f"neutral_pkg: STOP: {e}", file=sys.stderr)
+        return 1
     except (InputError, OSError) as e:
         print(f"neutral_pkg: {e}", file=sys.stderr)
         return 2
+    if seen:
+        print(f"data strings checked against the source: {seen['checked']}, {seen['literals']} reviewed literal(s)")
     write_private(Path(a.map), {"api": r["mapping"], "text": r["data_names"]})
     Path(a.tokens).write_text(json.dumps(r["tokens"], indent=0) + "\n", encoding="utf-8")
     print(f"neutral package {r['base']}: {len(r['mapping'])} names renamed, {r['scrubbed']} data strings overwritten, "

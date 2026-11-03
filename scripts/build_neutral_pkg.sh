@@ -39,13 +39,19 @@ wasm-bindgen --target web --out-name p --out-dir "$raw" "$wasm"
 
 # the tokens the package must not carry: the engine's name, who built it and where, every
 # source file name, every crate of the engine's family in the build (by name)
+# (read into variables first: a failure inside `< <(...)` would only shrink the token set)
 tokens=(--name alice --token "$(id -un)" --token "$(basename "$repo")" --token rustup)
-while IFS= read -r f; do tokens+=(--token "$(basename "$f")"); done < <(git ls-files 'src/*.rs' 'crates/*.rs')
-while IFS= read -r c; do tokens+=(--token "$c"); done < <(awk '/^name = /{gsub(/"/,"",$3); print $3}' Cargo.lock | grep '^alice' | sort -u)
+src_files=$(git ls-files 'src/*.rs' 'crates/*.rs')
+family=$(awk '/^name = /{gsub(/"/,"",$3); print $3}' Cargo.lock | grep '^alice' | sort -u)
+[ -n "$src_files" ] && [ -n "$family" ] || { echo "error: no source file or no crate of the family read" >&2; exit 2; }
+while IFS= read -r f; do tokens+=(--token "$(basename "$f")"); done <<< "$src_files"
+while IFS= read -r c; do tokens+=(--token "$c"); done <<< "$family"
 
 rm -rf "$out"
 python3 scripts/neutral_pkg.py --in "$raw" --out "$out" --map "$private/name-map.json" \
-  --tokens "$out.tokens.json" --identifiers docs/PUBLIC_API_SNAPSHOT.txt "${tokens[@]}"
+  --tokens "$out.tokens.json" --identifiers docs/PUBLIC_API_SNAPSHOT.txt \
+  --source-root . --data-literals scripts/neutral_data_literals.txt "${tokens[@]}"
 python3 scripts/neutral_leak_check.py --tokens "$out.tokens.json" "$out"
-# the neutral package must behave as the package it was made from, bit for bit
+# the neutral package must behave as the package it was made from: positions, rotations and the
+# whole serialized state, bit for bit
 node scripts/neutral_equivalence.mjs "$raw" "$out" "$private/name-map.json"

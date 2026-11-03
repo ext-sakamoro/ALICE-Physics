@@ -1,0 +1,13 @@
+# Engine identifiers that the engine source uses as string literals and that the neutral browser
+# package overwrites in its wasm data (scripts/neutral_pkg.py --data-literals).
+#
+#   <identifier> <file> <role>
+#
+# The build stops when it would overwrite such a literal that is not listed here, when a listed line
+# matches no overwritten literal, or when the literal's line hashes it (hash, law id, digest,
+# checksum, fingerprint). Identifiers with no literal in the source (derived Debug text, panic
+# locations) are not listed. Overwriting keeps the length, so only the text changes.
+body_a src/scene_io.rs JSON key of the scene reader; the reader is not in the package (its other keys are absent from the wasm), the text comes from derived Debug output
+body_b src/scene_io.rs JSON key of the scene reader; as body_a
+contact_cache src/profiling.rs profile entry label; the profiler is not exported
+contact_cache src/solver/world_snapshot.rs section label in snapshot read errors and in the debug dump; neither is exported

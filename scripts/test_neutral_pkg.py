@@ -214,6 +214,63 @@ class LeakCheck(unittest.TestCase):
         self.assertEqual(run_check([], d)[0], 2)  # no token
         self.assertEqual(run_check(["not-a-hash"], d)[0], 2)
 
+    def test_a_malformed_token_set_exits_2(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "f.txt").write_text("plain words only")
+        for bad in ([["x"]], 5, {"insensitive": 5}, {"insensitive": [], "sensitive": [1]}):
+            self.assertEqual(run_check(bad, d)[0], 2, bad)
+        t = Path(tempfile.mkdtemp()) / "tokens.json"
+        t.write_text("{not json")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(nlc.main(["--tokens", str(t), str(d)]), 2)
+
+
+class DataLiterals(unittest.TestCase):
+    """an engine identifier overwritten in the wasm data must not be a string the source uses,
+    unless reviewed, and never one that is hashed"""
+
+    SOURCES = {
+        "src/scene.rs": 'let a = read(obj, "frob_index")?;\n',
+        "src/law.rs": 'let id = law_id_of("frob_tag");\n',
+    }
+
+    def test_a_reviewed_literal_and_a_derived_name_pass(self):
+        r = npk.check_data_literals(["frob_index", "FrobOutOfRange"], self.SOURCES, {("frob_index", "src/scene.rs")})
+        self.assertEqual(r, {"checked": 2, "literals": 1})
+
+    def test_an_unreviewed_literal_stops(self):
+        with self.assertRaisesRegex(npk.CheckError, "not on the reviewed list"):
+            npk.check_data_literals(["frob_index"], self.SOURCES, {("other_name", "src/x.rs")} | set())
+
+    def test_a_hashed_literal_stops_even_when_reviewed(self):
+        with self.assertRaisesRegex(npk.CheckError, "hash input"):
+            npk.check_data_literals(["frob_tag"], self.SOURCES, {("frob_tag", "src/law.rs")})
+
+    def test_a_stale_reviewed_line_stops(self):
+        with self.assertRaisesRegex(npk.CheckError, "stale"):
+            npk.check_data_literals(["frob_index"], self.SOURCES,
+                                    {("frob_index", "src/scene.rs"), ("frob_gone", "src/scene.rs")})
+
+    def test_no_source_is_an_input_error(self):
+        with self.assertRaises(npk.InputError):
+            npk.check_data_literals(["frob_index"], {}, {("frob_index", "src/scene.rs")})
+
+    def test_the_reviewed_list_needs_a_role_and_an_entry(self):
+        self.assertEqual(npk.read_reviewed("# c\nfrob_index src/scene.rs json key\n"), {("frob_index", "src/scene.rs")})
+        with self.assertRaises(npk.InputError):
+            npk.read_reviewed("frob_index src/scene.rs\n")
+        with self.assertRaises(npk.InputError):
+            npk.read_reviewed("# only a comment\n")
+
+    def test_the_package_refuses_data_identifiers_without_a_review(self):
+        root = Path(tempfile.mkdtemp())
+        src = package(root / "in")
+        with self.assertRaises(npk.InputError):
+            npk.process(src, root / "out", KEY, [], [USER], {"ZorblatError"})
+        seen = []
+        npk.process(src, root / "out2", KEY, [], [USER], {"ZorblatError"}, seen.append)
+        self.assertEqual(seen, [["ZorblatError"]])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

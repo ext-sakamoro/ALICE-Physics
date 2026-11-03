@@ -111,13 +111,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         data = json.loads(Path(a.tokens).read_text(encoding="utf-8"))
         if isinstance(data, dict):
-            hashes, sensitive = set(data.get("insensitive", [])), set(data.get("sensitive", []))
+            ins, sen = data.get("insensitive", []), data.get("sensitive", [])
         else:
-            hashes, sensitive = set(data), set()
-        every = hashes | sensitive
-        if not hashes or not all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in every):
+            ins, sen = data, []
+        if not isinstance(ins, list) or not isinstance(sen, list):
+            print("neutral_leak_check: the token set is not a list of SHA-256 hex digests", file=sys.stderr)
+            return 2
+        every = ins + sen
+        if not ins or not all(isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) for h in every):
             print("neutral_leak_check: the token set is empty or not SHA-256 hex digests", file=sys.stderr)
             return 2
+        hashes, sensitive = set(ins), set(sen)
         findings, nfiles, compared = check([Path(p) for p in a.paths], hashes, sensitive)
     except (OSError, ValueError) as e:
         print(f"neutral_leak_check: {e}", file=sys.stderr)

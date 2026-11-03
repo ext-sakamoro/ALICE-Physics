@@ -5,10 +5,11 @@
 // <original-dir> holds the wasm-bindgen `--target web --out-name p` output, <neutral-dir> the
 // package scripts/neutral_pkg.py made from it, <name-map.json> its private name map. The same
 // scene (a static plane, two dynamic bodies on a ball joint, 120 steps of 1/60) runs through both,
-// and the positions, rotations, and, when the package has them, the state digest and the law
-// identifier must be equal byte for byte: renaming and overwriting text must not change behaviour
-// (a hash input overwritten by mistake shows up here). Exit 0 when equal, 1 when not, 2 when
-// nothing could be compared.
+// and the positions, rotations and the whole serialized state (`serializeState`: positions,
+// velocities, rotations, angular velocities, sleep state) must be equal byte for byte: renaming and
+// overwriting text must not change behaviour. The wasm API exports no law identifier, so a string
+// that feeds one is kept out by the build's source check (neutral_pkg.py --data-literals), not
+// here. Exit 0 when equal, 1 when not, 2 when nothing could be compared.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +35,6 @@ function api(glue, neutral) {
   return {
     world: () => World[name("withConfig")](0, -10, 0, 8, 4),
     call: (w, n, ...args) => (typeof w[name(n)] === "function" ? w[name(n)](...args) : undefined),
-    has: (w, n) => typeof w[name(n)] === "function",
   };
 }
 
@@ -45,10 +45,11 @@ function run(a) {
   const b1 = a.call(w, "addDynamicBody", 1, 5, 0, 2);
   a.call(w, "addBallJoint", b0, b1, new Float64Array([0, 0, 0, -1, 0, 0]));
   for (let i = 0; i < 120; i++) a.call(w, "step", 1 / 60);
-  const out = { positions: a.call(w, "getPositions"), rotations: a.call(w, "getRotations") };
-  if (a.has(w, "stateDigest")) out.stateDigest = a.call(w, "stateDigest");
-  if (a.has(w, "lawId")) out.lawId = a.call(w, "lawId");
-  return out;
+  return {
+    positions: a.call(w, "getPositions"),
+    rotations: a.call(w, "getRotations"),
+    serializedState: a.call(w, "serializeState"),
+  };
 }
 
 const neutralBase = fs.readdirSync(neutralDir).find((f) => /^p-[0-9a-f]{12}\.js$/.test(f))?.slice(0, -3);
@@ -62,7 +63,10 @@ const bytes = (x) => Buffer.from(x.buffer, x.byteOffset, x.byteLength);
 let compared = 0;
 let differ = 0;
 for (const k of Object.keys(a)) {
-  if (!a[k] || a[k].length === 0) continue;
+  if (!a[k] || a[k].length === 0) {
+    console.error(`neutral_equivalence: the original package gave no ${k}`);
+    process.exit(2);
+  }
   compared += 1;
   const same = b[k] && bytes(a[k]).equals(bytes(b[k]));
   if (!same) differ += 1;
