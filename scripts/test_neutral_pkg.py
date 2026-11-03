@@ -243,13 +243,32 @@ class DataLiterals(unittest.TestCase):
             npk.check_data_literals(["frob_index"], self.SOURCES, {("other_name", "src/x.rs")} | set())
 
     def test_a_hashed_literal_stops_even_when_reviewed(self):
-        with self.assertRaisesRegex(npk.CheckError, "hash input"):
+        with self.assertRaisesRegex(npk.CheckError, "reaches a hash"):
             npk.check_data_literals(["frob_tag"], self.SOURCES, {("frob_tag", "src/law.rs")})
 
     def test_a_stale_reviewed_line_stops(self):
         with self.assertRaisesRegex(npk.CheckError, "stale"):
             npk.check_data_literals(["frob_index"], self.SOURCES,
                                     {("frob_index", "src/scene.rs"), ("frob_gone", "src/scene.rs")})
+
+    def test_an_identifier_inside_a_longer_literal_counts(self):
+        sources = {"src/law.rs": 'h.update(b"world/frob_key/v1");\n'}
+        with self.assertRaisesRegex(npk.CheckError, "not on the reviewed list"):
+            npk.check_data_literals(["frob_key"], sources, {("x_y", "src/x.rs")})
+        with self.assertRaisesRegex(npk.CheckError, "reaches a hash at line 1"):
+            npk.check_data_literals(["frob_key"], sources, {("frob_key", "src/law.rs")})
+
+    def test_a_bound_literal_hashed_on_another_line_stops(self):
+        sources = {"src/law.rs": 'const TAG: &str = "frob_tag";\nfn id() -> u64 { law_id_of(TAG) }\n'}
+        with self.assertRaisesRegex(npk.CheckError, "reaches a hash at line 2"):
+            npk.check_data_literals(["frob_tag"], sources, {("frob_tag", "src/law.rs")})
+        labelled = {"src/x.rs": 'const S: &str = "frob_tag";\nlet n = r.len(S, 8)?;\n'}
+        self.assertEqual(npk.check_data_literals(["frob_tag"], labelled, {("frob_tag", "src/x.rs")}),
+                         {"checked": 1, "literals": 1})
+
+    def test_a_list_is_checked_also_when_no_identifier_is_overwritten(self):
+        with self.assertRaisesRegex(npk.CheckError, "stale"):
+            npk.check_data_literals([], self.SOURCES, {("frob_index", "src/scene.rs")})
 
     def test_no_source_is_an_input_error(self):
         with self.assertRaises(npk.InputError):
@@ -270,6 +289,61 @@ class DataLiterals(unittest.TestCase):
         seen = []
         npk.process(src, root / "out2", KEY, [], [USER], {"ZorblatError"}, seen.append)
         self.assertEqual(seen, [["ZorblatError"]])
+        seen.clear()
+        npk.process(src, root / "out3", KEY, [], [USER], set(), seen.append)
+        self.assertEqual(seen, [[]])  # the list is still checked
+
+
+class CommandLine(unittest.TestCase):
+    """main() wires the source check in; the key is replaced by a test key"""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.src = package(self.root / "in")
+        (self.root / "repo" / "src").mkdir(parents=True)
+        (self.root / "repo" / "src" / "err.rs").write_text('let k = "ZorblatError";\n')
+        self.ids = self.root / "api.txt"
+        self.ids.write_text("pub enum zorblat_core::ZorblatError\n")
+        self.orig = npk.keychain_key
+        npk.keychain_key = lambda *a: KEY
+
+    def tearDown(self):
+        npk.keychain_key = self.orig
+
+    def main(self, *extra: str) -> int:
+        n = len(list(self.root.glob("out*")))
+        args = ["--in", str(self.src), "--out", str(self.root / f"out{n}"), "--map", str(self.root / "m" / "map.json"),
+                "--tokens", str(self.root / f"t{n}.json"), "--token", USER, "--identifiers", str(self.ids),
+                "--crate", "zorblat_core", *extra]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return npk.main(args)
+
+    def test_the_check_runs_from_the_command_line(self):
+        listed = self.root / "ok.txt"
+        listed.write_text("ZorblatError src/err.rs error kind returned as text\n")
+        other = self.root / "other.txt"
+        other.write_text("ZorblatOther src/err.rs not this one\n")
+        repo = str(self.root / "repo")
+        self.assertEqual(self.main("--source-root", repo, "--data-literals", str(listed)), 0)
+        self.assertEqual(self.main("--source-root", repo, "--data-literals", str(other)), 1)
+        self.assertEqual(self.main("--source-root", repo), 2)  # one without the other
+        self.assertEqual(self.main(), 2)  # identifiers in the data and no list
+        empty = self.root / "empty"
+        empty.mkdir()
+        self.assertEqual(self.main("--source-root", str(empty), "--data-literals", str(listed)), 2)
+
+
+class CommittedList(unittest.TestCase):
+    """the repository's reviewed list matches its source (each line still names a literal, none hashed)"""
+
+    def test_the_committed_list_matches_the_source(self):
+        repo = HERE.parent
+        reviewed = npk.read_reviewed((HERE / "neutral_data_literals.txt").read_text(encoding="utf-8"))
+        sources = npk.read_sources(repo)
+        self.assertGreater(len(sources), 100)
+        # the identifiers the list names, as if each were overwritten: no stale line, no hash
+        r = npk.check_data_literals(sorted({i for i, _ in reviewed}), sources, reviewed)
+        self.assertEqual(r["literals"], len(reviewed))
 
 
 if __name__ == "__main__":

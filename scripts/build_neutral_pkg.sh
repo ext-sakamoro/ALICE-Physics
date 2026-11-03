@@ -40,7 +40,9 @@ wasm-bindgen --target web --out-name p --out-dir "$raw" "$wasm"
 # the tokens the package must not carry: the engine's name, who built it and where, every
 # source file name, every crate of the engine's family in the build (by name)
 # (read into variables first: a failure inside `< <(...)` would only shrink the token set)
-tokens=(--name alice --token "$(id -un)" --token "$(basename "$repo")" --token rustup)
+user=$(id -un)
+repo_name=$(basename "$repo")
+tokens=(--name alice --token "$user" --token "$repo_name" --token rustup)
 src_files=$(git ls-files 'src/*.rs' 'crates/*.rs')
 family=$(awk '/^name = /{gsub(/"/,"",$3); print $3}' Cargo.lock | grep '^alice' | sort -u)
 [ -n "$src_files" ] && [ -n "$family" ] || { echo "error: no source file or no crate of the family read" >&2; exit 2; }

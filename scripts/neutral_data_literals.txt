@@ -1,13 +1,25 @@
-# Engine identifiers that the engine source uses as string literals and that the neutral browser
+# Engine identifiers that occur in string literals of the engine source and that the neutral browser
 # package overwrites in its wasm data (scripts/neutral_pkg.py --data-literals).
 #
 #   <identifier> <file> <role>
 #
-# The build stops when it would overwrite such a literal that is not listed here, when a listed line
-# matches no overwritten literal, or when the literal's line hashes it (hash, law id, digest,
-# checksum, fingerprint). Identifiers with no literal in the source (derived Debug text, panic
-# locations) are not listed. Overwriting keeps the length, so only the text changes.
-body_a src/scene_io.rs JSON key of the scene reader; the reader is not in the package (its other keys are absent from the wasm), the text comes from derived Debug output
-body_b src/scene_io.rs JSON key of the scene reader; as body_a
+# The build stops when it would overwrite an identifier that occurs in a literal of a file not
+# listed here for it, when a listed line matches no such literal, or when the literal's line, or a
+# line of the same file that uses the name the literal is bound to, names a hash (hash, law id,
+# digest, sha, checksum, fingerprint, blake, fnv, crc32, .update). Identifiers in no literal
+# (derived Debug text, panic locations) are not listed. Overwriting keeps the length, so only the
+# text changes; scripts/test_neutral_pkg.py checks this list against the source in CI.
+body_a src/scene_io.rs JSON key of the scene writer and reader; neither is exported to the browser package
+body_a src/solver.rs assertion messages of unit tests
+body_a src/solver_tgs_backend.rs assertion messages of unit tests
+body_a src/solver_tgs_hooks_6dof_oriented_scoped.rs panic messages of expect calls
+body_b src/scene_io.rs JSON key of the scene writer and reader; as body_a
+body_b src/solver.rs assertion messages of unit tests
+body_b src/solver_tgs_backend.rs assertion messages of unit tests
+body_b src/solver_tgs_hooks_6dof_oriented_scoped.rs panic messages of expect calls
 contact_cache src/profiling.rs profile entry label; the profiler is not exported
 contact_cache src/solver/world_snapshot.rs section label in snapshot read errors and in the debug dump; neither is exported
+sdf_collider src/character.rs lint reason text, read by the compiler only
+sdf_collider src/semantics.rs label of a pinned identifier; the identifier is a precomputed constant, the label is not hashed at run time
+sdf_collider src/solver.rs field label of the Debug output
+sdf_collider src/solver/world_snapshot.rs section label in snapshot read errors and in the debug dump; neither is exported

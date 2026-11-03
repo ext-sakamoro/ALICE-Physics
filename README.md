@@ -406,9 +406,12 @@ the package or the viewer.
 engine in it, for a product that ships it under its own name: exports, glue identifiers and paths are
 renamed or overwritten with names keyed by an HMAC key from the macOS Keychain, the files are named by
 their content hash, and the build fails unless a leak check (SHA-256 token hashes, copyable into the
-consumer) finds nothing, every overwritten engine string that the source uses as a literal is on a
-reviewed list and none is hashed, and the renamed package gives the same positions, rotations and
-serialized state (`serializeState`), bit for bit, as the package it was made from.
+consumer) finds nothing, every engine API identifier it overwrites in the data that occurs in a string
+literal of the source is on a reviewed list (`scripts/neutral_data_literals.txt`) and is not handed to a
+hash on that line or through a name bound to it in the same file, and the renamed package returns the
+same values, bit for bit, as the package it was made from for two scenes that go through the whole API
+(positions, rotations, the serialized state, query results, ids). Source paths and the engine name are
+overwritten wherever they occur and are covered by that comparison only.
 
 ## Performance
 

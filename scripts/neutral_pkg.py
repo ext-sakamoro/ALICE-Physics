@@ -266,11 +266,11 @@ def process(src: Path, out: Path, key: bytes, names: list[str], extra_tokens: li
             # (check_data_literals) refuses any of them the engine source uses as a string literal
             # unless it is on the reviewed list
             in_data = sorted(i for i in identifiers if distinctive(i) and i.encode("utf-8") in p)
-            if in_data:
-                if review is None:
-                    raise InputError(f"{len(in_data)} engine identifiers in the wasm data and no reviewed list "
-                                     "(--source-root and --data-literals)")
-                review(in_data)
+            if in_data and review is None:
+                raise InputError(f"{len(in_data)} engine identifiers in the wasm data and no reviewed list "
+                                 "(--source-root and --data-literals)")
+            if review is not None:
+                review(in_data)  # also with none: a reviewed line that no longer applies is refused
             p, scrubbed = scrub(p, names, key, in_data)
             data_names = {i: neutral(key, i) for i in in_data}
         new_secs.append((sid, p))
@@ -307,14 +307,32 @@ class CheckError(Exception):
 
 # a line that hands its string to one of these is a hash input: overwriting the string would
 # change a value computed from it
-HASH_MARK = re.compile(r"hash|law_?id|digest|sha256|checksum|fingerprint", re.I)
+HASH_MARK = re.compile(r"hash|law_?id|digest|sha\d|checksum|fingerprint|blake|fnv|crc32|\.update\(", re.I)
+# a string literal on one line (`"..."`, `b"..."`, escapes kept)
+LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+# a line that binds a literal to a name: `const S: &str = "..."` / `static` / `let`
+BINDING = re.compile(r"\b(?:const|static|let)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\b[^=]*=\s*b?\"")
 
 
 def literal_uses(sources: dict[str, str], ident: str) -> list[tuple[str, int, str]]:
-    """(file, line number, line) for every exact string literal `"ident"` in the sources"""
-    lit = f'"{ident}"'
+    """(file, line number, line) for every line whose string literals contain `ident` (also inside a
+    longer literal: the data is overwritten wherever the identifier occurs)"""
     return [(f, n, line) for f, text in sorted(sources.items())
-            for n, line in enumerate(text.splitlines(), 1) if lit in line]
+            for n, line in enumerate(text.splitlines(), 1)
+            if ident in line and any(ident in m for m in LITERAL.findall(line))]
+
+
+def hashed_at(text: str, line: str) -> list[int]:
+    """line numbers that hash the literal on `line`: the line itself, and when it binds the literal
+    to a name, every line of the same file that uses that name"""
+    hits = []
+    m = BINDING.search(line)
+    names = [m.group(1)] if m else []
+    for n, other in enumerate(text.splitlines(), 1):
+        if other == line or any(re.search(rf"\b{re.escape(x)}\b", other) for x in names):
+            if HASH_MARK.search(other):
+                hits.append(n)
+    return hits
 
 
 def read_reviewed(text: str) -> set[tuple[str, str]]:
@@ -334,10 +352,12 @@ def read_reviewed(text: str) -> set[tuple[str, str]]:
 
 
 def check_data_literals(in_data: list[str], sources: dict[str, str], reviewed: set[tuple[str, str]]) -> dict:
-    """refuse to overwrite an engine identifier the source uses as a string literal unless that
-    (identifier, file) is on the reviewed list, and refuse a literal on a line that hashes it;
-    a listed pair with no such literal is refused too (the list must not go stale). Identifiers
-    with no literal come from derived text (Debug output, panic locations) and pass."""
+    """refuse to overwrite an engine identifier that occurs in a string literal of the source unless
+    that (identifier, file) is on the reviewed list, and refuse it when the literal's line, or a
+    line of the same file that uses the name the literal is bound to, names a hash (HASH_MARK); a
+    listed pair with no such literal is refused too (the list must not go stale). Identifiers in
+    no literal come from derived text (Debug output, panic locations) and pass. Not seen: a hash
+    reached through another file or a call whose name carries none of the HASH_MARK words."""
     if not sources:
         raise InputError("no engine source read (nothing to compare the wasm data with)")
     used = set()
@@ -345,8 +365,8 @@ def check_data_literals(in_data: list[str], sources: dict[str, str], reviewed: s
     for ident in in_data:
         for f, n, line in literal_uses(sources, ident):
             used.add((ident, f))
-            if HASH_MARK.search(line):
-                errors.append(f"{f}:{n}: {ident!r} is a hash input")
+            for h in hashed_at(sources[f], line):
+                errors.append(f"{f}:{n}: {ident!r} reaches a hash at line {h}")
     errors += [f"{f}: {i!r} is a string literal there and not on the reviewed list" for i, f in sorted(used - reviewed)]
     errors += [f"reviewed list: {i!r} in {f} is not an overwritten literal (stale line)" for i, f in sorted(reviewed - used)]
     if errors:
