@@ -14,7 +14,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import re
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -356,6 +358,89 @@ class CommittedList(unittest.TestCase):
         # the identifiers the list names, as if each were overwritten: no stale line, no hash
         r = npk.check_data_literals(sorted({i for i, _ in reviewed}), sources, reviewed)
         self.assertEqual(r["literals"], len(reviewed))
+
+
+def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: str = "", module_extra: str = "") -> str:
+    """a stand-in for the wasm-bindgen glue with the engine's API (method bodies return values of the
+    kind the real API returns); `rename` maps an API name to the name the glue uses"""
+    def body(n: str) -> str:
+        if n in overrides:
+            return overrides[n]
+        if n.startswith("add"):
+            return "return this.ids++;"
+        if n == "getBodyType":
+            return "return 0;"
+        if n in ("serializeState",):
+            return "return new Uint8Array([1, 2, this.ids]);"
+        if n.startswith(("get", "cast", "observe", "raycast", "overlap")):
+            return "return new Float64Array([this.ids, 0.5]);"
+        if n.endswith("Count"):
+            return "return this.ids;"
+        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape"):
+            return "return true;"
+        return "return undefined;"
+    methods = "\n".join(f"  {rename(n)}(...a) {{ {body(n)} }}" for n in names
+                         if n not in ("withConfig", "alicePhysicsVersion", "WasmPhysicsWorld"))
+    return (f"export function initSync() {{}}\n"
+            f"export class {rename('WasmPhysicsWorld')} {{\n  constructor() {{ this.ids = 0; }}\n"
+            f"  static {rename('withConfig')}() {{ return new this(); }}\n{methods}\n{extra}\n  free() {{}}\n}}\n"
+            + (f"export function {rename('alicePhysicsVersion')}() {{ return \"0.0.0\"; }}\n"
+               if "alicePhysicsVersion" in names else "") + module_extra)
+
+
+class Equivalence(unittest.TestCase):
+    """scripts/neutral_equivalence.mjs against a stand-in package: it passes only when every export is
+    called and every value is present, non-empty and equal"""
+
+    NAMES = sorted(set(re.findall(r'js_name = "([A-Za-z]+)"', (HERE.parent / "src" / "wasm.rs").read_text(encoding="utf-8")))
+                   | {"step", "WasmPhysicsWorld"})
+
+    def run_pair(self, orig: dict = {}, neutral: dict = {}, orig_extra: str = "", drop: str = "", orig_module: str = "") -> int:
+        d = Path(tempfile.mkdtemp())
+        mapping = {n: "n" + hashlib.sha256(n.encode()).hexdigest()[:10] for n in self.NAMES}
+        (d / "o").mkdir()
+        (d / "o" / "p.js").write_text(fake_glue(self.NAMES, lambda n: n, orig, orig_extra, orig_module))
+        (d / "o" / "p_bg.wasm").write_bytes(b"\0asm")
+        (d / "n").mkdir()
+        names = [n for n in self.NAMES if n != drop]
+        (d / "n" / "p-0123456789ab.js").write_text(fake_glue(names, mapping.get, neutral))
+        (d / "n" / "p-0123456789ab.wasm").write_bytes(b"\0asm")
+        (d / "map.json").write_text(json.dumps({"api": mapping}))
+        r = subprocess.run(["node", str(HERE / "neutral_equivalence.mjs"), str(d / "o"), str(d / "n"), str(d / "map.json")],
+                           capture_output=True, text=True)
+        self.last = r.stdout + r.stderr
+        return r.returncode
+
+    def test_the_stand_in_names_are_the_engine_api(self):
+        self.assertGreater(len(self.NAMES), 40)
+
+    def test_equal_packages_pass_with_every_export_called(self):
+        self.assertEqual(self.run_pair(), 0, self.last)
+        self.assertRegex(self.last, r"API exports called: (\d+) of \1")
+
+    def test_a_different_value_fails(self):
+        self.assertEqual(self.run_pair(neutral={"getPositions": "return new Float64Array([9]);"}), 1, self.last)
+
+    def test_a_missing_name_stops(self):
+        self.assertEqual(self.run_pair(drop="castCapsule"), 2, self.last)
+        self.assertEqual(self.run_pair(drop="alicePhysicsVersion"), 2, self.last)
+        self.assertEqual(self.run_pair(drop="setFriction"), 2, self.last)  # a setter returns nothing
+
+    def test_an_export_no_scene_calls_stops(self):
+        self.assertEqual(self.run_pair(orig_extra="  neverCalled() { return 1; }"), 2, self.last)
+        self.assertIn("neverCalled", self.last)
+        self.assertEqual(self.run_pair(orig_extra="  static neverStatic() { return 1; }"), 2, self.last)
+        self.assertIn("neverStatic", self.last)
+        self.assertEqual(self.run_pair(orig_module="export function neverFree() { return 1; }\n"), 2, self.last)
+        self.assertIn("neverFree", self.last)
+
+    def test_a_refused_add_or_an_empty_value_stops(self):
+        self.assertEqual(self.run_pair(orig={"addHingeJoint": "return undefined;"},
+                                       neutral={"addHingeJoint": "return undefined;"}), 2, self.last)
+        self.assertEqual(self.run_pair(orig={"castSphere": "return new Float64Array([]);"},
+                                       neutral={"castSphere": "return new Float64Array([]);"}), 2, self.last)
+        self.assertEqual(self.run_pair(orig={"setBodyShape": "return undefined;"},
+                                       neutral={"setBodyShape": "return undefined;"}), 2, self.last)
 
 
 if __name__ == "__main__":

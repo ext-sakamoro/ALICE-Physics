@@ -407,8 +407,9 @@ engine in it, for a product that ships it under its own name: exports, glue iden
 renamed or overwritten with names keyed by an HMAC key from the macOS Keychain, the files are named by
 their content hash, and the build fails unless a leak check (SHA-256 token hashes, copyable into the
 consumer) finds nothing, every engine API identifier it overwrites in the data that occurs in a string
-literal of the source is on a reviewed list (`scripts/neutral_data_literals.txt`) and is not handed to a
-hash on that line or through a name bound to it in the same file, and the renamed package returns the
+literal of the source is on a reviewed list (`scripts/neutral_data_literals.txt`), neither that line nor
+a line of the same file that uses a name the literal is bound to carries a hash word (hash, law id,
+digest, sha, checksum, fingerprint, blake, fnv, crc32, `.update(`), and the renamed package returns the
 same values, bit for bit, as the package it was made from for two scenes that call every export of
 the package (the check fails when one is not called or a name is missing) and compare positions,
 rotations, the serialized state, query results and ids. Source paths and the engine name are

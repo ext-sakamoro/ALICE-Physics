@@ -30,7 +30,7 @@ async function load(dir, base) {
 }
 
 // the API of the original package: the methods and static functions of its world class, its free
-// functions and the constructor (wasm-bindgen's own memory helpers are not API)
+// functions and the constructor (the glue's own helpers that free a world are not API)
 function exportsOf(glue) {
   const World = glue.WasmPhysicsWorld;
   const own = new Set(["constructor", "free", "__destroy_into_raw", "__wrap"]);
@@ -66,14 +66,28 @@ function api(glue, neutral, called) {
   };
 }
 
+const f = (x) => new Float64Array(x);
+// an add must succeed: an id that is not a number (a refused add gives undefined) would compare as
+// equal on both sides, so it stops the run
+const id = (x, what) => {
+  if (typeof x !== "number" || !Number.isFinite(x)) throw new Error(`${what} gave no id (${x})`);
+  return x;
+};
+// a yes / no result or a count, as bytes
+const val = (x, what) => {
+  if (typeof x !== "boolean" && typeof x !== "number") throw new Error(`${what} gave ${x}`);
+  return f([Number(x)]);
+};
+
 function run(a) {
   const w = a.world();
-  a.call(w, "addStaticPlane", 0, 1, 0, 0);
-  const b0 = a.call(w, "addDynamicBody", 0, 5, 0, 1);
-  const b1 = a.call(w, "addDynamicBody", 1, 5, 0, 2);
-  a.call(w, "addBallJoint", b0, b1, new Float64Array([0, 0, 0, -1, 0, 0]));
+  const plane = id(a.call(w, "addStaticPlane", 0, 1, 0, 0), "addStaticPlane");
+  const b0 = id(a.call(w, "addDynamicBody", 0, 5, 0, 1), "addDynamicBody");
+  const b1 = id(a.call(w, "addDynamicBody", 1, 5, 0, 2), "addDynamicBody");
+  const joint = id(a.call(w, "addBallJoint", b0, b1, f([0, 0, 0, -1, 0, 0])), "addBallJoint");
   for (let i = 0; i < 120; i++) a.call(w, "step", 1 / 60);
   return {
+    ids: f([plane, b0, b1, joint]),
     positions: a.call(w, "getPositions"),
     rotations: a.call(w, "getRotations"),
     serializedState: a.call(w, "serializeState"),
@@ -82,72 +96,72 @@ function run(a) {
 
 // a second scene through the rest of the API: every joint kind, shaped bodies, a height field and a
 // triangle mesh, material and gravity setters, impulses, the scene queries, removal, and a save /
-// step / load round trip; every value the API returns is compared
+// step / load round trip; every value the API returns is compared (the setters return nothing)
 function wide(a) {
   const w = a.world();
-  const f = (x) => new Float64Array(x);
-  const num = (x) => f([x === undefined || x === null ? NaN : Number(x)]);
   const out = {};
-  out.plane = num(a.call(w, "addStaticPlane", 0, 1, 0, 0));
-  out.field = num(a.call(w, "addStaticHeightField", f([0, 0.1, 0.2, 0.1, 0.3, 0.1, 0, 0.2, 0]), 3, 3, 1, 4, 0, 4));
-  out.mesh = num(a.call(w, "addStaticTriMesh", f([-8, 0.5, -8, -6, 0.5, -8, -8, 0.5, -6]), new Uint32Array([0, 1, 2])));
+  const add = (n, ...args) => id(a.call(w, n, ...args), n);
+  out.statics = f([
+    add("addStaticPlane", 0, 1, 0, 0),
+    add("addStaticHeightField", f([0, 0.1, 0.2, 0.1, 0.3, 0.1, 0, 0.2, 0]), 3, 3, 1, 4, 0, 4),
+    add("addStaticTriMesh", f([-8, 0.5, -8, -6, 0.5, -8, -8, 0.5, -6]), new Uint32Array([0, 1, 2])),
+  ]);
   const b = [];
-  for (let i = 0; i < 6; i++) b.push(a.call(w, "addDynamicBody", i * 0.7, 2 + i, 0.3 * i, 1 + i));
-  b.push(a.call(w, "addStaticBody", 3, 0.5, 3));
-  b.push(a.call(w, "addKinematicBody", -3, 1, -3));
-  b.push(a.call(w, "addShapedBody", 0, 0.3, 0.2, 0.4, 2, 1, 6, 1));
-  b.push(a.call(w, "addShapedBody", 1, 0.2, 0.5, 0, 1, -1, 6, 1));
-  b.push(a.call(w, "addShapedBody", 3, 0.3, 0.2, 0.25, 1, 2, 7, -1));
+  for (let i = 0; i < 6; i++) b.push(add("addDynamicBody", i * 0.7, 2 + i, 0.3 * i, 1 + i));
+  b.push(add("addStaticBody", 3, 0.5, 3));
+  b.push(add("addKinematicBody", -3, 1, -3));
+  b.push(add("addShapedBody", 0, 0.3, 0.2, 0.4, 2, 1, 6, 1));
+  b.push(add("addShapedBody", 1, 0.2, 0.5, 0, 1, -1, 6, 1));
+  b.push(add("addShapedBody", 3, 0.3, 0.2, 0.25, 1, 2, 7, -1));
   out.bodies = f(b);
-  out.hinge = num(a.call(w, "addHingeJoint", b[0], b[1], f([0.3, 0, 0, -0.3, 0, 0]), f([0, 0, 1, 0, 0, 1])));
-  out.fixed = num(a.call(w, "addFixedJoint", b[1], b[2], f([0, 0.4, 0, 0, -0.4, 0]), f([0, 0, 0, 1])));
-  out.slider = num(a.call(w, "addSliderJoint", b[2], b[3], f([1, 0, 0]), f([0, 0, 0, 0, 0, 0])));
-  out.spring = num(a.call(w, "addSpringJoint", b[3], b[4], f([0, 0, 0, 0, 0, 0]), 1.2, 40, 0.5));
-  out.ball = num(a.call(w, "addBallJoint", b[4], b[5], f([0, 0, 0, -0.5, 0, 0])));
+  out.joints = f([
+    add("addHingeJoint", b[0], b[1], f([0.3, 0, 0, -0.3, 0, 0]), f([0, 0, 1, 0, 0, 1])),
+    add("addFixedJoint", b[1], b[2], f([0, 0.4, 0, 0, -0.4, 0]), f([0, 0, 0, 1])),
+    add("addSliderJoint", b[2], b[3], f([1, 0, 0]), f([0, 0, 0, 0, 0, 0])),
+    add("addSpringJoint", b[3], b[4], f([0, 0, 0, 0, 0, 0]), 1.2, 40, 0.5),
+    add("addBallJoint", b[4], b[5], f([0, 0, 0, -0.5, 0, 0])),
+  ]);
   a.call(w, "setRestitution", b[0], 0.6);
   a.call(w, "setFriction", b[1], 0.2);
   a.call(w, "setGravityScale", b[2], 0.5);
-  a.call(w, "setCollisionRadius", b[3], 0.45);
+  out.radiusSet = val(a.call(w, "setCollisionRadius", b[3], 0.45), "setCollisionRadius");
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);
   a.call(w, "setPosition", b[6], 3, 0.6, 3.2);
   a.call(w, "setVelocitiesBatch", f(b.flatMap((_, i) => [0.1 * i, 0, -0.05 * i])));
   a.call(w, "applyImpulsesBatch", f([b[0], 0, 1, 0, b[2], 0.5, 0, 0, 99, 1, 1, 1]));
-  out.cleared = num(a.call(w, "clearCollisionRadius", b[3]));
-  out.clearedAgain = num(a.call(w, "clearCollisionRadius", b[3]));
+  out.cleared = val(a.call(w, "clearCollisionRadius", b[3]), "clearCollisionRadius");
+  out.clearedAgain = val(a.call(w, "clearCollisionRadius", b[3]), "clearCollisionRadius");
   a.call(w, "setSubsteps", 6);
   a.call(w, "stepN", 1 / 60, 90);
   a.call(w, "setGravity", 0, -9.5, 0.3);
-  a.call(w, "setBodyShape", b[8], 2, 0.3, 0.6, 0);
+  out.shapeSet = val(a.call(w, "setBodyShape", b[8], 2, 0.3, 0.6, 0), "setBodyShape");
   for (let i = 0; i < 60; i++) a.call(w, "step", 1 / 60);
-  out.removed = num(a.call(w, "removeJoint", 1));
-  out.removedStatic = num(a.call(w, "removeStaticCollider", 2));
-  out.counts = f([a.call(w, "bodyCount"), a.call(w, "jointCount"), a.call(w, "staticColliderCount")]);
-  out.types = f(b.map((i) => a.call(w, "getBodyType", i)));
-  out.raycast = f(a.call(w, "raycast", 0, 10, 0, 0, -1, 0, 50, 4) ?? []);
-  out.castRay = f(a.call(w, "castRay", f([0.2, 10, 0.1]), f([0, -1, 0]), 50, undefined) ?? []);
-  out.castSphere = f(a.call(w, "castSphere", f([1, 10, 0]), 0.3, f([0, -1, 0]), 50, undefined) ?? []);
-  out.castCapsule = f(a.call(w, "castCapsule", f([0, 10, 1]), f([0, 10.5, 1]), 0.2, f([0, -1, 0]), 50, undefined) ?? []);
-  out.overlap = f(a.call(w, "overlapSphere", f([0, 1, 0]), 3, undefined) ?? []);
-  for (const k of ["raycast", "castRay", "castSphere", "castCapsule", "overlap"]) {
-    if (out[k].length === 0) {
-      console.error(`neutral_equivalence: the scene query ${k} hit nothing (it would compare nothing)`);
-      process.exit(2);
-    }
-  }
-  out.observe = f(a.call(w, "observeBody", b[0]) ?? []);
+  out.removed = val(a.call(w, "removeJoint", 1), "removeJoint");
+  out.removedStatic = val(a.call(w, "removeStaticCollider", 2), "removeStaticCollider");
+  out.counts = f(["bodyCount", "jointCount", "staticColliderCount"].map((n) => val(a.call(w, n), n)[0]));
+  out.types = f(b.map((i) => val(a.call(w, "getBodyType", i), "getBodyType")[0]));
+  // the queries must hit something (an empty result compares nothing); checked with every value below
+  out.raycast = a.call(w, "raycast", 0, 10, 0, 0, -1, 0, 50, 4);
+  out.castRay = a.call(w, "castRay", f([0.2, 10, 0.1]), f([0, -1, 0]), 50, undefined);
+  out.castSphere = a.call(w, "castSphere", f([1, 10, 0]), 0.3, f([0, -1, 0]), 50, undefined);
+  out.castCapsule = a.call(w, "castCapsule", f([0, 10, 1]), f([0, 10.5, 1]), 0.2, f([0, -1, 0]), 50, undefined);
+  out.overlap = a.call(w, "overlapSphere", f([0, 1, 0]), 3, undefined);
+  out.observe = a.call(w, "observeBody", b[0]);
   out.states = a.call(w, "getStates");
   out.velocities = a.call(w, "getVelocities");
   const saved = a.call(w, "serializeState");
   out.saved = saved;
   for (let i = 0; i < 30; i++) a.call(w, "step", 1 / 60);
   out.after = a.call(w, "serializeState");
-  out.loaded = num(a.call(w, "deserializeState", saved));
+  out.loaded = val(a.call(w, "deserializeState", saved), "deserializeState");
   out.reloaded = a.call(w, "serializeState");
-  out.version = new TextEncoder().encode(a.free("alicePhysicsVersion"));
+  const version = a.free("alicePhysicsVersion");
+  if (typeof version !== "string") throw new Error(`alicePhysicsVersion gave ${version}`);
+  out.version = new TextEncoder().encode(version);
   const fresh = a.fresh();
-  out.freshCount = num(a.call(fresh, "bodyCount"));
+  out.freshCount = val(a.call(fresh, "bodyCount"), "bodyCount");
   return out;
 }
 
@@ -183,9 +197,9 @@ const bytes = (x) => Buffer.from(x.buffer, x.byteOffset, x.byteLength);
 let compared = 0;
 let differ = 0;
 for (const k of Object.keys(a)) {
-  // a query may return an empty list, but every value must be bytes (a missing one is a failure)
-  if (!ArrayBuffer.isView(a[k]) || (!k.startsWith("wide.") && a[k].length === 0)) {
-    console.error(`neutral_equivalence: the original package gave no ${k}`);
+  // every value must be bytes and not empty (a missing or empty one would compare nothing)
+  if (!ArrayBuffer.isView(a[k]) || a[k].length === 0) {
+    console.error(`neutral_equivalence: the original package gave no ${k} (or an empty one)`);
     process.exit(2);
   }
   compared += 1;
