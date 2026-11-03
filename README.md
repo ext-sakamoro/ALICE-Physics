@@ -409,8 +409,9 @@ their content hash, and the build fails unless a leak check (SHA-256 token hashe
 consumer) finds nothing, every engine API identifier it overwrites in the data that occurs in a string
 literal of the source is on a reviewed list (`scripts/neutral_data_literals.txt`) and is not handed to a
 hash on that line or through a name bound to it in the same file, and the renamed package returns the
-same values, bit for bit, as the package it was made from for two scenes that go through the whole API
-(positions, rotations, the serialized state, query results, ids). Source paths and the engine name are
+same values, bit for bit, as the package it was made from for two scenes that call every export of
+the package (the check fails when one is not called or a name is missing) and compare positions,
+rotations, the serialized state, query results and ids. Source paths and the engine name are
 overwritten wherever they occur and are covered by that comparison only.
 
 ## Performance

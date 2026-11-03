@@ -29,13 +29,40 @@ async function load(dir, base) {
   return glue;
 }
 
-// calls a method of the original name on either package
-function api(glue, neutral) {
-  const name = (n) => (neutral ? map[n] : n);
+// the API of the original package: the methods and static functions of its world class, its free
+// functions and the constructor (wasm-bindgen's own memory helpers are not API)
+function exportsOf(glue) {
+  const World = glue.WasmPhysicsWorld;
+  const own = new Set(["constructor", "free", "__destroy_into_raw", "__wrap"]);
+  const fns = (o) => Object.getOwnPropertyNames(o).filter((n) => typeof o[n] === "function" && !own.has(n) && !n.startsWith("__"));
+  const free = Object.keys(glue).filter((n) => typeof glue[n] === "function" && !["initSync", "default", "WasmPhysicsWorld"].includes(n) && !n.startsWith("__"));
+  return new Set([...fns(World.prototype), ...fns(World), ...free, "new"]);
+}
+
+// calls a function of the original name on either package; a name the package does not have is an
+// error (never a silent undefined, which would compare as equal on both sides), and every name
+// called is recorded so that the run can require the whole API
+function api(glue, neutral, called) {
+  const name = (n) => {
+    if (neutral && !(n in map)) throw new Error(`the name map has no ${n}`);
+    return neutral ? map[n] : n;
+  };
   const World = glue[name("WasmPhysicsWorld")];
+  if (typeof World !== "function") throw new Error("the package has no world class");
+  const fn = (holder, n) => {
+    const f = holder[name(n)];
+    if (typeof f !== "function") throw new Error(`the package has no ${n}`);
+    called.add(n);
+    return f;
+  };
   return {
-    world: () => World[name("withConfig")](0, -10, 0, 8, 4),
-    call: (w, n, ...args) => (typeof w[name(n)] === "function" ? w[name(n)](...args) : undefined),
+    world: () => fn(World, "withConfig").call(World, 0, -10, 0, 8, 4),
+    fresh: () => {
+      called.add("new");
+      return new World();
+    },
+    call: (w, n, ...args) => fn(w, n).apply(w, args),
+    free: (n, ...args) => fn(glue, n)(...args),
   };
 }
 
@@ -83,7 +110,12 @@ function wide(a) {
   a.call(w, "setCollisionRadius", b[3], 0.45);
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
-  a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3);
+  a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);
+  a.call(w, "setPosition", b[6], 3, 0.6, 3.2);
+  a.call(w, "setVelocitiesBatch", f(b.flatMap((_, i) => [0.1 * i, 0, -0.05 * i])));
+  a.call(w, "applyImpulsesBatch", f([b[0], 0, 1, 0, b[2], 0.5, 0, 0, 99, 1, 1, 1]));
+  out.cleared = num(a.call(w, "clearCollisionRadius", b[3]));
+  out.clearedAgain = num(a.call(w, "clearCollisionRadius", b[3]));
   a.call(w, "setSubsteps", 6);
   a.call(w, "stepN", 1 / 60, 90);
   a.call(w, "setGravity", 0, -9.5, 0.3);
@@ -113,7 +145,9 @@ function wide(a) {
   out.after = a.call(w, "serializeState");
   out.loaded = num(a.call(w, "deserializeState", saved));
   out.reloaded = a.call(w, "serializeState");
-  out.version = new TextEncoder().encode(String(a.call(w, "alicePhysicsVersion")));
+  out.version = new TextEncoder().encode(a.free("alicePhysicsVersion"));
+  const fresh = a.fresh();
+  out.freshCount = num(a.call(fresh, "bodyCount"));
   return out;
 }
 
@@ -122,10 +156,29 @@ if (!neutralBase) {
   console.error("neutral_equivalence: no p-<h12>.js in the neutral directory");
   process.exit(2);
 }
-const origApi = api(await load(origDir, "p"), false);
-const neutralApi = api(await load(neutralDir, neutralBase), true);
-const a = { ...run(origApi), ...Object.fromEntries(Object.entries(wide(origApi)).map(([k, v]) => [`wide.${k}`, v])) };
-const b = { ...run(neutralApi), ...Object.fromEntries(Object.entries(wide(neutralApi)).map(([k, v]) => [`wide.${k}`, v])) };
+const origGlue = await load(origDir, "p");
+const calledA = new Set();
+const calledB = new Set();
+let a;
+let b;
+try {
+  const origApi = api(origGlue, false, calledA);
+  const neutralApi = api(await load(neutralDir, neutralBase), true, calledB);
+  a = { ...run(origApi), ...Object.fromEntries(Object.entries(wide(origApi)).map(([k, v]) => [`wide.${k}`, v])) };
+  b = { ...run(neutralApi), ...Object.fromEntries(Object.entries(wide(neutralApi)).map(([k, v]) => [`wide.${k}`, v])) };
+} catch (e) {
+  console.error(`neutral_equivalence: ${e.message}`);
+  process.exit(2);
+}
+// the scenes must go through every export of the package, on both sides
+const exported = exportsOf(origGlue);
+const missed = [...exported].filter((n) => !calledA.has(n)).sort();
+const sameCalls = calledA.size === calledB.size && [...calledA].every((n) => calledB.has(n));
+console.log(`API exports called: ${exported.size - missed.length} of ${exported.size}`);
+if (exported.size === 0 || missed.length || !sameCalls) {
+  console.error(`neutral_equivalence: not called: ${missed.join(", ") || "(none)"}; same calls on both sides: ${sameCalls}`);
+  process.exit(2);
+}
 const bytes = (x) => Buffer.from(x.buffer, x.byteOffset, x.byteLength);
 let compared = 0;
 let differ = 0;

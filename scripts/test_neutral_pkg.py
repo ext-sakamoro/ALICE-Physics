@@ -266,6 +266,18 @@ class DataLiterals(unittest.TestCase):
         self.assertEqual(npk.check_data_literals(["frob_tag"], labelled, {("frob_tag", "src/x.rs")}),
                          {"checked": 1, "literals": 1})
 
+    def test_each_binding_form_and_hash_word_is_seen(self):
+        for bind in ('let tag = "frob_tag";', 'static TAG: &str = "frob_tag";', 'let mut tag = "frob_tag";'):
+            name = bind.split("=")[0].split()[-1].rstrip(":") if ":" not in bind.split("=")[0] else bind.split(":")[0].split()[-1]
+            src = {"src/a.rs": f"{bind}\nlet h = digest_of({name});\n"}
+            with self.assertRaisesRegex(npk.CheckError, "reaches a hash at line 2", msg=bind):
+                npk.check_data_literals(["frob_tag"], src, {("frob_tag", "src/a.rs")})
+        for call in ("hash_of", "law_id", "lawid", "digest", "Sha256::new", "sha3", "checksum", "fingerprint", "blake3",
+                     "fnv1a", "crc32", "h.update"):
+            src = {"src/a.rs": f'let x = {call}("frob_tag");\n'}
+            with self.assertRaisesRegex(npk.CheckError, "reaches a hash", msg=call):
+                npk.check_data_literals(["frob_tag"], src, {("frob_tag", "src/a.rs")})
+
     def test_a_list_is_checked_also_when_no_identifier_is_overwritten(self):
         with self.assertRaisesRegex(npk.CheckError, "stale"):
             npk.check_data_literals([], self.SOURCES, {("frob_index", "src/scene.rs")})
