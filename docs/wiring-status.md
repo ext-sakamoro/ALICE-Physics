@@ -4,9 +4,15 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **5 baseline items** — Permitted violations, ratchet in place
+❌ **NEW violations detected** — Must be resolved or added to baseline
 
 ---
+
+## 🔴 NEW: Unwired Items (1)
+
+```
+unwired: src/solver.rs::solve_joints_with_bridge: solve_joints_with_bridge: production code から 1 度も参照されていない (test / doc / use のみ)
+```
 
 ## 📋 Baseline (5 permitted)
 
