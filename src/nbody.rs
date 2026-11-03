@@ -260,8 +260,9 @@ impl DirectSum {
     /// The result is the same scheme as [`VelocityVerlet`] **when the step is
     /// a pure drift**: set `config.gravity` to zero (or keep it if the uniform
     /// field is wanted, it then enters at the frame head as a first-order
-    /// term) and `config.damping` and each body's `linear_damping` to one
-    /// (frame damping scales the velocity and breaks the symplectic map).
+    /// term) and `config.damping_rate` and each body's `linear_damping_rate`
+    /// to zero (frame damping scales the velocity and breaks the symplectic
+    /// map).
     /// Contacts, joints and [`PhysicsWorld::force_fields`] still act inside
     /// the step as usual. Two `O(N²)` evaluations per frame.
     ///
