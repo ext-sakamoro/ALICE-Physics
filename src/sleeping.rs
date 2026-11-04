@@ -397,6 +397,44 @@ mod tests {
     }
 
     #[test]
+    fn wake_islands_matches_wake_island_per_body() {
+        // Islands {0,1} {2,3} {4} {5}, every body asleep
+        let asleep = || {
+            let mut mgr = IslandManager::new(6, SleepConfig::default());
+            for d in &mut mgr.sleep_data {
+                d.state = SleepState::Sleeping;
+            }
+            mgr.union(0, 1);
+            mgr.union(2, 3);
+            mgr
+        };
+        let mut batch = asleep();
+        let mut single = asleep();
+
+        // 99 is past the last body and is ignored
+        batch.wake_islands(&[1, 4, 99]);
+        single.wake_island(1);
+        single.wake_island(4);
+
+        let awake: Vec<bool> = (0..6).map(|i| !batch.is_sleeping(i)).collect();
+        assert_eq!(awake, vec![true, true, false, false, true, false]);
+        for i in 0..6 {
+            assert_eq!(batch.is_sleeping(i), single.is_sleeping(i), "body {i}");
+        }
+    }
+
+    #[test]
+    fn wake_islands_with_no_bodies_wakes_nothing() {
+        let mut mgr = IslandManager::new(3, SleepConfig::default());
+        for d in &mut mgr.sleep_data {
+            d.state = SleepState::Sleeping;
+        }
+        mgr.union(0, 2);
+        mgr.wake_islands(&[]);
+        assert_eq!(mgr.sleeping_count(), 3);
+    }
+
+    #[test]
     fn test_resize() {
         let config = SleepConfig::default();
         let mut mgr = IslandManager::new(2, config);
