@@ -95,7 +95,7 @@ function run(a) {
 }
 
 // a second scene through the rest of the API: every joint kind, shaped bodies, a height field and a
-// triangle mesh, material and gravity setters, impulses, the scene queries, removal, and a save /
+// triangle mesh, material and gravity setters, a magnet, impulses, the scene queries, removal, and a save /
 // step / load round trip; every value the API returns is compared (the setters return nothing)
 function wide(a) {
   const w = a.world();
@@ -125,6 +125,11 @@ function wide(a) {
   a.call(w, "setFriction", b[1], 0.2);
   a.call(w, "setGravityScale", b[2], 0.5);
   out.radiusSet = val(a.call(w, "setCollisionRadius", b[3], 0.45), "setCollisionRadius");
+  // a registered material for body 0 and a magnet beside its fall, pulling that material
+  const mat = id(a.call(w, "registerMaterial", 0.4, 0.3), "registerMaterial");
+  out.material = f([mat]);
+  out.materialSet = val(a.call(w, "setBodyMaterial", b[0], mat), "setBodyMaterial");
+  out.magnet = f([id(a.call(w, "addMagnet", 0.3, 0.8, 0, 0, 400, 0, 0.1, mat, 3, 1.7e6, 7850), "addMagnet")]);
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);

@@ -4562,6 +4562,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_observe(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceBodyObservation) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_collision_radius(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_friction(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_material(*mut alice_physics_core::solver::PhysicsWorld, u32, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_position(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_restitution(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_shape(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AlicePhysicsShape) -> u8
@@ -4586,6 +4587,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_static_remove(*mut alice_physics_core::solver::PhysicsWorld, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_string_free(*mut std::os::raw::c_char)
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_version() -> *const std::os::raw::c_char
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_magnet(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_body_count(*const alice_physics_core::solver::PhysicsWorld) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_cast_capsule(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryHit) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_cast_ray(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryHit) -> u8
@@ -4597,6 +4599,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_positions_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_velocities_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_overlap_sphere(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryTarget, u32) -> u32
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_register_material(*mut alice_physics_core::solver::PhysicsWorld, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_gravity(*mut alice_physics_core::solver::PhysicsWorld, f64, f64, f64)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_substeps(*mut alice_physics_core::solver::PhysicsWorld, u32)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_velocities_batch(*mut alice_physics_core::solver::PhysicsWorld, *const f64, u32) -> u8
@@ -12788,6 +12791,7 @@ pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usiz
 pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
+pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
 impl core::marker::Freeze for alice_physics_core::sleeping::IslandManager
 impl core::marker::Send for alice_physics_core::sleeping::IslandManager
 impl core::marker::Sync for alice_physics_core::sleeping::IslandManager
@@ -18032,6 +18036,7 @@ pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usiz
 pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
+pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
 impl core::marker::Freeze for alice_physics_core::sleeping::IslandManager
 impl core::marker::Send for alice_physics_core::sleeping::IslandManager
 impl core::marker::Sync for alice_physics_core::sleeping::IslandManager
@@ -24404,6 +24409,7 @@ pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usiz
 pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
+pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
 impl core::marker::Freeze for alice_physics_core::sleeping::IslandManager
 impl core::marker::Send for alice_physics_core::sleeping::IslandManager
 impl core::marker::Sync for alice_physics_core::sleeping::IslandManager

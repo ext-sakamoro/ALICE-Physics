@@ -1151,6 +1151,85 @@ pub unsafe extern "C" fn alice_physics_body_set_collision_radius(
     })
 }
 
+/// Register a contact material with `friction` and `restitution` (finite, not negative) and
+/// return its id, or `u32::MAX` for a null world, a bad value or no free id. A body given the id
+/// with [`alice_physics_body_set_material`] meets others with these values instead of its own.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_register_material(
+    world: *mut PhysicsWorld,
+    friction: f64,
+    restitution: f64,
+) -> u32 {
+    ffi_guard_world(world, u32::MAX, || match writable(world) {
+        Some(w) => index_result(binding_api::register_material(w, friction, restitution)),
+        None => u32::MAX,
+    })
+}
+
+/// Set a body's material id (0 to 65535). Returns 1 on success, 0 for a null world, an unknown
+/// body or an id above 65535. Magnets pull only the bodies of the material they name.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_material(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    material: u32,
+) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) => u8::from(binding_api::set_body_material(
+            w,
+            body_id as usize,
+            material,
+        )),
+        None => 0,
+    })
+}
+
+/// Add a permanent magnet: an ideal dipole at `position` with `moment` (A·m²) and its own
+/// `radius`, pulling the bodies of `material`, a soft ferromagnet of effective susceptibility
+/// `chi_eff`, saturation magnetisation `saturation` (A/m) and `density` (kg/m³). Returns the
+/// force field index, or `u32::MAX` for a null world, a bad value, or a material another magnet
+/// names with different properties.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "C ABI: position, moment, radius and the material's properties are flat arguments"
+)]
+pub unsafe extern "C" fn alice_physics_world_add_magnet(
+    world: *mut PhysicsWorld,
+    position: AliceVec3,
+    moment: AliceVec3,
+    radius: f64,
+    material: u32,
+    chi_eff: f64,
+    saturation: f64,
+    density: f64,
+) -> u32 {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
+            return u32::MAX;
+        };
+        let (Some(p), Some(m)) = (vec3_arg(&position), vec3_arg(&moment)) else {
+            return u32::MAX;
+        };
+        let mat = binding_api::MagnetMaterial {
+            material,
+            chi_eff,
+            saturation,
+            density,
+        };
+        index_result(binding_api::add_magnet(w, p, m, radius, &mat))
+    })
+}
+
 /// Drop a body's own collision radius; it falls back to the world default.
 /// Returns 1 on success, 0 for a null world or an unknown body.
 ///
@@ -1791,6 +1870,106 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The C entry points for materials and magnets build the same world as the Rust API: a
+    /// registered material, a body of it hitting a resting body and a magnet, with distinct values
+    /// for every argument, stepped 60 times, end bit-equal (a swapped argument would differ, the
+    /// hit makes the material's values matter); bad values give the failure value.
+    #[test]
+    fn magnet_and_material_through_c_equal_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end; every out pointer is a local.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(c, v(0.05, 0.3, 0.0), 0.004);
+            assert_eq!(alice_physics_body_set_collision_radius(c, b, 0.005), 1);
+            // a resting ball in its path: the hit makes the material's friction and
+            // restitution matter
+            let hit = alice_physics_body_add_dynamic(c, v(0.08, 0.3, 0.0), 0.004);
+            assert_eq!(alice_physics_body_set_collision_radius(c, hit, 0.005), 1);
+            assert_eq!(alice_physics_body_set_velocity(c, b, v(0.6, 0.0, 0.0)), 1);
+            let m = alice_physics_world_register_material(c, 0.35, 0.25);
+            assert_eq!(m, 1);
+            assert_eq!(alice_physics_body_set_material(c, b, m), 1);
+            let f = alice_physics_world_add_magnet(
+                c,
+                v(0.0, 0.25, 0.01),
+                v(0.2, 0.7, 0.1),
+                0.02,
+                m,
+                2.5,
+                1.2e6,
+                7700.0,
+            );
+            assert_eq!(f, 0);
+            assert_eq!(
+                alice_physics_world_add_magnet(
+                    c,
+                    v(0.0, 0.0, 0.0),
+                    v(0.0, 1.0, 0.0),
+                    -1.0,
+                    m,
+                    2.5,
+                    1.2e6,
+                    7700.0
+                ),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_world_register_material(c, -0.1, 0.2),
+                u32::MAX
+            );
+            assert_eq!(alice_physics_body_set_material(c, 99, m), 0);
+            assert_eq!(alice_physics_body_set_material(c, b, 70_000), 0);
+
+            let mut r = PhysicsWorld::new(SolverConfig::default());
+            let rb = r.add_body(RigidBody::new_dynamic(
+                v(0.05, 0.3, 0.0).to_vec3fix(),
+                Fix128::from_f64(0.004),
+            ));
+            r.set_body_collision_radius(rb, Fix128::from_f64(0.005));
+            let rhit = r.add_body(RigidBody::new_dynamic(
+                v(0.08, 0.3, 0.0).to_vec3fix(),
+                Fix128::from_f64(0.004),
+            ));
+            r.set_body_collision_radius(rhit, Fix128::from_f64(0.005));
+            r.bodies[rb].velocity = v(0.6, 0.0, 0.0).to_vec3fix();
+            let rm = r
+                .material_table
+                .register(crate::material::PhysicsMaterial::new(
+                    0,
+                    Fix128::from_f64(0.35),
+                    Fix128::from_f64(0.25),
+                ));
+            r.set_body_material(rb, rm);
+            r.add_force_field(crate::force::ForceFieldInstance::new(
+                crate::force::ForceField::InducedDipole {
+                    position: v(0.0, 0.25, 0.01).to_vec3fix(),
+                    moment: v(0.2, 0.7, 0.1).to_vec3fix(),
+                    radius: Fix128::from_f64(0.02),
+                    material: rm,
+                    response: crate::electromagnetic::MagneticResponse {
+                        chi_eff: Fix128::from_f64(2.5),
+                        saturation_magnetization: Fix128::from_f64(1.2e6),
+                    },
+                    density: Fix128::from_f64(7700.0),
+                },
+            ));
+            for _ in 0..60 {
+                assert_eq!(alice_physics_world_step(c, 1.0 / 120.0), 1);
+                r.step(Fix128::from_f64(1.0 / 120.0));
+            }
+            let cw = &*c;
+            assert_eq!(cw.bodies[b as usize].position, r.bodies[rb].position);
+            assert_eq!(cw.bodies[b as usize].velocity, r.bodies[rb].velocity);
+            assert_eq!(cw.bodies[hit as usize].position, r.bodies[rhit].position);
+            assert_eq!(cw.bodies[hit as usize].velocity, r.bodies[rhit].velocity);
+            // the hit happened: the resting ball was pushed along +x
+            assert!(cw.bodies[hit as usize].velocity.x > Fix128::ZERO);
+            alice_physics_world_destroy(c);
+        }
+    }
 
     #[test]
     fn version_string_matches_cargo_pkg_version() {

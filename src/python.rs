@@ -387,6 +387,57 @@ impl PyPhysicsWorld {
         )
     }
 
+    /// Register a contact material with `friction` and `restitution` (finite, not negative) and
+    /// return its id; a body given the id with `set_body_material` meets others with these values
+    /// instead of its own.
+    fn register_material(&mut self, friction: f64, restitution: f64) -> PyResult<usize> {
+        binding_api::register_material(&mut self.inner, friction, restitution).ok_or_else(|| {
+            PyValueError::new_err("friction and restitution must be finite and not negative")
+        })
+    }
+
+    /// Set a body's material id (0 to 65535); magnets pull only the bodies of the material they
+    /// name.
+    fn set_body_material(&mut self, body_id: usize, material: u32) -> PyResult<()> {
+        self.check_body(body_id)?;
+        ok_or_value(
+            binding_api::set_body_material(&mut self.inner, body_id, material),
+            "material must be 0 to 65535",
+        )
+    }
+
+    /// Add a permanent magnet: an ideal dipole at `position` with `moment` (A·m²) and its own
+    /// `radius`, pulling the bodies of `material`, a soft ferromagnet of effective susceptibility
+    /// `chi_eff`, saturation magnetisation `saturation` (A/m) and `density` (kg/m³). Returns the
+    /// force field index.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Python method: position, moment, radius and the material's properties are separate arguments"
+    )]
+    fn add_magnet(
+        &mut self,
+        position: (f64, f64, f64),
+        moment: (f64, f64, f64),
+        radius: f64,
+        material: u32,
+        chi_eff: f64,
+        saturation: f64,
+        density: f64,
+    ) -> PyResult<usize> {
+        let bad = || {
+            PyValueError::new_err("bad magnet: values must be finite (radius and density positive, chi_eff and saturation not negative, material 0 to 65535) and agree with any magnet naming the same material")
+        };
+        let p = binding_api::vec3(position.0, position.1, position.2).ok_or_else(bad)?;
+        let m = binding_api::vec3(moment.0, moment.1, moment.2).ok_or_else(bad)?;
+        let mat = binding_api::MagnetMaterial {
+            material,
+            chi_eff,
+            saturation,
+            density,
+        };
+        binding_api::add_magnet(&mut self.inner, p, m, radius, &mat).ok_or_else(bad)
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     fn clear_collision_radius(&mut self, body_id: usize) -> PyResult<()> {
         self.check_body(body_id)?;

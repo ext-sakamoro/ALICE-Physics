@@ -2472,9 +2472,15 @@ impl PhysicsWorld {
     }
 
     /// Set a body's material ID
+    ///
+    /// A change wakes the body and its island (their sleep timers start again, also for bodies
+    /// that were awake): a sleeping body would otherwise not feel a magnet that pulls its new
+    /// material until something else woke it. Setting the material a body already has does
+    /// nothing.
     pub fn set_body_material(&mut self, body_idx: usize, material_id: crate::material::MaterialId) {
-        if body_idx < self.body_materials.len() {
+        if body_idx < self.body_materials.len() && self.body_materials[body_idx] != material_id {
             self.body_materials[body_idx] = material_id;
+            self.wake_body(body_idx);
         }
     }
 
@@ -2750,6 +2756,10 @@ impl PhysicsWorld {
     /// [`crate::ForceField::InducedDipole`] whose response or density differs from another
     /// magnet naming the same material (each carries a copy of that material's magnetic
     /// properties); the field is not added.
+    ///
+    /// An added `InducedDipole` wakes every body of the material it names, with its island
+    /// (their sleep timers start again; a magnet naming the default material wakes every body of
+    /// the default material).
     pub fn try_add_force_field(
         &mut self,
         field: ForceFieldInstance,
@@ -2761,7 +2771,18 @@ impl PhysicsWorld {
                 reason: "an induced-dipole field names a material with another magnetic response",
             });
         }
-        Ok(self.force_fields.len() - 1)
+        // a new magnet wakes the bodies it pulls (a sleeping body skips the force fields)
+        let last = self.force_fields.len() - 1;
+        if let crate::force::ForceField::InducedDipole { material, .. } =
+            self.force_fields[last].field
+        {
+            let n = self.body_materials.len().min(self.bodies.len());
+            let pulled: Vec<usize> = (0..n)
+                .filter(|&i| self.body_materials[i] == material)
+                .collect();
+            self.islands.wake_islands(&pulled);
+        }
+        Ok(last)
     }
 
     /// Remove a force field by index

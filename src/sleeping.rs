@@ -260,6 +260,24 @@ impl IslandManager {
         }
     }
 
+    /// Wake the islands of every body in `bodies` in one pass over the bodies (indices past the
+    /// last body are ignored); the same as [`Self::wake_island`] for each, without its cost per body
+    pub fn wake_islands(&mut self, bodies: &[usize]) {
+        let n = self.parent.len();
+        let mut root = vec![false; n];
+        for &b in bodies {
+            if b < n {
+                let r = self.find(b);
+                root[r] = true;
+            }
+        }
+        for i in 0..n {
+            if root[self.find(i)] {
+                self.sleep_data[i].wake();
+            }
+        }
+    }
+
     /// Wake up a single body
     #[inline]
     pub fn wake_body(&mut self, body_index: usize) {

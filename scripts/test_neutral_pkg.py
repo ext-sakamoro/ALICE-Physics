@@ -366,7 +366,7 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
     def body(n: str) -> str:
         if n in overrides:
             return overrides[n]
-        if n.startswith("add"):
+        if n.startswith(("add", "register")):
             return "return this.ids++;"
         if n == "getBodyType":
             return "return 0;"
@@ -376,7 +376,7 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Float64Array([this.ids, 0.5]);"
         if n.endswith("Count"):
             return "return this.ids;"
-        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape"):
+        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape", "setBodyMaterial"):
             return "return true;"
         return "return undefined;"
     methods = "\n".join(f"  {rename(n)}(...a) {{ {body(n)} }}" for n in names

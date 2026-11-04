@@ -593,6 +593,62 @@ impl WasmPhysicsWorld {
         binding_api::set_collision_radius(&mut self.inner, body_id, radius)
     }
 
+    /// Register a contact material with `friction` and `restitution` (finite, not negative) and
+    /// return its id (`undefined` for a bad value). A body given the id with `setBodyMaterial`
+    /// meets others with these values instead of its own.
+    #[wasm_bindgen(js_name = "registerMaterial")]
+    pub fn register_material(&mut self, friction: f64, restitution: f64) -> Option<u32> {
+        binding_api::register_material(&mut self.inner, friction, restitution)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Set a body's material id (0 to 65535); `false` for an unknown body or an id out of range.
+    /// Magnets (`addMagnet`) pull only the bodies of the material they name.
+    #[wasm_bindgen(js_name = "setBodyMaterial")]
+    pub fn set_body_material(&mut self, body_id: usize, material: u32) -> bool {
+        binding_api::set_body_material(&mut self.inner, body_id, material)
+    }
+
+    /// Add a permanent magnet: an ideal dipole at (x, y, z) with moment (mx, my, mz) in A·m² and
+    /// its own `radius`, pulling the bodies of `material`, a soft ferromagnet of effective
+    /// susceptibility `chi_eff`, saturation magnetisation `saturation` (A/m) and `density`
+    /// (kg/m³). Returns the field index, or `undefined` for a bad value or a material another
+    /// magnet names with different properties.
+    #[wasm_bindgen(js_name = "addMagnet")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export cannot take a struct from JS cheaply; position, moment, radius and the material's properties are flat numbers"
+    )]
+    pub fn add_magnet(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        mx: f64,
+        my: f64,
+        mz: f64,
+        radius: f64,
+        material: u32,
+        chi_eff: f64,
+        saturation: f64,
+        density: f64,
+    ) -> Option<u32> {
+        let m = binding_api::MagnetMaterial {
+            material,
+            chi_eff,
+            saturation,
+            density,
+        };
+        binding_api::add_magnet(
+            &mut self.inner,
+            binding_api::vec3(x, y, z)?,
+            binding_api::vec3(mx, my, mz)?,
+            radius,
+            &m,
+        )
+        .and_then(|i| u32::try_from(i).ok())
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     #[wasm_bindgen(js_name = "clearCollisionRadius")]
     pub fn clear_collision_radius(&mut self, body_id: usize) -> bool {
@@ -830,6 +886,125 @@ fn hit_array(hit: Option<binding_api::QueryHit>) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A world with a magnet at the origin and a steel-mass ball of material 1 above it, no
+    /// gravity; returns (world, ball)
+    fn magnet_world() -> (WasmPhysicsWorld, usize) {
+        let mut w = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let ball = w.add_dynamic_body(0.0, 0.06, 0.0, 0.00411);
+        assert!(w.set_collision_radius(ball, 0.005));
+        assert!(w.set_body_material(ball, 1));
+        assert_eq!(
+            w.add_magnet(0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.01, 1, 3.0, 1.7e6, 7850.0),
+            Some(0)
+        );
+        (w, ball)
+    }
+
+    /// The wasm calls build the world the Rust API builds: a registered material with friction and
+    /// restitution of different values, a ball of it rolling into a resting ball, and a magnet
+    /// with a different value for every argument; 120 steps later both are bit-equal (a swapped
+    /// argument would differ, the hit makes the material's values matter).
+    #[test]
+    fn material_and_magnet_calls_equal_the_rust_api() {
+        let scene = |w: &mut WasmPhysicsWorld| {
+            let a = w
+                .add_shaped_body(3, 0.2, 0.2, 0.2, 7800.0, 0.0, 0.0, 0.0)
+                .unwrap() as usize;
+            let b = w
+                .add_shaped_body(3, 0.2, 0.2, 0.2, 7800.0, 0.9, 0.05, 0.0)
+                .unwrap() as usize;
+            w.set_velocity(a, 1.5, 0.0, 0.0);
+            (a, b)
+        };
+        let mut c = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let (a, _) = scene(&mut c);
+        let m = c.register_material(0.7, 0.4).unwrap();
+        assert!(c.set_body_material(a, m));
+        assert_eq!(
+            c.add_magnet(1.6, 0.3, 0.1, 0.2, 900.0, 0.3, 0.15, m, 2.5, 1.2e6, 7700.0),
+            Some(0)
+        );
+
+        let mut r = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let (ra, _) = scene(&mut r);
+        let fx = Fix128::from_f64;
+        let v = |x: f64, y: f64, z: f64| Vec3Fix::new(fx(x), fx(y), fx(z));
+        let rm = r
+            .inner
+            .material_table
+            .register(crate::material::PhysicsMaterial::new(0, fx(0.7), fx(0.4)));
+        r.inner.set_body_material(ra, rm);
+        r.inner
+            .add_force_field(crate::force::ForceFieldInstance::new(
+                crate::force::ForceField::InducedDipole {
+                    position: v(1.6, 0.3, 0.1),
+                    moment: v(0.2, 900.0, 0.3),
+                    radius: fx(0.15),
+                    material: rm,
+                    response: crate::electromagnetic::MagneticResponse {
+                        chi_eff: fx(2.5),
+                        saturation_magnetization: fx(1.2e6),
+                    },
+                    density: fx(7700.0),
+                },
+            ));
+        for _ in 0..120 {
+            c.step(1.0 / 120.0);
+            r.step(1.0 / 120.0);
+        }
+        assert_eq!(c.get_positions(), r.get_positions());
+        assert_eq!(c.get_velocities(), r.get_velocities());
+        // the hit happened: the resting ball moves
+        assert!(c.get_velocities()[3] > 0.0, "{:?}", c.get_velocities());
+    }
+
+    /// A magnet survives the snapshot: a run saved at step 30, run on, restored and run again
+    /// ends bit for bit where it did; the ball is pulled toward the magnet. Bad values give `None`.
+    #[test]
+    fn magnet_pulls_and_survives_save_and_restore() {
+        let (mut a, ball) = magnet_world();
+        for _ in 0..30 {
+            a.step(1.0 / 120.0);
+        }
+        let saved = a.serialize_state();
+        for _ in 0..30 {
+            a.step(1.0 / 120.0);
+        }
+        let straight = a.get_positions();
+        assert!(a.deserialize_state(&saved));
+        for _ in 0..30 {
+            a.step(1.0 / 120.0);
+        }
+        assert_eq!(a.get_positions(), straight);
+        assert!(a.get_positions()[ball * 3 + 1] < 0.06);
+        assert_eq!(
+            a.add_magnet(0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 1, 3.0, 1.7e6, 7850.0),
+            None
+        );
+        assert_eq!(
+            a.add_magnet(
+                f64::NAN,
+                0.0,
+                0.0,
+                0.0,
+                0.5,
+                0.0,
+                0.01,
+                1,
+                3.0,
+                1.7e6,
+                7850.0
+            ),
+            None
+        );
+        assert_eq!(
+            a.add_magnet(0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.01, 1, 2.0, 1.7e6, 7850.0),
+            None
+        );
+        assert!(!a.set_body_material(ball, 70_000));
+        assert!(!a.set_body_material(99, 1));
+    }
 
     #[test]
     fn test_world_creation() {

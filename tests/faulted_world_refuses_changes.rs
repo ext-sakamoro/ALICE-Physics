@@ -259,6 +259,27 @@ mod c_api {
                 alice_physics_body_set_collision_radius(wp, 0, 0.25) == 0,
             ));
             refused.push((
+                "world_register_material",
+                alice_physics_world_register_material(wp, 0.3, 0.15) == u32::MAX,
+            ));
+            refused.push((
+                "body_set_material",
+                alice_physics_body_set_material(wp, 0, 1) == 0,
+            ));
+            refused.push((
+                "world_add_magnet",
+                alice_physics_world_add_magnet(
+                    wp,
+                    v(0.0, 1.0, 0.0),
+                    v(0.0, 1.0, 0.0),
+                    0.05,
+                    1,
+                    3.0,
+                    1.7e6,
+                    7850.0,
+                ) == u32::MAX,
+            ));
+            refused.push((
                 "body_clear_collision_radius",
                 alice_physics_body_clear_collision_radius(wp, 0) == 0,
             ));
@@ -316,7 +337,7 @@ mod c_api {
             .filter(|(_, r)| !r)
             .map(|(n, _)| *n)
             .collect();
-        assert_eq!(refused.len(), 25);
+        assert_eq!(refused.len(), 28);
         assert!(
             not_refused.is_empty() && !changed,
             "a faulted world accepted changes through the C API: not refused {not_refused:?}, snapshot changed: {changed}"

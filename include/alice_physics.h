@@ -211,6 +211,12 @@ typedef struct {
 
 /** Set a body's collision sphere radius (finite, > 0). Returns 1 on success. */
 uint8_t alice_physics_body_set_collision_radius(AlicePhysicsWorld* world, uint32_t body_id, double radius);
+/** Register a contact material (friction, restitution finite and >= 0). Returns its id or UINT32_MAX. */
+uint32_t alice_physics_world_register_material(AlicePhysicsWorld* world, double friction, double restitution);
+/** Set a body's material id (0..65535). Returns 1 on success. */
+uint8_t alice_physics_body_set_material(AlicePhysicsWorld* world, uint32_t body_id, uint32_t material);
+/** Add a permanent magnet (ideal dipole) pulling the bodies of `material`. Returns the force field index or UINT32_MAX. */
+uint32_t alice_physics_world_add_magnet(AlicePhysicsWorld* world, AliceVec3 position, AliceVec3 moment, double radius, uint32_t material, double chi_eff, double saturation, double density);
 /** Drop a body's own collision radius (falls back to the world default). Returns 1 on success. */
 uint8_t alice_physics_body_clear_collision_radius(AlicePhysicsWorld* world, uint32_t body_id);
 /** Add a dynamic body with a shape; mass and inertia from density. Returns body index or UINT32_MAX. */

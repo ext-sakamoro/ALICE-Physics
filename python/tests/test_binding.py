@@ -115,6 +115,88 @@ def test_a_non_finite_query_length_raises_value_error():
     raise AssertionError("no ValueError for max_t = inf")
 
 
+def test_a_magnet_pulls_only_its_material():
+    # a magnet at the origin with its moment along x; a ball of the registered material 6 cm to
+    # its right and a ball of the default material 6 cm to its left fall side by side for 0.5 s:
+    # the first moves toward the magnet (x below 0.06), the second keeps its x
+    w = ap.PhysicsWorld()
+    a = w.add_dynamic_body(0.06, 0.0, 0.0, 0.00411)
+    b = w.add_dynamic_body(-0.06, 0.0, 0.0, 0.00411)
+    for i in (a, b):
+        w.set_collision_radius(i, 0.005)
+    m = w.register_material(0.3, 0.15)
+    w.set_body_material(a, m)
+    assert w.add_magnet((0.0, 0.0, 0.0), (0.5, 0.0, 0.0), 0.01, m, 3.0, 1.7e6, 7850.0) == 0
+    w.step_n(1.0 / 120.0, 60)
+    assert w.get_position(a)[0] < 0.06, w.get_position(a)
+    # positions come back as f32: the unmoved ball is at the f32 nearest -0.06
+    assert w.get_position(b)[0] == struct.unpack("<f", struct.pack("<f", -0.06))[0], w.get_position(b)
+
+
+def _pull(chi_eff, saturation):
+    # how far a ball of the magnet's material, 6 cm from a magnet along its moment, moves toward
+    # it in 0.5 s (no other force acts along x)
+    w = ap.PhysicsWorld()
+    a = w.add_dynamic_body(0.06, 0.0, 0.0, 0.00411)
+    w.set_collision_radius(a, 0.005)
+    m = w.register_material(0.3, 0.15)
+    w.set_body_material(a, m)
+    w.add_magnet((0.0, 0.0, 0.0), (0.5, 0.0, 0.0), 0.01, m, chi_eff, saturation, 7850.0)
+    w.step_n(1.0 / 120.0, 60)
+    return 0.06 - w.get_position(a)[0]
+
+
+def test_magnet_arguments_reach_their_fields():
+    # a low saturation caps the pull, a low susceptibility weakens it: with the arguments in
+    # place, steel (chi 3, 1.7e6 A/m) pulls far more than a material saturating at 1 A/m; with
+    # susceptibility and saturation swapped both would barely move
+    strong = _pull(3.0, 1.7e6)
+    capped = _pull(3.0, 1.0)
+    assert strong > 0.0 and strong > 100.0 * abs(capped), (strong, capped)
+
+
+def _bounce(friction, restitution):
+    # x velocity of a resting ball after a ball of a registered material hits it head on
+    w = ap.PhysicsWorld()
+    a = w.add_shaped_body(3, 0.2, 0.2, 0.2, 7800.0, 0.0, 5.0, 0.0)
+    b = w.add_shaped_body(3, 0.2, 0.2, 0.2, 7800.0, 0.9, 5.0, 0.0)
+    w.set_velocity(a, 2.0, 0.0, 0.0)
+    w.set_body_material(a, w.register_material(friction, restitution))
+    w.step_n(1.0 / 120.0, 60)
+    return w.get_position(b)[0]
+
+
+def test_registered_material_arguments_reach_their_fields():
+    # restitution changes a head-on hit, friction barely does: with the arguments in place,
+    # (friction 0, restitution 0.9) and (0, 0) differ; swapped they would both have restitution 0
+    assert _bounce(0.0, 0.9) != _bounce(0.0, 0.0)
+    assert _bounce(0.0, 0.9) == _bounce(0.0, 0.9)
+
+
+def test_bad_magnets_and_materials_raise():
+    w = ap.PhysicsWorld()
+    body = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0)
+    m = w.register_material(0.3, 0.15)
+    for bad in [
+        lambda: w.register_material(-0.1, 0.2),
+        lambda: w.set_body_material(body, 70000),
+        lambda: w.add_magnet((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.0, m, 3.0, 1.7e6, 7850.0),
+        lambda: w.add_magnet((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.01, m, -3.0, 1.7e6, 7850.0),
+        lambda: w.add_magnet((float("nan"), 0.0, 0.0), (0.0, 1.0, 0.0), 0.01, m, 3.0, 1.7e6, 7850.0),
+    ]:
+        try:
+            bad()
+        except ValueError:
+            continue
+        raise AssertionError("a bad value was accepted")
+    try:
+        w.set_body_material(99, m)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("an unknown body was accepted")
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
