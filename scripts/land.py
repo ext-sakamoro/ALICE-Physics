@@ -602,6 +602,9 @@ NEW_PROCESS_GROUP: dict = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP
                            else {"start_new_session": True})
 
 
+KILL_DRAIN_SECONDS = 5.0
+
+
 def kill_tree(p: subprocess.Popen) -> None:
     """stop `p` and every process of its group (started with NEW_PROCESS_GROUP)"""
     if os.name == "nt":
@@ -620,7 +623,15 @@ def communicate_or_kill(p: subprocess.Popen, timeout: float) -> tuple[str, str]:
         return p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_tree(p)
-        p.communicate()
+        # a descendant that left the group can hold the pipes open: the read after the stop has its own limit
+        try:
+            p.communicate(timeout=KILL_DRAIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            if os.name != "nt":   # (on Windows closing a pipe a reader thread is blocked on would block here)
+                for pipe in (p.stdout, p.stderr):
+                    if pipe:
+                        pipe.close()
+                p.wait()
         raise
 LAW_CANDIDATE = "ALICE-Physics"
 

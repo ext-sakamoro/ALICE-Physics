@@ -312,6 +312,14 @@ if record:
                              "git": os.path.realpath(shutil.which("git") or ""),
                              "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
                                         for i in range(n)]}) + "\n")
+if rc == 52:
+    # a child that left the script's process group and keeps its stdout and stderr open: stopping the group
+    # does not reach it, and reading to the end of the pipes would wait for it
+    import subprocess, time
+    kw = {"start_new_session": True} if os.name != "nt" else {"creationflags": subprocess.DETACHED_PROCESS}
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(45)"], **kw)
+    time.sleep(60)
+    sys.exit(0)
 if rc == 51:
     # a script that starts a child of its own and does not answer: the child writes a heartbeat
     # file (its path in the `beat` file next to the script) until it is stopped or 60 s pass
@@ -4011,6 +4019,22 @@ class LawState(Isolated):
         first = beat.read_text(encoding="utf-8")
         time.sleep(1.5)
         self.assertEqual(beat.read_text(encoding="utf-8"), first, "the script's child is still running")
+
+    @unittest.skipIf(os.name == "nt", "a detached child does not hold a pipe the way a POSIX one does")
+    def test_a_child_that_left_the_group_cannot_hold_the_refusal(self):
+        # the read after the stop has a limit of its own: an escaped child holding the pipes (45 s here) cannot
+        # keep the landing waiting
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(52)
+        lander.law_state_timeout = 3.0
+        start = time.monotonic()
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        took = time.monotonic() - start
+        self.assertIn("land_law_state gave no answer in 3 s", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+        self.assertLess(took, 30.0, f"the refusal took {took:.1f} s (an escaped child kept the read open)")
 
     def test_a_law_fetch_past_its_time_limit_refuses(self):
         before = self.landing()
