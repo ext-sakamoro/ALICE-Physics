@@ -33,22 +33,33 @@ use sha2::{Digest, Sha256};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+const LAW_ID_DOMAIN_LEN: usize = LAW_ID_DOMAIN.len();
+
+/// Each byte of [`LAW_ID_DOMAIN`] XOR `0xA5` XOR `i·0x3B`, computed at compile time from the
+/// published constant (one source for the bytes). Only this masked array reaches the binary: a
+/// constant used only during constant evaluation is not emitted.
+const LAW_ID_DOMAIN_MASKED: [u8; LAW_ID_DOMAIN_LEN] = {
+    let mut out = [0u8; LAW_ID_DOMAIN_LEN];
+    let mut i = 0;
+    while i < LAW_ID_DOMAIN_LEN {
+        out[i] = LAW_ID_DOMAIN[i] ^ 0xA5 ^ (i as u8).wrapping_mul(0x3B);
+        i += 1;
+    }
+    out
+};
+
 /// The bytes of [`LAW_ID_DOMAIN`], which [`PhysicsWorld::law_id`] hashes.
 ///
-/// They are stored masked (each byte XOR `0xA5` XOR `i·0x3B`) and unmasked here at run
-/// time behind `black_box`, so the compiler cannot fold the text back into the binary and a
-/// build distributed without the engine's name does not carry it in this string. This is
+/// They are kept masked ([`LAW_ID_DOMAIN_MASKED`]) and unmasked here at run time behind
+/// `black_box`, so the compiler cannot fold the text back into the binary and a build
+/// distributed without the engine's name does not carry it in this string. This is
 /// obfuscation of a constant for distribution, not a security property: anyone can unmask
 /// it, and the published domain is [`LAW_ID_DOMAIN`]. The hashed bytes are exactly that
 /// constant (tested), so every law identifier is unchanged.
 #[inline(never)]
-fn law_id_domain() -> [u8; 23] {
-    const MASKED: [u8; 23] = [
-        0xc4, 0xf2, 0xba, 0x77, 0x2c, 0xaf, 0xb7, 0x50, 0x04, 0xc5, 0x82, 0x4f, 0x12, 0x75, 0xf3,
-        0xb1, 0x62, 0x63, 0xea, 0xa0, 0x16, 0x04, 0x86,
-    ];
+fn law_id_domain() -> [u8; LAW_ID_DOMAIN_LEN] {
     let mask = core::hint::black_box(0xA5u8);
-    let mut out = MASKED;
+    let mut out = LAW_ID_DOMAIN_MASKED;
     for (i, b) in out.iter_mut().enumerate() {
         *b ^= mask ^ (i as u8).wrapping_mul(0x3B);
     }

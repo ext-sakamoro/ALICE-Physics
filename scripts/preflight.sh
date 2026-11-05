@@ -128,6 +128,9 @@ python3 scripts/id_move_check.py
 step "browser package without names (scripts)"
 python3 scripts/test_neutral_pkg.py
 
+step "masked constants absent from the wasm (tests)"
+python3 scripts/test_wasm_literal_check.py
+
 step "docs lint (public vocabulary / CHANGELOG structure)"
 # 予測されて困る値が予測可能な源から来ていないか (検査器の test を先に走らせる)
 python3 scripts/test_csprng_guard.py
