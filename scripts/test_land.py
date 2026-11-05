@@ -312,6 +312,21 @@ if record:
                              "git": os.path.realpath(shutil.which("git") or ""),
                              "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
                                         for i in range(n)]}) + "\n")
+if rc == 50:
+    # a script that does not answer (a GitHub read that hangs)
+    import time
+    time.sleep(60)
+    sys.exit(0)
+if rc in (40, 41, 42):
+    # 40: the report-only Law (exit 0 with `state moves: yes`); 41: exit 0 printing both
+    # verdicts; 42: exit 1 printing `state moves: no`
+    print("land_law_state: state moves: " + ("no" if rc == 42 else "yes"))
+    if rc != 42:
+        print("  ALICE-Physics: pass 9 -> 10, unverified 3 -> 2")
+    if rc == 41:
+        print("land_law_state: state moves: no")
+    print("land_law_state: 16 manifests read for 18 crates, 224 gates compared, 0 findings (candidates: ALICE-Physics)")
+    sys.exit(1 if rc == 42 else 0)
 trailing = rc in (30, 31)
 if trailing:
     rc -= 30
@@ -3737,8 +3752,9 @@ class Verdict(Isolated):
 
 class LawState(Isolated):
     """check_law_state: before the push to main, ALICE-Law's land_law_state.py is asked whether
-    landing the commit moves Law's conformance state; exit 0 lands, exit 1 / exit 2 / a Law that
-    cannot be read refuse with nothing pushed."""
+    landing the commit moves Law's conformance state; exit 0 lands with either verdict (the
+    report-only Law), exit 1 (a Law that still records the state) / exit 2 / a missing or doubled
+    verdict / a Law that cannot be read / a time limit refuse with nothing pushed."""
 
     def landing(self) -> str:
         commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"},
@@ -3914,6 +3930,63 @@ class LawState(Isolated):
         self.assertGreaterEqual(len(shas), 2, shas)
         self.assertEqual(shas[-1], sha)
         self.assertNotEqual(shas[0], sha)
+
+    def test_a_reported_move_lands_and_records_the_counts(self):
+        # the report-only Law: exit 0 with `state moves: yes`; the landing goes ahead and the
+        # moved counts go into the landing record (a check that wanted `moves: no` for exit 0
+        # refused every state-moving landing for good)
+        self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(40)
+        law_sha = git(Path(lander.law_url), "rev-parse", "HEAD")
+        logged: list[str] = []
+        lander.log = logged.append
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertIn(f"Law state: moves, reported (compared with ALICE-Law main {law_sha}): "
+                      "ALICE-Physics: pass 9 -> 10, unverified 3 -> 2", lander.record)
+        self.assertFalse(any(l.startswith("Law state: unmoved") for l in lander.record), lander.record)
+        self.assertTrue(any("moves it (reported" in l and "224 gates compared" in l for l in logged), logged)
+
+    def test_a_doubled_or_mismatched_verdict_refuses(self):
+        # exit 0 printing both verdicts, exit 1 printing `moves: no`: neither is a computed state
+        for rc, needle in ((41, "exit 0 both verdicts"), (42, "exit 1 without `land_law_state: state moves: yes`")):
+            with self.subTest(fake=rc):
+                before = self.landing() if rc == 41 else self.r.origin_head()
+                lander = self.r.lander()
+                lander.law_url = fake_law(rc)
+                with self.assertRaises(land.LandError) as cm:
+                    lander.land()
+                text = str(cm.exception)
+                self.assertIn("could not be computed", text)
+                self.assertIn(needle, text)
+                self.assertNotIn("--write", text)
+                self.assertIn("nothing was pushed to main", text)
+                self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_script_past_its_time_limit_refuses(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(50)
+        lander.law_state_timeout = 2.0
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        text = str(cm.exception)
+        self.assertIn("land_law_state gave no answer in 2 s", text)
+        self.assertIn("nothing was pushed to main", text)
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_law_fetch_past_its_time_limit_refuses(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(0)
+        lander.law_git_timeout = 1e-6
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        text = str(cm.exception)
+        self.assertIn("ALICE-Law's main could not be read from", text)
+        self.assertIn("no answer in 1e-06 s", text)
+        self.assertEqual(self.r.origin_head(), before)
 
     def test_a_state_that_cannot_be_computed_refuses(self):
         before = self.landing()

@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `scripts/land.py`: ALICE-Law の `scripts/land_law_state.py` が報告だけの形 (計算できれば exit 0 で `state moves: no` / `state moves: yes` のどちらか) になっても着地できるようにした exit 0 は判定行がどちらでも取り込み、動く時はその件数を取り込みの記録に書く Law の main がまだ状態を記録している間の exit 1 (`state moves: yes`) は従来どおり止め、先に Law に記録する command を名指す 判定行が無い・両方ある・exit と食い違う (exit 1 で `moves: no`) 時は計算できないとして止める Law の fetch の git と script に時間の上限 (git 300 秒、script 900 秒) を置き、超えたら何も push せずに止める 試験 `scripts/test_land.py` の `LawState` (報告の move で着地と記録、判定行の重複・食い違い、script と fetch の時間切れ)
 - `PhysicsWorld::set_body_material` は材料が変わった剛体をその island ごと起こす、`try_add_force_field` / `add_force_field` は足した `InducedDipole` が名指す材料の剛体をその island ごと起こす (島ごとに 1 回の走査) 眠っている剛体は力の場を受けないので、これまでは静止した球に後から磁石を置いても動かなかった 起こされた剛体は起きていたものも眠りまでの計数が 0 から数え直しになるので、step の途中で材料を変える・磁石を足す run は眠る時刻が変わりうる 既定の材料 (0) を名指す磁石は既定の材料の剛体をすべて起こす 材料が同じままの呼び出しと磁石以外の力の場は従来どおり
 - 共有の file 4 つ (`.github/workflows/eol.yml` / `.github/workflows/public-text.yml` / `scripts/shared_files.sh` / `scripts/test_shared_files.py`) を ALICE-Law 40973a8a の表が計画した bytes にした (workflow は actions の版の更新)
 - shared-files と G11 の表の pin を ALICE-Law 40973a8a に上げた (識別子の移動の検査器の新しい bytes を表が計画した版)

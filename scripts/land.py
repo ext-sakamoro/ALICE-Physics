@@ -35,9 +35,12 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      ALICE-Law is asked whether the landing moves its conformance state (check_law_state: a
      blob-less fetch of Law's main into a temporary directory runs its
      scripts/land_law_state.py with the prepared SHA of land.py's own working copy as the
-     candidate): exit 0 lands; exit 1 (the state moves, so Law's state commit has to land
-     first: the message names the Law SHA, the moved counts and the command), exit 2 (not
-     computed) and a Law that cannot be read stop the landing with nothing pushed. The last
+     candidate): exit 0 lands whether its verdict line says the state moves or not (a report:
+     the verdict and the moved counts go into the landing record); exit 1 (a Law whose main
+     still records the state: it moves, so Law's state commit has to land first: the message
+     names the Law SHA, the moved counts and the command), exit 2 (not computed), a Law that
+     cannot be read and a fetch or a script past its time limit stop the landing with nothing
+     pushed. The last
      line of a landing is `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
   All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
   made at start from the checkout's HEAD, the source SHA, read once) and removed at the end: the
@@ -105,6 +108,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import itertools
 import json
 import os
 import re
@@ -1112,6 +1116,10 @@ class Lander:
         # where check_law_state clones ALICE-Law from; tests point it at a local fake (set in
         # code, never from the environment)
         self.law_url = LAW_URL
+        # the time limits (seconds) of each git process that fetches Law's main and of its
+        # land_law_state.py (which reads every release-train repository's main from GitHub)
+        self.law_git_timeout = 300.0
+        self.law_state_timeout = 900.0
         self.preflight_runs = 0
         self.preflighted_tree = ""
         self.poll_seconds = 30
@@ -1645,14 +1653,23 @@ class Lander:
         """Before the push to main: whether landing `sha` moves ALICE-Law's conformance state.
         A blob-less clone of Law's main (in a temporary directory, with the pinned git) runs its
         scripts/land_law_state.py with this repository's own working copy at `sha` as the
-        candidate. Exit 0 (the state does not move) lands; exit 1 (it moves: the Law state commit
-        has to land first) and exit 2 (not computed), a Law that cannot be cloned and a missing
-        script refuse the landing (LandError, nothing pushed)."""
+        candidate. Exit 0 with its verdict line lands, `state moves: no` and `state moves: yes`
+        alike: the script only reports (each repository's own gates decide its landing), and the
+        verdict with the moved counts goes into the landing record. Exit 1 with `state moves: yes`
+        is a Law whose main still records the state (the Law state commit has to land first) and
+        refuses; exit 2 (not computed), an exit without its verdict line, a Law that cannot be
+        cloned, a missing script and a git process or a script past its time limit refuse the
+        landing (LandError, nothing pushed)."""
         d = tempfile.mkdtemp(prefix="land-law-")
         law = os.path.join(d, "law")
         nothing = f"nothing was pushed to {self.branch}"
         def law_git(*args: str) -> str:
-            r = subprocess.run([*self.git_argv, *args], cwd=law, capture_output=True, text=True, env=self.git_env)
+            try:
+                r = subprocess.run([*self.git_argv, *args], cwd=law, capture_output=True, text=True, env=self.git_env,
+                                   timeout=self.law_git_timeout)
+            except subprocess.TimeoutExpired:
+                raise LandError(f"ALICE-Law's main could not be read from {self.law_url} (git {' '.join(args[:3])}: "
+                                f"no answer in {self.law_git_timeout:g} s): the Law state cannot be checked; {nothing}") from None
             if r.returncode != 0:
                 raise LandError(f"ALICE-Law's main could not be read from {self.law_url} (git {' '.join(args[:3])}: "
                                 f"{(r.stderr or r.stdout).strip()[:300]}): the Law state cannot be checked; {nothing}")
@@ -1682,9 +1699,13 @@ class Lander:
                 raise LandError(f"ALICE-Law {law_sha[:12]} has no {'/'.join(LAW_STATE_SCRIPT)}: "
                                 f"the Law state cannot be checked; {nothing}")
             gh = self.gh()
-            p = subprocess.run([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
-                               cwd=law, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               env=law_state_env(gh[0] if len(gh) == 1 else None))
+            try:
+                p = subprocess.run([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
+                                   cwd=law, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                   env=law_state_env(gh[0] if len(gh) == 1 else None), timeout=self.law_state_timeout)
+            except subprocess.TimeoutExpired:
+                raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state gave no answer "
+                                f"in {self.law_state_timeout:g} s, Law main {law_sha[:12]}); {nothing}") from None
             full = "\n".join(x for x in (p.stdout.strip(), p.stderr.strip()) if x)
             # the verdict is read from the whole output (the script prints its note lines first
             # and the verdict last); only the text quoted in a message is cut, keeping its end
@@ -1692,14 +1713,28 @@ class Lander:
             summary = next((x for x in reversed(full.splitlines()) if x.startswith("land_law_state:")), "")
             # the exit code counts only with the script's own verdict line: an exit 1 from a
             # traceback is not a computed move, and an exit 0 that printed nothing is not "unmoved"
-            verdict = {ln.strip() for ln in full.splitlines()}
-            said = {0: "land_law_state: state moves: no", 1: "land_law_state: state moves: yes"}.get(p.returncode)
-            if said is not None and said not in verdict:
+            raw = full.splitlines()
+            lines = [ln.strip() for ln in raw]
+            no, yes = "land_law_state: state moves: no", "land_law_state: state moves: yes"
+            said = [v for v in (no, yes) if v in lines]
+            # exit 0 reports either verdict; exit 1 is only ever a move
+            wanted = {0: (no, yes), 1: (yes,)}.get(p.returncode)
+            if wanted is not None and (len(said) != 1 or said[0] not in wanted):
+                expect = " or ".join(f"`{v}`" for v in wanted)
+                got = "both verdicts" if len(said) > 1 else "without"
                 raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
-                                f"{p.returncode} without `{said}`, Law main {law_sha[:12]}):\n{out}\n{nothing}")
-            if p.returncode == 0:
+                                f"{p.returncode} {got} {expect}, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+            if p.returncode == 0 and said == [no]:
                 self.log(f"ALICE-Law state: landing {sha[:7]} does not move it (Law main {law_sha[:12]}) {summary}")
                 self.record.append(f"Law state: unmoved (compared with ALICE-Law main {law_sha})")
+                return
+            if p.returncode == 0:
+                # the moved counts: the indented lines right after the verdict
+                counts = [ln.strip() for ln in itertools.takewhile(lambda x: x.startswith("  "), raw[lines.index(yes) + 1:])]
+                self.log(f"ALICE-Law state: landing {sha[:7]} moves it (reported, Law main {law_sha[:12]}): "
+                         + ("; ".join(counts) or "no counts printed") + f" {summary}")
+                self.record.append(f"Law state: moves, reported (compared with ALICE-Law main {law_sha}): "
+                                   + ("; ".join(counts) or "no counts printed"))
                 return
             if p.returncode == 1:
                 raise LandError(
