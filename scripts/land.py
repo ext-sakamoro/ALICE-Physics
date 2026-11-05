@@ -113,6 +113,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -594,6 +595,33 @@ LOCK_WAIT_MINUTES = 30
 # whether landing the commit moves Law's recorded state (check_law_state)
 LAW_URL = "https://github.com/ext-sakamoro/ALICE-Law"
 LAW_STATE_SCRIPT = ("scripts", "land_law_state.py")
+# the processes check_law_state starts run in a process group of their own, so a time limit stops
+# the whole tree (land_law_state.py starts git and gh itself; killing only the script left them
+# running): start_new_session (setsid) on POSIX, CREATE_NEW_PROCESS_GROUP on Windows (taskkill /T)
+NEW_PROCESS_GROUP: dict = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+                           else {"start_new_session": True})
+
+
+def kill_tree(p: subprocess.Popen) -> None:
+    """stop `p` and every process of its group (started with NEW_PROCESS_GROUP)"""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True, env=clean_env())
+        p.kill()
+    else:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def communicate_or_kill(p: subprocess.Popen, timeout: float) -> tuple[str, str]:
+    """p's output, or past `timeout` the whole tree stopped and subprocess.TimeoutExpired raised"""
+    try:
+        return p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(p)
+        p.communicate()
+        raise
 LAW_CANDIDATE = "ALICE-Physics"
 
 
@@ -1664,16 +1692,17 @@ class Lander:
         law = os.path.join(d, "law")
         nothing = f"nothing was pushed to {self.branch}"
         def law_git(*args: str) -> str:
+            p = subprocess.Popen([*self.git_argv, *args], cwd=law, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, env=self.git_env, **NEW_PROCESS_GROUP)
             try:
-                r = subprocess.run([*self.git_argv, *args], cwd=law, capture_output=True, text=True, env=self.git_env,
-                                   timeout=self.law_git_timeout)
+                out, err = communicate_or_kill(p, self.law_git_timeout)
             except subprocess.TimeoutExpired:
                 raise LandError(f"ALICE-Law's main could not be read from {self.law_url} (git {' '.join(args[:3])}: "
                                 f"no answer in {self.law_git_timeout:g} s): the Law state cannot be checked; {nothing}") from None
-            if r.returncode != 0:
+            if p.returncode != 0:
                 raise LandError(f"ALICE-Law's main could not be read from {self.law_url} (git {' '.join(args[:3])}: "
-                                f"{(r.stderr or r.stdout).strip()[:300]}): the Law state cannot be checked; {nothing}")
-            return r.stdout.strip()
+                                f"{(err or out).strip()[:300]}): the Law state cannot be checked; {nothing}")
+            return out.strip()
 
         try:
             # a blob-less partial clone of main, made as init + remote + fetch so the remote's
@@ -1699,14 +1728,16 @@ class Lander:
                 raise LandError(f"ALICE-Law {law_sha[:12]} has no {'/'.join(LAW_STATE_SCRIPT)}: "
                                 f"the Law state cannot be checked; {nothing}")
             gh = self.gh()
+            p = subprocess.Popen([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
+                                 cwd=law, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                                 errors="replace", env=law_state_env(gh[0] if len(gh) == 1 else None),
+                                 **NEW_PROCESS_GROUP)
             try:
-                p = subprocess.run([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
-                                   cwd=law, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                   env=law_state_env(gh[0] if len(gh) == 1 else None), timeout=self.law_state_timeout)
+                stdout, stderr = communicate_or_kill(p, self.law_state_timeout)
             except subprocess.TimeoutExpired:
                 raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state gave no answer "
                                 f"in {self.law_state_timeout:g} s, Law main {law_sha[:12]}); {nothing}") from None
-            full = "\n".join(x for x in (p.stdout.strip(), p.stderr.strip()) if x)
+            full = "\n".join(x for x in (stdout.strip(), stderr.strip()) if x)
             # the verdict is read from the whole output (the script prints its note lines first
             # and the verdict last); only the text quoted in a message is cut, keeping its end
             out = full if len(full) <= 3000 else "...\n" + full[-3000:]

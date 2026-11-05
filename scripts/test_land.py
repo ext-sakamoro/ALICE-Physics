@@ -312,6 +312,16 @@ if record:
                              "git": os.path.realpath(shutil.which("git") or ""),
                              "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
                                         for i in range(n)]}) + "\n")
+if rc == 51:
+    # a script that starts a child of its own and does not answer: the child writes a heartbeat
+    # file (its path in the `beat` file next to the script) until it is stopped or 60 s pass
+    import subprocess, time
+    beat = open(os.path.join(here, "beat"), encoding="utf-8").read().strip()
+    subprocess.Popen([sys.executable, "-c",
+                      "import sys, time\nfor _ in range(600):\n    open(sys.argv[1], 'w').write(str(time.time()))\n    time.sleep(0.1)",
+                      beat])
+    time.sleep(60)
+    sys.exit(0)
 if rc == 50:
     # a script that does not answer (a GitHub read that hangs)
     import time
@@ -3975,6 +3985,32 @@ class LawState(Isolated):
         self.assertIn("land_law_state gave no answer in 2 s", text)
         self.assertIn("nothing was pushed to main", text)
         self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_script_past_its_time_limit_leaves_no_child_running(self):
+        # the time limit stops the script's whole process tree: a child it started (a git or gh
+        # read) stops with it, its heartbeat file then stays unchanged
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(51)
+        law = Path(lander.law_url)
+        beat = Path(tempfile.mkdtemp(prefix="law-beat-")) / "beat"
+        self.addCleanup(shutil.rmtree, beat.parent, True)
+        commit(law, {"scripts/beat": f"{beat}\n"}, "beat path")
+        lander.law_state_timeout = 3.0
+        start = time.monotonic()
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        # the refusal comes at the limit, not when the child ends by itself (60 s): a kill of the
+        # script alone leaves the child holding the output pipes, and the read waits for it
+        took = time.monotonic() - start
+        self.assertIn("land_law_state gave no answer in 3 s", str(cm.exception))
+        self.assertLess(took, 30.0, f"the refusal took {took:.1f} s (the child kept the landing waiting)")
+        self.assertEqual(self.r.origin_head(), before)
+        self.assertTrue(beat.exists(), "the child never started (the test would prove nothing)")
+        time.sleep(0.5)
+        first = beat.read_text(encoding="utf-8")
+        time.sleep(1.5)
+        self.assertEqual(beat.read_text(encoding="utf-8"), first, "the script's child is still running")
 
     def test_a_law_fetch_past_its_time_limit_refuses(self):
         before = self.landing()
