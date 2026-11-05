@@ -25,7 +25,14 @@ const RES: usize = 7;
 const FIRST_IDENTITY_STEP: u32 = 480;
 
 fn sheet() -> Cloth {
-    let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, RES, RES, Fix128::ONE);
+    let mut c = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::ONE,
+        Fix128::ONE,
+        RES,
+        RES,
+        Fix128::ONE,
+    );
     c.config = ClothConfig {
         iterations: 4,
         substeps: 1,
@@ -36,7 +43,8 @@ fn sheet() -> Cloth {
         ..ClothConfig::default()
     };
     // k = m ω², c = 2 ζ m ω with ω = 2π / 0.5 s, ζ = 0.42 (from integer ratios: no f32)
-    let omega = Fix128::from_ratio(4, 1) * Fix128::from_ratio(314_159_265_358_979, 100_000_000_000_000);
+    let omega =
+        Fix128::from_ratio(4, 1) * Fix128::from_ratio(314_159_265_358_979, 100_000_000_000_000);
     c.set_rest_tether(omega * omega, Fix128::from_ratio(84, 100) * omega);
     c
 }
@@ -59,7 +67,11 @@ fn drive(c: &mut Cloth, g: usize, g0: Vec3Fix, f: u32) {
         c.pin(g);
         let t = Fix128::from_ratio(i64::from(f) - 10, 30);
         c.positions[g] = g0
-            + Vec3Fix::new(Fix128::from_ratio(6, 10) * t, Fix128::ZERO, Fix128::from_ratio(3, 10) * t);
+            + Vec3Fix::new(
+                Fix128::from_ratio(6, 10) * t,
+                Fix128::ZERO,
+                Fix128::from_ratio(3, 10) * t,
+            );
         c.velocities[g] = Vec3Fix::ZERO;
     }
     if f == 40 {
@@ -69,14 +81,19 @@ fn drive(c: &mut Cloth, g: usize, g0: Vec3Fix, f: u32) {
 
 /// A light tap: particle 3 gets an upward velocity.
 fn poke(c: &mut Cloth) {
-    c.velocities[3] = c.velocities[3] + Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 2), Fix128::ZERO);
+    c.velocities[3] =
+        c.velocities[3] + Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 2), Fix128::ZERO);
 }
 
 #[derive(PartialEq, Debug)]
 struct State(Vec<Vec3Fix>, Vec<Vec3Fix>, Vec<Vec3Fix>);
 
 fn state(c: &Cloth) -> State {
-    State(c.positions.clone(), c.prev_positions.clone(), c.velocities.clone())
+    State(
+        c.positions.clone(),
+        c.prev_positions.clone(),
+        c.velocities.clone(),
+    )
 }
 
 /// Run the script for `frames` frames with a poke at `wake`; `sleep` turns sleep on.
@@ -136,7 +153,10 @@ fn a_woken_cloth_follows_the_never_slept_trajectory_bit_for_bit() {
         assert_eq!(slept0, 0);
         // the wakes after the fixed point must actually have slept, or nothing was tested
         if wake > FIRST_IDENTITY_STEP + 1 {
-            assert!(slept >= wake - FIRST_IDENTITY_STEP - 1, "wake {wake}: asleep {slept} frames");
+            assert!(
+                slept >= wake - FIRST_IDENTITY_STEP - 1,
+                "wake {wake}: asleep {slept} frames"
+            );
         }
         for (f, (a, b)) in never.iter().zip(&woken).enumerate() {
             assert_eq!(a, b, "wake {wake}: frame {f} differs");
@@ -172,7 +192,8 @@ fn changing_an_input_while_asleep_wakes_the_cloth() {
         d.step(dt());
     }
     assert!(d.is_asleep());
-    d.positions[5] = d.positions[5] + Vec3Fix::new(Fix128::from_ratio(1, 100), Fix128::ZERO, Fix128::ZERO);
+    d.positions[5] =
+        d.positions[5] + Vec3Fix::new(Fix128::from_ratio(1, 100), Fix128::ZERO, Fix128::ZERO);
     assert!(!d.is_asleep());
     let before = state(&d);
     d.step(dt());
@@ -229,7 +250,14 @@ fn unpin_restores_the_mass_pin_took() {
     c.unpin(5);
     assert_eq!(c.inv_masses, before);
     // a particle pinned from construction (pin_top_row) is unpinned to the grid's mass
-    let mut d = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, RES, RES, Fix128::from_int(2));
+    let mut d = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::ONE,
+        Fix128::ONE,
+        RES,
+        RES,
+        Fix128::from_int(2),
+    );
     d.pin_top_row(RES);
     let p = d.pinned[0];
     d.unpin(p);
@@ -256,4 +284,6 @@ fn trajectory_digest_with_sleep_is_pinned() {
     assert_eq!(got, TRAJECTORY_DIGEST);
 }
 
-const TRAJECTORY_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+// from Physics main bc76ee2d without any sleep code: the same scene never slept (release by
+// restoring the inverse mass by hand), 540 frames
+const TRAJECTORY_DIGEST: &str = "154ff855bc90da827373172562aa9471c050948e6df59e6340353a87ced2885c";
