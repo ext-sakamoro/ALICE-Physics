@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5924 |
+| 🟢 Not ignored (run by CI) | 5933 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6021** |
+| **Total** | **6030** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5924)
+## 🟢 Not ignored (5933)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -448,6 +448,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_prestressed.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `law_g2_tie_classes.rs` | 9 |
+| `state_digest.rs` | 9 |
 | `vehicle_dynamics_degenerate.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
 | `analytic_broadphase.rs` | 8 |
