@@ -157,7 +157,7 @@ fn the_law_id_binding_value_is_the_world_law_under_this_build() {
         w.law_id(&PHYSICS_SEMANTICS_ID),
         other.law_id(&PHYSICS_SEMANTICS_ID)
     );
-    // the snapshot header carries it (bytes 48..80 of a version 4 blob)
+    // the snapshot header carries it (bytes 48..80 of every blob since version 4)
     assert_eq!(
         &w.snapshot_world()[48..80],
         &w.law_id(&PHYSICS_SEMANTICS_ID)
