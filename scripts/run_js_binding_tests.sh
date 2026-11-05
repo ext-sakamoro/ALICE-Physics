@@ -8,6 +8,8 @@ target="${CARGO_TARGET_DIR:-target}"
 mkdir -p "$target"
 pkg="$(cd "$target" && pwd)/js-pkg"
 bash scripts/build_wasm_pkg.sh nodejs "$pkg" --dev
+# the constants kept masked in the source (src/law_id.rs) are not in the built wasm as text
+python3 scripts/wasm_literal_check.py "$pkg"
 # the reporter is fixed: node picks `spec` on a terminal and `tap` otherwise, and the
 # count below is read from the TAP summary line (`# tests N`)
 out=$(ALICE_JS_PKG="$pkg" node --test --test-reporter=tap tests/js/*.test.mjs 2>&1) || { echo "$out"; exit 1; }

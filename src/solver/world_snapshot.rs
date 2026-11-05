@@ -261,6 +261,58 @@ impl core::fmt::Display for Hex<'_> {
     }
 }
 
+impl WorldSnapshotError {
+    /// The variant's name, stable across releases: the bindings report a refused
+    /// restore by it (the JavaScript error's `name`, the Python exception's first word).
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Truncated => "Truncated",
+            Self::Unpinned => "Unpinned",
+            Self::BadMagic => "BadMagic",
+            Self::UnsupportedVersion { .. } => "UnsupportedVersion",
+            Self::ReservedNotZero => "ReservedNotZero",
+            Self::TrailingBytes { .. } => "TrailingBytes",
+            Self::ChecksumMismatch { .. } => "ChecksumMismatch",
+            Self::InvalidValue { .. } => "InvalidValue",
+            Self::DanglingIndex { .. } => "DanglingIndex",
+            Self::SdfFieldCountMismatch { .. } => "SdfFieldCountMismatch",
+            Self::CallbackCountMismatch { .. } => "CallbackCountMismatch",
+            Self::ParticipantMismatch(_) => "ParticipantMismatch",
+            Self::ParticipantState { .. } => "ParticipantState",
+            Self::FieldState(_) => "FieldState",
+            Self::SemanticsMismatch { .. } => "SemanticsMismatch",
+            Self::LawIdMismatch { .. } => "LawIdMismatch",
+            Self::LegacyDampingNeedsStep { .. } => "LegacyDampingNeedsStep",
+        }
+    }
+
+    /// The variant as a number for the C ABI, in declaration order from 1 (0 is
+    /// success there); a number is never reused for another variant.
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        match self {
+            Self::Truncated => 1,
+            Self::Unpinned => 2,
+            Self::BadMagic => 3,
+            Self::UnsupportedVersion { .. } => 4,
+            Self::ReservedNotZero => 5,
+            Self::TrailingBytes { .. } => 6,
+            Self::ChecksumMismatch { .. } => 7,
+            Self::InvalidValue { .. } => 8,
+            Self::DanglingIndex { .. } => 9,
+            Self::SdfFieldCountMismatch { .. } => 10,
+            Self::CallbackCountMismatch { .. } => 11,
+            Self::ParticipantMismatch(_) => 12,
+            Self::ParticipantState { .. } => 13,
+            Self::FieldState(_) => 14,
+            Self::SemanticsMismatch { .. } => 15,
+            Self::LawIdMismatch { .. } => 16,
+            Self::LegacyDampingNeedsStep { .. } => 17,
+        }
+    }
+}
+
 impl core::fmt::Display for WorldSnapshotError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -2035,6 +2087,40 @@ impl PhysicsWorld {
         data
     }
 
+    /// Domain separation of [`Self::state_digest`]: 32 fixed bytes, the SHA-256 of
+    /// the text `alice-physics/state-digest/v1` computed once. The bytes, not the text,
+    /// are in the binary, so a build that must not carry the engine's name can keep
+    /// this constant unchanged and still compute the same digests.
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = [
+        0x32, 0x6a, 0xa2, 0xe0, 0xcf, 0x7a, 0xeb, 0x00, 0x8a, 0x8c, 0x0b, 0x14, 0xb7, 0x26, 0x2a,
+        0x61, 0x91, 0xfb, 0x4d, 0x1e, 0x1f, 0xdb, 0xe4, 0x56, 0x27, 0x36, 0xb9, 0xf3, 0x0f, 0x83,
+        0x85, 0x0e,
+    ];
+
+    /// SHA-256 of [`Self::snapshot_world`]: one value that two runs agree on
+    /// exactly when their worlds are in the same state under the same rules,
+    /// for a replay or a shared solution to be checked by its result.
+    ///
+    /// The input is the 32 bytes of [`Self::STATE_DIGEST_DOMAIN`] followed by the
+    /// snapshot bytes: `SHA-256(STATE_DIGEST_DOMAIN ‖ snapshot_world())`, which an
+    /// independent implementation recomputes with any SHA-256. The snapshot's header
+    /// holds [`crate::PHYSICS_SEMANTICS_ID`] and [`Self::law_id`], so the digest
+    /// also names the arithmetic and the rules. It covers what the snapshot covers
+    /// (see the field table there): not SDF field code, joint motors, contact hooks
+    /// or participants' code, none of which is data.
+    ///
+    /// The order bodies, joints and colliders were added in is part of the state:
+    /// their indices are the ids the caller holds, and the step visits them in that
+    /// order, so the same scene added in another order has another digest.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        h.update(self.snapshot_world());
+        h.finalize().into()
+    }
+
     /// Build a new world from a [`Self::snapshot_world`] blob.
     ///
     /// The new world holds no SDF fields, hooks, contact modifiers or GPU
@@ -2885,6 +2971,96 @@ fn validate(d: &Decoded) -> Res<()> {
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
+    // The error names and numbers the bindings report. oracle: the enum's declaration in this
+    // file (read as text, not through `kind` / `code`): `kind` is the variant's own name and
+    // `code` is its position from 1, as the doc on `code` promises.
+    #[test]
+    fn error_kind_is_the_variant_name_and_code_is_the_declaration_position() {
+        use crate::math::Fix128;
+        use crate::world_participant::{ParticipantMismatch, StateError};
+        let src = include_str!("world_snapshot.rs");
+        let body = src
+            .split_once("pub enum WorldSnapshotError {\n")
+            .and_then(|(_, rest)| rest.split_once("\n}\n"))
+            .map(|(b, _)| b)
+            .expect("the enum declaration is in this file");
+        let declared: Vec<&str> = body
+            .lines()
+            .filter_map(|l| l.strip_prefix("    "))
+            .filter(|l| l.starts_with(|c: char| c.is_ascii_uppercase()))
+            .map(|l| {
+                l.split(|c: char| !c.is_ascii_alphanumeric())
+                    .next()
+                    .unwrap_or("")
+            })
+            .collect();
+        let state = StateError::InvalidValue;
+        let all = [
+            WorldSnapshotError::Truncated,
+            WorldSnapshotError::Unpinned,
+            WorldSnapshotError::BadMagic,
+            WorldSnapshotError::UnsupportedVersion {
+                found: 9,
+                supported: 6,
+            },
+            WorldSnapshotError::ReservedNotZero,
+            WorldSnapshotError::TrailingBytes { extra: 1 },
+            WorldSnapshotError::ChecksumMismatch {
+                stored: 1,
+                computed: 2,
+            },
+            WorldSnapshotError::InvalidValue { section: "s" },
+            WorldSnapshotError::DanglingIndex {
+                section: "s",
+                index: 1,
+                len: 1,
+            },
+            WorldSnapshotError::SdfFieldCountMismatch {
+                snapshot: 1,
+                world: 2,
+            },
+            WorldSnapshotError::CallbackCountMismatch {
+                section: "s",
+                snapshot: 1,
+                world: 2,
+            },
+            WorldSnapshotError::ParticipantMismatch(ParticipantMismatch::Count {
+                snapshot: 1,
+                world: 2,
+            }),
+            WorldSnapshotError::ParticipantState {
+                index: 0,
+                error: state,
+            },
+            WorldSnapshotError::FieldState(state),
+            WorldSnapshotError::SemanticsMismatch {
+                stored: [1; 32],
+                expected: [2; 32],
+            },
+            WorldSnapshotError::LawIdMismatch {
+                stored: [1; 32],
+                expected: [2; 32],
+            },
+            WorldSnapshotError::LegacyDampingNeedsStep {
+                retention: Fix128::from_ratio(99, 100),
+            },
+        ];
+        assert_eq!(
+            declared.len(),
+            all.len(),
+            "every declared variant is listed here: {declared:?}"
+        );
+        for (i, (e, name)) in all.iter().zip(&declared).enumerate() {
+            let debug = format!("{e:?}");
+            assert!(
+                debug.starts_with(name),
+                "listed in declaration order: {debug} at {name}"
+            );
+            assert_eq!(e.kind(), *name);
+            assert_eq!(e.code(), u32::try_from(i + 1).unwrap(), "{name}");
+        }
+    }
+
     // Oracles for the whole-world snapshot.
     //
     // The comparator ([`digest`]) reads every [`PhysicsWorld`] field directly

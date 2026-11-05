@@ -33,6 +33,39 @@ use sha2::{Digest, Sha256};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+const LAW_ID_DOMAIN_LEN: usize = LAW_ID_DOMAIN.len();
+
+/// Each byte of [`LAW_ID_DOMAIN`] XOR `0xA5` XOR `i·0x3B`, computed at compile time from the
+/// published constant (one source for the bytes). Only this masked array reaches the binary: a
+/// constant used only during constant evaluation is not emitted.
+const LAW_ID_DOMAIN_MASKED: [u8; LAW_ID_DOMAIN_LEN] = {
+    let mut out = [0u8; LAW_ID_DOMAIN_LEN];
+    let mut i = 0;
+    while i < LAW_ID_DOMAIN_LEN {
+        out[i] = LAW_ID_DOMAIN[i] ^ 0xA5 ^ (i as u8).wrapping_mul(0x3B);
+        i += 1;
+    }
+    out
+};
+
+/// The bytes of [`LAW_ID_DOMAIN`], which [`PhysicsWorld::law_id`] hashes.
+///
+/// They are kept masked ([`LAW_ID_DOMAIN_MASKED`]) and unmasked here at run time behind
+/// `black_box`, so the compiler cannot fold the text back into the binary and a build
+/// distributed without the engine's name does not carry it in this string. This is
+/// obfuscation of a constant for distribution, not a security property: anyone can unmask
+/// it, and the published domain is [`LAW_ID_DOMAIN`]. The hashed bytes are exactly that
+/// constant (tested), so every law identifier is unchanged.
+#[inline(never)]
+fn law_id_domain() -> [u8; LAW_ID_DOMAIN_LEN] {
+    let mask = core::hint::black_box(0xA5u8);
+    let mut out = LAW_ID_DOMAIN_MASKED;
+    for (i, b) in out.iter_mut().enumerate() {
+        *b ^= mask ^ (i as u8).wrapping_mul(0x3B);
+    }
+    out
+}
+
 /// The canonical byte encoding of a world's law, written into a hasher.
 struct Encoder(Sha256);
 
@@ -273,7 +306,7 @@ impl PhysicsWorld {
     #[must_use]
     pub fn law_id(&self, semantics_id: &[u8; 32]) -> [u8; 32] {
         let mut e = Encoder(Sha256::new());
-        e.bytes(LAW_ID_DOMAIN);
+        e.bytes(&law_id_domain());
         e.bytes(WORLD_LAW_KIND);
         e.0.update(semantics_id);
 
@@ -564,5 +597,13 @@ mod induced_dipole_arm {
                 assert_ne!(all[i], all[j], "cases {i} and {j} share a law id");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod domain_tests {
+    #[test]
+    fn the_unmasked_domain_is_the_published_law_id_domain() {
+        assert_eq!(&super::law_id_domain()[..], super::LAW_ID_DOMAIN);
     }
 }

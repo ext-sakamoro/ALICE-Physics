@@ -192,6 +192,32 @@ impl PyPhysicsWorld {
         py.detach(|| self.inner.deserialize_state(&data))
     }
 
+    /// The whole world as bytes (`PhysicsWorld::snapshot_world`): bodies, joints,
+    /// constraints, static colliders, materials, under the header's semantics and
+    /// law identifiers. `serialize_state` keeps body motion only.
+    fn snapshot_world<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
+        let data = py.detach(|| self.inner.snapshot_world());
+        data.into_pyarray(py)
+    }
+
+    /// Restore the whole world from `snapshot_world`'s bytes. A refused blob raises
+    /// ValueError whose message starts with the `WorldSnapshotError` variant
+    /// (`SemanticsMismatch: ...`) and leaves the world unchanged.
+    fn restore_world(&mut self, py: Python<'_>, data: Vec<u8>) -> PyResult<()> {
+        py.detach(|| self.inner.restore_world(&data))
+            .map_err(|e| PyValueError::new_err(format!("{}: {e}", e.kind())))
+    }
+
+    /// SHA-256 of the world snapshot (`PhysicsWorld::state_digest`, 32 bytes).
+    fn state_digest(&self, py: Python<'_>) -> Vec<u8> {
+        py.detach(|| self.inner.state_digest().to_vec())
+    }
+
+    /// The world's law identifier under this build's semantics (32 bytes).
+    fn law_id(&self, py: Python<'_>) -> Vec<u8> {
+        py.detach(|| self.inner.law_id(&crate::PHYSICS_SEMANTICS_ID).to_vec())
+    }
+
     /// Number of bodies in the world.
     fn body_count(&self) -> usize {
         self.inner.bodies.len()

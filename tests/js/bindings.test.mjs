@@ -102,3 +102,77 @@ test("refused arguments return undefined / false and change nothing", () => {
   assert.equal(w.staticColliderCount(), 0);
   assert.equal(w.bodyCount(), 2);
 });
+
+// oracle: SHA-256 over the 32 domain bytes (themselves the SHA-256 of "alice-physics/state-digest/v1"), then
+// snapshotWorld(), recomputed with WebCrypto (an implementation independent of the crate's)
+async function digestOf(snapshot) {
+  const text = new TextEncoder().encode("alice-physics/state-digest/v1");
+  const domain = new Uint8Array(await crypto.subtle.digest("SHA-256", text));
+  const all = new Uint8Array(domain.length + snapshot.length);
+  all.set(domain, 0);
+  all.set(snapshot, domain.length);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", all));
+}
+
+const jointedScene = () => {
+  const w = world();
+  w.addStaticPlane(0, 1, 0, 0);
+  const a = w.addDynamicBody(0, 5, 0, 1);
+  const b = w.addDynamicBody(1, 5, 0, 2);
+  w.addBallJoint(a, b, [0, 0, 0, -1, 0, 0]);
+  return w;
+};
+
+test("stateDigest is SHA-256 of the domain and snapshotWorld (WebCrypto recomputation)", async () => {
+  const w = jointedScene();
+  for (let i = 0; i < 30; i++) w.step(DT);
+  const d = w.stateDigest();
+  assert.equal(d.length, 32);
+  assert.deepEqual(Array.from(d), Array.from(await digestOf(w.snapshotWorld())));
+  assert.equal(w.lawId().length, 32);
+});
+
+test("restoreWorld brings back joints that deserializeState drops, with the same digest", () => {
+  const w = jointedScene();
+  for (let i = 0; i < 20; i++) w.step(DT);
+  const blob = w.snapshotWorld();
+  const digest = Array.from(w.stateDigest());
+  const fresh = world();
+  fresh.restoreWorld(blob);
+  assert.equal(fresh.jointCount(), 1);
+  assert.deepEqual(Array.from(fresh.stateDigest()), digest);
+  for (let i = 0; i < 40; i++) {
+    w.step(DT);
+    fresh.step(DT);
+  }
+  assert.deepEqual(Array.from(fresh.stateDigest()), Array.from(w.stateDigest()));
+});
+
+test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
+  const w = jointedScene();
+  const before = Array.from(w.stateDigest());
+  const blob = jointedScene().snapshotWorld();
+  blob[blob.length - 20] ^= 1;
+  assert.throws(() => w.restoreWorld(blob), (e) => e instanceof Error && e.name === "ChecksumMismatch");
+  assert.throws(() => w.restoreWorld(new Uint8Array(3)), (e) => e.name === "Truncated");
+  assert.deepEqual(Array.from(w.stateDigest()), before);
+});
+
+test("one impulse changes the digest, the same calls do not", () => {
+  const a = jointedScene();
+  const b = jointedScene();
+  assert.deepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
+  b.applyImpulse(0, 0, 1, 0);
+  assert.notDeepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
+});
+
+// golden (regenerated on purpose only, with the Rust test that pins the same two values,
+// tests/state_digest.rs GOLDEN_STATE_DIGEST / GOLDEN_LAW_ID): the jointed scene after 120 steps
+// must give these exact bytes in WebAssembly as on every native platform
+test("the jointed scene's digest and law id are the golden the native platforms compute", () => {
+  const w = jointedScene();
+  for (let i = 0; i < 120; i++) w.step(DT);
+  const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  assert.equal(hex(w.stateDigest()), "42baf81046676a57946a3fccf6dc36568cbe49e28e0e6c1105bedd172be0d564");
+  assert.equal(hex(w.lawId()), "822f0f0d47bc9e822089404ffd6062e7174a0f94bb95e32c05437f3f4da486f4");
+});
