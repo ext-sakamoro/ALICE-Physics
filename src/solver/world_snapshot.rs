@@ -1833,7 +1833,7 @@ impl PhysicsWorld {
     /// step. The structure is private to [`crate::sleeping`] and has no
     /// non-mutating accessor, so it cannot be copied from `&self`.
     ///
-    /// # Format (version 4)
+    /// # Format (version 6)
     ///
     /// | range | content |
     /// |---|---|
