@@ -385,7 +385,7 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Float64Array([this.ids, 0.5]);"
         if n.endswith("Count"):
             return "return this.ids;"
-        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape", "setBodyMaterial"):
+        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape", "setBodyMaterial", "setRotation", "setAngularVelocity"):
             return "return true;"
         return "return undefined;"
     methods = "\n".join(f"  {rename(n)}(...a) {{ {body(n)} }}" for n in names

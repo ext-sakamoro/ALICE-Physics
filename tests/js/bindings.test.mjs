@@ -176,3 +176,37 @@ test("the jointed scene's digest and law id are the golden the native platforms 
   assert.equal(hex(w.stateDigest()), "42baf81046676a57946a3fccf6dc36568cbe49e28e0e6c1105bedd172be0d564");
   assert.equal(hex(w.lawId()), "822f0f0d47bc9e822089404ffd6062e7174a0f94bb95e32c05437f3f4da486f4");
 });
+
+test("setRotation normalises, refuses the zero quaternion and a bad id, and is saved by snapshotWorld", () => {
+  const w = world();
+  const b = w.addDynamicBody(0, 5, 0, 1);
+  const before = Array.from(w.stateDigest());
+  assert.equal(w.setRotation(b, 0, 0, 2, 0), true);
+  assert.deepEqual(Array.from(w.getRotations().slice(4 * b, 4 * b + 4)), [0, 0, 1, 0]);
+  assert.notDeepEqual(Array.from(w.stateDigest()), before);
+  assert.equal(w.setRotation(b, 0, 0, 0, 0), false);
+  assert.equal(w.setRotation(b, NaN, 0, 0, 1), false);
+  assert.equal(w.setRotation(99, 0, 0, 0, 1), false);
+  assert.deepEqual(Array.from(w.getRotations().slice(4 * b, 4 * b + 4)), [0, 0, 1, 0]);
+});
+
+// withConfig keeps the world's per-step damping, so the closed form (a half turn for pi rad/s
+// over 1 s with no damping) is checked in the Rust test of binding_api; here: the turn is about
+// z only, in the positive sense, and grows with time
+test("setAngularVelocity turns a free body about the given axis", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  const b = w.addDynamicBody(0, 0, 0, 1);
+  assert.equal(w.setAngularVelocity(b, 0, 0, Math.PI), true);
+  assert.equal(w.setAngularVelocity(99, 0, 0, 1), false);
+  assert.equal(w.setAngularVelocity(b, Infinity, 0, 0), false);
+  const angleAt = () => {
+    const [qx, qy, qz, qw] = Array.from(w.getRotations().slice(4 * b, 4 * b + 4));
+    assert.ok(Math.abs(qx) < 1e-9 && Math.abs(qy) < 1e-9, `${qx} ${qy}`);
+    return 2 * Math.atan2(qz, qw);
+  };
+  for (let i = 0; i < 10; i++) w.step(DT);
+  const early = angleAt();
+  for (let i = 0; i < 10; i++) w.step(DT);
+  const later = angleAt();
+  assert.ok(early > 0 && later > early, `${early} then ${later}`);
+});

@@ -130,6 +130,9 @@ function wide(a) {
   out.material = f([mat]);
   out.materialSet = val(a.call(w, "setBodyMaterial", b[0], mat), "setBodyMaterial");
   out.magnet = f([id(a.call(w, "addMagnet", 0.3, 0.8, 0, 0, 400, 0, 0.1, mat, 3, 1.7e6, 7850), "addMagnet")]);
+  // an orientation and a spin set directly (both report whether the body exists)
+  out.rotationSet = val(a.call(w, "setRotation", b[1], 0, 0.3826834323650898, 0, 0.9238795325112867), "setRotation");
+  out.spinSet = val(a.call(w, "setAngularVelocity", b[2], 0, 0, 1.5), "setAngularVelocity");
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);
