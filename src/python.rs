@@ -486,7 +486,7 @@ impl PyPhysicsWorld {
         area: f64,
     ) -> PyResult<usize> {
         let bad = || {
-            PyValueError::new_err("bad wind zone: values must be finite, min not above max, direction not zero, speeds and frequency not negative, density, drag coefficient and area positive")
+            PyValueError::new_err("bad wind zone: values must be finite and within the fixed-point range, min not above max, direction not zero, speeds and frequency not negative, density, drag coefficient and area positive")
         };
         let args = binding_api::WindZoneArgs {
             min: binding_api::vec3(min.0, min.1, min.2).ok_or_else(bad)?,

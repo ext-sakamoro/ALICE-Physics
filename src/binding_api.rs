@@ -33,19 +33,23 @@ pub(crate) const SHAPE_ELLIPSOID: u32 = 3;
 pub(crate) const SHAPE_WEDGE: u32 = 4;
 pub(crate) const SHAPE_TORUS: u32 = 5;
 
-/// A finite value.
+/// `x` as a [`Fix128`], or `None` when it is not one: not a number, or outside
+/// `-2^63 <= x < 2^63`, the range of the integer part. Past that range
+/// `Fix128::from_f64` has no right answer to give, so a binding refuses the value
+/// instead of working with another one.
 pub(crate) fn finite(x: f64) -> Option<Fix128> {
-    x.is_finite().then(|| Fix128::from_f64(x))
+    const LIMIT: f64 = 9_223_372_036_854_775_808.0;
+    (-LIMIT <= x && x < LIMIT).then(|| Fix128::from_f64(x))
 }
 
-/// A finite value greater than zero.
+/// [`finite`], and greater than zero.
 pub(crate) fn positive(x: f64) -> Option<Fix128> {
-    (x.is_finite() && x > 0.0).then(|| Fix128::from_f64(x))
+    finite(x).filter(|_| x > 0.0)
 }
 
-/// A finite value that is not negative.
+/// [`finite`], and not negative.
 pub(crate) fn non_negative(x: f64) -> Option<Fix128> {
-    (x.is_finite() && x >= 0.0).then(|| Fix128::from_f64(x))
+    finite(x).filter(|_| x >= 0.0)
 }
 
 /// A finite vector.
@@ -552,6 +556,75 @@ pub(crate) fn contact_events(world: &PhysicsWorld) -> Vec<f64> {
 mod tests {
     use super::*;
     use crate::solver::{PhysicsConfig, RigidBody};
+
+    /// oracle: the range is the integer part's, both ends exact; inside it the value
+    /// is `from_f64`'s, bit for bit, so a world built from in-range values is unchanged.
+    #[test]
+    fn a_value_is_taken_inside_the_range_of_fix128_and_refused_outside() {
+        const TWO_63: f64 = 9_223_372_036_854_775_808.0;
+        let below = f64::from_bits(TWO_63.to_bits() - 1);
+        let beyond = f64::from_bits((-TWO_63).to_bits() + 1);
+        for x in [TWO_63, 1e19, 1e30, f64::MAX, f64::INFINITY, f64::NAN] {
+            assert_eq!(finite(x), None, "{x}");
+            assert_eq!(positive(x), None, "{x}");
+            assert_eq!(non_negative(x), None, "{x}");
+        }
+        for x in [beyond, -1e19, -1e30, f64::MIN, f64::NEG_INFINITY] {
+            assert_eq!(finite(x), None, "{x}");
+        }
+        for x in [below, -below, -TWO_63, 0.0, 0.1, -0.1, 1e-300, 1234.5] {
+            assert_eq!(finite(x), Some(Fix128::from_f64(x)), "{x}");
+        }
+        assert_eq!(positive(below), Some(Fix128::from_f64(below)));
+        assert_eq!(non_negative(below), Some(Fix128::from_f64(below)));
+        assert_eq!(positive(0.0), None);
+        assert_eq!(positive(-1.0), None);
+        assert_eq!(non_negative(0.0), Some(Fix128::ZERO));
+        assert_eq!(non_negative(-1.0), None);
+        assert_eq!(vec3(0.0, 1e30, 0.0), None);
+    }
+
+    /// oracle: every entry that takes a float refuses one out of range and leaves
+    /// the world as it was.
+    #[test]
+    fn every_float_entry_refuses_a_value_out_of_range() {
+        let huge = 1e30;
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        let body = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let before = w.snapshot_world();
+        assert!(shape(SHAPE_BOX, huge, 1.0, 1.0).is_none());
+        assert!(!set_collision_radius(&mut w, body, huge));
+        assert_eq!(register_material(&mut w, huge, 0.0), None);
+        assert_eq!(register_material(&mut w, 0.0, huge), None);
+        let mut m = steel();
+        m.density = huge;
+        assert_eq!(
+            add_magnet(&mut w, Vec3Fix::ZERO, Vec3Fix::ZERO, 1.0, &m),
+            None
+        );
+        let m = steel();
+        assert_eq!(
+            add_magnet(&mut w, Vec3Fix::ZERO, Vec3Fix::ZERO, huge, &m),
+            None
+        );
+        let unit_box = shape(SHAPE_BOX, 1.0, 1.0, 1.0).expect("shape");
+        assert_eq!(add_shaped_body(&mut w, unit_box, huge, Vec3Fix::ZERO), None);
+        let up = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        assert_eq!(add_static_plane(&mut w, up, huge), None);
+        let flat = [0.0; 4];
+        assert_eq!(
+            add_static_heightfield(&mut w, &flat, 2, 2, huge, Vec3Fix::ZERO),
+            None
+        );
+        let tall = [0.0, 0.0, 0.0, huge];
+        assert_eq!(
+            add_static_heightfield(&mut w, &tall, 2, 2, 1.0, Vec3Fix::ZERO),
+            None
+        );
+        let far = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, huge, 0.0];
+        assert_eq!(add_static_trimesh(&mut w, &far, &[0, 1, 2]), None);
+        assert_eq!(w.snapshot_world(), before);
+    }
 
     fn steel() -> MagnetMaterial {
         MagnetMaterial {

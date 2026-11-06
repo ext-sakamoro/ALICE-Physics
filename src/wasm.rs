@@ -1121,6 +1121,14 @@ mod tests {
             p[i] = value;
             assert_eq!(call(&mut w, &p), None, "argument {i} = {value}");
         }
+        // past the range of Fix128, on every argument and on either side
+        for i in 0..good.len() {
+            for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN] {
+                let mut p = good;
+                p[i] = value;
+                assert_eq!(call(&mut w, &p), None, "argument {i} = {value}");
+            }
+        }
         let mut zero = good;
         zero[6] = 0.0;
         assert_eq!(call(&mut w, &zero), None, "zero direction");

@@ -225,6 +225,17 @@ def test_a_bad_wind_zone_is_refused():
         except ValueError:
             continue
         raise AssertionError(f"accepted {bad}")
+    # past the range of the fixed point, on every argument and on either side
+    good = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    for i in range(len(good)):
+        for value in (1e19, 1e30, sys.float_info.max, -1e19, -1e30, -sys.float_info.max):
+            p = list(good)
+            p[i] = value
+            try:
+                w.add_wind_zone(tuple(p[0:3]), tuple(p[3:6]), tuple(p[6:9]), *p[9:])
+            except ValueError:
+                continue
+            raise AssertionError(f"accepted argument {i} = {value}")
     assert w.add_wind_zone(*box, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0) == 0
 
 
