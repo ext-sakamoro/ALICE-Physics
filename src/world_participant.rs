@@ -59,6 +59,7 @@
 //! | `NBDY` | `0x4e42_4459` | `nbody::NBodyParticipant` |
 //! | `VHCL` | `0x5648_434c` | `vehicle::VehicleParticipant` |
 //! | `WNDZ` | `0x574e_445a` | `wind_zone::WindZoneParticipant` |
+//! | `BUOY` | `0x4255_4f59` | `buoyancy_zone::BuoyancyZoneParticipant` |
 //!
 //! # Coupling through ports
 //!
@@ -883,6 +884,13 @@ impl ForceAccumulator {
     }
 }
 
+/// The world's collision radii as a substep sees them.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BodyRadii<'a> {
+    pub(crate) radii: &'a [Option<Fix128>],
+    pub(crate) default: Fix128,
+}
+
 /// What a participant sees during one substep: the bodies as they were at the
 /// start of the substep (read only) and an accumulator for its forces.
 #[derive(Debug)]
@@ -896,6 +904,7 @@ pub struct SubstepCtx<'a> {
     stage: Option<&'a mut FieldStage>,
     ports: &'a [Port],
     sdf_contacts: &'a [crate::sdf_collider::SdfContact],
+    body_radii: Option<BodyRadii<'a>>,
 }
 
 impl<'a> SubstepCtx<'a> {
@@ -929,6 +938,7 @@ impl<'a> SubstepCtx<'a> {
             stage: None,
             ports: &[],
             sdf_contacts: &[],
+            body_radii: None,
         })
     }
 
@@ -954,6 +964,33 @@ impl<'a> SubstepCtx<'a> {
     pub fn with_sdf_contacts(mut self, contacts: &'a [crate::sdf_collider::SdfContact]) -> Self {
         self.sdf_contacts = contacts;
         self
+    }
+
+    /// The same context with the world's collision radii: `radii` per body and
+    /// `default` for a body without its own ([`Self::body_radius`]).
+    #[must_use]
+    pub fn with_body_radii(mut self, radii: &'a [Option<Fix128>], default: Fix128) -> Self {
+        self.body_radii = Some(BodyRadii { radii, default });
+        self
+    }
+
+    /// The collision radius the world uses for body `i`: its own, else the
+    /// world's default. `None` when `i` is not a body or when this context was
+    /// built without the world's radii ([`Self::with_body_radii`]).
+    #[must_use]
+    pub fn body_radius(&self, i: usize) -> Option<Fix128> {
+        if i >= self.bodies.len() {
+            return None;
+        }
+        let world = self.body_radii?;
+        Some(
+            world
+                .radii
+                .get(i)
+                .copied()
+                .flatten()
+                .unwrap_or(world.default),
+        )
     }
 
     fn declared(&self, id: PortId, access: PortAccess) -> Result<(), FieldAccessError> {
@@ -1801,6 +1838,7 @@ pub fn run_substep_with_sdf_contacts(
         forces,
         time,
         sdf_contacts,
+        None,
         &mut None,
     )
 }
@@ -1821,6 +1859,7 @@ pub(crate) fn run_substep_tracked(
     forces: &mut ForceAccumulator,
     time: SubstepTime,
     sdf_contacts: &[crate::sdf_collider::SdfContact],
+    body_radii: Option<BodyRadii<'_>>,
     running: &mut Option<usize>,
 ) -> Result<Vec<WorldFault>, ExchangeError> {
     let n = participants.len();
@@ -1867,6 +1906,9 @@ pub(crate) fn run_substep_tracked(
             let mut ctx = ctx
                 .with_fields(board, &mut stage, &plan.ports[i])
                 .with_sdf_contacts(sdf_contacts);
+            if let Some(world) = body_radii {
+                ctx = ctx.with_body_radii(world.radii, world.default);
+            }
             *running = Some(i);
             let result = participants[i].substep(&mut ctx, time.h);
             *running = None;
