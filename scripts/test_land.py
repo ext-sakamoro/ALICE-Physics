@@ -348,6 +348,8 @@ if rc in (40, 41, 42):
 trailing = rc in (30, 31)
 if trailing:
     rc -= 30
+# 21 and 31: `state moves: yes` with exit 0 (the padding of 20 and 30 around the moving verdict)
+reported = rc == 21 or (trailing and rc == 1)
 if rc in (20, 21):
     # the real script's note lines (one per manifest) come before the verdict and run past
     # 3000 bytes: the verdict is the last thing printed
@@ -371,7 +373,7 @@ if trailing:
     # then neither the last line nor within the last 3000 bytes of the combined output
     for i in range(60):
         print(f"warning: ALICE-Crate{i:02d}: a late note that runs past the verdict line (padding to 3000 bytes)", file=sys.stderr)
-sys.exit(rc)
+sys.exit(0 if reported else rc)
 """
 
 
@@ -3707,7 +3709,7 @@ class AmbientEnv(Isolated):
            "WaitEvidence.test_all_green_passes",
            "WaitAfter.test_all_green",
            "LawState.test_an_unmoved_state_lands_and_the_script_saw_the_candidate_at_the_landed_sha",
-           "LawState.test_a_moving_state_refuses_and_names_the_law_sha_the_counts_and_the_record_command"]
+           "LawState.test_exit_1_refuses_even_with_a_moving_verdict"]
 
     def test_the_key_cases_pass_under_a_hostile_environment(self):
         elsewhere = Path(tempfile.mkdtemp())
@@ -3771,8 +3773,8 @@ class Verdict(Isolated):
 class LawState(Isolated):
     """check_law_state: before the push to main, ALICE-Law's land_law_state.py is asked whether
     landing the commit moves Law's conformance state; exit 0 lands with either verdict (the
-    report-only Law), exit 1 (a Law that still records the state) / exit 2 / a missing or doubled
-    verdict / a Law that cannot be read / a time limit refuse with nothing pushed."""
+    report-only Law), any other exit / a missing or doubled verdict / a Law that cannot be read /
+    a time limit refuse with nothing pushed."""
 
     def landing(self) -> str:
         commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"},
@@ -3851,7 +3853,9 @@ class LawState(Isolated):
         self.assertEqual(call["config"], [[k, v] for k, _, v in forced])
         self.assertTrue(os.path.basename(call["cwd"]) == "law", call["cwd"])
 
-    def test_a_moving_state_refuses_and_names_the_law_sha_the_counts_and_the_record_command(self):
+    def test_exit_1_refuses_even_with_a_moving_verdict(self):
+        # exit 0 is the only exit that reports a state: there is no state to record any more, so
+        # an exit 1 asks for nothing and names no command
         before = self.landing()
         lander = self.r.lander()
         lander.law_url = fake_law(1)
@@ -3859,28 +3863,25 @@ class LawState(Isolated):
         with self.assertRaises(land.LandError) as cm:
             lander.land()
         text = str(cm.exception)
-        self.assertIn("moves ALICE-Law's conformance state", text)
-        self.assertIn(f"Law main {law_sha[:12]}", text)
+        self.assertIn(f"could not be computed (land_law_state exit 1, Law main {law_sha[:12]})", text)
         self.assertIn("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2", text)
-        self.assertIn("may also come from another repository's main", text)
-        self.assertIn(f"in a clone of ALICE-Law at {law_sha[:12]} run", text)
-        self.assertIn("scripts/land_law_state.py --candidate ALICE-Physics=", text)
-        self.assertIn("--write", text)
+        self.assertNotIn("--write", text)
+        self.assertNotIn("moves ALICE-Law's conformance state", text)
         self.assertIn("nothing was pushed to main", text)
         self.assertEqual(self.r.origin_head(), before)
 
     def test_an_exit_code_without_the_verdict_line_refuses(self):
         # exit 1 from a traceback is not a computed move, exit 0 that printed nothing is not
         # "unmoved": both are "could not be computed", nothing lands
-        for rc, code in ((11, 1), (10, 0)):
-            with self.subTest(exit=code):
+        for rc, needle in ((11, "exit 1,"), (10, "exit 0 without")):
+            with self.subTest(fake=rc):
                 before = self.landing() if rc == 11 else self.r.origin_head()
                 lander = self.r.lander()
                 lander.law_url = fake_law(rc)
                 with self.assertRaises(land.LandError) as cm:
                     lander.land()
                 text = str(cm.exception)
-                self.assertIn(f"could not be computed (land_law_state exit {code} without", text)
+                self.assertIn(f"could not be computed (land_law_state {needle}", text)
                 self.assertNotIn("moves ALICE-Law's conformance state", text)
                 self.assertIn("nothing was pushed to main", text)
                 self.assertEqual(self.r.origin_head(), before)
@@ -3888,15 +3889,7 @@ class LawState(Isolated):
     def test_the_verdict_after_more_than_3000_bytes_of_notes_is_read(self):
         # the verdict is the script's last line; a check that cut the output to a fixed length
         # before looking for it refused an unmoved state as "could not be computed"
-        before = self.landing()
-        lander = self.r.lander()
-        lander.law_url = fake_law(21)
-        with self.assertRaises(land.LandError) as cm:
-            lander.land()
-        text = str(cm.exception)
-        self.assertIn("moves ALICE-Law's conformance state", text)
-        self.assertIn("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2", text)
-        self.assertEqual(self.r.origin_head(), before)
+        self.landing()
         lander = self.r.lander()
         lander.law_url = fake_law(20)
         sha = lander.land()
@@ -3904,15 +3897,19 @@ class LawState(Isolated):
         self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
                         lander.record)
 
+    def test_the_moving_verdict_after_more_than_3000_bytes_of_notes_is_read(self):
+        self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(21)
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertTrue(any(l.startswith("Law state: moves, reported (compared with ALICE-Law main ")
+                            and l.endswith("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2") for l in lander.record),
+                        lander.record)
+
     def test_the_verdict_before_more_than_3000_bytes_of_stderr_is_read(self):
         # the verdict read from the whole output, not from the end that a message quotes
-        before = self.landing()
-        lander = self.r.lander()
-        lander.law_url = fake_law(31)
-        with self.assertRaises(land.LandError) as cm:
-            lander.land()
-        self.assertIn("moves ALICE-Law's conformance state", str(cm.exception))
-        self.assertEqual(self.r.origin_head(), before)
+        self.landing()
         lander = self.r.lander()
         lander.law_url = fake_law(30)
         logged: list[str] = []
@@ -3922,6 +3919,16 @@ class LawState(Isolated):
         # the summary line (the counts) is read from the whole output too
         self.assertTrue(any("224 gates compared" in l for l in logged), logged)
         self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
+                        lander.record)
+
+    def test_the_moving_verdict_before_more_than_3000_bytes_of_stderr_is_read(self):
+        self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(31)
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertTrue(any(l.startswith("Law state: moves, reported (compared with ALICE-Law main ")
+                            and l.endswith("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2") for l in lander.record),
                         lander.record)
 
     def test_every_rebase_round_asks_again_with_the_sha_it_lands(self):
@@ -3968,7 +3975,7 @@ class LawState(Isolated):
 
     def test_a_doubled_or_mismatched_verdict_refuses(self):
         # exit 0 printing both verdicts, exit 1 printing `moves: no`: neither is a computed state
-        for rc, needle in ((41, "exit 0 both verdicts"), (42, "exit 1 without `land_law_state: state moves: yes`")):
+        for rc, needle in ((41, "exit 0 both verdicts"), (42, "exit 1,")):
             with self.subTest(fake=rc):
                 before = self.landing() if rc == 41 else self.r.origin_head()
                 lander = self.r.lander()
@@ -4079,10 +4086,10 @@ class LawState(Isolated):
     def test_a_dry_run_asks_too(self):
         before = self.landing()
         lander = self.r.lander(dry_run=True)
-        lander.law_url = fake_law(1)
+        lander.law_url = fake_law(2)
         with self.assertRaises(land.LandError) as cm:
             lander.land()
-        self.assertIn("moves ALICE-Law's conformance state", str(cm.exception))
+        self.assertIn("could not be computed (land_law_state exit 2", str(cm.exception))
         self.assertEqual(self.r.origin_head(), before)
 
     def test_the_script_environment_starts_from_the_clean_one(self):

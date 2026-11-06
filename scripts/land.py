@@ -36,11 +36,9 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      blob-less fetch of Law's main into a temporary directory runs its
      scripts/land_law_state.py with the prepared SHA of land.py's own working copy as the
      candidate): exit 0 lands whether its verdict line says the state moves or not (a report:
-     the verdict and the moved counts go into the landing record); exit 1 (a Law whose main
-     still records the state: it moves, so Law's state commit has to land first: the message
-     names the Law SHA, the moved counts and the command), exit 2 (not computed), a Law that
-     cannot be read and a fetch or a script past its time limit stop the landing with nothing
-     pushed. The last
+     the verdict and the moved counts go into the landing record); any other exit (not
+     computed), a Law that cannot be read and a fetch or a script past its time limit stop the
+     landing with nothing pushed. The last
      line of a landing is `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
   All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
   made at start from the checkout's HEAD, the source SHA, read once) and removed at the end: the
@@ -592,7 +590,7 @@ MOVING_MESSAGE = "main is moving: wait for a quiet main or coordinate a landing 
 LOCK_DIR_ENV = "LAND_LOCK_DIR"  # where the per-repository landing lock lives (tests point it elsewhere)
 LOCK_WAIT_MINUTES = 30
 # ALICE-Law's conformance state: before the push to main, land.py asks Law's land_law_state.py
-# whether landing the commit moves Law's recorded state (check_law_state)
+# whether landing the commit moves the state Law observes (check_law_state)
 LAW_URL = "https://github.com/ext-sakamoro/ALICE-Law"
 LAW_STATE_SCRIPT = ("scripts", "land_law_state.py")
 # the processes check_law_state starts run in a process group of their own, so a time limit stops
@@ -1694,11 +1692,10 @@ class Lander:
         scripts/land_law_state.py with this repository's own working copy at `sha` as the
         candidate. Exit 0 with its verdict line lands, `state moves: no` and `state moves: yes`
         alike: the script only reports (each repository's own gates decide its landing), and the
-        verdict with the moved counts goes into the landing record. Exit 1 with `state moves: yes`
-        is a Law whose main still records the state (the Law state commit has to land first) and
-        refuses; exit 2 (not computed), an exit without its verdict line, a Law that cannot be
-        cloned, a missing script and a git process or a script past its time limit refuse the
-        landing (LandError, nothing pushed)."""
+        verdict with the moved counts goes into the landing record. Any other exit (not computed),
+        an exit 0 without exactly one verdict line, a Law that cannot be cloned, a missing script
+        and a git process or a script past its time limit refuse the landing (LandError, nothing
+        pushed)."""
         d = tempfile.mkdtemp(prefix="land-law-")
         law = os.path.join(d, "law")
         nothing = f"nothing was pushed to {self.branch}"
@@ -1753,43 +1750,29 @@ class Lander:
             # and the verdict last); only the text quoted in a message is cut, keeping its end
             out = full if len(full) <= 3000 else "...\n" + full[-3000:]
             summary = next((x for x in reversed(full.splitlines()) if x.startswith("land_law_state:")), "")
-            # the exit code counts only with the script's own verdict line: an exit 1 from a
-            # traceback is not a computed move, and an exit 0 that printed nothing is not "unmoved"
+            if p.returncode != 0:
+                raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
+                                f"{p.returncode}, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+            # exit 0 counts only with the script's own verdict line: an exit 0 that printed nothing
+            # is not "unmoved"
             raw = full.splitlines()
             lines = [ln.strip() for ln in raw]
             no, yes = "land_law_state: state moves: no", "land_law_state: state moves: yes"
             said = [v for v in (no, yes) if v in lines]
-            # exit 0 reports either verdict; exit 1 is only ever a move
-            wanted = {0: (no, yes), 1: (yes,)}.get(p.returncode)
-            if wanted is not None and (len(said) != 1 or said[0] not in wanted):
-                expect = " or ".join(f"`{v}`" for v in wanted)
-                got = "both verdicts" if len(said) > 1 else "without"
-                raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
-                                f"{p.returncode} {got} {expect}, Law main {law_sha[:12]}):\n{out}\n{nothing}")
-            if p.returncode == 0 and said == [no]:
+            if len(said) != 1:
+                got = "both verdicts" if said else "without"
+                raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit 0 {got} "
+                                f"`{no}` or `{yes}`, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+            if said == [no]:
                 self.log(f"ALICE-Law state: landing {sha[:7]} does not move it (Law main {law_sha[:12]}) {summary}")
                 self.record.append(f"Law state: unmoved (compared with ALICE-Law main {law_sha})")
                 return
-            if p.returncode == 0:
-                # the moved counts: the indented lines right after the verdict
-                counts = [ln.strip() for ln in itertools.takewhile(lambda x: x.startswith("  "), raw[lines.index(yes) + 1:])]
-                self.log(f"ALICE-Law state: landing {sha[:7]} moves it (reported, Law main {law_sha[:12]}): "
-                         + ("; ".join(counts) or "no counts printed") + f" {summary}")
-                self.record.append(f"Law state: moves, reported (compared with ALICE-Law main {law_sha}): "
-                                   + ("; ".join(counts) or "no counts printed"))
-                return
-            if p.returncode == 1:
-                raise LandError(
-                    f"landing {sha[:7]} moves ALICE-Law's conformance state (compared with Law main {law_sha[:12]}):\n"
-                    f"{out}\n"
-                    f"(the move may also come from another repository's main that Law has not recorded yet; "
-                    f"the output above names the crates that move, and the same --write records them)\n"
-                    f"record the Law state first: in a clone of ALICE-Law at {law_sha[:12]} run\n"
-                    f"  python3 {'/'.join(LAW_STATE_SCRIPT)} --candidate {LAW_CANDIDATE}=<a clone of this "
-                    f"repository>@{sha} --write\n"
-                    f"land that commit on ALICE-Law's main, then run land.py again; {nothing}")
-            raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
-                            f"{p.returncode}, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+            # the moved counts: the indented lines right after the verdict
+            counts = [ln.strip() for ln in itertools.takewhile(lambda x: x.startswith("  "), raw[lines.index(yes) + 1:])]
+            self.log(f"ALICE-Law state: landing {sha[:7]} moves it (reported, Law main {law_sha[:12]}): "
+                     + ("; ".join(counts) or "no counts printed") + f" {summary}")
+            self.record.append(f"Law state: moves, reported (compared with ALICE-Law main {law_sha}): "
+                               + ("; ".join(counts) or "no counts printed"))
         finally:
             shutil.rmtree(d, ignore_errors=True)
 
