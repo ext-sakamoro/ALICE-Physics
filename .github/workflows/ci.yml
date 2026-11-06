@@ -702,6 +702,13 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      # the world's residents: every oracle and the scene digest, printed so the
+      # log shows the bits; the count keeps the suite from disappearing
+      - name: World residents via wasmtime
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+        run: scripts/run_tests.sh analytic_wind_zone_participant=13 -- cargo test --test analytic_wind_zone_participant --target wasm32-wasip1 -- --nocapture
+
   # The published C ABI libraries are built from the facade (alice-physics) so that their
   # names stay alice_physics; the #[no_mangle] functions live in the engine. Release
   # profile, as release.yml builds them: the exported symbols of the cdylib and the
