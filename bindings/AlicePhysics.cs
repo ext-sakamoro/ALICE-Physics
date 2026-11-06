@@ -224,6 +224,7 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern byte alice_physics_body_set_collision_radius(IntPtr world, uint bodyId, double radius);
         [DllImport(DLL)] public static extern uint alice_physics_world_register_material(IntPtr world, double friction, double restitution);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_material(IntPtr world, uint bodyId, uint material);
+        [DllImport(DLL)] public static extern uint alice_physics_world_add_wind_zone(IntPtr world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_magnet(IntPtr world, AliceVec3 position, AliceVec3 moment, double radius, uint material, double chiEff, double saturation, double density);
         [DllImport(DLL)] public static extern byte alice_physics_body_clear_collision_radius(IntPtr world, uint bodyId);
         [DllImport(DLL)] public static extern uint alice_physics_body_add_shaped(IntPtr world, AlicePhysicsShape shape, double density, AliceVec3 position);
@@ -378,6 +379,13 @@ namespace AlicePhysics
             AliceVec3 pos;
             Native.alice_physics_body_get_position(_ptr, bodyId, out pos);
             return pos.ToVector3();
+        }
+
+        /// <summary>Add a wind zone over a box: drag of a wind along direction (normalised), baseSpeed + gustAmplitude*sin(2*pi*gustHz*t) m/s. Part of the world's state. Returns its index, or uint.MaxValue for a bad value.</summary>
+        public uint AddWindZone(Vector3 min, Vector3 max, Vector3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_add_wind_zone(_ptr, AliceVec3.FromVector3(min), AliceVec3.FromVector3(max), AliceVec3.FromVector3(direction), baseSpeed, gustAmplitude, gustHz, airDensity, dragCoefficient, area);
         }
 
         /// <summary>Set body position.</summary>

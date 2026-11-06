@@ -26,6 +26,12 @@
 use crate::math::{Fix128, Vec3Fix};
 use crate::solver::RigidBody;
 
+/// Feed a value's bits to `h`.
+pub(crate) fn hash_fix(h: &mut crate::det_hash::DetHasher, f: Fix128) {
+    core::hash::Hasher::write(h, &f.hi.to_le_bytes());
+    core::hash::Hasher::write(h, &f.lo.to_le_bytes());
+}
+
 /// Shape of the buoyancy zone volume.
 #[derive(Debug, Clone, Copy)]
 pub enum ZoneShape {
@@ -46,6 +52,28 @@ pub enum ZoneShape {
 }
 
 impl ZoneShape {
+    /// Feed the shape's variant and values to `h`: the part of a resident's
+    /// law digest that says where the zone is.
+    pub(crate) fn hash_into(&self, h: &mut crate::det_hash::DetHasher) {
+        match self {
+            Self::Aabb { min, max } => {
+                core::hash::Hasher::write(h, &[0]);
+                for v in [*min, *max] {
+                    hash_fix(h, v.x);
+                    hash_fix(h, v.y);
+                    hash_fix(h, v.z);
+                }
+            }
+            Self::Sphere { centre, radius } => {
+                core::hash::Hasher::write(h, &[1]);
+                hash_fix(h, centre.x);
+                hash_fix(h, centre.y);
+                hash_fix(h, centre.z);
+                hash_fix(h, *radius);
+            }
+        }
+    }
+
     /// True when `point` lies strictly inside the shape.
     #[must_use]
     pub fn contains(&self, point: Vec3Fix) -> bool {

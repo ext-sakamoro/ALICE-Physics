@@ -148,6 +148,53 @@ test("restoreWorld brings back joints that deserializeState drops, with the same
   assert.deepEqual(Array.from(fresh.stateDigest()), Array.from(w.stateDigest()));
 });
 
+// A ball in a steady wind, no gravity, in a world built by withConfig, which keeps 0.99 of the
+// velocity at the end of every frame. Within a frame of length T the drag u' = -c·u² (u = U - v,
+// c = ½ρCdA/m) takes u to u/(1 + c·u·T), so the steady speed is the fixed point of
+// v = 0.99·(U - u/(1 + c·u·T)). Here U = 10 m/s and c = 0.25 /m.
+test("a ball in a wind zone reaches the speed where drag balances the frame damping", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  const ball = w.addDynamicBody(0, 0, 0, 2);
+  assert.equal(w.addWindZone(-1e3, -1e3, -1e3, 1e3, 1e3, 1e3, 1, 0, 0, 10, 0, 0, 1, 1, 1), 0);
+  for (let i = 0; i < 1200; i++) w.step(DT);
+  let want = 0;
+  for (let i = 0; i < 5000; i++) {
+    const u = 10 - want;
+    want = 0.99 * (10 - u / (1 + 0.25 * u * DT));
+  }
+  const [vx, vy, vz] = vel(w, ball);
+  assert.ok(Math.abs(vx - want) < 0.001 * want, `vx ${vx}, want ${want}`);
+  assert.equal(vy, 0);
+  assert.equal(vz, 0);
+});
+
+test("a gusting wind zone rewinds to the same bits through snapshotWorld", () => {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  w.addDynamicBody(0, 5, 0, 1);
+  assert.equal(w.addWindZone(-50, -50, -50, 50, 50, 50, 1, 0, 0.5, 6, 3, 1.5, 1.2, 0.9, 0.4), 0);
+  for (let i = 0; i < 30; i++) w.step(DT);
+  const blob = w.snapshotWorld();
+  const run = () => {
+    for (let i = 0; i < 90; i++) w.step(DT);
+    return [Array.from(w.stateDigest()), Array.from(w.getPositions())];
+  };
+  const first = run();
+  w.restoreWorld(blob);
+  assert.deepEqual(Array.from(w.snapshotWorld()), Array.from(blob));
+  assert.deepEqual(run(), first);
+});
+
+test("a wind zone's arguments are checked and a world without it refuses its snapshot", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  assert.equal(w.addWindZone(1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1), undefined, "inside out");
+  assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1), undefined, "no direction");
+  assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1), undefined, "no air");
+  assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1), 0);
+  const blob = w.snapshotWorld();
+  const plain = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  assert.throws(() => plain.restoreWorld(blob));
+});
+
 test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
   const w = jointedScene();
   const before = Array.from(w.stateDigest());

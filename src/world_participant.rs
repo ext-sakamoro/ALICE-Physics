@@ -58,6 +58,7 @@
 //! | `MEDM` | `0x4d45_444d` | `coupling_medium::DragMedium` |
 //! | `NBDY` | `0x4e42_4459` | `nbody::NBodyParticipant` |
 //! | `VHCL` | `0x5648_434c` | `vehicle::VehicleParticipant` |
+//! | `WNDZ` | `0x574e_445a` | `wind_zone::WindZoneParticipant` |
 //!
 //! # Coupling through ports
 //!

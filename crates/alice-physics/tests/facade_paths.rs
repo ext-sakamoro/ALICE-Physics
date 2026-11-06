@@ -1586,6 +1586,10 @@ use alice_physics::wedge as _;
 use alice_physics::wedge::Wedge as _;
 use alice_physics::wind_zone as _;
 use alice_physics::wind_zone::WindZone as _;
+use alice_physics::wind_zone::WindZoneParticipant as _;
+use alice_physics::wind_zone::WIND_ZONE_OBS_BODIES as _;
+use alice_physics::wind_zone::WIND_ZONE_OBS_TIME as _;
+use alice_physics::wind_zone::WIND_ZONE_PARTICIPANT_KIND as _;
 use alice_physics::world_character as _;
 use alice_physics::world_participant as _;
 use alice_physics::world_participant::check_field_ports as _;
@@ -1870,7 +1874,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1852 paths, checked at compile time
+    // 1855 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

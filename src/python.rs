@@ -493,6 +493,44 @@ impl PyPhysicsWorld {
         binding_api::add_magnet(&mut self.inner, p, m, radius, &mat).ok_or_else(bad)
     }
 
+    /// Add a wind zone: inside the box `min` to `max` a body feels the drag of a wind along
+    /// `direction` (normalised) of `base_speed` plus `gust_amplitude`·sin(2π·`gust_hz`·t) m/s,
+    /// with `air_density` (kg/m³), `drag_coefficient` and reference `area` (m²). The zone is part
+    /// of the world: `snapshot_world` keeps its clock, and `restore_world` needs the same zones
+    /// added in the same order. Returns its index.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Python method: the box, the direction and the wind's values are separate arguments"
+    )]
+    fn add_wind_zone(
+        &mut self,
+        min: (f64, f64, f64),
+        max: (f64, f64, f64),
+        direction: (f64, f64, f64),
+        base_speed: f64,
+        gust_amplitude: f64,
+        gust_hz: f64,
+        air_density: f64,
+        drag_coefficient: f64,
+        area: f64,
+    ) -> PyResult<usize> {
+        let bad = || {
+            PyValueError::new_err("bad wind zone: values must be finite, min not above max, direction not zero, speeds and frequency not negative, density, drag coefficient and area positive")
+        };
+        let args = binding_api::WindZoneArgs {
+            min: binding_api::vec3(min.0, min.1, min.2).ok_or_else(bad)?,
+            max: binding_api::vec3(max.0, max.1, max.2).ok_or_else(bad)?,
+            direction: binding_api::vec3(direction.0, direction.1, direction.2).ok_or_else(bad)?,
+            base_speed,
+            gust_amplitude,
+            gust_hz,
+            air_density,
+            drag_coefficient,
+            area,
+        };
+        binding_api::add_wind_zone(&mut self.inner, &args).ok_or_else(bad)
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     fn clear_collision_radius(&mut self, body_id: usize) -> PyResult<()> {
         self.check_body(body_id)?;
