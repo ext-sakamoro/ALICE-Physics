@@ -726,7 +726,7 @@ axis = "rigid-fluid"
 item = "buoyancy and drag on rigid bodies in a bounded fluid zone (Archimedes force with a submerged fraction, linear and quadratic drag)"
 source = "Archimedes; Newman, Marine Hydrodynamics ch.6; Unity / Godot buoyancy components"
 status = "partial"
-evidence = "src/buoyancy_zone.rs::force_on / tests/analytic_buoyancy_zone_wiring.rs::buoyancy_is_archimedes_with_full_precision_four_thirds_pi / tests/analytic_buoyancy_zone_wiring.rs::light_body_settles_at_the_depth_archimedes_predicts src/force.rs::ForceField の半空間の Buoyancy は深さ比例の力 (体積を見ない)"
+evidence = "src/buoyancy_zone.rs::force_on / tests/analytic_buoyancy_zone_wiring.rs::buoyancy_is_archimedes_with_full_precision_four_thirds_pi / tests/analytic_buoyancy_zone_wiring.rs::light_body_settles_at_the_depth_archimedes_predicts src/force.rs::ForceField の半空間の Buoyancy は深さ比例の力 (体積を見ない) world の参加者としても載る: src/buoyancy_zone.rs::BuoyancyZoneParticipant が substep ごとに body の world の半径で力を staging する (tests/analytic_buoyancy_zone_participant.rs::a_quarter_density_sphere_floats_at_the_cap_root)"
 oracle_candidate = ""
 limitation = "src/buoyancy_zone.rs 'where `V_displaced` is estimated from a spherical body proxy of radius `body_radius`; the exact submerged volume of an arbitrary mesh is out of scope for this module and remains future work.'"
 

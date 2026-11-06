@@ -26,3 +26,4 @@ unreal alice_physics_law_id a 32-byte identifier has no Blueprint type yet; C++ 
 unreal alice_physics_body_set_rotation not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly
 unreal alice_physics_body_set_angular_velocity not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly
 unreal alice_physics_world_add_wind_zone the component exposes no wind zone Blueprint function yet; C++ code calls the C ABI directly
+unreal alice_physics_world_add_buoyancy_zone the component exposes no buoyancy zone Blueprint function yet; C++ code calls the C ABI directly
