@@ -84,7 +84,8 @@ fn cast_ray_hits_a_body_whose_box_leaves_the_range() {
 }
 
 /// `k` of the scaled path: the bits of the largest integer magnitude beyond 29
-/// (a negative value by its one's complement, as the implementation counts it).
+/// (a negative value by its one's complement, as the implementation counts it);
+/// the implementation takes it over `2 · radius + 2` after advancing the ray.
 fn scale_bits_of(values: &[i64]) -> u32 {
     let top = values
         .iter()
@@ -142,8 +143,12 @@ fn raycast_beyond_the_direct_limit_is_within_the_stated_bound_of_exact_closed_fo
                         d[axis] = Fix128::from_int(sign);
                         let w = world_with_sphere_at(center, Fix128::from_int(r * m));
                         let want = Fix128::from_int(l - s * m);
-                        let k = scale_bits_of(&[c[0], c[1], c[2], r * m, l]);
-                        assert!(k > 0, "the case must be beyond the direct limit");
+                        // the scale is chosen from the body's own extent (the ray is advanced first)
+                        let k = scale_bits_of(&[2 * r * m + 2]);
+                        assert!(
+                            k > 0,
+                            "the sphere must be huge, beyond the direct limit by itself"
+                        );
                         let bound = Fix128::from_raw(0, 1u64 << (k + 4)); // 2^(k−60)
                         let hit = w.raycast(
                             Vec3Fix::ZERO,
@@ -168,5 +173,152 @@ fn raycast_beyond_the_direct_limit_is_within_the_stated_bound_of_exact_closed_fo
     assert_eq!(
         digest, FAR_DIGEST,
         "far-query bits moved (checked {checked}, worst error {worst:?})"
+    );
+}
+
+/// Recorded on the first run (every platform must agree).
+const FAR_GEOMETRY_DIGEST: u64 = 0x7c654fa22812aa85;
+
+/// `cast_ray` beyond the direct limit, against the real geometry: each body sits
+/// `l` along an axis (identity rotation), and the ray from the origin along that
+/// axis enters it at an exact integer distance: a box or a wedge-free solid at
+/// `l − extent`, a sphere from a Pythagorean triple as above, a compound's sphere
+/// child at `l − offset − radius`. The analytic shapes must be within `2^(k−60)`;
+/// the torus, which sphere-traces to `2⁻³²` at the scale, within `2^(k−32)`.
+#[test]
+fn cast_ray_beyond_the_direct_limit_is_within_the_stated_bound_of_exact_closed_forms() {
+    use alice_physics_core::collider::Sphere;
+    use alice_physics_core::compound::CompoundShape;
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::shape::Shape;
+
+    let filter = RayFilter::default();
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    let mut checked = 0;
+    let mut worst = Fix128::ZERO;
+    let mut check =
+        |w: &PhysicsWorld, dir: Vec3Fix, l: i64, want: i64, k: u32, slack: u32, what: &str| {
+            let hit = w
+                .cast_ray(Vec3Fix::ZERO, dir, Fix128::from_int(l), &filter)
+                .unwrap_or_else(|| panic!("silent None: {what}"));
+            assert_eq!(hit.body, Some(0), "{what}");
+            let err = (hit.t - Fix128::from_int(want)).abs();
+            // 2^(k + slack − 64)
+            let bound = if k + slack < 64 {
+                Fix128::from_raw(0, 1u64 << (k + slack))
+            } else {
+                Fix128::from_raw(1i64 << (k + slack - 64), 0)
+            };
+            assert!(
+                err <= bound,
+                "{what}: |t − exact| = {err:?} > 2^({k}−{})",
+                64 - slack
+            );
+            if err > worst {
+                worst = err;
+            }
+            fold(&mut digest, hit.t);
+            checked += 1;
+        };
+    for p in [40u32, 50, 56] {
+        let m = 1i64 << p;
+        for l in [1i64 << 61, 1i64 << 62, 3i64 << 60] {
+            for axis in 0..3 {
+                for sign in [1i64, -1] {
+                    let mut c = [0i64; 3];
+                    c[axis] = sign * l;
+                    let center = Vec3Fix::from_int(c[0], c[1], c[2]);
+                    let mut d = [Fix128::ZERO; 3];
+                    d[axis] = Fix128::from_int(sign);
+                    let dir = Vec3Fix::new(d[0], d[1], d[2]);
+                    // the scale is chosen from the geometry's reach (sum of its lengths), and
+                    // for an ellipsoid from its largest radius brought below 2
+                    let k_box = scale_bits_of(&[2 * 10 * m + 2]);
+                    let k_ellipsoid = k_box.max(64 - (4 * m).leading_zeros() - 1);
+                    let k_torus = scale_bits_of(&[2 * 5 * m + 2]);
+                    let k_sphere = scale_bits_of(&[2 * 5 * m + 2]);
+                    let tag = format!("p={p} l={l} axis={axis} sign={sign}");
+                    // a box 3m × 2m × 5m (half extents), entered on the face facing the origin
+                    let mut he = [2 * m, 3 * m, 5 * m];
+                    he.rotate_right(axis);
+                    let mut w = world_with_sphere_at(center, Fix128::from_int(8 * m));
+                    assert!(w.set_body_shape(
+                        0,
+                        &Shape::Box {
+                            half_extents: Vec3Fix::from_int(he[0], he[1], he[2])
+                        }
+                    ));
+                    check(&w, dir, l, l - 2 * m, k_box, 4, &format!("box {tag}"));
+                    // an ellipsoid with radii (4m, 2m, 3m) along the axis
+                    let mut ra = [4 * m, 2 * m, 3 * m];
+                    ra.rotate_right(axis);
+                    let mut w = world_with_sphere_at(center, Fix128::from_int(8 * m));
+                    assert!(w.set_body_shape(
+                        0,
+                        &Shape::Ellipsoid {
+                            radii: Vec3Fix::from_int(ra[0], ra[1], ra[2])
+                        }
+                    ));
+                    check(
+                        &w,
+                        dir,
+                        l,
+                        l - 4 * m,
+                        k_ellipsoid,
+                        4,
+                        &format!("ellipsoid {tag}"),
+                    );
+                    // a torus (its ring in the xz plane): along x or z the outer rim is at
+                    // major + minor = 5m; along y the ray passes through the hole
+                    if axis != 1 {
+                        let mut w = world_with_sphere_at(center, Fix128::from_int(8 * m));
+                        assert!(w.set_body_shape(
+                            0,
+                            &Shape::Torus {
+                                major_radius: Fix128::from_int(4 * m),
+                                minor_radius: Fix128::from_int(m)
+                            }
+                        ));
+                        check(&w, dir, l, l - 5 * m, k_torus, 32, &format!("torus {tag}"));
+                    }
+                    // a compound of ordinary size far away: one sphere child of radius 1
+                    // (a huge child has no finite mass and is refused); the body sits at
+                    // the compound's centre of mass, so the child is centred on the body
+                    let mut off = [0i64; 3];
+                    off[axis] = -sign * 2;
+                    let mut compound = CompoundShape::new();
+                    compound.add_sphere(
+                        Sphere {
+                            center: Vec3Fix::from_int(off[0], off[1], off[2]),
+                            radius: Fix128::ONE,
+                        },
+                        Vec3Fix::ZERO,
+                        QuatFix::IDENTITY,
+                    );
+                    let mut w = PhysicsWorld::new(SolverConfig {
+                        gravity: Vec3Fix::ZERO,
+                        ..SolverConfig::default()
+                    });
+                    let i = w
+                        .add_compound_body(&compound, Fix128::ONE, center)
+                        .expect("valid compound");
+                    assert_eq!(i, 0);
+                    check(&w, dir, l, l - 1, 0, 4, &format!("compound {tag}"));
+                    // the bounding sphere alone, from the triple (3, 4, 5) beside the axis
+                    let mut c2 = c;
+                    c2[(axis + 1) % 3] = 3 * m;
+                    let w = world_with_sphere_at(
+                        Vec3Fix::from_int(c2[0], c2[1], c2[2]),
+                        Fix128::from_int(5 * m),
+                    );
+                    check(&w, dir, l, l - 4 * m, k_sphere, 4, &format!("sphere {tag}"));
+                }
+            }
+        }
+    }
+    assert!(checked >= 200, "compared {checked}");
+    assert_eq!(
+        digest, FAR_GEOMETRY_DIGEST,
+        "far geometry bits moved (checked {checked}, worst error {worst:?})"
     );
 }
