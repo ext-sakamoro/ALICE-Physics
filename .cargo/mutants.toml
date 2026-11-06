@@ -190,6 +190,7 @@ exclude_re = [
     "joint\\.rs:1540:.*replace > with >= in solve_cone_twist_joint",
     "replace \\| with \\^ in Fix128::(sqrt|half|shr_bits|double)$",
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
+    "replace \\| with \\^ in (widening_mul_by_words|limbs_to_u128|divide_limbs|sqrt_step|isqrt_shifted)$",
     "replace \\| with \\^ in select_fix128$",
     "replace \\| with \\^ in (expand_bits|morton_code|BvhNode::leaf)$",
     "bvh\\.rs:539:.*replace \\| with \\^ in LinearBvh::build_recursive",

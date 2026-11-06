@@ -702,6 +702,16 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      # Fix128 takes a different word path on a 32-bit target: its bits against the reference there
+      - name: Build fix128_bit_identity test (wasm32-wasip1)
+        run: cargo test --test fix128_bit_identity --target wasm32-wasip1 --no-run
+
+      - name: Run fix128_bit_identity test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'fix128_bit_identity-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
   # The published C ABI libraries are built from the facade (alice-physics) so that their
   # names stay alice_physics; the #[no_mangle] functions live in the engine. Release
   # profile, as release.yml builds them: the exported symbols of the cdylib and the
