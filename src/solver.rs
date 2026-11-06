@@ -3014,7 +3014,9 @@ impl PhysicsWorld {
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
                 let pos = self.bodies[i].position;
                 let half = Vec3Fix::new(radius, radius, radius);
-                let aabb = crate::collider::AABB::from_center_half(pos, half);
+                // saturating: a box past the range stops at its end instead of wrapping
+                // to the other side, so the body stays a candidate (a query writes no flag)
+                let aabb = crate::collider::AABB::from_center_half_saturating(pos, half).0;
                 primitives.push(crate::bvh::BvhPrimitive {
                     aabb,
                     index: i as u32,
@@ -3079,7 +3081,36 @@ impl PhysicsWorld {
                 Some(Some(r)) => *r,
                 _ => continue,
             };
-            let oc = origin - self.bodies[i].position;
+            let position = self.bodies[i].position;
+            let inputs = [
+                origin.x,
+                origin.y,
+                origin.z,
+                position.x,
+                position.y,
+                position.z,
+                radius,
+                max_distance,
+            ];
+            if !crate::shape_raycast::direct(&inputs) {
+                // beyond 2³⁰ the squares below leave the range: solve at a smaller
+                // scale instead (same roots, see `shape_raycast::scaled_sphere_t`)
+                let k = crate::shape_raycast::scale_bits(&inputs);
+                if let Some(t) = crate::shape_raycast::scaled_sphere_t(
+                    origin,
+                    dir_norm,
+                    position,
+                    radius,
+                    max_distance,
+                    k,
+                ) {
+                    if best.is_none_or(|(_, prev_t)| t < prev_t) {
+                        best = Some((i, t));
+                    }
+                }
+                continue;
+            }
+            let oc = origin - position;
             let b = oc.dot(dir_norm);
             let c = oc.dot(oc) - radius * radius;
             let discriminant = b * b - c;
