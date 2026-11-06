@@ -101,8 +101,26 @@ impl Fix128 {
     }
 
     /// Create from f64 (for initialization only, not deterministic!)
+    ///
+    /// This conversion cannot fail. A value outside the range saturates: from 2^63 up (and `+inf`)
+    /// gives the highest value, 2^63 - 2^-64, and below -2^63 (and `-inf`) gives the lowest, -2^63.
+    /// NaN gives 0: a boundary where a NaN would be an error refuses it before calling this. All of
+    /// this is the same in every build profile.
     #[must_use]
     pub fn from_f64(f: f64) -> Self {
+        const TOP: f64 = 9_223_372_036_854_775_808.0; // 2^63
+        if f >= TOP {
+            return Self {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            };
+        }
+        if f < -TOP {
+            return Self {
+                hi: i64::MIN,
+                lo: 0,
+            };
+        }
         let hi = f as i64; // truncation toward zero
         let frac = f - (hi as f64);
         let abs_frac = frac.abs();

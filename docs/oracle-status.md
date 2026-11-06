@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5933 |
-| 🔴 Red by design | 71 |
+| 🟢 Not ignored (run by CI) | 5941 |
+| 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6030** |
+| **Total** | **6037** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (70)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -44,7 +44,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `editing_the_public_triangles_keeps_queries_consistent` (audit_trimesh.rs) — known defect: AUD-A-S4W2-016: triangles は pub field だが BVH は構築時の AABB のまま。triangles[i] を書き換えると raycast / colli…
 - `escape_index_above_the_24_bit_field_is_not_silently_truncated` (audit_bvh.rs) — known defect: AUD-A-S3W2-011: the escape index is stored in 24 bits and ESCAPE_NONE (u32::MAX) is masked to 0x…
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
-- `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
@@ -152,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5933)
+## 🟢 Not ignored (5941)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -539,6 +538,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_laminate.rs` | 5 |
 | `audit_dangling_joint.rs` | 5 |
 | `audit_solver_bridge_modifier.rs` | 5 |
+| `determinism_from_f64.rs` | 5 |
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
@@ -601,6 +601,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_gpu_bridge.rs` | 3 |
 | `audit_nonunit_quaternion_compound.rs` | 3 |
 | `audit_privacy_noise_secrecy.rs` | 3 |
+| `fix128_bit_identity.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
 | `panic_paths_fault_the_world.rs` | 3 |
