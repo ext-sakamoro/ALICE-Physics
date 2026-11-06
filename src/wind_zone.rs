@@ -24,9 +24,17 @@
 //! integration and streamwise-turbulence spectral models are future
 //! work.
 
-use crate::buoyancy_zone::ZoneShape;
+use crate::buoyancy_zone::{hash_fix, ZoneShape};
+use crate::det_hash::DetHasher;
 use crate::math::{Fix128, Vec3Fix};
-use crate::solver::RigidBody;
+use crate::solver::{BodyType, RigidBody};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
+use core::hash::Hasher;
+
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// Directional wind + turbulent gust volume.
 #[derive(Debug, Clone, Copy)]
@@ -130,6 +138,44 @@ impl WindZone {
         self.aerodynamic_force(wind, velocity)
     }
 
+    /// [`Self::force_on`] with every product and sum checked: `None` when a
+    /// value leaves the range of [`Fix128`] (where `force_on` wraps), and the
+    /// same bits as `force_on` otherwise.
+    #[must_use]
+    pub fn try_force_on(&self, body: &RigidBody, t_s: Fix128) -> Option<Vec3Fix> {
+        if !self.shape.contains(body.position) {
+            return Some(Vec3Fix::ZERO);
+        }
+        let wind = self.try_instantaneous_wind_vector(t_s)?;
+        let relative = wind.checked_sub(body.velocity)?;
+        let half = Fix128::from_ratio(1, 2);
+        let coeff = half
+            .checked_mul(self.air_density_kg_m3)?
+            .checked_mul(self.drag_coefficient)?
+            .checked_mul(self.reference_area_m2)?;
+        if coeff.is_zero() {
+            return Some(Vec3Fix::ZERO);
+        }
+        let k = coeff.sqrt();
+        let scaled = relative.checked_scale(k)?;
+        let scaled_speed_sq = scaled.checked_length_squared()?;
+        if scaled_speed_sq.is_zero() {
+            return Some(Vec3Fix::ZERO);
+        }
+        relative.checked_scale(k.checked_mul(scaled_speed_sq.sqrt())?)
+    }
+
+    /// [`Self::instantaneous_wind_vector`] with every product and sum checked.
+    fn try_instantaneous_wind_vector(&self, t_s: Fix128) -> Option<Vec3Fix> {
+        let base = self.direction.checked_scale(self.base_speed_m_s)?;
+        let two_pi = Fix128::PI * Fix128::from_int(2);
+        let phase = two_pi
+            .checked_mul(self.gust_frequency_hz)?
+            .checked_mul(t_s)?;
+        let gust_scalar = self.turbulence_amplitude.checked_mul(phase.sin())?;
+        base.checked_add(self.direction.checked_scale(gust_scalar)?)
+    }
+
     fn aerodynamic_force(&self, wind_velocity: Vec3Fix, body_velocity: Vec3Fix) -> Vec3Fix {
         let relative = wind_velocity - body_velocity;
         let half = Fix128::from_ratio(1, 2);
@@ -162,6 +208,195 @@ impl WindZone {
         // velocity.
         relative * (k * scaled_speed)
     }
+}
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`WindZoneParticipant`]: the ASCII code `WNDZ`, big endian.
+pub const WIND_ZONE_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"WNDZ"));
+
+/// Observation channel of [`WindZoneParticipant`]: the zone's clock, the time
+/// it has been registered and stepped for (seconds).
+pub const WIND_ZONE_OBS_TIME: u32 = 0;
+
+/// Observation channel of [`WindZoneParticipant`]: how many bodies felt the
+/// zone in the last substep it ran.
+pub const WIND_ZONE_OBS_BODIES: u32 = 1;
+
+/// Payload layout version written by [`WindZoneParticipant`].
+const WIND_ZONE_STATE_VERSION: u32 = 1;
+
+/// `version: u32`, `digest: u64`, the clock (`Fix128`), the body count (`u64`).
+const WIND_ZONE_STATE_LEN: usize = 4 + 8 + 16 + 8;
+
+/// [`WindZone`] as a participant of a [`crate::solver::PhysicsWorld`]: a
+/// bounded wind that pushes the world's dynamic bodies inside every substep.
+///
+/// Register it with `PhysicsWorld::add_participant` and advance the world with
+/// `try_step` (or `try_step_parallel`). In every substep of width `h` it reads
+/// the bodies at the head of the substep and stages, for each dynamic body
+/// with a finite mass whose centre is inside the zone, the force
+/// [`WindZone::force_on`] at the zone's clock `t`, then advances `t` by `h`.
+/// The world adds `F·inv_mass·h` to the velocity before it integrates the
+/// position, so the drag is integrated explicitly: it stays stable while
+/// `2·k·|v_rel|·inv_mass·h < 2` with `k = ½·ρ·C_d·A`.
+///
+/// The clock starts at zero when the participant is built, is part of the
+/// world's state and goes back with a restored snapshot, so a gust is at the
+/// same phase in every replay. Rewind with `snapshotWorld` / `restore_world`:
+/// `serialize_state` keeps the motion of the bodies only and leaves the clock
+/// where it is.
+///
+/// Static and kinematic bodies are left out. A sleeping body is woken by the
+/// world when the force changes its velocity. Every body takes the zone's one
+/// reference area `A` whatever its shape or size.
+///
+/// # Range
+///
+/// A force or clock outside the range of [`Fix128`] makes the substep fail with
+/// [`ParticipantFault::OutOfRange`]: nothing is staged, the participant keeps
+/// its state and the world records the fault.
+///
+/// # Snapshot payload
+///
+/// Little endian, 36 bytes: `version: u32` (1), `digest: u64`, the clock as a
+/// [`Fix128`] (`hi: i64`, `lo: u64`), the number of bodies that felt the zone
+/// (`u64`). The digest is FNV-1a 64 over the zone's shape and values;
+/// [`Participant::check_state`] refuses a payload of another length
+/// ([`StateError::Length`]), version or zone ([`StateError::InvalidValue`]).
+#[derive(Clone, Debug)]
+pub struct WindZoneParticipant {
+    zone: WindZone,
+    digest: u64,
+    time: Fix128,
+    bodies: u64,
+}
+
+impl WindZoneParticipant {
+    /// The participant for `zone`, with its clock at zero.
+    #[must_use]
+    pub fn new(zone: WindZone) -> Self {
+        let mut h = DetHasher::default();
+        zone.shape.hash_into(&mut h);
+        for f in [
+            zone.air_density_kg_m3,
+            zone.direction.x,
+            zone.direction.y,
+            zone.direction.z,
+            zone.base_speed_m_s,
+            zone.turbulence_amplitude,
+            zone.gust_frequency_hz,
+            zone.drag_coefficient,
+            zone.reference_area_m2,
+        ] {
+            hash_fix(&mut h, f);
+        }
+        Self {
+            zone,
+            digest: h.finish(),
+            time: Fix128::ZERO,
+            bodies: 0,
+        }
+    }
+
+    /// The zone it applies.
+    #[must_use]
+    pub fn zone(&self) -> &WindZone {
+        &self.zone
+    }
+
+    /// The zone's clock (seconds).
+    #[must_use]
+    pub fn time(&self) -> Fix128 {
+        self.time
+    }
+}
+
+impl Participant for WindZoneParticipant {
+    fn kind(&self) -> ParticipantKind {
+        WIND_ZONE_PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        // Work the whole substep out first: a value out of range leaves the
+        // world's force buffer and this participant as they were.
+        let next = self
+            .time
+            .checked_add(h)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        let mut staged: Vec<(usize, Vec3Fix)> = Vec::new();
+        let mut bodies = 0u64;
+        for (i, body) in ctx.bodies().iter().enumerate() {
+            if body.body_type != BodyType::Dynamic
+                || body.inv_mass.is_zero()
+                || !self.zone.shape.contains(body.position)
+            {
+                continue;
+            }
+            let force = self
+                .zone
+                .try_force_on(body, self.time)
+                .ok_or(ParticipantFault::OutOfRange)?;
+            staged.push((i, force));
+            bodies += 1;
+        }
+        for (i, force) in staged {
+            ctx.add_force(i, force)
+                .map_err(|_| ParticipantFault::InvalidState)?;
+        }
+        self.time = next;
+        self.bodies = bodies;
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        out.push(WIND_ZONE_OBS_TIME, self.time);
+        out.push(WIND_ZONE_OBS_BODIES, Fix128::from_int(self.bodies as i64));
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&WIND_ZONE_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&self.time.hi.to_le_bytes());
+        out.extend_from_slice(&self.time.lo.to_le_bytes());
+        out.extend_from_slice(&self.bodies.to_le_bytes());
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() != WIND_ZONE_STATE_LEN {
+            return Err(StateError::Length {
+                expected: WIND_ZONE_STATE_LEN,
+                found: bytes.len(),
+            });
+        }
+        if u32_at(bytes, 0) != WIND_ZONE_STATE_VERSION || u64_at(bytes, 4) != self.digest {
+            return Err(StateError::InvalidValue);
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        self.time = Fix128 {
+            hi: u64_at(bytes, 12) as i64,
+            lo: u64_at(bytes, 20),
+        };
+        self.bodies = u64_at(bytes, 28);
+    }
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> u32 {
+    let mut b = [0u8; 4];
+    b.copy_from_slice(&bytes[at..at + 4]);
+    u32::from_le_bytes(b)
+}
+
+fn u64_at(bytes: &[u8], at: usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[at..at + 8]);
+    u64::from_le_bytes(b)
 }
 
 #[cfg(test)]
@@ -287,5 +522,117 @@ mod tests {
         body.velocity = zone.direction * zone.base_speed_m_s;
         let f = zone.force_on(&body, Fix128::ZERO);
         assert_eq!(f, Vec3Fix::ZERO);
+    }
+
+    fn resident() -> WindZoneParticipant {
+        WindZoneParticipant::new(WindZone::light_breeze(wide_aabb()))
+    }
+
+    #[test]
+    fn the_kind_is_the_ascii_code_of_wndz() {
+        assert_eq!(resident().kind(), ParticipantKind::new(0x574e_445a));
+    }
+
+    #[test]
+    fn the_state_round_trips_with_clock_and_count() {
+        let mut a = resident();
+        a.time = Fix128::from_ratio(-7, 3);
+        a.bodies = 5;
+        let mut bytes = Vec::new();
+        a.write_state(&mut bytes);
+        assert_eq!(bytes.len(), WIND_ZONE_STATE_LEN);
+        let mut b = resident();
+        assert_eq!(b.check_state(&bytes), Ok(()));
+        b.read_state(&bytes);
+        assert_eq!(b.time(), a.time());
+        assert_eq!(b.bodies, 5);
+    }
+
+    #[test]
+    fn check_state_refuses_length_version_and_zone() {
+        let a = resident();
+        let mut bytes = Vec::new();
+        a.write_state(&mut bytes);
+        assert_eq!(
+            a.check_state(&bytes[..35]),
+            Err(StateError::Length {
+                expected: 36,
+                found: 35
+            })
+        );
+        let mut wrong_version = bytes.clone();
+        wrong_version[0] ^= 1;
+        assert_eq!(a.check_state(&wrong_version), Err(StateError::InvalidValue));
+        let other = WindZoneParticipant::new(WindZone::storm(wide_aabb()));
+        assert_eq!(other.check_state(&bytes), Err(StateError::InvalidValue));
+    }
+
+    /// Every value of the zone changes the digest a snapshot is checked with.
+    #[test]
+    fn every_value_of_the_zone_is_in_the_digest() {
+        let base = WindZone::light_breeze(wide_aabb());
+        let d = WindZoneParticipant::new(base).digest;
+        let bump = Fix128::from_ratio(1, 1024);
+        let mut changed: Vec<WindZone> = Vec::new();
+        for edit in [
+            |z: &mut WindZone, b: Fix128| z.air_density_kg_m3 = z.air_density_kg_m3 + b,
+            |z: &mut WindZone, b: Fix128| z.direction.x = z.direction.x + b,
+            |z: &mut WindZone, b: Fix128| z.direction.y = z.direction.y + b,
+            |z: &mut WindZone, b: Fix128| z.direction.z = z.direction.z + b,
+            |z: &mut WindZone, b: Fix128| z.base_speed_m_s = z.base_speed_m_s + b,
+            |z: &mut WindZone, b: Fix128| z.turbulence_amplitude = z.turbulence_amplitude + b,
+            |z: &mut WindZone, b: Fix128| z.gust_frequency_hz = z.gust_frequency_hz + b,
+            |z: &mut WindZone, b: Fix128| z.drag_coefficient = z.drag_coefficient + b,
+            |z: &mut WindZone, b: Fix128| z.reference_area_m2 = z.reference_area_m2 + b,
+        ] {
+            let mut z = base;
+            edit(&mut z, bump);
+            changed.push(z);
+        }
+        let mut moved = base;
+        moved.shape = ZoneShape::Sphere {
+            centre: Vec3Fix::ZERO,
+            radius: Fix128::ONE,
+        };
+        changed.push(moved);
+        for (i, z) in changed.into_iter().enumerate() {
+            assert_ne!(WindZoneParticipant::new(z).digest, d, "value {i}");
+        }
+    }
+
+    /// The checked force gives up where the unchecked one would wrap: a wind
+    /// of 2⁶² m/s has no representable relative velocity against a body moving
+    /// the other way at the same speed.
+    #[test]
+    fn the_checked_force_is_none_out_of_range() {
+        let mut zone = WindZone::light_breeze(wide_aabb());
+        zone.turbulence_amplitude = Fix128::ZERO;
+        let huge = Fix128::from_int(1_i64 << 62);
+        zone.base_speed_m_s = huge;
+        let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        body.velocity = Vec3Fix::new(-huge, Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(zone.try_force_on(&body, Fix128::ZERO), None);
+        body.velocity = Vec3Fix::ZERO;
+        assert_eq!(zone.try_force_on(&body, Fix128::ZERO), None);
+    }
+
+    #[test]
+    fn the_checked_force_is_zero_without_coefficient_or_outside() {
+        let mut zone = WindZone::light_breeze(wide_aabb());
+        zone.reference_area_m2 = Fix128::ZERO;
+        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        assert_eq!(zone.try_force_on(&body, Fix128::ZERO), Some(Vec3Fix::ZERO));
+        let zone = WindZone::light_breeze(wide_aabb());
+        let far = RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::from_int(100), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        assert_eq!(zone.try_force_on(&far, Fix128::ZERO), Some(Vec3Fix::ZERO));
+        let mut still = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        let mut calm = WindZone::light_breeze(wide_aabb());
+        calm.base_speed_m_s = Fix128::ZERO;
+        calm.turbulence_amplitude = Fix128::ZERO;
+        still.velocity = Vec3Fix::ZERO;
+        assert_eq!(calm.try_force_on(&still, Fix128::ZERO), Some(Vec3Fix::ZERO));
     }
 }

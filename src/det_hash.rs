@@ -9,7 +9,9 @@
 //! sorts or uses a `BTreeMap`. The fixed hasher removes the OS entropy draw,
 //! which `scripts/entropy_guard.py` and clippy's `disallowed-types` keep out.
 
-use core::hash::{BuildHasherDefault, Hasher};
+use core::hash::Hasher;
+#[cfg(feature = "std")]
+use core::hash::BuildHasherDefault;
 
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -78,6 +80,7 @@ impl Hasher for DetHasher {
 }
 
 /// The build hasher of [`DetHashMap`]
+#[cfg(feature = "std")]
 pub(crate) type DetBuildHasher = BuildHasherDefault<DetHasher>;
 
 /// A `HashMap` whose hasher has no random seed
@@ -86,6 +89,7 @@ pub(crate) type DetBuildHasher = BuildHasherDefault<DetHasher>;
     clippy::disallowed_types,
     reason = "the one place the std HashMap is named, to define the seedless DetHashMap alias that the rest of the crate must use"
 )]
+#[cfg(feature = "std")]
 pub(crate) type DetHashMap<K, V> = std::collections::HashMap<K, V, DetBuildHasher>;
 
 #[cfg(test)]

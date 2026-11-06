@@ -232,6 +232,8 @@ uint32_t alice_physics_world_register_material(AlicePhysicsWorld* world, double 
 uint8_t alice_physics_body_set_material(AlicePhysicsWorld* world, uint32_t body_id, uint32_t material);
 /** Add a permanent magnet (ideal dipole) pulling the bodies of `material`. Returns the force field index or UINT32_MAX. */
 uint32_t alice_physics_world_add_magnet(AlicePhysicsWorld* world, AliceVec3 position, AliceVec3 moment, double radius, uint32_t material, double chi_eff, double saturation, double density);
+/** Add a wind zone over the box min to max: drag of a wind along direction (normalised), base_speed + gust_amplitude*sin(2*pi*gust_hz*t) m/s. Part of the world's state. Returns its index or UINT32_MAX. */
+uint32_t alice_physics_world_add_wind_zone(AlicePhysicsWorld* world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double base_speed, double gust_amplitude, double gust_hz, double air_density, double drag_coefficient, double area);
 /** Drop a body's own collision radius (falls back to the world default). Returns 1 on success. */
 uint8_t alice_physics_body_clear_collision_radius(AlicePhysicsWorld* world, uint32_t body_id);
 /** Add a dynamic body with a shape; mass and inertia from density. Returns body index or UINT32_MAX. */
