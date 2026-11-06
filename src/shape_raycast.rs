@@ -1147,9 +1147,11 @@ fn ray_bilinear_cell(
 /// A static collider. Beyond [`DIRECT_LIMIT`] a plane is met at the scale `2⁻ᵏ`
 /// (one quotient, so the distance is within `2ᵏ⁻⁶⁰` divided by the cosine of
 /// incidence); a height field or a triangle mesh of ordinary size anywhere in
-/// the range is met by advancing the ray to its box first, as a body is. A
-/// height field or mesh whose own extent reaches 2²⁹ is not scaled (its data
-/// would have to be copied per query) and is met with the direct arithmetic.
+/// the range is met by advancing the ray to its box first, as a body is, and
+/// one whose own extent reaches 2²⁹ by a copy of its data at the scale `2⁻ᵏ`
+/// (made for the query; the bound is the body's). An SDF collider marches in
+/// the field's own `f32` from the ray moved into its frame (a `Fix128`
+/// difference), so a far SDF is reached as well, to the field's precision.
 fn ray_static(
     origin: Vec3Fix,
     direction: Vec3Fix,
@@ -1181,21 +1183,77 @@ fn ray_static(
             })
         }
         StaticCollider::HeightField(field) => {
-            let (origin, t0, max_t) = advance_to_box(origin, direction, &field.aabb(), max_t)?;
-            ray_heightfield(origin, direction, field, max_t).map(|h| LocalHit {
+            let aabb = field.aabb();
+            let (origin, t0, max_t) = advance_to_box(origin, direction, &aabb, max_t)?;
+            let k = box_scale_bits(&aabb);
+            let hit = if k == 0 {
+                ray_heightfield(origin, direction, field, max_t)
+            } else {
+                // a huge field: a copy at the scale 2⁻ᵏ (its data, once per query)
+                let scaled = HeightField::new(
+                    field.heights.iter().map(|h| h.shr_bits(k)).collect(),
+                    field.width,
+                    field.depth,
+                    field.spacing.shr_bits(k),
+                    shrink(field.origin, k),
+                );
+                ray_heightfield(shrink(origin, k), direction, &scaled, max_t.shr_bits(k)).map(|h| {
+                    LocalHit {
+                        t: shl_bits(h.t, k),
+                        normal: h.normal,
+                    }
+                })
+            };
+            hit.map(|h| LocalHit {
                 t: t0 + h.t,
                 normal: h.normal,
             })
         }
         StaticCollider::TriMesh(mesh) => {
             let (origin, t0, max_t) = advance_to_box(origin, direction, &mesh.bounds, max_t)?;
-            let ray = Ray { origin, direction };
-            mesh.raycast(&ray, max_t).map(|h| LocalHit {
+            let k = box_scale_bits(&mesh.bounds);
+            let hit = if k == 0 {
+                let ray = Ray { origin, direction };
+                mesh.raycast(&ray, max_t)
+            } else {
+                // a huge mesh: a copy at the scale 2⁻ᵏ (its triangles and their tree,
+                // once per query)
+                let scaled = crate::trimesh::TriMesh::from_triangles(
+                    mesh.triangles
+                        .iter()
+                        .map(|t| {
+                            crate::trimesh::Triangle::new(
+                                shrink(t.v0, k),
+                                shrink(t.v1, k),
+                                shrink(t.v2, k),
+                            )
+                        })
+                        .collect(),
+                );
+                let ray = Ray {
+                    origin: shrink(origin, k),
+                    direction,
+                };
+                scaled
+                    .raycast(&ray, max_t.shr_bits(k))
+                    .map(|h| crate::raycast::RayHit {
+                        t: shl_bits(h.t, k),
+                        ..h
+                    })
+            };
+            hit.map(|h| LocalHit {
                 t: t0 + h.t,
                 normal: h.normal,
             })
         }
     }
+}
+
+/// The scale a static collider inside `aabb` needs by its own extent (0 for an
+/// ordinary size), as [`body_scale_bits`] for a body.
+fn box_scale_bits(aabb: &AABB) -> u32 {
+    let (lo, hi) = (shrink(aabb.min, 1), shrink(aabb.max, 1));
+    body_scale_bits(reach_of(hi - lo))
 }
 
 /// [`advance_to`] for geometry inside `aabb`: unchanged (`t₀ = 0`) when the ray
