@@ -10,6 +10,9 @@
 //   world.Step(1.0 / 60.0);
 //   Vector3 pos = world.GetBodyPosition(bodyId);
 //   world.Dispose();
+//
+// Vector3 holds float: a value float cannot represent (0.6) reaches the engine as
+// its nearest float, so it gives other bits than a caller passing the double 0.6.
 
 using System;
 using System.Runtime.InteropServices;
