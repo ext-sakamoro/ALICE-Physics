@@ -189,6 +189,15 @@ test("a wind zone's arguments are checked and a world without it refuses its sna
   assert.equal(w.addWindZone(1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1), undefined, "inside out");
   assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 1), undefined, "no direction");
   assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1), undefined, "no air");
+  // past the range of the fixed point, on every argument and on either side
+  const good = [0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1];
+  for (let i = 0; i < good.length; i++) {
+    for (const value of [1e19, 1e30, Number.MAX_VALUE, -1e19, -1e30, -Number.MAX_VALUE]) {
+      const p = good.slice();
+      p[i] = value;
+      assert.equal(w.addWindZone(...p), undefined, `argument ${i} = ${value}`);
+    }
+  }
   assert.equal(w.addWindZone(0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1), 0);
   const blob = w.snapshotWorld();
   const plain = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
