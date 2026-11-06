@@ -1371,6 +1371,43 @@ pub unsafe extern "C" fn alice_physics_world_add_wind_zone(
     })
 }
 
+/// Add a box of fluid (`min` to `max`, surface at `max.y`): a body touching it feels the lift of
+/// the volume it displaces, from its collision radius, `density` (kg/m³) and `gravity` (m/s², upward
+/// lift), and the drag `drag_linear`·v + `drag_quadratic`·v·|v|. The zone is part of the world: a
+/// world snapshot keeps it, and a restore needs the same zones added in the same order. Returns its
+/// index, or `u32::MAX` for a null world or a bad value.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_add_buoyancy_zone(
+    world: *mut PhysicsWorld,
+    min: AliceVec3,
+    max: AliceVec3,
+    density: f64,
+    gravity: f64,
+    drag_linear: f64,
+    drag_quadratic: f64,
+) -> u32 {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
+            return u32::MAX;
+        };
+        let (Some(min), Some(max)) = (vec3_arg(&min), vec3_arg(&max)) else {
+            return u32::MAX;
+        };
+        let args = binding_api::BuoyancyZoneArgs {
+            min,
+            max,
+            density,
+            gravity,
+            drag_linear,
+            drag_quadratic,
+        };
+        index_result(binding_api::add_buoyancy_zone(w, &args))
+    })
+}
+
 /// Drop a body's own collision radius; it falls back to the world default.
 /// Returns 1 on success, 0 for a null world or an unknown body.
 ///
@@ -2011,6 +2048,101 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The C call builds the fluid the Rust API builds, every argument with its own value, and a
+    /// bad value registers nothing.
+    #[test]
+    fn buoyancy_zone_through_c_equals_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        let fx = |x: f64, y: f64, z: f64| {
+            Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            )
+        };
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end.
+        unsafe {
+            let c = alice_physics_world_create();
+            // past the range of Fix128, on every argument and on either side
+            let call = |p: &[f64; 10]| {
+                alice_physics_world_add_buoyancy_zone(
+                    c,
+                    AliceVec3 { x: p[0], y: p[1], z: p[2] },
+                    AliceVec3 { x: p[3], y: p[4], z: p[5] },
+                    p[6],
+                    p[7],
+                    p[8],
+                    p[9],
+                )
+            };
+            let good = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5];
+            for i in 0..good.len() {
+                for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN] {
+                    let mut p = good;
+                    p[i] = value;
+                    assert_eq!(call(&p), u32::MAX, "argument {i} = {value}");
+                }
+            }
+            let b = alice_physics_body_add_dynamic(c, v(0.5, 1.0, -0.25), 2.5);
+            let add = |min: AliceVec3, density: f64| {
+                alice_physics_world_add_buoyancy_zone(
+                    c,
+                    min,
+                    v(6.0, 7.0, 8.0),
+                    density,
+                    1.5,
+                    0.75,
+                    0.3,
+                )
+            };
+            assert_eq!(add(v(9.0, -4.0, -5.0), 1.25), u32::MAX);
+            assert_eq!(add(v(-3.0, -4.0, -5.0), 0.0), u32::MAX);
+            assert_eq!(add(v(-3.0, -4.0, -5.0), 1.25), 0);
+            assert_eq!(
+                alice_physics_world_add_buoyancy_zone(
+                    core::ptr::null_mut(),
+                    v(0.0, 0.0, 0.0),
+                    v(1.0, 1.0, 1.0),
+                    1.0,
+                    1.0,
+                    0.0,
+                    0.0
+                ),
+                u32::MAX
+            );
+
+            let mut r = PhysicsWorld::new(SolverConfig::default());
+            r.add_body(RigidBody::new_dynamic(
+                fx(0.5, 1.0, -0.25),
+                Fix128::from_f64(2.5),
+            ));
+            let zone = crate::buoyancy_zone::BuoyancyZone {
+                shape: crate::buoyancy_zone::ZoneShape::Aabb {
+                    min: fx(-3.0, -4.0, -5.0),
+                    max: fx(6.0, 7.0, 8.0),
+                },
+                density_kg_m3: Fix128::from_f64(1.25),
+                gravity: Fix128::from_f64(1.5),
+                drag_linear: Fix128::from_f64(0.75),
+                drag_quadratic: Fix128::from_f64(0.3),
+            };
+            r.add_participant(Box::new(
+                crate::buoyancy_zone::BuoyancyZoneParticipant::new(zone),
+            ))
+            .expect("register");
+            let world = &mut *c;
+            let dt = Fix128::from_ratio(1, 60);
+            for _ in 0..240 {
+                world.step(dt);
+                r.step(dt);
+            }
+            assert_eq!(world.bodies[b as usize].position, r.bodies[0].position);
+            assert_eq!(world.snapshot_world(), r.snapshot_world());
+            alice_physics_world_destroy(c);
+        }
+    }
 
     /// The C call builds the zone the Rust API builds, every argument with its own value, and a
     /// bad value registers nothing.
