@@ -1043,7 +1043,9 @@ impl PhysicsWorld {
             let body = &self.bodies[i];
             let aabb = match collider {
                 Some(c) => c.world_aabb(body.position, body.rotation),
-                None => AABB::from_center_half(body.position, Vec3Fix::new(radius, radius, radius)),
+                None => {
+                    AABB::from_center_half_saturating(body.position, Vec3Fix::new(radius, radius, radius)).0
+                }
             };
             *slot = aabb;
             primitives.push(BvhPrimitive {

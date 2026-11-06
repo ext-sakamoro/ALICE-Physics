@@ -3014,7 +3014,9 @@ impl PhysicsWorld {
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
                 let pos = self.bodies[i].position;
                 let half = Vec3Fix::new(radius, radius, radius);
-                let aabb = crate::collider::AABB::from_center_half(pos, half);
+                // saturating: a box past the range stops at its end instead of wrapping
+                // to the other side, so the body stays a candidate (query path: no flag)
+                let aabb = crate::collider::AABB::from_center_half_saturating(pos, half).0;
                 primitives.push(crate::bvh::BvhPrimitive {
                     aabb,
                     index: i as u32,
