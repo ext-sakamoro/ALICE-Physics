@@ -707,7 +707,7 @@ jobs:
       - name: World residents via wasmtime
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
-        run: scripts/run_tests.sh analytic_wind_zone_participant=13 -- cargo test --test analytic_wind_zone_participant --target wasm32-wasip1 -- --nocapture
+        run: scripts/run_tests.sh analytic_wind_zone_participant=13,analytic_buoyancy_zone_participant=20 -- cargo test --test analytic_wind_zone_participant --test analytic_buoyancy_zone_participant --target wasm32-wasip1 -- --nocapture
 
   # The published C ABI libraries are built from the facade (alice-physics) so that their
   # names stay alice_physics; the #[no_mangle] functions live in the engine. Release

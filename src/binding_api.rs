@@ -8,7 +8,7 @@
 //! that would panic (`add_joint`) or quietly store an unusable value.
 
 #[cfg(feature = "std")]
-use crate::buoyancy_zone::ZoneShape;
+use crate::buoyancy_zone::{BuoyancyZone, BuoyancyZoneParticipant, ZoneShape};
 use crate::electromagnetic::MagneticResponse;
 use crate::force::{ForceField, ForceFieldInstance};
 use crate::heightfield::HeightField;
@@ -247,6 +247,40 @@ pub(crate) fn add_wind_zone(w: &mut PhysicsWorld, a: &WindZoneArgs) -> Option<us
         reference_area_m2: positive(a.area).filter(|v| *v > Fix128::ZERO)?,
     };
     w.add_participant(Box::new(WindZoneParticipant::new(zone)))
+        .ok()
+}
+
+/// The numbers of a box-shaped fluid, in the units of [`BuoyancyZone`].
+#[cfg(feature = "std")]
+pub(crate) struct BuoyancyZoneArgs {
+    pub(crate) min: Vec3Fix,
+    pub(crate) max: Vec3Fix,
+    pub(crate) density: f64,
+    pub(crate) gravity: f64,
+    pub(crate) drag_linear: f64,
+    pub(crate) drag_quadratic: f64,
+}
+
+/// Register a box of fluid as a resident of the world and return its
+/// participant index. The box must not be inside out; the density and the
+/// gravity must be greater than zero and the drag coefficients not negative.
+#[cfg(feature = "std")]
+pub(crate) fn add_buoyancy_zone(w: &mut PhysicsWorld, a: &BuoyancyZoneArgs) -> Option<usize> {
+    if a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z {
+        return None;
+    }
+    let zone = BuoyancyZone {
+        shape: ZoneShape::Aabb {
+            min: a.min,
+            max: a.max,
+        },
+        // positive after the conversion too (1e-300 would become a fixed-point zero)
+        density_kg_m3: positive(a.density).filter(|v| *v > Fix128::ZERO)?,
+        gravity: positive(a.gravity).filter(|v| *v > Fix128::ZERO)?,
+        drag_linear: non_negative(a.drag_linear)?,
+        drag_quadratic: non_negative(a.drag_quadratic)?,
+    };
+    w.add_participant(Box::new(BuoyancyZoneParticipant::new(zone)))
         .ok()
 }
 

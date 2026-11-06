@@ -228,6 +228,61 @@ def test_a_bad_wind_zone_is_refused():
     assert w.add_wind_zone(*box, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0) == 0
 
 
+def _floating():
+    # a ball of radius 1 and half the density of the fluid, whose surface is at y = 0
+    w = ap.PhysicsWorld()
+    ball = w.add_dynamic_body(0.0, 0.25, 0.0, 0.5 * 4.0 * math.pi / 3.0)
+    w.set_collision_radius(ball, 1.0)
+    assert w.add_buoyancy_zone((-1e3, -1e3, -1e3), (1e3, 0.0, 1e3), 1.0, 10.0, 8.0, 0.0) == 0
+    return w, ball
+
+
+def test_a_ball_of_half_the_density_floats_on_its_centre():
+    # m g = rho (V / 2) g: the submerged cap is half the ball with the centre on the surface
+    w, ball = _floating()
+    w.step_n(1.0 / 60.0, 1800)
+    got = w.get_position(ball)
+    assert abs(got[1]) < 1e-3, got
+    assert got[0] == 0.0 and got[2] == 0.0, got
+
+
+def test_a_buoyancy_zone_rewinds_and_is_part_of_the_snapshot():
+    w, _ = _floating()
+    w.step_n(1.0 / 60.0, 30)
+    blob = bytes(w.snapshot_world())
+    w.step_n(1.0 / 60.0, 30)
+    first = bytes(w.snapshot_world())
+    w.restore_world(blob)
+    assert bytes(w.snapshot_world()) == blob
+    w.step_n(1.0 / 60.0, 30)
+    assert bytes(w.snapshot_world()) == first
+    plain = ap.PhysicsWorld()
+    plain.add_dynamic_body(0.0, 0.25, 0.0, 1.0)
+    try:
+        plain.restore_world(blob)
+    except ValueError:
+        return
+    raise AssertionError("a world without the zone took its snapshot")
+
+
+def test_a_bad_buoyancy_zone_is_refused():
+    w = ap.PhysicsWorld()
+    box = ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+    for bad in [
+        ((1.0, 0.0, 0.0), (0.0, 1.0, 1.0), 1.0, 1.0, 0.0, 0.0),
+        (*box, 0.0, 1.0, 0.0, 0.0),
+        (*box, 1.0, 0.0, 0.0, 0.0),
+        (*box, 1.0, 1.0, -1.0, 0.0),
+        (*box, float("nan"), 1.0, 0.0, 0.0),
+    ]:
+        try:
+            w.add_buoyancy_zone(*bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    assert w.add_buoyancy_zone(*box, 1.0, 1.0, 0.0, 0.0) == 0
+
+
 def _pull(chi_eff, saturation):
     # how far a ball of the magnet's material, 6 cm from a magnet along its moment, moves toward
     # it in 0.5 s (no other force acts along x)

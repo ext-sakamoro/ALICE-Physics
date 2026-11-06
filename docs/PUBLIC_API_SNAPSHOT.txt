@@ -1136,6 +1136,7 @@ pub alice_physics_core::buoyancy_zone::BuoyancyZone::shape: alice_physics_core::
 impl alice_physics_core::buoyancy_zone::BuoyancyZone
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZone::force_on(&self, &alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZone::submerged_fraction(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZone::try_force_on(&self, &alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::math::Vec3Fix>
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZone::water_pool(alice_physics_core::buoyancy_zone::ZoneShape) -> Self
 impl core::clone::Clone for alice_physics_core::buoyancy_zone::BuoyancyZone
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZone::clone(&self) -> Self
@@ -1149,6 +1150,34 @@ impl core::marker::Unpin for alice_physics_core::buoyancy_zone::BuoyancyZone
 impl core::marker::UnsafeUnpin for alice_physics_core::buoyancy_zone::BuoyancyZone
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::buoyancy_zone::BuoyancyZone
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::buoyancy_zone::BuoyancyZone
+pub struct alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::bodies_in_fluid(&self) -> u64
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::new(alice_physics_core::buoyancy_zone::BuoyancyZone) -> Self
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::zone(&self) -> &alice_physics_core::buoyancy_zone::BuoyancyZone
+impl alice_physics_core::world_participant::Participant for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::marker::Send for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::marker::Sync for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::marker::Unpin for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub const alice_physics_core::buoyancy_zone::BUOYANCY_ZONE_OBS_BODIES: u32
+pub const alice_physics_core::buoyancy_zone::BUOYANCY_ZONE_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub mod alice_physics_core::bvh
 #[repr(C, align(32))] pub struct alice_physics_core::bvh::BvhNode
 pub alice_physics_core::bvh::BvhNode::aabb_max: [i32; 3]
@@ -4589,6 +4618,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_static_remove(*mut alice_physics_core::solver::PhysicsWorld, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_string_free(*mut std::os::raw::c_char)
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_version() -> *const std::os::raw::c_char
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_buoyancy_zone(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_magnet(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_wind_zone(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, f64, f64, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_body_count(*const alice_physics_core::solver::PhysicsWorld) -> u32
@@ -21232,6 +21262,7 @@ impl<'a> alice_physics_core::world_participant::SubstepCtx<'a>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::add_force(&mut self, usize, alice_physics_core::math::Vec3Fix) -> core::result::Result<(), alice_physics_core::world_participant::AccumulateError>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::add_torque(&mut self, usize, alice_physics_core::math::Vec3Fix) -> core::result::Result<(), alice_physics_core::world_participant::AccumulateError>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::bodies(&self) -> &[alice_physics_core::solver::RigidBody]
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::body_radius(&self, usize) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::field(&self, alice_physics_core::world_participant::PortId) -> core::result::Result<&'a [alice_physics_core::math::Fix128], alice_physics_core::world_participant::FieldAccessError>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::h(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::new(&'a [alice_physics_core::solver::RigidBody], &'a mut alice_physics_core::world_participant::ForceAccumulator, usize, usize, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::world_participant::AccumulateError>
@@ -21239,6 +21270,7 @@ pub fn alice_physics_core::world_participant::SubstepCtx<'a>::sdf_contacts(&self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::stage_field(&mut self, alice_physics_core::world_participant::PortId) -> core::result::Result<&mut [alice_physics_core::math::Fix128], alice_physics_core::world_participant::FieldAccessError>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::substep_index(&self) -> usize
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::substeps(&self) -> usize
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_body_radii(self, &'a [core::option::Option<alice_physics_core::math::Fix128>], alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_fields(self, &'a alice_physics_core::world_participant::FieldBoard, &'a mut alice_physics_core::world_participant::FieldStage, &'a [alice_physics_core::world_participant::Port]) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_sdf_contacts(self, &'a [alice_physics_core::sdf_collider::SdfContact]) -> Self
 impl<'a> core::fmt::Debug for alice_physics_core::world_participant::SubstepCtx<'a>
@@ -21280,6 +21312,16 @@ pub fn alice_physics_core::world_participant::Participant::semantics_id(&self) -
 pub fn alice_physics_core::world_participant::Participant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::world_participant::Participant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::coupling_medium::DragMedium
 pub fn alice_physics_core::coupling_medium::DragMedium::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::coupling_medium::DragMedium::kind(&self) -> alice_physics_core::world_participant::ParticipantKind

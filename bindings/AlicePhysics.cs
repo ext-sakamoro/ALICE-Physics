@@ -227,6 +227,7 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern byte alice_physics_body_set_material(IntPtr world, uint bodyId, uint material);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_wind_zone(IntPtr world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_magnet(IntPtr world, AliceVec3 position, AliceVec3 moment, double radius, uint material, double chiEff, double saturation, double density);
+        [DllImport(DLL)] public static extern uint alice_physics_world_add_buoyancy_zone(IntPtr world, AliceVec3 min, AliceVec3 max, double density, double gravity, double dragLinear, double dragQuadratic);
         [DllImport(DLL)] public static extern byte alice_physics_body_clear_collision_radius(IntPtr world, uint bodyId);
         [DllImport(DLL)] public static extern uint alice_physics_body_add_shaped(IntPtr world, AlicePhysicsShape shape, double density, AliceVec3 position);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_shape(IntPtr world, uint bodyId, AlicePhysicsShape shape);
@@ -387,6 +388,13 @@ namespace AlicePhysics
         {
             ThrowIfDisposed();
             return Native.alice_physics_world_add_wind_zone(_ptr, AliceVec3.FromVector3(min), AliceVec3.FromVector3(max), AliceVec3.FromVector3(direction), baseSpeed, gustAmplitude, gustHz, airDensity, dragCoefficient, area);
+        }
+
+        /// <summary>Add a box of fluid, surface at the top: lift of the volume a body displaces (from its collision radius, density, gravity) and drag dragLinear*v + dragQuadratic*v*|v|. Part of the world: a snapshot keeps it, a restore needs the same zones in the same order. Returns its index, uint.MaxValue for a bad value.</summary>
+        public uint AddBuoyancyZone(Vector3 min, Vector3 max, double density, double gravity, double dragLinear, double dragQuadratic)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_add_buoyancy_zone(_ptr, AliceVec3.FromVector3(min), AliceVec3.FromVector3(max), density, gravity, dragLinear, dragQuadratic);
         }
 
         /// <summary>Set body position.</summary>

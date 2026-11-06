@@ -730,6 +730,41 @@ impl WasmPhysicsWorld {
         binding_api::add_wind_zone(&mut self.inner, &args).and_then(|i| u32::try_from(i).ok())
     }
 
+    /// Add a box of fluid (`min_*` to `max_*`, surface at `max_y`): a body touching it feels the
+    /// lift of the volume it displaces, from its collision radius, `density` (kg/m³) and `gravity`
+    /// (m/s², upward lift), and the drag `drag_linear`·v + `drag_quadratic`·v·|v|. The zone is part
+    /// of the world: `snapshotWorld` keeps it, and `restoreWorld` needs the same zones added in the
+    /// same order. Returns its index, or `undefined` for a bad value.
+    #[cfg(feature = "std")]
+    #[wasm_bindgen(js_name = "addBuoyancyZone")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export cannot take a struct from JS cheaply; the box and the fluid's values are flat numbers"
+    )]
+    pub fn add_buoyancy_zone(
+        &mut self,
+        min_x: f64,
+        min_y: f64,
+        min_z: f64,
+        max_x: f64,
+        max_y: f64,
+        max_z: f64,
+        density: f64,
+        gravity: f64,
+        drag_linear: f64,
+        drag_quadratic: f64,
+    ) -> Option<u32> {
+        let args = binding_api::BuoyancyZoneArgs {
+            min: binding_api::vec3(min_x, min_y, min_z)?,
+            max: binding_api::vec3(max_x, max_y, max_z)?,
+            density,
+            gravity,
+            drag_linear,
+            drag_quadratic,
+        };
+        binding_api::add_buoyancy_zone(&mut self.inner, &args).and_then(|i| u32::try_from(i).ok())
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     #[wasm_bindgen(js_name = "clearCollisionRadius")]
     pub fn clear_collision_radius(&mut self, body_id: usize) -> bool {
@@ -980,6 +1015,79 @@ mod tests {
             Some(0)
         );
         (w, ball)
+    }
+
+    /// The wasm call builds the fluid the Rust API builds: every argument has its own value, a
+    /// body sinks through it, and 240 steps later both worlds are bit-equal.
+    #[test]
+    fn buoyancy_zone_call_equals_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| {
+            Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            )
+        };
+        let mut a = WasmPhysicsWorld::with_config(0.0, -1.5, 0.0, 4, 8);
+        let ball = a.add_dynamic_body(0.5, 1.0, -0.25, 2.5);
+        assert_eq!(
+            a.add_buoyancy_zone(-3.0, -4.0, -5.0, 6.0, 7.0, 8.0, 1.25, 1.5, 0.75, 0.3),
+            Some(0)
+        );
+        let mut b = WasmPhysicsWorld::with_config(0.0, -1.5, 0.0, 4, 8);
+        b.add_dynamic_body(0.5, 1.0, -0.25, 2.5);
+        let zone = crate::buoyancy_zone::BuoyancyZone {
+            shape: crate::buoyancy_zone::ZoneShape::Aabb {
+                min: v(-3.0, -4.0, -5.0),
+                max: v(6.0, 7.0, 8.0),
+            },
+            density_kg_m3: Fix128::from_f64(1.25),
+            gravity: Fix128::from_f64(1.5),
+            drag_linear: Fix128::from_f64(0.75),
+            drag_quadratic: Fix128::from_f64(0.3),
+        };
+        b.inner
+            .add_participant(Box::new(
+                crate::buoyancy_zone::BuoyancyZoneParticipant::new(zone),
+            ))
+            .expect("register");
+        for _ in 0..240 {
+            a.step(1.0 / 60.0);
+            b.step(1.0 / 60.0);
+        }
+        assert_eq!(a.inner.bodies[ball].position, b.inner.bodies[ball].position);
+        assert_eq!(a.inner.bodies[ball].velocity, b.inner.bodies[ball].velocity);
+        assert_eq!(a.snapshot_world(), b.snapshot_world());
+    }
+
+    /// Every argument the binding checks is refused alone, and a refusal registers nothing.
+    #[test]
+    fn a_bad_buoyancy_zone_is_refused() {
+        let good = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5];
+        let call = |w: &mut WasmPhysicsWorld, p: &[f64; 10]| {
+            w.add_buoyancy_zone(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9])
+        };
+        let mut w = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let bad: &[(usize, f64)] = &[
+            (0, f64::NAN),
+            (0, 2.0), // inside out on x
+            (1, 2.0), // inside out on y
+            (2, 2.0), // inside out on z
+            (5, f64::INFINITY),
+            (6, 0.0),
+            (6, 1e-300),
+            (7, 0.0),
+            (7, 1e-300),
+            (8, -1.0),
+            (9, -1.0),
+        ];
+        for &(i, value) in bad {
+            let mut p = good;
+            p[i] = value;
+            assert_eq!(call(&mut w, &p), None, "argument {i} = {value}");
+        }
+        assert_eq!(w.inner.participant_kinds().len(), 0);
+        assert_eq!(call(&mut w, &good), Some(0));
     }
 
     /// The wasm call builds the zone the Rust API builds: every argument has its own value, the

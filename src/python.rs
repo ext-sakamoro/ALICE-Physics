@@ -502,6 +502,34 @@ impl PyPhysicsWorld {
         binding_api::add_wind_zone(&mut self.inner, &args).ok_or_else(bad)
     }
 
+    /// Add a box of fluid (`min` to `max`, surface at the top): a body touching it feels the lift
+    /// of the volume it displaces, from its collision radius, `density` (kg/m³) and `gravity`
+    /// (m/s²), and the drag `drag_linear`·v + `drag_quadratic`·v·|v|. The zone is part of the world:
+    /// `snapshot_world` keeps it, and `restore_world` needs the same zones added in the same order.
+    /// Returns its index.
+    fn add_buoyancy_zone(
+        &mut self,
+        min: (f64, f64, f64),
+        max: (f64, f64, f64),
+        density: f64,
+        gravity: f64,
+        drag_linear: f64,
+        drag_quadratic: f64,
+    ) -> PyResult<usize> {
+        let bad = || {
+            PyValueError::new_err("bad buoyancy zone: values must be finite, min not above max, density and gravity above zero, drag not negative")
+        };
+        let args = binding_api::BuoyancyZoneArgs {
+            min: binding_api::vec3(min.0, min.1, min.2).ok_or_else(bad)?,
+            max: binding_api::vec3(max.0, max.1, max.2).ok_or_else(bad)?,
+            density,
+            gravity,
+            drag_linear,
+            drag_quadratic,
+        };
+        binding_api::add_buoyancy_zone(&mut self.inner, &args).ok_or_else(bad)
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     fn clear_collision_radius(&mut self, body_id: usize) -> PyResult<()> {
         self.check_body(body_id)?;

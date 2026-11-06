@@ -132,6 +132,8 @@ function wide(a) {
   out.magnet = f([id(a.call(w, "addMagnet", 0.3, 0.8, 0, 0, 400, 0, 0.1, mat, 3, 1.7e6, 7850), "addMagnet")]);
   // a wind zone over the scene: a resident, in the snapshot and the digest from here on
   out.wind = f([id(a.call(w, "addWindZone", -9, -9, -9, 9, 9, 9, 1, 0, 0.5, 2, 0.5, 1.5, 1.2, 0.9, 0.3), "addWindZone")]);
+  // a pool under the scene: another resident, its count in the snapshot and the digest
+  out.pool = f([id(a.call(w, "addBuoyancyZone", -9, -9, -9, 9, 0.5, 9, 40, 10, 0.75, 0.3), "addBuoyancyZone")]);
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);

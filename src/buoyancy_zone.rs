@@ -1,6 +1,10 @@
 //! `BuoyancyZone` — 3-D fluid volume that applies buoyancy + drag to
 //! immersed rigid bodies.
 //!
+//! [`BuoyancyZoneParticipant`] is the same law as a resident of the world: it
+//! works inside the substeps, with the world's own radius of each body, and is
+//! in the digest and the snapshot.
+//!
 //! Complements the existing [`crate::force::ForceField::Buoyancy`]
 //! variant (infinite half-space with a horizontal water surface) by
 //! modelling a **bounded** fluid volume with an explicit shape. Two
@@ -23,8 +27,16 @@
 //! radius `body_radius`; the exact submerged volume of an arbitrary
 //! mesh is out of scope for this module and remains future work.
 
+use crate::det_hash::DetHasher;
 use crate::math::{Fix128, Vec3Fix};
-use crate::solver::RigidBody;
+use crate::solver::{BodyType, RigidBody};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
+use core::hash::Hasher;
+
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// Feed a value's bits to `h`.
 pub(crate) fn hash_fix(h: &mut crate::det_hash::DetHasher, f: Fix128) {
@@ -267,6 +279,279 @@ impl BuoyancyZone {
         let three_r_minus_h = Fix128::from_int(3) * radius - h;
         (h * h * three_r_minus_h) / (Fix128::from_int(4) * radius * radius * radius)
     }
+
+    /// [`Self::force_on`] with every product and sum checked: `None` when a
+    /// value leaves the range of [`Fix128`]. In range it is `force_on`, bit for
+    /// bit.
+    #[must_use]
+    pub fn try_force_on(&self, body: &RigidBody, body_radius: Fix128) -> Option<Vec3Fix> {
+        let fraction = self.try_submerged_fraction(body.position, body_radius)?;
+        self.try_force_at(body, body_radius, fraction)
+    }
+
+    /// The force of [`Self::try_force_on`] for an already known fraction.
+    fn try_force_at(
+        &self,
+        body: &RigidBody,
+        body_radius: Fix128,
+        fraction: Fix128,
+    ) -> Option<Vec3Fix> {
+        if fraction.is_zero() {
+            return Some(Vec3Fix::ZERO);
+        }
+        let four_pi_third = Fix128::PI * Fix128::from_int(4) / Fix128::from_int(3);
+        let radius_cubed = body_radius
+            .checked_mul(body_radius)?
+            .checked_mul(body_radius)?;
+        let displaced = four_pi_third
+            .checked_mul(radius_cubed)?
+            .checked_mul(fraction)?;
+        let lift = self
+            .density_kg_m3
+            .checked_mul(displaced)?
+            .checked_mul(self.gravity)?;
+        let buoyancy = Vec3Fix::new(Fix128::ZERO, lift, Fix128::ZERO);
+        let speed_sq = body.velocity.checked_length_squared()?;
+        if speed_sq.is_zero() {
+            return Some(buoyancy);
+        }
+        let linear = body.velocity.checked_scale(-self.drag_linear)?;
+        let quadratic = body
+            .velocity
+            .checked_scale((-self.drag_quadratic).checked_mul(speed_sq.sqrt())?)?;
+        buoyancy.checked_add(linear)?.checked_add(quadratic)
+    }
+
+    /// [`Self::submerged_fraction`] with every product and sum checked: `None`
+    /// when a value leaves the range of [`Fix128`], zero when the sphere does
+    /// not touch the fluid.
+    fn try_submerged_fraction(&self, position: Vec3Fix, radius: Fix128) -> Option<Fix128> {
+        if radius <= Fix128::ZERO {
+            return Some(Fix128::ZERO);
+        }
+        let depth = match self.shape {
+            ZoneShape::Aabb { min, max } => {
+                if position.x < min.x
+                    || position.x > max.x
+                    || position.z < min.z
+                    || position.z > max.z
+                    || position.y < min.y
+                {
+                    return Some(Fix128::ZERO);
+                }
+                max.y.checked_sub(position.y)?
+            }
+            ZoneShape::Sphere {
+                centre,
+                radius: zone_radius,
+            } => {
+                let dx = position.x.checked_sub(centre.x)?;
+                let dz = position.z.checked_sub(centre.z)?;
+                // Further than the radius along one axis is outside, however
+                // far: the squares below need not be representable for that.
+                let reach = zone_radius.abs();
+                if dx.abs() >= reach || dz.abs() >= reach {
+                    return Some(Fix128::ZERO);
+                }
+                let across = dx.checked_mul(dx)?.checked_add(dz.checked_mul(dz)?)?;
+                if across >= zone_radius.checked_mul(zone_radius)?
+                    || position.y < centre.y.checked_sub(zone_radius)?
+                {
+                    return Some(Fix128::ZERO);
+                }
+                centre.y.checked_add(zone_radius)?.checked_sub(position.y)?
+            }
+        };
+        let two_r = radius.checked_add(radius)?;
+        let h = depth.checked_add(radius)?;
+        if h <= Fix128::ZERO {
+            return Some(Fix128::ZERO);
+        }
+        if h >= two_r {
+            return Some(Fix128::ONE);
+        }
+        let three_r_minus_h = Fix128::from_int(3).checked_mul(radius)?.checked_sub(h)?;
+        let four_r_cubed = Fix128::from_int(4)
+            .checked_mul(radius)?
+            .checked_mul(radius)?
+            .checked_mul(radius)?;
+        h.checked_mul(h)?
+            .checked_mul(three_r_minus_h)?
+            .checked_div(four_r_cubed)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`BuoyancyZoneParticipant`]: the ASCII code `BUOY`, big
+/// endian.
+pub const BUOYANCY_ZONE_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"BUOY"));
+
+/// Observation channel of [`BuoyancyZoneParticipant`]: how many bodies touched
+/// the fluid in the last substep it ran.
+pub const BUOYANCY_ZONE_OBS_BODIES: u32 = 0;
+
+/// Payload layout version written by [`BuoyancyZoneParticipant`].
+const BUOYANCY_ZONE_STATE_VERSION: u32 = 1;
+
+/// `version: u32`, `digest: u64`, the body count (`u64`).
+const BUOYANCY_ZONE_STATE_LEN: usize = 4 + 8 + 8;
+
+/// [`BuoyancyZone`] as a participant of a [`crate::solver::PhysicsWorld`]: a
+/// bounded fluid that lifts and drags the world's dynamic bodies inside every
+/// substep.
+///
+/// Register it with `PhysicsWorld::add_participant` and advance the world with
+/// `try_step` (or `try_step_parallel`). In every substep of width `h` it reads
+/// the bodies at the head of the substep and stages, for each dynamic body with
+/// a finite mass that touches the fluid, the force [`BuoyancyZone::force_on`]
+/// with the world's collision radius of that body (the radius given with
+/// `add_body_with_radius` or `set_collision_radius`, else the world's
+/// `sdf_collision_radius`). The drag is integrated explicitly: it stays stable
+/// while `(c_lin + 2·c_quad·|v|)·inv_mass·h < 2`.
+///
+/// The zone's `gravity` is its own value: a fluid that should balance the
+/// world's weight is given the magnitude of the world's gravity.
+///
+/// Static and kinematic bodies are left out. A sleeping body is woken by the
+/// world when the force changes its velocity.
+///
+/// # Range
+///
+/// A force outside the range of [`Fix128`] makes the substep fail with
+/// [`ParticipantFault::OutOfRange`]: nothing is staged, the participant keeps
+/// its state and the world records the fault. A substep context built without
+/// the world's radii fails with [`ParticipantFault::InvalidState`] when a body
+/// is a candidate, since the displaced volume is unknown.
+///
+/// # Snapshot payload
+///
+/// Little endian, 20 bytes: `version: u32` (1), `digest: u64`, the number of
+/// bodies that touched the fluid (`u64`). The digest is FNV-1a 64 over the
+/// zone's shape and values; [`Participant::check_state`] refuses a payload of
+/// another length ([`StateError::Length`]), version or zone
+/// ([`StateError::InvalidValue`]).
+#[derive(Clone, Debug)]
+pub struct BuoyancyZoneParticipant {
+    zone: BuoyancyZone,
+    digest: u64,
+    bodies: u64,
+}
+
+impl BuoyancyZoneParticipant {
+    /// The participant for `zone`.
+    #[must_use]
+    pub fn new(zone: BuoyancyZone) -> Self {
+        let mut h = DetHasher::default();
+        zone.shape.hash_into(&mut h);
+        for f in [
+            zone.density_kg_m3,
+            zone.gravity,
+            zone.drag_linear,
+            zone.drag_quadratic,
+        ] {
+            hash_fix(&mut h, f);
+        }
+        Self {
+            zone,
+            digest: h.finish(),
+            bodies: 0,
+        }
+    }
+
+    /// The zone it applies.
+    #[must_use]
+    pub fn zone(&self) -> &BuoyancyZone {
+        &self.zone
+    }
+
+    /// How many bodies touched the fluid in the last substep it ran.
+    #[must_use]
+    pub fn bodies_in_fluid(&self) -> u64 {
+        self.bodies
+    }
+}
+
+impl Participant for BuoyancyZoneParticipant {
+    fn kind(&self) -> ParticipantKind {
+        BUOYANCY_ZONE_PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _h: Fix128) -> Result<(), ParticipantFault> {
+        // Work the whole substep out first: a value out of range leaves the
+        // world's force buffer and this participant as they were.
+        let mut staged: Vec<(usize, Vec3Fix)> = Vec::new();
+        for (i, body) in ctx.bodies().iter().enumerate() {
+            if body.body_type != BodyType::Dynamic || body.inv_mass.is_zero() {
+                continue;
+            }
+            let radius = ctx.body_radius(i).ok_or(ParticipantFault::InvalidState)?;
+            let fraction = self
+                .zone
+                .try_submerged_fraction(body.position, radius)
+                .ok_or(ParticipantFault::OutOfRange)?;
+            if fraction.is_zero() {
+                continue;
+            }
+            let force = self
+                .zone
+                .try_force_at(body, radius, fraction)
+                .ok_or(ParticipantFault::OutOfRange)?;
+            staged.push((i, force));
+        }
+        let bodies = staged.len() as u64;
+        for (i, force) in staged {
+            ctx.add_force(i, force)
+                .map_err(|_| ParticipantFault::InvalidState)?;
+        }
+        self.bodies = bodies;
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        out.push(
+            BUOYANCY_ZONE_OBS_BODIES,
+            Fix128::from_int(self.bodies as i64),
+        );
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&BUOYANCY_ZONE_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&self.bodies.to_le_bytes());
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() != BUOYANCY_ZONE_STATE_LEN {
+            return Err(StateError::Length {
+                expected: BUOYANCY_ZONE_STATE_LEN,
+                found: bytes.len(),
+            });
+        }
+        if u32_at(bytes, 0) != BUOYANCY_ZONE_STATE_VERSION || u64_at(bytes, 4) != self.digest {
+            return Err(StateError::InvalidValue);
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        self.bodies = u64_at(bytes, 12);
+    }
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> u32 {
+    let mut b = [0u8; 4];
+    b.copy_from_slice(&bytes[at..at + 4]);
+    u32::from_le_bytes(b)
+}
+
+fn u64_at(bytes: &[u8], at: usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[at..at + 8]);
+    u64::from_le_bytes(b)
 }
 
 #[cfg(test)]
