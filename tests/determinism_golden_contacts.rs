@@ -284,8 +284,9 @@ fn determinism_contact_bounce() {
 // (b) Slide: Coulomb friction capped by the normal multiplier
 // ============================================================================
 
-/// **Slide**: a ball resting on the ground launched at `v0 = 3 m/s` along
-/// `x`, `μ = 1/5`, `e = 0`, gravity `(0, −10, 0)`, 120 frames.
+/// **Slide**: a ball that cannot turn (`inv_inertia = 0`) resting on the
+/// ground launched at `v0 = 3 m/s` along `x`, `μ = 1/5`, `e = 0`, gravity
+/// `(0, −10, 0)`, 120 frames.
 ///
 /// Invariants (kinetic friction decelerates at `μ g`):
 /// * at `t = 1 s`: `v = v0 − μ g t = 1 m/s`, `x = v0 t − μ g t² / 2 = 2 m`;
@@ -318,6 +319,9 @@ fn determinism_contact_slide() {
             v3(Fix128::ZERO, fr(1, 2), Fix128::ZERO),
             v3(Fix128::from_int(3), Fix128::ZERO, Fix128::ZERO),
         );
+        // a ball that cannot turn: the closed forms above are those of pure
+        // sliding (a ball with inertia spins up and rolls, see `roll`)
+        w.bodies[ball].inv_inertia = Vec3Fix::ZERO;
         let mut contacts = 0usize;
         for frame in 1..=120 {
             step(&mut w, path);
@@ -346,6 +350,89 @@ fn determinism_contact_slide() {
         );
         assert_no_rotation("contact_slide", &w);
         assert_golden("contact_slide", path, &hash_world(&w), GOLDEN_CONTACT_SLIDE);
+    }
+}
+
+// ============================================================================
+// (b') Roll: friction at the contact point spins the ball up
+// ============================================================================
+
+/// **Roll**: the slide scene with a solid ball (`I = 2/5 m r²`, `r = 1/2`):
+/// `v0 = 3 m/s`, `μ = 1/5`, `e = 0`, 120 frames.
+///
+/// Invariants (kinetic friction at the contact point decelerates the centre
+/// at `μ g` and spins the ball up at `5 μ g / (2 r)` until it rolls):
+/// * the ball rolls from `t* = 2 v0 / (7 μ g) = 3/7 s` on at `v = 5 v0 / 7`
+///   with `v = −ω_z r`;
+/// * at `t = 1 s` and `t = 2 s`: `v = 15/7 m/s`, `|v + ω_z r| < 1e-3`,
+///   `x = v0 t* − μ g t*² / 2 + v (t − t*)`;
+/// * the ball has turned about `z` only.
+///
+/// Budget: `2 μ g h` on `v` as in `slide`, plus the slip the velocity
+/// derivation leaves (`≤ 1e-3`); `2e-2` on `x`.
+const GOLDEN_CONTACT_ROLL: &str =
+    "8f718f5f75c8082bb4ed61a17ed8fc83eca7df6e10854e9dc612547685dc32dd";
+
+#[test]
+fn determinism_contact_roll() {
+    let (g, mu, v0) = (10.0, 0.2, 3.0);
+    let t_star = 2.0 * v0 / (7.0 * mu * g);
+    let v_roll = 5.0 * v0 / 7.0;
+    let x_at = |t: f64| v0 * t_star - mu * g * t_star * t_star / 2.0 + v_roll * (t - t_star);
+    for path in paths() {
+        let (mut w, id) = world_with_ground(
+            v3(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
+            fr(1, 5),
+            Fix128::ZERO,
+        );
+        let ball = add_ball(
+            &mut w,
+            id,
+            v3(Fix128::ZERO, fr(1, 2), Fix128::ZERO),
+            v3(Fix128::from_int(3), Fix128::ZERO, Fix128::ZERO),
+        );
+        // I = 2/5 m r² with m = 1, r = 1/2: inv_inertia = 10
+        w.bodies[ball].inv_inertia = v3(
+            Fix128::from_int(10),
+            Fix128::from_int(10),
+            Fix128::from_int(10),
+        );
+        let mut contacts = 0usize;
+        for frame in 1..=120 {
+            step(&mut w, path);
+            contacts += w.contact_constraints.len();
+            if frame == 60 || frame == 120 {
+                let t = frame as f64 / 60.0;
+                let b = &w.bodies[ball];
+                let (x, v, wr) = (
+                    b.position.x.to_f64(),
+                    b.velocity.x.to_f64(),
+                    b.angular_velocity.z.to_f64() / 2.0,
+                );
+                println!(
+                    "{path:?}: t={t} x {x:.6} ({:.6}), v {v:.6} ({v_roll:.6}), ω_z r {wr:.6}",
+                    x_at(t)
+                );
+                assert!(
+                    (v - v_roll).abs() < 2.0 * mu * g * h() + 1e-3
+                        && (v + wr).abs() < 1e-3
+                        && (x - x_at(t)).abs() < 2e-2,
+                    "{path:?}: t = {t} s: x {x:.6} / {:.6}, v {v:.6} / {v_roll:.6}, ω_z r {wr:.6}",
+                    x_at(t)
+                );
+            }
+        }
+        assert!(contacts > 0, "{path:?}: no contact was generated");
+        let b = &w.bodies[ball];
+        assert!(
+            b.angular_velocity.x.is_zero()
+                && b.angular_velocity.y.is_zero()
+                && b.rotation.x.is_zero()
+                && b.rotation.y.is_zero()
+                && !b.angular_velocity.z.is_zero(),
+            "{path:?}: the ball must turn about z only"
+        );
+        assert_golden("contact_roll", path, &hash_world(&w), GOLDEN_CONTACT_ROLL);
     }
 }
 
@@ -489,9 +576,11 @@ fn determinism_contact_stack() {
 ///   tilt `3e-6` at `x = 3`).
 ///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
-/// solve did not move (`v = v_pred + Δx_corr / h`).
+/// solve did not move (`v = v_pred + Δx_corr / h`), and again when the
+/// contact friction began acting at the contact point (the kept ball's
+/// bounces on the tilted ground leave it a spin of `1e-7`).
 const GOLDEN_CONTACT_VETO: &str =
-    "cf1a50cd1de2b13ddf8e8b067f44a878c73f327dd3788102831369776117fb0d";
+    "a359c51d79716028c0d55c9b53a4ab0d45854519b6aa2461c2b30a928246665e";
 
 #[test]
 fn determinism_contact_veto() {
@@ -549,7 +638,25 @@ fn determinism_contact_veto() {
             (y - 0.5).abs() < 1e-3 && v < 2.0 * g * h() && (x - 3.0).abs() < 1e-4,
             "{path:?}: kept ball not at rest: ({x:.6}, {y:.6}), |v| {v:.3e}"
         );
-        assert_no_rotation("contact_veto", &w);
+        // the vetoed ball never touched anything; the kept ball bounced on
+        // the ground sphere, whose surface at `x = 3` is tilted by `3e-4`,
+        // so the friction at the contact point left it a trace of spin
+        let b = &w.bodies[vetoed];
+        assert!(
+            b.angular_velocity.length_squared().is_zero()
+                && b.rotation.x.is_zero()
+                && b.rotation.y.is_zero()
+                && b.rotation.z.is_zero()
+                && b.rotation.w == Fix128::ONE,
+            "{path:?}: the vetoed ball turned"
+        );
+        let b = &w.bodies[kept];
+        let spin = b.angular_velocity.length().to_f64();
+        assert!(
+            spin < 1e-6 && b.rotation.z.to_f64().abs() < 1e-6,
+            "{path:?}: kept ball spin {spin:.3e}, rotation z {:.3e}",
+            b.rotation.z.to_f64()
+        );
         assert_golden("contact_veto", path, &hash_world(&w), GOLDEN_CONTACT_VETO);
     }
 }
