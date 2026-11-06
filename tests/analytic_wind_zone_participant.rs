@@ -516,8 +516,12 @@ const GUST_TGS: &str = "f1210801fd56774d3791be7c8a53588f46e63b97839528374610ec6e
 /// and on wasm32, so the bits are the same everywhere.
 #[test]
 fn gust_scene_digest_is_pinned() {
-    assert_eq!(gust_digest(SolverBackend::Xpbd), GUST_XPBD);
-    assert_eq!(gust_digest(SolverBackend::Tgs), GUST_TGS);
+    let xpbd = gust_digest(SolverBackend::Xpbd);
+    let tgs = gust_digest(SolverBackend::Tgs);
+    println!("gust digest xpbd {xpbd}");
+    println!("gust digest tgs {tgs}");
+    assert_eq!(xpbd, GUST_XPBD);
+    assert_eq!(tgs, GUST_TGS);
 }
 
 /// oracle (parallel): `try_step_parallel` gives the same blob on 1, 2 and 8
