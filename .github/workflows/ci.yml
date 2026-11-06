@@ -702,6 +702,15 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      - name: Build determinism_from_f64 test (wasm32-wasip1)
+        run: cargo test --test determinism_from_f64 --target wasm32-wasip1 --no-run
+
+      - name: Run determinism_from_f64 test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'determinism_from_f64-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
       # Fix128 takes a different word path on a 32-bit target: its bits against the reference there
       - name: Build fix128_bit_identity test (wasm32-wasip1)
         run: cargo test --test fix128_bit_identity --target wasm32-wasip1 --no-run

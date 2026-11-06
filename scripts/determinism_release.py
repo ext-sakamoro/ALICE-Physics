@@ -38,6 +38,7 @@ TEST_BINARIES = (
     "determinism_physics2d_step_digest",
     "determinism_cloth_step_digest",
     "determinism_golden_coverage",
+    "determinism_from_f64",
 )
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 RESULT_RE = re.compile(r"^test result: (ok|FAILED)\. (\d+) passed", re.M)
