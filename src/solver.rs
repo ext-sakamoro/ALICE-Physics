@@ -3216,6 +3216,27 @@ impl PhysicsWorld {
                 _ => continue,
             };
             let position = self.bodies[i].position;
+            // the ray/sphere test with the arithmetic it always had
+            let sphere_t = |origin: Vec3Fix, max_distance: Fix128| -> Option<Fix128> {
+                let oc = origin - position;
+                let b = oc.dot(dir_norm);
+                let c = oc.dot(oc) - radius * radius;
+                let discriminant = b * b - c;
+                if discriminant < Fix128::ZERO {
+                    return None;
+                }
+                let sqrt_d = discriminant.sqrt();
+                // Try the nearest intersection first
+                let mut t = -b - sqrt_d;
+                // If nearest t is behind origin, try the far intersection (ray inside sphere)
+                if t < Fix128::ZERO {
+                    t = -b + sqrt_d;
+                }
+                if t < Fix128::ZERO || t > max_distance {
+                    return None;
+                }
+                Some(t)
+            };
             let inputs = [
                 origin.x,
                 origin.y,
@@ -3226,41 +3247,34 @@ impl PhysicsWorld {
                 radius,
                 max_distance,
             ];
-            if !crate::shape_raycast::direct(&inputs) {
-                // beyond 2³⁰ the squares below leave the range: solve at a smaller
-                // scale instead (same roots, see `shape_raycast::scaled_sphere_t`)
-                let k = crate::shape_raycast::scale_bits(&inputs);
-                if let Some(t) = crate::shape_raycast::scaled_sphere_t(
+            let t = if crate::shape_raycast::direct(&inputs) {
+                sphere_t(origin, max_distance)
+            } else {
+                // beyond 2³⁰ the squares leave the range: advance the ray to the
+                // sphere, then test from there, at a smaller scale if the sphere
+                // itself is huge (see the range notes in `shape_raycast`)
+                let Some((near, t0, reach)) = crate::shape_raycast::advance_to(
                     origin,
                     dir_norm,
                     position,
                     radius,
                     max_distance,
-                    k,
-                ) {
-                    if best.is_none_or(|(_, prev_t)| t < prev_t) {
-                        best = Some((i, t));
-                    }
-                }
+                ) else {
+                    continue;
+                };
+                let k = crate::shape_raycast::body_scale_bits(radius);
+                let t = if k == 0 {
+                    sphere_t(near, reach)
+                } else {
+                    crate::shape_raycast::scaled_sphere_t(
+                        near, dir_norm, position, radius, reach, k,
+                    )
+                };
+                t.map(|t| t0 + t)
+            };
+            let Some(t) = t else {
                 continue;
-            }
-            let oc = origin - position;
-            let b = oc.dot(dir_norm);
-            let c = oc.dot(oc) - radius * radius;
-            let discriminant = b * b - c;
-            if discriminant < Fix128::ZERO {
-                continue;
-            }
-            let sqrt_d = discriminant.sqrt();
-            // Try the nearest intersection first
-            let mut t = -b - sqrt_d;
-            // If nearest t is behind origin, try the far intersection (ray inside sphere)
-            if t < Fix128::ZERO {
-                t = -b + sqrt_d;
-            }
-            if t < Fix128::ZERO || t > max_distance {
-                continue;
-            }
+            };
             let dominated = match best {
                 None => true,
                 Some((_, prev_t)) => t < prev_t,
