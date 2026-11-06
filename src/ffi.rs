@@ -2537,6 +2537,7 @@ mod tests {
             // NaN / infinite dt is clamped by Fix128::from_f64, not a panic
             assert_eq!(alice_physics_world_step(world, f64::NAN), 1);
             assert_eq!(alice_physics_world_step(world, f64::INFINITY), 1);
+            assert_eq!(alice_physics_world_step(world, f64::NEG_INFINITY), 1);
             // garbage state
             let junk = [0xFFu8; 13];
             assert_eq!(alice_physics_state_deserialize(world, junk.as_ptr(), 13), 0);

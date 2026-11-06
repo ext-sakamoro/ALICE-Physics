@@ -899,7 +899,7 @@ axis = "representation"
 item = "f64 <-> Fix128 conversion"
 source = "IEEE 754 binary64"
 status = "implemented+oracle"
-evidence = "src/math.rs::Fix128 / tests/audit_math.rs::f64_and_f32_conversions / known defect: tests/audit_math.rs::from_f64_non_finite_and_out_of_range_are_not_silently_plausible / known defect: tests/audit_math.rs::to_f64_is_relatively_accurate_for_small_negative_values"
+evidence = "src/math.rs::Fix128 / tests/audit_math.rs::f64_and_f32_conversions / tests/determinism_from_f64.rs::below_the_range_is_the_lowest_value / tests/determinism_from_f64.rs::nan_is_zero / known defect: tests/audit_math.rs::to_f64_is_relatively_accurate_for_small_negative_values"
 oracle_candidate = ""
 limitation = ""
 
