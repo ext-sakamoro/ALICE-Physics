@@ -322,3 +322,147 @@ fn cast_ray_beyond_the_direct_limit_is_within_the_stated_bound_of_exact_closed_f
         "far geometry bits moved (checked {checked}, worst error {worst:?})"
     );
 }
+
+/// Recorded on the first run (every platform must agree).
+const FAR_STATIC_DIGEST: u64 = 0xfcaa5358552c39e5;
+
+/// Static colliders beyond the direct limit: a plane whose offset is far, a plane
+/// hit from a far origin, and a flat height field and a triangle mesh of ordinary
+/// size placed far along an axis, hit from straight above. Every distance has an
+/// exact integer closed form; a plane must be within `2^(k−60)` (unit incidence
+/// here), a field or mesh of ordinary size within `2⁻⁶⁰` whatever its distance.
+#[test]
+fn cast_ray_beyond_the_direct_limit_meets_static_colliders_within_the_stated_bound() {
+    use alice_physics_core::heightfield::HeightField;
+    use alice_physics_core::plane_collider::PlaneCollider;
+    use alice_physics_core::static_collider::StaticCollider;
+    use alice_physics_core::trimesh::TriMesh;
+
+    let filter = RayFilter::default();
+    let mut digest = 0xcbf2_9ce4_8422_2325u64;
+    let mut checked = 0;
+    let mut check = |w: &PhysicsWorld,
+                     origin: Vec3Fix,
+                     dir: Vec3Fix,
+                     reach: i64,
+                     want: i64,
+                     k: u32,
+                     what: &str| {
+        let hit = w
+            .cast_ray(origin, dir, Fix128::from_int(reach), &filter)
+            .unwrap_or_else(|| panic!("silent None: {what}"));
+        assert_eq!(hit.body, None, "{what}");
+        let err = (hit.t - Fix128::from_int(want)).abs();
+        let bound = Fix128::from_raw(0, 1u64 << (k + 4)); // 2^(k−60)
+        assert!(err <= bound, "{what}: |t − exact| = {err:?} > 2^({k}−60)");
+        fold(&mut digest, hit.t);
+        checked += 1;
+    };
+    let new_world = || {
+        PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        })
+    };
+    for l in [1i64 << 40, 1i64 << 61, 1i64 << 62, 3i64 << 60] {
+        for axis in 0..3 {
+            for sign in [1i64, -1] {
+                let mut n = [0i64; 3];
+                n[axis] = sign;
+                let dir = Vec3Fix::from_int(n[0], n[1], n[2]);
+                let tag = format!("l={l} axis={axis} sign={sign}");
+                // a plane far along the axis, facing the origin: t = l exactly
+                let mut w = new_world();
+                w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+                    dir,
+                    Fix128::from_int(l),
+                )));
+                let k = scale_bits_of(&[l, l + 1]);
+                check(
+                    &w,
+                    Vec3Fix::ZERO,
+                    dir,
+                    l + 1,
+                    l,
+                    k,
+                    &format!("far plane {tag}"),
+                );
+                // the ground plane hit from a far origin 2^20 above it
+                let mut p = [0i64; 3];
+                p[axis] = sign * l;
+                p[(axis + 1) % 3] = 1 << 20;
+                let mut down = [0i64; 3];
+                down[(axis + 1) % 3] = -1;
+                let (origin, down) = (
+                    Vec3Fix::from_int(p[0], p[1], p[2]),
+                    Vec3Fix::from_int(down[0], down[1], down[2]),
+                );
+                let mut nn = [0i64; 3];
+                nn[(axis + 1) % 3] = 1;
+                let mut w = new_world();
+                w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+                    Vec3Fix::from_int(nn[0], nn[1], nn[2]),
+                    Fix128::ZERO,
+                )));
+                let k = scale_bits_of(&[l, 1 << 21]);
+                check(
+                    &w,
+                    origin,
+                    down,
+                    1 << 21,
+                    1 << 20,
+                    k,
+                    &format!("ground plane from far {tag}"),
+                );
+                // a flat height field (y = 0) of 5 × 5 points, spacing 1, around the far
+                // point in the xz plane, hit from 2^20 above: only when "above" is y
+                if (axis + 1) % 3 == 1 {
+                    let mut fo = [0i64; 3];
+                    fo[axis] = sign * l - 2;
+                    fo[2] = -2;
+                    let field = HeightField::new(
+                        vec![Fix128::ZERO; 25],
+                        5,
+                        5,
+                        Fix128::ONE,
+                        Vec3Fix::from_int(fo[0], fo[1], fo[2]),
+                    );
+                    let mut w = new_world();
+                    w.add_static_collider(StaticCollider::HeightField(field));
+                    check(
+                        &w,
+                        origin,
+                        down,
+                        1 << 21,
+                        1 << 20,
+                        0,
+                        &format!("far field {tag}"),
+                    );
+                    // two triangles making the square [l−2, l+2] × [−2, 2] at y = 0
+                    let v = |x: i64, z: i64| Vec3Fix::from_int(x, 0, z);
+                    let (x0, x1) = (sign * l - 2, sign * l + 2);
+                    let mesh = TriMesh::from_indexed(
+                        &[v(x0, -2), v(x1, -2), v(x1, 2), v(x0, 2)],
+                        &[0, 1, 2, 0, 2, 3],
+                    );
+                    let mut w = new_world();
+                    w.add_static_collider(StaticCollider::TriMesh(mesh));
+                    check(
+                        &w,
+                        origin,
+                        down,
+                        1 << 21,
+                        1 << 20,
+                        0,
+                        &format!("far mesh {tag}"),
+                    );
+                }
+            }
+        }
+    }
+    assert!(checked >= 40, "compared {checked}");
+    assert_eq!(
+        digest, FAR_STATIC_DIGEST,
+        "far static bits moved (checked {checked})"
+    );
+}
