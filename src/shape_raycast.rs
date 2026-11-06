@@ -102,6 +102,98 @@ const TORUS_MAX_STEPS: usize = 512;
 /// Newton steps on the torus quartic after sphere tracing.
 const TORUS_NEWTON_STEPS: usize = 4;
 
+// ---------------------------------------------------------------- range
+//
+// A query whose inputs are all below `DIRECT_LIMIT` (2³⁰) in magnitude is computed
+// with the arithmetic it always had, bit for bit. Above that, every product of
+// the ray/sphere test can leave the `Fix128` range (`2³⁰ · 2³⁰ · 3` already
+// reaches 2⁶¹·…, and a position at 2⁶² squares to 2¹²⁴, which `Mul` wraps to 0),
+// so the inputs are first scaled by `2⁻ᵏ` (an exact shift of the raw bits, see
+// [`scale_bits`]) to below 2²⁹, solved there, and the distance is scaled back.
+//
+// Error: every scaled operand is floored to 2⁻⁶⁴ scaled units = 2ᵏ⁻⁶⁴ world
+// units, and the quadratic's rounding is a few units of that, so for a ray that
+// is not grazing (scaled discriminant at least 1, an entry at least 2ᵏ from a
+// tangency) the distance is within `2ᵏ⁻⁶⁰` of the exact value
+// (`tests/analytic_query_box_range.rs` checks this against exact integer
+// closed forms). A grazing ray loses up to the same amount divided by the square
+// root of its scaled discriminant, as the direct path does with its own
+// rounding. Only `Fix128` integer arithmetic is used, so the result is the same
+// bits on every platform, as the direct path is.
+
+/// Inputs below this in magnitude take the direct (unchanged) arithmetic: 2³⁰.
+pub(crate) const DIRECT_LIMIT: Fix128 = Fix128 { hi: 1 << 30, lo: 0 };
+
+/// Whether every value is below [`DIRECT_LIMIT`] in magnitude.
+pub(crate) fn direct(values: &[Fix128]) -> bool {
+    values
+        .iter()
+        .all(|v| v.hi > -(1 << 30) && *v < DIRECT_LIMIT)
+}
+
+/// The number of bits `k` such that every value shifted right by `k` is below
+/// 2²⁹ in magnitude (0 when they already are). The shift is exact on the raw
+/// bits, so a value and its scaled copy agree to 2ᵏ⁻⁶⁴.
+pub(crate) fn scale_bits(values: &[Fix128]) -> u32 {
+    let top = values
+        .iter()
+        .map(|v| {
+            // bits of the integer part's magnitude (a negative value by its
+            // one's complement, which bounds it from above)
+            let m = if v.hi < 0 { !v.hi } else { v.hi };
+            64 - m.leading_zeros()
+        })
+        .max()
+        .unwrap_or(0);
+    top.saturating_sub(29)
+}
+
+/// `v · 2ᵏ`: the exact inverse of `v.shr_bits(k)` for a value that fits.
+pub(crate) fn shl_bits(v: Fix128, k: u32) -> Fix128 {
+    if k == 0 {
+        return v;
+    }
+    let raw = ((i128::from(v.hi)) << 64) | i128::from(v.lo);
+    let out = raw << k;
+    Fix128::from_raw((out >> 64) as i64, out as u64)
+}
+
+/// The nearest distance along the unit `direction` at which the ray from
+/// `origin` meets the solid sphere `(center, radius)`, within `max_t`, computed
+/// at the scale `2⁻ᵏ` (`k` from [`scale_bits`] over the inputs): the ray/sphere
+/// test of [`PhysicsWorld::raycast`] for inputs beyond [`DIRECT_LIMIT`]. A ray
+/// starting inside reports the far intersection, as the direct test does.
+pub(crate) fn scaled_sphere_t(
+    origin: Vec3Fix,
+    direction: Vec3Fix,
+    center: Vec3Fix,
+    radius: Fix128,
+    max_t: Fix128,
+    k: u32,
+) -> Option<Fix128> {
+    // shift before subtracting: `origin - center` itself may not fit
+    let shrink = |v: Vec3Fix| Vec3Fix::new(v.x.shr_bits(k), v.y.shr_bits(k), v.z.shr_bits(k));
+    let oc = shrink(origin) - shrink(center);
+    let r = radius.shr_bits(k);
+    let max_s = max_t.shr_bits(k);
+    let b = oc.dot(direction);
+    let c = oc.dot(oc) - r * r;
+    let discriminant = b * b - c;
+    if discriminant < Fix128::ZERO {
+        return None;
+    }
+    let sqrt_d = discriminant.sqrt();
+    let mut t = -b - sqrt_d;
+    if t < Fix128::ZERO {
+        t = -b + sqrt_d;
+    }
+    if t < Fix128::ZERO || t > max_s {
+        return None;
+    }
+    // t ≤ max_s = floor(max_t / 2ᵏ), so t · 2ᵏ ≤ max_t fits
+    Some(shl_bits(t, k))
+}
+
 /// The first crossing of a ray with one piece of geometry: the distance along the
 /// unit direction and the normal there (unit, see the module conventions).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
