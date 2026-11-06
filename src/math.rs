@@ -229,49 +229,26 @@ impl Fix128 {
 
     /// Square root, exact floor: `floor(sqrt(self))` in I64F64.
     ///
-    /// Restoring digit-recurrence (one result bit per step) on the 192-bit
-    /// radicand `self << 64`, 96 fixed steps, so the result is the largest
-    /// `r` with `r * r <= self` — bit-identical on every platform and to the
-    /// pre-1.2.0 Newton-Raphson implementation (verified over 20 000 samples
-    /// plus edge values in `tests::sqrt_matches_newton_reference`).
+    /// The integer square root of the 192-bit radicand `self << 64`, so the result
+    /// is the largest `r` with `r * r <= self` — bit-identical on every platform and
+    /// to the digit recurrence it replaced (`tests/fix128_bit_identity.rs`) and the
+    /// Newton-Raphson implementation before that (`tests::sqrt_matches_newton_reference`).
     ///
-    /// Before 1.2.0 this ran 64 Newton iterations, each calling the 64-step
-    /// long division, ≈ 4 096 inner steps per call (≈ 10 µs); 3-5 iterations
-    /// had already converged. The recurrence needs 96 shift/compare/subtract
-    /// steps (≈ 24× faster, see `benches/physics_bench.rs::fix128_sqrt`).
+    /// 12 result bits come from the digit recurrence, and the other 84 from three
+    /// steps that each double the number of known bits by one division (Zimmermann,
+    /// "Karatsuba Square Root"). The number of steps does not depend on the input.
     ///
     /// Negative input returns `ZERO` (deterministic, no NaN).
     ///
-    /// Deterministic: fixed number of iterations, integer-only.
+    /// Deterministic: integer-only.
     #[must_use]
     pub fn sqrt(self) -> Self {
         if self.is_negative() || self.is_zero() {
             return Self::ZERO;
         }
 
-        // Radicand N = (hi:lo) << 64 as a 192-bit integer; result = isqrt(N),
-        // which is sqrt(value) * 2^64 = the I64F64 encoding of sqrt(value).
-        // Process 2 radicand bits per step from the top: the first 64 steps
-        // consume the 128 bits of (hi:lo), the remaining 32 steps consume the
-        // 64 appended zero bits.
-        let n = ((self.hi as u128) << 64) | (self.lo as u128);
-        let mut rem: u128 = 0;
-        let mut root: u128 = 0;
-        let mut i = 0u32;
-        while i < 96 {
-            // Next two radicand bits (MSB first). rem < 2*root + 1 < 2^97
-            // before the shift, so rem << 2 | bits < 2^99 never overflows u128.
-            let bits = if i < 64 { (n >> (126 - 2 * i)) & 3 } else { 0 };
-            rem = (rem << 2) | bits;
-            let trial = (root << 2) | 1;
-            if rem >= trial {
-                rem -= trial;
-                root = (root << 1) | 1;
-            } else {
-                root <<= 1;
-            }
-            i += 1;
-        }
+        // (hi:lo) as a non-negative integer; the root is sqrt(value) * 2^64, the I64F64 encoding
+        let root = isqrt_shifted(((self.hi as u128) << 64) | (self.lo as u128));
 
         Self {
             hi: (root >> 64) as i64,
@@ -423,6 +400,214 @@ impl Sub for Fix128 {
     }
 }
 
+/// `a * b` as (high, low) words.
+#[inline]
+const fn widening_mul(a: u64, b: u64) -> (u64, u64) {
+    if cfg!(target_pointer_width = "64") {
+        let product = (a as u128) * (b as u128);
+        ((product >> 64) as u64, product as u64)
+    } else {
+        widening_mul_by_words(a, b)
+    }
+}
+
+/// `a * b` as (high, low) words, from four `u64` products of 32-bit words. A 32-bit target has no
+/// 64x64 product: `u128 * u128` there is a call into a general routine.
+#[inline]
+const fn widening_mul_by_words(a: u64, b: u64) -> (u64, u64) {
+    const LOW: u64 = 0xFFFF_FFFF;
+    let (a1, a0) = (a >> 32, a & LOW);
+    let (b1, b0) = (b >> 32, b & LOW);
+    let p00 = a0 * b0;
+    let p01 = a0 * b1;
+    let p10 = a1 * b0;
+    let p11 = a1 * b1;
+    let mid = (p00 >> 32) + (p01 & LOW) + (p10 & LOW);
+    (
+        p11 + (p01 >> 32) + (p10 >> 32) + (mid >> 32),
+        (p00 & LOW) | (mid << 32),
+    )
+}
+
+const fn limbs_of(v: u128) -> [u32; 4] {
+    [
+        v as u32,
+        (v >> 32) as u32,
+        (v >> 64) as u32,
+        (v >> 96) as u32,
+    ]
+}
+
+const fn limbs_to_u128(l: &[u32; 4]) -> u128 {
+    (l[0] as u128) | ((l[1] as u128) << 32) | ((l[2] as u128) << 64) | ((l[3] as u128) << 96)
+}
+
+/// `(numerator[..]) / divisor` on 32-bit limbs, least significant first (Knuth, TAOCP vol. 2, 4.3.1,
+/// Algorithm D). Every step is a `u64` operation, which 32-bit and 64-bit targets both have.
+///
+/// `numerator` is left holding the remainder. `divisor` must not be zero. `N + 1` is the room the
+/// normalising shift needs, so `numerator[N]` must be zero on entry.
+fn divide_limbs<const N: usize>(numerator: &mut [u32], divisor: u128, quotient: &mut [u32; N]) {
+    const BASE: u64 = 1 << 32;
+    let top_bits = 128 - divisor.leading_zeros() as usize;
+    let n = top_bits.div_ceil(32);
+    let m = numerator.len() - 1;
+
+    if n == 1 {
+        let d = divisor as u64;
+        let mut rem = 0u64;
+        for j in (0..m).rev() {
+            let cur = (rem << 32) | u64::from(numerator[j]);
+            quotient[j] = (cur / d) as u32;
+            rem = cur % d;
+            numerator[j] = 0;
+        }
+        numerator[0] = rem as u32;
+        return;
+    }
+
+    // D1: shift so the divisor's top limb has its top bit set
+    let shift = divisor.leading_zeros() % 32;
+    let v = limbs_of(divisor << shift);
+    if shift != 0 {
+        let mut carry = 0u32;
+        for limb in numerator.iter_mut() {
+            let wide = (u64::from(*limb) << shift) | u64::from(carry);
+            *limb = wide as u32;
+            carry = (wide >> 32) as u32;
+        }
+    }
+
+    let v_top = u64::from(v[n - 1]);
+    let v_next = u64::from(v[n - 2]);
+    let mut j = m;
+    while j >= n {
+        j -= 1;
+        let at = j - (n - 1);
+        // D3: estimate the limb from the top two limbs, then correct it from the next one
+        let top = (u64::from(numerator[j + 1]) << 32) | u64::from(numerator[j]);
+        let mut qhat = top / v_top;
+        let mut rhat = top % v_top;
+        while qhat >= BASE || qhat * v_next > ((rhat << 32) | u64::from(numerator[j - 1])) {
+            qhat -= 1;
+            rhat += v_top;
+            if rhat >= BASE {
+                break;
+            }
+        }
+        // D4: multiply and subtract
+        let mut carry = 0u64;
+        let mut borrow = 0u64;
+        for i in 0..n {
+            let product = qhat * u64::from(v[i]) + carry;
+            carry = product >> 32;
+            let diff = u64::from(numerator[at + i])
+                .wrapping_sub(product & 0xFFFF_FFFF)
+                .wrapping_sub(borrow);
+            numerator[at + i] = diff as u32;
+            borrow = (diff >> 63) & 1;
+        }
+        let diff = u64::from(numerator[at + n])
+            .wrapping_sub(carry)
+            .wrapping_sub(borrow);
+        numerator[at + n] = diff as u32;
+        // D6: the estimate was one too high (rare): add the divisor back
+        if (diff as i64) < 0 {
+            qhat -= 1;
+            let mut carry = 0u64;
+            for i in 0..n {
+                let sum = u64::from(numerator[at + i]) + u64::from(v[i]) + carry;
+                numerator[at + i] = sum as u32;
+                carry = sum >> 32;
+            }
+            numerator[at + n] = numerator[at + n].wrapping_add(carry as u32);
+        }
+        quotient[at] = qhat as u32;
+    }
+
+    // D8: undo the shift on the remainder, which is below the divisor: the top limb is already zero
+    if shift != 0 {
+        for i in 0..m {
+            numerator[i] = (numerator[i] >> shift) | (numerator[i + 1] << (32 - shift));
+        }
+    }
+}
+
+/// The low 128 bits of `floor(a * 2^64 / b)`. `b` must not be zero.
+fn div_shifted(a: u128, b: u128) -> u128 {
+    let [a0, a1, a2, a3] = limbs_of(a);
+    let mut numerator = [0, 0, a0, a1, a2, a3, 0];
+    let mut quotient = [0u32; 6];
+    divide_limbs(&mut numerator, b, &mut quotient);
+    limbs_to_u128(&[quotient[0], quotient[1], quotient[2], quotient[3]])
+}
+
+/// One step of the square root recurrence of Zimmermann, "Karatsuba Square Root" (INRIA RR-3805):
+/// from the root `s` and remainder `r` of the digits so far, take two more digits of `bits` bits.
+#[inline]
+const fn sqrt_step(s: u64, r: u64, hi: u64, lo: u64, bits: u32) -> (u64, u64) {
+    let numerator = (r << bits) | hi;
+    let divisor = 2 * s;
+    let q = numerator / divisor;
+    let u = numerator % divisor;
+    let next = (s << bits) + q;
+    let rem = ((u << bits) | lo) as i64 - (q * q) as i64;
+    if rem < 0 {
+        (next - 1, (rem + 2 * next as i64 - 1) as u64)
+    } else {
+        (next, rem as u64)
+    }
+}
+
+/// The `bits` bits of `x` that end just below bit `from`.
+const fn digits(x: u128, from: u32, bits: u32) -> u64 {
+    ((x >> (from - bits)) as u64) & ((1 << bits) - 1)
+}
+
+/// `floor(sqrt(n * 2^64))`, for `n` other than zero.
+fn isqrt_shifted(n: u128) -> u128 {
+    // Scale by 4^k so the 192-bit radicand has one of its top two bits set: the recurrence needs that,
+    // and the root of the scaled value shifted back down by k is the floor of the root asked for.
+    let k = n.leading_zeros() / 2;
+    let x = n << (2 * k);
+
+    // 24 bits by the digit recurrence, giving a 12-bit root
+    let top = (x >> 104) as u64;
+    let mut rem = 0u64;
+    let mut root = 0u64;
+    for i in 0..12 {
+        rem = (rem << 2) | ((top >> (22 - 2 * i)) & 3);
+        let trial = (root << 2) | 1;
+        if rem >= trial {
+            rem -= trial;
+            root = (root << 1) | 1;
+        } else {
+            root <<= 1;
+        }
+    }
+
+    // 12 -> 24 -> 48 root bits, each in `u64`
+    let (s, r) = sqrt_step(root, rem, digits(x, 104, 12), digits(x, 92, 12), 12);
+    let (s, r) = sqrt_step(s, r, digits(x, 80, 24), digits(x, 56, 24), 24);
+
+    // 48 -> 96 root bits: the next digit is `x`'s low 32 bits and 16 appended zeros, the last is zero
+    let hi_digit = (x as u32 as u64) << 16;
+    let numerator = ((r as u128) << 48) | hi_digit as u128;
+    let divisor = 2 * s;
+    let [n0, n1, n2, n3] = limbs_of(numerator);
+    let mut limbs = [n0, n1, n2, n3, 0];
+    let mut quotient = [0u32; 4];
+    divide_limbs(&mut limbs, divisor as u128, &mut quotient);
+    let q = limbs_to_u128(&quotient) as u64;
+    let u = limbs_to_u128(&[limbs[0], limbs[1], limbs[2], limbs[3]]);
+    let root = ((s as u128) << 48) + q as u128;
+    // rem = u * 2^48 + 0 - q^2; the root is one too large when that is negative
+    let (sq_hi, sq_lo) = widening_mul(q, q);
+    let square = ((sq_hi as u128) << 64) | sq_lo as u128;
+    let root = root - u128::from((u << 48) < square);
+    root >> k
+}
+
 /// Fixed-point multiplication: the 256-bit product of the two Q64.64
 /// values, keeping bits `[192:64]`.
 ///
@@ -455,31 +640,23 @@ impl Mul for Fix128 {
         //
         // We want bits [192:64] of the 256-bit result (middle 128 bits)
 
-        let a_hi = self.hi as i128;
-        let a_lo = self.lo as u128;
-        let b_hi = rhs.hi as i128;
-        let b_lo = rhs.lo as u128;
+        let (ll_hi, _) = widening_mul(self.lo, rhs.lo);
+        // the mixed products: multiply as unsigned, then take off 2^64 * the other word when negative
+        let (hl_hi, hl_lo) = widening_mul(self.hi as u64, rhs.lo);
+        let hl_hi = hl_hi.wrapping_sub(if self.hi < 0 { rhs.lo } else { 0 });
+        let (lh_hi, lh_lo) = widening_mul(self.lo, rhs.hi as u64);
+        let lh_hi = lh_hi.wrapping_sub(if rhs.hi < 0 { self.lo } else { 0 });
 
-        // lo * lo (unsigned)
-        let ll = a_lo.wrapping_mul(b_lo);
-
-        // hi * lo and lo * hi (mixed sign)
-        let hl = a_hi.wrapping_mul(b_lo as i128);
-        let lh = (a_lo as i128).wrapping_mul(b_hi);
-
-        // hi * hi (signed)
-        let hh = a_hi.wrapping_mul(b_hi);
-
-        // Combine: we want (hh << 64) + hl + lh + (ll >> 64)
-        let ll_hi = (ll >> 64) as i128;
-
-        let mid = hl.wrapping_add(lh).wrapping_add(ll_hi);
-        let mid_lo = mid as u64;
-        let mid_hi = (mid >> 64) as i64;
-
-        let hi = (hh as i64).wrapping_add(mid_hi);
-
-        Self { hi, lo: mid_lo }
+        let (lo, carry_a) = hl_lo.overflowing_add(lh_lo);
+        let (lo, carry_b) = lo.overflowing_add(ll_hi);
+        let hi = self
+            .hi
+            .wrapping_mul(rhs.hi)
+            .wrapping_add(hl_hi as i64)
+            .wrapping_add(lh_hi as i64)
+            .wrapping_add(i64::from(carry_a))
+            .wrapping_add(i64::from(carry_b));
+        Self { hi, lo }
     }
 }
 
@@ -779,30 +956,11 @@ impl Div for Fix128 {
             return Self::ZERO;
         }
 
-        // I64F64 division: result = (a_full << 64) / b_full
-        // Since (a_full << 64) overflows u128, split into two parts:
-        //   result_hi = a_full / b_full  (integer part)
-        //   result_lo = fractional part via 64-step long division
-
-        let quot_hi = a_full / b_full;
-        let rem = a_full % b_full;
-
-        // Compute fractional 64 bits via bit-by-bit long division
-        // This avoids the (rem << 64) overflow that broke the old implementation
-        let mut r = rem;
-        let mut quot_lo: u64 = 0;
-        for i in (0..64).rev() {
-            let overflow_bit = r >> 127;
-            r <<= 1;
-            if overflow_bit != 0 || r >= b_full {
-                r = r.wrapping_sub(b_full);
-                quot_lo |= 1u64 << i;
-            }
-        }
-
+        // I64F64 division: the low 128 bits of (a_full << 64) / b_full
+        let quotient = div_shifted(a_full, b_full);
         let result = Self {
-            hi: quot_hi as i64,
-            lo: quot_lo,
+            hi: (quotient >> 64) as i64,
+            lo: quotient as u64,
         };
 
         if neg {
@@ -3941,6 +4099,46 @@ mod tests {
             let hi = ((state >> 1) >> shift) as i64;
             Fix128 { hi, lo }
         })
+    }
+
+    #[test]
+    fn widening_mul_by_words_matches_the_128_bit_product() {
+        // oracle: the `u128` product, which every target computes exactly. A 64-bit target never
+        // runs the word version, so this is what checks it there; wasm32 runs it for real.
+        let mut compared = 0u32;
+        let mut same = |a: u64, b: u64| {
+            let product = u128::from(a) * u128::from(b);
+            let expected = ((product >> 64) as u64, product as u64);
+            assert_eq!(widening_mul_by_words(a, b), expected, "{a:#x} * {b:#x}");
+            assert_eq!(widening_mul(a, b), expected, "{a:#x} * {b:#x}");
+            compared += 1;
+        };
+        let edges = [
+            0,
+            1,
+            0xFFFF_FFFF,
+            0x1_0000_0000,
+            0x8000_0000_0000_0000,
+            u64::MAX - 1,
+            u64::MAX,
+        ];
+        for a in edges {
+            for b in edges {
+                same(a, b);
+            }
+        }
+        let mut state = 0x4d55_4c57_u64;
+        for _ in 0..4096 {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            let a = state;
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            same(a, state);
+        }
+        assert_eq!(compared, 49 + 4096);
     }
 
     #[test]

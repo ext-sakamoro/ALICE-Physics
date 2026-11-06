@@ -383,6 +383,7 @@ grep -q '^wasm32-wasip1$' <<<"$(rustup target list --installed)" || rustup targe
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
+cargo test --test fix128_bit_identity --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
 grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
