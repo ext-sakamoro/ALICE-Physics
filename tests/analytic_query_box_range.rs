@@ -324,7 +324,7 @@ fn cast_ray_beyond_the_direct_limit_is_within_the_stated_bound_of_exact_closed_f
 }
 
 /// Recorded on the first run (every platform must agree).
-const FAR_STATIC_DIGEST: u64 = 0xfcaa5358552c39e5;
+const FAR_STATIC_DIGEST: u64 = 0x643f87519685a6e5;
 
 /// Static colliders beyond the direct limit: a plane whose offset is far, a plane
 /// hit from a far origin, and a flat height field and a triangle mesh of ordinary
@@ -460,9 +460,92 @@ fn cast_ray_beyond_the_direct_limit_meets_static_colliders_within_the_stated_bou
             }
         }
     }
+    // huge statics, scaled by a copy per query: a flat field of 3 × 3 points at
+    // spacing 2^40 and a mesh square of side 2^41, both at y = 0 around a far x,
+    // hit from 2^20 above (t = 2^20); their scale k comes from their reach
+    for l in [1i64 << 40, 1i64 << 61] {
+        let origin = Vec3Fix::from_int(l, 1 << 20, 0);
+        let down = Vec3Fix::from_int(0, -1, 0);
+        let m = 1i64 << 40;
+        // the box half reaches m along x and m along z: 2 · (m + m) + 2
+        let k = scale_bits_of(&[2 * (m + m) + 2]);
+        let field = HeightField::new(
+            vec![Fix128::ZERO; 9],
+            3,
+            3,
+            Fix128::from_int(m),
+            Vec3Fix::from_int(l - m, 0, -m),
+        );
+        let mut w = new_world();
+        w.add_static_collider(StaticCollider::HeightField(field));
+        check(
+            &w,
+            origin,
+            down,
+            1 << 21,
+            1 << 20,
+            k,
+            &format!("huge field l={l}"),
+        );
+        let v = |x: i64, z: i64| Vec3Fix::from_int(x, 0, z);
+        let mesh = TriMesh::from_indexed(
+            &[v(l - m, -m), v(l + m, -m), v(l + m, m), v(l - m, m)],
+            &[0, 1, 2, 0, 2, 3],
+        );
+        let mut w = new_world();
+        w.add_static_collider(StaticCollider::TriMesh(mesh));
+        check(
+            &w,
+            origin,
+            down,
+            1 << 21,
+            1 << 20,
+            k,
+            &format!("huge mesh l={l}"),
+        );
+    }
     assert!(checked >= 40, "compared {checked}");
     assert_eq!(
         digest, FAR_STATIC_DIGEST,
         "far static bits moved (checked {checked})"
     );
+}
+
+/// A unit-sphere SDF far along +x, hit from the origin: the march works in the
+/// field's frame (`origin − position` in `Fix128`, then `f32`), so the far
+/// surface is found to the march tolerance (`1e-3`) plus the `f32` resolution
+/// of the local coordinates near the surface.
+#[cfg(feature = "std")]
+#[test]
+fn cast_ray_beyond_the_direct_limit_meets_a_far_sdf_collider() {
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+
+    for l in [1i64 << 40, 1i64 << 61] {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        w.add_sdf_collider(SdfCollider::new_static(
+            Box::new(ClosureSdf::new(
+                |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+                |x, y, z| {
+                    let n = (x * x + y * y + z * z).sqrt();
+                    (x / n, y / n, z / n)
+                },
+            )),
+            Vec3Fix::from_int(l, 0, 0),
+            QuatFix::IDENTITY,
+        ));
+        let hit = w
+            .cast_ray(
+                Vec3Fix::ZERO,
+                Vec3Fix::from_int(1, 0, 0),
+                Fix128::from_int(l),
+                &RayFilter::default(),
+            )
+            .unwrap_or_else(|| panic!("silent None: sdf l={l}"));
+        let err = (hit.t - Fix128::from_int(l - 1)).abs().to_f64();
+        assert!(err <= 2e-3, "sdf l={l}: |t − (l − 1)| = {err:e}");
+    }
 }
