@@ -1369,6 +1369,55 @@ pub unsafe extern "C" fn alice_physics_world_add_magnet(
     })
 }
 
+/// Add a wind zone: inside the box `min` to `max` a body feels the drag of a wind along
+/// `direction` (normalised) of `base_speed` plus `gust_amplitude`·sin(2π·`gust_hz`·t) m/s, with
+/// `air_density` (kg/m³), `drag_coefficient` and reference `area` (m²). The zone is part of the
+/// world: a world snapshot keeps its clock, and a restore needs the same zones added in the same
+/// order. Returns its index, or `u32::MAX` for a null world or a bad value.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "C ABI: the box, the direction and the wind's values are flat arguments"
+)]
+pub unsafe extern "C" fn alice_physics_world_add_wind_zone(
+    world: *mut PhysicsWorld,
+    min: AliceVec3,
+    max: AliceVec3,
+    direction: AliceVec3,
+    base_speed: f64,
+    gust_amplitude: f64,
+    gust_hz: f64,
+    air_density: f64,
+    drag_coefficient: f64,
+    area: f64,
+) -> u32 {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
+            return u32::MAX;
+        };
+        let (Some(min), Some(max), Some(direction)) =
+            (vec3_arg(&min), vec3_arg(&max), vec3_arg(&direction))
+        else {
+            return u32::MAX;
+        };
+        let args = binding_api::WindZoneArgs {
+            min,
+            max,
+            direction,
+            base_speed,
+            gust_amplitude,
+            gust_hz,
+            air_density,
+            drag_coefficient,
+            area,
+        };
+        index_result(binding_api::add_wind_zone(w, &args))
+    })
+}
+
 /// Drop a body's own collision radius; it falls back to the world default.
 /// Returns 1 on success, 0 for a null world or an unknown body.
 ///
@@ -2195,6 +2244,89 @@ mod tests {
                 alice_physics_body_set_rotation(core::ptr::null_mut(), b, q),
                 0
             );
+            alice_physics_world_destroy(c);
+        }
+    }
+
+    /// The C call builds the zone the Rust API builds, every argument with its own value, and a
+    /// bad value registers nothing.
+    #[test]
+    fn wind_zone_through_c_equals_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        let fx = |x: f64, y: f64, z: f64| {
+            Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            )
+        };
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(c, v(0.5, 1.0, -0.25), 2.5);
+            let add = |min: AliceVec3, dir: AliceVec3, area: f64| {
+                alice_physics_world_add_wind_zone(
+                    c,
+                    min,
+                    v(6.0, 7.0, 8.0),
+                    dir,
+                    4.0,
+                    1.5,
+                    0.75,
+                    1.25,
+                    0.8,
+                    area,
+                )
+            };
+            assert_eq!(add(v(9.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.6), u32::MAX);
+            assert_eq!(add(v(-3.0, -4.0, -5.0), v(0.0, 0.0, 0.0), 0.6), u32::MAX);
+            assert_eq!(add(v(-3.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.0), u32::MAX);
+            assert_eq!(add(v(-3.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.6), 0);
+            assert_eq!(
+                alice_physics_world_add_wind_zone(
+                    core::ptr::null_mut(),
+                    v(0.0, 0.0, 0.0),
+                    v(1.0, 1.0, 1.0),
+                    v(1.0, 0.0, 0.0),
+                    1.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ),
+                u32::MAX
+            );
+
+            let mut r = PhysicsWorld::new(SolverConfig::default());
+            r.add_body(RigidBody::new_dynamic(
+                fx(0.5, 1.0, -0.25),
+                Fix128::from_f64(2.5),
+            ));
+            let zone = crate::wind_zone::WindZone {
+                shape: crate::buoyancy_zone::ZoneShape::Aabb {
+                    min: fx(-3.0, -4.0, -5.0),
+                    max: fx(6.0, 7.0, 8.0),
+                },
+                air_density_kg_m3: Fix128::from_f64(1.25),
+                direction: fx(1.0, 2.0, -2.0).try_normalize().expect("direction"),
+                base_speed_m_s: Fix128::from_f64(4.0),
+                turbulence_amplitude: Fix128::from_f64(1.5),
+                gust_frequency_hz: Fix128::from_f64(0.75),
+                drag_coefficient: Fix128::from_f64(0.8),
+                reference_area_m2: Fix128::from_f64(0.6),
+            };
+            r.add_participant(Box::new(crate::wind_zone::WindZoneParticipant::new(zone)))
+                .expect("register");
+            let world = &mut *c;
+            let dt = Fix128::from_ratio(1, 60);
+            for _ in 0..240 {
+                world.step(dt);
+                r.step(dt);
+            }
+            assert_eq!(world.bodies[b as usize].position, r.bodies[0].position);
+            assert_eq!(world.snapshot_world(), r.snapshot_world());
             alice_physics_world_destroy(c);
         }
     }

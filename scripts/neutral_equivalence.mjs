@@ -133,6 +133,8 @@ function wide(a) {
   // an orientation and a spin set directly (both report whether the body exists)
   out.rotationSet = val(a.call(w, "setRotation", b[1], 0, 0.3826834323650898, 0, 0.9238795325112867), "setRotation");
   out.spinSet = val(a.call(w, "setAngularVelocity", b[2], 0, 0, 1.5), "setAngularVelocity");
+  // a wind zone over the scene: a resident, in the snapshot and the digest from here on
+  out.wind = f([id(a.call(w, "addWindZone", -9, -9, -9, 9, 9, 9, 1, 0, 0.5, 2, 0.5, 1.5, 1.2, 0.9, 0.3), "addWindZone")]);
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);
