@@ -172,6 +172,62 @@ def test_a_magnet_pulls_only_its_material():
     assert w.get_position(b)[0] == struct.unpack("<f", struct.pack("<f", -0.06))[0], w.get_position(b)
 
 
+def _windy():
+    # a wind straight up, U = 10 m/s, with k = 1/2 rho Cd A = 0.5 on a 2 kg ball under gravity
+    w = ap.PhysicsWorld()
+    ball = w.add_dynamic_body(0.0, 0.0, 0.0, 2.0)
+    i = w.add_wind_zone((-1e3, -1e3, -1e3), (1e3, 1e3, 1e3), (0.0, 1.0, 0.0), 10.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+    assert i == 0
+    return w, ball
+
+
+def test_a_ball_in_a_rising_wind_zone_reaches_the_terminal_velocity():
+    # k (U - v)^2 = m g, so v = U - sqrt(m g / k), with the default world's g = 10
+    w, ball = _windy()
+    w.step_n(1.0 / 60.0, 900)
+    want = 10.0 - math.sqrt(2.0 * 10.0 / 0.5)
+    got = w.velocities()[ball]
+    assert abs(got[1] - want) < 0.01 * want, got
+    assert got[0] == 0.0 and got[2] == 0.0, got
+
+
+def test_a_wind_zone_rewinds_and_is_part_of_the_snapshot():
+    w, _ = _windy()
+    w.step_n(1.0 / 60.0, 30)
+    blob = bytes(w.snapshot_world())
+    w.step_n(1.0 / 60.0, 30)
+    first = bytes(w.snapshot_world())
+    w.restore_world(blob)
+    assert bytes(w.snapshot_world()) == blob
+    w.step_n(1.0 / 60.0, 30)
+    assert bytes(w.snapshot_world()) == first
+    plain = ap.PhysicsWorld()
+    plain.add_dynamic_body(0.0, 0.0, 0.0, 2.0)
+    try:
+        plain.restore_world(blob)
+    except ValueError:
+        return
+    raise AssertionError("a world without the zone took its snapshot")
+
+
+def test_a_bad_wind_zone_is_refused():
+    w = ap.PhysicsWorld()
+    box = ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (1.0, 0.0, 0.0))
+    for bad in [
+        ((1.0, 0.0, 0.0), (0.0, 1.0, 1.0), (1.0, 0.0, 0.0), 1.0, 0.0, 0.0, 1.0, 1.0, 1.0),
+        ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0), 1.0, 0.0, 0.0, 1.0, 1.0, 1.0),
+        (*box, -1.0, 0.0, 0.0, 1.0, 1.0, 1.0),
+        (*box, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0),
+        (*box, float("nan"), 0.0, 0.0, 1.0, 1.0, 1.0),
+    ]:
+        try:
+            w.add_wind_zone(*bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    assert w.add_wind_zone(*box, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0) == 0
+
+
 def _pull(chi_eff, saturation):
     # how far a ball of the magnet's material, 6 cm from a magnet along its moment, moves toward
     # it in 0.5 s (no other force acts along x)

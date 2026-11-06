@@ -695,6 +695,49 @@ impl WasmPhysicsWorld {
         .and_then(|i| u32::try_from(i).ok())
     }
 
+    /// Add a wind zone: inside the box (`min_*` to `max_*`) a body feels the drag of a wind along
+    /// `dir_*` (normalised) of `base_speed` plus `gust_amplitude`·sin(2π·`gust_hz`·t) m/s, with
+    /// `air_density` (kg/m³), `drag_coefficient` and reference `area` (m²). The zone is part of the
+    /// world: `snapshotWorld` keeps its clock, and `restoreWorld` needs the same zones added in the
+    /// same order. Returns its index, or `undefined` for a bad value.
+    #[cfg(feature = "std")]
+    #[wasm_bindgen(js_name = "addWindZone")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export cannot take a struct from JS cheaply; the box, the direction and the wind's values are flat numbers"
+    )]
+    pub fn add_wind_zone(
+        &mut self,
+        min_x: f64,
+        min_y: f64,
+        min_z: f64,
+        max_x: f64,
+        max_y: f64,
+        max_z: f64,
+        dir_x: f64,
+        dir_y: f64,
+        dir_z: f64,
+        base_speed: f64,
+        gust_amplitude: f64,
+        gust_hz: f64,
+        air_density: f64,
+        drag_coefficient: f64,
+        area: f64,
+    ) -> Option<u32> {
+        let args = binding_api::WindZoneArgs {
+            min: binding_api::vec3(min_x, min_y, min_z)?,
+            max: binding_api::vec3(max_x, max_y, max_z)?,
+            direction: binding_api::vec3(dir_x, dir_y, dir_z)?,
+            base_speed,
+            gust_amplitude,
+            gust_hz,
+            air_density,
+            drag_coefficient,
+            area,
+        };
+        binding_api::add_wind_zone(&mut self.inner, &args).and_then(|i| u32::try_from(i).ok())
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     #[wasm_bindgen(js_name = "clearCollisionRadius")]
     pub fn clear_collision_radius(&mut self, body_id: usize) -> bool {
@@ -997,6 +1040,91 @@ mod tests {
         let hit = w.get_contact_events();
         assert_eq!(&hit[..3], &[0.0, 1.0, 0.0]);
         assert!((hit[3] - 2.0).abs() < 0.1, "{}", hit[3]);
+    }
+
+    /// The wasm call builds the zone the Rust API builds: every argument has its own value, the
+    /// wind blows off the axes with a gust running, and 240 steps later both worlds are bit-equal.
+    #[test]
+    fn wind_zone_call_equals_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| {
+            Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(y),
+                Fix128::from_f64(z),
+            )
+        };
+        let mut a = WasmPhysicsWorld::with_config(0.0, -1.5, 0.0, 4, 8);
+        let ball = a.add_dynamic_body(0.5, 1.0, -0.25, 2.5);
+        assert_eq!(
+            a.add_wind_zone(
+                -3.0, -4.0, -5.0, 6.0, 7.0, 8.0, 1.0, 2.0, -2.0, 4.0, 1.5, 0.75, 1.25, 0.8, 0.6
+            ),
+            Some(0)
+        );
+        let mut b = WasmPhysicsWorld::with_config(0.0, -1.5, 0.0, 4, 8);
+        b.add_dynamic_body(0.5, 1.0, -0.25, 2.5);
+        let zone = crate::wind_zone::WindZone {
+            shape: crate::buoyancy_zone::ZoneShape::Aabb {
+                min: v(-3.0, -4.0, -5.0),
+                max: v(6.0, 7.0, 8.0),
+            },
+            air_density_kg_m3: Fix128::from_f64(1.25),
+            direction: v(1.0, 2.0, -2.0).try_normalize().expect("direction"),
+            base_speed_m_s: Fix128::from_f64(4.0),
+            turbulence_amplitude: Fix128::from_f64(1.5),
+            gust_frequency_hz: Fix128::from_f64(0.75),
+            drag_coefficient: Fix128::from_f64(0.8),
+            reference_area_m2: Fix128::from_f64(0.6),
+        };
+        b.inner
+            .add_participant(Box::new(crate::wind_zone::WindZoneParticipant::new(zone)))
+            .expect("register");
+        for _ in 0..240 {
+            a.step(1.0 / 60.0);
+            b.step(1.0 / 60.0);
+        }
+        assert_eq!(a.inner.bodies[ball].position, b.inner.bodies[ball].position);
+        assert_eq!(a.inner.bodies[ball].velocity, b.inner.bodies[ball].velocity);
+        assert_eq!(a.snapshot_world(), b.snapshot_world());
+    }
+
+    /// Every argument the binding checks is refused alone, and a refusal registers nothing.
+    #[test]
+    fn a_bad_wind_zone_is_refused() {
+        let good = [
+            -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 2.0, 0.5, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let call = |w: &mut WasmPhysicsWorld, p: &[f64; 15]| {
+            w.add_wind_zone(
+                p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12],
+                p[13], p[14],
+            )
+        };
+        let mut w = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let bad: &[(usize, f64)] = &[
+            (0, f64::NAN),
+            (0, 2.0), // inside out on x
+            (1, 2.0), // inside out on y
+            (2, 2.0), // inside out on z
+            (5, f64::INFINITY),
+            (6, f64::NAN),
+            (9, -1.0),
+            (10, -1.0),
+            (11, -1.0),
+            (12, 0.0),
+            (12, 1e-300),
+            (13, 0.0),
+            (14, 0.0),
+        ];
+        for &(i, value) in bad {
+            let mut p = good;
+            p[i] = value;
+            assert_eq!(call(&mut w, &p), None, "argument {i} = {value}");
+        }
+        let mut zero = good;
+        zero[6] = 0.0;
+        assert_eq!(call(&mut w, &zero), None, "zero direction");
+        assert_eq!(call(&mut w, &good), Some(0), "nothing registered before it");
     }
 
     /// The wasm calls build the world the Rust API builds: a registered material with friction and

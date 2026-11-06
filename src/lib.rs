@@ -780,7 +780,6 @@ pub(crate) mod gyroscopic;
 // Option C — TGS extension mechanism with zero downstream adoption is
 // hidden from the public surface; re-expose via semver-minor bump if
 // concrete demand emerges).
-#[cfg(feature = "std")]
 pub(crate) mod det_hash;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs;
