@@ -4919,9 +4919,24 @@ impl PhysicsWorld {
                     self.bodies[constraint.body_b].velocity - impulse_n * (body_b.inv_mass * inv_w);
             }
 
-            // Friction: reduce tangential velocity
-            let relative_vel2 =
-                self.bodies[constraint.body_a].velocity - self.bodies[constraint.body_b].velocity;
+            // Friction: reduce the tangential velocity at the contact point.
+            // The relative velocity is taken at the contact point, so a
+            // body's spin enters through `ω × r`, and the impulse acts
+            // through the lever arms, so friction also changes the angular
+            // velocities (a ball launched sliding spins up and rolls at
+            // `5 v₀ / 7`). Bodies that cannot rotate (`inv_inertia = 0`)
+            // take the centre-velocity path below, bit for bit as before.
+            let post_a = self.bodies[constraint.body_a];
+            let post_b = self.bodies[constraint.body_b];
+            // lever arms from each body's own contact point (Müller et al.
+            // 2020 use `r₁`, `r₂` the same way); the two points differ by the
+            // penetration depth along the normal, so the pair's angular
+            // momentum changes by `depth · (n × p)` while they overlap
+            let r_a = constraint.contact.point_a - post_a.position;
+            let r_b = constraint.contact.point_b - post_b.position;
+            let spin_a = post_a.angular_velocity.cross(r_a);
+            let spin_b = post_b.angular_velocity.cross(r_b);
+            let relative_vel2 = (post_a.velocity + spin_a) - (post_b.velocity + spin_b);
             let vn2 = relative_vel2.dot(n);
             let tangent_vel = relative_vel2 - n * vn2;
             let tangent_speed_sq = tangent_vel.length_squared();
@@ -4939,18 +4954,64 @@ impl PhysicsWorld {
                 // it is about 0 for a resting contact, which removed the
                 // friction of sliding and resting bodies.
                 let max_friction_impulse = friction * constraint.cached_lambda * inv_dt;
-                let applied = if tangent_speed < max_friction_impulse {
-                    tangent_speed
-                } else {
-                    max_friction_impulse
-                };
                 let friction_dir = tangent_vel / tangent_speed;
-                let friction_impulse = friction_dir * applied;
                 let inv_w = Fix128::ONE / w_sum;
-                self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a].velocity
-                    - friction_impulse * (body_a.inv_mass * inv_w);
-                self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
-                    + friction_impulse * (body_b.inv_mass * inv_w);
+                // generalised inverse mass along the friction direction at
+                // the contact point: `w_a + w_b + (r_a × t)·I_a⁻¹(r_a × t)
+                // + (r_b × t)·I_b⁻¹(r_b × t)` (static bodies add nothing)
+                let ra_t = r_a.cross(friction_dir);
+                let rb_t = r_b.cross(friction_dir);
+                let rot_a = if post_a.is_static() {
+                    Fix128::ZERO
+                } else {
+                    ra_t.dot(post_a.world_inv_inertia_apply(ra_t))
+                };
+                let rot_b = if post_b.is_static() {
+                    Fix128::ZERO
+                } else {
+                    rb_t.dot(post_b.world_inv_inertia_apply(rb_t))
+                };
+                if rot_a.is_zero() && rot_b.is_zero() {
+                    // no rotational response possible: the centre-velocity
+                    // correction, unchanged
+                    let applied = if tangent_speed < max_friction_impulse {
+                        tangent_speed
+                    } else {
+                        max_friction_impulse
+                    };
+                    let friction_impulse = friction_dir * applied;
+                    self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a]
+                        .velocity
+                        - friction_impulse * (body_a.inv_mass * inv_w);
+                    self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b]
+                        .velocity
+                        + friction_impulse * (body_b.inv_mass * inv_w);
+                } else {
+                    let w_gen = w_sum + rot_a + rot_b;
+                    // the same cap, as an impulse: `μ λ / (h w_sum)`
+                    let max_impulse = max_friction_impulse * inv_w;
+                    let needed = tangent_speed / w_gen;
+                    let p = if needed < max_impulse {
+                        needed
+                    } else {
+                        max_impulse
+                    };
+                    let impulse = friction_dir * p;
+                    if !post_a.is_static() {
+                        let torque = r_a.cross(impulse);
+                        let ba = &mut self.bodies[constraint.body_a];
+                        ba.velocity = ba.velocity - impulse * post_a.inv_mass;
+                        ba.angular_velocity =
+                            ba.angular_velocity - post_a.world_inv_inertia_apply(torque);
+                    }
+                    if !post_b.is_static() {
+                        let torque = r_b.cross(impulse);
+                        let bb = &mut self.bodies[constraint.body_b];
+                        bb.velocity = bb.velocity + impulse * post_b.inv_mass;
+                        bb.angular_velocity =
+                            bb.angular_velocity + post_b.world_inv_inertia_apply(torque);
+                    }
+                }
             }
         }
 

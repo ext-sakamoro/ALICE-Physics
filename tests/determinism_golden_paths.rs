@@ -472,7 +472,11 @@ fn golden_path_tgs_try_step() {
 /// dynamic body is asleep, and the digest pins the state the sleep decision left.
 /// Re-recorded when damping became a rate per second: the scene's retention 0.9
 /// per step of 1/60 s is now the rate `-ln(0.9)·60`, applied in closed form.
-const GOLDEN_SLEEPING: &str = "3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229";
+/// Re-recorded when the contact friction began acting at the contact point:
+/// the balls at `x = ±3` bounce on a surface tilted by `3e-6` and keep a turn
+/// of `2e-8` about `z` (and move `6e-9` along `x`); the centre ball and the
+/// sleep decisions are unchanged.
+const GOLDEN_SLEEPING: &str = "cb84f34c3f218683abcc25f42eb7c1310cb74b770eca785eb40d1378066f1503";
 
 #[test]
 fn golden_sleeping() {

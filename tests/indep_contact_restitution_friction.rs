@@ -247,12 +247,9 @@ fn a_ball_that_cannot_turn_decelerates_at_mu_g_and_stops() {
 /// `ω_z r = −(5/2) μ g t` until `t* = 2 v₀ / (7 μ g)`, then rolls at
 /// `5 v₀ / 7` with `v = −ω_z r`. Budget `2e-2` m/s as above.
 ///
-/// Measured (step, t = 0.2 s): `v = 3.40016` (the closed form 3.4) but
-/// `ω_z r = 0` (want −1.5): the contact friction acts on the centre
-/// velocities only and applies no angular impulse, so the ball never spins
-/// up and never rolls.
+/// Before the friction acted at the contact point (step, t = 0.2 s):
+/// `v = 3.40016` but `ω_z r = 0` (want −1.5), the ball never spun up.
 #[test]
-#[ignore = "src gap: contact friction is translational only, a solid ball gets no spin and never rolls"]
 fn a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed() {
     let (mu, v0) = (0.3, 4.0);
     let inv_i = 1.0 / (0.4 * R * R);
