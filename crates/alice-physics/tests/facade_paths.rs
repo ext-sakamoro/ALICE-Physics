@@ -296,6 +296,7 @@ use alice_physics::debug_render::DebugPoint as _;
 use alice_physics::deformable as _;
 use alice_physics::deformable::DeformableBody as _;
 use alice_physics::deformable::DeformableConfig as _;
+use alice_physics::deformable::Material as _;
 use alice_physics::det_math as _;
 use alice_physics::det_math::acos as _;
 use alice_physics::det_math::acos64 as _;
