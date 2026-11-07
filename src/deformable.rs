@@ -10,9 +10,86 @@
 //! - Edge constraints prevent over-stretching
 //! - SDF collision for surface contacts
 //!
+//! # MODEL — tetrahedral soft body
+//!
+//! **Equations.** Particles of mass `m` under XPBD: a predicted position `x* = x + v·h + a·h²`
+//! per substep `h`, constraints projected over `iterations` Gauss–Seidel passes, velocities
+//! `v = (x − x_prev) / h`. Two constitutive laws ([`Material`]):
+//! `Material::NeoHookean(law)` is the stable Neo-Hookean solid on every tetrahedron: with
+//! the deformation gradient `F = Ds·Dm⁻¹` (`Ds`, `Dm` the current and rest edge matrices),
+//! `I_C = tr(FᵀF)`, `J = det F`, the energy per unit rest volume
+//! `ψ = μ/2 (I_C − 3) − μ (J − 1) + λ̂/2 (J − 1)²` (Smith, De Goes & Kim, ACM TOG 2018,
+//! without the log term; zero at every rotation, positive elsewhere near rest), with
+//! `μ = E / (2(1+ν))`, `λ = Eν / ((1+ν)(1−2ν))` and `λ̂ = λ + μ` (the energy expands to
+//! `μ tr(ε²) + (λ̂ − μ)/2 (tr ε)²` at small strain, so this `λ̂` makes that limit Hooke's law
+//! with `μ`, `λ`), is the XPBD constraint `C = √(2 V ψ)`
+//! of unit compliance (`½ C² = V ψ`, `V` the rest volume; Macklin, Müller & Chentanez 2016)
+//! with gradient `∇_i C = V (P Dm⁻ᵀ) e_i / C`, `P = ∂ψ/∂F = μ F + (λ̂ (J − 1) − μ) cof F`,
+//! projected with `Δλ = −(C + α̃λ) / (Σ w_i|∇_i C|² + α̃)`, `α̃ = 1 / h²`, the multiplier `λ`
+//! kept over the iterations of a substep. (The two-constraint split `C_D = ‖F‖`, `C_H = J − γ`
+//! of Macklin & Müller 2021 is not used: in the stiff regime `α̃ ≪ Σ w|∇C|²` its deviatoric
+//! projection sends `F` to zero in one step and the body collapses; measured.) `Material::Constraints` is the earlier geometric set: edge
+//! length `|x_i − x_j| = l_0` (compliance `edge_compliance`), tetrahedral volume
+//! `V(x) = V_0` (compliance `volume_compliance`) and a blend of every particle toward its
+//! rest offset from the centroid by `shape_stiffness` per iteration.
+//!
+//! **Units.** SI: positions m, masses kg, time s, `E`, `μ`, `λ` Pa, `ν` dimensionless,
+//! compliances m/N (the geometric set: `edge_compliance` m/N, `volume_compliance` m³/N·m);
+//! every quantity is `Fix128` (Q64.64), so a run replays bit for bit.
+//!
+//! **Conservation.** Every constraint moves its particles along the gradient in proportion to
+//! their inverse masses, so the particles' linear momentum is unchanged by a projection
+//! (exactly, `Fix128` addition being exact); the Neo-Hookean and volume constraints are
+//! translation invariant and the Neo-Hookean set rotation invariant, so they conserve angular
+//! momentum too, while the shape blend of `Material::Constraints` is not rotation invariant
+//! (it pulls toward the rest orientation and exchanges angular momentum with nothing).
+//! Energy: the elastic energy is a potential (not tracked as a quantity); `config.damping` is
+//! a velocity retention per frame (numerical, frame-rate dependent) that dissipates, and the
+//! Gauss–Seidel passes before convergence dissipate as well.
+//!
+//! **Valid range.** Neo-Hookean: `0 < E ≤ 2⁴⁰ Pa` and `−1 < ν ≤ 0.5 − 2⁻¹⁶`, refused by
+//! [`NeoHookeanLaw::new`] outside (`λ = Eν/((1+ν)(1−2ν))` diverges at `ν = 0.5`); any
+//! strain including inverted tetrahedra (`J ≤ 0`, the energy stays finite and the shape
+//! recovers); rest tetrahedra of non-zero volume (a degenerate one is skipped). The
+//! stiffness converges with `iterations` and `substeps` (the stiff regime
+//! `α̃ = 1/h² ≪ Σ w|∇C|²` is handled: a projection then restores the rest shape and the
+//! multiplier carries the material's compliance to convergence). Positions, `V` and `h` must
+//! keep `V ψ`, `V P Dm⁻¹` and `Σ w|∇C|²` inside `Fix128` (|value| < 2^63); out of that the
+//! arithmetic wraps and the result is not a simulation (no detection at this layer). The
+//! geometric set has no material range: its stiffness is the iteration count's.
+//!
+//! **Approximations.** P1 (constant strain) tetrahedra; Gauss–Seidel projection, so before
+//! convergence the body is softer than the material (measured: 8 vs 16 iterations within 1 %
+//! of the sag, see validation); no plasticity, viscosity, damage or thermal strain; contact
+//! with SDF colliders is a position projection to the surface with the normal velocity dropped
+//! and the tangential one scaled by `1 − sdf_friction` (no Coulomb law, no reaction on the
+//! collider), with rigid bodies a mass-weighted push-out; particle masses are what the caller
+//! sets (`new` gives every particle the same mass; a lumped distribution is the caller's).
+//! The geometric set is not a material model: no `E`, no `ν`, its sag depends on the
+//! iteration count and the compliances.
+//!
+//! **Validation.** `tests/analytic_deformable_static_sag.rs::the_neo_hookean_body_settles_to_the_finite_element_sag`
+//! (a fixed-base column's sag under its own weight equals the linear elastic finite element
+//! solve on the same tetrahedra within 2 %),
+//! `::the_neo_hookean_sag_converges_to_the_closed_form_as_the_cell_halves` (three cell sizes,
+//! the error against `ρ g H² / (2E)` does not grow as the cell halves),
+//! `::the_neo_hookean_sag_does_not_depend_on_the_iteration_count` (8 vs 16 iterations within
+//! 1 %), `::an_inverted_tetrahedron_recovers_its_rest_shape`,
+//! `::a_neo_hookean_run_replays_to_the_same_bits`,
+//! `::the_finite_element_sag_of_a_column_lies_below_rho_g_h_squared_over_two_e_by_at_most_the_base_layer`
+//! (the reference itself against the closed form: the fixed base takes at most the bottom
+//! layer's share, 6.0 % at `H/w = 8`, 5.4 % at 15),
+//! `::the_default_material_is_constraints_and_neo_hookean_is_a_different_law`;
+//! `tests/analytic_deformable_wiring.rs` (the cube constructor, centre of mass in free fall,
+//! rigid-body push-out).
+//!
+//! **Tiers.** L0 only: the tetrahedral solid at the mesh resolution given. A coarse cage
+//! tier with the fine surface embedded is planned; its error against L0 will be measured by
+//! the same sag and vibration problems.
+//!
 //! Author: Moroya Sakamoto
 
-use crate::math::{Fix128, Vec3Fix};
+use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 #[cfg(feature = "std")]
 use crate::sdf_collider::SdfCollider;
 
@@ -32,18 +109,110 @@ pub enum Material {
     /// (`volume_compliance`) and the blend toward the rest shape (`shape_stiffness`). No
     /// material parameter: the stiffness depends on the iteration count and the compliances.
     Constraints,
-    /// Stable Neo-Hookean tetrahedral constraints taking Young's modulus `E` (Pa) and
-    /// Poisson's ratio `ν`: per tetrahedron a deviatoric constraint of compliance `1/μ` and a
-    /// hydrostatic one of compliance `1/λ`, `μ = E / (2(1+ν))`, `λ = Eν / ((1+ν)(1−2ν))`
-    /// (Macklin & Müller, "A Constraint-based Formulation of Stable Neo-Hookean Materials",
-    /// MIG 2021). Not implemented yet: a step with this material panics
-    /// (`tests/analytic_deformable_static_sag.rs` is the red oracle it must turn green).
-    NeoHookean {
-        /// Young's modulus, Pa
-        young_modulus: Fix128,
-        /// Poisson's ratio, dimensionless, in `(-1, 0.5)`
-        poisson_ratio: Fix128,
-    },
+    /// The stable Neo-Hookean solid with Young's modulus `E` (Pa) and Poisson's ratio `ν`
+    /// ([`NeoHookeanLaw`], checked on construction): one energy constraint per tetrahedron,
+    /// see the module's MODEL section. Checked by `tests/analytic_deformable_static_sag.rs`.
+    NeoHookean(NeoHookeanLaw),
+}
+
+/// Why a [`NeoHookeanLaw`] could not be built.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaterialError {
+    /// `E ≤ 0`
+    YoungModulusNotPositive,
+    /// `ν` outside `(−1, 0.5 − 2⁻¹⁶]`: at `ν = 0.5` the Lamé parameter `λ` diverges, and
+    /// closer than `2⁻¹⁶` to it `λ = Eν / ((1+ν)(1−2ν))` leaves the `Fix128` range for the
+    /// moduli this law is meant for (`E` up to `2⁴⁰ Pa`)
+    PoissonRatioOutOfRange,
+    /// `E > 2⁴⁰ Pa`: `μ V`, `λ V` and the stress `P` must stay inside `Fix128`
+    YoungModulusTooLarge,
+}
+
+impl core::fmt::Display for MaterialError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::YoungModulusNotPositive => f.write_str("Young's modulus must be positive"),
+            Self::PoissonRatioOutOfRange => {
+                f.write_str("Poisson's ratio must be in (-1, 0.5 - 2^-16]")
+            }
+            Self::YoungModulusTooLarge => f.write_str("Young's modulus must be at most 2^40 Pa"),
+        }
+    }
+}
+
+impl core::error::Error for MaterialError {}
+
+/// Young's modulus and Poisson's ratio of a [`Material::NeoHookean`] body, with the Lamé
+/// parameters `μ = E / (2(1+ν))`, `λ = Eν / ((1+ν)(1−2ν))` they give. Built only through
+/// [`NeoHookeanLaw::new`], which refuses the values the constraint cannot carry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NeoHookeanLaw {
+    young_modulus: Fix128,
+    poisson_ratio: Fix128,
+    mu: Fix128,
+    lambda: Fix128,
+}
+
+impl NeoHookeanLaw {
+    /// Largest Young's modulus accepted, Pa (`2⁴⁰`).
+    pub const MAX_YOUNG_MODULUS: Fix128 = Fix128::from_int(1 << 40);
+    /// How far below `0.5` Poisson's ratio must stay (`2⁻¹⁶`).
+    pub const POISSON_MARGIN: Fix128 = Fix128::from_raw(0, 1 << 48);
+
+    /// `E` in Pa, `ν` dimensionless.
+    ///
+    /// # Errors
+    ///
+    /// [`MaterialError::YoungModulusNotPositive`] for `E ≤ 0`,
+    /// [`MaterialError::YoungModulusTooLarge`] above [`Self::MAX_YOUNG_MODULUS`],
+    /// [`MaterialError::PoissonRatioOutOfRange`] for `ν ≤ −1` or `ν > 0.5 − 2⁻¹⁶`.
+    pub fn new(young_modulus: Fix128, poisson_ratio: Fix128) -> Result<Self, MaterialError> {
+        if young_modulus <= Fix128::ZERO {
+            return Err(MaterialError::YoungModulusNotPositive);
+        }
+        if young_modulus > Self::MAX_YOUNG_MODULUS {
+            return Err(MaterialError::YoungModulusTooLarge);
+        }
+        let one_plus = Fix128::ONE + poisson_ratio;
+        let one_minus_two = Fix128::ONE - (poisson_ratio + poisson_ratio);
+        if one_plus <= Fix128::ZERO || one_minus_two < Self::POISSON_MARGIN + Self::POISSON_MARGIN {
+            return Err(MaterialError::PoissonRatioOutOfRange);
+        }
+        let mu = young_modulus / (one_plus + one_plus);
+        let lambda = young_modulus * poisson_ratio / (one_plus * one_minus_two);
+        Ok(Self {
+            young_modulus,
+            poisson_ratio,
+            mu,
+            lambda,
+        })
+    }
+
+    /// Young's modulus, Pa
+    #[must_use]
+    pub const fn young_modulus(&self) -> Fix128 {
+        self.young_modulus
+    }
+
+    /// Poisson's ratio
+    #[must_use]
+    pub const fn poisson_ratio(&self) -> Fix128 {
+        self.poisson_ratio
+    }
+
+    /// The Lamé parameters `(μ, λ)`, Pa
+    #[must_use]
+    pub const fn lame(&self) -> (Fix128, Fix128) {
+        (self.mu, self.lambda)
+    }
+
+    /// The energy's volumetric coefficient `λ̂ = λ + μ`: the stable Neo-Hookean energy without
+    /// its log term expands to `μ tr(ε²) + (λ̂ − μ)/2 (tr ε)²` at small strain, so `λ̂ = λ + μ`
+    /// makes that limit Hooke's law with this `μ` and `λ`.
+    #[must_use]
+    pub fn lambda_energy(&self) -> Fix128 {
+        self.lambda + self.mu
+    }
 }
 
 /// Deformable body configuration
@@ -130,6 +299,10 @@ pub struct DeformableBody {
     edge_constraints: Vec<EdgeConstraint>,
     /// Rest positions relative to center
     rest_relative: Vec<Vec3Fix>,
+    /// Per tetrahedron: the inverse of the rest edge matrix `Dm = [x1−x0, x2−x0, x3−x0]` and
+    /// the rest volume `|det Dm| / 6` (`None` for a degenerate rest tetrahedron, which the
+    /// Neo-Hookean constraints skip), indexed like `tetrahedra`
+    rest_inverse: Vec<Option<(Mat3Fix, Fix128)>>,
     /// Configuration
     pub config: DeformableConfig,
 }
@@ -153,6 +326,18 @@ impl DeformableBody {
         // Compute rest shape
         let rest_center = compute_center_of_mass(&positions);
         let rest_relative: Vec<Vec3Fix> = positions.iter().map(|p| *p - rest_center).collect();
+        let rest_inverse: Vec<Option<(Mat3Fix, Fix128)>> = tetrahedra
+            .iter()
+            .map(|&[i0, i1, i2, i3]| {
+                let dm = Mat3Fix::from_cols(
+                    positions[i1] - positions[i0],
+                    positions[i2] - positions[i0],
+                    positions[i3] - positions[i0],
+                );
+                let volume = dm.determinant().abs() / Fix128::from_int(6);
+                dm.inverse().map(|inv| (inv, volume))
+            })
+            .collect();
 
         let mut body = Self {
             prev_positions: positions.clone(),
@@ -163,6 +348,7 @@ impl DeformableBody {
             tet_constraints: Vec::new(),
             edge_constraints: Vec::new(),
             rest_relative,
+            rest_inverse,
             positions,
             config: DeformableConfig::default(),
         };
@@ -314,13 +500,22 @@ impl DeformableBody {
         }
 
         // 2. Solve constraints
-        if let Material::NeoHookean { .. } = self.config.material {
-            todo!("STUB: Material::NeoHookean tetrahedral constraints (E, ν) are not implemented")
-        }
-        for _ in 0..self.config.iterations {
-            self.solve_edge_constraints(dt);
-            self.solve_volume_constraints(dt);
-            self.apply_shape_matching();
+        match self.config.material {
+            Material::Constraints => {
+                for _ in 0..self.config.iterations {
+                    self.solve_edge_constraints(dt);
+                    self.solve_volume_constraints(dt);
+                    self.apply_shape_matching();
+                }
+            }
+            Material::NeoHookean(law) => {
+                let (mu, _) = law.lame();
+                let lambda = law.lambda_energy();
+                let mut multipliers = vec![Fix128::ZERO; self.tetrahedra.len()];
+                for _ in 0..self.config.iterations {
+                    self.solve_neo_hookean(dt, mu, lambda, &mut multipliers);
+                }
+            }
         }
 
         // 3. Update velocities
@@ -334,6 +529,7 @@ impl DeformableBody {
     }
 
     /// Solve edge constraints
+    #[inline(never)] // PROFILE-TEMP
     fn solve_edge_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.edge_compliance / (dt * dt);
 
@@ -369,6 +565,7 @@ impl DeformableBody {
     }
 
     /// Solve tetrahedral volume constraints
+    #[inline(never)] // PROFILE-TEMP
     fn solve_volume_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.volume_compliance / (dt * dt);
 
@@ -426,7 +623,129 @@ impl DeformableBody {
         }
     }
 
+    /// One Gauss–Seidel pass of the stable Neo-Hookean energy constraint over every
+    /// tetrahedron: with the deformation gradient `F = Ds · Dm⁻¹`, the energy per unit rest
+    /// volume `ψ = μ/2 (I_C − 3) − μ (J − 1) + λ̂/2 (J − 1)²` (Smith, De Goes & Kim 2018 without
+    /// the log term, shifted so `ψ = 0` at every rotation) is the XPBD constraint
+    /// `C = √(2 V ψ)` of unit compliance (`½ C² = V ψ`, Macklin, Müller & Chentanez 2016 §4),
+    /// gradient `∇_i C = V (P Dm⁻ᵀ) e_i / C` with the first Piola stress
+    /// `P = ∂ψ/∂F = μ F + (λ̂ (J − 1) − μ) cof F`, `λ̂ = λ + μ` ([`NeoHookeanLaw::lambda_energy`]).
+    /// A projection to `C = 0` restores the rest
+    /// shape (any rotation), so the stiff limit is right; the multiplier `λ_t` persists over
+    /// the iterations of one substep.
+    #[inline(never)] // PROFILE-TEMP
+    fn solve_neo_hookean(
+        &mut self,
+        dt: Fix128,
+        mu: Fix128,
+        lambda: Fix128,
+        multipliers: &mut [Fix128],
+    ) {
+        let alpha_tilde = Fix128::ONE / (dt * dt);
+        let two = Fix128::from_int(2);
+        let three = Fix128::from_int(3);
+        for t in 0..self.tetrahedra.len() {
+            let Some((dm_inv, rest_volume)) = self.rest_inverse[t] else {
+                continue;
+            };
+            if rest_volume.is_zero() {
+                continue;
+            }
+            let [i0, i1, i2, i3] = self.tetrahedra[t];
+            let f = self.deformation_gradient(i0, i1, i2, i3, dm_inv);
+            let i_c = f.col0.length_squared() + f.col1.length_squared() + f.col2.length_squared();
+            let j_minus_one = f.determinant() - Fix128::ONE;
+            let psi = mu * (i_c - three) / two - mu * j_minus_one
+                + lambda * j_minus_one * j_minus_one / two;
+            let c2 = two * rest_volume * psi;
+            if c2 <= Fix128::ZERO {
+                #[cfg(feature = "std")] // DEBUG-TEMP
+                if std::env::var_os("NH_DEBUG").is_some() {
+                    std::eprintln!(
+                        "skip tet {t}: psi {:.3e} J-1 {:.3e} I_C-3 {:.3e} det(Dm) sign {}",
+                        psi.to_f64(),
+                        j_minus_one.to_f64(),
+                        (i_c - three).to_f64(),
+                        if dm_inv.determinant().is_negative() {
+                            "-"
+                        } else {
+                            "+"
+                        }
+                    );
+                }
+                continue;
+            }
+            let c = c2.sqrt();
+            if c.is_zero() {
+                continue;
+            }
+            // cof F: columns f1 × f2, f2 × f0, f0 × f1
+            let cof = Mat3Fix::from_cols(
+                f.col1.cross(f.col2),
+                f.col2.cross(f.col0),
+                f.col0.cross(f.col1),
+            );
+            let k = lambda * j_minus_one - mu;
+            let p = Mat3Fix::from_cols(
+                f.col0 * mu + cof.col0 * k,
+                f.col1 * mu + cof.col1 * k,
+                f.col2 * mu + cof.col2 * k,
+            );
+            let g = p.mul_mat(dm_inv.transpose()).scale(rest_volume / c);
+            let grads = [-(g.col0 + g.col1 + g.col2), g.col0, g.col1, g.col2];
+            let w = [
+                self.inv_masses[i0],
+                self.inv_masses[i1],
+                self.inv_masses[i2],
+                self.inv_masses[i3],
+            ];
+            let mut denom = alpha_tilde;
+            for k in 0..4 {
+                denom = denom + w[k] * grads[k].length_squared();
+            }
+            if denom.is_zero() {
+                continue;
+            }
+            let delta = -(c + alpha_tilde * multipliers[t]) / denom;
+            #[cfg(feature = "std")] // DEBUG-TEMP
+            if t < 3 && std::env::var_os("NH_DEBUG").is_some() {
+                let gm: Vec<f64> = grads.iter().map(|g| g.length().to_f64()).collect();
+                std::eprintln!(
+                    "tet {t}: psi {:.3e} c {:.3e} J-1 {:.3e} I_C-3 {:.3e} V {:.3e} |g| {:?} w {:?} denom {:.3e} alpha {:.3e} delta {:.3e}",
+                    psi.to_f64(), c.to_f64(), j_minus_one.to_f64(), (i_c - three).to_f64(), rest_volume.to_f64(), gm,
+                    w.iter().map(|x| x.to_f64()).collect::<Vec<_>>(), denom.to_f64(), alpha_tilde.to_f64(), delta.to_f64()
+                );
+            }
+            multipliers[t] = multipliers[t] + delta;
+            let idx = [i0, i1, i2, i3];
+            for k in 0..4 {
+                if !w[k].is_zero() {
+                    self.positions[idx[k]] = self.positions[idx[k]] + grads[k] * (w[k] * delta);
+                }
+            }
+        }
+    }
+
+    /// `F = Ds · Dm⁻¹` of one tetrahedron from the current positions
+    fn deformation_gradient(
+        &self,
+        i0: usize,
+        i1: usize,
+        i2: usize,
+        i3: usize,
+        dm_inv: Mat3Fix,
+    ) -> Mat3Fix {
+        let p0 = self.positions[i0];
+        Mat3Fix::from_cols(
+            self.positions[i1] - p0,
+            self.positions[i2] - p0,
+            self.positions[i3] - p0,
+        )
+        .mul_mat(dm_inv)
+    }
+
     /// Shape matching: move particles toward their rest pose
+    #[inline(never)] // PROFILE-TEMP
     fn apply_shape_matching(&mut self) {
         let alpha = self.config.shape_stiffness;
         if alpha.is_zero() {
@@ -451,6 +770,7 @@ impl DeformableBody {
 
     /// Resolve SDF collisions
     #[cfg(feature = "std")]
+    #[inline(never)] // PROFILE-TEMP
     fn resolve_sdf_collisions(&mut self, sdf_colliders: &[SdfCollider]) {
         for i in 0..self.particle_count() {
             if self.inv_masses[i].is_zero() {
