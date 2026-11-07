@@ -45,7 +45,10 @@
 //! frequency `ω` loses energy at the rate `2 ζ(ω) ω`, `ζ(ω) = α/(2ω) + βω/2`, which the
 //! trapezoidal step reproduces as the per-step factor `|z|²`, `z = (1 + λ dt/2)/(1 − λ dt/2)`,
 //! `λ = −ζω ± iω√(1−ζ²)` (closed form, validated below). Momentum of a free body follows the
-//! applied force exactly. The co-rotational step conserves the same quantities within one
+//! applied force exactly, and an external impulse `J` changes it by `J` (`M Δv = J` through the
+//! mass solve: exact for the lumped mass, to the solve's tolerance for the consistent one)
+//! and the free steps keep it within `n (2/dt) tol |u| M_total` (the corrector amplifies the
+//! solve's displacement error into velocity). The co-rotational step conserves the same quantities within one
 //! linearisation per step: a rotation as a whole produces no elastic force or energy.
 //!
 //! **Valid range.** Any `dt > 0` (unconditional stability); the modes resolved are those with
@@ -65,7 +68,8 @@
 //! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
 //! or none; contact is a single plane, frictionless, resolved to the step's end (no
 //! time-of-impact subdivision, a vertex arriving mid-step is held from the end of that step),
-//! no restitution (the hold is inelastic); no external impulses yet; the lumped mass lowers the frequencies and the
+//! no restitution (the hold is inelastic); external impulses are applied between steps, not
+//! inside one; the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
 //! space); loads and prescribed displacements are constant over a run.
 //!
@@ -93,7 +97,11 @@
 //! `ρ g H² / (2E)` is the O(h) limit, 0.6 % away on this mesh),
 //! `::a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static_sag` (a
 //! 10 mm drop: no step ends below the plane, touchdown within one step of `√(2h/g)`, the
-//! same sag), `tests/audit_dynamic_fem.rs`.
+//! same sag), `::an_impulse_on_a_free_lumped_body_is_its_momentum_exactly_and_is_kept` and
+//! `::an_impulse_on_a_free_consistent_body_is_its_momentum_to_the_solve_tolerance` (an oblique
+//! impulse on the top of a free column: `Σ M v = J` to 1e-12 with the lumped mass, to the solve
+//! tolerance with the consistent one, and the momentum and centre-of-mass velocity are kept
+//! over 200 free steps within the derived bound), `tests/audit_dynamic_fem.rs`.
 //!
 //! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
 //! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
@@ -1390,6 +1398,69 @@ impl CorotationalTransientSolver {
     #[must_use]
     pub fn on_ground(&self) -> &[bool] {
         &self.on_ground
+    }
+
+    /// External impulses `(vertex, J)` in N·s (`t·mm/s`), applied between steps: the velocity
+    /// changes by `Δv = M⁻¹ J` (the mass solve, so the consistent and the lumped mass both
+    /// conserve momentum: `Σ M Δv = J` exactly for the lumped one, to the solve's tolerance for
+    /// the consistent one); the displacement and the acceleration are untouched, the next step
+    /// carries the new velocity. Impulses on prescribed or held degrees of freedom are dropped
+    /// (the constraint takes them).
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::VertexOutOfRange`] for a vertex index past the mesh, and the conjugate
+    /// gradient errors of the mass solve.
+    pub fn apply_impulses(&mut self, impulses: &[(u32, [Fix128; 3])]) -> Result<(), FemError> {
+        let ndof = self.u.len();
+        let vertex_count = ndof / 3;
+        let mut j = vec![Fix128::ZERO; ndof];
+        for &(vertex, impulse) in impulses {
+            if vertex as usize >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex,
+                    vertex_count,
+                });
+            }
+            for (axis, value) in impulse.iter().enumerate() {
+                let d = vertex as usize * 3 + axis;
+                if self.is_free[d] && !(axis == 1 && self.on_ground[vertex as usize]) {
+                    j[d] = j[d] + *value;
+                }
+            }
+        }
+        // `Ṁ = c₀ M`, so solving `Ṁ y = J` gives `Δv = c₀ y`
+        let ops = &self.ops;
+        let (y, _) = conjugate_gradient(
+            &j,
+            &self.is_free,
+            &self.mass_precond,
+            &self.config,
+            |p, out| {
+                ops.apply_mass(p, out);
+            },
+        )?;
+        for ((v, &y), &free) in self.v.iter_mut().zip(&y).zip(&self.is_free) {
+            if free {
+                *v = *v + y * self.inv_beta_dt2;
+            }
+        }
+        Ok(())
+    }
+
+    /// `M v`, the momentum of the body (N·s, three components per vertex summed by the caller
+    /// or read per vertex): the mass product of the velocity, so `Σ` over all vertices is the
+    /// total momentum whatever the mass distribution.
+    #[must_use]
+    pub fn momentum(&self) -> Vec<Fix128> {
+        let ndof = self.u.len();
+        let mut out = vec![Fix128::ZERO; ndof];
+        self.ops.apply_mass(&self.v, &mut out);
+        // `apply_mass` applies `Ṁ = c₀ M`
+        for x in &mut out {
+            *x = *x / self.inv_beta_dt2;
+        }
+        out
     }
 
     /// Rayleigh damping `C = α M + β K'` with `K'` the warped stiffness: `α` in 1/s damps
