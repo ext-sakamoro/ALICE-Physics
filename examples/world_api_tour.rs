@@ -512,7 +512,7 @@ mod gpu {
         // semantics identifier first, like every bridge path)
         let before_pass = dispatches.load(Ordering::SeqCst);
         world
-            .solve_contact_constraints_with_bridge(&mut bridge)
+            .solve_contact_constraints_with_bridge(&mut bridge, frame_dt())
             .expect("the bridge computes under this build's semantics");
         println!(
             "[world_api] host-driven contact pass: dispatches={}",
