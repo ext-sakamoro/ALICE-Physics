@@ -915,6 +915,13 @@ jobs:
         run: python3 scripts/test_wiring_guard.py
       - name: wiring-guard (新規の未配線 / 理由の無い dead_code が無い)
         run: python3 scripts/wiring_guard.py
+      # 物理 module の宣言: scripts/model-modules.txt の module は MODEL 節 (方程式 / 単位 / 保存則 / 適用範囲 /
+      # 近似 / 検証 / 段) を持ち、名指しの試験が実在して #[ignore] でなく CI の cargo test で走る
+      # (未記載は scripts/model-section-baseline.txt のラチェット、比較 0 件で fail)
+      - name: model-section-check oracle (検査器自身の試験)
+        run: python3 scripts/test_model_section_check.py
+      - name: model-section-check (物理 module の MODEL 節と検証 test の実在)
+        run: python3 scripts/model_section_check.py
       # 決定論: production の code は OS の entropy も時計も使わない
       - name: Entropy guard (test first)
         run: python3 scripts/test_entropy_guard.py

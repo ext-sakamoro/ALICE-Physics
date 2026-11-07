@@ -20,6 +20,52 @@
 //! - Clough & Penzien, *Dynamics of Structures* 3rd ed. Ch. 12.
 //! - Chopra, *Dynamics of Structures* 5th ed. §11.4 (Rayleigh damping).
 //! - Craig & Kurdila, *Fundamentals of Structural Dynamics* Ch. 8.
+//!
+//! # MODEL — Rayleigh damping
+//!
+//! **Equations.** `C = α·M + β·K`, which decouples in the undamped modes to a modal damping
+//! ratio `ζ(ω) = α / (2ω) + β·ω / 2` ([`RayleighCoefficients::damping_ratio`]). Fitting two
+//! modes `(ω_1, ζ_1)`, `(ω_2, ζ_2)` solves `2·ω_i·ζ_i = α + β·ω_i²`:
+//! `β = 2·(ω_2·ζ_2 − ω_1·ζ_1) / (ω_2² − ω_1²)`, `α = 2·ω_1·ζ_1 − β·ω_1²`
+//! ([`RayleighCoefficients::fit_two_modes`]); when that exact fit needs a negative
+//! coefficient, the result is the non-negative least squares fit of the two ratios (the better
+//! of `(α, 0)` and `(0, β)`, each in closed form), since `C` is positive semi-definite only
+//! for `α, β ≥ 0`. `ω = 2π·f` ([`hz_to_omega`], [`omega_to_hz`]).
+//!
+//! **Units.** SI: `ω` rad/s, `f` Hz, `α` 1/s, `β` s, `ζ` dimensionless; `M` kg, `K` N/m and
+//! `C` N·s/m when the matrices are assembled by the structural solver. Every quantity is
+//! `Fix128` (Q64.64), so a fit replays bit for bit.
+//!
+//! **Conservation.** Dissipative by construction: a mode of amplitude `A` loses energy at the
+//! rate `2·ζ(ω)·ω` per unit of its energy (the decay `e^{−ζ ω t}` of the amplitude), and the
+//! loss is never negative for `α, β ≥ 0`. Mass and momentum are untouched (the model adds a
+//! velocity-proportional force only). Energy leaves the system and is not tracked as heat.
+//!
+//! **Valid range.** Classically damped linear structures (the damping matrix must be a
+//! combination of `M` and `K` for the modes to decouple); `ω > 0`. `damping_ratio` at `ω = 0`
+//! returns 0 (no division), `fit_two_modes` with a zero or two equal frequencies returns the
+//! default `(0, 0)` (singular system, documented, not an error), and the fit never returns a
+//! negative coefficient. Values must keep `ω²` and `ω·ζ` inside `Fix128` (|value| < 2^63);
+//! beyond that the arithmetic wraps and the result is not a fit (no detection here).
+//!
+//! **Approximations.** Linear viscous damping only: no hysteretic (structural) damping, no
+//! friction (Coulomb) damping, no frequency-dependent material loss factor, no dependence on
+//! amplitude or temperature. Two target modes fix the whole curve, so modes between them are
+//! under-damped and modes outside them over-damped relative to a constant target.
+//!
+//! **Validation.** `tests/audit_damping_rayleigh.rs::fit_reproduces_both_targets_to_fix128_precision`
+//! (the fit returns both target ratios), `::fit_two_modes_is_symmetric_in_mode_order`,
+//! `::damping_ratio_minimum_is_sqrt_alpha_beta_at_sqrt_alpha_over_beta` (the minimum of
+//! `ζ(ω)` at `ω = √(α/β)` is `√(α·β)`), `::damping_ratio_is_linear_in_the_coefficients`,
+//! `::fit_at_ultrasonic_frequencies_matches_closed_form`,
+//! `::fit_two_modes_never_returns_negative_damping_coefficients`,
+//! `::fit_two_modes_with_opposite_frequencies_is_singular_and_returns_default`;
+//! `tests/analytic_damping_rayleigh_wiring.rs::fit_two_modes_matches_hand_solved_linear_system_for_a_second_mode_pair`
+//! (the 2×2 system solved by hand in `f64`),
+//! `::hz_to_omega_matches_two_pi_times_frequency_independent_reference`,
+//! `::hz_to_omega_omega_to_hz_round_trip_recovers_original_frequency`.
+//!
+//! **Tiers.** L0 only: the coefficients are a parameter law, there is no lighter tier.
 
 use crate::math::Fix128;
 
