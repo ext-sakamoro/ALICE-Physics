@@ -6,28 +6,35 @@
 //! world `z`; about any other hinge axis the bodies are not coupled at all.
 //!
 //! Closed form of one projection with ratio `r`, inverse inertias `w_a`, `w_b`
-//! about the axis and a twist `θ` on body A alone: `λ = θ / (w_a + r² w_b)`,
-//! A turns by `−λ w_a` and B by `−λ r w_b`, so the twists after the solve satisfy
-//! `θ_a + r θ_b = 0` exactly in real arithmetic. The correction is applied as the
-//! quaternion `(0, 0, −λw/2, 1)` normalised, whose angle is `2·atan(λw/2) = λw −
-//! (λw)³/12 + …`, so the residual of the sum is below `(|θ|)³ / 6` for `|θ| < 1`
-//! (both bodies' cubic terms, each `≤ |θ|³/12`), plus the `2⁻⁴⁰` of the one CORDIC
-//! `sin_cos` in `from_axis_angle`.
+//! about the axis and a twist `θ` on body A alone. `solve_gear` does not read `θ`
+//! itself: `extract_angle_around_axis` returns `2 · (xyz · axis)` of the `w ≥ 0`
+//! quaternion, which is `2 sin(θ/2)`, so `λ = 2 sin(θ/2) / (w_a + r² w_b)`. With
+//! `a = λ w_a` and `b = λ r w_b` the two corrections are the quaternions
+//! `(0, 0, −a/2, 1)` and `(0, 0, −b/2, 1)` normalised, whose angles are
+//! `2 · atan(a/2) = a − a³/12 + a⁵/80 − …` (the same in `b`). The twists measured
+//! afterwards, `2 · atan2` of the composed quaternion, are `θ_a = θ − 2 atan(a/2)`
+//! and `θ_b = −2 atan(b/2)`; with `a + r b = 2 sin(θ/2) = θ − θ³/24 + θ⁵/1920 − …`
+//! they satisfy
+//!
+//! `θ_a + r θ_b = [θ − 2 sin(θ/2)] + (a³ + r b³)/12 − …`
+//! `= θ³/24 + (a³ + r b³)/12 + O(θ⁵)`.
+//!
+//! The fifth-order terms dropped, `θ⁵/1920 + (a⁵ + r b⁵)/80`, enter the residual
+//! with a minus sign, so `θ³/24 + (a³ + r b³)/12` is an upper bound in exact
+//! arithmetic with that much margin (about `4e-8` at `θ = 1/8`, `r = 1`), far
+//! above the `~2⁻⁴⁸` error of the one CORDIC `sin_cos` in `from_axis_angle` and
+//! the `2⁻⁶⁴` rounding of `Fix128`. The bound is evaluated in f64 from `θ`, `r`,
+//! `w_a` and `w_b`, never by the solver under test.
 //!
 //! Author: Moroya Sakamoto
 #![allow(
     clippy::disallowed_methods,
-    reason = "analytic reference: the twist bound θ³/6 is a closed form evaluated in f64, never by the solver under test"
+    reason = "analytic reference: the bound is a closed form in f64, never the solver under test"
 )]
 
 use alice_physics_core::joint_extra::{solve_extra_joints, ExtraJoint, GearJoint};
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
-
-/// `2^-40`: 256x the documented `~2^-48` CORDIC error of the one `sin_cos` call.
-fn cordic_tol() -> Fix128 {
-    Fix128::from_raw(0, 1 << 24)
-}
 
 /// two unit-mass bodies with unit inverse inertia; A carries a twist `theta`
 /// about `axis` over the step (`prev_rotation` identity), B is at rest
@@ -65,10 +72,15 @@ fn gear(ratio: Fix128) -> Vec<ExtraJoint> {
     vec![ExtraJoint::Gear(GearJoint::new(0, 1, 0, 1, ratio))]
 }
 
-/// bound on `|θ_a + r θ_b|` after one projection: the cubic term of the
-/// small-angle quaternion on each body plus the CORDIC tolerance
-fn residual_bound(theta: f64) -> f64 {
-    theta.abs().powi(3) / 6.0 + cordic_tol().to_f64()
+/// bound on `|θ_a + r θ_b|` after one projection (module doc): the third-order
+/// terms of the twist read as `2 sin(θ/2)` and of the two corrections applied as
+/// `(0, 0, −x/2, 1)`; the fifth-order terms dropped only lower the residual.
+/// `w_a`, `w_b` are the inverse inertias about the axis the solver uses
+fn residual_bound(theta: f64, ratio: f64, w_a: f64, w_b: f64) -> f64 {
+    let theta = theta.abs();
+    let lambda = 2.0 * (theta / 2.0).sin() / (w_a + ratio * ratio * w_b);
+    let (a, b) = (lambda * w_a, lambda * ratio * w_b);
+    theta.powi(3) / 24.0 + (a.powi(3) + ratio * b.powi(3)) / 12.0
 }
 
 /// Today's behaviour, pinned: a twist about world `z` is coupled by the
@@ -83,8 +95,11 @@ fn a_twist_about_world_z_is_coupled_in_the_ratio() {
         let ta = twist_about(&bodies[0], Vec3Fix::UNIT_Z);
         let tb = twist_about(&bodies[1], Vec3Fix::UNIT_Z);
         let residual = ta + ratio.to_f64() * tb;
-        let bound = residual_bound(theta.to_f64());
-        eprintln!("z, ratio {num}/{den}: θ_a {ta:.6e} θ_b {tb:.6e} residual {residual:.3e} bound {bound:.3e}");
+        let bound = residual_bound(theta.to_f64(), ratio.to_f64(), 1.0, 1.0);
+        eprintln!(
+            "z, ratio {num}/{den}: θ_a {ta:.6e} θ_b {tb:.6e} \
+             residual {residual:.3e} bound {bound:.3e}"
+        );
         assert!(
             residual.abs() <= bound,
             "residual {residual:.3e} above {bound:.3e}"
@@ -108,7 +123,7 @@ fn a_twist_about_the_hinge_axis_x_is_coupled_in_the_ratio() {
     let ta = twist_about(&bodies[0], Vec3Fix::UNIT_X);
     let tb = twist_about(&bodies[1], Vec3Fix::UNIT_X);
     let residual = ta + ratio.to_f64() * tb;
-    let bound = residual_bound(theta.to_f64());
+    let bound = residual_bound(theta.to_f64(), ratio.to_f64(), 1.0, 1.0);
     eprintln!("x: θ_a {ta:.6e} θ_b {tb:.6e} residual {residual:.3e} bound {bound:.3e}");
     assert!(tb != 0.0, "B stayed at rest: the x twist was not seen");
     assert!(
