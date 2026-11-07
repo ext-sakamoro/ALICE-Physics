@@ -147,10 +147,11 @@ impl BodyCollider {
     }
 
     /// Radius of a sphere about the body's origin (its centre of mass) that contains
-    /// the whole collider.
-    pub(crate) fn bounding_radius(&self) -> Fix128 {
+    /// the whole collider, or `None` when it does not fit `Fix128` (the lengths are
+    /// formed without squaring out of the range, as [`Shape::checked_bounding_radius`]).
+    pub(crate) fn checked_bounding_radius(&self) -> Option<Fix128> {
         match self {
-            Self::Shape(shape) => shape.bounding_radius(),
+            Self::Shape(shape) => shape.checked_bounding_radius(),
             Self::Compound(compound) => {
                 // The corners of each child's box in the body's own frame bound it;
                 // the farthest corner from the origin bounds the union.
@@ -160,7 +161,7 @@ impl BodyCollider {
                     for &x in &[b.min.x, b.max.x] {
                         for &y in &[b.min.y, b.max.y] {
                             for &z in &[b.min.z, b.max.z] {
-                                let d = Vec3Fix::new(x, y, z).length();
+                                let d = Vec3Fix::new(x, y, z).checked_length_scaled()?;
                                 if d > radius {
                                     radius = d;
                                 }
@@ -168,7 +169,7 @@ impl BodyCollider {
                         }
                     }
                 }
-                radius
+                Some(radius)
             }
         }
     }
@@ -917,7 +918,12 @@ mod tests {
         let c = BodyCollider::Shape(Shape::Box {
             half_extents: Vec3Fix::from_int(1, 2, 2),
         });
-        assert_near(c.bounding_radius(), 3.0, 1e-12, "box bounding radius");
+        assert_near(
+            c.checked_bounding_radius().expect("in range"),
+            3.0,
+            1e-12,
+            "box bounding radius",
+        );
     }
 
     /// Two axis-aligned unit cubes whose centres are 9/10 apart along `X` overlap
