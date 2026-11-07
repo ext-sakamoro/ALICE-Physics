@@ -110,7 +110,19 @@ ORACLE_STATUS = textwrap.dedent("""\
 
 KNOWN_DEFECTS_LINE = "//!\n//! **Known defects.** `tests/analytic_fall.rs::a_dropped_body_comes_to_rest_on_the_floor` (FALL-001).\n"
 
-BODY = "\npub fn drop(t: f64) -> f64 { 0.5 * 9.81 * t * t }\n"
+BODY = textwrap.dedent("""
+    pub fn drop(t: f64) -> f64 { 0.5 * 9.81 * t * t }
+
+    /// how a body meets the floor
+    pub enum Landing {
+        Rest,
+        Bounce(f64),
+    }
+
+    pub struct FallConfig {
+        pub restitution: f64,
+    }
+    """)
 
 
 def crate(files: dict[str, str], ci: str = CI_DEFAULT, default_features: str = '"std"') -> Path:
@@ -170,6 +182,16 @@ class Citations(unittest.TestCase):
         sec = SECTION_PARAGRAPH.replace("No drag (`drop`).", "No drag on `v`.")
         rep = run(crate({"src/fall.rs": sec + BODY}))
         self.assertTrue(any("sentence 1 cites `v`, which is not defined" in f for f in rep.findings), rep.findings)
+
+    def test_enum_variant_and_struct_field_resolve(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("No drag (`drop`).", "No drag (`Landing::Rest`); no bounce (`restitution`).")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertEqual(rep.findings, [])
+
+    def test_unknown_variant_fails(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("No drag (`drop`).", "No drag (`Landing::Slide`).")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertTrue(any("cites `Landing::Slide`, which is not defined" in f for f in rep.findings), rep.findings)
 
     def test_units_need_no_citation(self) -> None:
         rep = run(crate({}))

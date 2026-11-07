@@ -98,6 +98,11 @@ SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;。])\s+")
 IDENT_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)(?:\(\))?`")
 PATH_LINE_RE = re.compile(r"\b((?:src|tests|examples|benches|fuzz)/[A-Za-z0-9_./-]+\.rs):(\d+)\b")
 DEF_RE = re.compile(r"\b(?:fn|struct|enum|const|static|trait|type|mod|union)\s+([A-Za-z_][A-Za-z0-9_]*)|macro_rules!\s+([A-Za-z_][A-Za-z0-9_]*)")
+# an enum variant (`Variant,` / `Variant(` / `Variant {` / `Variant =` at the start of a line) and a
+# struct field (`name: Type` at the start of a line, `pub` or not): named items too, cited as
+# `Type::Variant` or by the field's name
+VARIANT_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?([A-Z][A-Za-z0-9_]*)\s*(?:,|\(|\{|=|$)", re.M)
+FIELD_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?([a-z_][a-z0-9_]*)\s*:\s*[A-Za-z&(\[]", re.M)
 
 
 @dataclass
@@ -333,15 +338,18 @@ class Resolver:
 
     def defined_names(self) -> set[str]:
         """every item name defined in src/ (`fn`, `struct`, `enum`, `const`, `static`, `trait`,
-        `type`, `mod`, `union`, `macro_rules!`)"""
+        `type`, `mod`, `union`, `macro_rules!`), the enum variants and the struct fields"""
         if self._defined is None:
             names: set[str] = set()
             for dirpath, _d, files in os.walk(os.path.join(self.root, "src")):
                 for f in files:
                     if f.endswith(".rs"):
                         with open(os.path.join(dirpath, f), encoding="utf-8") as fh:
-                            for m in DEF_RE.finditer(fh.read()):
-                                names.add(m.group(1) or m.group(2))
+                            text = fh.read()
+                        for m in DEF_RE.finditer(text):
+                            names.add(m.group(1) or m.group(2))
+                        names.update(VARIANT_RE.findall(text))
+                        names.update(FIELD_RE.findall(text))
             self._defined = names
         return self._defined
 
