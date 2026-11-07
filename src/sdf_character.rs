@@ -13,58 +13,70 @@
 //!
 //! # MODEL — kinematic SDF character (projection onto a distance field)
 //!
-//! - **方程式 (equations)**: no equation of motion is solved; the controller
-//!   is kinematic. Per frame `v += a·dt` (`apply_gravity`) and `x += v·dt +
-//!   control` (`step`). Penetration is resolved by fixed-point projection on
-//!   the field: while `d(x) < radius` and iterations remain, `x += n ·
-//!   min(radius − d + skin, max_push)` with `n` the field's normal at `x`
-//!   (`resolve`); a normal with `n · up < min_up_alignment` is replaced by
-//!   `up`, and on a sphere world a walkable contact (`n · up ≥
-//!   ground_up_threshold`) is pushed along `up` by `(radius − d + skin) /
-//!   (n · up)`. Contact response: the net correction is the contact normal
-//!   and the velocity component into it is removed, `v −= n (v · n)` for
-//!   `v · n < 0` (inelastic kinematic law); the tangent is kept. On a sphere
-//!   (`step_on_sphere`) the tangential velocity moves the character along the
-//!   great circle by `|v_t|·dt / r` and the velocity turns with the frame; at
-//!   rest inside the skin band on walkable ground it is lifted by
-//!   `(radius + skin − d) / (n · up)`. Ground: the field is sampled `radius +
-//!   ground_probe_epsilon` along `−up`; a sample within the epsilon is a
-//!   contact, grounded when `n · up ≥ ground_up_threshold`.
-//! - **単位 (units)**: SI in `f32` throughout — m, s, m/s, m/s²; `up` is
-//!   normalized on use. No `Fix128` is on the path, so the core's Fix128
-//!   bit-for-bit guarantee does not cover this module; what is claimed is
-//!   narrower: `sqrt`, `sin_cos`, `acos`, `min`, `clamp` go through
-//!   `det_math` and the cross-platform golden below pins the bits.
-//! - **保存則 (conservation)**: nothing is conserved. The character has no
-//!   mass and moves no body. The velocity component into a contact is dropped,
-//!   never reflected (energy removed); the arc step keeps `|v_t|·dt` as the
-//!   arc length and the distance from the centre exactly, and rotates the
-//!   velocity without changing its length.
-//! - **適用範囲 (range)**: exact distance fields (`|∇f| = 1`): the sample is
-//!   treated as a true distance. For `|∇f| > 1` the push overstates the
-//!   penetration and can tunnel through a sheet; `SdfCharacter::max_push` and
-//!   `SdfCharacter::min_up_alignment` (both off by default) are the opt-in
-//!   bounds. Any `dt`, 0 included, is accepted. An exhausted budget returns
-//!   `converged = false` with the least-penetrating sample
-//!   (`MoveOutcome::best_position`), which `step` adopts. A zero or non-finite
-//!   `up` falls back to `+Y`; at a sphere's centre the arc is skipped. A fixed
-//!   `+Y` up axis is wrong on a sphere unless `up` is set radially.
-//! - **近似 (approximations)**: only the centre is sampled — the capsule is a
-//!   sphere of `radius` and `SdfCharacter::height` is read by no move; no
-//!   step height, no slope-limited walking in `move_and_slide` (the threshold
-//!   decides `is_grounded` and the walkable push on a sphere only), no
-//!   friction, restitution, mass or reaction; one normal per iteration.
-//!   Surface orientation comes from the SDF gradient at every contact, as the
-//!   field reports it (`SdfField::normal`, analytic or finite-difference);
-//!   the up axis is a fixed `+Y` by default and radial only when set.
+//! - **方程式 (equations)**: no equation of motion is solved; the controller is
+//!   kinematic. `v += a·dt` (`apply_gravity`, l. 478) and `x += v·dt + control`
+//!   with `control` a displacement (`step_resolved`, l. 645). Penetration is
+//!   resolved by projection: while `d(x) < radius` and the budget remains,
+//!   `x += n · min(radius − d + skin, max_push)`, `n` the field's normal at `x`
+//!   (`resolve`, l. 409–442). First a normal with `n · up < min_up_alignment` is
+//!   replaced by `up` (`resolve`, l. 424–426); on the sphere path only, a contact
+//!   with `n · up ≥ ground_up_threshold` and `n · up > 0` is pushed along `up` by
+//!   `(radius − d + skin) / (n · up)` (`resolve`, l. 432–437); the `max_push` cap
+//!   is applied last (`resolve`, l. 439). Contact response: `n` is the unit net
+//!   correction — `adopted − unresolved` in `step`, the sum of pushes on the sphere
+//!   path when converged (`step_resolved`, l. 662–670) — and for `|correction| >
+//!   skin` the velocity into it is removed, `v −= n (v · n)` when `v · n < 0`
+//!   (`step_resolved`, l. 679–690). Sphere: `up = (p − c) / |p − c|`
+//!   (`step_on_sphere`, l. 557); the tangential part of the given velocity rotates
+//!   `up` and `t` by `|v_t|·dt / r` (l. 568–586) and `v` by the same angle
+//!   (l. 590–596); after the step, inside `d < radius + skin` on walkable ground
+//!   with `v · up ≤ 0`, the centre is lifted by `(radius + skin − d) / (n · up)`
+//!   and `v · up` is removed (`snap_to_walkable_ground`, l. 618–633). Ground: the
+//!   field is sampled `radius + ground_probe_epsilon` along `−up`; a sample
+//!   `≤ ground_probe_epsilon` is a contact (`ground_contact`, l. 725–732), grounded
+//!   when `n · up ≥ ground_up_threshold` (`is_grounded`, l. 788).
+//! - **単位 (units)**: every quantity is `f32` in the field's own length and time
+//!   unit; nothing converts (`SdfCharacter`, l. 262–320): `radius`, `skin_width`,
+//!   `ground_probe_epsilon`, `max_push` lengths, `velocity` length/time, `gravity`
+//!   length/time² (`apply_gravity`, l. 478); `up` is normalized where read
+//!   (`up_unit`, l. 707–709). The controller holds no `Fix128`; the world field
+//!   converts each query point to `Vec3Fix` for the collider frame
+//!   (`WorldSdfField::nearest`, l. 822). `sqrt`, `sin_cos`, `acos`, `min`, `clamp`
+//!   go through `det_math` (l. 439, 555, 567, 571, 671, 707, 769); the golden below
+//!   pins the bits of `move_and_slide` and `is_grounded` only, not the sphere path.
+//! - **保存則 (conservation)**: nothing is conserved. The character has no mass and
+//!   moves no body; `resolve` only reads the field (l. 410, 419). The velocity into
+//!   a contact is dropped, never reflected (`step_resolved`, l. 686–690), and the
+//!   snap drops `v · up` (`snap_to_walkable_ground`, l. 631). The arc step keeps
+//!   `|p − c| = r` and the length of `v`, up to rounding (`step_on_sphere`, l. 582–596).
+//! - **適用範囲 (range)**: exact distance fields (`|∇f| = 1`): the sample is taken
+//!   as a true distance (`resolve`, l. 431). For `|∇f| > 1` the push overstates the
+//!   penetration and can cross into the next sheet; `max_push` (default `+∞`,
+//!   l. 333) and `min_up_alignment` (default `−∞`, l. 334) are the opt-in bounds.
+//!   `dt` is not checked: `0` moves by `control` alone (`step_resolved`, l. 645)
+//!   and skips the arc (`step_on_sphere`, l. 569). An exhausted budget returns
+//!   `converged = false` with the least-penetrating sample seen, final push
+//!   included (`resolve`, l. 448–459), which `step` adopts (`resolved_position`,
+//!   l. 251–257; `step_resolved`, l. 655). A zero or non-finite `up` falls back to
+//!   `+Y` (`up_unit`, l. 708–712); at the sphere's centre the arc is skipped (l. 556).
+//! - **近似 (approximations)**: only the centre is sampled (`resolve`, l. 410), so
+//!   the capsule acts as a sphere of `radius`; `height` is read by no move (l. 270,
+//!   347). No step height, friction, restitution, mass or reaction; one normal per
+//!   iteration (`resolve`, l. 419).
+//!   `ground_up_threshold` decides `is_grounded` (l. 788), the walkable push on the
+//!   sphere path (`resolve`, l. 434) and the snap (`snap_to_walkable_ground`,
+//!   l. 627); `move_and_slide` and `step` apply no slope limit (`walkable_along_up
+//!   = false`, l. 364, 510). Orientation is the field's normal as reported
+//!   (`SdfField::normal`, l. 419); `up` is `+Y` (l. 332) unless set; `step_on_sphere`
+//!   sets it radially (l. 558).
 //! - **検証 (validation)**: `tests/analytic_sdf_character_up_axis.rs::
 //!   ground_contact_reports_the_closed_form_distance_and_normal`,
 //!   `::equator_is_not_grounded_with_a_fixed_y_up_axis`,
 //!   `::equator_is_grounded_once_the_up_axis_is_radial`,
 //!   `::a_degenerate_up_axis_falls_back_to_y_instead_of_producing_nan`,
 //!   `::one_unclamped_push_overshoots_the_free_pocket_into_the_next_sheet` and
-//!   `::a_clamped_push_lands_in_the_analytic_free_band` (`|∇f| > 1`
-//!   tunnelling and its cap), `::the_outcome_reports_the_least_penetrating_sample_it_saw`,
+//!   `::a_clamped_push_lands_in_the_analytic_free_band` (`|∇f| > 1` crossing and
+//!   its cap), `::the_outcome_reports_the_least_penetrating_sample_it_saw`,
 //!   `::a_free_fall_step_advances_by_velocity_times_dt_and_keeps_the_velocity`,
 //!   `::landing_removes_the_velocity_into_the_surface_and_keeps_the_tangent`,
 //!   `::a_wall_removes_only_the_component_into_the_wall`,
@@ -73,18 +85,16 @@
 //!   arc_step_travels_speed_times_time_along_the_great_circle`,
 //!   `::radial_velocity_stays_radial_across_an_arc_step`,
 //!   `::central_gravity_settles_on_the_sphere_at_every_latitude`,
-//!   `::walkable_slope_holds_and_steep_slope_slides` (the push along `up`
-//!   holds under the threshold, slides over it),
+//!   `::walkable_slope_holds_and_steep_slope_slides` (20°/40° hold, 60° slides),
 //!   `::a_jump_from_the_ground_is_not_snapped_back`;
 //!   `tests/analytic_character_state_wiring.rs::ground_contact_closed_form_on_flat_plane`;
 //!   `tests/analytic_world_sweeps.rs::parity_with_move_and_slide_on_the_single_field`
-//!   (the world's SDF union as one field); the cross-platform bits
-//!   `tests/determinism_golden_f32.rs::golden_sdf_soft_family`.
-//!   validation missing: free fall onto a flat field compared with
-//!   `t = √(2h/g)` (the rest oracles check the final state, not the fall
-//!   time). validation missing: a slope on a flat world through `step` (the
-//!   slope oracle runs on the sphere path only). Momentum exchange in a
-//!   collision: not applicable, the controller carries no momentum.
+//!   (the world's SDF union as one field); the cross-platform bits of 12 `move_and_slide`
+//!   + `is_grounded` steps on one field, `tests/determinism_golden_f32.rs::golden_sdf_soft_family`.
+//!   validation missing: free fall onto a flat field compared with `t = √(2h/g)` (the
+//!   rest oracles check the final state, not the fall time). validation missing: a
+//!   slope on a flat world through `step` (the slope oracle runs on the sphere path
+//!   only). Momentum exchange in a collision: not applicable, no momentum is carried.
 //! - **段 (tiers)**: L0 only.
 //!
 //! # Move-and-slide algorithm

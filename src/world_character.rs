@@ -11,71 +11,77 @@
 //!
 //! # MODEL — kinematic capsule move-and-slide against the world's geometry
 //!
-//! - **方程式 (equations)**: no equation of motion is solved; the controller
-//!   is kinematic. The displacement `D` plus the inherited platform velocity
-//!   is swept as a capsule (`PhysicsWorld::cast_capsule`) in at most
-//!   `CharacterConfig::max_slides` steps: at a contact of distance `t` and
-//!   normal `n` the capsule travels `t − skin / (−d · n)` (at least 0) along
-//!   the unit direction `d`, and the rest is projected onto the contact plane,
-//!   `rest − n (rest · n)`; a contact steeper than the slope limit whose
-//!   projection would climb is projected onto the horizontal part of `n`
-//!   instead (a wall). Walkable means `n · Y ≥ cos(max_slope_angle)`. Step:
-//!   grounded and a steep contact met, the move is retried raised by the
-//!   step height (less under a ceiling), swept horizontally, dropped by the
-//!   rise plus two skins to a walkable hit, and taken only if it gets more
-//!   than a skin further along. Ground: a downward capsule cast of the probe
-//!   plus a skin, grounded when the hit is walkable and did not start inside.
-//!   Starting overlap: the capsule is pushed out along each collider's normal
-//!   by the penetration plus a skin, deepest first, up to `max_slides` pushes
-//!   and `radius + height` in all; one that cannot be freed stays, and the
-//!   cast from inside then blocks the move.
-//! - **単位 (units)**: SI in `Fix128` — m, rad (the slope limit is compared
-//!   through its cosine). Against SDF colliders (`std`) the cast samples the
-//!   field in `f32` and stops at the SDF CCD tolerance, so the core's Fix128
-//!   bit-for-bit guarantee does not cover an SDF contact; it is not claimed.
-//! - **保存則 (conservation)**: nothing is conserved. The controller has no
-//!   mass; a move is a position projection and its momentum and energy are
-//!   undefined. No body is moved or given an impulse here; the velocity of the
-//!   body under the feet is inherited into the next move, and
-//!   `MoveResult::velocity` is the requested displacement, not a state.
-//! - **適用範囲 (range)**: a vertical capsule with a fixed `+Y` up axis against
-//!   everything the world collides with — body shapes, compound children,
-//!   static colliders, (`std`) SDF colliders — subject to the `RayFilter`. A
-//!   negative radius, skin or height is refused (controller unchanged);
-//!   `max_slides` 0 is taken as 1; height under `2·radius` is a sphere. No
-//!   time step enters and gravity is not integrated here. The rest left after
-//!   the last slide is dropped. Convergence in the slide count is not
-//!   measured; the cast gap for curved and mesh geometry is below `2⁻³²`.
-//! - **近似 (approximations)**: a fixed `+Y` up axis — walkability and the
-//!   step rise use `n · Y`, not a surface frame; no friction, restitution,
-//!   mass or reaction on bodies; no sliding under gravity (a caller applies
-//!   gravity as displacement and gets the projected slide). Surface
-//!   orientation is the hit normal of the cast: planes, boxes, meshes and
-//!   height fields from their geometry, SDF colliders from the field's
-//!   gradient (`SdfField::distance_and_normal`); the ground probe and the
-//!   step rise are the fixed `−Y` / `+Y` axes.
-//! - **検証 (validation)**: `tests/analytic_world_character.rs::
-//!   walking_on_a_plane_keeps_the_standing_height`,
+//! - **方程式 (equations)**: no equation of motion is solved; the move is a chain of capsule
+//!   casts (`move_character_with_filter`, l. 385). The swept vector is `D + v_p`, the displacement
+//!   plus the stored platform velocity added unscaled (l. 424). Each of at most `max_slides` sweeps
+//!   casts `|rest| + skin`: no hit takes the whole rest (`slide`, l. 269–270); a hit at `t` with
+//!   unit normal `n` travels `max(0, t − skin / (−d · n))` along the unit direction `d`
+//!   (`short_of`, l. 243) and the rest `d (|rest| − travel)` is projected,
+//!   `rest − n (rest · n)` (`project`, l. 358). Walkable means `n · Y ≥ cos(max_slope_angle)`
+//!   (`is_walkable`, l. 257). A non-walkable hit with `n · Y > 0` whose projection has `y > 0` is
+//!   projected onto the unit horizontal part of `n` instead (`slide`, l. 280). Step, only when
+//!   grounded before the move, a non-walkable hit was met and `step_height > 0` (l. 427): cast up
+//!   `step_height + skin` (no hit: the full rise; a hit at `t > skin`: `t − skin`; nearer: no
+//!   step; `step`, l. 301–303), slide the horizontal part of `D + v_p` from there (l. 306), cast
+//!   down `rise + 2 skin` (l. 308), and take the landing if its hit is walkable and it is more than
+//!   a skin further along the horizontal direction than the plain slide (l. 309–314). Ground: a
+//!   cast down `probe + skin` whose hit is walkable and did not start inside (`ground`,
+//!   l. 352–353). Starting overlap: each overlapped collider gives a depth `r − δ` and its
+//!   normal at the nearest point (`capsule_penetrations`, `src/world_shape_query.rs`
+//!   l. 3807–3837); the deepest is pushed `depth + skin` along its normal until nothing overlaps,
+//!   at most `max_slides` pushes and `radius + height` in all, else the capsule stays where it is
+//!   (`depenetrate`, l. 323–344; l. 422–423). A cast from inside reports `t = 0`, normal `−d`
+//!   (`src/world_shape_query.rs` l. 59–60), so travel and projection are 0 (`short_of`, l. 243;
+//!   `project`, l. 358).
+//! - **単位 (units)**: this file converts nothing: radius, skin, height, step height, probe, `t`
+//!   and `D` are lengths in the world's unit (m) (`cast`, l. 228). `max_slope_angle` is rad: it
+//!   goes through `Fix128::cos` (CORDIC, `src/math.rs` l. 343) and is compared as a cosine
+//!   (l. 416). `v_p` is the ground body's `velocity` added to `D` with no time step (l. 437, 424),
+//!   so it acts as a length per move. All arithmetic here is `Fix128`; the only `f32` on the path
+//!   is the SDF field (`point_sdf`, `src/world_shape_query.rs` l. 3554–3561) and its stop
+//!   `SdfCcdConfig::tolerance` (`src/sdf_ccd.rs` l. 123; `trace`, `src/world_shape_query.rs`
+//!   l. 3179, 3230).
+//! - **保存則 (conservation)**: nothing is conserved or dissipated. The controller has no mass
+//!   and no momentum; the world is borrowed `&self`, so no body is moved or given an impulse
+//!   (l. 385). Only the controller is written: position, grounded, ground body, platform velocity
+//!   and `velocity`, which is the requested `D`, not a state (l. 439–443; `MoveResult::velocity`,
+//!   l. 448).
+//! - **適用範囲 (range)**: a capsule with a fixed `+Y` axis (`cast`, l. 228) against what the
+//!   cast sees through the `RayFilter` (`src/shape_raycast.rs` l. 918–931: body shapes, static
+//!   colliders, `std` SDF colliders; `exclude_body` drops the own body). A negative radius, skin or
+//!   height is refused and the controller is unchanged (l. 394); `max_slides` 0 is taken as 1
+//!   (l. 417); a height below `2·radius` gives a segment of length 0 (l. 409), which the cast
+//!   treats as a sphere (`cast_capsule`, `src/world_shape_query.rs` l. 3747). A zero rest ends the
+//!   sweeps (l. 265); the rest left after the last sweep is dropped and the slide count is bounded,
+//!   not converged (`slide`, l. 264). Hit distances carry the cast's gap tolerance
+//!   (`src/world_shape_query.rs` l. 98); the oracles in `tests/analytic_world_character.rs` allow
+//!   `ITER = 1e-8` for it (l. 27–28, 48).
+//! - **近似 (approximations)**: the up axis is `+Y` everywhere: walkability is `n · Y` (l. 257)
+//!   and the step rise and the ground probe are the `±Y` axes (l. 301, 352), not a surface frame.
+//!   No friction, restitution, mass or reaction on bodies (`&self`, l. 385). Gravity is not
+//!   integrated: a caller passes it inside `D` and gets the projected slide (l. 424). The platform
+//!   velocity is applied one move late and unscaled (l. 437, 424). The surface normal is the cast's
+//!   hit normal: planes, boxes, meshes and height fields from their geometry, SDF colliders from
+//!   the field's own normal (`SdfField::distance_and_normal`, `src/sdf_collider.rs` l. 109,
+//!   converted in `point_sdf`, `src/world_shape_query.rs` l. 3556–3562).
+//! - **検証 (validation)**:
+//!   `tests/analytic_world_character.rs::walking_on_a_plane_keeps_the_standing_height`,
 //!   `::walking_on_a_triangle_mesh_floor_keeps_the_standing_height`,
 //!   `::walking_on_a_height_field_floor_keeps_the_standing_height`,
-//!   `::moving_into_a_wall_stops_at_radius_plus_skin_and_keeps_the_tangential_part`
-//!   (`c + D − n (D · n)` by hand), `::a_box_body_wall_is_its_box_not_a_sphere`,
+//!   `::moving_into_a_wall_stops_at_radius_plus_skin_and_keeps_the_tangential_part`,
+//!   `::a_box_body_wall_is_its_box_not_a_sphere`,
 //!   `::an_acute_corner_stops_a_skin_width_from_both_walls`,
-//!   `::a_slope_below_the_limit_is_walkable_and_grounded` and
-//!   `::a_slope_above_the_limit_is_not_grounded_and_slides` (30° and 60°
-//!   planes, normal `(−sin a, cos a, 0)`: projected move, grounded flag,
-//!   wall rule), `::a_ledge_lower_than_the_step_height_is_stepped_onto`,
-//!   `::a_ledge_higher_than_the_step_height_blocks`,
-//!   `::a_low_ceiling_limits_the_step_rise`,
+//!   `::a_slope_below_the_limit_is_walkable_and_grounded`,
+//!   `::a_slope_above_the_limit_is_not_grounded_and_slides`,
+//!   `::a_ledge_lower_than_the_step_height_is_stepped_onto`,
+//!   `::a_ledge_higher_than_the_step_height_blocks`, `::a_low_ceiling_limits_the_step_rise`,
 //!   `::the_own_body_is_excluded_by_the_filter_and_ground_bodies_carry_their_velocity`,
 //!   `::a_capsule_embedded_in_a_plane_floor_is_pushed_up_to_the_standing_height`,
 //!   `::a_capsule_embedded_in_a_floor_and_a_wall_is_freed_from_both`,
 //!   `::a_capsule_deep_inside_a_large_box_is_left_blocked`,
-//!   `::overlaps_are_pushed_out_deepest_first`,
-//!   `::huge_coordinates_give_the_same_answers`;
+//!   `::overlaps_are_pushed_out_deepest_first`, `::huge_coordinates_give_the_same_answers`;
 //!   `tests/analytic_world_query_margins.rs::a_slope_at_exactly_the_limit_is_walkable`,
-//!   `::the_ground_probe_reaches_a_skin_width_below`,
-//!   `::an_airborne_controller_does_not_step_up`,
+//!   `::the_ground_probe_reaches_a_skin_width_below`, `::an_airborne_controller_does_not_step_up`,
 //!   `::a_step_down_lands_up_to_two_skin_widths_below_the_rise`,
 //!   `::a_capsule_shorter_than_its_diameter_is_a_sphere`;
 //!   `tests/analytic_world_query_boundaries.rs::an_invalid_configuration_does_not_move`,
@@ -88,8 +94,7 @@
 //!   from the gradient (the slope oracles use plane colliders). validation
 //!   missing: free fall through this move onto a floor compared with
 //!   `t = √(2h/g)` (no oracle integrates gravity through `move_character`).
-//!   Momentum exchange in a collision: not applicable, the controller carries
-//!   no momentum.
+//!   Momentum exchange in a collision: not applicable, no momentum is carried.
 //! - **段 (tiers)**: L0 only.
 //!
 //! # The capsule
