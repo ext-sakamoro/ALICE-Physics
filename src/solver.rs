@@ -2134,7 +2134,11 @@ impl PhysicsWorld {
             Fix128::ONE / inertia.y,
             Fix128::ONE / inertia.z,
         );
-        let idx = self.add_body_with_radius(body, shape.bounding_radius());
+        // the mass check above refuses a shape this large; kept as the contract
+        let radius = shape
+            .checked_bounding_radius()
+            .ok_or(crate::shape::ShapeError::MassNotRepresentable)?;
+        let idx = self.add_body_with_radius(body, radius);
         self.body_colliders[idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         Ok(idx)
     }
@@ -2148,12 +2152,24 @@ impl PhysicsWorld {
     /// The body's position is taken as the shape's **centre of mass** (see
     /// [`crate::shape`]); its mass and inertia are not changed — use
     /// [`Self::add_shaped_body`] for a body whose mass properties come from the shape.
+    ///
+    /// A shape whose bounding radius does not fit `Fix128` (dimensions near 2⁶³)
+    /// is set with the radius at the end of the range and the world's overflow
+    /// flag raised ([`Self::overflow_detected`]): the step's data is then out of
+    /// range, as any other `Fix128` value that left it.
     pub fn set_body_shape(&mut self, body_idx: usize, shape: &crate::shape::Shape) -> bool {
         if body_idx >= self.bodies.len() || body_idx >= self.body_colliders.len() {
             return false;
         }
         self.park_generation = self.park_generation.wrapping_add(1);
-        self.body_collision_radii[body_idx] = Some(shape.bounding_radius());
+        let radius = match shape.checked_bounding_radius() {
+            Some(r) => r,
+            None => {
+                self.note_rigid_overflow();
+                shape.bounding_radius()
+            }
+        };
+        self.body_collision_radii[body_idx] = Some(radius);
         self.body_colliders[body_idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         true
     }
@@ -2254,7 +2270,9 @@ impl PhysicsWorld {
             });
         }
         let collider = crate::body_collider::BodyCollider::Compound(stored);
-        let radius = collider.bounding_radius();
+        let radius = collider
+            .checked_bounding_radius()
+            .ok_or(ShapeError::MassNotRepresentable)?;
         // The largest quantity the solve forms, as an `f64`, before it is formed.
         let estimate = props.mass.to_f64() * radius.to_f64() * radius.to_f64();
         if !(estimate.is_finite() && estimate < (1u64 << 61) as f64) {
