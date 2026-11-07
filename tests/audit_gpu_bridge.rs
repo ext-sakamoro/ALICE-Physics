@@ -206,7 +206,7 @@ fn contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero() {
         seen_len: Arc::clone(&lens),
         seen_first_bodies: Arc::clone(&firsts),
     };
-    w.solve_contact_constraints_with_bridge(&mut rec)
+    w.solve_contact_constraints_with_bridge(&mut rec, Fix128::from_ratio(1, 60))
         .expect("the bridge computes under this build's semantics");
     assert_eq!(
         *lens.lock().unwrap(),
@@ -257,7 +257,7 @@ fn filtered_upload_writes_lambda_back_to_the_original_slot() {
         .push(ContactConstraint::new(a, b, contact()));
     w.contact_constraints
         .push(ContactConstraint::new(b, c, contact()));
-    w.solve_contact_constraints_with_bridge(&mut Lam)
+    w.solve_contact_constraints_with_bridge(&mut Lam, Fix128::from_ratio(1, 60))
         .expect("the bridge computes under this build's semantics");
     assert_eq!(w.contact_constraints[0].cached_lambda, Fix128::ZERO);
     assert_eq!(w.contact_constraints[1].cached_lambda, Fix128::from_int(7));

@@ -5819,7 +5819,7 @@ impl PhysicsWorld {
     fn solve_contact_constraints(&mut self, dt: Fix128) {
         #[cfg(feature = "gpu-solver-bridge")]
         if let Some(mut bridge) = self.gpu_solver_bridge.take() {
-            self.solve_contact_pass_with_bridge(bridge.as_mut());
+            self.solve_contact_pass_with_bridge(bridge.as_mut(), dt);
             self.gpu_solver_bridge = Some(bridge);
             return;
         }
@@ -5935,9 +5935,10 @@ impl PhysicsWorld {
     >(
         &mut self,
         bridge: &mut B,
+        dt: Fix128,
     ) {
         self.apply_contact_filters();
-        self.solve_contact_pass_with_bridge(bridge);
+        self.solve_contact_pass_with_bridge(bridge, dt);
     }
 
     /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
@@ -5998,9 +5999,10 @@ impl PhysicsWorld {
     pub fn solve_contact_constraints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
+        dt: Fix128,
     ) -> Result<(), crate::PeerMismatch> {
         crate::gpu_bridge::check_bridge("solve_contact_constraints_with_bridge", bridge)?;
-        self.solve_contact_constraints_with_bridge_unchecked(bridge);
+        self.solve_contact_constraints_with_bridge_unchecked(bridge, dt);
         Ok(())
     }
 
@@ -6012,6 +6014,7 @@ impl PhysicsWorld {
     fn solve_contact_pass_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
+        dt: Fix128,
     ) {
         // ---- Stage A: select the surviving constraints ----
         let num_constraints = self.contact_constraints.len();
@@ -6085,7 +6088,7 @@ impl PhysicsWorld {
             if c.contact.depth <= Fix128::ZERO || w_sum < W_SUM_EPSILON {
                 continue;
             }
-            self.apply_static_friction(orig_slot, Fix128::ONE / w_sum);
+            self.apply_static_friction(orig_slot, Fix128::ONE / w_sum, dt);
         }
     }
 
@@ -6234,9 +6237,9 @@ impl PhysicsWorld {
         for iteration in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             if iteration == 0 {
-                self.solve_contact_constraints_with_bridge_unchecked(bridge);
+                self.solve_contact_constraints_with_bridge_unchecked(bridge, dt);
             } else {
-                self.solve_contact_pass_with_bridge(bridge);
+                self.solve_contact_pass_with_bridge(bridge, dt);
             }
         }
 
