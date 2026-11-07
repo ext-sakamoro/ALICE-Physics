@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5945 |
+| 🟢 Not ignored (run by CI) | 5947 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 29 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6046** |
+| **Total** | **6048** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -158,7 +158,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5945)
+## 🟢 Not ignored (5947)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -510,6 +510,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_analytics_bridge_wiring.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
 | `analytic_deformable_static_sag.rs` | 6 |
+| `analytic_dynamic_fem_corotational.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
@@ -559,7 +560,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_damping_rate.rs` | 4 |
-| `analytic_dynamic_fem_corotational.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_shaped_static_contact.rs` | 4 |
 | `analytic_slider_reaction_limit.rs` | 4 |

@@ -9,6 +9,7 @@
 //! cargo run --example dynamic_fem_corotational
 //! ```
 
+use alice_physics_core::damping_rayleigh::RayleighCoefficients;
 use alice_physics_core::dynamic_fem::{CorotationalTransientSolver, DynamicsConfig, MassLumping};
 use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, ElasticMaterial, SolverConfig,
@@ -109,8 +110,13 @@ fn main() {
         SolverConfig::try_new(20_000, Fix128::from_f64(1e-7)).expect("budget and tolerance");
     let mut solver = CorotationalTransientSolver::new(&mesh, &material, &bc, &dynamics, &config)
         .expect("the column solves");
+    // Rayleigh damping, 5 % of critical on the first axial mode (about 282 rad/s): β = 2ζ/ω
+    solver.set_damping(Some(RayleighCoefficients {
+        alpha: Fix128::ZERO,
+        beta: Fix128::from_f64(2.0 * 0.05 / 282.0),
+    }));
     println!(
-        "column 25 × 200 × 25 mm, {} vertices, {} tetrahedra, dt {dt} s",
+        "column 25 × 200 × 25 mm, {} vertices, {} tetrahedra, dt {dt} s, 5 % damping on the first mode",
         n,
         mesh.tets.len()
     );

@@ -18,7 +18,11 @@
 //! factor of the element's deformation gradient `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ` at the start of the
 //! step (Müller & Gross, "Interactive Virtual Materials", GI 2004), so the step solves
 //! `(Rₑ Kₑ Rₑᵀ + 4M/dt²) u' = f + (4M/dt²)·ũ − Σₑ Rₑ Kₑ (Rₑᵀ x₀ − x₀)`: one warped
-//! linearisation per step, no inner Newton loop. `M` is the consistent Galerkin mass
+//! linearisation per step, no inner Newton loop. With Rayleigh damping
+//! ([`CorotationalTransientSolver::set_damping`], `C = α M + β K'`, the coefficients of
+//! [`crate::damping_rayleigh`]) the equation is `M ü + C u̇ + fᵢₙₜ(u) = f` and the step solves
+//! `(K' + (2/dt) C + 4M/dt²) u' = f + (4M/dt²)·ũ − C ṽ − …` with `ṽ = v + (dt/2) a − (2/dt) ũ`
+//! (the trapezoidal rule on the damped system). `M` is the consistent Galerkin mass
 //! `ρV/20 (1 + δᵢⱼ)` or its row-sum lumping `ρV/4` ([`MassLumping`]). The linear system is
 //! solved by a Jacobi-preconditioned conjugate gradient in `Fix128` to a relative residual
 //! ([`SolverConfig`]).
@@ -31,8 +35,11 @@
 //! conserves the discrete energy `½ vᵀMv + ½ uᵀKu` up to the rounding of the Newmark
 //! coefficients (exact for a dyadic `dt`, a measured `1.5e-5` drift over 500 steps for a
 //! general one before the coefficient was formed by inverting first; see the section on the
-//! arithmetic below); there is no damping term. Momentum of a free body follows the applied
-//! force exactly. The co-rotational step conserves the same quantities within one
+//! arithmetic below); without Rayleigh damping there is no dissipation, with it a mode of
+//! frequency `ω` loses energy at the rate `2 ζ(ω) ω`, `ζ(ω) = α/(2ω) + βω/2`, which the
+//! trapezoidal step reproduces as the per-step factor `|z|²`, `z = (1 + λ dt/2)/(1 − λ dt/2)`,
+//! `λ = −ζω ± iω√(1−ζ²)` (closed form, validated below). Momentum of a free body follows the
+//! applied force exactly. The co-rotational step conserves the same quantities within one
 //! linearisation per step: a rotation as a whole produces no elastic force or energy.
 //!
 //! **Valid range.** Any `dt > 0` (unconditional stability); the modes resolved are those with
@@ -48,8 +55,9 @@
 //!
 //! **Approximations.** P1 (constant strain) tetrahedra; Hooke's law in the element frame
 //! (no hyperelastic law, no plasticity, no thermal strain here); the co-rotational frame is
-//! frozen over a step (first order in the rotation increment per step); no damping; no
-//! contact and no external impulses yet; the lumped mass lowers the frequencies and the
+//! frozen over a step (first order in the rotation increment per step); damping is Rayleigh's
+//! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
+//! or none; no contact and no external impulses yet; the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
 //! space); loads and prescribed displacements are constant over a run.
 //!
@@ -67,6 +75,10 @@
 //! static sag within 1 %),
 //! `::the_discrete_axial_mode_lies_above_the_thin_rod_frequency_by_at_most_the_base_layer_share`
 //! (the discrete mode against `(π/2H)√(E/ρ)` with the rod's assumptions stated),
+//! `::stiffness_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate` and
+//! `::mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate` (`ζ = 0.05`
+//! by `β` alone and by `α` alone: the first mode's log-decrement per period within 2 % and
+//! its period within 0.5 % of the trapezoidal closed form, measured −0.23 % and +0.004 %),
 //! `tests/audit_dynamic_fem.rs`.
 //!
 //! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
@@ -157,6 +169,7 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::damping_rayleigh::RayleighCoefficients;
 use crate::linear_elastic_fem::{
     BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig, StressTensor,
     RESIDUAL_NORM_FLOOR,
@@ -1069,6 +1082,21 @@ impl Operators {
     /// small-strain stress and force formed there, the force rotated back), the mass term
     /// unrotated.
     fn apply_effective_rotated(&self, rotations: &[Mat3Fix], u: &[Fix128], out: &mut [Fix128]) {
+        self.apply_scaled_rotated(rotations, Fix128::ONE, Fix128::ONE, u, out);
+    }
+
+    /// `out = (k_scale · R Kₑ Rᵀ + m_scale · Ṁ) u`: the rotated stiffness and the mass term
+    /// with a scalar each, so the damped effective operator
+    /// `K' + (2/dt) C + Ṁ = (1 + 2β/dt) K' + (1 + α dt/2) Ṁ` for `C = α M + β K'` costs the
+    /// one element loop too.
+    fn apply_scaled_rotated(
+        &self,
+        rotations: &[Mat3Fix],
+        k_scale: Fix128,
+        m_scale: Fix128,
+        u: &[Fix128],
+        out: &mut [Fix128],
+    ) {
         out.fill(Fix128::ZERO);
         for ((element, &scale), r) in self
             .elements
@@ -1087,11 +1115,11 @@ impl Operators {
             let stiffness = element_force_from_stress(element, stress);
             let mass = Self::element_mass_force(self.lumping, scale, &local);
             for ((k, m), &node) in stiffness.iter().zip(mass.iter()).zip(element.nodes.iter()) {
-                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2]));
+                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2])) * k_scale;
                 let base = node * 3;
-                out[base] = out[base] + f.x + m[0];
-                out[base + 1] = out[base + 1] + f.y + m[1];
-                out[base + 2] = out[base + 2] + f.z + m[2];
+                out[base] = out[base] + f.x + m[0] * m_scale;
+                out[base + 1] = out[base + 1] + f.y + m[1] * m_scale;
+                out[base + 2] = out[base + 2] + f.z + m[2] * m_scale;
             }
         }
     }
@@ -1165,6 +1193,8 @@ pub struct CorotationalTransientSolver {
     ops: Operators,
     /// rest positions (mm), three per vertex
     rest: Vec<Fix128>,
+    /// Rayleigh damping `C = α M + β K'` (`α` 1/s, `β` s), none by default
+    damping: Option<RayleighCoefficients>,
     dt: Fix128,
     inv_beta_dt2: Fix128,
     half_dt: Fix128,
@@ -1236,6 +1266,7 @@ impl CorotationalTransientSolver {
         let mut solver = Self {
             ops,
             rest,
+            damping: None,
             dt: dynamics.dt,
             inv_beta_dt2: dynamics.inv_beta_dt2,
             half_dt: dynamics.dt.half(),
@@ -1322,8 +1353,22 @@ impl CorotationalTransientSolver {
         }
     }
 
+    /// Rayleigh damping `C = α M + β K'` with `K'` the warped stiffness: `α` in 1/s damps
+    /// the low modes, `β` in s the high ones, the modal ratio
+    /// `ζ(ω) = α/(2ω) + βω/2` ([`RayleighCoefficients::damping_ratio`]). `None` removes it.
+    pub fn set_damping(&mut self, damping: Option<RayleighCoefficients>) {
+        self.damping = damping;
+    }
+
     /// Advance one Newmark step with the element rotations of the current state. Returns
     /// the conjugate gradient iterations used.
+    ///
+    /// With damping the step solves
+    /// `(K' + (2/dt) C + Ṁ) u' = f + Ṁ ũ − C ṽ − Σₑ R Kₑ (Rᵀ x₀ − x₀)` with
+    /// `ṽ = v + (dt/2) a − (2/dt) ũ`, which is `v' = (2/dt) u' + ṽ` of the `γ = 1/2`
+    /// corrector substituted into `M a' + C v' + K' u' = f` (the trapezoidal rule on the
+    /// damped system; a prescribed degree of freedom has `v' = 0`, and its column of the
+    /// operator moved to the right-hand side cancels its share of `C ṽ` exactly).
     ///
     /// # Errors
     ///
@@ -1342,16 +1387,56 @@ impl CorotationalTransientSolver {
         }
         let mut mass_predictor = vec![Fix128::ZERO; ndof];
         self.ops.apply_mass(&predictor, &mut mass_predictor);
+        // the damped effective operator's scalars: (1 + 2β/dt) on K', (1 + α dt/2) on Ṁ
+        let two_over_dt = Fix128::ONE / self.half_dt;
+        let (k_scale, m_scale, c_v) = match self.damping {
+            None => (Fix128::ONE, Fix128::ONE, None),
+            Some(c) => {
+                // ṽ = v + (dt/2) a − (2/dt) ũ, then C ṽ = (α/c₀) Ṁ ṽ + β (K' ṽ), with K' ṽ the
+                // rotated stiffness product alone
+                let mut v_tilde = vec![Fix128::ZERO; ndof];
+                for d in 0..ndof {
+                    v_tilde[d] = self.v[d] + self.half_dt * self.a[d] - two_over_dt * predictor[d];
+                }
+                let mut k_v = vec![Fix128::ZERO; ndof];
+                self.ops.apply_scaled_rotated(
+                    &rotations,
+                    Fix128::ONE,
+                    Fix128::ZERO,
+                    &v_tilde,
+                    &mut k_v,
+                );
+                let mut m_v = vec![Fix128::ZERO; ndof];
+                self.ops.apply_mass(&v_tilde, &mut m_v);
+                let alpha_over_c0 = c.alpha / self.inv_beta_dt2;
+                let c_v: Vec<Fix128> = k_v
+                    .iter()
+                    .zip(m_v.iter())
+                    .map(|(k, m)| c.beta * *k + alpha_over_c0 * *m)
+                    .collect();
+                (
+                    Fix128::ONE + two_over_dt * c.beta,
+                    Fix128::ONE + self.half_dt * c.alpha,
+                    Some(c_v),
+                )
+            }
+        };
         let mut keff_prescribed = vec![Fix128::ZERO; ndof];
-        self.ops
-            .apply_effective_rotated(&rotations, &self.prescribed_value, &mut keff_prescribed);
+        self.ops.apply_scaled_rotated(
+            &rotations,
+            k_scale,
+            m_scale,
+            &self.prescribed_value,
+            &mut keff_prescribed,
+        );
         let mut offset = vec![Fix128::ZERO; ndof];
         self.ops
             .rotation_offset(&rotations, &self.rest, &mut offset);
         let mut b = vec![Fix128::ZERO; ndof];
         for d in 0..ndof {
             b[d] = if self.is_free[d] {
-                self.load[d] + mass_predictor[d] - keff_prescribed[d] - offset[d]
+                let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
+                self.load[d] + mass_predictor[d] - keff_prescribed[d] - offset[d] - damping_term
             } else {
                 Fix128::ZERO
             };
@@ -1359,7 +1444,7 @@ impl CorotationalTransientSolver {
         let ops = &self.ops;
         let (mut next_u, iterations) =
             conjugate_gradient(&b, &self.is_free, &self.precond, &self.config, |p, out| {
-                ops.apply_effective_rotated(&rotations, p, out);
+                ops.apply_scaled_rotated(&rotations, k_scale, m_scale, p, out);
             })?;
         for d in 0..ndof {
             if self.is_free[d] {
