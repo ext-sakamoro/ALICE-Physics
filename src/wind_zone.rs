@@ -17,6 +17,18 @@
 //! `wind_velocity(t) = base_direction · base_speed
 //!                     + turbulence · sin(2π · gust_frequency · t)`.
 //!
+//! # What it models and what it does not
+//!
+//! | | |
+//! |---|---|
+//! | Flow | A prescribed field: one uniform vector inside the zone, nothing outside. No flow equation is solved |
+//! | Obstacles | The wind passes through bodies and shapes: no shelter, no wake, no flow around an obstacle |
+//! | Drag | Quadratic in the relative velocity, `½ ρ C_d A |v_rel| v_rel`, SI units (kg/m³, m², m/s, N). `C_d` and `A` are constants given by the caller; no Reynolds dependence |
+//! | Terminal velocity | Follows from the drag law; tests pin `v = U − √(m g / k)` against the closed form |
+//! | Height profile | None: the speed does not depend on height, so there is no boundary layer or log law near the ground |
+//! | Gusts | One sinusoid along the mean direction; not a turbulence spectrum (von Kármán, Kaimal) and no cross-wind component |
+//! | Orientation | The force acts at the centre of the body; the projected area does not change with the surface orientation |
+//!
 // LIMITATION(COV-SOFT-072): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
 // LIMITATION(COV-ENV-103): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
 //! The MVP evaluates the aerodynamic force in the body's centre and
