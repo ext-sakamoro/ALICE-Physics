@@ -85,6 +85,12 @@ fn floor_sin() -> f64 { std::env::var("SFB_FLOOR").ok().and_then(|x| x.parse().o
 /// with a dihedral angle under `1e-4` rad does not survive the quality gate.
 const COLLAPSED_SIN: f64 = 1.0e-4;
 
+/// How far outside the surface an element's centroid may sit, in cells. A
+/// tetrahedron with a face on a concave curved surface has its centroid a
+/// quarter of the way from that face's sagitta toward the opposite vertex,
+/// so a legitimate element never comes near this.
+const OUTSIDE_CELLS: f64 = 0.01;
+
 /// Finite-difference step for Newton projection, as a fraction of `cell`.
 const NEWTON_STEP_CELLS: f32 = 1.0e-3;
 
@@ -351,7 +357,25 @@ pub(crate) fn crease_target<F: SdfField + ?Sized>(
     }
     planes.truncate(3);
     let owners: Vec<[f64; 3]> = planes.iter().map(|p| p.p).collect();
-    let (x, _) = feature_point(sdf, &planes, &owners, to64(corner), cell)?;
+    let (x, refined) = feature_point(sdf, &planes, &owners, to64(corner), cell)?;
+    // Only a convex crease or corner. At a reflex one (the inside edge of a
+    // cavity) the lattice corners warped onto it are joined by marching
+    // tetrahedra across the cavity, which the mesh then counts as solid; the
+    // boundary pass places reflex crease vertices under its outside check.
+    // The side test: just off the crease along n_i - n_j is outside for a
+    // convex pair (the solid is the intersection of the half-spaces) and
+    // inside for a reflex pair (their union).
+    let step = 0.05 * f64::from(cell);
+    for i in 0..refined.len() {
+        for j in 0..refined.len() {
+            if i != j {
+                let probe = add_scaled(x, step, sub(refined[i].n, refined[j].n));
+                if !(field(sdf, probe) > 0.0) {
+                    return None;
+                }
+            }
+        }
+    }
     Some(to32(x))
 }
 
@@ -398,6 +422,10 @@ struct Work<'a, F: SdfField + ?Sized> {
 }
 
 impl<F: SdfField + ?Sized> Work<'_, F> {
+    fn outside_count(&self) -> usize {
+        self.mesh.tets.iter().filter(|t| self.reaches_outside(&t.vertices)).count()
+    }
+
     fn global_worst(&self) -> f64 {
         (0..self.mesh.tets.len() as u32).map(|t| tet_quality(self.tet_points(t)).0).fold(f64::INFINITY, f64::min)
     }
@@ -486,7 +514,10 @@ impl<F: SdfField + ?Sized> Work<'_, F> {
                 if self.collapses_onto_face(t, q) {
                     continue;
                 }
-                if !(vol6 > 0.0) || q < q_before.min(floor_sin()) {
+                if !(vol6 > 0.0)
+                    || q < q_before.min(floor_sin())
+                    || self.reaches_outside(&self.mesh.tets[t as usize].vertices)
+                {
                     bad.extend(self.mesh.tets[t as usize].vertices);
                 }
             }
@@ -581,7 +612,7 @@ impl<F: SdfField + ?Sized> Work<'_, F> {
                 for &t in &w.incident[u as usize] {
                     let (qt, vol6) = tet_quality(w.tet_points(t));
                     q = q.min(qt);
-                    valid &= vol6 > 0.0;
+                    valid &= vol6 > 0.0 && !w.reaches_outside(&w.mesh.tets[t as usize].vertices);
                 }
                 (q, valid)
             };
@@ -617,6 +648,11 @@ impl<F: SdfField + ?Sized> Work<'_, F> {
             .iter()
             .map(|&t| (t, tet_quality(self.tet_points(t)).0))
             .collect();
+        let outside_before: BTreeSet<u32> = self.incident[v as usize]
+            .iter()
+            .copied()
+            .filter(|&t| self.reaches_outside(&self.mesh.tets[t as usize].vertices))
+            .collect();
         let fracs: &[f64] = if whole_only {
             &[1.0]
         } else {
@@ -633,7 +669,7 @@ impl<F: SdfField + ?Sized> Work<'_, F> {
                 if self.collapses_onto_face(t, q) {
                     continue;
                 }
-                if !(vol6 > 0.0) {
+                if !(vol6 > 0.0) || (self.reaches_outside(&self.mesh.tets[t as usize].vertices) && !outside_before.contains(&t)) {
                     inv += 1;
                     if step == 0 && std::env::var_os("SFB_DEBUG").is_some() {
                         let vs = self.mesh.tets[t as usize].vertices;
@@ -662,6 +698,18 @@ impl<F: SdfField + ?Sized> Work<'_, F> {
         }
         self.mesh.vertices[v as usize] = to32(from);
         false
+    }
+
+    /// Whether a tetrahedron reaches outside the shape: its centroid is more than
+    /// [`OUTSIDE_CELLS`] of a cell outside. Moving a vertex onto a reflex crease
+    /// (an inside edge of a cavity) can leave an element whose edge chords
+    /// across the cavity; it is positively oriented and well shaped, so neither
+    /// the orientation nor the dihedral check sees it, and the mesh gains the
+    /// cavity's volume.
+    fn reaches_outside(&self, vs: &[u32; 4]) -> bool {
+        let p = vs.map(|v| to64(self.mesh.vertices[v as usize]));
+        let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k] + p[3][k]) / 4.0);
+        field(self.sdf, c) > OUTSIDE_CELLS * f64::from(self.cell)
     }
 
     /// A tetrahedron all four of whose vertices lie on one face of the surface
@@ -770,7 +818,7 @@ pub(crate) fn conform_boundary<F: SdfField + ?Sized>(
     w.rebuild_incidence();
     let dbg_t = std::time::Instant::now();
     let dbg = std::env::var_os("SFB_TIME").is_some();
-    if dbg { eprintln!("T start worst {:.4}", w.global_worst()); }
+    if dbg { eprintln!("T start worst {:.4} outside {}", w.global_worst(), w.outside_count()); }
 
     // 1. projection
     let mut moves = Vec::new();
@@ -800,12 +848,12 @@ pub(crate) fn conform_boundary<F: SdfField + ?Sized>(
         }
     }
 
-    if dbg { eprintln!("T verts {} tets {} project {:?} worst {:.4}", w.mesh.vertices.len(), w.mesh.tets.len(), dbg_t.elapsed(), w.global_worst()); }
+    if dbg { eprintln!("T verts {} tets {} project {:?} worst {:.4} outside {}", w.mesh.vertices.len(), w.mesh.tets.len(), dbg_t.elapsed(), w.global_worst(), w.outside_count()); }
     for _ in 0..FEATURE_PASSES {
         let creases = split_creases(&mut w);
-        if dbg { eprintln!("T creases {creases} {:?} worst {:.4}", dbg_t.elapsed(), w.global_worst()); }
+        if dbg { eprintln!("T creases {creases} {:?} worst {:.4} outside {}", dbg_t.elapsed(), w.global_worst(), w.outside_count()); }
         let corners = split_corners(&mut w);
-        if dbg { eprintln!("T corners {corners} {:?} worst {:.4}", dbg_t.elapsed(), w.global_worst()); }
+        if dbg { eprintln!("T corners {corners} {:?} worst {:.4} outside {}", dbg_t.elapsed(), w.global_worst(), w.outside_count()); }
         let dropped = w.drop_collapsed();
         if std::env::var_os("SFB_DEBUG").is_some() { eprintln!("dropped {dropped}"); }
         // refine_guarded measured 2026-11-08: thin box at a half-cell offset
@@ -834,6 +882,29 @@ fn split_creases<F: SdfField + ?Sized>(w: &mut Work<'_, F>) -> usize {
     for f in boundary_faces(w.mesh) {
         for (a, b) in [(f[0], f[1]), (f[1], f[2]), (f[0], f[2])] {
             edges.insert((a.min(b), a.max(b)));
+        }
+    }
+    // An interior edge between two surface vertices whose midpoint is outside
+    // is a chord across a reflex crease (the lattice joined the two walls of a
+    // cavity across it): it is split at the crease like a boundary edge, which
+    // pulls the elements around it back out of the cavity.
+    let tol = OUTSIDE_CELLS * f64::from(w.cell);
+    let mut chords: BTreeSet<(u32, u32)> = BTreeSet::new();
+    for tet in &w.mesh.tets {
+        let vs = tet.vertices;
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                let (a, b) = (vs[i].min(vs[j]), vs[i].max(vs[j]));
+                if edges.contains(&(a, b)) || !w.surface_point(a) || !w.surface_point(b) {
+                    continue;
+                }
+                let pa = to64(w.mesh.vertices[a as usize]);
+                let pb = to64(w.mesh.vertices[b as usize]);
+                if field(w.sdf, add_scaled(pa, 0.5, sub(pb, pa))) > tol {
+                    edges.insert((a, b));
+                    chords.insert((a, b));
+                }
+            }
         }
     }
     // Decide every split from the mesh as it stands, then apply. A vertex found
@@ -918,6 +989,15 @@ fn split_creases<F: SdfField + ?Sized>(w: &mut Work<'_, F>) -> usize {
     };
     if targets.is_empty() {
         return relabelled;
+    }
+    if std::env::var_os("SFB_DEBUG").is_some() {
+        let ch_t = targets.keys().filter(|k| chords.contains(k)).count();
+        eprintln!("chords {} of which targeted {ch_t}", chords.len());
+        for &(a, b) in chords.iter().take(4) {
+            let sf = w.shares_face(&[a, b]);
+            let np = (w.planes[a as usize].len(), w.planes[b as usize].len());
+            eprintln!("  chord {:?} {:?} shares_face {sf} planes {np:?} targeted {}", w.mesh.vertices[a as usize], w.mesh.vertices[b as usize], targets.contains_key(&(a, b)));
+        }
     }
     let proposals: Vec<((u32, u32), [f64; 3], Vec<Plane>)> =
         targets.into_iter().map(|(k, (x, pl))| (k, x, pl)).collect();
@@ -1195,6 +1275,16 @@ where
         .iter()
         .map(|t| tet_quality(t.vertices.map(|v| to64(snapshot[v as usize]))).0)
         .collect();
+    // elements already reaching outside (the lattice bridged a cavity) may keep
+    // doing so in their children; the step may not make a new one
+    let was_outside: Vec<bool> = old
+        .iter()
+        .map(|t| {
+            let p = t.vertices.map(|v| to64(snapshot[v as usize]));
+            let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k] + p[3][k]) / 4.0);
+            field(w.sdf, c) > OUTSIDE_CELLS * f64::from(w.cell)
+        })
+        .collect();
     loop {
         w.mesh.vertices.truncate(base);
         w.planes.truncate(base);
@@ -1207,7 +1297,7 @@ where
         let mut out: Vec<Tetrahedron> = Vec::with_capacity(old.len() + 4 * proposals.len());
         let mut bad: BTreeSet<u32> = BTreeSet::new();
         let mut restored = false;
-        for (tet, &q0) in old.iter().zip(&q_ref) {
+        for ((tet, &q0), &out0) in old.iter().zip(&q_ref).zip(&was_outside) {
             let start = out.len();
             split(tet.vertices, &mid, &mut out);
             let floor = q0.min(floor_sin());
@@ -1215,7 +1305,7 @@ where
                 let p = child.vertices.map(|v| to64(w.mesh.vertices[v as usize]));
                 let (q, vol6) = tet_quality(p);
                 let collapsed = q < COLLAPSED_SIN && w.shares_face(&child.vertices);
-                if collapsed || (vol6 > 0.0 && q >= floor) {
+                if collapsed || (vol6 > 0.0 && q >= floor && (out0 || !w.reaches_outside(&child.vertices))) {
                     continue;
                 }
                 let new: Vec<u32> = child.vertices.iter().copied().filter(|&v| v as usize >= base).collect();

@@ -254,6 +254,65 @@ fn curved_shapes_have_their_boundary_on_the_surface_and_their_volume_within_the_
     }
 }
 
+fn boxed(p: [f32; 3], half: [f32; 3]) -> f32 {
+    let d = [p[0].abs() - half[0], p[1].abs() - half[1], p[2].abs() - half[2]];
+    let out = [d[0].max(0.0), d[1].max(0.0), d[2].max(0.0)];
+    (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt() + d[0].max(d[1]).max(d[2]).min(0.0)
+}
+
+/// The concave scenes of `tests/mesh_quality.rs` (same fields, same offset): the meshed
+/// volume is the analytic one within a derived bound, from both sides. `hollow` (a cube
+/// with a cubic cavity) and `ell` are bounded by planes only, so the bound is the f32
+/// rounding [`BOX_EXACT`]; `holed` adds a cylindrical bore of radius `R`, whose inscribed
+/// triangulation lies *outside* the bore (the solid gains volume there) by at most
+/// `A_bore · ℓ² / (8 R)` with `ℓ` the longest boundary edge measured on the mesh.
+#[test]
+#[ignore = "known defect: the boundary pass leaves concave scenes over their volume (hollow +1.49 % at cell 0.25) and planar ones short at some lattice offsets"]
+fn concave_scenes_have_their_volume_within_the_derived_bound() {
+    use std::f64::consts::PI;
+    const OFF: f32 = 0.07;
+    let hollow = ClosureSdf::new(
+        |x, y, z| {
+            let p = [x - OFF, y + OFF, z - OFF];
+            boxed(p, [1.0, 1.0, 1.0]).max(-boxed(p, [0.4, 0.4, 0.4]))
+        },
+        |_, _, _| (0.0, 0.0, 1.0),
+    );
+    let holed = ClosureSdf::new(
+        |x, y, z| {
+            let p = [x - OFF, y + OFF, z - OFF];
+            boxed(p, [1.0, 1.0, 0.25]).max(-((p[0] * p[0] + p[1] * p[1]).sqrt() - 0.35))
+        },
+        |_, _, _| (0.0, 0.0, 1.0),
+    );
+    let ell = ClosureSdf::new(
+        |x, y, z| {
+            let p = [x - OFF, y + OFF, z - OFF];
+            boxed([p[0] + 0.5, p[1], p[2]], [0.5, 1.0, 0.4]).min(boxed([p[0], p[1] + 0.5, p[2]], [1.0, 0.5, 0.4]))
+        },
+        |_, _, _| (0.0, 0.0, 1.0),
+    );
+    // (name, field, volume, curved area, its radius)
+    let scenes: [(&str, ClosureSdf, f64, f64, f64); 3] = [
+        ("hollow", hollow, 8.0 - 0.512, 0.0, 1.0),
+        ("holed", holed, 2.0 - PI * 0.35 * 0.35 * 0.5, 2.0 * PI * 0.35 * 0.5, 0.35),
+        ("ell", ell, 3.0 * 0.8, 0.0, 1.0),
+    ];
+    for (name, sdf, volume, curved, radius) in scenes {
+        for cell in [0.25_f32, 0.1875, 0.125] {
+            let mesh = sdf_fem_mesh::generate_marching_tets(&sdf, [-2.0; 3], [2.0; 3], cell);
+            let (_, lmax) = boundary_stats(&mesh, &sdf);
+            let bound = BOX_EXACT * volume + curved * lmax * lmax / (8.0 * radius);
+            let err = mesh_volume(&mesh) - volume;
+            assert!(
+                err.abs() <= bound,
+                "{name} cell {cell}: volume off by {err:+.4e} ({:+.3} %), bound {bound:.3e}",
+                100.0 * err / volume
+            );
+        }
+    }
+}
+
 /// A column one cell wide still has a bottom face: at least four vertices on the plane and a
 /// positive area. Today it has one vertex and no triangle (and no mesh at all when the face
 /// lies on a lattice plane).
@@ -344,4 +403,25 @@ fn zz_diag_corners() {
         eprintln!("pad {pad}: worst dihedral {worst:.2} deg, tets {}", mesh.tets.len());
         eprintln!("pad {pad}: share {:.5} vol {:.6e} truth {:.6e} dmax {dmax:.2e}", a / 0.04, mesh_volume(&mesh), 8.0 * f64::from(hb[0] * hb[1] * hb[2]));
     }
+}
+
+#[test]
+#[ignore = "diagnostic"]
+fn zz_diag_hollow() {
+    const OFF: f32 = 0.07;
+    let f = |x: f32, y: f32, z: f32| { let p = [x - OFF, y + OFF, z - OFF]; boxed(p, [1.0, 1.0, 1.0]).max(-boxed(p, [0.4, 0.4, 0.4])) };
+    let sdf = ClosureSdf::new(f, |_, _, _| (0.0, 0.0, 1.0));
+    let mesh = sdf_fem_mesh::generate_marching_tets(&sdf, [-2.0; 3], [2.0; 3], 0.25);
+    let (mut vin, mut n_out, mut worst) = (0.0f64, 0, 0.0f32);
+    for t in &mesh.tets {
+        let p = t.vertices.map(|i| mesh.vertices[i as usize]);
+        let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k] + p[3][k]) / 4.0);
+        let d = f(c[0], c[1], c[2]);
+        let e = |i: usize| [0, 1, 2].map(|k| f64::from(p[i][k]) - f64::from(p[0][k]));
+        let (a, b, cc) = (e(1), e(2), e(3));
+        let v = (a[0] * (b[1] * cc[2] - b[2] * cc[1]) - a[1] * (b[0] * cc[2] - b[2] * cc[0]) + a[2] * (b[0] * cc[1] - b[1] * cc[0])).abs() / 6.0;
+        if d > 0.0 { vin += v; n_out += 1; if d > worst { worst = d; } if n_out <= 8 { eprintln!("outside tet d {d:.4} vol {v:.3e} {p:?}"); } }
+    }
+    let vmax = mesh.vertices.iter().map(|v| f(v[0], v[1], v[2])).fold(f32::MIN, f32::max);
+    eprintln!("tets with centroid outside: {n_out}, their volume {vin:.4e}, deepest {worst:.4}; max vertex d {vmax:.3e}; total {:.4}", mesh_volume(&mesh));
 }
