@@ -2010,6 +2010,79 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 mod tests {
     use super::*;
 
+    /// oracle: (0.1, 0.2, 0.3, 0.9) has length sqrt 0.95, so each component comes back divided by
+    /// it; a swapped or dropped component shows, since all four differ, and likewise (1, 2, 3)
+    #[test]
+    fn set_rotation_and_angular_velocity_reach_every_component_through_c() {
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at the
+        // end; the out pointer is a local.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(
+                c,
+                AliceVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                1.0,
+            );
+            let q = AliceQuat {
+                x: 0.1,
+                y: 0.2,
+                z: 0.3,
+                w: 0.9,
+            };
+            assert_eq!(alice_physics_body_set_rotation(c, b, q), 1);
+            let mut out = AliceQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 0.0,
+            };
+            assert_eq!(alice_physics_body_get_rotation(c, b, &mut out), 1);
+            let length = 0.95_f64.sqrt();
+            for (got, want) in [
+                (out.x, 0.1 / length),
+                (out.y, 0.2 / length),
+                (out.z, 0.3 / length),
+                (out.w, 0.9 / length),
+            ] {
+                assert!((got - want).abs() < 1e-12, "{got} {want}");
+            }
+            let omega = AliceVec3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            };
+            assert_eq!(alice_physics_body_set_angular_velocity(c, b, omega), 1);
+            let stored = (*c).bodies[b as usize].angular_velocity;
+            assert_eq!(stored, Vec3Fix::from_int(1, 2, 3));
+
+            // refused: an unknown body, the zero quaternion, a component that is not finite
+            assert_eq!(alice_physics_body_set_rotation(c, 99, q), 0);
+            assert_eq!(alice_physics_body_set_angular_velocity(c, 99, omega), 0);
+            let zero = AliceQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 0.0,
+            };
+            assert_eq!(alice_physics_body_set_rotation(c, b, zero), 0);
+            let nan = AliceVec3 {
+                x: f64::NAN,
+                y: 0.0,
+                z: 0.0,
+            };
+            assert_eq!(alice_physics_body_set_angular_velocity(c, b, nan), 0);
+            assert_eq!(
+                alice_physics_body_set_rotation(core::ptr::null_mut(), b, q),
+                0
+            );
+            alice_physics_world_destroy(c);
+        }
+    }
+
     /// The C entry points for materials and magnets build the same world as the Rust API: a
     /// registered material, a body of it hitting a resting body and a magnet, with distinct values
     /// for every argument, stepped 60 times, end bit-equal (a swapped argument would differ, the

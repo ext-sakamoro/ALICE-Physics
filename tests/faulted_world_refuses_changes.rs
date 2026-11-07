@@ -247,6 +247,23 @@ mod c_api {
                 alice_physics_body_set_velocity(wp, 0, v(1.0, 0.0, 0.0)) == 0,
             ));
             refused.push((
+                "body_set_rotation",
+                alice_physics_body_set_rotation(
+                    wp,
+                    0,
+                    AliceQuat {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                        w: 1.0,
+                    },
+                ) == 0,
+            ));
+            refused.push((
+                "body_set_angular_velocity",
+                alice_physics_body_set_angular_velocity(wp, 0, v(1.0, 0.0, 0.0)) == 0,
+            ));
+            refused.push((
                 "body_set_restitution",
                 alice_physics_body_set_restitution(wp, 0, 0.9) == 0,
             ));
@@ -337,7 +354,7 @@ mod c_api {
             .filter(|(_, r)| !r)
             .map(|(n, _)| *n)
             .collect();
-        assert_eq!(refused.len(), 28);
+        assert_eq!(refused.len(), 30);
         assert!(
             not_refused.is_empty() && !changed,
             "a faulted world accepted changes through the C API: not refused {not_refused:?}, snapshot changed: {changed}"

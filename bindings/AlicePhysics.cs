@@ -412,14 +412,14 @@ namespace AlicePhysics
             return rot.ToQuaternion();
         }
 
-        /// <summary>Set body orientation (normalised). False for an unknown body or the zero quaternion.</summary>
+        /// <summary>Set body orientation (normalised). False for an unknown body, a component that is not finite, or the zero quaternion.</summary>
         public bool SetBodyRotation(uint bodyId, AliceQuat rotation)
         {
             ThrowIfDisposed();
             return Native.alice_physics_body_set_rotation(_ptr, bodyId, rotation) != 0;
         }
 
-        /// <summary>Set body angular velocity (world frame, rad/s). False for an unknown body.</summary>
+        /// <summary>Set body angular velocity (world frame, rad/s). False for an unknown body or a component that is not finite.</summary>
         public bool SetBodyAngularVelocity(uint bodyId, Vector3 angularVelocity)
         {
             ThrowIfDisposed();
