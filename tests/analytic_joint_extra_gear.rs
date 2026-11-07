@@ -36,7 +36,10 @@ fn pair_with_twist(axis: Vec3Fix, theta: Fix128) -> Vec<RigidBody> {
     a.inv_inertia = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
     a.prev_rotation = QuatFix::IDENTITY;
     a.rotation = QuatFix::from_axis_angle(axis, theta);
-    let mut b = RigidBody::new(Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO), Fix128::ONE);
+    let mut b = RigidBody::new(
+        Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+        Fix128::ONE,
+    );
     b.inv_inertia = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
     b.prev_rotation = QuatFix::IDENTITY;
     b.rotation = QuatFix::IDENTITY;
@@ -48,7 +51,11 @@ fn pair_with_twist(axis: Vec3Fix, theta: Fix128) -> Vec<RigidBody> {
 fn twist_about(body: &RigidBody, axis: Vec3Fix) -> f64 {
     let q = body.rotation.mul(body.prev_rotation.conjugate());
     let (x, y, z, w) = (q.x.to_f64(), q.y.to_f64(), q.z.to_f64(), q.w.to_f64());
-    let (x, y, z, w) = if w < 0.0 { (-x, -y, -z, -w) } else { (x, y, z, w) };
+    let (x, y, z, w) = if w < 0.0 {
+        (-x, -y, -z, -w)
+    } else {
+        (x, y, z, w)
+    };
     let (ax, ay, az) = (axis.x.to_f64(), axis.y.to_f64(), axis.z.to_f64());
     2.0 * (x * ax + y * ay + z * az).atan2(w)
 }
@@ -78,7 +85,10 @@ fn a_twist_about_world_z_is_coupled_in_the_ratio() {
         let residual = ta + ratio.to_f64() * tb;
         let bound = residual_bound(theta.to_f64());
         eprintln!("z, ratio {num}/{den}: θ_a {ta:.6e} θ_b {tb:.6e} residual {residual:.3e} bound {bound:.3e}");
-        assert!(residual.abs() <= bound, "residual {residual:.3e} above {bound:.3e}");
+        assert!(
+            residual.abs() <= bound,
+            "residual {residual:.3e} above {bound:.3e}"
+        );
         assert!(tb != 0.0, "B must turn");
     }
 }
@@ -101,5 +111,8 @@ fn a_twist_about_the_hinge_axis_x_is_coupled_in_the_ratio() {
     let bound = residual_bound(theta.to_f64());
     eprintln!("x: θ_a {ta:.6e} θ_b {tb:.6e} residual {residual:.3e} bound {bound:.3e}");
     assert!(tb != 0.0, "B stayed at rest: the x twist was not seen");
-    assert!(residual.abs() <= bound, "residual {residual:.3e} above {bound:.3e}");
+    assert!(
+        residual.abs() <= bound,
+        "residual {residual:.3e} above {bound:.3e}"
+    );
 }
