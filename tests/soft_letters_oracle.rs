@@ -268,7 +268,7 @@ fn outline_hole_is_empty_and_pieces_are_counted() {
 fn outline_smaller_than_the_spacing_is_refused() {
     let p = |x: i64, y: i64| [r(x, 1000), r(y, 1000)];
     let tiny = vec![vec![p(0, 0), p(10, 0), p(10, 10), p(0, 10)]];
-    let mut w = world();
+    let w = world();
     let err = Cloth::from_outline(&desc(tiny, Fix128::ZERO, Fix128::ONE)).unwrap_err();
     assert_eq!(err, OutlineError::NoTriangles);
     assert!(w.cloths.is_empty());
