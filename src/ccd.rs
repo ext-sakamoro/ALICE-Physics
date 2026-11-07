@@ -94,7 +94,7 @@
 //!   (-012),
 //!   `::conservative_advancement_does_not_give_up_on_a_shallow_approach`
 //!   (-013). The sub-step count's √3 shortfall on a diagonal mover (-014) is
-//!   sized in [`crate::solver_tgs`] and is listed as that module's known defect.
+//!   sized in `crate::solver_tgs` and is listed as that module's known defect.
 //!
 //! # Algorithms
 //!
