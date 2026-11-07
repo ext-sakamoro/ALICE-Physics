@@ -23,6 +23,8 @@
 //!   (no turbulence spectrum such as von Kármán or Kaimal, no cross-wind); the
 //!   force acts at the body's centre with a constant area, independent of the
 //!   surface orientation.
+//! - **Tiers**: L0 only. No lighter tier is built, so no tier has an error to
+//!   measure against L0.
 //! - **Validation** (`tests/analytic_wind_zone_participant.rs`):
 //!   `release_into_a_steady_wind_follows_quadratic_drag` (closed form
 //!   `v(t) = U − U/(1 + c U t)` and the first-order step error),
