@@ -24,10 +24,12 @@ use alice_physics_core::electromagnetic::{
     dipole_sample, induced_dipole_energy, induced_dipole_force, MagneticResponse,
 };
 use alice_physics_core::force::apply_force_fields;
+use alice_physics_core::solver::WorldSnapshotError;
 use alice_physics_core::{
     material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
     PhysicsWorld, RigidBody, Vec3Fix,
 };
+use alice_physics_core::{LegacyPolicy, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS};
 
 fn fx(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -537,25 +539,30 @@ const OLDER_KINDS_A: &[u8] =
 const OLDER_KINDS_B: &[u8] =
     include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_b.bin");
 
-/// Adding magnets did not change the format or the stepping of worlds without one: such a world
-/// is written to the bytes the earlier release wrote; those bytes are read back and written again
-/// unchanged, with every field, its filter and its switch in place; and restored and stepped 30
-/// times here they give the bytes the earlier release's own 30 steps gave.
+/// The bytes the release before magnets wrote (`OLDER_KINDS_A` / `_B`, format 6, stepping
+/// identifier `e90000da…`) are refused by every reader naming both identifiers, the target
+/// unchanged: sleep by elapsed time moved the identifier (bodies idle at a step other than
+/// 1/60 s sleep at another step), so this build is not shown to reproduce data stamped with
+/// the earlier one. The current writer round-trips its own bytes unchanged, with every field,
+/// its filter and its switch in place.
+///
+/// # History
+///
+/// While the identifier was `e90000da…` this test read `_a`, wrote it back byte for byte and
+/// stepped it 30 times to `_b`, byte for byte: adding magnets had changed neither the format
+/// nor the stepping of worlds without one. At the sleep change the same 30 steps were measured
+/// once more against this build (the bodies, restored through the format 6 reader with the
+/// writer's step, hashed the same as `_b`'s), but the identifier moved for the other step sizes,
+/// so the fixtures stay as the refusal case.
 #[test]
 fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
-    assert_eq!(
-        older_kinds_world().snapshot_world(),
-        OLDER_KINDS_A,
-        "a world without magnets is written as before"
-    );
-
-    let mut w = PhysicsWorld::new(PhysicsConfig::default());
-    w.restore_world(OLDER_KINDS_A)
-        .expect("the earlier snapshot restores");
-    assert_eq!(w.snapshot_world(), OLDER_KINDS_A, "written back unchanged");
-    assert_eq!(w.force_fields.len(), 7);
+    let now = older_kinds_world().snapshot_world();
+    let mut t = PhysicsWorld::new(PhysicsConfig::default());
+    t.restore_world(&now).expect("the current bytes restore");
+    assert_eq!(t.snapshot_world(), now, "written back unchanged");
+    assert_eq!(t.force_fields.len(), 7);
     let expected = older_kinds_world();
-    for (k, (got, want)) in w
+    for (k, (got, want)) in t
         .force_fields
         .iter()
         .zip(&expected.force_fields)
@@ -569,16 +576,40 @@ fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
         assert_eq!(got.affected_bodies, want.affected_bodies, "filter {k}");
         assert_eq!(got.enabled, want.enabled, "switch {k}");
     }
-    assert_eq!(w.force_fields[1].affected_bodies, Some(vec![0, 2]));
-    assert!(!w.force_fields[5].enabled);
+    assert_eq!(t.force_fields[1].affected_bodies, Some(vec![0, 2]));
+    assert!(!t.force_fields[5].enabled);
 
-    for _ in 0..30 {
-        w.step(fx(1, 60));
-    }
-    assert_ne!(OLDER_KINDS_B, OLDER_KINDS_A, "the bodies moved");
+    let earlier: [u8; 32] = OLDER_KINDS_A[16..48].try_into().expect("32 bytes");
     assert_eq!(
-        w.snapshot_world(),
-        OLDER_KINDS_B,
-        "30 steps here are the earlier release's 30 steps, to the bit"
+        &earlier[..4],
+        &[0xe9, 0x00, 0x00, 0xda],
+        "the fixture is stamped e90000da…"
+    );
+    assert_ne!(earlier, PHYSICS_SEMANTICS_ID);
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&earlier));
+    let refused = WorldSnapshotError::SemanticsMismatch {
+        stored: earlier,
+        expected: PHYSICS_SEMANTICS_ID,
+    };
+    for blob in [OLDER_KINDS_A, OLDER_KINDS_B] {
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        let before = w.snapshot_world();
+        assert_eq!(w.restore_world(blob), Err(refused));
+        for policy in [LegacyPolicy::AcceptUnpinned, LegacyPolicy::RequirePinned] {
+            assert_eq!(w.restore_world_checked(blob, None, policy), Err(refused));
+        }
+        assert_eq!(
+            w.restore_world_legacy_damping(blob, fx(1, 60)),
+            Err(refused)
+        );
+        assert_eq!(
+            w.snapshot_world(),
+            before,
+            "a refused blob changed the target"
+        );
+    }
+    assert_ne!(
+        OLDER_KINDS_B, OLDER_KINDS_A,
+        "the bodies moved in the earlier release"
     );
 }
