@@ -1815,6 +1815,30 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::character_s
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::character_state::CharacterStateContext
 pub fn alice_physics_core::character_state::transition(alice_physics_core::character_state::CharacterState, alice_physics_core::character_state::CharacterStateContext) -> alice_physics_core::character_state::CharacterState
 pub mod alice_physics_core::cloth
+#[non_exhaustive] pub enum alice_physics_core::cloth::OutlineError
+pub alice_physics_core::cloth::OutlineError::EmptyOutline
+pub alice_physics_core::cloth::OutlineError::MassNotPositive
+pub alice_physics_core::cloth::OutlineError::NoTriangles
+pub alice_physics_core::cloth::OutlineError::SpacingNotPositive
+impl core::clone::Clone for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::OutlineError
+impl core::cmp::PartialEq for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics_core::cloth::OutlineError
+impl core::fmt::Debug for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::OutlineError
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::OutlineError
+impl core::marker::Freeze for alice_physics_core::cloth::OutlineError
+impl core::marker::Send for alice_physics_core::cloth::OutlineError
+impl core::marker::Sync for alice_physics_core::cloth::OutlineError
+impl core::marker::Unpin for alice_physics_core::cloth::OutlineError
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::OutlineError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::OutlineError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::OutlineError
 #[repr(C, align(64))] pub struct alice_physics_core::cloth::Cloth
 pub alice_physics_core::cloth::Cloth::config: alice_physics_core::cloth::ClothConfig
 pub alice_physics_core::cloth::Cloth::inv_masses: alloc::vec::Vec<alice_physics_core::math::Fix128>
@@ -1825,19 +1849,41 @@ pub alice_physics_core::cloth::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics_core::cloth::Cloth::velocities: alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub alice_physics_core::cloth::Cloth::wind: alice_physics_core::math::Vec3Fix
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLOTH_DIGEST_DOMAIN: [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::cloth::Cloth::is_asleep(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::new_grid(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, usize, usize, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics_core::cloth::Cloth::pin(&mut self, usize)
+pub fn alice_physics_core::cloth::Cloth::pin_released(&self) -> &[(usize, alice_physics_core::math::Fix128)]
 pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
+pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
+impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::cloth::Cloth::grab_particle(&self, alice_physics_core::cloth::GrabId) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::grabs(&self) -> &[alice_physics_core::cloth::Grab]
+pub fn alice_physics_core::cloth::Cloth::has_grab(&self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::last_dt(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::cloth::Cloth::move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::cloth::Cloth::nearest_free(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::release_grab(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::release_grab_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -1876,6 +1922,73 @@ impl core::marker::Unpin for alice_physics_core::cloth::ClothConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::cloth::ClothConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::ClothConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::ClothConfig
+pub struct alice_physics_core::cloth::Grab
+pub alice_physics_core::cloth::Grab::id: alice_physics_core::cloth::GrabId
+pub alice_physics_core::cloth::Grab::particle: usize
+pub alice_physics_core::cloth::Grab::target: alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::Grab
+impl core::cmp::PartialEq for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::Grab
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::Grab
+impl core::marker::Freeze for alice_physics_core::cloth::Grab
+impl core::marker::Send for alice_physics_core::cloth::Grab
+impl core::marker::Sync for alice_physics_core::cloth::Grab
+impl core::marker::Unpin for alice_physics_core::cloth::Grab
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::Grab
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::Grab
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::Grab
+pub struct alice_physics_core::cloth::GrabId(pub u32)
+impl core::clone::Clone for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::GrabId
+impl core::cmp::Ord for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics_core::cloth::GrabId
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::GrabId
+impl core::marker::Freeze for alice_physics_core::cloth::GrabId
+impl core::marker::Send for alice_physics_core::cloth::GrabId
+impl core::marker::Sync for alice_physics_core::cloth::GrabId
+impl core::marker::Unpin for alice_physics_core::cloth::GrabId
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::GrabId
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::GrabId
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::GrabId
+pub struct alice_physics_core::cloth::OutlineDesc
+pub alice_physics_core::cloth::OutlineDesc::config: alice_physics_core::cloth::ClothConfig
+pub alice_physics_core::cloth::OutlineDesc::contours: alloc::vec::Vec<alloc::vec::Vec<[alice_physics_core::math::Fix128; 2]>>
+pub alice_physics_core::cloth::OutlineDesc::mass_per_particle: alice_physics_core::math::Fix128
+pub alice_physics_core::cloth::OutlineDesc::origin: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::cloth::OutlineDesc::spacing: alice_physics_core::math::Fix128
+pub alice_physics_core::cloth::OutlineDesc::tether: core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub alice_physics_core::cloth::OutlineDesc::u: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::cloth::OutlineDesc::v: alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::OutlineDesc
+impl core::cmp::PartialEq for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Freeze for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Send for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Sync for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Unpin for alice_physics_core::cloth::OutlineDesc
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::OutlineDesc
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::OutlineDesc
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::OutlineDesc
 pub struct alice_physics_core::cloth::RestPositionsMismatch
 pub alice_physics_core::cloth::RestPositionsMismatch::expected: usize
 pub alice_physics_core::cloth::RestPositionsMismatch::got: usize
@@ -11070,19 +11183,41 @@ pub alice_physics_core::prelude::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics_core::prelude::Cloth::velocities: alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub alice_physics_core::prelude::Cloth::wind: alice_physics_core::math::Vec3Fix
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLOTH_DIGEST_DOMAIN: [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::cloth::Cloth::is_asleep(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::new_grid(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, usize, usize, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics_core::cloth::Cloth::pin(&mut self, usize)
+pub fn alice_physics_core::cloth::Cloth::pin_released(&self) -> &[(usize, alice_physics_core::math::Fix128)]
 pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
+pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
+impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::cloth::Cloth::grab_particle(&self, alice_physics_core::cloth::GrabId) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::grabs(&self) -> &[alice_physics_core::cloth::Grab]
+pub fn alice_physics_core::cloth::Cloth::has_grab(&self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::last_dt(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::cloth::Cloth::move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::cloth::Cloth::nearest_free(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::release_grab(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::release_grab_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -13507,6 +13642,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::scene_io::Phys
 pub struct alice_physics_core::prelude::PhysicsWorld
 pub alice_physics_core::prelude::PhysicsWorld::bodies: alloc::vec::Vec<alice_physics_core::solver::RigidBody>
 pub alice_physics_core::prelude::PhysicsWorld::body_materials: alloc::vec::Vec<alice_physics_core::material::MaterialId>
+pub alice_physics_core::prelude::PhysicsWorld::cloths: alloc::vec::Vec<alice_physics_core::cloth::Cloth>
 pub alice_physics_core::prelude::PhysicsWorld::config: alice_physics_core::solver::SolverConfig
 pub alice_physics_core::prelude::PhysicsWorld::contact_cache: alice_physics_core::contact_cache::ContactCache
 pub alice_physics_core::prelude::PhysicsWorld::contact_constraints: alloc::vec::Vec<alice_physics_core::solver::ContactConstraint>
@@ -13536,6 +13672,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics_core::solver::ContactModifier>)
@@ -13559,6 +13696,10 @@ pub fn alice_physics_core::solver::PhysicsWorld::clear_body_collision_radius(&mu
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_grab(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics_core::material::CombinedMaterial
 pub fn alice_physics_core::solver::PhysicsWorld::contact_arrows(&self, alice_physics_core::math::Fix128) -> alloc::vec::Vec<alice_physics_core::contact_viz::ContactArrow>
@@ -13574,6 +13715,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::end_frame(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::get_body(&self, usize) -> core::option::Option<&alice_physics_core::solver::RigidBody>
 pub fn alice_physics_core::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::solver::RigidBody>
 pub const fn alice_physics_core::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::has_cloth_grab(&self, alice_physics_core::cloth::GrabId) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::motor::PdController3D>
@@ -18484,6 +18626,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::solver::Distan
 pub struct alice_physics_core::solver::PhysicsWorld
 pub alice_physics_core::solver::PhysicsWorld::bodies: alloc::vec::Vec<alice_physics_core::solver::RigidBody>
 pub alice_physics_core::solver::PhysicsWorld::body_materials: alloc::vec::Vec<alice_physics_core::material::MaterialId>
+pub alice_physics_core::solver::PhysicsWorld::cloths: alloc::vec::Vec<alice_physics_core::cloth::Cloth>
 pub alice_physics_core::solver::PhysicsWorld::config: alice_physics_core::solver::SolverConfig
 pub alice_physics_core::solver::PhysicsWorld::contact_cache: alice_physics_core::contact_cache::ContactCache
 pub alice_physics_core::solver::PhysicsWorld::contact_constraints: alloc::vec::Vec<alice_physics_core::solver::ContactConstraint>
@@ -18513,6 +18656,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics_core::solver::ContactModifier>)
@@ -18536,6 +18680,10 @@ pub fn alice_physics_core::solver::PhysicsWorld::clear_body_collision_radius(&mu
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_grab(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics_core::material::CombinedMaterial
 pub fn alice_physics_core::solver::PhysicsWorld::contact_arrows(&self, alice_physics_core::math::Fix128) -> alloc::vec::Vec<alice_physics_core::contact_viz::ContactArrow>
@@ -18551,6 +18699,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::end_frame(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::get_body(&self, usize) -> core::option::Option<&alice_physics_core::solver::RigidBody>
 pub fn alice_physics_core::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::solver::RigidBody>
 pub const fn alice_physics_core::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::has_cloth_grab(&self, alice_physics_core::cloth::GrabId) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::motor::PdController3D>
@@ -21816,6 +21965,30 @@ impl core::marker::Unpin for alice_physics_core::motor::MotorMode
 impl core::marker::UnsafeUnpin for alice_physics_core::motor::MotorMode
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::motor::MotorMode
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::motor::MotorMode
+#[non_exhaustive] pub enum alice_physics_core::OutlineError
+pub alice_physics_core::OutlineError::EmptyOutline
+pub alice_physics_core::OutlineError::MassNotPositive
+pub alice_physics_core::OutlineError::NoTriangles
+pub alice_physics_core::OutlineError::SpacingNotPositive
+impl core::clone::Clone for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::OutlineError
+impl core::cmp::PartialEq for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics_core::cloth::OutlineError
+impl core::fmt::Debug for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::cloth::OutlineError
+pub fn alice_physics_core::cloth::OutlineError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::OutlineError
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::OutlineError
+impl core::marker::Freeze for alice_physics_core::cloth::OutlineError
+impl core::marker::Send for alice_physics_core::cloth::OutlineError
+impl core::marker::Sync for alice_physics_core::cloth::OutlineError
+impl core::marker::Unpin for alice_physics_core::cloth::OutlineError
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::OutlineError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::OutlineError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::OutlineError
 #[repr(u8)] pub enum alice_physics_core::Phase
 pub alice_physics_core::Phase::Gas = 2
 pub alice_physics_core::Phase::Liquid = 1
@@ -22680,19 +22853,41 @@ pub alice_physics_core::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics_core::Cloth::velocities: alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub alice_physics_core::Cloth::wind: alice_physics_core::math::Vec3Fix
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLOTH_DIGEST_DOMAIN: [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::cloth::Cloth::is_asleep(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::new_grid(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, usize, usize, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics_core::cloth::Cloth::pin(&mut self, usize)
+pub fn alice_physics_core::cloth::Cloth::pin_released(&self) -> &[(usize, alice_physics_core::math::Fix128)]
 pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
+pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
+impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::cloth::Cloth::grab_particle(&self, alice_physics_core::cloth::GrabId) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::grabs(&self) -> &[alice_physics_core::cloth::Grab]
+pub fn alice_physics_core::cloth::Cloth::has_grab(&self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::last_dt(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::cloth::Cloth::move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::cloth::Cloth::nearest_free(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<usize>
+pub fn alice_physics_core::cloth::Cloth::release_grab(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::cloth::Cloth::release_grab_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -24284,6 +24479,49 @@ impl core::marker::Unpin for alice_physics_core::gpu_sdf::GpuSdfResult
 impl core::marker::UnsafeUnpin for alice_physics_core::gpu_sdf::GpuSdfResult
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::gpu_sdf::GpuSdfResult
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::gpu_sdf::GpuSdfResult
+pub struct alice_physics_core::Grab
+pub alice_physics_core::Grab::id: alice_physics_core::cloth::GrabId
+pub alice_physics_core::Grab::particle: usize
+pub alice_physics_core::Grab::target: alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::Grab
+impl core::cmp::PartialEq for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::cloth::Grab
+pub fn alice_physics_core::cloth::Grab::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::Grab
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::Grab
+impl core::marker::Freeze for alice_physics_core::cloth::Grab
+impl core::marker::Send for alice_physics_core::cloth::Grab
+impl core::marker::Sync for alice_physics_core::cloth::Grab
+impl core::marker::Unpin for alice_physics_core::cloth::Grab
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::Grab
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::Grab
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::Grab
+pub struct alice_physics_core::GrabId(pub u32)
+impl core::clone::Clone for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::GrabId
+impl core::cmp::Ord for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics_core::cloth::GrabId
+pub fn alice_physics_core::cloth::GrabId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics_core::cloth::GrabId
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::GrabId
+impl core::marker::Freeze for alice_physics_core::cloth::GrabId
+impl core::marker::Send for alice_physics_core::cloth::GrabId
+impl core::marker::Sync for alice_physics_core::cloth::GrabId
+impl core::marker::Unpin for alice_physics_core::cloth::GrabId
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::GrabId
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::GrabId
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::GrabId
 pub struct alice_physics_core::Heatmap
 pub alice_physics_core::Heatmap::data: alloc::vec::Vec<alice_physics_core::math::Fix128>
 pub alice_physics_core::Heatmap::height: usize
@@ -24879,6 +25117,30 @@ impl core::marker::Unpin for alice_physics_core::box_collider::OrientedBox
 impl core::marker::UnsafeUnpin for alice_physics_core::box_collider::OrientedBox
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::box_collider::OrientedBox
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::box_collider::OrientedBox
+pub struct alice_physics_core::OutlineDesc
+pub alice_physics_core::OutlineDesc::config: alice_physics_core::cloth::ClothConfig
+pub alice_physics_core::OutlineDesc::contours: alloc::vec::Vec<alloc::vec::Vec<[alice_physics_core::math::Fix128; 2]>>
+pub alice_physics_core::OutlineDesc::mass_per_particle: alice_physics_core::math::Fix128
+pub alice_physics_core::OutlineDesc::origin: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::OutlineDesc::spacing: alice_physics_core::math::Fix128
+pub alice_physics_core::OutlineDesc::tether: core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub alice_physics_core::OutlineDesc::u: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::OutlineDesc::v: alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::OutlineDesc
+impl core::cmp::PartialEq for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::cloth::OutlineDesc
+pub fn alice_physics_core::cloth::OutlineDesc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Freeze for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Send for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Sync for alice_physics_core::cloth::OutlineDesc
+impl core::marker::Unpin for alice_physics_core::cloth::OutlineDesc
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::OutlineDesc
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::OutlineDesc
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::OutlineDesc
 pub struct alice_physics_core::OverlapResult
 pub alice_physics_core::OverlapResult::body_index: usize
 pub alice_physics_core::OverlapResult::depth: alice_physics_core::math::Fix128
@@ -25181,6 +25443,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::scene_io::Phys
 pub struct alice_physics_core::PhysicsWorld
 pub alice_physics_core::PhysicsWorld::bodies: alloc::vec::Vec<alice_physics_core::solver::RigidBody>
 pub alice_physics_core::PhysicsWorld::body_materials: alloc::vec::Vec<alice_physics_core::material::MaterialId>
+pub alice_physics_core::PhysicsWorld::cloths: alloc::vec::Vec<alice_physics_core::cloth::Cloth>
 pub alice_physics_core::PhysicsWorld::config: alice_physics_core::solver::SolverConfig
 pub alice_physics_core::PhysicsWorld::contact_cache: alice_physics_core::contact_cache::ContactCache
 pub alice_physics_core::PhysicsWorld::contact_constraints: alloc::vec::Vec<alice_physics_core::solver::ContactConstraint>
@@ -25210,6 +25473,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact_modifier(&mut self, alloc::boxed::Box<dyn alice_physics_core::solver::ContactModifier>)
@@ -25233,6 +25497,10 @@ pub fn alice_physics_core::solver::PhysicsWorld::clear_body_collision_radius(&mu
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contact_modifiers(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_contacts(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::clear_pre_solve_hooks(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_grab(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::cloth::GrabId>
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_move_grab(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release(&mut self, alice_physics_core::cloth::GrabId) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::cloth_release_with_velocity(&mut self, alice_physics_core::cloth::GrabId, alice_physics_core::math::Vec3Fix) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::colliders_overlap(&self, usize, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::combined_material(&self, usize, usize) -> alice_physics_core::material::CombinedMaterial
 pub fn alice_physics_core::solver::PhysicsWorld::contact_arrows(&self, alice_physics_core::math::Fix128) -> alloc::vec::Vec<alice_physics_core::contact_viz::ContactArrow>
@@ -25248,6 +25516,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::end_frame(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::get_body(&self, usize) -> core::option::Option<&alice_physics_core::solver::RigidBody>
 pub fn alice_physics_core::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::solver::RigidBody>
 pub const fn alice_physics_core::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::has_cloth_grab(&self, alice_physics_core::cloth::GrabId) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics_core::motor::PdController3D>
