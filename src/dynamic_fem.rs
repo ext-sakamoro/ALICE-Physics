@@ -11,7 +11,8 @@
 //! **Equations.** `M ü + fᵢₙₜ(u) = f` on the nodes of a tetrahedral mesh, advanced by the
 //! average-acceleration Newmark step (`β = 1/4`, `γ = 1/2`): predictor
 //! `ũ = u + dt·v + (dt²/4)·a`, the linear solve `(K + 4M/dt²) u' = f + (4M/dt²)·ũ`, corrector
-//! `a' = (4/dt²)(u' − ũ)`, `v' = v + (dt/2)(a + a')`. [`TransientSolver`]: small strain,
+//! `a' = (4/dt²)(u' − ũ)`, `v' = v + (dt/2)(a + a')` (`newmark_predictor`, `newmark_corrector`).
+//! [`TransientSolver`]: small strain,
 //! `fᵢₙₜ = K u` with the P1 stiffness `K = Σₑ ∫ Bᵀ D B dV` of isotropic Hooke's law
 //! (`σ = λ tr(ε) I + 2μ ε`, `μ = E/(2(1+ν))`, `λ = Eν/((1+ν)(1−2ν))`).
 //! [`CorotationalTransientSolver`]: `fᵢₙₜ(x) = Σₑ Rₑ Kₑ (Rₑᵀ x − x₀)` with `Rₑ` the polar
@@ -42,20 +43,23 @@
 //! **Conservation.** The scheme is unconditionally stable and, for a linear system,
 //! conserves the discrete energy `½ vᵀMv + ½ uᵀKu` up to the rounding of the Newmark
 //! coefficients (exact for a dyadic `dt`, a measured `1.5e-5` drift over 500 steps for a
-//! general one before the coefficient was formed by inverting first; see the section on the
-//! arithmetic below); without Rayleigh damping there is no dissipation, with it a mode of
+//! general one before the coefficient was formed by inverting first; see `dyadic_dt` and the
+//! section on the arithmetic below); without Rayleigh damping there is no dissipation, with it a mode of
 //! frequency `ω` loses energy at the rate `2 ζ(ω) ω`, `ζ(ω) = α/(2ω) + βω/2`, which the
 //! trapezoidal step reproduces as the per-step factor `|z|²`, `z = (1 + λ dt/2)/(1 − λ dt/2)`,
-//! `λ = −ζω ± iω√(1−ζ²)` (closed form, validated below). Momentum of a free body follows the
-//! applied force exactly, and an external impulse `J` changes it by `J` (`M Δv = J` through the
-//! mass solve: exact for the lumped mass, to the solve's tolerance for the consistent one)
+//! `λ = −ζω ± iω√(1−ζ²)` (closed form of `set_damping`, validated below). Momentum of a free
+//! body follows the applied force exactly, and an external impulse `J` changes it by `J`
+//! (`apply_impulses`: `M Δv = J` through the mass solve, exact for the lumped mass, to the
+//! solve's tolerance for the consistent one; `momentum` reads `M v`)
 //! and the free steps keep it within `n (2/dt) tol |u| M_total` (the corrector amplifies the
-//! solve's displacement error into velocity). The co-rotational step conserves the same quantities within one
-//! linearisation per step: a rotation as a whole produces no elastic force or energy.
+//! solve's displacement error into velocity). The co-rotational step conserves the same
+//! quantities within one linearisation per step: a rotation as a whole produces no elastic
+//! force or energy (`rotation_offset` cancels it).
 //!
-//! **Valid range.** Any `dt > 0` (unconditional stability); the modes resolved are those with
-//! `ω dt ≲ 1`, above that the period is elongated by `ω̄ = (2/dt)·atan(ω dt/2)` with no
-//! amplitude change. Small strain (a few per cent) in the element frame; the co-rotational
+//! **Valid range.** Any `dt > 0` (unconditional stability, [`DynamicsConfig::try_new`]); the
+//! modes resolved are those with `ω dt ≲ 1`, above that the period is elongated by
+//! `ω̄ = (2/dt)·atan(ω dt/2)` with no amplitude change (`newmark_corrector`). Small strain (a
+//! few per cent) in the element frame (`element_stress_local`); the co-rotational
 //! form admits any rigid rotation and refuses an element whose `det F` falls to `2⁻²⁰` or
 //! below ([`FemError::RotationFailed`], the state unchanged). `E > 0`, `−1 < ν < 0.5`
 //! ([`ElasticMaterial::new`] refuses the rest); density and `dt` positive and
@@ -67,16 +71,18 @@
 //! tetrahedra (`tests/support/deformable_column.rs`), `6e-8` on the 153-vertex column of
 //! `tests/analytic_deformable_integrators.rs` at one step per frame.
 //!
-//! **Approximations.** P1 (constant strain) tetrahedra; Hooke's law in the element frame
-//! (no hyperelastic law, no plasticity, no thermal strain here); the co-rotational frame is
-//! frozen over a step (first order in the rotation increment per step); damping is Rayleigh's
+//! **Approximations.** P1 (constant strain) tetrahedra (`build_elements`); Hooke's law in the
+//! element frame (no hyperelastic law, no plasticity, no thermal strain here,
+//! `element_stress_local`); the co-rotational frame is frozen over a step (first order in the
+//! rotation increment per step, `rotations` at the step's start); damping is Rayleigh's
 //! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
 //! or none; contact is a single plane, frictionless, resolved to the step's end (no
 //! time-of-impact subdivision, a vertex arriving mid-step is held from the end of that step),
-//! no restitution (the hold is inelastic); external impulses are applied between steps, not
-//! inside one; the lumped mass lowers the frequencies and the
+//! no restitution (the hold is inelastic, `set_ground`); external impulses are applied between
+//! steps, not inside one (`apply_impulses`); the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
-//! space); loads and prescribed displacements are constant over a run; the tetrahedra are
+//! space, [`MassLumping`]); loads and prescribed displacements are constant over a run
+//! ([`BoundaryConditions`] fixed at `new`); the tetrahedra are
 //! the caller's, and a mesh from [`crate::sdf_fem_mesh::generate_marching_tets`] carries that
 //! mesher's own errors (the chamfer of flat faces and the overfill at reflex edges, its MODEL's
 //! known defects) into the mass, the stiffness and the contact area here.
