@@ -1,6 +1,7 @@
 //! A column standing on its base, released under its own weight, advanced by the
 //! co-rotational Newmark solver: the sag oscillates about the static value with the period of
-//! the column's first axial mode. Then the same column rotated as a whole by 36.87°: the
+//! the column's first axial mode. Then the same column with no base fix standing on the ground
+//! plane (every bottom vertex held, frictionless), and rotated as a whole by 36.87°: the
 //! co-rotational element sees no strain in a rotation, so nothing moves.
 //!
 //! Units are the finite element module's: mm, N, MPa, tonne (density in t/mm³).
@@ -132,6 +133,30 @@ fn main() {
             );
         }
     }
+
+    // the same column with no base fix, standing on the ground plane y = 0 under gravity
+    let mut bc = BoundaryConditions::new();
+    for (i, m) in mass.iter().enumerate() {
+        bc.add_load(i as u32, Axis::Y, Fix128::from_f64(-m * 9810.0));
+    }
+    let mut solver = CorotationalTransientSolver::new(&mesh, &material, &bc, &dynamics, &config)
+        .expect("the column solves");
+    solver.set_damping(Some(RayleighCoefficients {
+        alpha: Fix128::ZERO,
+        beta: Fix128::from_f64(2.0 * 0.2 / 282.0),
+    }));
+    solver.set_ground(Some(Fix128::ZERO));
+    for _ in 0..400 {
+        solver.step().expect("the step converges");
+    }
+    let held = solver.on_ground().iter().filter(|&&h| h).count();
+    let u = solver.displacements();
+    let sag: f64 = top
+        .iter()
+        .map(|&i| 200.0 - (f64::from(mesh.vertices[i][1]) + u[3 * i + 1].to_f64()))
+        .sum::<f64>()
+        / top.len() as f64;
+    println!("standing on the ground, no base fix: {held} of {} bottom vertices held, top sag {sag:.5} mm", base.len());
 
     // rotated as a whole by 36.87° about the base centre, no load: nothing moves
     // the 3-4-5 rotation (36.87°): sine 0.6 and cosine 0.8 exactly, no transcendental call
