@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5933 |
+| 🟢 Not ignored (run by CI) | 5940 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6030** |
+| **Total** | **6037** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5933)
+## 🟢 Not ignored (5940)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -507,6 +507,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
 | `analytic_metric_wiring.rs` | 6 |
+| `analytic_query_box_range.rs` | 6 |
 | `analytic_sdf_distance_query.rs` | 6 |
 | `analytic_support_volume_wiring.rs` | 6 |
 | `analytic_thermoelastic.rs` | 6 |
@@ -643,6 +644,7 @@ Per-file counts (the test names are in `tests/`):
 | `c_world_fault_codes.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
 | `law_check_cast.rs` | 1 |
+| `ray_query_previous_bits.rs` | 1 |
 | `tgs_joints_static_colliders.rs` | 1 |
 
 ---
