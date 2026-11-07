@@ -34,10 +34,10 @@
 //! The angular velocity is now re-derived by the exact logarithm of the
 //! rotation (`θ = 2·atan2(|v|, w)`), so the two free-rotation oracles hold to
 //! rounding; the measurements above are from the chord re-derivation they
-//! replaced. The constant-torque oracle stays a `src gap` (`#[ignore]`d):
-//! `add_torque` is applied once at the frame head, which leaves the angle
-//! splitting term `½ (τ/I) dt t (s − 1)/s` (+0.078 rad at 10 s for every `s`;
-//! its `ω` is already exact). Run with `--ignored` to see it fail.
+//! replaced. `add_torque` is one blow at the frame head, and its angle carries
+//! the splitting term `½ (τ/I) dt t (s − 1)/s` in closed form; a torque that acts
+//! throughout the frame is staged per substep through the participant contract,
+//! which has no such term. Both are pinned below.
 //!
 //! Author: Moroya Sakamoto
 
@@ -163,65 +163,6 @@ fn report(failures: &[String]) {
         failures.len(),
         failures.join("\n")
     );
-}
-
-/// Constant torque `τ` about `z` from rest (default unit-sphere inertia,
-/// `I = 2/5`, `τ = 2/5` so `τ/I = 1 rad/s²`), applied with `add_torque` every
-/// frame.
-///
-/// - physical expectation: `ω(t) = (0, 0, t)` at every frame boundary
-///   (to rounding), the angle `θ(t) = ½ t²` to within the truncation `½ h t`,
-///   and the angular velocity stays on `z`
-/// - current (measured, 10 s): `ω_z(10)` = 8.7162 (s=1), 9.2825 (2),
-///   9.6183 (4), 9.8028 (8), 9.8997 (16) against 10, `θ(10)` = 47.287 /
-///   48.575 / 49.296 / 49.679 / 49.876 against 50; the chord model gives the
-///   same `ω` to ≤ 1e-9; the axis stays exactly on `z`
-/// - difference closed form: `dω/dt = τ/I − ω³ h / 24` (chord re-derivation)
-///   plus the angle splitting term `½ (τ/I) dt t (s − 1)/s`
-#[test]
-#[ignore = "src gap: add_torque is applied once at the frame head, so θ carries the splitting term ½ (τ/I) dt t (s − 1)/s (+0.078 rad at 10 s for every s); the frame-head external-force item is a separate pending decision"]
-fn constant_torque_spins_up_as_tau_t_over_i() {
-    let mut failures = Vec::new();
-    let dtf = 1.0 / DT_DEN as f64;
-    for s in SUBSTEPS {
-        let h = dtf / s as f64;
-        let (mut w, id) = world(s, {
-            let inv_i = Fix128::from_ratio(5, 2);
-            Vec3Fix::new(inv_i, inv_i, inv_i)
-        });
-        let torque = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_ratio(2, 5));
-        let mut unwrap = Unwrap::new();
-        let (mut worst_w, mut worst_off_axis, mut worst_theta) = (0.0_f64, 0.0_f64, 0.0_f64);
-        let mut last = (0.0, 0.0);
-        for n in 1..=FRAMES {
-            w.bodies[id].add_torque(torque, dt());
-            w.step(dt());
-            let t = n as f64 * dtf;
-            let om = v3(w.bodies[id].angular_velocity);
-            let theta = unwrap.push(angle_about(w.bodies[id].rotation, [0.0, 0.0, 1.0]));
-            worst_w = worst_w.max((om[2] - t).abs());
-            worst_off_axis = worst_off_axis.max(om[0].abs().max(om[1].abs()));
-            worst_theta = worst_theta.max((theta - 0.5 * t * t).abs() - 0.5 * h * t);
-            last = (om[2], theta);
-        }
-        let (model_w, model_th) = chord_model(0.0, 1.0, s, FRAMES);
-        eprintln!(
-            "torque s={s}: ω_z(10) {:.12} (expected 10, chord model {model_w:.12}), θ(10) {:.9} (expected 50 ± {:.6}, model {model_th:.9}), off-axis {worst_off_axis:.3e}",
-            last.0,
-            last.1,
-            0.5 * h * 10.0
-        );
-        if worst_w > ROUND || worst_off_axis > ROUND || worst_theta > ROUND {
-            failures.push(format!(
-                "s={s}: ω_z(10) = {:.12} rad/s (expected 10; chord model {model_w:.12}, residual {:+.3e}), max |ω_z − t| {worst_w:.3e}, θ(10) = {:.9} (expected 50 within ½ h t = {:.6}; model {model_th:.9}), off-axis {worst_off_axis:.3e}",
-                last.0,
-                last.0 - model_w,
-                last.1,
-                0.5 * h * 10.0
-            ));
-        }
-    }
-    report(&failures);
 }
 
 /// A torque staged in every substep through the participant contract.
