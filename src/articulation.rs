@@ -16,83 +16,97 @@
 //!
 //! # MODEL — articulated-body forward dynamics
 //!
-//! - **方程式 (equations)**: [`FeatherstoneSolver::solve`] is the
-//!   articulated-body algorithm (Featherstone, Rigid Body Dynamics Algorithms,
-//!   ch. 7) on a tree of rigid links joined by [`Joint`]s: a forward pass of
-//!   spatial velocities `v` and the velocity-product acceleration
-//!   `c = v × (v − v_parent)`; a backward pass of the articulated inertia
-//!   `I^A` and bias force `p^A`, each child folded into its parent by
-//!   `I^a = I^A − U D⁻¹ Uᵀ` (`U = I^A S`, `D = Sᵀ I^A S`, `S` the joint's
-//!   motion subspace: ball and cone-twist 3 revolute, hinge 1, slider 1
-//!   prismatic, fixed 0, spring 6, D6 its unlocked axes); a forward pass of
-//!   joint accelerations `q̈ = D⁻¹(u − Uᵀ a')`, `u = τ − Sᵀ p^A` with `τ = 0`;
-//!   then one semi-implicit Euler step `v += a dt`, `x += v dt`,
-//!   `q' = dq(ω dt) q`. Gravity enters by the base-acceleration substitution
-//!   (RBDA §7.3), so free fall and static equilibrium are bit-exact.
-//!   [`ArticulatedBody::forward_kinematics`] places each child at
-//!   `x_parent + R_parent · offset`; [`ArticulatedBody::apply_motors`] adds
-//!   the PD impulse `τ dt` about the hinge axis (hinge links, coordinate the
-//!   twist angle) or `F dt` along the parent–child line (other joints,
-//!   coordinate the centre distance). `solve_with_mass_splitting` takes two
-//!   half steps when the dynamic links' mass ratio reaches the threshold.
-//! - **単位 (units)**: SI in `Fix128` — m, s, kg, kg m², N, N m, rad;
-//!   spatial vectors in world coordinates. No f32 on the path; the only
-//!   inversions go through one Gauss–Jordan routine whose pivot rule is an
-//!   exact integer comparison.
-//! - **保存則 (conservation)**: joint constraint forces appear in equal and
-//!   opposite pairs, so the total linear momentum of a free chain changes by
-//!   exactly the total weight and its centre of mass accelerates at exactly
-//!   `g` (bit-exact for a chain at rest; `2⁻⁴⁰` for an articulating one).
-//!   Angular momentum of a free chain: no oracle yet. Energy: the
-//!   semi-implicit Euler step does not conserve it, and the drift is not
-//!   measured.
-//! - **適用範囲 (range)**: trees without loops, up to 6 DOF per joint, 3D,
-//!   first order in `dt`; the closed-form oracles compare the first step's
-//!   accelerations (compound pendulum, centrifugal coupling, double pendulum)
-//!   to `2⁻⁴⁰`, the structural ones are exact; no sweep of `dt` yet. A root
-//!   index out of range is a no-op, a joint naming bodies outside the chain
-//!   panics, a static (zero inverse mass) link is not integrated, an empty
-//!   chain does nothing; nothing is clamped. Joint limits and compliance are
-//!   not part of the dynamics: a limit binds only at the stop, which this
-//!   solver does not enforce.
-//! - **近似 (approximations)**: uniform gravity only (a body's gravity scale
-//!   is not read); no contacts, joint limits, joint friction or compliance;
-//!   no motor torque inside the dynamics (motors write velocities afterwards);
-//!   the spring joint is treated as a free 6-DOF joint, its force applied
-//!   elsewhere; mass splitting is a `dt` halving, not a constraint split;
-//!   the built ragdoll is a fixed 12-body layout.
+//! - **方程式 (equations)**: `FeatherstoneSolver::solve` is the articulated-body
+//!   algorithm (Featherstone, RBDA ch. 7) in world coordinates, three passes over
+//!   the link tree (solve, l. 1155-1157). Pass 1, root to leaves: spatial velocity
+//!   `v = [ω; v_cm − ω × x]` (fv_recursive, l. 1258), `c = v × (v − v_parent)`
+//!   (fv_recursive, l. 1267) and the joint subspace `S`: fixed 0 columns, ball
+//!   and cone-twist 3 revolute, hinge 1 revolute about body A's axis, slider 1
+//!   prismatic, spring 3 revolute + 3 prismatic, D6 one per axis not `Locked`
+//!   (subspace_for, l. 1019-1056); a revolute column is `[axis; anchor × axis]`
+//!   with the axis not normalised (revolute, l. 946). Pass 2, leaves to root:
+//!   spatial inertia about the origin from `m` and `R diag(I_local) Rᵀ`
+//!   (body_spatial_inertia, l. 814; world_inertia, l. 799), bias `p = v ×* (I v)`
+//!   (bi_recursive, l. 1301), each child folded by `U = I^A S`, `D = Sᵀ U`,
+//!   `u = −Sᵀ p^A` (τ = 0), `I^a = I^A − U D⁻¹ Uᵀ`, `p^a = p^A + I^a c + U D⁻¹ u`
+//!   (fold_child, l. 1347-1388), a singular `D` taking `D⁻¹ = 0` (fold_child,
+//!   l. 1359). Pass 3, root to leaves: a root held by `fixed_base` or by zero
+//!   inverse mass gets `ã = [0; −g]` (forward_acceleration_pass, l. 1410-1416),
+//!   a floating root `ã = −(I^A)⁻¹ p^A`, zero when singular (solve_floating_base,
+//!   l. 1441-1444); each child `a' = a_parent + c`, `q̈ = D⁻¹(u − Uᵀ a')`,
+//!   `a = a' + S q̈` (fa_recursive, l. 1484-1494). Each dynamic body then takes
+//!   one semi-implicit Euler step `a_cm = ã_lin + g + α × x + ω × v`,
+//!   `v += a_cm dt`, `ω += α dt`, `x += v dt`, `q ← normalize(dq(ω̂, |ω| dt) q)`
+//!   (integrate, l. 1517-1528). `forward_kinematics` sets a child's position to
+//!   `x_parent + R_parent · local_offset`, rotation untouched (fk_recursive, l. 269).
+//!   `apply_motors` adds a PD angular impulse `axis · τ dt` on the twist angle for a
+//!   hinge link (apply_motors, l. 303-319), else a PD linear impulse `F dt` along
+//!   the centre line (apply_motors, l. 325-348). `solve_with_mass_splitting` scans
+//!   links with positive inverse mass (solve_with_mass_splitting, l. 1205) and, when
+//!   the threshold is positive and `max_inv ≥ threshold · min_inv`, calls `solve`
+//!   twice with `dt.half()`, else once with `dt` (solve_with_mass_splitting,
+//!   l. 1227-1237).
+//! - **単位 (units)**: SI in `Fix128`: position m, velocity m/s, angular velocity
+//!   rad/s, inverse mass 1/kg, inverse inertia 1/(kg m²), gravity m/s², `dt` s;
+//!   spatial vectors `[angular; linear]` taken about the world origin
+//!   (fv_recursive, l. 1258; body_spatial_inertia, l. 814). A zero inverse mass
+//!   or inertia becomes the finite stand-in `10⁶` (reciprocal_or_standin, l. 770).
+//!   The only inversion is Gauss–Jordan, exact integer pivot (invert_small, l. 884).
+//! - **保存則 (conservation)**: mass: the step writes only velocity, angular
+//!   velocity, position and rotation (integrate, l. 1521-1528). Linear momentum
+//!   of a free chain: only gravity (integrate, l. 1517) and the velocity product
+//!   (bi_recursive, l. 1301) enter the passes; the tests below bound the deviation
+//!   from the weight impulse by `2⁻⁴⁰` over 30 steps, exact `g dt` for a chain at
+//!   rest. A held root or zero-inverse-mass link is not integrated
+//!   (forward_acceleration_pass, l. 1425; fa_recursive, l. 1499), so it absorbs
+//!   momentum. Angular momentum and energy of a free chain are not measured; the
+//!   Euler step has no correction term (integrate, l. 1521-1528).
+//! - **適用範囲 (range)**: trees built by `add_link`, a parent index past the
+//!   links panics at the children push, loops are not checked (add_link, l. 193);
+//!   at most 6 DOF per joint, a seventh column is dropped (push, l. 963); 3D;
+//!   first order in `dt`, no step sweep. An empty chain or a root index past
+//!   `links.len()` returns untouched (solve, l. 1149). A joint whose `body_a` or
+//!   `body_b` is past `bodies.len()` panics by slice indexing (subspace_for,
+//!   l. 1009-1014; apply_motors, l. 299-300); nothing checks that a joint names
+//!   its own link and parent, in-range foreign indices are used as given
+//!   (add_link, l. 176-193). A zero-inverse-mass link is not integrated and
+//!   holds the root (fa_recursive, l. 1499; forward_acceleration_pass, l. 1410).
+//!   Nothing is clamped (integrate, l. 1515-1528).
+//! - **近似 (approximations)**: uniform gravity only, `gravity_scale` is not
+//!   read (forward_acceleration_pass, l. 1416; integrate, l. 1517). No contacts,
+//!   joint limits, friction or compliance: the subspace reads only anchors, axes
+//!   and D6 motions (subspace_for, l. 1005-1056). No constraint stabilisation:
+//!   the joint velocity is taken as `v − v_parent` (fv_recursive, l. 1267), each
+//!   body is integrated on its own (integrate, l. 1521-1528) and nothing
+//!   re-projects an anchor afterwards (solve, l. 1141-1158), so anchor gaps
+//!   accumulate over steps. `τ = 0` in the dynamics (fold_child, l. 1365);
+//!   motors write velocities afterwards (apply_motors, l. 291). The spring joint
+//!   is a free 6-DOF subspace, its force not applied here (subspace_for,
+//!   l. 1035). A singular `D` locks the joint for the step (fold_child, l. 1359).
+//!   Mass splitting is a `dt` halving only, no decomposition
+//!   (solve_with_mass_splitting, l. 1233-1235).
 //! - **検証 (validation)**: `tests/analytic_multibody_dynamics.rs::
 //!   free_floating_chain_center_of_mass_accelerates_at_gravity` (exact `g dt`),
-//!   `::free_floating_chain_links_each_accelerate_at_gravity` (bit-exact, no spin),
+//!   `::free_floating_chain_links_each_accelerate_at_gravity` (exact, no spin),
 //!   `::momentum_of_an_articulating_free_chain_changes_only_by_weight` (`2⁻⁴⁰`),
-//!   `::link_welded_to_static_base_does_not_move`,
-//!   `::chain_hanging_at_rest_stays_at_rest` (static equilibrium),
-//!   `::hinged_body_acquires_angular_velocity`,
-//!   `::joint_axis_selects_which_moments_can_act`,
+//!   `::link_welded_to_static_base_does_not_move`, `::chain_hanging_at_rest_stays_at_rest`,
+//!   `::hinged_body_acquires_angular_velocity`, `::joint_axis_selects_which_moments_can_act`,
 //!   `::heavier_rotational_inertia_swings_more_slowly`,
 //!   `::outboard_joint_changes_what_the_inboard_link_feels`,
-//!   `::compound_pendulum_matches_its_closed_form_angular_acceleration`
-//!   (`I α = M` with the parallel-axis inertia),
-//!   `::centrifugal_coupling_to_a_rotating_parent_matches_its_closed_form`
-//!   (the `c` term), `::anisotropic_inertia_is_carried_into_world_axes`
-//!   (`R I Rᵀ`), `::double_pendulum_rank_reduction_matches_its_closed_form`
-//!   (Lagrangian closed form);
+//!   `::compound_pendulum_matches_its_closed_form_angular_acceleration` (`I α = M`),
+//!   `::centrifugal_coupling_to_a_rotating_parent_matches_its_closed_form` (`c`),
+//!   `::anisotropic_inertia_is_carried_into_world_axes` (`R I Rᵀ`),
+//!   `::double_pendulum_rank_reduction_matches_its_closed_form`;
 //!   `tests/audit_articulation.rs::single_root_free_fall_fixed_base_and_static_base`,
-//!   `::forward_kinematics_chains_through_updated_parents`,
-//!   `::hinge_motor_drives_the_hinge_angle`,
+//!   `::forward_kinematics_chains_through_updated_parents`, `::hinge_motor_drives_the_hinge_angle`,
 //!   `::motor_position_mode_pushes_the_pair_apart_by_f_dt_inverse_mass`,
-//!   `::mass_splitting_triggers_at_the_ratio_boundary`,
+//!   `::mass_splitting_triggers_at_the_ratio_boundary`, `::static_child_links_are_not_integrated`,
 //!   `::angular_velocity_is_applied_in_the_world_frame`,
-//!   `::static_child_links_are_not_integrated`,
 //!   `::ragdoll_joint_anchors_coincide_at_build_time`;
-//!   `tests/analytic_articulation_wiring.rs::
-//!   solve_with_mass_splitting_two_half_steps_differ_from_one_full_step_by_exactly_one_quarter_g_dt2`,
-//!   `::forward_kinematics_propagates_parent_rotation_into_child_offset`.
-//!   validation missing: a pendulum's period over many steps against the
-//!   closed form with a step sweep (only the first step's angular
-//!   acceleration is pinned).
-//!   validation missing: energy drift and angular momentum of a free chain
-//!   over many steps.
+//!   `tests/analytic_articulation_wiring.rs` (whole file; two half steps vs one).
+//!   validation missing: anchor drift over many steps (no stabilisation).
+//!   validation missing: a pendulum's period over many steps with a step sweep.
+//!   validation missing: energy drift and angular momentum of a free chain.
 //! - **段 (tiers)**: L0 only.
 
 use crate::joint::{BallJoint, D6Motion, HingeJoint, Joint};
@@ -1151,10 +1165,9 @@ impl FeatherstoneSolver {
     /// `max_inv_mass >= mass_ratio_split_threshold * min_inv_mass` with a
     /// positive threshold — the heaviest link outweighs the lightest by the
     /// threshold or more — the step is taken as two [`Self::solve`] calls of
-    /// `dt / 2`; otherwise as one call of `dt`. The halving is a first-order
-    /// proxy for a mass-splitting decomposition of the contact impulses: it
-    /// lowers the effective spectral radius of the pass without changing any
-    /// link's inertia, and the decomposition itself is not implemented.
+    /// `dt / 2`; otherwise as one call of `dt`. Nothing else is done: no
+    /// link's inertia is changed and no decomposition of impulses is
+    /// implemented.
     ///
     /// # Determinism
     /// The scan runs over `artic.links` in index order, the ratio test is a
@@ -1169,16 +1182,10 @@ impl FeatherstoneSolver {
         dt: Fix128,
         mass_ratio_split_threshold: Fix128,
     ) {
-        // Body of Phase F 11.2: proxy Mass Splitting policy via dt
-        // halving. Rationale: with an extreme mass ratio across the
-        // articulated links (heaviest / lightest > threshold), a
-        // single Featherstone forward-dynamics pass at the full `dt`
-        // suffers from stiffness-induced ill-conditioning that shows
-        // up as jitter at contact points. Splitting the step into two
-        // half-steps of `dt / 2` acts as a first-order proxy for the
-        // full Mass Splitting decomposition (which would decompose
-        // contact impulses instead), relieving the effective spectral
-        // radius without altering any per-link inertia.
+        // Time-step split for large mass ratios: when heaviest / lightest
+        // reaches the threshold, the step is two half steps of `dt / 2`
+        // through `solve`; otherwise one full step. No link's inertia is
+        // changed and no decomposition of impulses is performed.
         //
         // # Determinism
         // - The min / max reciprocal mass scan iterates over

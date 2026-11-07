@@ -4,85 +4,88 @@
 //!
 //! # MODEL — time of impact of translating shapes
 //!
-//! - **方程式 (equations)**: time of impact `t ∈ [0, 1]` of the step for
-//!   bodies translating at constant velocity; no response. Two spheres:
-//!   the smaller root of `|p + v t|² = (r_a + r_b)²` with `p = c_b − c_a`,
-//!   `v = v_b − v_a`; `|p| ≤ r_a + r_b` is `t = 0`. Sphere and plane
-//!   `n·x = o`, two-sided: `t = (s r − d) / (v·n)`, `d = n·c − o`,
-//!   `s = sign(d)`; `|d| ≤ r` is `t = 0`. Conservative advancement on a
-//!   signed distance `φ`: `t ← t + (φ(x(t)) − r) / |Δx|` until
-//!   `φ − r ≤ tol` (`tol = 10⁻³` m, 32 iterations by default). Swept AABB:
-//!   slab entry and exit per axis, `t = max(t_enter)` when `≤ min(t_exit)`.
-//!   Speculative contact: `gap = |p| − (r_a + r_b)`, a contact of depth
-//!   `(−v·p̂) dt − gap` when positive, normal from B to A. AABB and plane:
-//!   the support vertex against `n`, one-sided. Capsule and plane: the
-//!   endpoint sphere nearer the plane; sphere and capsule: the closest
-//!   segment point at `t = 0` as a still sphere. Sub-steps of a closing
-//!   pair: `n = ⌈|v|_∞ dt / (r_min / 2)⌉` clamped to `[1, max]` (with
-//!   `std` through `solver_tgs`, without it the maximum).
-//!   `PhysicsWorld::time_of_impact` casts the body's collision sphere
-//!   (`cast_sphere`) and divides the hit distance by `|v dt|`.
-//! - **単位 (units)**: SI in `Fix128` — m, s, m/s; `t` and the sub-step
-//!   count are dimensionless; plane normals are unit vectors. No `f32`
-//!   on these paths.
-//! - **保存則 (conservation)**: none applies — kinematic queries on
-//!   straight-line motion; they move no body and exchange no momentum or
-//!   energy (the response is `solver::world_ccd` and the contact solver).
-//! - **適用範囲 (range)**: straight-line motion within one step; the
-//!   sphere and plane forms are closed, exact in `Fix128` up to the
-//!   rounding of `√` and `/` (the bit-exact oracles use dyadic inputs).
-//!   Conservative advancement needs a 1-Lipschitz `φ` and takes about
-//!   `log(gap / tol) / log(1 / (1 − cos θ))` iterations at approach angle
-//!   `θ` to the normal, so a shallow approach exhausts the 32 iterations
-//!   and answers `None` (AUD-A-S2W2-013); no sweep over `tol` or the
-//!   budget exists yet. Outside the range nothing is clamped: `t` past
-//!   `1`, a separating pair or an exhausted budget is `None`, no error.
-//! - **近似 (approximations)**: translation only, no rotation within the
-//!   step; the moving body is a sphere (`time_of_impact` takes the
-//!   bounding radius of a shaped or compound body, so its `t` is early,
-//!   never late); capsule-plane judges one endpoint sphere and
-//!   sphere-capsule freezes the closest point, both at `t = 0`, wrong for
-//!   a sliding approach (AUD-A-S2W2-010 / -011); `aabb_plane_toi` is
-//!   one-sided where `sphere_plane_toi` is two-sided (-012); the sub-step
-//!   count uses the `L∞` speed, `√3` short of the Euclidean cap on a
-//!   diagonal (-014); `speculative_contact` is a linear prediction along
-//!   the line of centres at `t = 0` (a superset of the impacts, not an
-//!   exact `t`) and answers `None` for coincident centres (-009);
-//!   `needs_ccd` is a heuristic (`|v| dt > r / 2` and `|v| > 5` m/s).
+//! - **方程式 (equations)**: the time of impact `t ∈ [0, 1]` of one step for shapes translating at
+//!   constant velocity; nothing is moved, each query returns a `TOI` or `None` (TOI, l. 112–114).
+//!   Two spheres: the smaller root of `|p + v t|² = (r_a + r_b)²`, `p = c_b − c_a`, `v = v_b − v_a`
+//!   (sphere_sphere_toi, l. 165–166, 196); `|p| ≤ r_a + r_b` is `t = 0` (l. 175). Sphere and plane
+//!   `n·x = o`, two-sided: `d = n·c − o`, `s = sign(d)`, `t = (s r − d) / (v·n)` (sphere_plane_toi,
+//!   l. 225, 256); `|d| ≤ r` is `t = 0` (l. 242). Conservative advancement on a signed distance
+//!   `φ`: `t ← t + (φ(x(t)) − r) / |Δx|` until `φ − r ≤ tol`, at most `max_iterations` times
+//!   (conservative_advancement, l. 286, 291–293, 304), defaults `tol = 10⁻³`, 32 iterations
+//!   (CcdConfig, l. 135–136). Swept AABB: slab entry and exit per axis, `t = max(t_enter)` when `≤
+//!   min(t_exit)` and in `[0, 1]`, an overlap at the start is `t = 0` (swept_aabb, l. 374–377).
+//!   Speculative contact: `gap = |p| − (r_a + r_b)` (speculative_contact, l. 568); with `gap ≤ 0`
+//!   the depth is `−gap`, no velocity term (l. 571–573); otherwise it is `(−v·p̂) dt − gap` when
+//!   positive (l. 582, 588–593); the normal is `−p̂`, from B to A (l. 567). AABB and plane: the
+//!   vertex supporting `−n`, one-sided, `t = −d / (v·n)` (aabb_plane_toi, l. 692, 716). Capsule and
+//!   plane: the endpoint with the smaller signed distance `n·e − o` is swept as a sphere, a tie
+//!   going to the second endpoint (capsule_plane_toi, l. 620, 625). Sphere and capsule: the segment
+//!   point closest to the sphere centre at `t = 0` is swept against as a still sphere
+//!   (sphere_capsule_toi, l. 646, 662). Sub-steps of a pair: `1` unless speculative_contact reports
+//!   a contact (adaptive_toi_substeps, l. 469); otherwise this module hands each body's own `|v|_∞`
+//!   (l. 490–493; not the relative speed), `r_min` and the factor `1/2` to `solver_tgs`
+//!   (on_collision_course_substeps, l. 503–504, 512, 518), which takes the larger speed and caps
+//!   the step at `min(r_min / 2, max_translation_per_step)` (0.1 by default; that cap is not in
+//!   this module); the count is clamped to `[1, max]` (l. 514), without `std` it is `max(1, max)`
+//!   (l. 539). The world sweep casts the body's collision sphere and divides the hit distance by
+//!   `|v dt|`, clamped to `t = 1` at or beyond it (time_of_impact, l. 783–787).
+//! - **単位 (units)**: one unit system in `Fix128` shared by lengths, `dt` and velocities (metres and
+//!   seconds by the crate convention); `t` is the step fraction (TOI, l. 114), the sub-step count a
+//!   `u32` (l. 465). Plane normals are taken as unit vectors, the signed distance is `n·c − o`
+//!   unnormalised (sphere_plane_toi, l. 225; aabb_plane_toi, l. 694). No `f32` or `f64`: every
+//!   signature takes `Fix128` / `Vec3Fix` (l. 145–770).
+//! - **保存則 (conservation)**: none applies: every fn is a kinematic query on straight-line motion
+//!   that moves no body and exchanges no momentum or energy; inputs come by value, a `TOI`,
+//!   `Contact` or count goes out (l. 157–163, 456–465, 548–555); the response is the contact
+//!   solver's.
+//! - **適用範囲 (range)**: straight-line motion within one step; a `t` outside `[0, 1]` is `None` for
+//!   the closed forms (sphere_sphere_toi, l. 198; sphere_plane_toi, l. 258; aabb_plane_toi, l. 718;
+//!   swept_aabb, l. 374) and past `1` for the advancement (conservative_advancement, l. 307). The
+//!   closed forms are exact up to one `√` and one `/` in `Fix128` (sphere_sphere_toi, l. 194, 196)
+//!   or one `/` (sphere_plane_toi, l. 256). The advancement assumes a 1-Lipschitz `φ` (l. 298) and
+//!   advances `gap / |Δx|` whatever the approach angle (l. 304), so a shallow approach can spend
+//!   all `max_iterations` and answer `None` (l. 286, 312; AUD-A-S2W2-013). Nothing is an error: a
+//!   separating pair, a zero relative velocity or an exhausted budget is `None` (l. 185, 251, 312).
+//!   Only the world sweep clamps, to `t = 1` (time_of_impact, l. 784–785); `dt ≤ 0`, a body without
+//!   radius or a zero displacement is `None` (l. 772, 775, 779).
+//! - **近似 (approximations)**: translation only, no rotation within the step (one velocity per body,
+//!   l. 157–163, 218–224); the world sweep's mover is the bounding sphere of a shaped or compound
+//!   body, so its `t` is early, never late (time_of_impact, l. 744–745, 775, 783); one endpoint
+//!   sphere for capsule-plane (capsule_plane_toi, l. 620; AUD-A-S2W2-010) and a frozen closest
+//!   point for sphere-capsule (sphere_capsule_toi, l. 646, 662; -011), both wrong off a head-on
+//!   approach; `aabb_plane_toi` one-sided where `sphere_plane_toi` is two-sided (l. 703 vs l. 242;
+//!   -012); sub-steps sized from a per-body `L∞` speed, `√3` short of the Euclidean cap on a
+//!   diagonal (on_collision_course_substeps, l. 490–493; -014); `speculative_contact` a linear
+//!   prediction at `t = 0`, a superset of the impacts, `None` for coincident centres (l. 561, 582,
+//!   586; -009); `needs_ccd` a heuristic, `|v| dt > r / 2` and `|v| > velocity_threshold`
+//!   (needs_ccd, l. 148).
 //! - **検証 (validation)**: against brute-force time sampling,
 //!   `tests/audit_ccd.rs::
-//!   sphere_sphere_toi_satisfies_the_touching_condition_on_random_scenes`
-//!   (600 scenes, `|p(t)| = r_a + r_b` within `10⁻⁶`, a miss only when
-//!   the sampled minimum stays above `r_a + r_b − 0.02`),
-//!   `::sphere_plane_toi_matches_brute_force_on_both_sides` (300 scenes,
-//!   `t` within `2 / 8192`),
+//!   sphere_sphere_toi_satisfies_the_touching_condition_on_random_scenes`,
+//!   `::sphere_plane_toi_matches_brute_force_on_both_sides`,
 //!   `::swept_aabb_matches_brute_force_overlap_sampling`,
 //!   `::speculative_contact_covers_every_sphere_sphere_impact`,
-//!   `::conservative_advancement_head_on_stops_within_tolerance_before_contact`
-//!   (`t ∈ [0.9 − tol / |v|, 0.9]`),
+//!   `::conservative_advancement_head_on_stops_within_tolerance_before_contact`,
 //!   `::adaptive_toi_substeps_counts_ceil_travel_over_half_the_smaller_radius`;
-//!   closed forms bit for bit on dyadic inputs,
-//!   `tests/analytic_ccd_wiring.rs::
+//!   closed forms bit for bit on dyadic inputs, `tests/analytic_ccd_wiring.rs::
 //!   sphere_capsule_toi_direct_approach_matches_closed_form`,
 //!   `::capsule_plane_toi_picks_nearer_endpoint_and_tie_breaks_to_b`,
 //!   `::speculative_contact_breach_and_overlap_match_closed_form`,
 //!   `::conservative_advancement_converges_on_a_colinear_sphere_obstacle`
-//!   (`t = 1/2`, the `t = 1` boundary, `gap = tol`); the world sweep
+//!   (`t = 1/2`, the `t = 1` boundary, `gap = tol`); the world sweep,
 //!   `tests/analytic_world_sweeps.rs::
-//!   two_spheres_approaching_touch_at_gap_over_travel` (`t = g / |v dt|`
-//!   within `10⁻¹²`),
+//!   two_spheres_approaching_touch_at_gap_over_travel` (within `10⁻¹²`),
 //!   `::sphere_falling_onto_plane_touches_at_height_minus_radius_over_travel`,
 //!   `::touching_or_overlapping_at_the_start_is_time_zero`,
-//!   `::parity_with_sphere_sphere_toi`,
-//!   `::shaped_body_uses_its_bounding_sphere`.
+//!   `::parity_with_sphere_sphere_toi`, `::shaped_body_uses_its_bounding_sphere`.
 //!   validation missing: no tunnelling at a stated speed through these
 //!   free functions (the world step's oracle is in `solver::world_ccd`);
 //!   validation missing: convergence of `conservative_advancement` over
 //!   `tol` and the iteration budget (no sweep yet);
 //!   validation missing: capsule-plane, sphere-capsule and AABB-plane
 //!   against a brute-force reference (single closed-form points only).
-//! - **段 (tiers)**: L0 only — these queries are the reference; no
-//!   lighter tier exists.
+//! - **段 (tiers)**: L0 only — these queries are the reference; no lighter
+//!   tier exists.
 //! - **既知の欠陥 (known defects)**: oracles kept `#[ignore = "known
 //!   defect: …"]`, all in `tests/audit_ccd.rs`:
 //!   `::speculative_contact_reports_coincident_overlapping_spheres`
@@ -90,11 +93,10 @@
 //!   `::capsule_plane_toi_behind_the_plane_uses_the_nearer_endpoint` and
 //!   `::capsule_plane_toi_straddling_capsule_is_already_touching` (-010),
 //!   `::sphere_capsule_toi_sliding_approach_hits_at_the_right_time` (-011),
-//!   `::aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version`
-//!   (-012),
+//!   `::aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (-012),
 //!   `::conservative_advancement_does_not_give_up_on_a_shallow_approach`
 //!   (-013). The sub-step count's √3 shortfall on a diagonal mover (-014) is
-//!   sized in `crate::solver_tgs` and is listed as that module's known defect.
+//!   sized in solver_tgs and is listed as that module's known defect.
 //!
 //! # Algorithms
 //!

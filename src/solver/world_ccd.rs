@@ -7,94 +7,101 @@
 //!
 //! # MODEL — swept impact of fast bodies in the substep
 //!
-//! - **方程式 (equations)**: in a substep of length `h` a body of
-//!   collision radius `r` with predicted displacement `d` is swept when
-//!   `|d| > θ r` (`θ = 1` by default). Its first impact at fraction `t`
-//!   of the substep with normal `n` (obstacle toward body) comes from the
-//!   sphere cast against still geometry and from
-//!   [`crate::ccd::sphere_sphere_toi`] under the relative motion of the
-//!   two bounding spheres for a target that moves. Placement: with
-//!   `w = w_i + w_j` the inverse masses and
-//!   `a = (w_j d_i·n + w_i d_j·n) / w` the pair's normal displacement
-//!   after the hit, each body ends at
-//!   `x₀ + d t + (d − (d·n) n + a n)(1 − t)` (a static or kinematic
-//!   obstacle has `w_j = 0`, so `a = d_j·n`). A hit on a body adds a
-//!   contact of depth `0`, and the velocity pass gives the pair the
-//!   textbook impact: momentum along `n` kept and separation speed
-//!   `e` times the approach speed,
-//!   `v_a = (m_a u_a + m_b u_b + m_b e (u_b − u_a)) / (m_a + m_b)`;
-//!   off centre `v − (1 + e)(v·n) n`. A hit on a static collider has no
-//!   body: the swept body stops on the surface along `n` and slides.
-//! - **単位 (units)**: SI in `Fix128` — m, s, kg; `t` is a fraction of
-//!   the substep, `θ` is in collision radii. No `f32` on this path.
-//! - **保存則 (conservation)**: linear momentum of a pair of dynamic
-//!   bodies is kept along `n` by the placement (the mass-weighted mean
-//!   `a`) and by the equal and opposite contact impulse; each body keeps
-//!   its own tangential displacement. Energy is dissipated by restitution
-//!   (`1 − e²` of the kinetic energy of the normal relative motion).
-//!   Against a static or kinematic obstacle the swept body's momentum is
-//!   not kept (the obstacle has infinite mass); a kinematic body is never
-//!   placed and gives the dynamic body `(1 + e)` times the approach
-//!   speed. The sweep itself adds no rotation; the contact it adds is
-//!   handled by the contact law of the solver.
-//! - **適用範囲 (range)**: translating spheres (the collision radius)
-//!   within one substep of the XPBD step, on and off `step_parallel`,
-//!   at any speed whose displacement per substep is below `2⁶³`
-//!   (`2³⁰` and `2⁴⁰` m/s are tested); geometry of zero thickness (a
-//!   single triangle) is caught. The TGS backend does not sweep, SDF
-//!   colliders are not swept, and a body at or below `θ r` is left to
-//!   the discrete detection (strict threshold). Only the first hit of a
-//!   substep is answered. Outside the range nothing is clamped or
-//!   reported: the body is stepped as without the setting.
-//! - **近似 (approximations)**: no rotation during the substep; a shaped
-//!   body is swept as its bounding sphere (early, never late); the
-//!   second obstacle reached by the slide, and a target the body overlaps
-//!   at the start and does not move further into, are left to later
-//!   discrete contacts; when several swept bodies hit one movable body in
-//!   a substep the last placement in body-index order stands; friction at
-//!   the swept contact is the contact law's and is not measured here
-//!   (every oracle uses `μ = 0`).
-//! - **検証 (validation)**: closed-form kinematics of translating
-//!   spheres (`h = 1/64` s, `e = 1/2`, positions within `10⁻⁹` m,
-//!   velocities within `64·10⁻⁹` m/s), `tests/analytic_world_step_ccd.rs::
-//!   on_a_fast_sphere_stops_on_a_thin_plate_and_bounces` (stops at
-//!   `x_f − r`, leaves at `−e u`),
-//!   `::default_config_never_crosses_the_plate_when_on` (552 m/s over
-//!   60 frames of 8 substeps), `::on_a_fast_sphere_stops_on_a_static_triangle`,
-//!   `::on_two_equal_spheres_stop_at_the_time_of_impact` (`t* = 0.55`),
-//!   `::on_unequal_spheres_keep_momentum_and_separate_at_e_times_approach`
-//!   (masses 1 and 3, momentum within `4 · 64·10⁻⁹`),
-//!   `::on_an_oblique_impact_has_the_closed_form_point_normal_and_velocity`
-//!   (`v − (1 + e)(v·n) n`),
-//!   `::grazing_paths_hit_only_when_they_enter_the_obstacle` (`2⁻²⁰`
-//!   beside is free, `2⁻⁸` into is a hit),
+//! - **方程式 (equations)**: a body of collision radius `r` with predicted
+//!   displacement `d = x₁ − x₀` is swept when `|d| > θ r`, `θ = 1` by default
+//!   (`ccd_sweep`, l. 360-371; `WorldCcdConfig::new`, l. 231-236). Its first hit,
+//!   at fraction `t ∈ [0, 1]` of the substep with unit normal `n` from obstacle
+//!   to body, is the earlier of the sphere cast of radius `r` along `d` through
+//!   the world at its start pose (`ccd_first_hit`, l. 449; `fraction`,
+//!   l. 777-783) and the root of `|Δx + Δd t| = r + r_j` against a target that
+//!   moves (`sphere_sphere_toi`, src/ccd.rs l. 155-199, called at l. 556 and
+//!   659; `ccd_sweep`, l. 382-384). Placement: with inverse masses `w_i`, `w_j`
+//!   (`w_j = 0` for a static or kinematic obstacle or a static collider) and
+//!   `a = (w_j d_i·n + w_i d_j·n) / (w_i + w_j)`, a placed body ends at
+//!   `x₀ + d t + (d − (d·n) n + a n)(1 − t)` (`ccd_place`, l. 678-712). A hit on
+//!   a body adds a contact of depth `0` (`ccd_add_contacts`, l. 734-754); the
+//!   velocity pass then raises the pair's relative normal velocity to
+//!   `max(−e v̄_n, 0)`, `v̄_n` the normal approach velocity before the solve, by
+//!   an impulse split by inverse mass, `e` being the pair's combined restitution
+//!   when `v̄_n < −2 |g| h` and `0` otherwise (`update_velocities`, src/solver.rs
+//!   l. 4857, 4894-4913; `add_contact_with_material`, l. 3173-3180). A static
+//!   collider gets no contact (`ccd_add_contacts`, l. 721) and `a = 0`, so the
+//!   body keeps no displacement along `n` after `t` (`ccd_place`, l. 687, 695-702).
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg; `t` is a fraction of the
+//!   substep (`fraction`, l. 777-783), `θ` is in collision radii
+//!   (`WorldCcdConfig::with_motion_threshold`, l. 252-258), `h` is the substep
+//!   width in s (src/solver.rs l. 4411); no `f32` or `f64` outside the tests.
+//! - **保存則 (conservation)**: for two dynamic bodies the placement moves the
+//!   pair along `n` by the inverse-mass-weighted mean `a` (`ccd_place`,
+//!   l. 695-698) and the velocity pass applies equal and opposite normal
+//!   impulses (`update_velocities`, src/solver.rs l. 4909-4913): linear momentum
+//!   along `n` is kept by construction, measured by the unequal-spheres oracle
+//!   below. The target `−e v̄_n` scales the normal relative velocity by `e`,
+//!   hence its kinetic energy by `e²` — by construction, not measured
+//!   (src/solver.rs l. 4900). Against a static or kinematic obstacle `w_j = 0`:
+//!   `a = d_j·n` and the whole impulse goes to the dynamic body, whose momentum
+//!   is not kept (`ccd_place`, l. 683-698; src/solver.rs l. 4909-4913); a
+//!   kinematic body is never placed (`ccd_place`, l. 705, 710).
+//! - **適用範囲 (range)**: dynamic awake or kinematic bodies that are not
+//!   sensors, not parked and have a collision radius (`ccd_sweep`, l. 348-358),
+//!   translating within one XPBD substep, serial and batched (`substep`,
+//!   src/solver.rs l. 4418-4431; `substep_batched`, l. 4466-4478); `step_tgs`
+//!   (src/solver.rs l. 3976) does not call the sweep. The threshold is strict
+//!   (`ccd_sweep`, l. 370). A displacement of `2⁶³` m or more in one substep, or
+//!   a `θ r` that overflows, is not swept (`ccd_sweep`, l. 361, 367;
+//!   `checked_length_scaled`, src/math.rs l. 1439-1450). SDF colliders are not
+//!   swept (`ccd_first_hit`, l. 429); a kinematic body sweeps only for dynamic
+//!   bodies it can move (`ccd_first_hit`, l. 430; `ccd_accepts`, l. 571-580).
+//!   Outside the range nothing is clamped or reported: an unswept body is
+//!   stepped as with the setting off (`ccd_sweep`, l. 341-343, 373-375).
+//! - **近似 (approximations)**: no rotation during the substep; the sweep
+//!   writes positions only (`ccd_place`, l. 707, 712). The swept body is its
+//!   collision sphere, cast against the other bodies' shapes and the static
+//!   colliders (`ccd_first_hit`, l. 449); a target that moves is re-timed as its
+//!   bounding sphere of radius `r_j`, which encloses its shape (`ccd_judge`,
+//!   l. 551-556; `ccd_first_moving_hit`, l. 632-659). A target overlapped at
+//!   the start and not moved further into (`d·n ≥ 0`) is left to the discrete
+//!   contacts (`ccd_first_hit`, l. 434-446; `ccd_first_moving_hit`, l. 648-657).
+//!   One hit per body per substep is answered, so a second obstacle after the
+//!   slide is not (`ccd_sweep`, l. 382-387). Several swept bodies hitting one
+//!   movable body are placed in body-index order, each placement writing the
+//!   position, so the last stands (`ccd_sweep`, l. 348, 379-387, 395-396;
+//!   `ccd_place`, l. 712). Friction at the swept contact is the contact law's
+//!   (`update_velocities`, src/solver.rs l. 4916-4950); every oracle uses
+//!   `μ = 0` (tests/analytic_world_step_ccd.rs l. 6, 108).
+//! - **検証 (validation)**: closed-form kinematics of translating spheres
+//!   (`h = 1/64` s, `e = 1/2`, positions within `10⁻⁹` m, velocities within
+//!   `64·10⁻⁹` m/s), `tests/analytic_world_step_ccd.rs::
+//!   on_a_fast_sphere_stops_on_a_thin_plate_and_bounces`,
+//!   `::default_config_never_crosses_the_plate_when_on`,
+//!   `::on_a_fast_sphere_stops_on_a_static_triangle`,
+//!   `::on_two_equal_spheres_stop_at_the_time_of_impact`,
+//!   `::on_unequal_spheres_keep_momentum_and_separate_at_e_times_approach`,
+//!   `::on_an_oblique_impact_has_the_closed_form_point_normal_and_velocity`,
+//!   `::grazing_paths_hit_only_when_they_enter_the_obstacle`,
 //!   `::starting_in_contact_hits_only_when_moving_into_the_obstacle`,
 //!   `::a_displacement_equal_to_the_threshold_is_not_swept`,
 //!   `::a_non_positive_threshold_sweeps_every_moving_body`,
 //!   `::bodies_without_radius_sensors_and_resting_worlds_are_left_alone`,
-//!   `::a_speed_of_two_to_the_forty_is_stopped`,
+//!   `::a_huge_speed_is_still_stopped`, `::a_speed_of_two_to_the_forty_is_stopped`,
 //!   `::many_overlapped_spheres_do_not_hide_the_wall`,
 //!   `::a_sphere_already_in_a_thin_floor_and_moving_in_does_not_pass`,
 //!   `::a_sphere_sliding_on_a_floor_is_not_stopped`,
-//!   `::a_fast_kinematic_body_pushes_a_still_dynamic_body` (`(1 + e) u`),
-//!   `::on_is_deterministic_and_independent_of_the_parallel_feature`
-//!   (golden digest), `::off_a_fast_sphere_passes_through_a_thin_plate`
-//!   (the tunnelling the setting removes); off is the step without the
-//!   sweep bit for bit, `tests/world_ccd_off_bit_identity.rs::
+//!   `::a_fast_kinematic_body_pushes_a_still_dynamic_body`,
+//!   `::on_is_deterministic_and_independent_of_the_parallel_feature`,
+//!   `::off_a_fast_sphere_passes_through_a_thin_plate`; off is the step without
+//!   the sweep bit for bit, `tests/world_ccd_off_bit_identity.rs::
 //!   off_steps_like_the_step_without_a_sweep_in_fast_scenes`,
 //!   `::on_without_a_fast_body_steps_like_off`,
 //!   `::control_fast_scene_swept_differs_from_off`; the golden path
 //!   `tests/determinism_golden_paths.rs::golden_continuous_collision`.
-//!   validation missing: convergence of the swept impact over the
-//!   substep (one `h` only, no sweep yet);
+//!   validation missing: convergence of the swept impact over the substep;
 //!   validation missing: rotation during the substep (COV-RIGID-075);
 //!   validation missing: friction at the swept contact (`μ > 0`);
-//!   validation missing: a second obstacle after the slide, and two swept
-//!   bodies hitting the same movable body in one substep;
-//!   validation missing: energy after the impact asserted as `1 − e²`
-//!   (only the velocities are checked).
-//! - **段 (tiers)**: L0 only — the sweep is the reference; no lighter
-//!   tier exists.
+//!   validation missing: a second obstacle after the slide; two swept bodies on
+//!   one movable body in a substep;
+//!   validation missing: energy after the impact asserted as `1 − e²`.
+//! - **段 (tiers)**: L0 only — the sweep is the reference; no lighter tier exists.
 //!
 //! # Method
 //!
