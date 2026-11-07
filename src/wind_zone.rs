@@ -10,8 +10,10 @@
 //!   momentum and energy are not conserved: drag adds momentum along the wind
 //!   and dissipates relative kinetic energy. The air carries no state except the
 //!   gust clock, which is in the world's state and digest.
-//! - **Range**: the force is integrated explicitly once per substep, stable while
-//!   `2 k |v_rel| inv_mass h < 2` with `k = ½ ρ C_d A`. A force out of the
+//! - **Range**: the force is integrated explicitly once per substep: with
+//!   `x = k |v_rel| inv_mass h` and `k = ½ ρ C_d A`, a substep multiplies `v_rel`
+//!   by `1 − x`, so the relative speed is bounded while `x < 2` and grows past it
+//!   (no clamp: the caller picks `h`). A force out of the
 //!   fixed-point range is a participant fault that changes nothing. `C_d` and
 //!   `A` are constants, so the model holds where the drag coefficient does not
 //!   vary with the Reynolds number over the speeds used.
@@ -26,7 +28,9 @@
 //!   `v(t) = U − U/(1 + c U t)` and the first-order step error),
 //!   `terminal_velocity_in_an_upward_wind` (`v = U − √(m g / k)`),
 //!   `staged_force_matches_the_formula_at_the_clock`,
-//!   `outside_the_zone_nothing_changes`, `rewind_and_fork_are_bit_identical`,
+//!   `outside_the_zone_nothing_changes`,
+//!   `the_explicit_drag_is_bounded_below_x_2_and_grows_above`,
+//!   `rewind_and_fork_are_bit_identical`,
 //!   `gust_scene_digest_is_pinned`. Not validated, because not modelled: the log
 //!   law, the shelter and wake of an obstacle, and a gust spectrum.
 //!
@@ -273,8 +277,10 @@ const WIND_ZONE_STATE_LEN: usize = 4 + 8 + 16 + 8;
 /// with a finite mass whose centre is inside the zone, the force
 /// [`WindZone::force_on`] at the zone's clock `t`, then advances `t` by `h`.
 /// The world adds `F·inv_mass·h` to the velocity before it integrates the
-/// position, so the drag is integrated explicitly: it stays stable while
-/// `2·k·|v_rel|·inv_mass·h < 2` with `k = ½·ρ·C_d·A`.
+/// position, so the drag is integrated explicitly. With `x = k·|v_rel|·inv_mass·h`
+/// and `k = ½·ρ·C_d·A`, one substep multiplies `v_rel` by `1 − x`: the relative
+/// speed falls without changing sign while `x < 1` and stays bounded while
+/// `x < 2`; past 2 it grows step after step.
 ///
 /// The clock starts at zero when the participant is built, is part of the
 /// world's state and goes back with a restored snapshot, so a gust is at the
