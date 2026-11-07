@@ -26,9 +26,10 @@
 //! of unit compliance (`½ C² = V ψ`, `V` the rest volume; Macklin, Müller & Chentanez 2016)
 //! with gradient `∇_i C = V (P Dm⁻ᵀ) e_i / C`, `P = ∂ψ/∂F = μ F + (λ̂ (J − 1) − μ) cof F`,
 //! projected with `Δλ = −(C + α̃λ) / (Σ w_i|∇_i C|² + α̃)`, `α̃ = 1 / h²`, the multiplier `λ`
-//! kept over the iterations of a substep. (The two-constraint split `C_D = ‖F‖`, `C_H = J − γ`
+//! kept over the iterations of a substep (`solve_neo_hookean`). (The two-constraint split `C_D = ‖F‖`, `C_H = J − γ`
 //! of Macklin & Müller 2021 is not used: in the stiff regime `α̃ ≪ Σ w|∇C|²` its deviatoric
-//! projection sends `F` to zero in one step and the body collapses; measured.) `Material::Constraints` is the earlier geometric set: edge
+//! projection sends `F` to zero in one step and the body collapses (`solve_neo_hookean` keeps
+//! the energy form); measured.) `Material::Constraints` is the earlier geometric set: edge
 //! length `|x_i − x_j| = l_0` (compliance `edge_compliance`), tetrahedral volume
 //! `V(x) = V_0` (compliance `volume_compliance`) and a blend of every particle toward its
 //! rest offset from the centroid by `shape_stiffness` per iteration.
@@ -43,35 +44,42 @@
 //! translation invariant and the Neo-Hookean set rotation invariant, so they conserve angular
 //! momentum too, while the shape blend of `Material::Constraints` is not rotation invariant
 //! (it pulls toward the rest orientation and exchanges angular momentum with nothing).
-//! Energy: the elastic energy is a potential (not tracked as a quantity); `config.damping` is
-//! a velocity retention per frame (numerical, frame-rate dependent) that dissipates, and the
-//! Gauss–Seidel passes before convergence dissipate as well.
+//! Energy: the elastic energy is a potential (`lambda_energy` gives its coefficients, nothing
+//! tracks it as a quantity); `damping` (`apply_frame_damping`) is a velocity retention per
+//! frame (numerical, frame-rate dependent) that dissipates, and the Gauss–Seidel passes before
+//! convergence dissipate as well.
 //!
 //! **Valid range.** Neo-Hookean: `0 < E ≤ 2⁴⁰ Pa` and `−1 < ν ≤ 0.5 − 2⁻¹⁶`, refused by
 //! [`NeoHookeanLaw::new`] outside (`λ = Eν/((1+ν)(1−2ν))` diverges at `ν = 0.5`); any
 //! strain including inverted tetrahedra (`J ≤ 0`, the energy stays finite and the shape
-//! recovers); rest tetrahedra of non-zero volume (a degenerate one is skipped). The
+//! recovers, `deformation_gradient`); rest tetrahedra of non-zero volume (a degenerate one is
+//! skipped by `build_constraints`). The
 //! stiffness converges with `iterations` and `substeps` (the stiff regime
 //! `α̃ = 1/h² ≪ Σ w|∇C|²` is handled: a projection then restores the rest shape and the
 //! multiplier carries the material's compliance to convergence). Positions, `V` and `h` must
 //! keep `V ψ`, `V P Dm⁻¹` and `Σ w|∇C|²` inside `Fix128` (|value| < 2^63); out of that the
-//! arithmetic wraps and the result is not a simulation (no detection at this layer). The
-//! geometric set has no material range: its stiffness is the iteration count's.
+//! arithmetic wraps and the result is not a simulation (no detection in `solve_neo_hookean`).
+//! The geometric set has no material range: its stiffness is the iteration count's
+//! (`iterations`).
 //!
-//! **Approximations.** P1 (constant strain) tetrahedra; XPBD Gauss–Seidel projection, which
+//! **Approximations.** P1 (constant strain) tetrahedra (`deformation_gradient`); XPBD
+//! Gauss–Seidel projection, which
 //! converges first order in the substep `h` only once `α̃ = 1/h²` is comparable to
 //! `Σ w|∇C|²` (≈ `μ / (ρ L²)`): below that the body is far softer than the material, and
 //! more iterations do not help because the multipliers reset every substep (measured: a
 //! 1.25 cm column at 64 substeps per frame sags 18 % more than the finite element solve, at
 //! 256 substeps 2.8 %, at 4 substeps it collapses). For a stiff solid an implicit solve
 //! (`crate::dynamic_fem`) reaches 1 % at one step per frame, 17–100 times cheaper (measured
-//! by `tests/analytic_deformable_integrators.rs`); no plasticity, viscosity, damage or thermal strain; contact
-//! with SDF colliders is a position projection to the surface with the normal velocity dropped
+//! by `tests/analytic_deformable_integrators.rs`); no plasticity, viscosity, damage or thermal
+//! strain (`solve_neo_hookean` has only the elastic law); contact
+//! with SDF colliders (`resolve_sdf_collisions`) is a position projection to the surface with
+//! the normal velocity dropped
 //! and the tangential one scaled by `1 − sdf_friction` (no Coulomb law, no reaction on the
 //! collider), with rigid bodies a mass-weighted push-out; particle masses are what the caller
-//! sets (`new` gives every particle the same mass; a lumped distribution is the caller's).
-//! The geometric set is not a material model: no `E`, no `ν`, its sag depends on the
-//! iteration count and the compliances.
+//! sets (`new` gives every particle the same mass; a lumped distribution is the caller's,
+//! `inv_masses`). The geometric set is not a material model: no `E`, no `ν`, its sag depends
+//! on the iteration count and the compliances (`solve_edge_constraints`,
+//! `solve_volume_constraints`).
 //!
 //! **Validation.** `tests/analytic_deformable_static_sag.rs::the_neo_hookean_body_settles_to_the_finite_element_sag`
 //! (a fixed-base column's sag under its own weight equals the linear elastic finite element
