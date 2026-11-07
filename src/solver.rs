@@ -98,12 +98,23 @@
 //!   `tests/analytic_contact_friction_convergence.rs::
 //!   rolling_down_an_incline_converges_at_first_order_in_the_substep`,
 //!   `::sliding_down_an_incline_converges_at_first_order_in_the_substep`,
-//!   `::just_below_the_slip_limit_the_ball_rolls_and_the_slip_falls_with_the_substep`
-//!   and the known-defect oracles
-//!   `::just_above_the_slip_limit_the_ball_slides_at_first_order_in_the_substep`,
+//!   `::just_below_the_slip_limit_the_ball_rolls_and_the_slip_falls_with_the_substep`;
+//!   the contact depth above EPA's threshold
 //!   `tests/analytic_contact_detection_small_penetration.rs::
-//!   a_shallow_penetration_is_detected_and_corrected_by_its_depth` and
-//!   `tests/analytic_contact_cylinder_rolling.rs` (ignored until their fixes).
+//!   a_penetration_above_the_epa_threshold_is_corrected_within_the_threshold`.
+//! - **段 (tiers)**: L0 only — this solver is the reference tier; no
+//!   lighter tier of the contact and friction laws exists yet.
+//! - **既知の欠陥 (known defects)**: oracles that are red today, kept
+//!   `#[ignore = "known defect: …"]` until their fix lands:
+//!   `tests/analytic_contact_detection_small_penetration.rs::
+//!   a_shallow_penetration_is_detected_and_corrected_by_its_depth` (the
+//!   depth EPA reports is off by up to its threshold `2⁻¹⁶`),
+//!   `tests/analytic_contact_friction_convergence.rs::
+//!   just_above_the_slip_limit_the_ball_slides_at_first_order_in_the_substep`
+//!   (the floor that error leaves in the sliding sweep at 32 and 64
+//!   substeps), and `tests/analytic_contact_cylinder_rolling.rs` (a
+//!   cylinder's single support-vertex contact holds it instead of rolling
+//!   at `2/3 g sin θ`).
 
 use crate::bvh::{BroadphaseHybrid, BvhPrimitive, LinearBvh};
 use crate::collider::{Contact, AABB};
