@@ -3,66 +3,88 @@
 //! # MODEL — tyre contact-patch force from slip
 //!
 //! - **方程式 (equations)**: steady-state slip-to-force laws selected by
-//!   [`TireModel`]. Brush (Fiala): theoretical slip `σ = (κ, tan α) /
-//!   (1 + κ)`, combined-slip measure `λ = |(C_κ σ_x / μ_x,s, C_α σ_y /
-//!   μ_y,s)| / (3 F_z)`; adhesion (`λ < 1`): `F_x = C_κ σ_x (1 − λ + λ²/3)`,
-//!   `F_y = −C_α σ_y (1 − λ + λ²/3)`; full sliding (`λ ≥ 1`, `w = 1/λ`):
-//!   `|F_i| = F_z μ_i`, `μ_i = μ_i,k + (μ_i,s − μ_i,k) w`, along a direction
-//!   blended from the adhesion direction (`w`) to the slip velocity
-//!   (`1 − w`); a locked wheel (`1 + κ ≤ 0`) is `w = 0`, pure kinetic
-//!   Coulomb against the slip velocity. Magic Formula (Pacejka pure slip):
-//!   `f = sin(C atan(B s − E (B s − atan(B s))))` at `s = κ` and
-//!   `s = atan(tan α)`, `F = (μ_x,s F_z f_x, −μ_y,s F_z f_y)`, `(f_x, f_y)`
-//!   projected radially onto the unit circle when outside it. Small-slip
-//!   slopes `∂F_x/∂κ = C_κ` (brush) or `B_x C_x μ_x,s F_z` (Magic Formula)
-//!   feed the vehicle's implicit spin update.
-//! - **単位 (units)**: `Fix128` — forces and `F_z` N, `C_κ`, `C_α` N per unit
-//!   slip, `κ`, `tan α`, `C`, `E`, `μ` dimensionless, `B` per unit slip
-//!   (`B_y` per radian). No `f32` on the force path (the `f64` in this
-//!   file is the test oracles only).
-//! - **保存則 (conservation)**: an algebraic law without state: it stores
-//!   no energy; the force opposes the slip velocity on each axis, so the
-//!   power `F · v_slip` is non-positive (the sliding contact dissipates);
-//!   the magnitude never leaves the friction ellipse of the static
-//!   coefficients (`μ_i ≤ μ_i,s`, `|u| = 1`; Magic Formula by projection).
-//! - **適用範囲 (range)**: any slip (the evaluation scales by the larger
-//!   component, so large slips do not overflow). `F_z ≤ 0`, zero static
-//!   grip on both axes or `κ = tan α = 0` give exactly zero force; a zero
-//!   static coefficient on one axis removes that axis and the other follows
-//!   its one-dimensional law; negative kinetic coefficients read 0 and
-//!   kinetic above static is clamped to static. Written for forward travel
-//!   (`κ = +1` is driving); the vehicle mirrors the frame when `v_x < 0`.
-//! - **近似 (approximations)**: steady state (no relaxation length); no
-//!   camber, turn slip, conicity or ply-steer; brush stiffnesses independent
-//!   of load; the Magic Formula ignores the kinetic coefficients (its
-//!   post-peak fall-off is the sliding law) and combines the pure-slip
-//!   curves by the ellipse rather than Pacejka's combined-slip weighting;
-//!   no load dependence of `B`, `C`, `E`; no temperature, pressure or wear;
-//!   the patch is a point with one `F_z`.
-//! - **検証 (validation)**: through the vehicle (brush model),
+//!   `TireModel` (`TireModel::force`, l. 408-413). Brush (Fiala): theoretical
+//!   slip `σ = (κ, tan α) / (1 + κ)`, `λ = |(C_κ σ_x / μ_x,s, C_α σ_y / μ_y,s)|
+//!   / (3 F_z)`, evaluated as `|b| / d` with `b = (C_κ κ μ_y,s, C_α tan α μ_x,s)`,
+//!   `d = 3 F_z (1 + κ) μ_x,s μ_y,s` (`BrushTire::force`, l. 211-224); adhesion
+//!   (`λ < 1`): `F = (C_κ σ_x, −C_α σ_y) (1 − λ + λ²/3)` (`BrushTire::force`,
+//!   l. 226-239); sliding (`λ ≥ 1`, `w = 1/λ`): `μ_i = μ_i,k + (μ_i,s − μ_i,k) w`,
+//!   `F = F_z (μ_x u_x, −μ_y u_y)`, `u` the unit vector along `w b/|b| +
+//!   (1 − w) (κ, tan α)/|…|`; `1 + κ ≤ 0` clamps `d` to 0 so `w = 0`, pure
+//!   kinetic Coulomb against the slip (`BrushTire::force`, l. 223, l. 246-259).
+//!   Magic Formula: `f(s) = sin(C atan(B s − E (B s − atan(B s))))` (`mf_curve`,
+//!   l. 333-340), `(f_x, f_y) = (f(κ), −f(atan(tan α)))`, divided by
+//!   `n = |(f_x, f_y)|` when `n > 1`, `F = (μ_x,s F_z f_x, μ_y,s F_z f_y)`
+//!   (`MagicFormulaTire::force`, l. 284-306). Small-slip slope `C_κ` (brush) or
+//!   `B_x C_x μ F_z` (Magic Formula), 0 for `F_z ≤ 0` or `μ ≤ 0`, feeds the
+//!   vehicle's implicit spin update (`TireModel::longitudinal_slope`, l. 421-429).
+//! - **単位 (units)**: every quantity is `Fix128`; `F_z` and the output in N
+//!   (`TireInput`, l. 116-117; `TireForce`, l. 124-131); `C_κ` N per unit slip
+//!   ratio, `C_α` N per unit `tan α` (`BrushTire`, l. 143-146); `κ`, `tan α`,
+//!   `μ`, `C`, `E` dimensionless, `B_x` per unit slip ratio, `B_y` per radian
+//!   as the lateral curve is fed `atan(tan α)` (`MagicFormulaTire`, l. 155-166;
+//!   `MagicFormulaTire::force`, l. 293). No `f32` or `f64` on the force path
+//!   (l. 106-430); the `f64` below is the unit oracles (l. 432-436).
+//! - **保存則 (conservation)**: no state, hence no stored energy: the force is
+//!   a function of the instantaneous input alone (`TireModel::force`, l. 408).
+//!   Brush, given `C_κ, C_α > 0` (public, unchecked, l. 143-146): `F_x` has the
+//!   sign of `κ` and `F_y` of `−tan α` on both branches — `1 − λ + λ²/3 > 0`,
+//!   `1 + κ > 0` in adhesion, `μ_i ≥ 0` (`axis_grip`, l. 312-315) and a blend
+//!   of two same-quadrant directions in sliding (`BrushTire::force`,
+//!   l. 226-259) — so the power against the slip velocity `(−κ, tan α)` is
+//!   non-positive. Magic Formula: that sign holds only for `B > 0`, `0 < C ≤ 2`,
+//!   `E ≤ 1` per axis (inner argument keeps the sign of `s`, `|C atan(…)| < π`);
+//!   the code does not enforce it — `B`, `C`, `E` are public fields read as
+//!   given (`MagicFormulaTire`, l. 155-166; `mf_curve`, l. 337-339) — so `E > 1`
+//!   or `C > 2` can turn the force with the slip (positive power);
+//!   `passenger_car` is inside the condition (l. 268-277). Both models stay in
+//!   the static ellipse: brush `|F| = 1 − (1 − λ)³ ≤ 1` in ellipse units in
+//!   adhesion, `μ_i ≤ μ_i,s`, `|u| = 1` in sliding (`BrushTire::force`,
+//!   l. 229-236, l. 253-258; `axis_grip`, l. 314); Magic Formula by the radial
+//!   projection (`MagicFormulaTire::force`, l. 297-302).
+//! - **適用範囲 (range)**: `F_z ≤ 0`, zero static grip on both axes, or
+//!   `κ = tan α = 0` give exactly zero force (`BrushTire::force`, l. 191-203,
+//!   l. 224-239; `MagicFormulaTire::force`, l. 284-296; `mf_curve`, l. 334-336);
+//!   zero static grip on one axis removes it and the other follows its
+//!   one-dimensional law (`BrushTire::force`, l. 211-222, l. 248-249;
+//!   `MagicFormulaTire::force`, l. 286-296). Brush only: negative static
+//!   coefficients read 0, kinetic ones clamp into `[0, μ_i,s]` (`axis_grip`,
+//!   l. 312-315); the Magic Formula never reads the kinetic ones (l. 284-285).
+//!   Magnitudes scale by the larger component, never squaring raw slip
+//!   (`magnitude_and_direction`, l. 320-329); the unit oracles sweep
+//!   `|κ|, |tan α| ≤ 1e6`, `F_z` 100 to 20000 N (l. 508-514). `C_κ`, `C_α`, `B`,
+//!   `C`, `E` are not range-checked (l. 143-146, l. 155-166). Written for forward
+//!   travel (`κ = +1` drives); the vehicle mirrors slip and force for `v_x < 0`
+//!   (`tyre_force`, mod.rs l. 429-448).
+//! - **近似 (approximations)**: steady state, no relaxation length, no camber,
+//!   turn slip, conicity, ply-steer, temperature, pressure or wear — only `κ`,
+//!   `tan α`, one `F_z` and the grip enter (`TireInput`, l. 111-122); brush
+//!   stiffnesses independent of load (`BrushTire::force`, l. 214, l. 219;
+//!   `TireModel::longitudinal_slope`, l. 426); the Magic Formula ignores the
+//!   kinetic coefficients, its post-peak fall-off being the sliding law
+//!   (`MagicFormulaTire::force`, l. 284-285), has no shifts `S_h`, `S_v` and no
+//!   load dependence of `B`, `C`, `E` (`mf_curve`, l. 337-339), and combines the
+//!   pure-slip curves by radial projection onto the ellipse, not Pacejka's
+//!   combined-slip weighting (`MagicFormulaTire::force`, l. 297-302).
+//! - **検証 (validation)**: through the vehicle (brush model only),
 //!   `tests/analytic_vehicle_dynamics.rs::stopping_distance_dry_locked_wheels`
-//!   (a locked wheel is exactly −μ_k F_z: s = v0² / (2 μ_k g)),
-//!   `::slope_above_static_friction_slides_with_kinetic_deceleration`
-//!   (full sliding at g (sin θ − μ_k cos θ)),
-//!   `::linear_bicycle_model_steady_yaw_rate` (small-slip slope −C_α per
-//!   wheel through r = v δ / (L + K v²)),
-//!   `::low_speed_turning_radius_matches_wheelbase_over_tan_delta` and
-//!   `::low_speed_turning_radius_with_ackermann_beats_parallel_steering`
-//!   (lateral balance at small slip),
-//!   `::launch_beyond_grip_is_limited_by_rear_axle_load` and
-//!   `::abs_keeps_wheels_rolling_and_respects_peak_grip_bound` (the
-//!   ellipse cap μ_s F_z), `::braking_with_steering_yaws_only_with_abs` (a
-//!   locked steered wheel pushes against its slide, no yaw),
-//!   `::cross_wind_on_the_road_is_carried_by_lateral_tyre_force`,
-//!   `::hydroplaning_reduces_deceleration_only_above_onset_speed` (the grip
-//!   scaling enters F). The module's own unit oracles compare both models
-//!   to f64 closed forms on a slip × load × grip grid (Fiala polynomial,
-//!   Pacejka curve, ellipse bound, signs, degenerate inputs), tolerance
-//!   derived from the atan / sin error bounds.
+//!   (locked wheel −μ_k F_z), `::slope_above_static_friction_slides_with_kinetic_deceleration`,
+//!   `::linear_bicycle_model_steady_yaw_rate` (small-slip slope −C_α per wheel),
+//!   `::abs_keeps_wheels_rolling_and_respects_peak_grip_bound` (ellipse cap μ_s F_z),
+//!   `::braking_with_steering_yaws_only_with_abs` (locked steered wheel, no yaw),
+//!   `::hydroplaning_reduces_deceleration_only_above_onset_speed`. In-module unit
+//!   tests (this file's test module) compare both models to f64 closed forms on
+//!   a grip × load × slip grid: `brush_combined_slip_matches_closed_form`,
+//!   `brush_pure_lateral_matches_fiala_closed_form`, `mf_matches_pacejka_formula_on_slip_grid`,
+//!   `brush_locked_wheel_is_exactly_minus_mu_kinetic_fz`,
+//!   `brush_stays_inside_static_friction_ellipse`, `mf_stays_inside_static_friction_ellipse`,
+//!   `signs_follow_the_slip_conventions_for_both_models` (sampled signs).
 //!   validation missing: the Magic Formula model in any tests/ run (every
 //!   vehicle-level oracle uses the brush model);
 //!   validation missing: the slip curve's peak and post-peak shape through
-//!   the vehicle at a swept load (pinned only in the unit oracles).
+//!   the vehicle at a swept load (pinned only in the unit oracles);
+//!   validation missing: any oracle at `B`, `C`, `E` outside the sign
+//!   condition above (the sign samples use `passenger_car` only).
 //! - **段 (tiers)**: L0 only.
 //!
 //! # Conventions (shared with [`super::DynamicVehicle`])

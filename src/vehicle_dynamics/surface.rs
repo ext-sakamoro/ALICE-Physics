@@ -2,70 +2,76 @@
 //!
 //! # MODEL — road geometry probe and road grip
 //!
-//! - **方程式 (equations)**: geometry — [`RoadSurface::probe`] returns the
-//!   first road point on the segment `origin + t dir`, `0 ≤ t ≤ max_dist`,
-//!   with the outward unit normal there. Plane (flat, inclined):
-//!   `t = (origin − p)·n / (−dir·n)`; height field: the surface
-//!   `y = h(x, z)` of the samples, marched in steps of a quarter cell and
-//!   bisected 64 times, the normal from half-spacing height differences;
-//!   triangle mesh: the first face on the segment, its winding normal (never
-//!   flipped towards the probe); SDF: sphere tracing `t ← t + d(origin +
-//!   t dir)` until `d ≤ tolerance`, the normal the field's gradient, the
-//!   point `p − n d`. An origin on or below the surface returns `t = 0` with
-//!   the point projected onto the surface. Grip — [`RoadCondition::grip`] =
-//!   material `(μ_x,s, μ_x,k, μ_y,s, μ_y,k)` × weather factor (dry 1, wet
-//!   7/10, packed snow 6/25, ice 3/25: ratios of the peak coefficients in
-//!   Wong, *Theory of Ground Vehicles*, Table 1.3) × hydroplaning loss on a
-//!   wet road with a film `≥ 2.5 mm` above Horne's onset speed
-//!   `V_p = (6.35 / 3.6) √p[kPa]` m/s: `max(1/10, (V_p / |v|)²)`, else 1;
-//!   rolling resistance is the coefficient `C_rr` (force `C_rr F_z`,
-//!   applied by the vehicle).
-//! - **単位 (units)**: `Fix128` — m, m/s, kPa, mm; `μ` and the factors
-//!   dimensionless. The SDF road converts the sample point to `f32` for the
-//!   [`SdfField`] call and its distance and normal back (the march itself is
-//!   `Fix128`): bit-for-bit agreement across platforms is not claimed on
-//!   that path; the other surfaces and the grip are `Fix128` throughout.
-//! - **保存則 (conservation)**: none applies — nothing is integrated here;
-//!   the module supplies the contact position, the surface normal and the
-//!   coefficients that the vehicle's contact and friction laws consume.
-//! - **適用範囲 (range)**: `max_dist < 0` or a probe pointing away from a
-//!   plane is no hit; the SDF hit lies within `tolerance / cos θ` of the true
-//!   crossing (`θ` the incidence angle) and gives up after `max_steps` or
-//!   past `max_dist`; a non-finite field value is no hit, a zero field
-//!   normal falls back to `−dir`; the height field has no side walls and
-//!   nothing outside its extent, a ray entering it below the surface finds
-//!   no road, a ridge thinner than a quarter cell can be missed; a mesh
-//!   wound the other way is a road facing down and a single-sided surface
-//!   above the wheel counts as the road under it. The hydroplaning factor
-//!   is continuous at `V_p` and floored at 1/10; a non-positive tyre
-//!   pressure puts the onset at 0 m/s (every moving contact on a flooded
-//!   road gets the floor); a negative film depth is no standing water.
-//! - **近似 (approximations)**: one factor scales static and kinetic
-//!   coefficients alike (the sliding / peak ratios differ by a few per cent
-//!   between surfaces, COV-MBD-046); the hydroplaning loss is a model of the
-//!   load share `(V_p / V)²`, not a measured law (COV-MBD-047); no
-//!   temperature, tread depth, contamination or polishing; the contact is a
-//!   point (no patch over a height field or mesh, no curvature); the
-//!   height-field normal is the grid gradient at the hit.
+//! - **方程式 (equations)**: `probe(origin, dir, max_dist)` returns the first road point on
+//!   the segment `origin + t dir`, `0 ≤ t ≤ max_dist`, and the outward unit normal there
+//!   (RoadSurface::probe, l. 104). Plane through `p` with unit normal `n`: `s = (origin − p)·n`,
+//!   `t = s / (−dir·n)` (probe_plane, l. 317–340). Height field: the gap `y(t) − h(x(t), z(t))`,
+//!   `h = sample_height`, marched in steps of `spacing / 4` over the segment clipped to the
+//!   grid until it turns `≤ 0`, the bracket then bisected 64 times (HeightFieldRoad::probe,
+//!   l. 461–492; HF_STEPS_PER_CELL, l. 360; HF_BISECT_ITERS, l. 362); the normal is
+//!   `(−∂h/∂x, 1, −∂h/∂z)` normalised, slopes from `sample_height` differences over one
+//!   spacing (normal_at, l. 383–390). Triangle mesh: the first face of `mesh.raycast` along
+//!   `dir` within `max_dist`, its own `unit_normal()` never flipped towards the probe
+//!   (TriMeshRoad::probe, l. 535–549; outward, l. 499–501). SDF: sphere tracing
+//!   `t ← t + d(origin + t dir)` until `d ≤ tolerance`, the point `p − n d`, the normal the
+//!   field's (SdfRoad::probe, l. 583–597). An origin on or below the surface returns `t = 0`,
+//!   the point projected onto it (l. 318–324; l. 467–468; l. 520–529; l. 574–579). Grip:
+//!   `grip(speed, p)` scales the four material coefficients by `k` and keeps the slip threshold,
+//!   `k` = weather factor × hydroplaning loss (RoadCondition::grip, l. 271–290). The weather
+//!   factors are constants of the code, dry 1, wet 7/10, snow 6/25, ice 3/25 (weather_factor,
+//!   l. 248–251); the doc comment on that fn attributes them to Wong, *Theory of Ground
+//!   Vehicles*, Table 1.3, and no test compares them to that source (l. 237–244).
+//!   Hydroplaning loss on a wet road with a film `≥ 2.5 mm` and `|speed| > V_p`:
+//!   `max(1/10, (V_p / |speed|)²)`, else 1 (grip, l. 272–280; HYDROPLANING_MIN_DEPTH_MM,
+//!   l. 207–210; hydroplaning_floor, l. 213–215); `V_p = (635 / 360) √p` m/s for `p > 0` kPa,
+//!   Horne's `V[km/h] = 6.35 √p[kPa]` as its doc names it (hydroplaning_onset_speed, l. 294–304).
+//! - **単位 (units)**: `Fix128` throughout: distance and point in m (GroundHit, l. 87–90),
+//!   speed in m/s and tyre pressure in kPa (grip doc, l. 255–256), water film in mm
+//!   (Weather::Wet, l. 183–184), `μ` and the factors dimensionless (weather_factor, l. 246–252).
+//!   The SDF road converts the sample point to `f32` for `distance_and_normal` and the result
+//!   back to `Fix128`, the march `t ← t + d` staying `Fix128` (SdfRoad::sample, l. 556–564;
+//!   SdfRoad::probe, l. 593); the field's arithmetic is behind `dyn SdfField` (l. 169).
+//! - **保存則 (conservation)**: none applies: nothing here integrates or mutates state,
+//!   `probe` is a query returning a `GroundHit` (RoadSurface::probe, l. 104; GroundHit, l. 86–93)
+//!   and `grip` returns a scaled copy of `material` (RoadCondition::grip, l. 283–290).
+//! - **適用範囲 (range)**: `max_dist < 0` is no hit on every road (probe_plane, l. 314;
+//!   HeightFieldRoad::probe, l. 456; TriMeshRoad::probe, l. 506; SdfRoad::probe, l. 570).
+//!   Plane: `−dir·n ≤ 0` or `t > max_dist` is no hit (probe_plane, l. 326–334). Height field:
+//!   fewer than 2×2 points or `spacing ≤ 0` is no surface (extent, l. 367–371); nothing outside
+//!   the grid's XZ extent (clip_slab, l. 470–471); entering the extent below the surface is no
+//!   hit (l. 474–476); only step ends are tested, so two crossings within one step are missed
+//!   (l. 477–492); the normal is one-sided at the border (normal_at, l. 384–387). Mesh: the
+//!   line is also traced backwards as far as the mesh bounds, and a face reached from its back
+//!   side, behind or ahead, returns `t = 0` with its outward normal: a reversed winding is a
+//!   road facing down, a single-sided surface above the wheel is the road it is under
+//!   (l. 511–530; l. 537–543). SDF: `tolerance` is clamped to `≥ 0` (SdfRoad::probe, l. 581);
+//!   a non-finite distance or normal is no hit (SdfRoad::sample, l. 558–560); a zero field
+//!   normal falls back to `−dir` (l. 561–563); the trace stops after `max_steps` steps or once
+//!   `t > max_dist` (SdfRoad::probe, l. 583; l. 594–598); the hit is the first sample with
+//!   `d ≤ tolerance`, its distance that sample's ray parameter, not the exact crossing
+//!   (l. 586–591). Grip: speed enters as `|speed|` (grip, l. 274); the loss needs `Weather::Wet`
+//!   with `water_depth_mm ≥ 2.5`, so a negative depth is no standing water (l. 272–273); the
+//!   factor is continuous at `V_p` and floored at 1/10 (l. 276–278); a non-positive tyre
+//!   pressure gives `V_p = 0` (hydroplaning_onset_speed, l. 300–302), so any non-zero speed on
+//!   a flooded road gets the floor and speed 0 no loss (grip, l. 276–278).
+//! - **近似 (approximations)**: one factor scales static and kinetic coefficients alike
+//!   (grip, l. 285–288; LIMITATION COV-MBD-046, l. 241); the hydroplaning loss `(V_p / V)²`
+//!   with a 1/10 floor is a model of the dry-contact load share, not a measured law (grip doc,
+//!   l. 258–265); grip takes only speed and pressure and weather is four states, so no
+//!   temperature, tread depth or contamination enters (grip, l. 270; Weather, l. 178–190).
 //! - **検証 (validation)**: through the vehicle,
-//!   `tests/analytic_vehicle_dynamics.rs::stopping_distance_wet_and_ratio_to_dry`
-//!   and `::stopping_distance_ice_and_ratio_to_dry` (stopping distance
-//!   ratio 1 / f_w, ice below wet),
-//!   `::hydroplaning_reduces_deceleration_only_above_onset_speed` (Horne
-//!   onset 26.16 m/s at 220 kPa: full grip at 0.8 V_p, a loss above),
-//!   `::slope_below_static_friction_holds_the_car` and
-//!   `::slope_above_static_friction_slides_with_kinetic_deceleration` (the
-//!   inclined plane's contact point and normal: hold at tan θ < μ_s, slide
-//!   at g (sin θ − μ_k cos θ)), `::rolling_resistance_coast_down_is_linear`
-//!   (C_rr = 0.012: a = C_rr M g / (M + 4 I_w / r²));
-//!   `tests/vehicle_dynamics_degenerate.rs::airborne_car_falls_freely` (a
-//!   plane beyond the probe reach is no hit). The module's own unit oracles
-//!   compare every probe (plane, height field, mesh, SDF) and the grip
-//!   (weather table, Horne formula, hydroplaning model) to f64 closed forms.
-//!   validation missing: a height-field, triangle-mesh or SDF road through
-//!   the vehicle (a car over a crest or bump has no oracle yet);
-//!   validation missing: the weather factors against measured data (they
-//!   are definitions pinned to Wong's table, not measured here).
+//!   `tests/analytic_vehicle_dynamics.rs::stopping_distance_wet_and_ratio_to_dry` and
+//!   `::stopping_distance_ice_and_ratio_to_dry` (stopping distance ratio 1 / f_w, ice below
+//!   wet), `::hydroplaning_reduces_deceleration_only_above_onset_speed` (onset 26.16 m/s at
+//!   220 kPa: full grip at 0.8 V_p, a loss above), `::slope_below_static_friction_holds_the_car`
+//!   and `::slope_above_static_friction_slides_with_kinetic_deceleration` (inclined plane
+//!   contact and normal), `::rolling_resistance_coast_down_is_linear` (C_rr = 0.012);
+//!   `tests/vehicle_dynamics_degenerate.rs::airborne_car_falls_freely` (a plane beyond the
+//!   probe reach is no hit). The unit oracles in this file compare every probe and the grip
+//!   to f64 closed forms.
+//!   validation missing: a height-field, triangle-mesh or SDF road through the vehicle (a car
+//!   over a crest or bump has no oracle yet); validation missing: the weather factors against
+//!   measured data (they are constants of the code, not measured here).
 //! - **段 (tiers)**: L0 only.
 
 use crate::anisotropic_friction::AnisotropicFriction;
