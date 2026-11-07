@@ -32,9 +32,9 @@ fn washing_world() -> PhysicsWorld {
 ///
 /// ⚠️ **「立つ前後で blob が変わる」では対照実験にならない** (2026-09-30 実測)
 /// 洗浄 step は sleep 状態も変えるので、**flag が被覆外でも blob は変わる**
-/// ⇒ 長さで見るのが精密 (v3 = header 12 + body ごと 208 + body ごと sleep 5
-/// + world ごと flag 1 + world ごと population fingerprint 8、v5 はさらに soft body
-/// 数 4 + 次の grab id 4、soft body が無い world ではそれだけ)
+/// ⇒ 長さで見るのが精密 (v3 = header 12 + body ごと 208 + body ごと sleep 5 に
+/// world ごと flag 1 と world ごと population fingerprint 8 を足したもの、v5 はさらに
+/// soft body 数 4 と次の grab id 4、soft body が無い world ではそれだけ)
 #[test]
 fn the_blob_length_includes_the_flag_byte() {
     let n = 1; // body 1 個
