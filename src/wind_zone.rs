@@ -673,4 +673,49 @@ mod tests {
         still.velocity = Vec3Fix::ZERO;
         assert_eq!(calm.try_force_on(&still, Fix128::ZERO), Some(Vec3Fix::ZERO));
     }
+
+    /// The substep stages `force_on` at the clock for each dynamic body inside the zone,
+    /// leaves static and outside bodies alone, advances the clock by `h` and reports the
+    /// count; a force out of range is a fault that stages nothing and keeps the clock.
+    #[test]
+    fn the_substep_stages_the_force_and_advances_the_clock() {
+        use crate::world_participant::{ForceAccumulator, ObservationSink, SubstepCtx};
+        let zone = WindZone::light_breeze(wide_aabb());
+        let mut inside = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        inside.velocity = Vec3Fix::from_int(1, 0, 0);
+        let outside = RigidBody::new_dynamic(Vec3Fix::from_int(100, 0, 0), Fix128::ONE);
+        let fixed = RigidBody::new_static(Vec3Fix::ZERO);
+        let bodies = [inside, outside, fixed];
+        let mut p = WindZoneParticipant::new(zone);
+        let h = Fix128::from_ratio(1, 64);
+        let mut forces = ForceAccumulator::new(bodies.len());
+        {
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h).expect("ctx");
+            p.substep(&mut ctx, h).expect("substep");
+        }
+        assert_eq!(
+            forces.force(0),
+            Some(zone.force_on(&bodies[0], Fix128::ZERO))
+        );
+        assert_eq!(forces.force(1), Some(Vec3Fix::ZERO));
+        assert_eq!(forces.force(2), Some(Vec3Fix::ZERO));
+        assert_eq!(p.time(), h);
+        let mut sink = ObservationSink::new();
+        p.observe(&mut sink);
+        assert_eq!(
+            sink.values(),
+            &[(WIND_ZONE_OBS_TIME, h), (WIND_ZONE_OBS_BODIES, Fix128::ONE)]
+        );
+
+        let mut huge = zone;
+        huge.base_speed_m_s = Fix128::from_int(1 << 40);
+        let mut q = WindZoneParticipant::new(huge);
+        let mut forces = ForceAccumulator::new(bodies.len());
+        {
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h).expect("ctx");
+            assert_eq!(q.substep(&mut ctx, h), Err(ParticipantFault::OutOfRange));
+        }
+        assert_eq!(forces.force(0), Some(Vec3Fix::ZERO));
+        assert_eq!(q.time(), Fix128::ZERO);
+    }
 }
