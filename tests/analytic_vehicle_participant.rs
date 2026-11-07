@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"
+        "c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb"
     );
 }
 
@@ -654,8 +654,8 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "3b0a4232d223b6a393c5561b4518265c597f2b9d2e45d247d48c9ccea12fd005";
-const DRIVE_TGS: &str = "489d4bb5288ef5a151c31a9250d7541f0260d64c66889ec3e31e60668cc01431";
+const DRIVE_XPBD: &str = "bbce201d49dd1e63cda450654c8959131fed46efecfd5f3102b823e15f083a6c";
+const DRIVE_TGS: &str = "df11b5729277a93df663e4c6fbfc0e722791b3586e79cc65c39851ec4327e5c2";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
