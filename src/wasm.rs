@@ -223,9 +223,7 @@ impl WasmPhysicsWorld {
     #[wasm_bindgen(js_name = "setPosition")]
     pub fn set_position(&mut self, body_id: usize, x: f64, y: f64, z: f64) -> Result<(), JsValue> {
         let position = binding_api::vec3(x, y, z).ok_or_else(out_of_range)?;
-        if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.position = position;
-        }
+        self.inner.set_body_position(body_id, position);
         Ok(())
     }
 
@@ -1737,6 +1735,11 @@ mod tests {
         w.set_velocities_batch(&[1.0, 0.0, 0.0]).unwrap();
         assert!(!asleep(&w), "setVelocitiesBatch");
         settle(&mut w);
+        w.set_position(body, 0.0, 3.0, 0.0).unwrap();
+        assert!(!asleep(&w), "setPosition");
+        settle(&mut w);
+        w.set_position(body, 0.0, 3.0, 0.0).unwrap();
+        assert!(asleep(&w), "the same position");
         w.wake_body(body);
         assert!(!asleep(&w), "wakeBody");
     }
