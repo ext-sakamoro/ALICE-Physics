@@ -13635,7 +13635,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut s
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics_core::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
+pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize
@@ -18613,7 +18613,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut s
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics_core::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
+pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize
@@ -25313,7 +25313,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut s
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics_core::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
+pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize

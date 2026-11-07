@@ -748,7 +748,7 @@ mod bridge {
             });
         }
         let mut rec = Recorder::default();
-        w.solve_contact_constraints_with_bridge(&mut rec)
+        w.solve_contact_constraints_with_bridge(&mut rec, Fix128::from_ratio(1, 60))
             .expect("the bridge computes under this build's semantics");
         let pairs: Vec<(usize, usize)> = rec.sent.iter().map(|c| (c.body_a, c.body_b)).collect();
         assert_eq!(pairs, vec![(1, 2), (0, 2)], "sent {pairs:?}");
@@ -786,7 +786,7 @@ mod bridge {
             cached_lambda: Fix128::ZERO,
         });
         let mut rec = Recorder::default();
-        w.solve_contact_constraints_with_bridge(&mut rec)
+        w.solve_contact_constraints_with_bridge(&mut rec, Fix128::from_ratio(1, 60))
             .expect("the bridge computes under this build's semantics");
         assert!(rec.sent.is_empty());
         assert_eq!(rec.positions_sent, 0, "send_body_state must not be called");
