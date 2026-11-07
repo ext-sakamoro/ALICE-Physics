@@ -10,7 +10,7 @@
 //! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 7f66b646642c7395574e9bb607331e2a5d23e7729b12c75f6edc8f00d6876077
+//! fce64051ccb0b377faaf6c548d1448732192bb7b031b404491f231c570e41b99
 //! ```
 //!
 //! # Entries
@@ -152,7 +152,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "sleeping",
-        hex32("fd10def88190b9f82db629f98e0f290b6074cb4a9bf53a93a1450f833c9ece22"),
+        hex32("3b9a3042a8cac2840c156465c51a46b26bef1333003f723edf32560ba6d300e8"),
     ),
     (
         "broadphase Bvh",
@@ -424,7 +424,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("7f66b646642c7395574e9bb607331e2a5d23e7729b12c75f6edc8f00d6876077"),
+        hex32("fce64051ccb0b377faaf6c548d1448732192bb7b031b404491f231c570e41b99"),
     ),
 ];
 
@@ -568,7 +568,7 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
-/// `7f66b646642c7395574e9bb607331e2a5d23e7729b12c75f6edc8f00d6876077`.
+/// `fce64051ccb0b377faaf6c548d1448732192bb7b031b404491f231c570e41b99`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
