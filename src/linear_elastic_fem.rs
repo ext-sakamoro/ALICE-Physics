@@ -164,6 +164,13 @@ pub enum FemError {
         /// Iterations the best residual went without improving.
         without_improvement: u32,
     },
+    /// The ground contact's active set did not settle: releasing the held vertices whose
+    /// reaction turned tensile and re-solving kept changing the set past the iteration cap
+    /// ([`crate::dynamic_fem::CorotationalTransientSolver::step`]). The state is unchanged.
+    ContactUnsettled {
+        /// Active-set iterations performed (each one a conjugate gradient solve).
+        iterations: u32,
+    },
     /// A [`ThermalExpansion`] field does not cover every node of the mesh.
     ///
     /// Refused rather than tolerated because [`CoupledField::sample`] clamps a
