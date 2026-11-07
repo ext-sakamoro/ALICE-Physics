@@ -6,21 +6,24 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5950 |
-| 🔴 Red by design | 70 |
-| ⏱ Gated (runtime / diagnostic / manual) | 26 |
+| 🟢 Not ignored (run by CI) | 5954 |
+| 🔴 Red by design | 74 |
+| ⏱ Gated (runtime / diagnostic / manual) | 29 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6046** |
+| **Total** | **6057** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (70)
+## 🔴 Red by design (74)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
+- `a_cylinder_above_the_slip_limit_slides_and_spins_at_the_kinetic_rates` (analytic_contact_cylinder_rolling.rs) — known defect: cylinder line contact
+- `a_cylinder_below_the_slip_limit_rolls_at_two_thirds_of_g_sin_theta` (analytic_contact_cylinder_rolling.rs) — known defect: cylinder line contact
+- `a_shallow_penetration_is_detected_and_corrected_by_its_depth` (analytic_contact_detection_small_penetration.rs) — known defect: shallow contact depth below the EPA threshold
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
 - `buoyancy_field_holds_a_body_at_its_equilibrium_depth` (analytic_external_force_substep.rs) — src gap: the buoyancy field is a frame-head impulse while gravity is per substep, so a floating body at equili…
@@ -49,6 +52,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
+- `just_above_the_slip_limit_the_ball_slides_at_first_order_in_the_substep` (analytic_contact_friction_convergence.rs) — known defect: shallow contact depth below the EPA threshold
 - `max_queries_bounds_what_one_dispatch_covers` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-009: GpuDispatchConfig::max_queries is documented as \"Maximum queries per dispatch\"…
 - `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
 - `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
@@ -109,17 +113,21 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (4)
+## ⚠️ Known defects without an id (8)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
+- `a_cylinder_above_the_slip_limit_slides_and_spins_at_the_kinetic_rates` (analytic_contact_cylinder_rolling.rs) — known defect: cylinder line contact
+- `a_cylinder_below_the_slip_limit_rolls_at_two_thirds_of_g_sin_theta` (analytic_contact_cylinder_rolling.rs) — known defect: cylinder line contact
+- `a_shallow_penetration_is_detected_and_corrected_by_its_depth` (analytic_contact_detection_small_penetration.rs) — known defect: shallow contact depth below the EPA threshold
+- `just_above_the_slip_limit_the_ball_slides_at_first_order_in_the_substep` (analytic_contact_friction_convergence.rs) — known defect: shallow contact depth below the EPA threshold
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (26)
+## ⏱ Gated (29)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -135,6 +143,9 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `cavity_size_sweep` (mesh_quality.rs) — diagnostic: the table behind a_cavity_narrower_than_a_cell_leaves_no_trace
 - `cavity_trace_by_size` (mesh_quality.rs) — diagnostic: the evidence table for what each cavity size leaves behind
 - `channel_error_is_second_order_in_the_cell_size` (analytic_cfd_flow_bc.rs) — runtime only: 43k steps across three resolutions, release-only; the accuracy it asks for is reached, see the d…
+- `diagnostic_contact_presence_per_substep_in_the_sliding_regime` (analytic_contact_friction_convergence.rs) — diagnostic: prints the per-substep record, asserts nothing
+- `diagnostic_per_substep_friction_in_the_sliding_regime` (analytic_contact_friction_convergence.rs) — diagnostic: prints the per-substep record, asserts nothing
+- `diagnostic_slip_per_substep_near_the_limit` (analytic_contact_friction_convergence.rs) — diagnostic: prints the per-substep record, asserts nothing
 - `duct_profile_develops_toward_the_parabola` (analytic_cfd_flow_bc.rs) — runtime only: 4096 steps on 24x16 cells with 200 GS sweeps, release-only; the accuracy it asks for is reached,…
 - `finest_level_residual_floor_by_preconditioner` (analytic_fem_convergence.rs) — 4 solves at 12,800 tets (about 45 s in release, measured 2026-10-03); the stopping-rule diagnostic
 - `gs_control_rates` (analytic_multigrid.rs) — diagnostic: GS control rates for oracle 2
@@ -151,7 +162,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5950)
+## 🟢 Not ignored (5954)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -586,6 +597,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_broadphase_overflow_kinds.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
+| `analytic_contact_friction_convergence.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
 | `analytic_joint_break_bridge.rs` | 3 |
 | `analytic_joint_compliance_xpbd.rs` | 3 |
@@ -634,6 +646,7 @@ Per-file counts (the test names are in `tests/`):
 | `vehicle_update_bits.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |
+| `analytic_contact_detection_small_penetration.rs` | 1 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |

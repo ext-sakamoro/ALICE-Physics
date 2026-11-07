@@ -81,8 +81,14 @@ fn substep() -> f64 {
 /// the face at the box's centre line; `rotates` selects the solid-ball inertia
 /// or `inv_inertia = 0`.
 fn incline(mu: f64, theta: f64, rotates: bool) -> (PhysicsWorld, usize) {
+    incline_with(mu, theta, rotates, PhysicsConfig::default().substeps)
+}
+
+/// The same scene with `substeps` per frame (the sweep of the derived bounds).
+fn incline_with(mu: f64, theta: f64, rotates: bool, substeps: usize) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         damping_rate: Fix128::ZERO,
+        substeps,
         ..PhysicsConfig::default()
     });
     let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
@@ -125,14 +131,41 @@ fn along_slope(w: &PhysicsWorld, ball: usize, start: Vec3Fix, theta: f64) -> (f6
     (down, speed, wr, energy)
 }
 
+/// Derived tolerances of `(d, v, ω r)` after `frames` frames: the substep is
+/// first order in `h` (`analytic_contact_friction_convergence.rs`), so with
+/// the default `n` substeps and half of them, `|x(h) − x(2h)| = e(h) (ρ − 1)`
+/// with `ρ ≥ 1.5`, hence `e(h) ≤ 2 |x(h) − x(2h)|`; the fixed-point floor
+/// `2⁻⁴⁰` covers quantities that already agree to rounding. The serial path
+/// is used; the batched path gives the same bits (`bodies_at_rest_…`).
+fn derived_bounds(mu: f64, theta: f64, rotates: bool, frames: usize) -> (f64, f64, f64) {
+    let n = PhysicsConfig::default().substeps;
+    let measure = |substeps: usize| {
+        let (mut w, ball) = incline_with(mu, theta, rotates, substeps);
+        let start = w.bodies[ball].position;
+        for _ in 0..frames {
+            w.step(fx(DT));
+        }
+        along_slope(&w, ball, start, theta)
+    };
+    let (d1, v1, wr1, _) = measure(n);
+    let (d2, v2, wr2, _) = measure(n / 2);
+    let floor = 2f64.powi(-40);
+    (
+        2.0 * (d1 - d2).abs() + floor,
+        2.0 * ((v1 - wr1) - (v2 - wr2)).abs() + floor,
+        2.0 * (wr1 - wr2).abs() + floor,
+    )
+}
+
 /// oracle: `θ = 0.3`, `μ = 0.5` (`tan θ = 0.309 < 7μ/2 = 1.75`): rolls without
-/// slip from rest, `d = (5/7) g sin θ t² / 2` after 1 s (budget 2 % + one
-/// substep `a h t`), `|v − ω r| < 1e-3`, mechanical energy conserved within
-/// `m g · a h t` (the phase of one substep).
+/// slip from rest, `d = (5/7) g sin θ t² / 2` after 1 s within the derived
+/// bound `2 |d(h) − d(2h)|`, `|v − ω r|` within its derived bound, mechanical
+/// energy conserved within `m g · a h t` (the phase of one substep).
 #[test]
 fn a_ball_below_the_slip_limit_rolls_at_five_sevenths_of_g_sin_theta() {
     let (mu, theta) = (0.5, 0.3_f64);
     let a = 5.0 / 7.0 * g() * theta.sin();
+    let (bound_d, bound_slip, _) = derived_bounds(mu, theta, true, 60);
     for path in paths() {
         let (mut w, ball) = incline(mu, theta, true);
         let start = w.bodies[ball].position;
@@ -143,12 +176,12 @@ fn a_ball_below_the_slip_limit_rolls_at_five_sevenths_of_g_sin_theta() {
         let (down, speed, wr, e) = along_slope(&w, ball, start, theta);
         let want = a * 0.5;
         println!(
-            "{path:?} θ=0.3 t=1: d {down:.6} ({want:.6}) v {speed:.6} ω_z r {wr:.6} ΔE {:.3e}",
+            "{path:?} θ=0.3 t=1: d {down:.6} ({want:.6}, bound {bound_d:.2e}) v {speed:.6} ω_z r {wr:.6} (slip bound {bound_slip:.2e}) ΔE {:.3e}",
             e - e0
         );
         assert!(
-            (down - want).abs() < 0.02 * want + a * substep()
-                && (speed - wr).abs() < 1e-3
+            (down - want).abs() <= bound_d
+                && (speed - wr).abs() <= bound_slip
                 && (e - e0).abs() < g() * a * substep(),
             "{path:?}: rolled {down:.6} (want {want:.6}), v {speed:.6}, ω r {wr:.6}, ΔE {:.3e}",
             e - e0
@@ -158,13 +191,14 @@ fn a_ball_below_the_slip_limit_rolls_at_five_sevenths_of_g_sin_theta() {
 
 /// oracle: `θ = 0.3`, `μ = 0.05` (`tan θ = 0.309 > 7μ/2 = 0.175`): the
 /// contact slips from the start; after 1 s `d = g (sin θ − μ cos θ) t² / 2`
-/// and `ω_z r = (5/2) μ g cos θ t` (budget 2 % + one substep), and the ball
-/// still slips: `v − ω r > 0`.
+/// and `ω_z r = (5/2) μ g cos θ t`, each within its derived bound
+/// `2 |x(h) − x(2h)|`, and the ball still slips: `v − ω r > 0`.
 #[test]
 fn a_ball_above_the_slip_limit_slides_and_spins_at_the_kinetic_rates() {
     let (mu, theta) = (0.05, 0.3_f64);
     let a = g() * (theta.sin() - mu * theta.cos());
     let alpha_r = 2.5 * mu * g() * theta.cos();
+    let (bound_d, _, bound_wr) = derived_bounds(mu, theta, true, 60);
     for path in paths() {
         let (mut w, ball) = incline(mu, theta, true);
         let start = w.bodies[ball].position;
@@ -173,10 +207,10 @@ fn a_ball_above_the_slip_limit_slides_and_spins_at_the_kinetic_rates() {
         }
         let (down, speed, wr, _) = along_slope(&w, ball, start, theta);
         let want = a * 0.5;
-        println!("{path:?} θ=0.3 μ=0.05 t=1: d {down:.6} ({want:.6}) v {speed:.6} ω_z r {wr:.6} ({alpha_r:.6})");
+        println!("{path:?} θ=0.3 μ=0.05 t=1: d {down:.6} ({want:.6}, bound {bound_d:.2e}) v {speed:.6} ω_z r {wr:.6} ({alpha_r:.6}, bound {bound_wr:.2e})");
         assert!(
-            (down - want).abs() < 0.02 * want + a * substep()
-                && (wr - alpha_r).abs() < 0.02 * alpha_r + alpha_r * substep()
+            (down - want).abs() <= bound_d
+                && (wr - alpha_r).abs() <= bound_wr
                 && speed - wr > 0.0,
             "{path:?}: slid {down:.6} (want {want:.6}), ω r {wr:.6} (want {alpha_r:.6}), v − ω r {:.3e}",
             speed - wr
@@ -208,9 +242,10 @@ fn a_ball_that_cannot_turn_is_held_below_mu_and_slides_above() {
         let a = g() * (theta.sin() - mu * theta.cos());
         let (down, ..) = along_slope(&w, ball, start, theta);
         let want = a * 2.0;
+        let (bound_d, ..) = derived_bounds(mu, theta, false, 120);
         assert!(
-            (down - want).abs() < 0.02 * want + a * substep() * 2.0,
-            "{path:?}: slid {down:.6}, closed form {want:.6}"
+            (down - want).abs() <= bound_d,
+            "{path:?}: slid {down:.6}, closed form {want:.6}, bound {bound_d:.2e}"
         );
     }
 }
@@ -397,6 +432,7 @@ fn a_ball_below_the_slip_limit_rolls_the_same_from_every_orientation() {
             QuatFix::from_axis_angle(axis, fx(1.5 + 0.3 * i as f64)).normalize()
         })
         .collect();
+    let (bound_d, bound_slip, _) = derived_bounds(mu, theta, true, 60);
     for path in paths() {
         let (mut base, ball) = incline(mu, theta, true);
         let start = base.bodies[ball].position;
@@ -413,7 +449,7 @@ fn a_ball_below_the_slip_limit_rolls_the_same_from_every_orientation() {
             let (down, speed, wr, _) = along_slope(&w, ball, start, theta);
             let want = a * 0.5;
             assert!(
-                (down - want).abs() < 0.02 * want + a * substep() && (speed - wr).abs() < 1e-3,
+                (down - want).abs() <= bound_d && (speed - wr).abs() <= bound_slip,
                 "{path:?} from {q:?}: rolled {down:.6} (want {want:.6}, identity run {down0:.6}), v {speed:.6}, ω r {wr:.6}"
             );
             assert_eq!(
