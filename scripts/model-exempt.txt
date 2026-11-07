@@ -1,0 +1,90 @@
+# model-section-check: src files with no physics model (shapes, queries, bindings, infrastructure), reason per line
+# <path>\t<reason>
+src/analytics_bridge.rs	metrics export to the analytics sketches, no physics
+src/animation_blend.rs	pose interpolation between an animation and a ragdoll, no equation of motion
+src/anomaly.rs	streaming outlier statistics, no physics
+src/binding_api.rs	argument checking shared by the bindings
+src/body_collider.rs	collider shape attached to a body (shape)
+src/box_collider.rs	box shape
+src/bvh.rs	bounding volume hierarchy (search structure)
+src/character_state.rs	locomotion state machine (which controller mode is active), no equation of motion
+src/collider.rs	collider shapes and overlap tests (geometry)
+src/collider_mutants_tests.rs	tests of collider.rs kept in src for the mutant run
+src/collision_mesh_gen.rs	collision mesh generation (geometry)
+src/compound.rs	compound shape
+src/cone.rs	cone shape
+src/contact_cache.rs	contact manifold cache and warm start bookkeeping, no equation of its own
+src/contact_viz.rs	debug drawing of contacts
+src/convex_decompose.rs	convex decomposition (geometry)
+src/convex_mesh_builder.rs	convex hull construction (geometry)
+src/coupled_field.rs	coupling channel (a Fix128 scalar field exchanged between subsystems), no equation of its own
+src/coupled_iteration.rs	convergence monitor of staggered coupling (residual bookkeeping), no equation of its own
+src/cylinder.rs	cylinder shape
+src/debug_render.rs	debug drawing
+src/det_hash.rs	hash maps with a fixed seed (infrastructure)
+src/dynamic_bvh.rs	dynamic bounding volume hierarchy (search structure)
+src/ellipsoid.rs	ellipsoid shape
+src/error.rs	error types
+src/event.rs	event queue (infrastructure)
+src/ffi.rs	C bindings
+src/filament_db.rs	table of filament material data
+src/filter.rs	collision layer and mask filtering, no physics
+src/flow_viz.rs	flow visualisation (drawing)
+src/fluid_netcode.rs	fluid state compression for the network, no equation of motion
+src/gpu_bridge.rs	offload trait for an external backend, no equation of its own
+src/gpu_sdf.rs	SDF upload layout for a GPU (data layout)
+src/heatmap.rs	heat map drawing
+src/heightfield.rs	height field shape
+src/ik_physics_bridge.rs	bridge from an IK chain to the physics bodies (wiring), no equation of its own
+src/interpolation.rs	render interpolation between substeps (output smoothing), no equation of motion
+src/law_id.rs	content identifier of the law (infrastructure)
+src/lib.rs	crate root
+src/linear_solver.rs	linear algebra (Krylov solvers)
+src/linear_solver/bicgstab.rs	linear algebra (BiCGSTAB)
+src/linear_solver/equilibrate.rs	linear algebra (block equilibration)
+src/linear_solver/gmres.rs	linear algebra (GMRES)
+src/linear_solver/precond.rs	linear algebra (preconditioners)
+src/material.rs	material parameter table and pair combine rules (data), the laws that read it are solver.rs
+src/math.rs	fixed point arithmetic and vectors
+src/math_util.rs	fixed point numerics (transcendentals, root finding)
+src/metric.rs	the distance metric (Euclidean by default), a definition not a model
+src/netcode.rs	network state replication
+src/netcode_prediction.rs	network prediction and reconciliation
+src/neural.rs	fixed point neural inference for controllers, no physics
+src/pipeline.rs	print pipeline I/O
+src/plane_collider.rs	plane shape
+src/print_orientation.rs	optimiser over the strength modules (chooses an orientation), the laws are theirs
+src/print_pipeline_solver.rs	print pipeline orchestration over the strength modules
+src/privacy.rs	differential privacy primitives, no physics
+src/profiling.rs	timing counters
+src/python.rs	Python bindings
+src/query.rs	spatial queries (search)
+src/ragdoll.rs	ragdoll preset builder (bodies and joints from a skeleton), the laws are solver.rs and joint.rs
+src/raycast.rs	ray casts against shapes (geometry)
+src/rng.rs	deterministic random numbers (infrastructure)
+src/scene_io.rs	scene file I/O
+src/sdf_adaptive.rs	adaptive SDF sampling (geometry)
+src/sdf_collider.rs	SDF collider shape (geometry)
+src/sdf_destruction.rs	CSG edits of SDF geometry (shape), no equation of motion
+src/sdf_fem_mesh.rs	tetrahedral meshing of an SDF (geometry), the solid laws are the FEM modules
+src/sdf_manifold.rs	contact point generation from SDF samples (geometry), the contact law is solver.rs
+src/semantics.rs	content hash of the stepping semantics (infrastructure)
+src/sensors.rs	simulated sensors read the world (observation), no equation of motion
+src/shape.rs	shape definitions
+src/shape_raycast.rs	ray casts against shapes (geometry)
+src/sim_field.rs	3D field storage (infrastructure)
+src/sim_modifier.rs	trait for physics driven SDF modifiers (wiring)
+src/sketch.rs	probabilistic sketches (statistics), no physics
+src/solver/participants.rs	the world side of the participant contract (registration, faults, observation), no equation
+src/solver/world_snapshot.rs	snapshot encoding of the world state (serialisation)
+src/solver_tgs_backend.rs	adapter between the world's bodies / contacts and the TGS engine, no equation of its own
+src/spatial.rs	spatial hash (search structure)
+src/static_collider.rs	static collider shapes
+src/support_volume.rs	support volume estimate for printing (geometry)
+src/torus.rs	torus shape
+src/trimesh.rs	triangle mesh shape
+src/warp_risk.rs	print warp risk score (heuristic over the thermal modules), the law is thermal.rs
+src/wasm.rs	WebAssembly bindings
+src/wedge.rs	wedge shape
+src/world_participant.rs	the participant contract (trait), no equation of its own
+src/world_shape_query.rs	shape queries over the world (search)
