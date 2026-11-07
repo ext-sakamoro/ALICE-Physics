@@ -342,7 +342,7 @@ mod c_api {
             .filter(|(_, r)| !r)
             .map(|(n, _)| *n)
             .collect();
-        assert_eq!(refused.len(), 28);
+        assert_eq!(refused.len(), 30);
         assert!(
             not_refused.is_empty() && !changed,
             "a faulted world accepted changes through the C API: not refused {not_refused:?}, snapshot changed: {changed}"
