@@ -9,7 +9,7 @@
 //! shaped body is one EPA support vertex, so a cylinder lying on a plane has
 //! a point contact instead of its line of contact, and the friction torque
 //! about that point does not give the rolling law. Fix: a contact manifold
-//! for cylinder / capsule line contact (Backlog `cylinder line contact`).
+//! for cylinder / capsule line contact (filed as `cylinder line contact`).
 //!
 //! Author: Moroya Sakamoto
 
