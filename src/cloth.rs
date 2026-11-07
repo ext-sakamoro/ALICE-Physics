@@ -414,6 +414,60 @@ impl Cloth {
     }
 
     /// Build edge and bending constraints from triangle mesh
+    /// A cloth over an arbitrary triangle mesh: `positions` are the rest shape (the edge
+    /// lengths and dihedral angles are measured on them), every particle has `inv_mass`.
+    /// Triangle indices must be below `positions.len()`.
+    #[must_use]
+    pub fn from_mesh(
+        positions: Vec<Vec3Fix>,
+        triangles: Vec<[usize; 3]>,
+        inv_mass: Fix128,
+    ) -> Self {
+        let n = positions.len();
+        let mut cloth = Self {
+            prev_positions: positions.clone(),
+            velocities: vec![Vec3Fix::ZERO; n],
+            positions,
+            inv_masses: vec![inv_mass; n],
+            triangles,
+            edge_constraints: Vec::new(),
+            bend_constraints: Vec::new(),
+            pinned: Vec::new(),
+            wind: Vec3Fix::ZERO,
+            config: ClothConfig::default(),
+            rest_tether: None,
+            rest_positions: Vec::new(),
+            pin_released: Vec::new(),
+            sleep_enabled: false,
+            sleeping: None,
+        };
+        cloth.build_constraints();
+        cloth
+    }
+
+    /// Whether the exact sleep is on ([`set_sleep`]).
+    ///
+    /// [`set_sleep`]: Self::set_sleep
+    #[must_use]
+    pub fn sleep_enabled(&self) -> bool {
+        self.sleep_enabled
+    }
+
+    /// The inverse masses [`pin`] replaced, `(particle, inverse mass)`, in pin order.
+    ///
+    /// [`pin`]: Self::pin
+    #[must_use]
+    pub fn pin_released(&self) -> &[(usize, Fix128)] {
+        &self.pin_released
+    }
+
+    /// Set the inverse masses [`pin`] replaced (restore path).
+    ///
+    /// [`pin`]: Self::pin
+    pub(crate) fn set_pin_released(&mut self, released: Vec<(usize, Fix128)>) {
+        self.pin_released = released;
+    }
+
     fn build_constraints(&mut self) {
         // Edge constraints: collect unique edges from triangles
         let mut edge_set: Vec<(usize, usize)> = Vec::new();
