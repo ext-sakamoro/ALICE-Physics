@@ -379,6 +379,7 @@ use alice_physics::event::ContactEvent as _;
 use alice_physics::event::ContactEventType as _;
 use alice_physics::event::EventCollector as _;
 use alice_physics::event::JointBreakEvent as _;
+use alice_physics::event::StaticHit as _;
 use alice_physics::event::TriggerEvent as _;
 use alice_physics::expected_peer_id as _;
 use alice_physics::fatigue as _;
@@ -1869,7 +1870,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1851 paths, checked at compile time
+    // 1852 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
