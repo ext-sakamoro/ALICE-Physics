@@ -324,6 +324,77 @@ def test_a_buoyancy_zone_rewinds_and_is_part_of_the_snapshot():
     raise AssertionError("a world without the zone took its snapshot")
 
 
+def _hanging_ball(mass):
+    w = ap.PhysicsWorld()
+    top = w.add_static_body(0.0, 0.0, 0.0)
+    ball = w.add_dynamic_body(0.8, -1.8, 0.0, mass)
+    tie = (0.0, 0.0, 0.0)
+    rope = w.add_rope((0.0, 0.0, 0.0), (0.8, -1.8, 0.0), 8, 1.0, 1.0, (top, tie), (ball, tie))
+    return w, ball, rope
+
+
+def test_a_rope_holds_a_ball_at_its_length_and_swings_it():
+    w, ball, rope = _hanging_ball(4.0)
+    length = math.hypot(0.8, 1.8)
+    lowest = 0.0
+    for frame in range(128):
+        w.step(1.0 / 64.0)
+        x, y, z = w.get_position(ball)
+        assert abs(math.sqrt(x * x + y * y + z * z) - length) < length * 0.05, frame
+        lowest = min(lowest, x)
+    assert lowest < -0.1, lowest
+    particles = w.rope_positions(rope)
+    assert len(particles) == 9
+    assert particles[0] == (0.0, 0.0, 0.0)
+
+
+def test_a_rope_rewinds_and_is_part_of_the_snapshot():
+    w, _, _ = _hanging_ball(4.0)
+    for _ in range(32):
+        w.step(1.0 / 64.0)
+    blob = w.snapshot_world()
+    for _ in range(32):
+        w.step(1.0 / 64.0)
+    end = w.snapshot_world()
+    w.restore_world(blob)
+    for _ in range(32):
+        w.step(1.0 / 64.0)
+    assert w.snapshot_world() == end
+    try:
+        ap.PhysicsWorld().restore_world(blob)
+    except ValueError:
+        return
+    raise AssertionError("a world without the rope took its snapshot")
+
+
+def test_a_bad_rope_is_refused():
+    w = ap.PhysicsWorld()
+    o = (0.0, 0.0, 0.0)
+    x = (1.0, 0.0, 0.0)
+    bad = [
+        (o, x, 0, 1.0),
+        (o, x, 2000, 1.0),
+        (o, o, 2, 1.0),
+        (o, x, 2, 0.0),
+        (o, x, 2, 1.0, 1.5),
+        (o, x, 2, 1.0, 1.0, (7, o)),
+    ]
+    for value in (1e19, 1e30, sys.float_info.max, -1e19, -1e30, -sys.float_info.max, float("nan")):
+        bad += [
+            ((value, 0.0, 0.0), x, 2, 1.0),
+            (o, (0.0, value, 0.0), 2, 1.0),
+            (o, x, 2, value),
+            (o, x, 2, 1.0, value),
+        ]
+    for args in bad:
+        try:
+            w.add_rope(*args)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {args}")
+    assert w.add_rope(o, x, 2, 1.0) == 0
+
+
 def test_a_bad_buoyancy_zone_is_refused():
     w = ap.PhysicsWorld()
     box = ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))

@@ -788,6 +788,63 @@ impl WasmPhysicsWorld {
         binding_api::add_buoyancy_zone(&mut self.inner, &args).and_then(|i| u32::try_from(i).ok())
     }
 
+    /// Add a rope from `start` to `end` (`[x, y, z]`) of `segments` segments and total `mass`,
+    /// falling under the world's gravity, keeping `damping` of its velocity per frame (1 keeps it
+    /// all). `start_body` and `end_body` tie an end to a body at `start_local` / `end_local` in the
+    /// body's frame: the rope then pulls that body and is pulled by it. The rope is part of the
+    /// world: `snapshotWorld` keeps it, and `restoreWorld` needs the same ropes added in the same
+    /// order. Returns its index, or `undefined` for a bad value.
+    #[cfg(feature = "std")]
+    #[wasm_bindgen(js_name = "addRope")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export cannot take a struct from JS cheaply; the ends and their ties are what a rope is"
+    )]
+    pub fn add_rope(
+        &mut self,
+        start: &[f64],
+        end: &[f64],
+        segments: u32,
+        mass: f64,
+        damping: f64,
+        start_body: Option<u32>,
+        start_local: &[f64],
+        end_body: Option<u32>,
+        end_local: &[f64],
+    ) -> Option<u32> {
+        let tie = |body: Option<u32>, local: &[f64]| match body {
+            None => Some(None),
+            Some(b) => Some(Some(binding_api::RopeTie {
+                body: b as usize,
+                local: binding_api::vec3_slice(local)?,
+            })),
+        };
+        let args = binding_api::RopeArgs {
+            start: binding_api::vec3_slice(start)?,
+            end: binding_api::vec3_slice(end)?,
+            segments,
+            mass,
+            damping,
+            start_tie: tie(start_body, start_local)?,
+            end_tie: tie(end_body, end_local)?,
+        };
+        binding_api::add_rope(&mut self.inner, &args).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// The particles of the rope at participant `index` as `[x, y, z, ...]`, or `undefined` when
+    /// that participant is not a rope.
+    #[cfg(feature = "std")]
+    #[wasm_bindgen(js_name = "ropePositions")]
+    pub fn rope_positions(&self, index: u32) -> Option<Vec<f64>> {
+        let particles = binding_api::rope_particles(&self.inner, index as usize)?;
+        Some(
+            particles
+                .iter()
+                .flat_map(|(p, _)| [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()])
+                .collect(),
+        )
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     #[wasm_bindgen(js_name = "clearCollisionRadius")]
     pub fn clear_collision_radius(&mut self, body_id: usize) -> bool {
@@ -1220,6 +1277,76 @@ mod tests {
     }
 
     /// Every argument the binding checks is refused alone, and a refusal registers nothing.
+    /// oracle: the wasm call builds the rope the Rust API builds, bit for bit after 60 frames,
+    /// and past the range of Fix128 every float argument is refused.
+    #[test]
+    fn rope_call_equals_the_rust_api_and_refuses_bad_values() {
+        let mut a = WasmPhysicsWorld::with_config(0.0, -10.0, 0.0, 4, 8);
+        let ball = a.add_dynamic_body(1.0, -1.0, 0.0, 2.0);
+        let index = a.add_rope(
+            &[0.0, 0.0, 0.0],
+            &[1.0, -1.0, 0.0],
+            4,
+            0.5,
+            0.99,
+            None,
+            &[],
+            Some(ball as u32),
+            &[0.0, 0.0, 0.0],
+        );
+        assert_eq!(index, Some(0));
+        let fx = Fix128::from_f64;
+        let v3 = |x, y, z| Vec3Fix::new(fx(x), fx(y), fx(z));
+        let mut b = PhysicsWorld::new(a.inner.config);
+        let body = b.add_body(RigidBody::new_dynamic(v3(1.0, -1.0, 0.0), fx(2.0)));
+        let length = v3(1.0, -1.0, 0.0).length();
+        let mut rope =
+            crate::rope::Rope::new(Vec3Fix::ZERO, v3(1.0, -1.0, 0.0), 4, fx(0.5) / length);
+        rope.config.damping = fx(0.99);
+        let anchors = vec![crate::rope_participant::RopeAnchor {
+            particle: 4,
+            body,
+            local_anchor: Vec3Fix::ZERO,
+        }];
+        let resident = crate::rope_participant::RopeParticipant::new(rope, anchors).unwrap();
+        b.add_participant(Box::new(resident)).unwrap();
+        for _ in 0..60 {
+            a.step(1.0 / 60.0);
+            b.step(fx(1.0 / 60.0));
+        }
+        assert_eq!(a.inner.snapshot_world(), b.snapshot_world());
+        assert_eq!(a.rope_positions(0).unwrap().len(), 15);
+        assert_eq!(a.rope_positions(1), None);
+
+        let o = [0.0, 0.0, 0.0];
+        let x = [1.0, 0.0, 0.0];
+        let mut w = WasmPhysicsWorld::with_config(0.0, -10.0, 0.0, 4, 8);
+        for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN, f64::NAN] {
+            let high = [value, 0.0, 0.0];
+            let mut add = |s: &[f64], e: &[f64], m: f64, d: f64| {
+                w.add_rope(s, e, 2, m, d, None, &[], None, &[])
+            };
+            assert_eq!(add(&high, &x, 1.0, 1.0), None, "start {value}");
+            assert_eq!(add(&o, &high, 1.0, 1.0), None, "end {value}");
+            assert_eq!(add(&o, &x, value, 1.0), None, "mass {value}");
+            assert_eq!(add(&o, &x, 1.0, value), None, "damping {value}");
+        }
+        assert_eq!(w.add_rope(&o, &o, 2, 1.0, 1.0, None, &[], None, &[]), None);
+        assert_eq!(w.add_rope(&o, &x, 0, 1.0, 1.0, None, &[], None, &[]), None);
+        assert_eq!(
+            w.add_rope(&o, &x, 1025, 1.0, 1.0, None, &[], None, &[]),
+            None
+        );
+        assert_eq!(
+            w.add_rope(&o, &x, 2, 1.0, 1.0, Some(9), &o, None, &[]),
+            None
+        );
+        assert_eq!(
+            w.add_rope(&o, &x, 2, 1.0, 1.0, None, &[], None, &[]),
+            Some(0)
+        );
+    }
+
     #[test]
     fn a_bad_wind_zone_is_refused() {
         let good = [

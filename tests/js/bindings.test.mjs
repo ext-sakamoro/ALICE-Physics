@@ -261,6 +261,68 @@ test("a buoyancy zone's arguments are checked and a world without it refuses its
   assert.throws(() => plain.restoreWorld(blob));
 });
 
+function hangingBall(mass) {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  const top = w.addStaticBody(0, 0, 0);
+  const ball = w.addDynamicBody(0.8, -1.8, 0, mass);
+  const rope = w.addRope([0, 0, 0], [0.8, -1.8, 0], 8, 1, 1, top, [0, 0, 0], ball, [0, 0, 0]);
+  return { w, ball, rope };
+}
+
+// oracle: a rope from JS holds the ball at its length while the ball swings past the bottom
+test("a rope tied to a ball holds it at the rope's length and swings it", () => {
+  const { w, ball, rope } = hangingBall(4);
+  const length = Math.hypot(0.8, 1.8);
+  let lowestX = Infinity;
+  for (let i = 0; i < 128; i++) {
+    w.step(1 / 64);
+    const all = w.getPositions();
+    const [x, y, z] = [all[ball * 3], all[ball * 3 + 1], all[ball * 3 + 2]];
+    assert.ok(Math.abs(Math.hypot(x, y, z) - length) < length * 0.05, `frame ${i}`);
+    lowestX = Math.min(lowestX, x);
+  }
+  assert.ok(lowestX < -0.1, `the ball swung to x = ${lowestX}`);
+  const p = w.ropePositions(rope);
+  assert.equal(p.length, 9 * 3);
+  assert.deepEqual(Array.from(p.slice(0, 3)), [0, 0, 0], "the tied end stays on the anchor");
+});
+
+test("a rope rewinds to the same bits through snapshotWorld", () => {
+  const { w } = hangingBall(4);
+  for (let i = 0; i < 32; i++) w.step(1 / 64);
+  const blob = w.snapshotWorld();
+  for (let i = 0; i < 32; i++) w.step(1 / 64);
+  const end = Array.from(w.snapshotWorld());
+  w.restoreWorld(blob);
+  for (let i = 0; i < 32; i++) w.step(1 / 64);
+  assert.deepEqual(Array.from(w.snapshotWorld()), end);
+});
+
+test("a rope's arguments are checked and a world without it refuses its snapshot", () => {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  const o = [0, 0, 0];
+  const x = [1, 0, 0];
+  const add = (start, end, segments, mass, damping, body) =>
+    w.addRope(start, end, segments, mass, damping, body, o, undefined, o);
+  assert.equal(add(o, x, 0, 1, 1), undefined, "no segments");
+  assert.equal(add(o, x, 2000, 1, 1), undefined, "too many segments");
+  assert.equal(add(o, o, 2, 1, 1), undefined, "ends coincide");
+  assert.equal(add(o, x, 2, 0, 1), undefined, "no mass");
+  assert.equal(add(o, x, 2, 1, 1.5), undefined, "damping above 1");
+  assert.equal(add(o, x, 2, 1, 1, 7), undefined, "no such body");
+  for (const value of [1e19, 1e30, Number.MAX_VALUE, -1e19, -1e30, -Number.MAX_VALUE, NaN]) {
+    assert.equal(add([value, 0, 0], x, 2, 1, 1), undefined, `start ${value}`);
+    assert.equal(add(o, [0, value, 0], 2, 1, 1), undefined, `end ${value}`);
+    assert.equal(add(o, x, 2, value, 1), undefined, `mass ${value}`);
+    assert.equal(add(o, x, 2, 1, value), undefined, `damping ${value}`);
+  }
+  assert.equal(add(o, x, 2, 1, 1), 0);
+  assert.equal(w.ropePositions(1), undefined, "no such participant");
+  const blob = w.snapshotWorld();
+  const plain = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  assert.throws(() => plain.restoreWorld(blob));
+});
+
 test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
   const w = jointedScene();
   const before = Array.from(w.stateDigest());

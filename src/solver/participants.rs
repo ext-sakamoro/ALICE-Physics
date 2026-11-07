@@ -55,8 +55,9 @@ use crate::math::Fix128;
 use crate::math::Vec3Fix;
 #[cfg(feature = "std")]
 use crate::world_participant::{
-    run_substep_tracked, wakes_parked_body, BodyRadii, ForceAccumulator, ObservationSink, Observed,
+    run_substep_tracked, wakes_parked_body, ForceAccumulator, ObservationSink, Observed,
     Participant, ParticipantFault, ParticipantKind, ParticipantPlan, StepRule, SubstepTime,
+    WorldReads,
 };
 use crate::world_participant::{
     FieldBoard, FieldError, FieldLayout, FieldMode, PortId, RegisterError, StepError, WorldFault,
@@ -594,9 +595,10 @@ impl PhysicsWorld {
                     &mut forces,
                     SubstepTime { index, count, h },
                     &self.sdf_contact_log,
-                    Some(BodyRadii {
+                    Some(WorldReads {
                         radii: &self.body_collision_radii,
                         default: self.sdf_collision_radius,
+                        gravity: self.config.gravity,
                     }),
                     &mut running,
                 )

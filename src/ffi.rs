@@ -1455,6 +1455,98 @@ pub unsafe extern "C" fn alice_physics_world_add_buoyancy_zone(
     })
 }
 
+/// Add a rope from `start` to `end` of `segments` segments and total `mass`, falling under the
+/// world's gravity, keeping `damping` of its velocity per frame (1 keeps it all). `start_body` and
+/// `end_body` tie an end to a body at `start_local` / `end_local` in the body's frame, `u32::MAX`
+/// for an end that is free: the rope then pulls that body and is pulled by it. The rope is part of
+/// the world: a world snapshot keeps it, and a restore needs the same ropes added in the same
+/// order. Returns its index, or `u32::MAX` for a null world or a bad value.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_add_rope(
+    world: *mut PhysicsWorld,
+    start: AliceVec3,
+    end: AliceVec3,
+    segments: u32,
+    mass: f64,
+    damping: f64,
+    start_body: u32,
+    start_local: AliceVec3,
+    end_body: u32,
+    end_local: AliceVec3,
+) -> u32 {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
+            return u32::MAX;
+        };
+        let tie = |body: u32, local: &AliceVec3| {
+            if body == u32::MAX {
+                return Some(None);
+            }
+            Some(Some(binding_api::RopeTie {
+                body: body as usize,
+                local: vec3_arg(local)?,
+            }))
+        };
+        let (Some(start), Some(end), Some(start_tie), Some(end_tie)) = (
+            vec3_arg(&start),
+            vec3_arg(&end),
+            tie(start_body, &start_local),
+            tie(end_body, &end_local),
+        ) else {
+            return u32::MAX;
+        };
+        let args = binding_api::RopeArgs {
+            start,
+            end,
+            segments,
+            mass,
+            damping,
+            start_tie,
+            end_tie,
+        };
+        index_result(binding_api::add_rope(w, &args))
+    })
+}
+
+/// Write the particles of the rope at participant `index` to `out`, which holds `capacity`
+/// positions. Returns how many the rope has (nothing is written when that is above `capacity`),
+/// or `u32::MAX` for a null world, a null `out` or a participant that is not a rope.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, and `out` must be valid for
+/// `capacity` writes.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_rope_positions(
+    world: *const PhysicsWorld,
+    index: u32,
+    out: *mut AliceVec3,
+    capacity: u32,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        if world.is_null() || out.is_null() {
+            return u32::MAX;
+        }
+        // SAFETY: the caller promises a valid world pointer, checked for null above.
+        let w = unsafe { &*world };
+        let Some(particles) = binding_api::rope_particles(w, index as usize) else {
+            return u32::MAX;
+        };
+        let Ok(count) = u32::try_from(particles.len()) else {
+            return u32::MAX;
+        };
+        if count <= capacity {
+            for (i, (p, _)) in particles.iter().enumerate() {
+                // SAFETY: `i < count <= capacity`, and the caller promises `capacity` writes.
+                unsafe { out.add(i).write(AliceVec3::from_vec3fix(*p)) };
+            }
+        }
+        count
+    })
+}
+
 /// Drop a body's own collision radius; it falls back to the world default.
 /// Returns 1 on success, 0 for a null world or an unknown body.
 ///
@@ -2390,6 +2482,55 @@ mod tests {
 
     /// The C call builds the zone the Rust API builds, every argument with its own value, and a
     /// bad value registers nothing.
+    #[test]
+    fn rope_through_c_refuses_bad_values_and_reports_its_particles() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        let free = u32::MAX;
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end; `out` holds the capacity it is given.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(c, v(1.0, 0.0, 0.0), 2.0);
+            let (o, x) = (v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
+            let add = |s, e, m, d| alice_physics_world_add_rope(c, s, e, 2, m, d, free, o, free, o);
+            for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN, f64::NAN] {
+                let high = v(value, 0.0, 0.0);
+                assert_eq!(add(high, x, 1.0, 1.0), u32::MAX, "start {value}");
+                assert_eq!(add(o, high, 1.0, 1.0), u32::MAX, "end {value}");
+                assert_eq!(add(o, x, value, 1.0), u32::MAX, "mass {value}");
+                assert_eq!(add(o, x, 1.0, value), u32::MAX, "damping {value}");
+            }
+            assert_eq!(
+                alice_physics_world_add_rope(c, o, x, 2, 1.0, 1.0, 9, o, free, o),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_world_add_rope(c, o, x, 2, 1.0, 1.0, free, o, b, o),
+                0
+            );
+            let mut out = [v(9.0, 9.0, 9.0); 3];
+            assert_eq!(
+                alice_physics_world_rope_positions(c, 0, out.as_mut_ptr(), 2),
+                3
+            );
+            assert_eq!(out[0].x, 9.0, "nothing written above capacity");
+            assert_eq!(
+                alice_physics_world_rope_positions(c, 0, out.as_mut_ptr(), 3),
+                3
+            );
+            assert_eq!(out[2].x, 1.0);
+            assert_eq!(
+                alice_physics_world_rope_positions(c, 1, out.as_mut_ptr(), 3),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_world_rope_positions(c, 0, core::ptr::null_mut(), 3),
+                u32::MAX
+            );
+            alice_physics_world_destroy(c);
+        }
+    }
+
     #[test]
     fn wind_zone_through_c_equals_the_rust_api() {
         let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
