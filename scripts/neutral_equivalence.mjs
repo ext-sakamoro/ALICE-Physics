@@ -63,6 +63,14 @@ function api(glue, neutral, called) {
     },
     call: (w, n, ...args) => fn(w, n).apply(w, args),
     free: (n, ...args) => fn(glue, n)(...args),
+    // another class of the package, by its original name, and its static functions
+    klass: (n) => {
+      const C = glue[name(n)];
+      if (typeof C !== "function") throw new Error(`the package has no ${n}`);
+      called.add(n);
+      return C;
+    },
+    statik: (C, n, ...args) => fn(C, n).apply(C, args),
   };
 }
 
@@ -176,6 +184,30 @@ function wide(a) {
   const version = a.free("alicePhysicsVersion");
   if (typeof version !== "string") throw new Error(`alicePhysicsVersion gave ${version}`);
   out.version = new TextEncoder().encode(version);
+  // a blow from a point, holds that pull bodies to places and let go, all through the step
+  out.radial = val(a.call(w, "applyRadialImpulse", 0, 1, 0, 6, 3), "applyRadialImpulse");
+  out.held = val(a.call(w, "holdBody", b[0], 0, 1.5, 0, 8), "holdBody");
+  out.moved = val(a.call(w, "moveHold", b[0], 0.2, 1.6, 0), "moveHold");
+  for (let i = 0; i < 20; i++) a.call(w, "step", 1 / 60);
+  out.released = val(a.call(w, "releaseHold", b[0]), "releaseHold");
+  out.formed = val(a.call(w, "formBodies", new Uint32Array([b[1], b[2]]), f([0, 1, 0, 0.5, 1, 0]), 8), "formBodies");
+  for (let i = 0; i < 20; i++) a.call(w, "step", 1 / 60);
+  out.letGo = val(a.call(w, "releaseHolds"), "releaseHolds");
+  out.heldState = a.call(w, "serializeState");
+  // the input log: two entries, its code, and back
+  const Log = a.klass("WasmInputLog");
+  const log = new Log();
+  if (a.call(log, "record", 3, new Uint8Array([1, 2])) !== true) throw new Error("record refused the first entry");
+  a.call(log, "record", 7, new Uint8Array([9]));
+  out.logLength = val(a.call(log, "length"), "length");
+  out.logStep = f([a.call(log, "stepAt", 1)]);
+  out.logInput = a.call(log, "inputAt", 0);
+  const code = a.call(log, "toCode", new Uint8Array(32).map((_, i) => i));
+  if (typeof code !== "string") throw new Error(`toCode gave ${code}`);
+  out.logCode = new TextEncoder().encode(code);
+  const back = a.statik(Log, "fromCode", code);
+  out.logBack = val(a.call(back, "length"), "length");
+  out.codeHead = a.statik(Log, "codeHead", code);
   const fresh = a.fresh();
   out.freshCount = val(a.call(fresh, "bodyCount"), "bodyCount");
   return out;

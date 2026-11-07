@@ -360,6 +360,10 @@ class CommittedList(unittest.TestCase):
         self.assertEqual(r["literals"], len(reviewed))
 
 
+# the input log's names: methods of its own class, not of the world
+LOG = ("stepAt", "inputAt", "toCode", "fromCode", "codeHead", "record", "length")
+
+
 def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: str = "", module_extra: str = "") -> str:
     """a stand-in for the wasm-bindgen glue with the engine's API (method bodies return values of the
     kind the real API returns); `rename` maps an API name to the name the glue uses"""
@@ -385,16 +389,31 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Float64Array([this.ids, 0.5]);"
         if n.endswith("Count"):
             return "return this.ids;"
-        if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape", "setBodyMaterial"):
+        if n.startswith(("remove", "clear", "deserialize")) or n in (
+                "setCollisionRadius", "setBodyShape", "setBodyMaterial", "holdBody", "moveHold", "releaseHold", "formBodies"):
             return "return true;"
+        if n in ("applyRadialImpulse", "releaseHolds"):
+            return "return 2;"
         return "return undefined;"
     methods = "\n".join(f"  {rename(n)}(...a) {{ {body(n)} }}" for n in names
-                         if n not in ("withConfig", "alicePhysicsVersion", "WasmPhysicsWorld"))
+                         if n not in ("withConfig", "alicePhysicsVersion", "WasmPhysicsWorld", *LOG, "WasmInputLog"))
+    # the input log is a class of its own in the glue
+    log = ""
+    if "WasmInputLog" in names:
+        log = (f"export class {rename('WasmInputLog')} {{\n  constructor() {{ this.e = []; }}\n"
+               f"  {rename('record')}(s, b) {{ this.e.push([s, b]); return true; }}\n"
+               f"  {rename('length')}() {{ return this.e.length; }}\n"
+               + (f"  {rename('stepAt')}(i) {{ return this.e[i][0]; }}\n" if "stepAt" in names else "")
+               + (f"  {rename('inputAt')}(i) {{ return this.e[i][1]; }}\n" if "inputAt" in names else "")
+               + (f"  {rename('toCode')}(d) {{ return \"c\" + this.e.length; }}\n" if "toCode" in names else "")
+               + (f"  static {rename('fromCode')}(c) {{ const l = new this(); l.e = [[1, new Uint8Array([1])]]; return l; }}\n" if "fromCode" in names else "")
+               + (f"  static {rename('codeHead')}(c) {{ return new Uint8Array([1, 2, 3, 4]); }}\n" if "codeHead" in names else "")
+               + "  free() {}\n}\n")
     return (f"export function initSync() {{}}\n"
             f"export class {rename('WasmPhysicsWorld')} {{\n  constructor() {{ this.ids = 0; }}\n"
             f"  static {rename('withConfig')}() {{ return new this(); }}\n{methods}\n{extra}\n  free() {{}}\n}}\n"
             + (f"export function {rename('alicePhysicsVersion')}() {{ return \"0.0.0\"; }}\n"
-               if "alicePhysicsVersion" in names else "") + module_extra)
+               if "alicePhysicsVersion" in names else "") + log + module_extra)
 
 
 class Equivalence(unittest.TestCase):
@@ -402,7 +421,7 @@ class Equivalence(unittest.TestCase):
     called and every value is present, non-empty and equal"""
 
     NAMES = sorted(set(re.findall(r'js_name = "([A-Za-z]+)"', (HERE.parent / "src" / "wasm.rs").read_text(encoding="utf-8")))
-                   | {"step", "WasmPhysicsWorld"})
+                   | {"step", "WasmPhysicsWorld", "WasmInputLog", "record", "length"})
 
     def run_pair(self, orig: dict = {}, neutral: dict = {}, orig_extra: str = "", drop: str = "", orig_module: str = "") -> int:
         d = Path(tempfile.mkdtemp())
