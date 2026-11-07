@@ -638,7 +638,7 @@ fn test_sleeping_in_step() {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 5,
+        time_to_sleep: Fix128::from_ratio(5, 60),
     });
 
     let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
@@ -865,7 +865,7 @@ fn test_body_count_and_active() {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
 
     // Add 3 still bodies
@@ -974,7 +974,7 @@ fn test_all_subsystems_combined() {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 120,
+        time_to_sleep: Fix128::from_ratio(120, 60),
     });
 
     // Body A and B connected by ball joint, both with collision radii
@@ -1153,7 +1153,7 @@ fn test_sleep_island_propagation() {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
 
     // Chain: A --joint-- B --joint-- C

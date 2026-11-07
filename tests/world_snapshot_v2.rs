@@ -21,7 +21,7 @@ fn scene() -> PhysicsWorld {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
     let anchor = w.add_body(RigidBody::new_static(Vec3Fix::from_int(0, 5, 0)));
     let a = w.add_body_with_radius(

@@ -37,7 +37,7 @@ fn tether_world() -> PhysicsWorld {
     // the default sleep rule (|v| < 0.01 for 60 frames) freezes the tail of the decay;
     // the oracles compare the whole trajectory, so sleeping is switched off here
     world.set_sleep_config(SleepConfig {
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
         ..SleepConfig::default()
     });
     world

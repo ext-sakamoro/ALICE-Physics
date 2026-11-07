@@ -61,7 +61,7 @@ fn base_scene(kind: Broadphase) -> PhysicsWorld {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 100),
         angular_threshold: Fix128::from_ratio(1, 100),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
     let half = Fix128::from_ratio(1, 2);
     // `new_static`, not `new(_, ZERO)`: a zero-mass body built with `new`
@@ -246,7 +246,7 @@ fn advance_then_restore_matches_the_older_snapshot() {
 /// Four small dynamic spheres resting on a large static sphere (not
 /// touching each other), under the same loose sleep config as `base_scene`.
 /// Falling under gravity onto the big sphere and settling takes well under
-/// 60 steps; by 120 steps (`frames_to_sleep: 3` past settling) all four are
+/// 60 steps; by 120 steps (`time_to_sleep: Fix128::from_ratio(3, 60)` past settling) all four are
 /// asleep. Unlike `base_scene`'s two bodies, which only hang from a joint
 /// and free-fall forever if nothing is actually resting them, these bodies
 /// reach, and stay at, genuine rest — the scenario `remove_body`'s sleep
@@ -257,7 +257,7 @@ fn resting_scene(kind: Broadphase) -> PhysicsWorld {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 10),
         angular_threshold: Fix128::from_ratio(1, 10),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
     let big_radius = fx(10.0);
     let small_radius = fx(0.5);
