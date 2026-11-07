@@ -23,9 +23,10 @@
 //!   (no turbulence spectrum such as von Kármán or Kaimal, no cross-wind); the
 //!   force acts at the body's centre with a constant area, independent of the
 //!   surface orientation.
-//! - **Tiers**: a prescribed wind field (no obstacle interaction), a tier below the
-//!   wind L0. The L0, wind solved around solid shapes with a log-law inflow and a
-//!   gust spectrum, is not built, so this tier's error against it is not measured.
+//! - **Tiers**: prescribed wind field (no obstacle interaction): a tier below the
+//!   wind L0. This is not the wind model: the L0, a wind field solved around SDF
+//!   solids with a log-law inflow and a gust spectrum, is not built, so this
+//!   tier's error against it is not measured.
 //! - **Validation** (`tests/analytic_wind_zone_participant.rs`):
 //!   `release_into_a_steady_wind_follows_quadratic_drag` (closed form
 //!   `v(t) = U − U/(1 + c U t)` and the first-order step error),
@@ -35,9 +36,10 @@
 //!   `the_explicit_drag_is_bounded_below_x_2_and_grows_above`,
 //!   `rewind_and_fork_are_bit_identical`,
 //!   `gust_scene_digest_is_pinned`.
-//! - **Validation missing**: the log law near the ground, the shadow and wake
-//!   behind an obstacle, and the gust spectrum (von Kármán / Kaimal). They belong
-//!   to the wind L0.
+//! - validation missing: the log-law profile near the ground (wind L0, a field
+//!   solved around SDF solids, not built)
+//! - validation missing: the shadow and wake behind an obstacle (wind L0, not built)
+//! - validation missing: the gust spectrum, von Kármán / Kaimal (wind L0, not built)
 //!
 //! `WindZone` — bounded aerodynamic force field applied to rigid bodies
 //! and cloth / hair particles.
