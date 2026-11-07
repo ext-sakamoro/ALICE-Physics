@@ -9,9 +9,7 @@
 //! ```
 
 use alice_physics_core::math::{Fix128, Vec3Fix};
-use alice_physics_core::particle::{
-    LandingTarget, ParticleEmitter, ParticleSystem, RunOff,
-};
+use alice_physics_core::particle::{LandingTarget, ParticleEmitter, ParticleSystem, RunOff};
 use alice_physics_core::rng::DeterministicRng;
 use alice_physics_core::sdf_collider::ClosureSdf;
 
@@ -58,6 +56,10 @@ fn main() {
         .count();
     println!("landed {landed}, dripped {dripped}, on the ball now {on_ball}");
     assert!(landed > 0 && dripped > 0, "the drops must land and drip");
-    let hex: String = rain.state_digest(&rng).iter().map(|b| format!("{b:02x}")).collect();
+    let hex: String = rain
+        .state_digest(&rng)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     println!("digest {hex}");
 }
