@@ -15,7 +15,7 @@ import path from "node:path";
 
 const pkgDir = process.env.ALICE_JS_PKG;
 if (!pkgDir) throw new Error("set ALICE_JS_PKG to the wasm-pack output directory");
-const { WasmPhysicsWorld } = createRequire(import.meta.url)(path.resolve(pkgDir, "alice_physics.js"));
+const { WasmPhysicsWorld, WasmInputLog } = createRequire(import.meta.url)(path.resolve(pkgDir, "alice_physics.js"));
 
 const DT = 1 / 60;
 const world = () => WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
@@ -229,4 +229,41 @@ test("setAngularVelocity turns a free body about the given axis", () => {
   for (let i = 0; i < 10; i++) w.step(DT);
   const later = angleAt();
   assert.ok(early > 0 && later > early, `${early} then ${later}`);
+});
+
+test("a blow, a hold and a log through the bindings", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 2, 4);
+  const a = w.addDynamicBody(1, 0, 0, 1);
+  const b = w.addDynamicBody(3, 0, 0, 1);
+  assert.equal(w.applyRadialImpulse(0, 0, 0, 2, 4), 1);
+  assert.equal(w.applyRadialImpulse(0, 0, 0, -1, 4), undefined);
+  assert.equal(w.applyRadialImpulse(NaN, 0, 0, 2, 4), undefined);
+  assert.equal(w.holdBody(b, 3, 2, 0, 6), true);
+  assert.equal(w.holdBody(b, 3, 2, 0, 6), false);
+  assert.equal(w.holdBody(9999, 0, 0, 0, 6), false);
+  assert.equal(w.holdBody(a, 0, 0, 0, 0), false);
+  assert.equal(w.moveHold(a, 0, 0, 0), false);
+  assert.equal(w.moveHold(b, 3, 4, 0), true);
+  for (let i = 0; i < 240; i++) w.step(1 / 60);
+  const all = w.getPositions();
+  assert.ok(Math.abs(all[b * 3 + 1] - 4) < 0.01, `${all}`);
+  assert.equal(w.releaseHold(b), true);
+  assert.equal(w.releaseHold(b), false);
+  assert.equal(w.formBodies(new Uint32Array([a, b]), new Float64Array([0, 1, 0, 0, 2, 0]), 6), true);
+  assert.equal(w.formBodies(new Uint32Array([a]), new Float64Array([0, 1]), 6), false);
+  assert.equal(w.releaseHolds(), 2);
+
+  const log = new WasmInputLog();
+  assert.equal(log.record(3, new Uint8Array([1, 2])), true);
+  assert.equal(log.record(2, new Uint8Array([])), false);
+  assert.equal(log.record(1.5, new Uint8Array([])), false);
+  const digest = w.stateDigest();
+  const code = log.toCode(digest);
+  assert.equal(log.toCode(new Uint8Array(3)), undefined);
+  const back = WasmInputLog.fromCode(code);
+  assert.equal(back.length, 1);
+  assert.equal(back.stepAt(0), 3);
+  assert.deepEqual(Array.from(back.inputAt(0)), [1, 2]);
+  assert.deepEqual(Array.from(WasmInputLog.codeHead(code)), Array.from(digest.slice(0, 4)));
+  assert.equal(WasmInputLog.fromCode("not a code"), undefined);
 });

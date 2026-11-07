@@ -15,6 +15,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
+
 ### Changed
 - **Breaking**: `det_math` から、この crate の production code も ALICE-* の他の crate も呼んでいない 8 関数 `ln` / `atan` / `asin` / `tan` / `tanh` / `atan64` / `atan2_64` / `atan2` の委譲を外した 同じ関数は `alice_det_math` (`alice_det_math::ln` など) にある この crate の試験 (`ln` 2 本、`atan2_64` 5 本、`atan2` 1 本) は `alice_det_math` を直接呼ぶ
 - CI: `scripts/package_git_patches.py` (共有、この repository が owner) は `rev` の無い git 依存 (`branch` 等) を Cargo.lock が解決した commit で patch する commit の読み方は `scripts/id_move_check.py` の `locked_git_commit` を呼ぶ (lock が無い・その url の package が無い・40 桁でない・2 つの commit は失敗) `scripts/id_move_check.py` と試験は ALICE-Analytics の新しい版に、`scripts/test_libm_dependency_guard.py` は ALICE-DetMath の新しい版に
