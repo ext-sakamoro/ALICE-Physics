@@ -469,11 +469,57 @@ fn intermediate_products_that_cancel_stay_in_range() {
     assert_eq!(Some(inv), old_inverse(m));
 }
 
-/// `Fix128::checked_mul` の範囲内の偽陽性 (中央 128 bit の和の i128 wrap で `None`)
+/// `Fix128::checked_mul` は厳密な積と一致する: 収まれば `Some(floor)`、収まらなければ `None`
 ///
-/// `−2⁶³ + (1 − 2⁻⁶⁴)` と `−2⁻⁶⁴` の積は約 0.5 で収まるが、`hl + lh` が i128 を
-/// 越えるので `None` になる `Mat3Fix::inverse` はこのため `checked_mul` を使わず
-/// 積を 256 bit で厳密に計算する (本 test は `checked_mul` 側の未修正の記録)
+/// oracle: `w_prod` の 256 bit の積 (32 bit の語の筆算) 値は端 (2^k とその前後、符号両方) の総当たりと
+/// 乱数 2^18 組 (大きさは一様でなく全桁に振る、`hl + lh` が i128 を越える組を含む)
+#[test]
+fn checked_mul_agrees_with_the_exact_product_on_every_input_class() {
+    let (mut fits, mut out_of_range, mut middle_sum_wraps) = (0u32, 0u32, 0u32);
+    let mut same = |a: Fix128, b: Fix128| {
+        let exact = w_fit(w_prod(a, b));
+        assert_eq!(a.checked_mul(b), exact, "{a:?} * {b:?}");
+        match exact {
+            Some(p) => {
+                fits += 1;
+                assert_eq!(a * b, p, "`*` agrees where the product fits: {a:?} * {b:?}");
+            }
+            None => out_of_range += 1,
+        }
+        let hl = i128::from(a.hi).wrapping_mul(i128::from(b.lo));
+        let lh = i128::from(a.lo).wrapping_mul(i128::from(b.hi));
+        middle_sum_wraps += u32::from(hl.checked_add(lh).is_none());
+    };
+    let mut edges = vec![0i128, 1, -1, i128::MAX, i128::MIN, i128::MIN + 1];
+    for k in 0..127 {
+        let p = 1i128 << k;
+        edges.extend([p - 1, p, p + 1, -(p - 1), -p, -(p + 1)]);
+    }
+    for &a in &edges {
+        for &b in &edges {
+            same(from_raw(a), from_raw(b));
+        }
+    }
+    let mut state = 0x4348_4b4d_u64;
+    let mut next = move || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    for _ in 0..(1 << 18) {
+        let a = ((u128::from(next()) << 64 | u128::from(next())) as i128) >> (next() % 128);
+        let b = ((u128::from(next()) << 64 | u128::from(next())) as i128) >> (next() % 128);
+        same(from_raw(a), from_raw(b));
+    }
+    assert!(
+        fits > 100_000 && out_of_range > 10_000 && middle_sum_wraps > 100,
+        "compared {fits} fitting, {out_of_range} out of range, {middle_sum_wraps} middle sums past i128"
+    );
+}
+
+/// 中央の和が i128 を越える具体例: `−2⁶³ + (1 − 2⁻⁶⁴)` と `−2⁻⁶⁴` の積は約 0.5 で収まる
 #[test]
 fn checked_mul_has_no_false_positive_when_the_middle_sum_wraps() {
     for (a, b) in [
