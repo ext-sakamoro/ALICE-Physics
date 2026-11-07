@@ -35,7 +35,9 @@
 //!
 //! **Units.** mm, N, MPa, s and tonne (`N = t·mm/s²`): density in t/mm³, displacements mm,
 //! velocities mm/s, accelerations mm/s², loads N; every quantity is `Fix128` (Q64.64), so a
-//! run replays bit for bit on every target.
+//! run replays bit for bit on every target ([`TransientSolver::state_digest`] /
+//! [`CorotationalTransientSolver::state_digest`] name the state; they stand alone, the finite
+//! element state is not yet in the world's snapshot or digest).
 //!
 //! **Conservation.** The scheme is unconditionally stable and, for a linear system,
 //! conserves the discrete energy `½ vᵀMv + ½ uᵀKu` up to the rounding of the Newmark
@@ -58,9 +60,12 @@
 //! below ([`FemError::RotationFailed`], the state unchanged). `E > 0`, `−1 < ν < 0.5`
 //! ([`ElasticMaterial::new`] refuses the rest); density and `dt` positive and
 //! `4ρ/dt²` within `Fix128` ([`DynamicsConfig::try_new`]). A conjugate gradient that does
-//! not reach its tolerance within its budget, or stagnates (measured at about `1e-9`
-//! relative in `Fix128`), is [`FemError::NotConverged`] / [`FemError::Stagnated`], never a
-//! wrong answer.
+//! not reach its tolerance within its budget, or stagnates, is [`FemError::NotConverged`] /
+//! [`FemError::Stagnated`], never a wrong answer; the attainable relative residual depends on
+//! the mesh (the `Fix128` floor of the residual norm, [`crate::linear_elastic_fem::RESIDUAL_NORM_FLOOR`],
+//! against the right-hand side's size): about `1e-9` on a 36-vertex column of 1.25 cm
+//! tetrahedra (`tests/support/deformable_column.rs`), `6e-8` on the 153-vertex column of
+//! `tests/analytic_deformable_integrators.rs` at one step per frame.
 //!
 //! **Approximations.** P1 (constant strain) tetrahedra; Hooke's law in the element frame
 //! (no hyperelastic law, no plasticity, no thermal strain here); the co-rotational frame is
@@ -71,7 +76,10 @@
 //! no restitution (the hold is inelastic); external impulses are applied between steps, not
 //! inside one; the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
-//! space); loads and prescribed displacements are constant over a run.
+//! space); loads and prescribed displacements are constant over a run; the tetrahedra are
+//! the caller's, and a mesh from [`crate::sdf_fem_mesh::generate_marching_tets`] carries that
+//! mesher's own errors (the chamfer of flat faces and the overfill at reflex edges, its MODEL's
+//! known defects) into the mass, the stiffness and the contact area here.
 //!
 //! **Validation.** `tests/analytic_dynamic_fem.rs` (a free body under a total force follows
 //! the closed-form parabola, a single degree of freedom tracks the closed-form step response,
@@ -79,29 +87,41 @@
 //! at the closed-form wave transit time and scales as the square root of density, prescribed
 //! displacements are held exactly, degenerate configurations are refused),
 //! `tests/analytic_dynamic_fem_corotational.rs::a_rigidly_rotated_body_feels_no_elastic_force`
-//! (a column rotated by 30° and released does not move),
-//! `::the_corotational_oscillation_has_the_modal_period_and_the_static_mean` and
-//! `::the_linear_newmark_oscillation_has_the_modal_period_and_the_static_mean` (the first
-//! axial modal coordinate of a column under its own weight oscillates at `2π/ω̄` of the mesh's
-//! own `ω₁` from inverse iteration on `K φ = ω² M φ`, within 0.5 %, and its mean is the
-//! static sag within 1 %),
+//! (a column rotated by 30° and released does not move beyond what the solves' residual
+//! guarantee allows, measured `9e-8 mm` against a bound of `1.3e-2 mm`),
+//! `::the_corotational_oscillation_has_the_modal_period_and_the_static_mean_at_three_step_sizes`
+//! and `::the_linear_newmark_oscillation_has_the_modal_period_and_the_static_mean_at_three_step_sizes`
+//! (at `dt = T₁/32, /64, /128`: the first axial modal coordinate of a column under its own
+//! weight oscillates at `2π/ω̄` of the mesh's own `ω₁` from inverse iteration on
+//! `K φ = ω² M φ`, the co-rotational one within the range the warping spans, and the means
+//! of `q₁` and of the top sag are the static ones; every tolerance is computed in the test
+//! from the crossing interpolation, the solves' residual guarantee, the Dirichlet kernel of
+//! the window and two static solves),
 //! `::the_discrete_axial_mode_lies_above_the_thin_rod_frequency_by_at_most_the_base_layer_share`
 //! (the discrete mode against `(π/2H)√(E/ρ)` with the rod's assumptions stated),
-//! `::stiffness_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate` and
-//! `::mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate` (`ζ = 0.05`
-//! by `β` alone and by `α` alone: the first mode's log-decrement per period within 2 % and
-//! its period within 0.5 % of the trapezoidal closed form, measured −0.23 % and +0.004 %),
+//! `::stiffness_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate_at_three_step_sizes`
+//! and `::mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate_at_three_step_sizes`
+//! (`ζ = 0.05` by `β` alone and by `α` alone at the three step sizes: the three-term
+//! recurrence fitted to `q₁` gives the per-step decay and phase, checked against the
+//! trapezoidal closed form over the warping's frequency range, the tolerance propagated
+//! from the solves' residual guarantee through the least squares),
 //! `::a_column_standing_on_the_ground_settles_to_the_roller_static_sag_with_its_whole_bottom_in_contact`
-//! (no base fix, the plane under it: the sag is the static solve of the same mesh with a
-//! roller base within 1 %, measured +0.01 %, every bottom vertex held; the closed form
-//! `ρ g H² / (2E)` is the O(h) limit, 0.6 % away on this mesh),
+//! (no base fix, the plane under it, three step sizes: the sag is the static solve of the
+//! same mesh with a roller base within the decay the trapezoidal map allows the modes,
+//! `max_ω |z(ω)|ⁿ/ω² ‖e_top‖_{M⁻¹} ‖f‖_{M⁻¹}`, measured +1e-4; every bottom vertex held at
+//! every step; the closed form `ρ g H² / (2E)` is the O(h) limit, 0.6 % away on this mesh),
 //! `::a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static_sag` (a
-//! 10 mm drop: no step ends below the plane, touchdown within one step of `√(2h/g)`, the
-//! same sag), `::an_impulse_on_a_free_lumped_body_is_its_momentum_exactly_and_is_kept` and
+//! 10 mm drop at three step sizes: no step ends below the plane, touchdown within one step
+//! of `√(2h/g)`, and from the final contact the sag over the last two periods is the roller
+//! static within the bound the state at contact and the modes' decay allow), `::an_impulse_on_a_free_lumped_body_is_its_momentum_exactly_and_is_kept` and
 //! `::an_impulse_on_a_free_consistent_body_is_its_momentum_to_the_solve_tolerance` (an oblique
 //! impulse on the top of a free column: `Σ M v = J` to 1e-12 with the lumped mass, to the solve
 //! tolerance with the consistent one, and the momentum and centre-of-mass velocity are kept
-//! over 200 free steps within the derived bound), `tests/audit_dynamic_fem.rs`.
+//! over 200 free steps within the derived bound),
+//! `::an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_downward`,
+//! `::two_runs_of_the_same_inputs_replay_to_the_same_bits_and_digest` (the linear and the
+//! co-rotational solver, with damping, ground, impulses: identical raw bits and digests, a
+//! changed input changes the digest), `tests/audit_dynamic_fem.rs`.
 //!
 //! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
 //! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
@@ -1086,6 +1106,33 @@ impl TransientSolver {
     pub fn accelerations(&self) -> &[Fix128] {
         &self.a
     }
+
+    /// Domain separation of [`Self::state_digest`]: the SHA-256 of the text
+    /// `alice-physics/dynamic-fem-state-digest/v1`, computed once; the bytes, not the text,
+    /// are hashed first.
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = [
+        0x4b, 0x8d, 0xd0, 0x67, 0x23, 0xde, 0xb2, 0x07, 0x64, 0x13, 0x07, 0xc2, 0x3a, 0xd4, 0x26,
+        0xd3, 0x94, 0x18, 0x26, 0x7f, 0xfe, 0x83, 0x0a, 0x75, 0x19, 0xf5, 0x9d, 0x0c, 0x28, 0x43,
+        0x46, 0x9d,
+    ];
+
+    /// SHA-256 of the solver's state: `STATE_DIGEST_DOMAIN`, then the raw `Fix128` bits of
+    /// every displacement, velocity and acceleration (little-endian `i64` high, `u64` low,
+    /// degree of freedom by degree of freedom). Two runs agree exactly when their states
+    /// are the same to the bit, which is what a replay of the same inputs gives on every
+    /// target. This digest stands alone: the finite element state is not yet part of
+    /// [`crate::PhysicsWorld::state_digest`] or its snapshot.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        for x in self.u.iter().chain(&self.v).chain(&self.a) {
+            h.update(x.hi.to_le_bytes());
+            h.update(x.lo.to_le_bytes());
+        }
+        h.finalize().into()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1404,8 +1451,9 @@ impl CorotationalTransientSolver {
     /// changes by `Δv = M⁻¹ J` (the mass solve, so the consistent and the lumped mass both
     /// conserve momentum: `Σ M Δv = J` exactly for the lumped one, to the solve's tolerance for
     /// the consistent one); the displacement and the acceleration are untouched, the next step
-    /// carries the new velocity. Impulses on prescribed or held degrees of freedom are dropped
-    /// (the constraint takes them).
+    /// carries the new velocity. Impulses on prescribed degrees of freedom are dropped (the
+    /// constraint takes them); on a vertex held by the ground the downward part is dropped
+    /// (the plane takes it) and the upward part releases it at the next step.
     ///
     /// # Errors
     ///
@@ -1424,7 +1472,11 @@ impl CorotationalTransientSolver {
             }
             for (axis, value) in impulse.iter().enumerate() {
                 let d = vertex as usize * 3 + axis;
-                if self.is_free[d] && !(axis == 1 && self.on_ground[vertex as usize]) {
+                // a held vertex takes an upward impulse (the plane only pushes), the ground
+                // takes a downward one
+                let into_ground =
+                    axis == 1 && self.on_ground[vertex as usize] && *value < Fix128::ZERO;
+                if self.is_free[d] && !into_ground {
                     j[d] = j[d] + *value;
                 }
             }
@@ -1632,6 +1684,34 @@ impl CorotationalTransientSolver {
     #[must_use]
     pub fn accelerations(&self) -> &[Fix128] {
         &self.a
+    }
+
+    /// Domain separation of [`Self::state_digest`]: the SHA-256 of the text
+    /// `alice-physics/dynamic-fem-state-digest/v1`, computed once (the same bytes as
+    /// [`TransientSolver::STATE_DIGEST_DOMAIN`]; the two solvers' states differ in content, so
+    /// a digest of one is never a digest of the other).
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = TransientSolver::STATE_DIGEST_DOMAIN;
+
+    /// SHA-256 of the solver's state: `STATE_DIGEST_DOMAIN`, then the raw `Fix128` bits of
+    /// every displacement, velocity and acceleration (little-endian `i64` high, `u64` low,
+    /// degree of freedom by degree of freedom), then one byte per vertex for the ground hold
+    /// (`1` held, `0` free). Two runs agree exactly when their states are the same to the
+    /// bit, which is what a replay of the same inputs gives on every target. This digest
+    /// stands alone: the finite element state is not yet part of
+    /// [`crate::PhysicsWorld::state_digest`] or its snapshot.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        for x in self.u.iter().chain(&self.v).chain(&self.a) {
+            h.update(x.hi.to_le_bytes());
+            h.update(x.lo.to_le_bytes());
+        }
+        for &held in &self.on_ground {
+            h.update([u8::from(held)]);
+        }
+        h.finalize().into()
     }
 }
 
