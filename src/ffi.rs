@@ -2010,6 +2010,37 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 mod tests {
     use super::*;
 
+    /// A fixed joint's rotation goes through the same normalisation as `set_rotation`: at a size
+    /// whose squared length wraps in `Fix128` it is accepted and is the unit rotation (the wrong
+    /// result before was accepted too)
+    #[test]
+    fn a_fixed_joint_takes_a_rotation_of_any_size() {
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at the end
+        unsafe {
+            let c = alice_physics_world_create();
+            let o = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            let a = alice_physics_body_add_dynamic(c, o, 1.0);
+            let b = alice_physics_body_add_dynamic(c, o, 1.0);
+            let q = AliceQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 1e18,
+                w: 0.0,
+            };
+            assert_ne!(alice_physics_joint_add_fixed(c, a, b, o, o, q), u32::MAX);
+            let Joint::Fixed(j) = &(&*c).joints[0] else {
+                panic!("not the fixed joint");
+            };
+            assert_eq!(j.relative_rotation.z, Fix128::ONE);
+            assert_eq!(j.relative_rotation.w, Fix128::ZERO);
+            alice_physics_world_destroy(c);
+        }
+    }
+
     /// A world with a box of half size 1/2 at rest and asleep on the floor `y = 0`
     unsafe fn box_asleep_on_a_floor() -> *mut PhysicsWorld {
         let c = alice_physics_world_create();

@@ -190,6 +190,15 @@ test("setRotation normalises, refuses the zero quaternion and a bad id, and is s
   assert.deepEqual(Array.from(w.getRotations().slice(4 * b, 4 * b + 4)), [0, 0, 1, 0]);
 });
 
+test("a fixed joint takes a rotation of any size", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  const a = w.addDynamicBody(0, 0, 0, 1);
+  const b = w.addDynamicBody(0, 0, 0, 1);
+  const anchors = new Float64Array(6);
+  assert.notEqual(w.addFixedJoint(a, b, anchors, new Float64Array([8.3e15, -1.5e16, 3.1e15, -2.2e17])), undefined);
+  assert.equal(w.addFixedJoint(a, b, anchors, new Float64Array(4)), undefined);
+});
+
 // a box at rest on a floor is asleep after 240 steps; a spin makes it turn
 test("a spin wakes a sleeping body", () => {
   const w = new WasmPhysicsWorld();
