@@ -52,6 +52,20 @@ pub(crate) fn non_negative(x: f64) -> Option<Fix128> {
     finite(x).filter(|_| x >= 0.0)
 }
 
+/// The sleep configuration from the bindings' floats, `None` when a threshold is
+/// out of range or negative.
+pub(crate) fn sleep_config(
+    linear_threshold: f64,
+    angular_threshold: f64,
+    frames_to_sleep: u32,
+) -> Option<crate::sleeping::SleepConfig> {
+    Some(crate::sleeping::SleepConfig {
+        linear_threshold: non_negative(linear_threshold)?,
+        angular_threshold: non_negative(angular_threshold)?,
+        frames_to_sleep,
+    })
+}
+
 /// A finite vector.
 pub(crate) fn vec3(x: f64, y: f64, z: f64) -> Option<Vec3Fix> {
     Some(Vec3Fix::new(finite(x)?, finite(y)?, finite(z)?))

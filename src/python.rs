@@ -151,7 +151,32 @@ impl PyPhysicsWorld {
                 "body_id out of range",
             ));
         }
-        self.inner.bodies[body_id].velocity = vec_f32(vx, vy, vz)?;
+        let velocity = vec_f32(vx, vy, vz)?;
+        self.inner.set_body_velocity(body_id, velocity);
+        Ok(())
+    }
+
+    /// Wake a body and the bodies connected to it.
+    fn wake_body(&mut self, body_id: usize) -> PyResult<()> {
+        if body_id >= self.inner.bodies.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "body_id out of range",
+            ));
+        }
+        self.inner.wake_body(body_id);
+        Ok(())
+    }
+
+    /// Set when a body goes to sleep: below both speeds for `frames_to_sleep` frames.
+    fn set_sleep_config(
+        &mut self,
+        linear_threshold: f64,
+        angular_threshold: f64,
+        frames_to_sleep: u32,
+    ) -> PyResult<()> {
+        let config = binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
+            .ok_or_else(out_of_range)?;
+        self.inner.set_sleep_config(config);
         Ok(())
     }
 
@@ -340,7 +365,7 @@ impl PyPhysicsWorld {
 
         py.detach(|| {
             for (i, vel) in velocities.into_iter().enumerate() {
-                self.inner.bodies[i].velocity = vel;
+                self.inner.set_body_velocity(i, vel);
             }
         });
 
@@ -394,12 +419,7 @@ impl PyPhysicsWorld {
 
         py.detach(|| {
             for (body_id, impulse) in impulses {
-                // Apply impulse: v += impulse / mass
-                let inv_mass = self.inner.bodies[body_id].inv_mass;
-                if !inv_mass.is_zero() {
-                    self.inner.bodies[body_id].velocity =
-                        self.inner.bodies[body_id].velocity + impulse * inv_mass;
-                }
+                self.inner.apply_body_impulse(body_id, impulse);
             }
         });
 

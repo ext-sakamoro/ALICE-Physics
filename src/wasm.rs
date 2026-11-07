@@ -229,23 +229,39 @@ impl WasmPhysicsWorld {
         Ok(())
     }
 
-    /// Set a body's velocity.
+    /// Set a body's velocity. A nonzero velocity wakes a sleeping dynamic body.
     #[wasm_bindgen(js_name = "setVelocity")]
     pub fn set_velocity(&mut self, body_id: usize, vx: f64, vy: f64, vz: f64) -> Result<(), JsValue> {
         let velocity = binding_api::vec3(vx, vy, vz).ok_or_else(out_of_range)?;
-        if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.velocity = velocity;
-        }
+        self.inner.set_body_velocity(body_id, velocity);
         Ok(())
     }
 
-    /// Apply impulse at center of mass.
+    /// Apply impulse at center of mass. A nonzero impulse wakes a sleeping dynamic body.
     #[wasm_bindgen(js_name = "applyImpulse")]
     pub fn apply_impulse(&mut self, body_id: usize, ix: f64, iy: f64, iz: f64) -> Result<(), JsValue> {
         let impulse = binding_api::vec3(ix, iy, iz).ok_or_else(out_of_range)?;
-        if let Some(body) = self.inner.bodies.get_mut(body_id) {
-            body.apply_impulse(impulse);
-        }
+        self.inner.apply_body_impulse(body_id, impulse);
+        Ok(())
+    }
+
+    /// Wake a body and the bodies connected to it. An index past the last body is ignored.
+    #[wasm_bindgen(js_name = "wakeBody")]
+    pub fn wake_body(&mut self, body_id: usize) {
+        self.inner.wake_body(body_id);
+    }
+
+    /// Set when a body goes to sleep: below both speeds for `framesToSleep` frames.
+    #[wasm_bindgen(js_name = "setSleepConfig")]
+    pub fn set_sleep_config(
+        &mut self,
+        linear_threshold: f64,
+        angular_threshold: f64,
+        frames_to_sleep: u32,
+    ) -> Result<(), JsValue> {
+        let config = binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
+            .ok_or_else(out_of_range)?;
+        self.inner.set_sleep_config(config);
         Ok(())
     }
 
@@ -323,8 +339,8 @@ impl WasmPhysicsWorld {
             .map(binding_api::vec3_slice)
             .collect::<Option<Vec<_>>>()
             .ok_or_else(out_of_range)?;
-        for (body, velocity) in self.inner.bodies.iter_mut().zip(velocities) {
-            body.velocity = velocity;
+        for (i, velocity) in velocities.into_iter().enumerate() {
+            self.inner.set_body_velocity(i, velocity);
         }
         Ok(())
     }
@@ -339,9 +355,7 @@ impl WasmPhysicsWorld {
             .collect::<Option<Vec<_>>>()
             .ok_or_else(out_of_range)?;
         for (body_id, impulse) in impulses {
-            if let Some(body) = self.inner.bodies.get_mut(body_id) {
-                body.apply_impulse(impulse);
-            }
+            self.inner.apply_body_impulse(body_id, impulse);
         }
         Ok(())
     }
@@ -1697,6 +1711,36 @@ mod tests {
 
     /// oracle: observeBody is the Rust observation through `to_f64`, before
     /// and after a step.
+    #[test]
+    fn velocity_impulse_and_wake_reach_a_sleeping_body() {
+        let mut w = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 4).unwrap();
+        w.set_sleep_config(0.01, 0.01, 5).unwrap();
+        let body = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0).unwrap();
+        let asleep = |w: &WasmPhysicsWorld| w.observe_body(body)[13] == 1.0;
+        let settle = |w: &mut WasmPhysicsWorld| {
+            w.set_velocity(body, 0.0, 0.0, 0.0).unwrap();
+            for _ in 0..20 {
+                w.step(1.0 / 60.0).unwrap();
+            }
+            assert!(w.inner.is_sleeping(body));
+        };
+        settle(&mut w);
+        w.set_velocity(body, 1.0, 0.0, 0.0).unwrap();
+        assert!(!asleep(&w), "setVelocity");
+        settle(&mut w);
+        w.apply_impulse(body, 1.0, 0.0, 0.0).unwrap();
+        assert!(!asleep(&w), "applyImpulse");
+        settle(&mut w);
+        w.apply_impulses_batch(&[body as f64, 1.0, 0.0, 0.0]).unwrap();
+        assert!(!asleep(&w), "applyImpulsesBatch");
+        settle(&mut w);
+        w.set_velocities_batch(&[1.0, 0.0, 0.0]).unwrap();
+        assert!(!asleep(&w), "setVelocitiesBatch");
+        settle(&mut w);
+        w.wake_body(body);
+        assert!(!asleep(&w), "wakeBody");
+    }
+
     #[test]
     fn observe_body_matches_the_rust_api() {
         let (mut w, mut r) = query_twins();

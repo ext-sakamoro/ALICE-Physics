@@ -394,6 +394,41 @@ def test_bad_magnets_and_materials_raise():
         raise AssertionError("an unknown body was accepted")
 
 
+def test_velocity_impulse_and_wake_body_wake_a_sleeping_body():
+    w = ap.PhysicsWorld()
+    w.set_gravity(0.0, 0.0, 0.0)
+    w.set_sleep_config(0.01, 0.01, 5)
+    body = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0)
+    asleep = lambda: w.observe_body(body)[4]
+
+    def settle():
+        for _ in range(20):
+            if asleep():
+                return
+            w.set_velocity(body, 0.0, 0.0, 0.0)
+            w.step(1.0 / 60.0)
+        raise AssertionError("the body did not fall asleep")
+
+    settle()
+    w.set_velocity(body, 1.0, 0.0, 0.0)
+    assert not asleep()
+    settle()
+    w.wake_body(body)
+    assert not asleep()
+    for bad in [lambda: w.set_sleep_config(-1.0, 0.01, 5), lambda: w.set_sleep_config(0.01, 1e19, 5)]:
+        try:
+            bad()
+        except ValueError:
+            continue
+        raise AssertionError("a bad threshold was accepted")
+    try:
+        w.wake_body(99)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("an unknown body was accepted")
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
