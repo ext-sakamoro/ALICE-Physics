@@ -16,6 +16,68 @@
 //! share no bodies (independent). This allows:
 //! - Sequential processing within each color (data dependency)
 //! - Parallel processing across colors (no conflicts)
+//!
+//! # MODEL — rigid contact and Coulomb friction
+//!
+//! - **方程式 (equations)**: XPBD rigid bodies (Müller, Macklin, Chentanez,
+//!   Jeschke, Kim, SCA 2020). Non-penetration is a position constraint on
+//!   the contact normal with the accumulated multiplier `λ_n`. Friction is
+//!   Coulomb with one coefficient `μ`: at the velocity stage the tangential
+//!   relative velocity at the contact point `v + ω × r` is removed by an
+//!   impulse through the lever arms (generalised inverse mass
+//!   `w_a + w_b + (r_a × t)·I_a⁻¹(r_a × t) + (r_b × t)·I_b⁻¹(r_b × t)`),
+//!   capped at `μ λ_n / h` (eq. 30); at the position stage the tangential
+//!   displacement of the contact material points `(x − x̄) + (r − q̄ q⁻¹ r)`
+//!   is cancelled when `|Δp_t| < μ λ_n` (eq. 26–28). The angular velocity
+//!   after the solve is `ω = ω_pred + log(turn) / h`, `turn` the exact
+//!   composition of the turns the friction applied.
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; quaternions unit.
+//! - **保存則 (conservation)**: contact impulses are equal and opposite, so
+//!   linear momentum is conserved and angular momentum about the contact
+//!   point is consistent with the lever arms
+//!   (`two_free_balls_in_a_spinning_collision_are_capped_and_conserve_momentum`);
+//!   energy is dissipated by friction (the work of the capped impulse over
+//!   the slip) and by the normal correction (restitution); a rolling ball
+//!   gains no energy (`a_rolling_ball_keeps_rolling_and_gains_no_energy`).
+//! - **適用範囲 (range)**: rigid bodies in dry point contact (a sphere's
+//!   surface point; a shaped body's EPA support vertex), sliding, rolling
+//!   and resting, for any substep rotation (the turn is composed exactly,
+//!   no small-angle limit); `h` is the substep, swept in the oracles (2 and
+//!   more substep counts) for convergence to the closed forms. Outside the
+//!   range nothing is clamped: a contact that slides takes the kinetic
+//!   path, one that sticks the static path; bodies that cannot turn use the
+//!   centre form bit for bit.
+//! - **近似 (approximations)**: static and kinetic coefficients equal
+//!   (COV-RIGID-080); isotropic friction cone; no rolling or spinning
+//!   resistance, no contact compliance, no speed-dependent (Stribeck) or
+//!   lubricated friction, no granular or soft contact; the contact patch is
+//!   a point, so a shaped body's torque comes from the support vertex, not
+//!   a patch (COV-RIGID-083); orientation independence of the motion is a
+//!   property of isotropic inertia only.
+//! - **検証 (verification)**: `tests/analytic_contact_friction_cap.rs::
+//!   a_sliding_ball_decelerates_at_mu_g` and
+//!   `::a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate`
+//!   (a = μ g, a = g (sin θ − μ cos θ));
+//!   `tests/analytic_contact_static_friction.rs::
+//!   a_ball_on_a_slope_below_the_friction_angle_stays_put` and
+//!   `::a_push_below_mu_m_g_holds_and_above_it_slides` (tan θ = μ, F = μ m g);
+//!   `tests/analytic_contact_friction_spin.rs::
+//!   a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths`,
+//!   `::a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_theta`,
+//!   `::a_ball_dropped_straight_down_gets_no_spin`,
+//!   `::a_cube_on_an_incline_is_held_below_mu_and_slides_without_turning_above`;
+//!   `tests/analytic_contact_static_friction_spin.rs::
+//!   a_ball_below_the_slip_limit_rolls_at_five_sevenths_of_g_sin_theta`,
+//!   `::a_ball_above_the_slip_limit_slides_and_spins_at_the_kinetic_rates`
+//!   (slip limit tan θ = 7μ/2 from both sides),
+//!   `::a_ball_below_the_slip_limit_rolls_the_same_from_every_orientation`,
+//!   `::bodies_at_rest_do_not_creep_and_batched_equals_serial`;
+//!   `tests/analytic_contact_turn_composition.rs::
+//!   two_contacts_in_one_substep_keep_the_motion_independent_of_orientation`,
+//!   `::a_kinematic_turntable_keeps_the_rotation_change_rule_and_turns_the_ball_on_it`;
+//!   `tests/analytic_isotropic_inertia.rs::
+//!   xpbd_isotropic_spheres_linear_motion_does_not_depend_on_orientation`
+//!   (bit for bit).
 
 use crate::bvh::{BroadphaseHybrid, BvhPrimitive, LinearBvh};
 use crate::collider::{Contact, AABB};
@@ -1196,6 +1258,11 @@ fn derive_linear_velocity(
 /// orientations with [`angular_from_rotations`] as before. A body not
 /// predicted (`None`: static, kinematic, sleeping, parked) derives `ω` from
 /// its rotation change, as [`angular_from_rotations`] always did.
+///
+/// Physical regime: rigid-body rotation in the substep, exact for any angle
+/// (the composition of unit quaternions and their logarithm, no small-angle
+/// expansion); the orientation independence holds for isotropic inertia, an
+/// anisotropic body's `θ` depends on its orientation by physics.
 #[inline]
 fn derived_angular_velocity(
     body: &RigidBody,
@@ -1490,6 +1557,15 @@ fn static_friction_correction(
 /// friction). Bodies that cannot turn (`inv_inertia = 0`, static) make their
 /// lever term vanish; when both vanish the centre form of
 /// [`static_friction_correction`] is used unchanged, bit for bit.
+///
+/// Physical regime: sticking contact below the friction cone (`|Δp_t| < μ
+/// λ_n`) between rigid bodies, the same `μ` as the kinetic law (static =
+/// kinetic), applied as an XPBD position correction each substep; no creep,
+/// no hysteresis, no rolling resistance, no contact compliance. The turn is
+/// composed exactly, so the regime has no small-angle limit on the substep
+/// rotation. Oracles: a resting body holds on a slope up to `tan θ = μ`, an
+/// isotropic sphere rolls without slip at `5/7 g sin θ` up to `tan θ = 7μ/2`
+/// and slides beyond it, from every orientation bit for bit.
 #[allow(
     clippy::too_many_arguments,
     reason = "the contact-point friction needs both bodies, both solved positions, the contact, the weight sum, mu and the normal lambda"
@@ -5169,6 +5245,17 @@ impl PhysicsWorld {
             // velocities (a ball launched sliding spins up and rolls at
             // `5 v₀ / 7`). Bodies that cannot rotate (`inv_inertia = 0`)
             // take the centre-velocity path below, bit for bit as before.
+            //
+            // Physical regime: dry Coulomb friction between rigid bodies at
+            // the impulse level — one coefficient `μ` (static = kinetic), an
+            // isotropic cone, the friction impulse capped at `μ` times this
+            // substep's normal impulse; no rolling or spinning resistance, no
+            // contact compliance, no speed-dependent (Stribeck) or lubricated
+            // friction, no granular or soft contact. The contact patch is a
+            // point: spheres (the contact point on the surface) and shaped
+            // bodies (EPA support vertex). Oracles: a sliding ball spins up
+            // and rolls at `5 v₀ / 7`, a ball on a slope above the friction
+            // angle slides at `g (sin θ − μ cos θ)`.
             let post_a = self.bodies[constraint.body_a];
             let post_b = self.bodies[constraint.body_b];
             // lever arms from each body's own contact point (Müller et al.
