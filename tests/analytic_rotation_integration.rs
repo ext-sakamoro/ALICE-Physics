@@ -52,6 +52,9 @@
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::sleeping::SleepConfig;
 use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 /// Frame length `dt = 1/64 s` (dyadic).
 const DT_DEN: i64 = 64;
@@ -219,6 +222,81 @@ fn constant_torque_spins_up_as_tau_t_over_i() {
         }
     }
     report(&failures);
+}
+
+/// A torque staged in every substep through the participant contract.
+struct ConstantTorque(Vec3Fix);
+
+impl Participant for ConstantTorque {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(u32::from_be_bytes(*b"TQRT"))
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _h: Fix128) -> Result<(), ParticipantFault> {
+        ctx.add_torque(0, self.0)
+            .map_err(|_| ParticipantFault::InvalidState)
+    }
+    fn observe(&self, _out: &mut ObservationSink) {}
+    fn write_state(&self, _out: &mut Vec<u8>) {}
+    fn check_state(&self, _bytes: &[u8]) -> Result<(), StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _bytes: &[u8]) {}
+}
+
+/// A constant torque staged in every substep has no splitting term: `ω(t) = t` to
+/// rounding and `θ(t) = ½ t²` within the integrator's `½ h t`, for every substep
+/// count (`τ/I = 1 rad/s²`). The frame-head `add_torque` of the oracle above is the
+/// one that carries `½ (τ/I) dt t (s − 1)/s`.
+#[test]
+fn constant_torque_staged_per_substep_has_no_splitting_term() {
+    let dtf = 1.0 / DT_DEN as f64;
+    for s in SUBSTEPS {
+        let h = dtf / s as f64;
+        let inv_i = Fix128::from_ratio(5, 2);
+        let (mut w, id) = world(s, Vec3Fix::new(inv_i, inv_i, inv_i));
+        let torque = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_ratio(2, 5));
+        w.add_participant(Box::new(ConstantTorque(torque)))
+            .expect("register");
+        let mut unwrap = Unwrap::new();
+        for n in 1..=FRAMES {
+            w.try_step(dt()).expect("step");
+            let t = n as f64 * dtf;
+            let om = v3(w.bodies[id].angular_velocity);
+            let theta = unwrap.push(angle_about(w.bodies[id].rotation, [0.0, 0.0, 1.0]));
+            assert!((om[2] - t).abs() < ROUND, "s={s} frame {n}: ω_z {}", om[2]);
+            assert!(
+                (theta - 0.5 * t * t).abs() <= 0.5 * h * t + ROUND,
+                "s={s} frame {n}: θ {theta} against {}",
+                0.5 * t * t
+            );
+        }
+    }
+}
+
+/// `add_torque` is one blow at the head of the frame, as `add_force` is: the angle
+/// is the closed form of that map, `θ(t) = ½ t² + ½ dt t (s − 1)/s` within `½ h t`.
+#[test]
+fn frame_head_torque_is_one_blow_with_the_splitting_term_in_closed_form() {
+    let dtf = 1.0 / DT_DEN as f64;
+    for s in SUBSTEPS {
+        let h = dtf / s as f64;
+        let inv_i = Fix128::from_ratio(5, 2);
+        let (mut w, id) = world(s, Vec3Fix::new(inv_i, inv_i, inv_i));
+        let torque = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_ratio(2, 5));
+        let mut unwrap = Unwrap::new();
+        for n in 1..=FRAMES {
+            w.bodies[id].add_torque(torque, dt());
+            w.step(dt());
+            let t = n as f64 * dtf;
+            let theta = unwrap.push(angle_about(w.bodies[id].rotation, [0.0, 0.0, 1.0]));
+            let split = 0.5 * dtf * t * (s as f64 - 1.0) / s as f64;
+            assert!(
+                (theta - 0.5 * t * t - split).abs() <= 0.5 * h * t + ROUND,
+                "s={s} frame {n}: θ {theta} against {}",
+                0.5 * t * t + split
+            );
+        }
+    }
 }
 
 /// Free rotation about a principal axis keeps `ω` (magnitude and direction),
