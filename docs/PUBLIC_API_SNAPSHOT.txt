@@ -3669,8 +3669,10 @@ impl alice_physics_core::dynamic_fem::CorotationalTransientSolver
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::accelerations(&self) -> &[alice_physics_core::math::Fix128]
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::displacements(&self) -> &[alice_physics_core::math::Fix128]
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::new(&alice_physics_core::sdf_fem_mesh::SdfTetMesh, &alice_physics_core::linear_elastic_fem::ElasticMaterial, &alice_physics_core::linear_elastic_fem::BoundaryConditions, &alice_physics_core::dynamic_fem::DynamicsConfig, &alice_physics_core::linear_elastic_fem::SolverConfig) -> core::result::Result<Self, alice_physics_core::linear_elastic_fem::FemError>
+pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::on_ground(&self) -> &[bool]
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::set_damping(&mut self, core::option::Option<alice_physics_core::damping_rayleigh::RayleighCoefficients>)
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::set_displacements(&mut self, &[alice_physics_core::math::Fix128]) -> core::result::Result<(), alice_physics_core::linear_elastic_fem::FemError>
+pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::set_ground(&mut self, core::option::Option<alice_physics_core::math::Fix128>)
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::step(&mut self) -> core::result::Result<u32, alice_physics_core::linear_elastic_fem::FemError>
 pub fn alice_physics_core::dynamic_fem::CorotationalTransientSolver::velocities(&self) -> &[alice_physics_core::math::Fix128]
 impl core::marker::Freeze for alice_physics_core::dynamic_fem::CorotationalTransientSolver
