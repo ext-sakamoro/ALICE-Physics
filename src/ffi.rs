@@ -866,7 +866,10 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
     restitution: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(restitution)) {
+        Some(w) => match (
+            w.bodies.get_mut(body_id as usize),
+            binding_api::finite(restitution),
+        ) {
             (None, _) => 0,
             (Some(_), None) => value_out_of_range(0),
             (Some(b), Some(value)) => {
@@ -889,7 +892,10 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
     friction: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(friction)) {
+        Some(w) => match (
+            w.bodies.get_mut(body_id as usize),
+            binding_api::finite(friction),
+        ) {
             (None, _) => 0,
             (Some(_), None) => value_out_of_range(0),
             (Some(b), Some(value)) => {
@@ -2085,8 +2091,8 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 
 #[cfg(test)]
 mod tests {
-    use crate::math::Fix128;
     use super::*;
+    use crate::math::Fix128;
 
     /// The C call builds the fluid the Rust API builds, every argument with its own value, and a
     /// bad value registers nothing.
@@ -2164,8 +2170,16 @@ mod tests {
             let call = |p: &[f64; 10]| {
                 alice_physics_world_add_buoyancy_zone(
                     c,
-                    AliceVec3 { x: p[0], y: p[1], z: p[2] },
-                    AliceVec3 { x: p[3], y: p[4], z: p[5] },
+                    AliceVec3 {
+                        x: p[0],
+                        y: p[1],
+                        z: p[2],
+                    },
+                    AliceVec3 {
+                        x: p[3],
+                        y: p[4],
+                        z: p[5],
+                    },
                     p[6],
                     p[7],
                     p[8],
