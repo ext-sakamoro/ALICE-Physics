@@ -733,6 +733,8 @@ pub mod sdf_collider;
 #[cfg(feature = "std")]
 pub mod sdf_destruction;
 #[cfg(feature = "std")]
+pub mod polygon_cdt;
+#[cfg(feature = "std")]
 pub mod sdf_fem_mesh;
 pub mod sdf_force;
 pub mod sdf_manifold;
