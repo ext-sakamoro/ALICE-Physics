@@ -42,18 +42,35 @@
 //! - **適用範囲 (range)**: rigid bodies in dry point contact (a sphere's
 //!   surface point; a shaped body's EPA support vertex), sliding, rolling
 //!   and resting, for any substep rotation (the turn is composed exactly,
-//!   no small-angle limit); `h` is the substep, swept in the oracles (2 and
-//!   more substep counts) for convergence to the closed forms. Outside the
-//!   range nothing is clamped: a contact that slides takes the kinetic
-//!   path, one that sticks the static path; bodies that cannot turn use the
-//!   centre form bit for bit.
+//!   no small-angle limit). The substep `h` is swept over 4 / 8 / 16 / 32
+//!   per 60 Hz frame (`analytic_contact_friction_convergence.rs`): rolling
+//!   converges at first order (error ratio 2.0 per halving, 4.6e-3 →
+//!   5.6e-4 m over 1 s) and so does sliding down to 16 substeps; the
+//!   oracles' tolerances are the Richardson bound `2 |x(h) − x(2h)|` from
+//!   the default and half the substeps. Limit of the range: once the
+//!   penetration per substep `g cos θ h²` is below EPA's termination
+//!   threshold `2⁻¹⁶` (8.8e-6 m at 32 substeps on a 0.63 rad incline) the
+//!   reported depth is wrong by up to that threshold: a sliding ball sinks to
+//!   a standing penetration of ~8 µm, then one substep reports the whole
+//!   depth and kicks it off the face (2.9e-2 m/s), and the substeps without a
+//!   contact apply no friction, so the deceleration stays 0.1–0.3 % under the
+//!   kinetic law (a floor that does not fall with `h`; known defect, oracle
+//!   `analytic_contact_detection_small_penetration.rs`). Outside the range
+//!   nothing is clamped: a contact that slides takes the kinetic path, one
+//!   that sticks the static path; bodies that cannot turn use the centre
+//!   form bit for bit.
 //! - **近似 (approximations)**: static and kinetic coefficients equal
 //!   (COV-RIGID-080); isotropic friction cone; no rolling or spinning
 //!   resistance, no contact compliance, no speed-dependent (Stribeck) or
 //!   lubricated friction, no granular or soft contact; the contact patch is
 //!   a point, so a shaped body's torque comes from the support vertex, not
-//!   a patch (COV-RIGID-083); orientation independence of the motion is a
-//!   property of isotropic inertia only.
+//!   a patch (COV-RIGID-083); a cylinder or capsule lying on a plane has
+//!   that one point instead of its line of contact, so it does not roll
+//!   (known defect, `analytic_contact_cylinder_rolling.rs`); orientation
+//!   independence of the motion is a property of isotropic inertia only;
+//!   the oracles' incline is a static box turned about `z`, its normal from
+//!   the box face, not an SDF gradient (the SDF path is
+//!   `resolve_sdf_collisions`).
 //! - **検証 (verification)**: `tests/analytic_contact_friction_cap.rs::
 //!   a_sliding_ball_decelerates_at_mu_g` and
 //!   `::a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate`
@@ -77,7 +94,16 @@
 //!   `::a_kinematic_turntable_keeps_the_rotation_change_rule_and_turns_the_ball_on_it`;
 //!   `tests/analytic_isotropic_inertia.rs::
 //!   xpbd_isotropic_spheres_linear_motion_does_not_depend_on_orientation`
-//!   (bit for bit).
+//!   (bit for bit); the substep sweep
+//!   `tests/analytic_contact_friction_convergence.rs::
+//!   rolling_down_an_incline_converges_at_first_order_in_the_substep`,
+//!   `::sliding_down_an_incline_converges_at_first_order_in_the_substep`,
+//!   `::just_below_the_slip_limit_the_ball_rolls_and_the_slip_falls_with_the_substep`
+//!   and the known-defect oracles
+//!   `::just_above_the_slip_limit_the_ball_slides_at_first_order_in_the_substep`,
+//!   `tests/analytic_contact_detection_small_penetration.rs::
+//!   a_shallow_penetration_is_detected_and_corrected_by_its_depth` and
+//!   `tests/analytic_contact_cylinder_rolling.rs` (ignored until their fixes).
 
 use crate::bvh::{BroadphaseHybrid, BvhPrimitive, LinearBvh};
 use crate::collider::{Contact, AABB};
