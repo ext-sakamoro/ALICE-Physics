@@ -877,7 +877,7 @@ source = "Erleben et al., Physics-Based Animation ch.6; Müller et al. 2020 §3.
 status = "partial"
 evidence = "XPBD の摩擦は速度段も位置段 (静止摩擦) も接触点で働く — ただし形のない球だけ、形のある体の接触点は EPA の support 頂点なので重心の形のまま (analytic_contact_friction_spin.rs の斜面の箱: 回らない) (tests/analytic_contact_friction_spin.rs の 5/7 転がりと斜面 5/7 g sinθ、analytic_contact_static_friction_spin.rs のすべり限界 tanθ = 7μ/2 の両側) 法線の押し戻しだけが重心で並進のまま (箱の転倒 COV-RIGID-114) TGS backend は腕の長さ r_a を使い同じ oracle で転がる"
 oracle_candidate = "角で支えた箱の転倒 (法線の押し戻しに腕が要る)"
-limitation = "src/solver.rs::static_friction_correction 'Contact points are taken at the body centres: the contact solve is translational only.' (位置段)"
+limitation = "src/solver.rs::static_friction_correction 'Contact points are taken at the body centres: the contact solve is translational only.'"
 
 [[item]]
 id = "COV-RIGID-084"
