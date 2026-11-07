@@ -188,6 +188,10 @@ def rename_text(text: str, mapping: dict[str, str]) -> str:
     return pat.sub(lambda m: mapping[m.group(1)], text)
 
 
+# the key of a checked build: public, so a package made with it hides nothing and is not shipped
+CHECK_KEY = b"neutral-pkg-check-build-key-not-a-secret-0001"
+
+
 def keychain_key(service: str, account: str) -> bytes:
     try:
         r = subprocess.run(["security", "find-generic-password", "-s", service, "-a", account, "-w"],
@@ -314,23 +318,47 @@ LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 BINDING = re.compile(r"\b(?:const|static|let)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\b[^=]*=\s*b?\"")
 
 
+def code_of(line: str) -> tuple[str, list[str]]:
+    """the line's code with its string literals and its `//` comment removed, and the literals of the
+    code: a hash word inside a literal (an error name such as "ChecksumMismatch") or in a comment
+    is not a call that hashes, and a literal in a comment is no data of the build"""
+    code, literals, pos = [], [], 0
+    for m in LITERAL.finditer(line):
+        before = line[pos:m.start()]
+        cut = before.find("//")
+        if cut >= 0:
+            code.append(before[:cut])
+            return "".join(code), literals
+        code.append(before + '""')
+        literals.append(m.group(0))
+        pos = m.end()
+    rest = line[pos:]
+    cut = rest.find("//")
+    code.append(rest if cut < 0 else rest[:cut])
+    return "".join(code), literals
+
+
 def literal_uses(sources: dict[str, str], ident: str) -> list[tuple[str, int, str]]:
     """(file, line number, line) for every line whose string literals contain `ident` (also inside a
     longer literal: the data is overwritten wherever the identifier occurs)"""
     return [(f, n, line) for f, text in sorted(sources.items())
             for n, line in enumerate(text.splitlines(), 1)
-            if ident in line and any(ident in m for m in LITERAL.findall(line))]
+            if ident in line and any(ident in m for m in code_of(line)[1])]
 
 
-def hashed_at(text: str, line: str) -> list[int]:
+def hashed_at(text: str, line: str, ident: str = "") -> list[int]:
     """line numbers that hash the literal on `line`: the line itself, and when it binds the literal
-    to a name, every line of the same file that uses that name"""
+    to a name, every line of the same file that uses that name. The identifier itself is taken out
+    of the code first: a variant named like a hash (`ChecksumMismatch`) is no call that hashes"""
     hits = []
     m = BINDING.search(line)
     names = [m.group(1)] if m else []
     for n, other in enumerate(text.splitlines(), 1):
-        if other == line or any(re.search(rf"\b{re.escape(x)}\b", other) for x in names):
-            if HASH_MARK.search(other):
+        code = code_of(other)[0]
+        if ident:
+            code = re.sub(rf"(?<![\w$]){re.escape(ident)}(?![\w$])", "", code)
+        if other == line or any(re.search(rf"\b{re.escape(x)}\b", code) for x in names):
+            if HASH_MARK.search(code):
                 hits.append(n)
     return hits
 
@@ -365,7 +393,7 @@ def check_data_literals(in_data: list[str], sources: dict[str, str], reviewed: s
     for ident in in_data:
         for f, n, line in literal_uses(sources, ident):
             used.add((ident, f))
-            for h in hashed_at(sources[f], line):
+            for h in hashed_at(sources[f], line, ident):
                 errors.append(f"{f}:{n}: {ident!r} reaches a hash at line {h}")
     errors += [f"{f}: {i!r} is a string literal there and not on the reviewed list" for i, f in sorted(used - reviewed)]
     errors += [f"reviewed list: {i!r} in {f} is not an overwritten literal (stale line)" for i, f in sorted(reviewed - used)]
@@ -402,9 +430,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--data-literals", help="the reviewed list of engine string literals the package may overwrite")
     ap.add_argument("--key-service", default="p-artifact-key")
     ap.add_argument("--key-account", default="k1")
+    ap.add_argument("--check-key", action="store_true",
+                    help="a fixed key that is no secret, for a build that is only checked (preflight): the "
+                         "renaming, the overwrite review and the leak check run as in a real build, and the "
+                         "package and its name map are thrown away")
     a = ap.parse_args(argv)
     try:
-        key = keychain_key(a.key_service, a.key_account)
+        key = CHECK_KEY if a.check_key else keychain_key(a.key_service, a.key_account)
         ids = snapshot_identifiers(Path(a.identifiers).read_text(encoding="utf-8"), a.crate) if a.identifiers else set()
         review = None
         seen = {}
