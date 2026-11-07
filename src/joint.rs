@@ -1740,6 +1740,25 @@ mod tests {
     use super::*;
     use crate::solver::RigidBody;
 
+    /// The rows of `scripts/mutants-equivalent.txt` for the cone and twist limits: at the
+    /// limit the error is 0, and a correction of 0 leaves both rotations as they were.
+    #[test]
+    fn angular_correction_of_zero_leaves_both_rotations() {
+        let axis = Vec3Fix::from_int(0, 0, 1);
+        let turned = QuatFix::from_axis_angle(Vec3Fix::from_int(1, 0, 0), Fix128::from_ratio(1, 3));
+        let mut bodies = vec![
+            RigidBody::new(Vec3Fix::ZERO, Fix128::ONE),
+            RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE),
+        ];
+        bodies[0].rotation = turned;
+        bodies[1].rotation = turned.mul(turned);
+        let before = (bodies[0].rotation, bodies[1].rotation);
+        assert!(!angular_inverse_mass(&bodies[0], axis).is_zero());
+        assert!(!angular_inverse_mass(&bodies[1], axis).is_zero());
+        apply_angular_correction(&mut bodies, 0, 1, axis, Fix128::ZERO);
+        assert_eq!((bodies[0].rotation, bodies[1].rotation), before);
+    }
+
     #[test]
     fn test_ball_joint_holds() {
         let mut bodies = vec![

@@ -5,7 +5,10 @@
 # lib tests are the oracle, not the subject.
 #
 # Equivalent mutants, excluded with the reason (every entry must be proven to
-# give bit-identical results, not just results inside a test tolerance):
+# give bit-identical results, not just results inside a test tolerance). An
+# entry here names no file position, which scripts/mutants_exclude_check.py
+# refuses: a proof about one site of a function goes in
+# scripts/mutants-equivalent.txt, keyed by that function and its hash.
 #
 # `replace > with >= in scaled_exp_neg` (src/smoke_fire.rs): the two forms
 #   differ only when the remaining exponent is exactly the step (16). `>`
@@ -15,90 +18,32 @@
 #   Any loop boundary of this function has the same property: the result is
 #   continuous at the boundary, which is what makes the mutant equivalent.
 #
-# `replace * with / in sphere_plane_toi` (src/ccd.rs:151,167): both are
-#   `plane_normal * side`, and `side` is assigned only once, as
-#   `if dist.is_negative() { -Fix128::ONE } else { Fix128::ONE }` — no other
-#   code path sets it, so it is always exactly ±1. `x * 1 == x / 1` and
-#   `x * -1 == x / -1` for every Fix128 `x`, so this is bit-identical for
-#   every possible call, not just a tested subset. (src/ccd.rs:147,160,163
-#   are other `*` sites in the same function that are NOT equivalent — they
-#   multiply by `dist` / `radius` / `t`, which are not restricted to ±1 —
-#   excluded here by line number so those stay covered.)
-#
-# `replace > with >= in swept_aabb` (src/ccd.rs:235,252,269) and
-# `replace < with <= in swept_aabb` (src/ccd.rs:236,253,270,280): the first
-#   three are `te > t_enter` / the next four are `tx < t_exit`, the running
-#   max/min across the X/Y/Z slab tests. At a tie the two operands are equal,
-#   so either branch returns the same Fix128 value — Fix128 is a plain
-#   two's-complement `(hi: i64, lo: u64)` pair (src/math.rs:51-58) with
-#   exactly one bit-pattern per represented value, no redundant encodings to
-#   exploit. Line 280 (`t_enter < Fix128::ZERO`, the "already overlapping"
-#   branch) is a tie point that can never be reached: the earlier branch
-#   (`t_enter >= ZERO && t_enter <= ONE`) always claims t_enter == 0 first,
-#   so line 280 only ever runs for t_enter strictly outside [0, 1], where the
-#   one value that would distinguish `<` from `<=` cannot occur. (Excluded by
-#   line number: src/ccd.rs:237,254,271 are a different comparison in the
-#   same function — `t_enter > t_exit`, the touch/no-touch early return — and
-#   are NOT equivalent; `swept_aabb_corner_touch_counts_as_hit` already kills
-#   them.)
-#
-# `replace > with >= in slab_test` (src/ccd.rs:307): `t0 > t1`, the swap
-#   condition; at a tie the pair is already (t0, t1) == (t1, t0), so swapping
-#   or not gives the same pair either way (same Fix128-representation
-#   argument as above). (Excluded by line number: src/ccd.rs:297, `a_min >
-#   b_max` in the static-axis overlap check, is a different, NOT-equivalent
-#   comparison in the same function, already killed by
-#   `slab_test_orders_times_and_handles_static_axis`'s exact-touch cases.)
-#
-# `replace < with <= in AABB::union` (src/collider.rs:249,254,259) and
-# `replace > with >= in AABB::union` (src/collider.rs:266,271,276): per-axis
+# `replace < with <= in AABB::union` (src/collider.rs) and
+# `replace > with >= in AABB::union` (src/collider.rs): per-axis
 #   min/max selection; same tie argument as swept_aabb above (these are the
 #   only `<`/`>` sites in this function, so no line-number restriction is
 #   needed here).
 #
-# `replace > with >= in solve_hinge_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_slider_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_d6_joint` (src/joint.rs:1514,1541): each is a
+# `replace > with >= in solve_hinge_joint` and
+# `replace > with >= in solve_slider_joint` and
+# `replace > with >= in solve_d6_joint` (src/joint.rs): each is a
 #   joint's upper limit check (`angle > *m` / `along_axis > *m` / `proj >
 #   limit_max` / `angle > limit_max`). At the exact limit the resulting
 #   `error` (`angle - max` etc.) is exactly zero regardless of which branch
 #   computed it, and every one of these is gated behind `if !error.is_zero()`
 #   (or the angular equivalent) before any correction is applied — confirmed
-#   by reading src/joint.rs:1070-1103 (slider) and 1234-1268 (d6) directly: a
+#   by reading the slider and d6 solvers directly: a
 #   zero-error correction is skipped entirely, not just zero-scaled. (d6 has
 #   two sites, linear and angular; both equivalent for the same reason, so no
 #   line-number restriction is needed for it. hinge and slider have exactly
-#   one upper-bound `>` site each.) ⚠️ line numbers below shift whenever a
-#   function is added or grown above these in the file — verified current
-#   by scripts/mutants_exclude_check.py, which fails if any of these regexes
-#   stop matching a real mutant.
-#
-# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1514,1541):
-#   1376 is `cone_angle < Fix128::ZERO`, a sign-fix for a value derived from
-#   `Fix128::atan2(cross_len, dot)` where `cross_len` is itself a vector
-#   length (`normalize_with_length`), hence never negative; atan2 with a
-#   non-negative first argument is mathematically always in [0, π], so this
-#   branch cannot be reached with any real input, making `<` and `<=`
-#   indistinguishable (same branch — or lack of one — either way). 1382/1409
-#   are the cone and twist upper-limit checks, equivalent for the same
-#   `if !error.is_zero()`-gated reason as the other joints' upper bounds
-#   above (src/joint.rs:1385-1400, 1416-1429), with the zero-lambda no-op
-#   confirmed one level deeper too: `apply_angular_correction` →
-#   `rotate_by_angle` has an explicit `if theta.is_zero() { return q; }`
-#   (src/joint.rs:1494) before it does anything else. (Excluded by line
-#   number: src/joint.rs:1410, a different `>` in the same function
-#   — `twist_angle > Fix128::ZERO`, a sign-handling branch where the operand
-#   is NOT restricted to be non-negative like cone_angle is — is NOT
-#   included here; no unreachability proof for it yet.)
+#   one upper-bound `>` site each.)
 #
 # src/math.rs and src/bvh.rs (each line gives bit-identical results for every
 # input the function can receive):
 #
 # `replace | with ^` in `Fix128::sqrt`, `Fix128::half`, `Fix128::shr_bits`,
 #   `Fix128::double`, `<impl Div for Fix128>::div`, `select_fix128`,
-#   `expand_bits`, `morton_code`, `BvhNode::leaf` and src/bvh.rs:530
-#   (`build_recursive`): every `|` there joins two operands that have no set
+#   `expand_bits`, `morton_code` and `BvhNode::leaf`: every `|` there joins two operands that have no set
 #   bit in common (`x << 64` with a 64-bit value, `x << k` with a value below
 #   `2^k`, `x >> 1` with a single top bit, a value and its complement mask,
 #   fields packed into disjoint bit ranges, the 21-bit inputs `morton_code`
@@ -113,40 +58,9 @@
 #   `num == 0`, where the quotient is 0 and its negation is 0; `denom <= 0`
 #   differs only at `denom == 0`, which returned before.
 #
-# src/math.rs:967, 969, 974-976 (`cordic_sin_cos` range reduction): the
-#   reduction and its clamp leave an angle in [-π, π] congruent to the input
-#   modulo `TWO_PI`, and `TWO_PI == PI + PI` bit for bit. The quadrant step
-#   maps -π and π to the same value (0, cosine negated), and `PI - (x + TWO_PI)
-#   == -PI - x` exactly, so every one of these mutants (entering the reduction
-#   at exactly ±π, the clamp's `> π` side that a reduced angle below π never
-#   reaches, its `< -π` side at exactly -π) yields the same quadrant input.
-#   (src/math.rs:969, `theta + PI` → `theta - PI`, is not listed: Fix128
-#   addition wraps, and near `hi = i64::MAX` only one of the two wraps.)
-#
-# src/math.rs:1008 (`cordic_sin_cos`) and :1043 (`cordic_atan`): `d > 0` where
-#   `d` is only ever 1 or -1, so `d >= 0` takes the same branch.
-#
-# src/bvh.rs:63, 66 (`point_to_morton`): at `size.y == scale` (or `.z`) both
-#   branches leave `scale` at the same value.
-#
-# src/bvh.rs:491 (`build_recursive`): `start * 1` folds the first primitive's
-#   box into the union a second time; a union with itself is the same box.
-#
-# src/bvh.rs:552, 558, 567 (`find_split`, called on Morton codes sorted
-#   ascending, ranges of more than 4): the first code has a 0 at the highest
-#   differing bit, so `first_code << b & 1` is 0 like `first_code >> b & 1`; an
-#   upper bound of `end` instead of `end - 1` adds a sentinel past a last code
-#   that already has the other bit, so the binary search ends at the same
-#   index; and the search result already lies in [start + 1, end - 1], so the
-#   final clamp with `start * 1` or `end + 1` / `end / 1` changes nothing.
-#
-# src/bvh.rs:951 (`query_pairs`): `end = start * 1` starts the scan of a cell
-#   at `start` instead of `start + 1`, and the first comparison
-#   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
-#
 # NOT excluded despite looking like the upper-bound case below: `replace <
-# with <= in solve_hinge_joint` (src/joint.rs:933), `...in solve_slider_joint`
-# (src/joint.rs:1072), `...in solve_d6_joint` (src/joint.rs:1239,1309), the
+# with <= in solve_hinge_joint` (src/joint.rs), `...in solve_slider_joint`
+# and `...in solve_d6_joint`, the
 # four lower limit checks (`angle < *m` / `along_axis < *m` / `proj <
 # limit_min` / `angle < limit_min`), each paired with an `else if value >
 # max`. These were investigated and found NOT equivalent, and deliberately
@@ -159,7 +73,7 @@
 # difference. `HingeJoint::with_limits`, `SliderJoint::with_limits`,
 # `D6Joint::with_linear_limits` and `with_angular_limits` reject `min >
 # max` at construction, but that is not the only way to reach the solver:
-# `PhysicsWorld::joints` is `pub Vec<Joint>` (src/solver.rs:1679), and
+# `PhysicsWorld::joints` is `pub Vec<Joint>` (src/solver.rs), and
 # every joint's limit fields are themselves `pub`, so a struct literal, a
 # direct field assignment, or `restore_world`'s snapshot deserialisation
 # (src/solver/world_snapshot.rs, each joint variant read field by field
@@ -170,40 +84,14 @@
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
-    "ccd\\.rs:151:.*replace \\* with / in sphere_plane_toi",
-    "ccd\\.rs:167:.*replace \\* with / in sphere_plane_toi",
-    "ccd\\.rs:235:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:252:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:269:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:236:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:253:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:270:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:280:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:307:.*replace > with >= in slab_test",
     "replace < with <= in AABB::union",
     "replace > with >= in AABB::union",
     "replace > with >= in solve_hinge_joint",
     "replace > with >= in solve_slider_joint",
     "replace > with >= in solve_d6_joint",
-    "joint\\.rs:1507:.*replace < with <= in solve_cone_twist_joint",
-    "joint\\.rs:1513:.*replace > with >= in solve_cone_twist_joint",
-    "joint\\.rs:1540:.*replace > with >= in solve_cone_twist_joint",
     "replace \\| with \\^ in Fix128::(sqrt|half|shr_bits|double)$",
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
     "replace \\| with \\^ in select_fix128$",
     "replace \\| with \\^ in (expand_bits|morton_code|BvhNode::leaf)$",
-    "bvh\\.rs:539:.*replace \\| with \\^ in LinearBvh::build_recursive",
     "replace < with <= in Fix128::(from_f64|from_ratio)$",
-    "math\\.rs:967:.*replace (> with >=|< with <=) in cordic_sin_cos",
-    "math\\.rs:974:.*replace > with (==|>=) in cordic_sin_cos",
-    "math\\.rs:975:.*replace - with (\\+|/) in cordic_sin_cos",
-    "math\\.rs:976:.*replace < with (==|<=) in cordic_sin_cos",
-    "math\\.rs:1008:.*replace > with >= in cordic_sin_cos",
-    "math\\.rs:1043:.*replace > with >= in cordic_atan",
-    "bvh\\.rs:(63|66):.*replace > with >= in point_to_morton",
-    "bvh\\.rs:500:.*replace \\+ with \\* in LinearBvh::build_recursive",
-    "bvh\\.rs:561:.*replace - with / in LinearBvh::find_split",
-    "bvh\\.rs:567:.*replace >> with << in LinearBvh::find_split",
-    "bvh\\.rs:576:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
-    "bvh\\.rs:960:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
 ]

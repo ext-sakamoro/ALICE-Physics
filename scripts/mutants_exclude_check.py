@@ -139,6 +139,13 @@ def read_baseline(path: Path) -> dict[str, int]:
     return out
 
 
+def line_numbered(patterns: list[str]) -> list[str]:
+    """Entries that name a file position. A line number moves with any code above it, and
+    this list has no hash to tell a move from a change, so such a proof belongs in
+    scripts/mutants-equivalent.txt, keyed by its function."""
+    return [p for p in patterns if re.search(r"\.rs\\?:", p) or re.search(r":\d+:", p)]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--mutants-toml", type=Path, default=MUTANTS_TOML)
@@ -149,6 +156,13 @@ def main(argv: list[str] | None = None) -> int:
     patterns = load_exclude_re(args.mutants_toml)
     if not patterns:
         print("error: compared nothing (exclude_re is empty)", file=sys.stderr)
+        return 1
+
+    numbered = line_numbered(patterns)
+    if numbered:
+        for p in numbered:
+            print(f"error: names a file position (move the proof to scripts/mutants-equivalent.txt): {p!r}",
+                  file=sys.stderr)
         return 1
 
     lines = full_mutant_list()

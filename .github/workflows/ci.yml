@@ -315,10 +315,10 @@ jobs:
         shell: bash
         run: cargo metadata --locked --format-version 1 > /dev/null
 
-      # .cargo/mutants.toml's exclude_re entries are line-anchored proofs of
-      # equivalence; code added above an excluded function shifts
-      # cargo-mutants' reported line:col, silently making the entry match 0
-      # mutants (scripts/mutants_exclude_check.py). `--list` only enumerates
+      # .cargo/mutants.toml's exclude_re entries are proofs of equivalence: an
+      # entry that stops matching leaves its mutant unfiltered, and one that
+      # names a file position is refused (scripts/mutants_exclude_check.py).
+      # `--list` only enumerates
       # candidate sites (no build-and-test per mutant), so this runs on every
       # push, not just the weekly cargo-mutants job in quality-deep.yml.
       # One OS only (ubuntu-latest): the match counts are a property of the

@@ -97,6 +97,14 @@ class Main(unittest.TestCase):
                 )
             return rc, baseline
 
+    def test_a_pattern_with_a_line_number_is_an_error(self):
+        for pattern in ("a\\\\.rs:10:.*replace < with <= in f", "a.rs:(10|11):.*in f", "x:10:.*in f"):
+            rc, _ = self.run_main(f'exclude_re = ["{pattern}"]\n', baseline_text=f"1\t{pattern}\n")
+            self.assertEqual(rc, 1, pattern)
+
+    def test_a_pattern_without_a_line_number_is_not_refused(self):
+        self.assertEqual(mec.line_numbered(["replace < with <= in Fix128::(a|b)$", "tests::"]), [])
+
     def test_empty_exclude_re_is_an_error(self):
         rc, _ = self.run_main("exclude_re = []\n", baseline_text="")
         self.assertEqual(rc, 1)

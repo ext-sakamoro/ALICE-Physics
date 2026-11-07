@@ -184,8 +184,8 @@ jobs:
             echo "no mutant in the changed lines"
             exit 0
           fi
-          # equivalent mutants (scripts/mutants-equivalent.txt, keyed by position and the
-          # hash of their source line) are reported by cargo-mutants on every run; only
+          # equivalent mutants (scripts/mutants-equivalent.txt, keyed by function, mutation
+          # text and hashes) are reported by cargo-mutants on every run; only
           # the others are survivors
           python3 scripts/mutants_equivalent.py --filter mutants.out/missed.txt > mutants.out/missed-real.txt
           missed=$(grep -c . mutants.out/missed-real.txt || true)
