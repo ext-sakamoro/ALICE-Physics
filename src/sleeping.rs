@@ -7,6 +7,23 @@
 //! Bodies whose velocities remain below a threshold for a sustained period
 //! are put to sleep, skipping integration and constraint solving.
 //!
+//! The rule is in time: a body sleeps at the first step whose accumulated idle time
+//! reaches [`SleepConfig::time_to_sleep`] within half a step
+//! (`idle + dt / 2 >= time_to_sleep`), so the sleep step is a function of elapsed seconds,
+//! not of the step count. Closed form for a fixed step `dt`: the smallest integer `k` with
+//! `(2k + 1)·dt >= 2·time_to_sleep`.
+//!
+//! # What is modelled, and what is an approximation
+//!
+//! Sleeping is a scheduling rule, not a physical law. A sleeping body is frozen exactly
+//! (no integration, no creep), which keeps its momentum trivially and removes the work of
+//! bodies at rest. The thresholds on linear and angular speed (m/s, rad/s) and the idle
+//! time are heuristics chosen per scene: a body that should keep moving slowly below the
+//! threshold (viscous settling, creep) is stopped early. A sleeping body is woken by a
+//! contact, a joint, an applied impulse or force, or a configuration change, not by a force
+//! it would have felt while asleep (a slowly growing field does not wake it until it acts
+//! on the body).
+//!
 //! # Islands
 //!
 //! Connected components of bodies (via joints/contacts) are grouped into islands.
