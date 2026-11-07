@@ -107,7 +107,7 @@ uint8_t  alice_physics_body_apply_impulse_at(AlicePhysicsWorldHandle world, uint
 
 // --- Config ---
 AlicePhysicsConfig alice_physics_config_default();
-void     alice_physics_world_set_gravity(AlicePhysicsWorldHandle world, double x, double y, double z);
+uint8_t  alice_physics_world_set_gravity(AlicePhysicsWorldHandle world, double x, double y, double z);
 void     alice_physics_world_set_substeps(AlicePhysicsWorldHandle world, uint32_t substeps);
 
 // --- State serialization (rollback netcode) ---

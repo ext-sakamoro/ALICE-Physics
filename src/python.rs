@@ -33,6 +33,20 @@ pub struct PyPhysicsWorld {
     inner: PhysicsWorld,
 }
 
+/// The error a value that is not a `Fix128` raises: not a number, or outside
+/// `-2^63 <= x < 2^63`. Nothing has changed when it is raised.
+fn out_of_range() -> PyErr {
+    PyValueError::new_err("a value is not a number or is outside the fixed-point range")
+}
+
+/// `(x, y, z)` through `f32`, the precision of these entries, or [`out_of_range`]
+/// when a component is not a `Fix128` after the cast.
+fn vec_f32(x: f64, y: f64, z: f64) -> PyResult<Vec3Fix> {
+    let (fx, fy, fz) = (x as f32, y as f32, z as f32);
+    binding_api::vec3(f64::from(fx), f64::from(fy), f64::from(fz)).ok_or_else(out_of_range)?;
+    Ok(Vec3Fix::from_f32(fx, fy, fz))
+}
+
 #[pymethods]
 impl PyPhysicsWorld {
     /// Create a new physics world with default configuration.
@@ -46,40 +60,42 @@ impl PyPhysicsWorld {
     /// Add a dynamic rigid body at position (x, y, z) with given mass.
     ///
     /// Returns the body index.
-    fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
+    fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> PyResult<usize> {
         let body = RigidBody::new_dynamic(
-            Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-            Fix128::from_f64(mass),
+            vec_f32(x, y, z)?,
+            binding_api::finite(mass).ok_or_else(out_of_range)?,
         );
-        self.inner.add_body(body)
+        Ok(self.inner.add_body(body))
     }
 
     /// Add a static (immovable) body at position (x, y, z).
     ///
     /// Returns the body index.
-    fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> usize {
-        let body = RigidBody::new_static(Vec3Fix::from_f32(x as f32, y as f32, z as f32));
-        self.inner.add_body(body)
+    fn add_static_body(&mut self, x: f64, y: f64, z: f64) -> PyResult<usize> {
+        let body = RigidBody::new_static(vec_f32(x, y, z)?);
+        Ok(self.inner.add_body(body))
     }
 
     /// Step the simulation by dt seconds.
     ///
     /// GIL is released during the physics computation for full parallelism.
-    fn step(&mut self, py: Python<'_>, dt: f64) {
-        let dt_fix = Fix128::from_f64(dt);
+    fn step(&mut self, py: Python<'_>, dt: f64) -> PyResult<()> {
+        let dt_fix = binding_api::finite(dt).ok_or_else(out_of_range)?;
         py.detach(|| {
             self.inner.step(dt_fix);
         });
+        Ok(())
     }
 
     /// Step the simulation N times with fixed dt (batch stepping).
     ///
     /// GIL released for the entire batch — ideal for training loops.
-    fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) {
-        let dt_fix = Fix128::from_f64(dt);
+    fn step_n(&mut self, py: Python<'_>, dt: f64, steps: usize) -> PyResult<()> {
+        let dt_fix = binding_api::finite(dt).ok_or_else(out_of_range)?;
         py.detach(|| {
             self.inner.step_n(steps, dt_fix);
         });
+        Ok(())
     }
 
     /// Get all body positions as a NumPy (N, 3) float64 array.
@@ -135,7 +151,7 @@ impl PyPhysicsWorld {
                 "body_id out of range",
             ));
         }
-        self.inner.bodies[body_id].velocity = Vec3Fix::from_f32(vx as f32, vy as f32, vz as f32);
+        self.inner.bodies[body_id].velocity = vec_f32(vx, vy, vz)?;
         Ok(())
     }
 
@@ -159,6 +175,11 @@ impl PyPhysicsWorld {
                 n,
                 self.inner.bodies.len()
             )));
+        }
+
+        // every value first: one out of range leaves all the bodies as they were
+        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+            return Err(out_of_range());
         }
 
         // Collect positions before GIL release
@@ -243,6 +264,13 @@ impl PyPhysicsWorld {
 
         let n = shape[0];
 
+        // every value first: one out of range adds no body at all
+        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
+            || (0..n).any(|i| binding_api::finite(array[[i, 3]]).is_none())
+        {
+            return Err(out_of_range());
+        }
+
         // Gather parameters from NumPy while GIL is held
         let params: Vec<(f32, f32, f32, f64)> = (0..n)
             .map(|i| {
@@ -295,6 +323,11 @@ impl PyPhysicsWorld {
             )));
         }
 
+        // every value first: one out of range leaves all the bodies as they were
+        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+            return Err(out_of_range());
+        }
+
         // Collect velocities before GIL release
         let velocities: Vec<Vec3Fix> = (0..n)
             .map(|i| {
@@ -330,6 +363,11 @@ impl PyPhysicsWorld {
         }
 
         let m = shape[0];
+
+        // every value first: one out of range leaves all the bodies as they were
+        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+            return Err(out_of_range());
+        }
 
         // Collect impulses before GIL release
         let impulses: Vec<(usize, Vec3Fix)> = (0..m)
@@ -1008,12 +1046,10 @@ impl PyDeterministicSimulation {
     }
 
     /// Add a dynamic body. Returns body index.
-    fn add_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> usize {
-        let body = RigidBody::new_dynamic(
-            Vec3Fix::from_f32(x as f32, y as f32, z as f32),
-            Fix128::from_f64(mass),
-        );
-        self.inner.add_body(body)
+    fn add_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> PyResult<usize> {
+        let mass = binding_api::finite(mass).ok_or_else(out_of_range)?;
+        let body = RigidBody::new_dynamic(vec_f32(x, y, z)?, mass);
+        Ok(self.inner.add_body(body))
     }
 
     /// Assign a player to control a body.
@@ -1028,21 +1064,21 @@ impl PyDeterministicSimulation {
     ///
     /// Returns:
     ///     Checksum (u64) for desync detection
-    fn advance_frame(&mut self, py: Python<'_>, inputs: Vec<(u8, f64, f64, f64, u32)>) -> u64 {
+    fn advance_frame(&mut self, py: Python<'_>, inputs: Vec<(u8, f64, f64, f64, u32)>) -> PyResult<u64> {
         let frame_inputs: Vec<FrameInput> = inputs
             .iter()
             .map(|&(pid, mx, my, mz, act)| {
-                FrameInput::new(pid)
-                    .with_movement(Vec3Fix::from_f32(mx as f32, my as f32, mz as f32))
-                    .with_actions(act)
+                Ok(FrameInput::new(pid)
+                    .with_movement(vec_f32(mx, my, mz)?)
+                    .with_actions(act))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
         let checksum = py.detach(|| {
             self.inner
                 .advance_frame_with_applicator(&frame_inputs, &DefaultInputApplicator::default())
         });
-        checksum.0
+        Ok(checksum.0)
     }
 
     /// Save a snapshot for rollback. Returns the frame number.
@@ -1139,16 +1175,12 @@ fn encode_frame_input(
     aim_x: f64,
     aim_y: f64,
     aim_z: f64,
-) -> Vec<u8> {
+) -> PyResult<Vec<u8>> {
     let input = FrameInput::new(player_id)
-        .with_movement(Vec3Fix::from_f32(
-            move_x as f32,
-            move_y as f32,
-            move_z as f32,
-        ))
+        .with_movement(vec_f32(move_x, move_y, move_z)?)
         .with_actions(actions)
-        .with_aim(Vec3Fix::from_f32(aim_x as f32, aim_y as f32, aim_z as f32));
-    input.to_wire().to_vec()
+        .with_aim(vec_f32(aim_x, aim_y, aim_z)?);
+    Ok(input.to_wire().to_vec())
 }
 
 /// Decode a FrameInput from its wire form (`FrameInput::from_wire`).

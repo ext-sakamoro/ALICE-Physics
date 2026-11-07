@@ -176,7 +176,7 @@ uint8_t alice_physics_body_apply_impulses_batch(AlicePhysicsWorld* world, const 
 AlicePhysicsConfig alice_physics_config_default(void);
 
 /** Set gravity on an existing world. */
-void alice_physics_world_set_gravity(AlicePhysicsWorld* world, double x, double y, double z);
+uint8_t alice_physics_world_set_gravity(AlicePhysicsWorld* world, double x, double y, double z);
 
 /** Set substeps on an existing world. */
 void alice_physics_world_set_substeps(AlicePhysicsWorld* world, uint32_t substeps);

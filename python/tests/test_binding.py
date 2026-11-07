@@ -276,6 +276,31 @@ def test_a_buoyancy_zone_rewinds_and_is_part_of_the_snapshot():
     raise AssertionError("a world without the zone took its snapshot")
 
 
+def test_an_entry_given_a_value_past_the_range_raises():
+    w = ap.PhysicsWorld()
+    assert w.add_dynamic_body(0.0, 0.0, 0.0, 1.0) == 0
+    for value in (1e19, 1e30, sys.float_info.max, -1e19, -1e30, -sys.float_info.max, float("nan")):
+        for call in (
+            lambda: w.add_dynamic_body(value, 0.0, 0.0, 1.0),
+            lambda: w.add_dynamic_body(0.0, 0.0, 0.0, value),
+            lambda: w.add_static_body(0.0, value, 0.0),
+            lambda: w.step(value),
+            lambda: w.step_n(value, 2),
+            lambda: w.add_bodies_batch(np.array([[0.0, 0.0, 0.0, 1.0], [value, 0.0, 0.0, 1.0]])),
+            lambda: w.set_velocity(0, value, 0.0, 0.0),
+            lambda: w.set_velocities_batch(np.array([[value, 0.0, 0.0]])),
+            lambda: w.set_positions_batch(np.array([[0.0, value, 0.0]])),
+            lambda: w.apply_impulses_batch(np.array([[0.0, value, 0.0, 0.0]])),
+            lambda: ap.encode_frame_input(0, value, 0.0, 0.0, 0, 0.0, 0.0, 0.0),
+        ):
+            try:
+                call()
+            except ValueError:
+                continue
+            raise AssertionError(f"accepted {value}")
+    assert w.add_dynamic_body(0.0, 0.0, 0.0, 1.0) == 1
+
+
 def test_a_bad_buoyancy_zone_is_refused():
     w = ap.PhysicsWorld()
     box = ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))

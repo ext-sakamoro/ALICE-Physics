@@ -261,6 +261,44 @@ test("a buoyancy zone's arguments are checked and a world without it refuses its
   assert.throws(() => plain.restoreWorld(blob));
 });
 
+// oracle: every entry that takes a float throws ValueOutOfRange past the range of the fixed
+// point, and the world's digest says nothing changed; a batch changes no body at all
+test("an entry given a value past the fixed-point range throws and changes nothing", () => {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 4, 4);
+  const b = w.addDynamicBody(0, 0, 0, 1);
+  const before = Array.from(w.stateDigest());
+  const named = (e) => e instanceof Error && e.name === "ValueOutOfRange";
+  for (const value of [1e19, 1e30, Number.MAX_VALUE, -1e19, -1e30, -Number.MAX_VALUE, NaN, Infinity]) {
+    const calls = [
+      () => WasmPhysicsWorld.withConfig(value, 0, 0, 4, 4),
+      () => w.addDynamicBody(value, 0, 0, 1),
+      () => w.addDynamicBody(0, 0, 0, value),
+      () => w.addStaticBody(0, value, 0),
+      () => w.addKinematicBody(0, 0, value),
+      () => w.step(value),
+      () => w.stepN(value, 2),
+      () => w.setPosition(b, value, 0, 0),
+      () => w.setVelocity(b, 0, value, 0),
+      () => w.applyImpulse(b, 0, 0, value),
+      () => w.setRestitution(b, value),
+      () => w.setFriction(b, value),
+      () => w.setGravityScale(b, value),
+      () => w.setKinematicTarget(b, value, 0, 0, 0, 0, 0, 1),
+      () => w.setKinematicTarget(b, 0, 0, 0, value, 0, 0, 1),
+      () => w.setVelocitiesBatch(new Float64Array([value, 0, 0])),
+      () => w.applyImpulsesBatch(new Float64Array([b, 1, 0, 0, b, value, 0, 0])),
+      () => w.setGravity(0, value, 0),
+      () => w.raycast(value, 0, 0, 1, 0, 0, 1, 1),
+      () => w.raycast(0, 0, 0, value, 0, 0, 1, 1),
+      () => w.raycast(0, 0, 0, 1, 0, 0, value, 1),
+      () => w.raycast(0, 0, 0, 1, 0, 0, 1, value),
+    ];
+    calls.forEach((call, i) => assert.throws(call, named, `call ${i} with ${value}`));
+  }
+  assert.deepEqual(Array.from(w.stateDigest()), before);
+  w.step(1 / 60);
+});
+
 test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
   const w = jointedScene();
   const before = Array.from(w.stateDigest());

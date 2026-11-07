@@ -209,7 +209,7 @@ namespace AlicePhysics
 
         // Config
         [DllImport(DLL)] public static extern AlicePhysicsConfig alice_physics_config_default();
-        [DllImport(DLL)] public static extern void alice_physics_world_set_gravity(IntPtr world, double x, double y, double z);
+        [DllImport(DLL)] public static extern byte alice_physics_world_set_gravity(IntPtr world, double x, double y, double z);
         [DllImport(DLL)] public static extern void alice_physics_world_set_substeps(IntPtr world, uint substeps);
 
         // State serialization
@@ -509,7 +509,8 @@ namespace AlicePhysics
         public void SetGravity(Vector3 gravity)
         {
             ThrowIfDisposed();
-            Native.alice_physics_world_set_gravity(_ptr, gravity.x, gravity.y, gravity.z);
+            if (Native.alice_physics_world_set_gravity(_ptr, gravity.x, gravity.y, gravity.z) == 0)
+                throw new ArgumentOutOfRangeException(nameof(gravity));
         }
 
         /// <summary>Set substeps per frame.</summary>

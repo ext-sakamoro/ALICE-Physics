@@ -240,7 +240,8 @@ pub struct AliceBodyInfo {
 // ============================================================================
 
 impl AliceVec3 {
-    fn to_vec3fix(self) -> Vec3Fix {
+    #[cfg(test)]
+    fn to_vec3fix_for_test(self) -> Vec3Fix {
         Vec3Fix::new(
             Fix128::from_f64(self.x),
             Fix128::from_f64(self.y),
@@ -288,15 +289,17 @@ pub extern "C" fn alice_physics_world_create_with_config(
     config: AlicePhysicsConfig,
 ) -> *mut PhysicsWorld {
     ffi_guard(std::ptr::null_mut(), || {
+        let (Some(gravity), Some(damping_rate)) = (
+            binding_api::vec3(config.gravity_x, config.gravity_y, config.gravity_z),
+            binding_api::finite(config.damping_rate),
+        ) else {
+            return value_out_of_range(std::ptr::null_mut());
+        };
         let solver_config = SolverConfig {
             substeps: config.substeps as usize,
             iterations: config.iterations as usize,
-            gravity: Vec3Fix::new(
-                Fix128::from_f64(config.gravity_x),
-                Fix128::from_f64(config.gravity_y),
-                Fix128::from_f64(config.gravity_z),
-            ),
-            damping_rate: Fix128::from_f64(config.damping_rate),
+            gravity,
+            damping_rate,
             ..Default::default()
         };
         let world = PhysicsWorld::new(solver_config);
@@ -333,7 +336,10 @@ pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: 
         let Some(w) = writable(world) else {
             return 0;
         };
-        step_result(w.try_step(Fix128::from_f64(dt)))
+        let Some(dt) = binding_api::finite(dt) else {
+            return value_out_of_range(0);
+        };
+        step_result(w.try_step(dt))
     })
 }
 
@@ -366,7 +372,9 @@ pub unsafe extern "C" fn alice_physics_world_step_n(
         let Some(w) = writable(world) else {
             return 0;
         };
-        let dt_fix = Fix128::from_f64(dt);
+        let Some(dt_fix) = binding_api::finite(dt) else {
+            return value_out_of_range(0);
+        };
         for _ in 0..steps {
             if step_result(w.try_step(dt_fix)) == 0 {
                 return 0;
@@ -508,12 +516,16 @@ pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
             return 0;
         }
         let buf = std::slice::from_raw_parts(data, n * 3);
-        for (i, body) in w.bodies.iter_mut().enumerate() {
-            body.velocity = Vec3Fix::new(
-                Fix128::from_f64(buf[i * 3]),
-                Fix128::from_f64(buf[i * 3 + 1]),
-                Fix128::from_f64(buf[i * 3 + 2]),
-            );
+        // every value first: one out of range leaves all the bodies as they were
+        let Some(velocities) = buf
+            .chunks_exact(3)
+            .map(|c| binding_api::vec3(c[0], c[1], c[2]))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return value_out_of_range(0);
+        };
+        for (body, velocity) in w.bodies.iter_mut().zip(velocities) {
+            body.velocity = velocity;
         }
         1
     })
@@ -540,19 +552,18 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
             return 0;
         }
         let buf = std::slice::from_raw_parts(data, count as usize);
-        let n_bodies = w.bodies.len();
-
-        for chunk in buf.chunks_exact(4) {
-            let body_id = chunk[0] as usize;
-            if body_id >= n_bodies {
-                continue;
+        // every value first: one out of range leaves all the bodies as they were
+        let Some(impulses) = buf
+            .chunks_exact(4)
+            .map(|c| Some((c[0] as usize, binding_api::vec3(c[1], c[2], c[3])?)))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return value_out_of_range(0);
+        };
+        for (body_id, impulse) in impulses {
+            if let Some(body) = w.bodies.get_mut(body_id) {
+                body.apply_impulse(impulse);
             }
-            let impulse = Vec3Fix::new(
-                Fix128::from_f64(chunk[1]),
-                Fix128::from_f64(chunk[2]),
-                Fix128::from_f64(chunk[3]),
-            );
-            w.bodies[body_id].apply_impulse(impulse);
         }
         1
     })
@@ -574,8 +585,11 @@ pub unsafe extern "C" fn alice_physics_body_add_dynamic(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_dynamic(position.to_vec3fix(), Fix128::from_f64(mass));
-            w.add_body(body) as u32
+            let (Some(position), Some(mass)) = (vec3_arg(&position), binding_api::finite(mass))
+            else {
+                return value_out_of_range(u32::MAX);
+            };
+            w.add_body(RigidBody::new_dynamic(position, mass)) as u32
         }
         None => u32::MAX,
     })
@@ -592,8 +606,10 @@ pub unsafe extern "C" fn alice_physics_body_add_static(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_static(position.to_vec3fix());
-            w.add_body(body) as u32
+            let Some(position) = vec3_arg(&position) else {
+                return value_out_of_range(u32::MAX);
+            };
+            w.add_body(RigidBody::new_static(position)) as u32
         }
         None => u32::MAX,
     })
@@ -610,8 +626,10 @@ pub unsafe extern "C" fn alice_physics_body_add_sensor(
 ) -> u32 {
     ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
-            let body = RigidBody::new_sensor(position.to_vec3fix());
-            w.add_body(body) as u32
+            let Some(position) = vec3_arg(&position) else {
+                return value_out_of_range(u32::MAX);
+            };
+            w.add_body(RigidBody::new_sensor(position)) as u32
         }
         None => u32::MAX,
     })
@@ -752,12 +770,13 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
     position: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.position = position.to_vec3fix();
+        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&position)) {
+            (None, _) => 0,
+            (Some(_), None) => value_out_of_range(0),
+            (Some(b), Some(value)) => {
+                b.position = value;
                 1
             }
-            None => 0,
         },
         None => 0,
     })
@@ -799,12 +818,13 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
     velocity: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.velocity = velocity.to_vec3fix();
+        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&velocity)) {
+            (None, _) => 0,
+            (Some(_), None) => value_out_of_range(0),
+            (Some(b), Some(value)) => {
+                b.velocity = value;
                 1
             }
-            None => 0,
         },
         None => 0,
     })
@@ -846,12 +866,13 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
     restitution: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.restitution = Fix128::from_f64(restitution);
+        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(restitution)) {
+            (None, _) => 0,
+            (Some(_), None) => value_out_of_range(0),
+            (Some(b), Some(value)) => {
+                b.restitution = value;
                 1
             }
-            None => 0,
         },
         None => 0,
     })
@@ -868,12 +889,13 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
     friction: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.friction = Fix128::from_f64(friction);
+        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(friction)) {
+            (None, _) => 0,
+            (Some(_), None) => value_out_of_range(0),
+            (Some(b), Some(value)) => {
+                b.friction = value;
                 1
             }
-            None => 0,
         },
         None => 0,
     })
@@ -890,12 +912,13 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
     impulse: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.apply_impulse(impulse.to_vec3fix());
+        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&impulse)) {
+            (None, _) => 0,
+            (Some(_), None) => value_out_of_range(0),
+            (Some(b), Some(impulse)) => {
+                b.apply_impulse(impulse);
                 1
             }
-            None => 0,
         },
         None => 0,
     })
@@ -913,12 +936,17 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
     point: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match w.bodies.get_mut(body_id as usize) {
-            Some(b) => {
-                b.apply_impulse_at(impulse.to_vec3fix(), point.to_vec3fix());
+        Some(w) => match (
+            w.bodies.get_mut(body_id as usize),
+            vec3_arg(&impulse),
+            vec3_arg(&point),
+        ) {
+            (None, _, _) => 0,
+            (Some(b), Some(impulse), Some(point)) => {
+                b.apply_impulse_at(impulse, point);
                 1
             }
-            None => 0,
+            _ => value_out_of_range(0),
         },
         None => 0,
     })
@@ -965,15 +993,16 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
     x: f64,
     y: f64,
     z: f64,
-) {
-    ffi_guard_world(world, (), || {
-        if let Some(w) = writable(world) {
-            w.config.gravity = Vec3Fix::new(
-                Fix128::from_f64(x),
-                Fix128::from_f64(y),
-                Fix128::from_f64(z),
-            );
-        }
+) -> u8 {
+    ffi_guard_world(world, 0, || {
+        let Some(w) = writable(world) else {
+            return 0;
+        };
+        let Some(gravity) = binding_api::vec3(x, y, z) else {
+            return value_out_of_range(0);
+        };
+        w.config.gravity = gravity;
+        1
     })
 }
 
@@ -1216,6 +1245,15 @@ impl AlicePhysicsShape {
 
 fn vec3_arg(v: &AliceVec3) -> Option<Vec3Fix> {
     binding_api::vec3(v.x, v.y, v.z)
+}
+
+/// `failure` with the last error set: a value that is not a `Fix128` (not a number, or
+/// outside `-2^63 <= x < 2^63`) was given, and nothing has changed.
+fn value_out_of_range<T>(failure: T) -> T {
+    guard::set_last_error(
+        "alice-physics: a value is not a number or is outside the fixed-point range",
+    );
+    failure
 }
 
 fn index_result(r: Option<usize>) -> u32 {
@@ -2051,6 +2089,62 @@ mod tests {
 
     /// The C call builds the fluid the Rust API builds, every argument with its own value, and a
     /// bad value registers nothing.
+    /// oracle: every C entry that takes a float refuses one out of range with its failure value,
+    /// the last error set, and the world's digest unchanged; a batch changes no body at all.
+    #[test]
+    fn every_direct_float_entry_refuses_a_value_out_of_range() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        let o = v(0.0, 0.0, 0.0);
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end; the buffers hold the counts given.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(c, o, 1.0);
+            let mut before = [0u8; 32];
+            assert_eq!(alice_physics_state_digest(c, before.as_mut_ptr()), 1);
+            for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN, f64::NAN] {
+                let h = v(value, 0.0, 0.0);
+                let batch = [value, 0.0, 0.0];
+                let impulses = [f64::from(b), 0.0, value, 0.0];
+                let fails_u8: [u8; 12] = [
+                    alice_physics_world_step(c, value),
+                    alice_physics_world_step_n(c, value, 2),
+                    alice_physics_world_set_velocities_batch(c, batch.as_ptr(), 3),
+                    alice_physics_body_apply_impulses_batch(c, impulses.as_ptr(), 4),
+                    alice_physics_body_set_position(c, b, h),
+                    alice_physics_body_set_velocity(c, b, h),
+                    alice_physics_body_set_restitution(c, b, value),
+                    alice_physics_body_set_friction(c, b, value),
+                    alice_physics_body_apply_impulse(c, b, h),
+                    alice_physics_body_apply_impulse_at(c, b, h, o),
+                    alice_physics_body_apply_impulse_at(c, b, o, h),
+                    alice_physics_world_set_gravity(c, 0.0, value, 0.0),
+                ];
+                assert_eq!(fails_u8, [0; 12], "{value}");
+                let fails_u32 = [
+                    alice_physics_body_add_dynamic(c, h, 1.0),
+                    alice_physics_body_add_dynamic(c, o, value),
+                    alice_physics_body_add_static(c, h),
+                    alice_physics_body_add_sensor(c, h),
+                ];
+                assert_eq!(fails_u32, [u32::MAX; 4], "{value}");
+                let mut config = alice_physics_config_default();
+                config.gravity_y = value;
+                assert!(alice_physics_world_create_with_config(config).is_null());
+                let mut config = alice_physics_config_default();
+                config.damping_rate = value;
+                assert!(alice_physics_world_create_with_config(config).is_null());
+            }
+            let mut after = [0u8; 32];
+            assert_eq!(alice_physics_state_digest(c, after.as_mut_ptr()), 1);
+            assert_eq!(before, after, "a refused call changes nothing");
+            assert_eq!(alice_physics_world_fault(c), 0, "a refusal is not a fault");
+            assert_eq!(alice_physics_world_set_gravity(c, 0.0, -9.0, 0.0), 1);
+            assert_eq!(alice_physics_world_step(c, 1.0 / 60.0), 1);
+            alice_physics_world_destroy(c);
+        }
+    }
+
     #[test]
     fn buoyancy_zone_through_c_equals_the_rust_api() {
         let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
@@ -2306,16 +2400,16 @@ mod tests {
 
             let mut r = PhysicsWorld::new(SolverConfig::default());
             let rb = r.add_body(RigidBody::new_dynamic(
-                v(0.05, 0.3, 0.0).to_vec3fix(),
+                v(0.05, 0.3, 0.0).to_vec3fix_for_test(),
                 Fix128::from_f64(0.004),
             ));
             r.set_body_collision_radius(rb, Fix128::from_f64(0.005));
             let rhit = r.add_body(RigidBody::new_dynamic(
-                v(0.08, 0.3, 0.0).to_vec3fix(),
+                v(0.08, 0.3, 0.0).to_vec3fix_for_test(),
                 Fix128::from_f64(0.004),
             ));
             r.set_body_collision_radius(rhit, Fix128::from_f64(0.005));
-            r.bodies[rb].velocity = v(0.6, 0.0, 0.0).to_vec3fix();
+            r.bodies[rb].velocity = v(0.6, 0.0, 0.0).to_vec3fix_for_test();
             let rm = r
                 .material_table
                 .register(crate::material::PhysicsMaterial::new(
@@ -2326,8 +2420,8 @@ mod tests {
             r.set_body_material(rb, rm);
             r.add_force_field(crate::force::ForceFieldInstance::new(
                 crate::force::ForceField::InducedDipole {
-                    position: v(0.0, 0.25, 0.01).to_vec3fix(),
-                    moment: v(0.2, 0.7, 0.1).to_vec3fix(),
+                    position: v(0.0, 0.25, 0.01).to_vec3fix_for_test(),
+                    moment: v(0.2, 0.7, 0.1).to_vec3fix_for_test(),
                     radius: Fix128::from_f64(0.02),
                     material: rm,
                     response: crate::electromagnetic::MagneticResponse {
@@ -2368,7 +2462,7 @@ mod tests {
             Fix128::from_f64(3.75),
         );
         let c = AliceVec3::from_vec3fix(original);
-        let back = c.to_vec3fix();
+        let back = c.to_vec3fix_for_test();
         assert_eq!(original.x.hi, back.x.hi);
         assert_eq!(original.y.hi, back.y.hi);
         assert_eq!(original.z.hi, back.z.hi);
