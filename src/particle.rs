@@ -537,8 +537,7 @@ impl ParticleSystem {
                         time_in_step,
                     });
                     particle.position = position;
-                    particle.velocity =
-                        particle.velocity - normal * particle.velocity.dot(normal);
+                    particle.velocity = particle.velocity - normal * particle.velocity.dot(normal);
                     self.on_surface[index] = Some(target);
                 } else {
                     particle.position = start + displacement;
