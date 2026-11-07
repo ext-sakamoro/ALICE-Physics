@@ -3551,6 +3551,27 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::debug_rende
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::debug_render::DebugPoint
 pub fn alice_physics_core::debug_render::debug_draw_world(&alice_physics_core::solver::PhysicsWorld, &alice_physics_core::debug_render::DebugDrawFlags, &mut alice_physics_core::debug_render::DebugDrawData)
 pub mod alice_physics_core::deformable
+pub enum alice_physics_core::deformable::Material
+pub alice_physics_core::deformable::Material::Constraints
+pub alice_physics_core::deformable::Material::NeoHookean
+pub alice_physics_core::deformable::Material::NeoHookean::poisson_ratio: alice_physics_core::math::Fix128
+pub alice_physics_core::deformable::Material::NeoHookean::young_modulus: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::deformable::Material
+pub fn alice_physics_core::deformable::Material::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::deformable::Material
+impl core::cmp::PartialEq for alice_physics_core::deformable::Material
+pub fn alice_physics_core::deformable::Material::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::deformable::Material
+pub fn alice_physics_core::deformable::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::deformable::Material
+impl core::marker::StructuralPartialEq for alice_physics_core::deformable::Material
+impl core::marker::Freeze for alice_physics_core::deformable::Material
+impl core::marker::Send for alice_physics_core::deformable::Material
+impl core::marker::Sync for alice_physics_core::deformable::Material
+impl core::marker::Unpin for alice_physics_core::deformable::Material
+impl core::marker::UnsafeUnpin for alice_physics_core::deformable::Material
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::deformable::Material
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::deformable::Material
 pub struct alice_physics_core::deformable::DeformableBody
 pub alice_physics_core::deformable::DeformableBody::config: alice_physics_core::deformable::DeformableConfig
 pub alice_physics_core::deformable::DeformableBody::inv_masses: alloc::vec::Vec<alice_physics_core::math::Fix128>
@@ -3580,6 +3601,7 @@ pub alice_physics_core::deformable::DeformableConfig::damping: alice_physics_cor
 pub alice_physics_core::deformable::DeformableConfig::edge_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::deformable::DeformableConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::deformable::DeformableConfig::iterations: usize
+pub alice_physics_core::deformable::DeformableConfig::material: alice_physics_core::deformable::Material
 pub alice_physics_core::deformable::DeformableConfig::sdf_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::deformable::DeformableConfig::shape_stiffness: alice_physics_core::math::Fix128
 pub alice_physics_core::deformable::DeformableConfig::substeps: usize
@@ -12047,6 +12069,7 @@ pub alice_physics_core::prelude::DeformableConfig::damping: alice_physics_core::
 pub alice_physics_core::prelude::DeformableConfig::edge_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::DeformableConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::DeformableConfig::iterations: usize
+pub alice_physics_core::prelude::DeformableConfig::material: alice_physics_core::deformable::Material
 pub alice_physics_core::prelude::DeformableConfig::sdf_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::DeformableConfig::shape_stiffness: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::DeformableConfig::substeps: usize
@@ -23950,6 +23973,7 @@ pub alice_physics_core::DeformableConfig::damping: alice_physics_core::math::Fix
 pub alice_physics_core::DeformableConfig::edge_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::DeformableConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::DeformableConfig::iterations: usize
+pub alice_physics_core::DeformableConfig::material: alice_physics_core::deformable::Material
 pub alice_physics_core::DeformableConfig::sdf_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::DeformableConfig::shape_stiffness: alice_physics_core::math::Fix128
 pub alice_physics_core::DeformableConfig::substeps: usize
