@@ -325,6 +325,7 @@ use alice_physics::det_math::tanh as _;
 use alice_physics::dynamic_bvh as _;
 use alice_physics::dynamic_bvh::DynamicAabbTree as _;
 use alice_physics::dynamic_fem as _;
+use alice_physics::dynamic_fem::CorotationalTransientSolver as _;
 use alice_physics::dynamic_fem::DynamicsConfig as _;
 use alice_physics::dynamic_fem::MassLumping as _;
 use alice_physics::dynamic_fem::TransientSolver as _;
@@ -1873,7 +1874,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1854 paths, checked at compile time
+    // 1855 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
