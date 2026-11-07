@@ -1244,6 +1244,11 @@ fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
 /// `tests/mesh_conformity.rs` re-measures that by face census.
 ///
 /// [`FemError::DegenerateElement`]: crate::linear_elastic_fem::FemError::DegenerateElement
+/// [`push_tet`] for the boundary pass.
+pub(crate) fn push_tet_pub(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
+    push_tet(mesh, vertices);
+}
+
 fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
     for i in 0..4 {
         for j in (i + 1)..4 {

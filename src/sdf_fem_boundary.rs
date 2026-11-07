@@ -67,6 +67,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::sdf_collider::SdfField;
 use crate::sdf_fem_mesh::{split_children, SdfTetMesh, Tetrahedron};
 
+mod reflex;
+
 /// Two tangent planes belong to the same face when their normals are within
 /// 20° (`cos 20°`). Creases shallower than this are left to the lattice.
 const FEATURE_ANGLE_COS: f64 = 0.939_692_620_785_908_4;
@@ -862,6 +864,11 @@ pub(crate) fn conform_boundary<F: SdfField + ?Sized>(
         if creases + corners == 0 {
             break;
         }
+    }
+    let rs = reflex::repair_reflex(&mut w);
+    if std::env::var_os("SFB_REFLEX").is_some() {
+        let r = |i: usize| reflex::REFUSE[i].load(std::sync::atomic::Ordering::Relaxed);
+        eprintln!("REFLEX {rs:?} outside left {} worst {:.4}; refusals degenerate {} floor {} outside-volume {}", w.outside_count(), w.global_worst(), r(0), r(1), r(2));
     }
 }
 
