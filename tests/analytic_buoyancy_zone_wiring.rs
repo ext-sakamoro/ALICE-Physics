@@ -34,6 +34,8 @@ fn body_at(x: i64, y: i64, z: i64, v: Vec3Fix) -> RigidBody {
         rotation: QuatFix::IDENTITY,
         angular_velocity: Vec3Fix::ZERO,
         prev_rotation: QuatFix::IDENTITY,
+        turn: QuatFix::IDENTITY,
+        turn_mixed: false,
         restitution: Fix128::ZERO,
         friction: Fix128::ZERO,
         gravity_scale: Fix128::ONE,

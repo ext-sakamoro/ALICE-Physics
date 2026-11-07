@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "2680b331c1812ba81961add76c75757262bdf3473ee9fa3454b475b4e1344a21"
+        "7f66b646642c7395574e9bb607331e2a5d23e7729b12c75f6edc8f00d6876077"
     );
 }
 

@@ -6,22 +6,21 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5940 |
-| 🔴 Red by design | 71 |
+| 🟢 Not ignored (run by CI) | 5946 |
+| 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6037** |
+| **Total** | **6042** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (70)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
-- `a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_theta` (analytic_contact_friction_spin.rs) — src gap: the position-level static friction holds the centre of a ball that should roll down the incline
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
 - `buoyancy_field_holds_a_body_at_its_equilibrium_depth` (analytic_external_force_substep.rs) — src gap: the buoyancy field is a frame-head impulse while gravity is per substep, so a floating body at equili…
@@ -152,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5940)
+## 🟢 Not ignored (5946)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -494,6 +493,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_dynamic_collider_world.rs` | 7 |
 | `analytic_sketch_generic.rs` | 7 |
 | `analytic_soft_body_cut_wiring.rs` | 7 |
+| `determinism_golden_contacts.rs` | 7 |
 | `elastoplastic_increment_api.rs` | 7 |
 | `fsi_advanced_sub_iteration.rs` | 7 |
 | `indep_aero_rotor.rs` | 7 |
@@ -516,7 +516,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint_extra.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |
-| `determinism_golden_contacts.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
@@ -527,6 +526,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cloth_crossings_wiring.rs` | 5 |
 | `analytic_contact_friction_spin.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
+| `analytic_contact_static_friction_spin.rs` | 5 |
 | `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |

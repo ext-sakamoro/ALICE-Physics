@@ -575,6 +575,11 @@ fn collision(friction: f64, restitution: f64, modifier: Option<SetMaterial>) -> 
         RigidBody::new(v3(2.1, 0.0, 0.0), Fix128::ONE).with_velocity(v3(-20.0, 0.0, 0.0)),
         Fix128::ONE,
     );
+    // balls that cannot turn: the tests below read the centre velocities, and a
+    // turning ball's gripping contact keeps its centre moving while the contact
+    // point sticks (the friction acts at the contact point)
+    w.bodies[a].inv_inertia = Vec3Fix::ZERO;
+    w.bodies[b].inv_inertia = Vec3Fix::ZERO;
     let id = w
         .material_table
         .register(alice_physics_core::PhysicsMaterial::new(
