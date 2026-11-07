@@ -63,12 +63,27 @@ pub(crate) fn vec3_slice(v: &[f64]) -> Option<Vec3Fix> {
     vec3(x, y, z)
 }
 
+/// The smallest and largest size of the largest component that [`unit_quat`] takes as it is
+const UNIT_QUAT_SMALLEST: f64 = 1.0 / 65_536.0;
+const UNIT_QUAT_LARGEST: f64 = 1_073_741_824.0;
+
 /// A finite, non-zero quaternion, normalised.
 pub(crate) fn unit_quat(x: f64, y: f64, z: f64, w: f64) -> Option<QuatFix> {
-    let q = QuatFix::new(finite(x)?, finite(y)?, finite(z)?, finite(w)?);
-    if q.length().is_zero() {
-        return None;
-    }
+    let largest = x.abs().max(y.abs()).max(z.abs()).max(w.abs());
+    // Inside these sizes the squared length of four components is a `Fix128` with digits to spare.
+    // Outside, it overflows or rounds to zero, and a rotation does not depend on the scale.
+    // The zero quaternion and a component that is not finite give NaN here, which `finite` refuses.
+    let divisor = if (UNIT_QUAT_SMALLEST..=UNIT_QUAT_LARGEST).contains(&largest) {
+        1.0
+    } else {
+        largest
+    };
+    let q = QuatFix::new(
+        finite(x / divisor)?,
+        finite(y / divisor)?,
+        finite(z / divisor)?,
+        finite(w / divisor)?,
+    );
     Some(q.normalize())
 }
 
@@ -926,6 +941,66 @@ mod tests {
     // oracle: a quaternion is normalised (0, 0, 2, 0) -> (0, 0, 1, 0); the zero
     // quaternion, a non-finite component and an unknown body are refused
     #[test]
+    fn a_quaternion_of_any_size_gives_the_same_rotation() {
+        // oracle: a rotation does not depend on the scale, so s (0, 0, 0, 1) and s (1, 0, 0, 0)
+        // give those unit quaternions and s (1, 1, 0, 0) gives (1, 1, 0, 0) / sqrt 2, at sizes
+        // whose squared length overflows `Fix128` or rounds to zero in it
+        let close = |got: f64, want: f64| (got - want).abs() < 1e-15;
+        let h = core::f64::consts::FRAC_1_SQRT_2;
+        for s in [
+            1e18,
+            3.1e9,
+            1e10,
+            1e-10,
+            1e-12,
+            1e300,
+            1e-300,
+            5e-324,
+            f64::MAX,
+        ] {
+            for (input, want) in [
+                ((s, 0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)),
+                ((-s, 0.0, 0.0, 0.0), (-1.0, 0.0, 0.0, 0.0)),
+                ((0.0, 0.0, 0.0, s), (0.0, 0.0, 0.0, 1.0)),
+                ((s, s, 0.0, 0.0), (h, h, 0.0, 0.0)),
+            ] {
+                let q = unit_quat(input.0, input.1, input.2, input.3).expect("not zero");
+                assert!(
+                    close(q.x.to_f64(), want.0)
+                        && close(q.y.to_f64(), want.1)
+                        && close(q.z.to_f64(), want.2)
+                        && close(q.w.to_f64(), want.3),
+                    "{input:?}: {q:?}"
+                );
+            }
+        }
+        // sizes that stay as they are give the bits of normalising the value itself
+        for s in [UNIT_QUAT_SMALLEST, 1.0, 0.25, UNIT_QUAT_LARGEST] {
+            let direct = QuatFix::new(
+                Fix128::from_f64(s),
+                Fix128::from_f64(2.0 * s),
+                Fix128::from_f64(0.5 * s),
+                Fix128::from_f64(0.25 * s),
+            )
+            .normalize();
+            assert_eq!(
+                unit_quat(s, 2.0 * s, 0.5 * s, 0.25 * s),
+                Some(direct),
+                "{s}"
+            );
+        }
+        for zero in [0.0, -0.0] {
+            assert_eq!(unit_quat(zero, zero, zero, zero), None);
+        }
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(unit_quat(bad, 0.0, 0.0, 1.0), None);
+            assert_eq!(unit_quat(0.0, bad, 0.0, 1.0), None);
+            assert_eq!(unit_quat(0.0, 0.0, bad, 1.0), None);
+            assert_eq!(unit_quat(0.0, 0.0, 0.0, bad), None);
+        }
+    }
+
+    #[test]
     fn set_rotation_normalises_and_refuses_what_is_not_a_rotation() {
         let mut w = free_world();
         assert!(set_rotation(&mut w, 0, 0.0, 0.0, 2.0, 0.0));
@@ -981,7 +1056,7 @@ mod tests {
         let b = &w.bodies[0];
         let q = b.rotation;
         // a half turn: |qz| = sin(pi/2) = 1 and qw = cos(pi/2) = 0, compared in the
-        // quaternion (no platform transcendental in a test either)
+        // quaternion (no platform transcendental function in a test either)
         assert!(
             (q.z.to_f64().abs() - 1.0).abs() < 1e-6 && q.w.to_f64().abs() < 1e-3,
             "{q:?}"
