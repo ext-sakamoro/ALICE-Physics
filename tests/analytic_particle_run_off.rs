@@ -99,6 +99,9 @@ fn on_an_incline_the_speed_reaches_the_closed_form() {
 }
 
 /// A unit sphere at the origin.
+/// One change to a particle system, for the digest teeth.
+type Change = Box<dyn Fn(&mut ParticleSystem)>;
+
 fn sphere() -> ClosureSdf {
     ClosureSdf::new(
         |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
@@ -263,7 +266,7 @@ fn every_part_of_the_state_moves_the_digest() {
     };
     // the same particles, none on a surface
     assert_ne!(free(&s).state_digest(&rng), base, "which surface");
-    let mut changed: Vec<Box<dyn Fn(&mut ParticleSystem)>> = vec![
+    let mut changed: Vec<Change> = vec![
         Box::new(|s| s.gravity.x = Fix128::ONE),
         Box::new(|s| s.damping = Fix128::ONE),
         Box::new(|s| s.max_particles += 1),
