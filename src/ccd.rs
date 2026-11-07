@@ -93,8 +93,8 @@
 //!   `::aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version`
 //!   (-012),
 //!   `::conservative_advancement_does_not_give_up_on_a_shallow_approach`
-//!   (-013),
-//!   `::adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (-014).
+//!   (-013). The sub-step count's √3 shortfall on a diagonal mover (-014) is
+//!   sized in [`crate::solver_tgs`] and is listed as that module's known defect.
 //!
 //! # Algorithms
 //!
