@@ -25,8 +25,8 @@ use alice_physics_core::electromagnetic::{
 };
 use alice_physics_core::force::apply_force_fields;
 use alice_physics_core::{
-    material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
-    PhysicsWorld, RigidBody, Vec3Fix,
+    material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, LegacyPolicy, MaterialId,
+    PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldSnapshotError, PHYSICS_SEMANTICS_ID,
 };
 
 fn fx(n: i64, d: i64) -> Fix128 {
@@ -536,23 +536,103 @@ const OLDER_KINDS_A: &[u8] =
     include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_a.bin");
 const OLDER_KINDS_B: &[u8] =
     include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_b.bin");
+/// the writer's stepping semantics, at `[16..48)` of the header
+const WRITER_SEMANTICS: &str = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
+/// the header: magic, version, reserved, payload length, then the two identifiers
+const IDS_AT: usize = 16;
+const PAYLOAD_AT: usize = 80;
+/// the FNV-1a fold over every preceding byte
+const CHECKSUM_LEN: usize = 8;
 
-/// Adding magnets did not change the format or the stepping of worlds without one: such a world
-/// is written to the bytes the earlier release wrote; those bytes are read back and written again
-/// unchanged, with every field, its filter and its switch in place; and restored and stepped 30
-/// times here they give the bytes the earlier release's own 30 steps gave.
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn writer_id() -> [u8; 32] {
+    OLDER_KINDS_A[IDS_AT..IDS_AT + 32]
+        .try_into()
+        .expect("32 bytes")
+}
+
+/// the payload of a snapshot: everything but the header's identifiers (which name the writing
+/// binary) and the checksum (which covers them)
+fn payload(blob: &[u8]) -> &[u8] {
+    &blob[PAYLOAD_AT..blob.len() - CHECKSUM_LEN]
+}
+
+/// Adding magnets did not change the format or the stepping of worlds without one. The stepping
+/// semantics identifier has moved since the fixtures were written (the overflow mark's predicate),
+/// so the header no longer matches and no restore entry accepts the blobs; the payload this build
+/// writes for the same world is the earlier release's to the byte, with every field, its filter
+/// and its switch in place, and 30 steps here give the payload the earlier release's own 30 steps
+/// gave.
 #[test]
 fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
+    assert_eq!(hex(&writer_id()), WRITER_SEMANTICS);
+    assert_ne!(writer_id(), PHYSICS_SEMANTICS_ID);
+    let w = older_kinds_world();
+    let own = w.snapshot_world();
+    assert_eq!(own.len(), OLDER_KINDS_A.len());
     assert_eq!(
-        older_kinds_world().snapshot_world(),
-        OLDER_KINDS_A,
-        "a world without magnets is written as before"
+        &own[..IDS_AT],
+        &OLDER_KINDS_A[..IDS_AT],
+        "magic, version, length"
+    );
+    assert_eq!(
+        payload(&own),
+        payload(OLDER_KINDS_A),
+        "a world without magnets is written as before outside the identifiers"
+    );
+    // the header law_id is the scene's rule under the writer's semantics
+    assert_eq!(
+        w.law_id(&writer_id()),
+        OLDER_KINDS_A[IDS_AT + 32..PAYLOAD_AT]
     );
 
+    // no restore entry accepts the writer's blobs, and the target is left unchanged
+    let want = || WorldSnapshotError::SemanticsMismatch {
+        stored: writer_id(),
+        expected: PHYSICS_SEMANTICS_ID,
+    };
+    let mut refused = 0;
+    for blob in [OLDER_KINDS_A, OLDER_KINDS_B] {
+        let mut target = PhysicsWorld::new(PhysicsConfig::default());
+        let before = target.snapshot_world();
+        assert_eq!(target.restore_world(blob), Err(want()));
+        assert_eq!(target.snapshot_world(), before);
+        refused += 1;
+        let header: [u8; 32] = blob[IDS_AT + 32..PAYLOAD_AT].try_into().expect("32 bytes");
+        for expected in [None, Some(header)] {
+            for policy in [LegacyPolicy::AcceptUnpinned, LegacyPolicy::RequirePinned] {
+                let mut target = PhysicsWorld::new(PhysicsConfig::default());
+                let before = target.snapshot_world();
+                assert_eq!(
+                    target.restore_world_checked(blob, expected.as_ref(), policy),
+                    Err(want()),
+                    "expected {expected:?}, policy {policy:?}"
+                );
+                assert_eq!(target.snapshot_world(), before);
+                refused += 1;
+            }
+        }
+    }
+    for blob in [OLDER_KINDS_A, OLDER_KINDS_B] {
+        let mut target = PhysicsWorld::new(PhysicsConfig::default());
+        let before = target.snapshot_world();
+        assert_eq!(
+            target.restore_world_legacy_damping(blob, fx(1, 60)),
+            Err(want())
+        );
+        assert_eq!(target.snapshot_world(), before);
+        refused += 1;
+    }
+    assert_eq!(refused, 12);
+
+    // this build's own bytes of that world restore with every field, its filter and its switch
     let mut w = PhysicsWorld::new(PhysicsConfig::default());
-    w.restore_world(OLDER_KINDS_A)
-        .expect("the earlier snapshot restores");
-    assert_eq!(w.snapshot_world(), OLDER_KINDS_A, "written back unchanged");
+    w.restore_world(&own)
+        .expect("this build's snapshot restores");
+    assert_eq!(w.snapshot_world(), own, "written back unchanged");
     assert_eq!(w.force_fields.len(), 7);
     let expected = older_kinds_world();
     for (k, (got, want)) in w
@@ -575,10 +655,14 @@ fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
     for _ in 0..30 {
         w.step(fx(1, 60));
     }
-    assert_ne!(OLDER_KINDS_B, OLDER_KINDS_A, "the bodies moved");
+    assert_ne!(
+        payload(OLDER_KINDS_B),
+        payload(OLDER_KINDS_A),
+        "the bodies moved"
+    );
     assert_eq!(
-        w.snapshot_world(),
-        OLDER_KINDS_B,
+        payload(&w.snapshot_world()),
+        payload(OLDER_KINDS_B),
         "30 steps here are the earlier release's 30 steps, to the bit"
     );
 }

@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"
+        "ed85e9258cae001bf9c1c617006123d9791309c661307b6f1da5a387f7554a47"
     );
 }
 
@@ -654,8 +654,10 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "3b0a4232d223b6a393c5561b4518265c597f2b9d2e45d247d48c9ccea12fd005";
-const DRIVE_TGS: &str = "489d4bb5288ef5a151c31a9250d7541f0260d64c66889ec3e31e60668cc01431";
+// re-pinned for the semantics identifier ed85e925… (the overflow flag predicate): only the
+// header's identifier, its law_id and the checksum moved; the state did not
+const DRIVE_XPBD: &str = "f4705edfa7ae871ed1a36cef214af91379879e1fc74cf2bfd550c01100f3bce7";
+const DRIVE_TGS: &str = "5f240be51c41d6b50d33da13883d96f9f5b8d315f63b1c4f94e69e1ca704a3b6";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
