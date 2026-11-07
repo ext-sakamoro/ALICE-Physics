@@ -160,6 +160,10 @@ use alice_physics::check_peer as _;
 use alice_physics::cloth as _;
 use alice_physics::cloth::Cloth as _;
 use alice_physics::cloth::ClothConfig as _;
+use alice_physics::cloth::Grab as _;
+use alice_physics::cloth::GrabId as _;
+use alice_physics::cloth::OutlineDesc as _;
+use alice_physics::cloth::OutlineError as _;
 use alice_physics::cloth::RestPositionsMismatch as _;
 use alice_physics::cloth_fluid as _;
 use alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid as _;
@@ -1725,6 +1729,8 @@ use alice_physics::GpuSdfInstancedBatch as _;
 use alice_physics::GpuSdfMultiDispatch as _;
 use alice_physics::GpuSdfQuery as _;
 use alice_physics::GpuSdfResult as _;
+use alice_physics::Grab as _;
+use alice_physics::GrabId as _;
 use alice_physics::HeatSource as _;
 use alice_physics::Heatmap as _;
 use alice_physics::HeatmapConfig as _;
@@ -1765,6 +1771,8 @@ use alice_physics::MouseJoint as _;
 use alice_physics::MoveResult as _;
 use alice_physics::NetcodeConfig as _;
 use alice_physics::OrientedBox as _;
+use alice_physics::OutlineDesc as _;
+use alice_physics::OutlineError as _;
 use alice_physics::OverlapResult as _;
 use alice_physics::Particle as _;
 use alice_physics::ParticleEmitter as _;
@@ -1869,7 +1877,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1851 paths, checked at compile time
+    // 1859 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
