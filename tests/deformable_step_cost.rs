@@ -12,7 +12,7 @@
     reason = "timing harness: std::time::Instant measures the wall-clock cost of the step; nothing it reads enters a result"
 )]
 
-use alice_physics_core::deformable::{DeformableBody, DeformableConfig, Material};
+use alice_physics_core::deformable::{DeformableBody, DeformableConfig, Material, NeoHookeanLaw};
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::sdf_fem_mesh;
@@ -117,6 +117,33 @@ fn what_a_step_costs_on_a_logo_sized_block() {
     let per_step = t.elapsed() / steps;
     println!(
         "{n} particles, {tets} tets: {per_step:?} a step (iterations {}, substeps {})",
+        body.config.iterations, body.config.substeps
+    );
+}
+
+/// The same block with the Neo-Hookean material at the substeps its convergence needs at this
+/// cell (`h ≲ 1/√(Σ w|∇C|²)`, 64 per frame at 1.25 cm cells of the oracle; this block's cells
+/// are 2 cm, so 40 would do, 64 is measured for the comparison with the oracle's setting):
+/// the cost of a correct L0 frame.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn what_a_converged_neo_hookean_step_costs_on_a_logo_sized_block() {
+    let law = NeoHookeanLaw::new(Fix128::from_f64(1.2725e6), Fix128::from_f64(0.49))
+        .expect("E > 0, ν in range");
+    let mut body = logo_sized_body(Material::NeoHookean(law));
+    body.config.substeps = 64;
+    body.config.iterations = 8;
+    let (n, tets) = (body.particle_count(), body.tetrahedra.len());
+    let dt = Fix128::from_ratio(1, 60);
+    body.step(dt); // warm up
+    let t = std::time::Instant::now();
+    let steps = 5;
+    for _ in 0..steps {
+        body.step(dt);
+    }
+    let per_step = t.elapsed() / steps;
+    println!(
+        "{n} particles, {tets} tets, Neo-Hookean: {per_step:?} a step (iterations {}, substeps {})",
         body.config.iterations, body.config.substeps
     );
 }
