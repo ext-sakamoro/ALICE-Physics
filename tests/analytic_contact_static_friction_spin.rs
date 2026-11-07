@@ -23,7 +23,7 @@
 #![cfg(feature = "std")]
 #![allow(
     clippy::disallowed_methods,
-    reason = "analytic reference in f64: incline closed forms and energy sums"
+    reason = "analytic reference: f64 incline closed forms and energy sums"
 )]
 
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
