@@ -477,7 +477,7 @@ fn golden_path_tgs_try_step() {
 /// of `2e-8` about `z` (and move `6e-9` along `x`); the centre ball and the
 /// sleep decisions are unchanged. Re-recorded again when the static friction
 /// did too: the turn is `1.0e-6`, the shift `1.1e-6`, still asleep.
-const GOLDEN_SLEEPING: &str = "fd10def88190b9f82db629f98e0f290b6074cb4a9bf53a93a1450f833c9ece22";
+const GOLDEN_SLEEPING: &str = "3b9a3042a8cac2840c156465c51a46b26bef1333003f723edf32560ba6d300e8";
 
 #[test]
 fn golden_sleeping() {

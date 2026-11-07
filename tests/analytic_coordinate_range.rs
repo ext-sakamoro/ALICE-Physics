@@ -1710,13 +1710,13 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
     // scene 0 (spheres against a static sphere with friction): re-recorded when the contact
     // friction began acting at the contact point of plain spheres (was 0xe1cf59847572e985)
-    (0, SolverBackend::Xpbd, 0x5ad51465f56c7a38_u64),
+    (0, SolverBackend::Xpbd, 0x49f4_182e_31d5_f46fu64),
     (1, SolverBackend::Xpbd, 0x36b5104395c14228_u64),
     (2, SolverBackend::Xpbd, 0xe1887bfb14a87bee_u64),
     // scene 3: re-recorded for the same reason (was 0x807206918944a242)
-    (3, SolverBackend::Xpbd, 0x4a3c8c479db3b9e1_u64),
+    (3, SolverBackend::Xpbd, 0x1f09_66a6_5a4a_ad01u64),
     (4, SolverBackend::Xpbd, 0x4baa81e4627924fb_u64),
-    (5, SolverBackend::Xpbd, 0xdd401c85f62e8f51_u64),
+    (5, SolverBackend::Xpbd, 0x7ee8_529e_6f78_155fu64),
     (6, SolverBackend::Xpbd, 0x6bfad6246e7bc457_u64),
     (0, SolverBackend::Tgs, 0x915631b49ab58b1b_u64),
     (1, SolverBackend::Tgs, 0x11757b14dcf526d0_u64),

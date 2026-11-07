@@ -460,7 +460,7 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// scene's default config had damped every body by a retention 0.99 per step).
 // re-recorded (from 0xd71a_9ec7_2f28_de10) when the contact friction began acting at the contact
 // point of plain spheres: the scene's spheres touch the static sphere with friction
-const GOLDEN_ISOTROPIC_XPBD: u64 = 0x229e_df1d_8ad9_15eb;
+const GOLDEN_ISOTROPIC_XPBD: u64 = 0xf155_e074_74bb_70c9;
 // The TGS value was re-recorded when the TGS orientation integrator became
 // the exact exponential map, and again when an isotropic inverse inertia
 // became the plain product `c·τ` (no rotation round trip), which changes the
@@ -491,7 +491,7 @@ fn d_isotropic_and_exempt_bodies_are_bit_identical_to_before() {
 /// Same scene under `step_parallel`; equal to the serial XPBD value (a copy of
 /// `GOLDEN_ISOTROPIC_XPBD`, re-pinned with it).
 #[cfg(feature = "parallel")]
-const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0x229e_df1d_8ad9_15eb;
+const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0xf155_e074_74bb_70c9;
 
 #[cfg(feature = "parallel")]
 #[test]

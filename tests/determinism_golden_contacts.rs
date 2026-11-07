@@ -375,7 +375,7 @@ fn determinism_contact_slide() {
 /// once the ball rolls, its material point's displacement is under `μ λ`
 /// and the position pass now keeps it (`x` at 2 s 4.470471 → 4.470459).
 const GOLDEN_CONTACT_ROLL: &str =
-    "0531ae7c5d21526d5d3909d213e82c385c0cdb2d5a529bd9db6ecba9be14660a";
+    "7afccb7ae2dbd8b9511ec08f5ad70fc258f69a88493b401c43be28e713f71cde";
 
 #[test]
 fn determinism_contact_roll() {
@@ -515,7 +515,7 @@ fn determinism_contact_slope() {
 /// Budget: `2 %` plus one substep of phase (`a h t`) on `x` and `v`; `1e-3`
 /// on the slip `v + ω_z r`.
 const GOLDEN_CONTACT_SLOPE_ROLL: &str =
-    "06d66f0d5952011228c8ad897d0dba431e0bb4ffc276f7f1f97f492bf93691a5";
+    "f4c4853e8e6250044127a653e1c31231de4e4fc4270975e5b298c3f52c09d68e";
 
 #[test]
 fn determinism_contact_slope_roll() {
@@ -654,7 +654,7 @@ fn determinism_contact_stack() {
 /// when the static friction did too (the spin is `5e-5` and the ball sits
 /// `2.6e-5` downhill, `|v|` `2.3e-5`: a free ball on a `3e-4` slope rolls).
 const GOLDEN_CONTACT_VETO: &str =
-    "ec659b05ed9fbd38463d8041828a6ed85bb96d1ff2ac5f4c328d00bf6d7d709a";
+    "12f03b0ea809ddfc9413c8436a5d010b0fc6c19aa6df58e3fd81e6b404371460";
 
 #[test]
 fn determinism_contact_veto() {

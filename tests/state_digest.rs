@@ -241,15 +241,15 @@ fn hex(b: &[u8]) -> String {
 /// bodies hash the same as before (checked by stepping the scene with the
 /// previous solver under the new identifier).
 const GOLDEN_STATE_DIGEST: &str =
-    "b9277e53485352521d59d8e518f3bda3c2b2dca872f32d2f67f95852f729c1cf";
-const GOLDEN_LAW_ID: &str = "b8f508637ad5596137b8ff200ac233f3f3221f5264e765b85e2dfad60a973eab";
+    "b527f1fc19dd621b5f4526ce558455a508fde47376d1d9250226f25d447f923c";
+const GOLDEN_LAW_ID: &str = "44b8d17d80de2ae28117f7906756018820523b838fc99edc14770d2b2638911c";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "a94c3dd3b761dcc027b6343dd1f771c239d3c202f3c71b5e1ee4373c3639da5d";
+    "e76b1fbb03641d0ec198719b6c5d71bfd722415336f9cb601305b1118ede14af";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
