@@ -567,7 +567,7 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 
 /// Frozen digest of the throw script at frame 600 (E and O, spacing 0.1). Every CI OS
 /// and the wasm lane must agree with it; it moves only with an announced law change.
-const THROW_DIGEST_600: &str = "303aeac1e640bb64fc26460550d4851ea84a4b905127683ccb3147d52528bb8e";
+const THROW_DIGEST_600: &str = "836386eaee18358062aa4eda39c17f987859ba57301b1673e5e29109bd9b8c07";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]

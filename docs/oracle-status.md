@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5961 |
+| 🟢 Not ignored (run by CI) | 5963 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6058** |
+| **Total** | **6060** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5961)
+## 🟢 Not ignored (5963)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -532,6 +532,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
+| `analytic_sleep_by_time.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
@@ -594,7 +595,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_large_rotation.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
-| `analytic_sleep_by_time.rs` | 3 |
 | `analytic_world_query_round_solids.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
