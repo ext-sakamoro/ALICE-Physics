@@ -399,9 +399,7 @@ fn older_versions_are_accepted_as_unpinned() {
         let before = t.snapshot_world();
         assert_eq!(
             t.restore_world(blob),
-            Err(read
-                .err()
-                .expect("every older blob is refused without a step")),
+            Err(read.expect_err("every older blob is refused without a step")),
             "version {version}"
         );
         assert_eq!(
