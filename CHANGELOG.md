@@ -15,6 +15,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
+
 ### Changed
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
