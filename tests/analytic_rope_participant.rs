@@ -391,10 +391,16 @@ fn stays_bounded(rope_mass: f64, body_mass: f64) -> Result<(), String> {
     for frame in 0..640 {
         w.try_step(Fix128::from_ratio(1, 64))
             .map_err(|e| format!("frame {frame}: {e:?}"))?;
-        let p = v3(w.bodies[b].position);
-        let reach = p.iter().map(|c| c * c).sum::<f64>().sqrt();
-        if (reach - length).abs() >= length * 0.05 {
-            return Err(format!("frame {frame}: reach {reach}"));
+        // A rope pulls and does not push, so it may fold: only its own length is held.
+        let along: f64 = particles(&w, 0)
+            .windows(2)
+            .map(|pair| {
+                let d = v3(pair[1].0 - pair[0].0);
+                d.iter().map(|c| c * c).sum::<f64>().sqrt()
+            })
+            .sum();
+        if along >= length * 1.05 {
+            return Err(format!("frame {frame}: length along the rope {along}"));
         }
         let now = energy(&w);
         if now > start * 1.01 {
@@ -701,8 +707,8 @@ fn swing_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const SWING_XPBD: &str = "unmeasured";
-const SWING_TGS: &str = "unmeasured";
+const SWING_XPBD: &str = "c4e095498ee2d7503aa22a5695e904fbc73fae4e54196f68d43630e35414a7a9";
+const SWING_TGS: &str = "fe97e1d93132915b8556b2f1bccac8824130846811637a21d9a3c64d89187217";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene
 /// after 256 frames, for each backend, printed so the log shows the bits.
