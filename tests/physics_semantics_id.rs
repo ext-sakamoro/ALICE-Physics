@@ -52,7 +52,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
+const PINNED_ID_HEX: &str = "e312ab6e0ffea0b5beb93dd65ce4c62de03add2f035832f8764f87b90da88925";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -943,7 +943,7 @@ const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[];
 
 /// Stepping paths pinned after the 3.x releases (their folds did not hold them), left out of the
 /// fold that reproduces the identifiers 3.x stamped, as the peer and Law output entries are
-const PINNED_AFTER_3X: &[&str] = &["secondary chain"];
+const PINNED_AFTER_3X: &[&str] = &["secondary chain", "sleep by time"];
 
 /// An identifier of an earlier `alice-det-math` generation (a row of another generation, or the
 /// fold of its pins before the peer and Law output entries were folded, as 3.x stamped) is in

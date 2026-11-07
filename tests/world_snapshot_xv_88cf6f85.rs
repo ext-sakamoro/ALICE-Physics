@@ -95,6 +95,16 @@ fn scene() -> PhysicsWorld {
 /// step, 0.99 by default, where this build's field is a rate per second (0 by default). `law_id`
 /// encodes the field's value, so the writer's `law_id` is reproduced only from the value it held;
 /// the field is set to that raw value to recompute it, not used as a rate.
+///
+/// # History
+///
+/// Up to the identifier `e90000da…` this build recomputed the writer's `law_id` directly
+/// (`writer_scene().law_id(&writer_id)`), the damping field set to the writer's value. Sleep by
+/// elapsed time (identifier `e312ab6e…`) changed row 11's encoding from a `u32` idle-step count
+/// to a `Fix128` time, so no world of this build folds to the writer's value any more; the
+/// fixture's header is instead checked against the documented rows folded with the writer's
+/// encoding (`tests/support/law_rows.rs`, row 11 as the step count 60), and this build's own
+/// `law_id` for the same scene is shown to differ.
 fn writer_scene() -> PhysicsWorld {
     let mut w = scene();
     w.config.damping_rate = Fix128::from_ratio(99, 100);
@@ -103,6 +113,21 @@ fn writer_scene() -> PhysicsWorld {
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[path = "support/law_rows.rs"]
+mod law_rows;
+use law_rows::{spec, Laws};
+
+/// The rules of `writer_scene()` folded as the writing build encoded them: gravity (0, −7, 0),
+/// the damping field holding the retention 0.99, the sleep rule as the step count 60 (the
+/// distance constraint and the radii are state, not rules).
+fn writer_laws() -> Laws {
+    let mut laws = Laws::defaults();
+    laws.config.gravity = Vec3Fix::from_int(0, -7, 0);
+    laws.config.damping_rate = Fix128::from_ratio(99, 100);
+    laws.legacy_sleep_steps = Some(60);
+    laws
 }
 
 fn writer_id() -> [u8; 32] {
@@ -126,10 +151,12 @@ fn the_fixtures_are_what_the_writer_wrote() {
     assert_eq!(hex(&A[LAW_AT..LAW_AT + 32]), WRITER_LAW_ID);
     let writer = writer_id();
     assert_ne!(writer, PHYSICS_SEMANTICS_ID);
-    // the header law_id is the scene's rule under the writer's semantics, with the world damping
-    // field holding the value the writer held; this build's own `scene()` holds rate 0 there, so
-    // it gives another id
-    assert_eq!(writer_scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
+    // the header law_id is the scene's rule under the writer's semantics, folded as the writer
+    // encoded it (damping as the retention 0.99, the sleep rule as 60 idle steps); this build's
+    // own `law_id` folds the sleep rule as a time (row 11 changed at e312ab6e…), so even with
+    // the writer's damping value it gives another id
+    assert_eq!(spec(&writer_laws(), &writer), A[LAW_AT..LAW_AT + 32]);
+    assert_ne!(writer_scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
     assert_ne!(scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
 }
 
