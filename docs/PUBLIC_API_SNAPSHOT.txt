@@ -10538,6 +10538,8 @@ pub alice_physics_core::prelude::WorldSnapshotError::LawIdMismatch::expected: [u
 pub alice_physics_core::prelude::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics_core::prelude::WorldSnapshotError::LegacyDampingNeedsStep
 pub alice_physics_core::prelude::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::WorldSnapshotError::LegacySleepFramesNeedsStep
+pub alice_physics_core::prelude::WorldSnapshotError::LegacySleepFramesNeedsStep::frames_to_sleep: u32
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantState
 pub alice_physics_core::prelude::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -12823,7 +12825,7 @@ pub fn alice_physics_core::sleeping::IslandManager::reset_unions(&mut self)
 pub fn alice_physics_core::sleeping::IslandManager::resize(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::sleeping_count(&self) -> usize
 pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usize)
-pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
+pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
@@ -14521,8 +14523,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::animation_b
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::animation_blend::SkeletonPose
 pub struct alice_physics_core::prelude::SleepConfig
 pub alice_physics_core::prelude::SleepConfig::angular_threshold: alice_physics_core::math::Fix128
-pub alice_physics_core::prelude::SleepConfig::frames_to_sleep: u32
 pub alice_physics_core::prelude::SleepConfig::linear_threshold: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::SleepConfig::time_to_sleep: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::sleeping::SleepConfig
 pub fn alice_physics_core::sleeping::SleepConfig::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::sleeping::SleepConfig
@@ -14542,7 +14544,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::SleepConfig
 pub struct alice_physics_core::prelude::SleepData
-pub alice_physics_core::prelude::SleepData::idle_frames: u32
+pub alice_physics_core::prelude::SleepData::idle_time: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::SleepData::state: alice_physics_core::sleeping::SleepState
 impl alice_physics_core::sleeping::SleepData
 pub fn alice_physics_core::sleeping::SleepData::is_sleeping(&self) -> bool
@@ -18071,7 +18073,7 @@ pub fn alice_physics_core::sleeping::IslandManager::reset_unions(&mut self)
 pub fn alice_physics_core::sleeping::IslandManager::resize(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::sleeping_count(&self) -> usize
 pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usize)
-pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
+pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
@@ -18084,8 +18086,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::I
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::IslandManager
 pub struct alice_physics_core::sleeping::SleepConfig
 pub alice_physics_core::sleeping::SleepConfig::angular_threshold: alice_physics_core::math::Fix128
-pub alice_physics_core::sleeping::SleepConfig::frames_to_sleep: u32
 pub alice_physics_core::sleeping::SleepConfig::linear_threshold: alice_physics_core::math::Fix128
+pub alice_physics_core::sleeping::SleepConfig::time_to_sleep: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::sleeping::SleepConfig
 pub fn alice_physics_core::sleeping::SleepConfig::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::sleeping::SleepConfig
@@ -18105,7 +18107,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::SleepConfig
 pub struct alice_physics_core::sleeping::SleepData
-pub alice_physics_core::sleeping::SleepData::idle_frames: u32
+pub alice_physics_core::sleeping::SleepData::idle_time: alice_physics_core::math::Fix128
 pub alice_physics_core::sleeping::SleepData::state: alice_physics_core::sleeping::SleepState
 impl alice_physics_core::sleeping::SleepData
 pub fn alice_physics_core::sleeping::SleepData::is_sleeping(&self) -> bool
@@ -18344,6 +18346,8 @@ pub alice_physics_core::solver::WorldSnapshotError::LawIdMismatch::expected: [u8
 pub alice_physics_core::solver::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics_core::solver::WorldSnapshotError::LegacyDampingNeedsStep
 pub alice_physics_core::solver::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
+pub alice_physics_core::solver::WorldSnapshotError::LegacySleepFramesNeedsStep
+pub alice_physics_core::solver::WorldSnapshotError::LegacySleepFramesNeedsStep::frames_to_sleep: u32
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantState
 pub alice_physics_core::solver::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -22136,6 +22140,8 @@ pub alice_physics_core::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
 pub alice_physics_core::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep
 pub alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep::retention: alice_physics_core::math::Fix128
+pub alice_physics_core::WorldSnapshotError::LegacySleepFramesNeedsStep
+pub alice_physics_core::WorldSnapshotError::LegacySleepFramesNeedsStep::frames_to_sleep: u32
 pub alice_physics_core::WorldSnapshotError::ParticipantMismatch(alice_physics_core::world_participant::ParticipantMismatch)
 pub alice_physics_core::WorldSnapshotError::ParticipantState
 pub alice_physics_core::WorldSnapshotError::ParticipantState::error: alice_physics_core::world_participant::StateError
@@ -24455,7 +24461,7 @@ pub fn alice_physics_core::sleeping::IslandManager::reset_unions(&mut self)
 pub fn alice_physics_core::sleeping::IslandManager::resize(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::sleeping_count(&self) -> usize
 pub fn alice_physics_core::sleeping::IslandManager::union(&mut self, usize, usize)
-pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody])
+pub fn alice_physics_core::sleeping::IslandManager::update_sleep(&mut self, &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::sleeping::IslandManager::wake_body(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_island(&mut self, usize)
 pub fn alice_physics_core::sleeping::IslandManager::wake_islands(&mut self, &[usize])
@@ -26250,8 +26256,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::animation_b
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::animation_blend::SkeletonPose
 pub struct alice_physics_core::SleepConfig
 pub alice_physics_core::SleepConfig::angular_threshold: alice_physics_core::math::Fix128
-pub alice_physics_core::SleepConfig::frames_to_sleep: u32
 pub alice_physics_core::SleepConfig::linear_threshold: alice_physics_core::math::Fix128
+pub alice_physics_core::SleepConfig::time_to_sleep: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::sleeping::SleepConfig
 pub fn alice_physics_core::sleeping::SleepConfig::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::sleeping::SleepConfig
@@ -26271,7 +26277,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::SleepConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::SleepConfig
 pub struct alice_physics_core::SleepData
-pub alice_physics_core::SleepData::idle_frames: u32
+pub alice_physics_core::SleepData::idle_time: alice_physics_core::math::Fix128
 pub alice_physics_core::SleepData::state: alice_physics_core::sleeping::SleepState
 impl alice_physics_core::sleeping::SleepData
 pub fn alice_physics_core::sleeping::SleepData::is_sleeping(&self) -> bool
