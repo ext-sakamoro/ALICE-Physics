@@ -1513,6 +1513,7 @@ impl BodySlicePtr {
 /// static and the kinetic coefficients are equal.
 // LIMITATION(COV-RIGID-080): the combined material carries one coefficient, so the static and the kinetic coefficients are equal.
 // LIMITATION(COV-RIGID-083): Contact points are taken at the body centres: the contact solve is translational only.
+// LIMITATION(COV-RIGID-113): a cylinder's contact point is an EPA support vertex, not its contact line, so a cylinder rolling down an incline (2/3 g sin θ) has no oracle
 #[allow(
     clippy::too_many_arguments,
     reason = "friction correction needs both displacements, normal, both inverse masses, weight sum, mu and the normal lambda"
