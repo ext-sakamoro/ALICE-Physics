@@ -1143,29 +1143,24 @@ impl FeatherstoneSolver {
         self.forward_acceleration_pass(artic, bodies, gravity, dt);
     }
 
-    /// Featherstone forward dynamics with a Mass Splitting hint for
-    /// large mass ratio stacks (Phase F 11.2 skeleton).
+    /// Featherstone forward dynamics with a time-step split for large mass
+    /// ratios.
     ///
-    /// Currently forwards to [`Self::solve`] unchanged. The follow-up
-    /// commit implements the split policy: contact pairs whose mass
-    /// ratio (heavier / lighter) exceeds `mass_ratio_split_threshold`
-    /// are decomposed into two separately solved constraints so that
-    /// PGS iteration count no longer has to fight the ill-conditioning
-    /// of extreme mass ratios.
+    /// Scans the dynamic links for the smallest and largest inverse mass
+    /// (static and kinematic links are skipped). When
+    /// `max_inv_mass >= mass_ratio_split_threshold * min_inv_mass` with a
+    /// positive threshold — the heaviest link outweighs the lightest by the
+    /// threshold or more — the step is taken as two [`Self::solve`] calls of
+    /// `dt / 2`; otherwise as one call of `dt`. The halving is a first-order
+    /// proxy for a mass-splitting decomposition of the contact impulses: it
+    /// lowers the effective spectral radius of the pass without changing any
+    /// link's inertia, and the decomposition itself is not implemented.
     ///
     /// # Determinism
-    /// The Mass Splitting policy will canonicalise pivot order via
-    /// `sort_by_key(mass) + index tie-break` and process the split
-    /// pairs in flat-array index order (deterministic traversal order).
-    /// The current forwarding path inherits [`Self::solve`]'s
-    /// determinism guarantee unchanged.
-    ///
-    /// # Status
-    /// Skeleton API committed as part of Phase F 11.2 rollout. The
-    /// signature is stable so downstream integrations (extreme mass
-    /// ratio stacking scenes, ragdoll systems on soft ground) can
-    /// begin experimenting; the actual splitting policy is scheduled
-    /// for a follow-up commit.
+    /// The scan runs over `artic.links` in index order, the ratio test is a
+    /// `Fix128` multiplication (no division), `dt.half()` is an exact shift,
+    /// and the two half steps are plain recursions into [`Self::solve`], so
+    /// the result is bit-exact across platforms.
     pub fn solve_with_mass_splitting(
         &mut self,
         artic: &ArticulatedBody,

@@ -50,8 +50,7 @@
 //!   eigenvalue damping keeps each turn under `max(4|θ|, 1/8 rad)` or applies
 //!   nothing (a fixed, deterministic number of damping steps); static bodies
 //!   are not moved; nothing is clamped otherwise. No substep sweep yet.
-//! - **近似 (approximations)**: the gear measures twist about world `z` only
-//!   and does not consult the hinge joints it names; the rack ignores rotation
+//! - **近似 (approximations)**: the rack ignores rotation
 //!   about other axes; the pulley and rack rows are positional only (no
 //!   lever-arm rotation from the anchors); no rope slack, friction or inertia
 //!   of the pulley or gear; the mouse joint damps the velocity along the pull
@@ -84,6 +83,11 @@
 //!   the mouse spring's oscillation period (the oracles above pin single
 //!   projections only; no time integration against a closed form).
 //! - **段 (tiers)**: L0 only.
+//! - **既知の欠陥 (known defects)**:
+//!   `tests/analytic_joint_extra_gear.rs::a_twist_about_the_hinge_axis_x_is_coupled_in_the_ratio`
+//!   — the gear reads each body's twist about world `z` and never the hinge
+//!   joints it names, so hinges about any other axis are not coupled (the
+//!   `z` case is pinned green in the same file).
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::motor::shortest_arc;
