@@ -5388,6 +5388,54 @@ impl core::marker::Unpin for alice_physics_core::heightfield::HeightField
 impl core::marker::UnsafeUnpin for alice_physics_core::heightfield::HeightField
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::heightfield::HeightField
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::heightfield::HeightField
+pub mod alice_physics_core::holds
+pub enum alice_physics_core::holds::HoldError
+pub alice_physics_core::holds::HoldError::AlreadyHeld(usize)
+pub alice_physics_core::holds::HoldError::BadOmega
+pub alice_physics_core::holds::HoldError::NoBody(usize)
+pub alice_physics_core::holds::HoldError::NotDynamic(usize)
+pub alice_physics_core::holds::HoldError::NotHeld(usize)
+impl core::clone::Clone for alice_physics_core::holds::HoldError
+pub fn alice_physics_core::holds::HoldError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::holds::HoldError
+impl core::cmp::PartialEq for alice_physics_core::holds::HoldError
+pub fn alice_physics_core::holds::HoldError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::holds::HoldError
+pub fn alice_physics_core::holds::HoldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::holds::HoldError
+impl core::marker::StructuralPartialEq for alice_physics_core::holds::HoldError
+impl core::marker::Freeze for alice_physics_core::holds::HoldError
+impl core::marker::Send for alice_physics_core::holds::HoldError
+impl core::marker::Sync for alice_physics_core::holds::HoldError
+impl core::marker::Unpin for alice_physics_core::holds::HoldError
+impl core::marker::UnsafeUnpin for alice_physics_core::holds::HoldError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::holds::HoldError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::holds::HoldError
+pub struct alice_physics_core::holds::Holds
+impl alice_physics_core::holds::Holds
+pub fn alice_physics_core::holds::Holds::form(&self, &mut alice_physics_core::solver::PhysicsWorld, &[usize], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::holds::HoldError>
+pub fn alice_physics_core::holds::Holds::hold(&self, &mut alice_physics_core::solver::PhysicsWorld, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::holds::HoldError>
+pub fn alice_physics_core::holds::Holds::holds(&self, &alice_physics_core::solver::PhysicsWorld, usize) -> bool
+pub fn alice_physics_core::holds::Holds::move_to(&self, &mut alice_physics_core::solver::PhysicsWorld, usize, alice_physics_core::math::Vec3Fix) -> core::result::Result<(), alice_physics_core::holds::HoldError>
+pub fn alice_physics_core::holds::Holds::new(&mut alice_physics_core::solver::PhysicsWorld) -> Self
+pub fn alice_physics_core::holds::Holds::release(&self, &mut alice_physics_core::solver::PhysicsWorld, usize) -> core::result::Result<(), alice_physics_core::holds::HoldError>
+pub fn alice_physics_core::holds::Holds::release_all(&self, &mut alice_physics_core::solver::PhysicsWorld) -> usize
+impl core::clone::Clone for alice_physics_core::holds::Holds
+pub fn alice_physics_core::holds::Holds::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::holds::Holds
+impl core::cmp::PartialEq for alice_physics_core::holds::Holds
+pub fn alice_physics_core::holds::Holds::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::holds::Holds
+pub fn alice_physics_core::holds::Holds::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::holds::Holds
+impl core::marker::StructuralPartialEq for alice_physics_core::holds::Holds
+impl core::marker::Freeze for alice_physics_core::holds::Holds
+impl core::marker::Send for alice_physics_core::holds::Holds
+impl core::marker::Sync for alice_physics_core::holds::Holds
+impl core::marker::Unpin for alice_physics_core::holds::Holds
+impl core::marker::UnsafeUnpin for alice_physics_core::holds::Holds
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::holds::Holds
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::holds::Holds
 pub mod alice_physics_core::hyperelastic
 pub enum alice_physics_core::hyperelastic::HyperelasticModel
 pub alice_physics_core::hyperelastic::HyperelasticModel::MooneyRivlin
@@ -5496,6 +5544,57 @@ impl core::marker::Unpin for alice_physics_core::ik_physics_bridge::IkTargetSet
 impl core::marker::UnsafeUnpin for alice_physics_core::ik_physics_bridge::IkTargetSet
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::ik_physics_bridge::IkTargetSet
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::ik_physics_bridge::IkTargetSet
+pub mod alice_physics_core::input_log
+pub enum alice_physics_core::input_log::LogError
+pub alice_physics_core::input_log::LogError::Backwards
+pub alice_physics_core::input_log::LogError::NotACode
+impl core::clone::Clone for alice_physics_core::input_log::LogError
+pub fn alice_physics_core::input_log::LogError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::input_log::LogError
+impl core::cmp::PartialEq for alice_physics_core::input_log::LogError
+pub fn alice_physics_core::input_log::LogError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::input_log::LogError
+pub fn alice_physics_core::input_log::LogError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::input_log::LogError
+impl core::marker::StructuralPartialEq for alice_physics_core::input_log::LogError
+impl core::marker::Freeze for alice_physics_core::input_log::LogError
+impl core::marker::Send for alice_physics_core::input_log::LogError
+impl core::marker::Sync for alice_physics_core::input_log::LogError
+impl core::marker::Unpin for alice_physics_core::input_log::LogError
+impl core::marker::UnsafeUnpin for alice_physics_core::input_log::LogError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::input_log::LogError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::LogError
+pub struct alice_physics_core::input_log::InputLog<I>
+impl<I: alice_physics_core::input_log::LogInput> alice_physics_core::input_log::InputLog<I>
+pub fn alice_physics_core::input_log::InputLog<I>::entries(&self) -> &[(u64, I)]
+pub fn alice_physics_core::input_log::InputLog<I>::from_code(&str) -> core::result::Result<([u8; 4], Self), alice_physics_core::input_log::LogError>
+pub fn alice_physics_core::input_log::InputLog<I>::new() -> Self
+pub fn alice_physics_core::input_log::InputLog<I>::record(&mut self, u64, I) -> core::result::Result<(), alice_physics_core::input_log::LogError>
+pub fn alice_physics_core::input_log::InputLog<I>::replay(&self, &mut alice_physics_core::solver::PhysicsWorld, u64, alice_physics_core::math::Fix128, impl core::ops::function::FnMut(&mut alice_physics_core::solver::PhysicsWorld, &I))
+pub fn alice_physics_core::input_log::InputLog<I>::to_code(&self, &[u8; 32]) -> alloc::string::String
+impl<I: core::clone::Clone> core::clone::Clone for alice_physics_core::input_log::InputLog<I>
+pub fn alice_physics_core::input_log::InputLog<I>::clone(&self) -> Self
+impl<I: core::cmp::Eq> core::cmp::Eq for alice_physics_core::input_log::InputLog<I>
+impl<I: core::cmp::PartialEq> core::cmp::PartialEq for alice_physics_core::input_log::InputLog<I>
+pub fn alice_physics_core::input_log::InputLog<I>::eq(&self, &Self) -> bool
+impl<I: core::cmp::PartialEq> core::marker::StructuralPartialEq for alice_physics_core::input_log::InputLog<I>
+impl<I: core::fmt::Debug> core::fmt::Debug for alice_physics_core::input_log::InputLog<I>
+pub fn alice_physics_core::input_log::InputLog<I>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<I> core::default::Default for alice_physics_core::input_log::InputLog<I>
+pub fn alice_physics_core::input_log::InputLog<I>::default() -> Self
+impl<I> core::marker::Freeze for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::Freeze
+impl<I> core::marker::Send for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::Send
+impl<I> core::marker::Sync for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::Sync
+impl<I> core::marker::Unpin for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::Unpin
+impl<I> core::marker::UnsafeUnpin for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::UnsafeUnpin
+impl<I> core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::panic::unwind_safe::RefUnwindSafe
+impl<I> core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::panic::unwind_safe::UnwindSafe
+pub trait alice_physics_core::input_log::LogInput: core::marker::Sized
+pub fn alice_physics_core::input_log::LogInput::read(&mut &[u8]) -> core::option::Option<Self>
+pub fn alice_physics_core::input_log::LogInput::write(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::input_log::LogInput for alloc::vec::Vec<u8>
+pub fn alloc::vec::Vec<u8>::read(&mut &[u8]) -> core::option::Option<Self>
+pub fn alloc::vec::Vec<u8>::write(&self, &mut alloc::vec::Vec<u8>)
 pub mod alice_physics_core::interface_capture
 pub fn alice_physics_core::interface_capture::fast_sweeping_reinit(&mut alice_physics_core::multiphase::Grid3d, u32)
 pub fn alice_physics_core::interface_capture::plic_normal(&alice_physics_core::multiphase::Grid3d, usize, usize, usize) -> alice_physics_core::math::Vec3Fix
@@ -13657,6 +13756,8 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_field(&mut self, alice_phys
 pub fn alice_physics_core::solver::PhysicsWorld::try_step(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
 pub fn alice_physics_core::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
 impl alice_physics_core::solver::PhysicsWorld
+pub fn alice_physics_core::solver::PhysicsWorld::apply_radial_impulse(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> usize
+impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::cast_capsule(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
 pub fn alice_physics_core::solver::PhysicsWorld::cast_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
 pub fn alice_physics_core::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics_core::collider::AABB, &alice_physics_core::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics_core::shape_raycast::RayTarget>
@@ -18633,6 +18734,8 @@ pub fn alice_physics_core::solver::PhysicsWorld::participant_state(&self, usize)
 pub fn alice_physics_core::solver::PhysicsWorld::set_field(&mut self, alice_physics_core::world_participant::PortId, &[alice_physics_core::math::Fix128]) -> core::result::Result<(), alice_physics_core::world_participant::FieldError>
 pub fn alice_physics_core::solver::PhysicsWorld::try_step(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
 pub fn alice_physics_core::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
+impl alice_physics_core::solver::PhysicsWorld
+pub fn alice_physics_core::solver::PhysicsWorld::apply_radial_impulse(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> usize
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::cast_capsule(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
 pub fn alice_physics_core::solver::PhysicsWorld::cast_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
@@ -25331,6 +25434,8 @@ pub fn alice_physics_core::solver::PhysicsWorld::participant_state(&self, usize)
 pub fn alice_physics_core::solver::PhysicsWorld::set_field(&mut self, alice_physics_core::world_participant::PortId, &[alice_physics_core::math::Fix128]) -> core::result::Result<(), alice_physics_core::world_participant::FieldError>
 pub fn alice_physics_core::solver::PhysicsWorld::try_step(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
 pub fn alice_physics_core::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::StepError>
+impl alice_physics_core::solver::PhysicsWorld
+pub fn alice_physics_core::solver::PhysicsWorld::apply_radial_impulse(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> usize
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::cast_capsule(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
 pub fn alice_physics_core::solver::PhysicsWorld::cast_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, &alice_physics_core::shape_raycast::RayFilter) -> core::option::Option<alice_physics_core::world_shape_query::WorldShapeHit>
