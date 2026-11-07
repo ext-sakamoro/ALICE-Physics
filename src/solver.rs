@@ -479,10 +479,10 @@ impl RigidBody {
         }
     }
 
-    /// Apply a continuous force (accumulated, applied during next step)
-    ///
-    /// Force is converted to velocity change: v += (F * `inv_mass`) * dt
-    /// For one-shot velocity changes, use `apply_impulse` instead.
+    /// Apply a force over `dt`: the velocity changes **at once** by
+    /// `force · inv_mass · dt` (nothing is accumulated for a later step; call it
+    /// each step the force acts). A static body is not changed. For a one-shot
+    /// velocity change use `apply_impulse` instead.
     #[inline]
     pub fn add_force(&mut self, force: Vec3Fix, dt: Fix128) {
         if !self.is_static() {
