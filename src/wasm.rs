@@ -26,7 +26,7 @@ use wasm_bindgen::prelude::*;
 use crate::binding_api;
 use crate::collider::Sphere;
 use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
-use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::math::{Fix128, QuatFix};
 use crate::raycast::{ray_sphere, Ray};
 use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
@@ -995,6 +995,7 @@ fn hit_array(hit: Option<binding_api::QueryHit>) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
+    use crate::math::Vec3Fix;
     use super::*;
 
     /// A world with a magnet at the origin and a steel-mass ball of material 1 above it, no
