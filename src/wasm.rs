@@ -44,6 +44,8 @@ use crate::solver::BodyType;
 #[wasm_bindgen]
 pub struct WasmPhysicsWorld {
     inner: PhysicsWorld,
+    /// The hands on it, from the first hold
+    hands: Option<crate::holds::Holds>,
 }
 
 #[wasm_bindgen]
@@ -53,6 +55,7 @@ impl WasmPhysicsWorld {
     pub fn new() -> Self {
         Self {
             inner: PhysicsWorld::new(PhysicsConfig::default()),
+            hands: None,
         }
     }
 
@@ -80,6 +83,7 @@ impl WasmPhysicsWorld {
         };
         Self {
             inner: PhysicsWorld::new(config),
+            hands: None,
         }
     }
 
@@ -411,6 +415,92 @@ impl WasmPhysicsWorld {
             err.set_name(e.kind());
             err.into()
         })
+    }
+
+    /// A blow from a point ([`PhysicsWorld::apply_radial_impulse`]), a negative strength pulling in. How many bodies
+    /// it reached, `undefined` for a value that cannot be used.
+    #[wasm_bindgen(js_name = "applyRadialImpulse")]
+    pub fn apply_radial_impulse(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+        strength: f64,
+    ) -> Option<u32> {
+        let center = binding_api::vec3(x, y, z)?;
+        binding_api::radial_impulse(&mut self.inner, center, radius, strength).map(|n| n as u32)
+    }
+
+    fn hands(&mut self) -> crate::holds::Holds {
+        if let Some(h) = self.hands {
+            return h;
+        }
+        let h = crate::holds::Holds::new(&mut self.inner);
+        self.hands = Some(h);
+        h
+    }
+
+    /// Hold a body at a place, reaching it at `omega` radians per second ([`crate::holds::Holds::hold`]). The first
+    /// hold adds one static body to the world. `false` when it cannot be held.
+    #[wasm_bindgen(js_name = "holdBody")]
+    pub fn hold_body(&mut self, body: u32, x: f64, y: f64, z: f64, omega: f64) -> bool {
+        let (Some(target), Some(omega)) =
+            (binding_api::vec3(x, y, z), binding_api::positive(omega))
+        else {
+            return false;
+        };
+        let hands = self.hands();
+        hands
+            .hold(&mut self.inner, body as usize, target, omega)
+            .is_ok()
+    }
+
+    /// Move the place a held body is going to. `false` when it is not held.
+    #[wasm_bindgen(js_name = "moveHold")]
+    pub fn move_hold(&mut self, body: u32, x: f64, y: f64, z: f64) -> bool {
+        let Some(target) = binding_api::vec3(x, y, z) else {
+            return false;
+        };
+        let hands = self.hands();
+        hands
+            .move_to(&mut self.inner, body as usize, target)
+            .is_ok()
+    }
+
+    /// Let go of a body: it keeps its velocity and its weight. `false` when it is not held.
+    #[wasm_bindgen(js_name = "releaseHold")]
+    pub fn release_hold(&mut self, body: u32) -> bool {
+        let hands = self.hands();
+        hands.release(&mut self.inner, body as usize).is_ok()
+    }
+
+    /// Hold each body at the place at its position in `places` (x, y, z each): all, or `false` and none.
+    #[wasm_bindgen(js_name = "formBodies")]
+    pub fn form_bodies(&mut self, bodies: &[u32], places: &[f64], omega: f64) -> bool {
+        let Some(omega) = binding_api::positive(omega) else {
+            return false;
+        };
+        if places.len() != bodies.len() * 3 {
+            return false;
+        }
+        let mut targets = Vec::with_capacity(bodies.len());
+        for p in places.chunks_exact(3) {
+            let Some(t) = binding_api::vec3(p[0], p[1], p[2]) else {
+                return false;
+            };
+            targets.push(t);
+        }
+        let list: Vec<usize> = bodies.iter().map(|b| *b as usize).collect();
+        let hands = self.hands();
+        hands.form(&mut self.inner, &list, &targets, omega).is_ok()
+    }
+
+    /// Let go of everything held. How many.
+    #[wasm_bindgen(js_name = "releaseHolds")]
+    pub fn release_holds(&mut self) -> u32 {
+        let hands = self.hands();
+        hands.release_all(&mut self.inner) as u32
     }
 
     /// SHA-256 of the world snapshot ([`PhysicsWorld::state_digest`], 32 bytes):
@@ -1546,5 +1636,72 @@ mod tests {
         assert!(empty.cast_ray(&o, &pz, 100.0, None).is_empty());
         assert!(empty.overlap_sphere(&o, 1.0, None).is_empty());
         assert!(empty.observe_body(0).is_empty());
+    }
+}
+
+/// What was done to a world, as bytes the host writes ([`crate::input_log::InputLog`]).
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct WasmInputLog {
+    inner: crate::input_log::InputLog<Vec<u8>>,
+}
+
+#[wasm_bindgen]
+impl WasmInputLog {
+    /// An empty log.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// What happened at `step`. `false` for a step before the last.
+    pub fn record(&mut self, step: f64, input: &[u8]) -> bool {
+        if !(step.is_finite()
+            && step >= 0.0
+            && step.fract() == 0.0
+            && step <= 9_007_199_254_740_991.0)
+        {
+            return false;
+        }
+        self.inner.record(step as u64, input.to_vec()).is_ok()
+    }
+
+    /// How many entries.
+    #[wasm_bindgen(getter)]
+    pub fn length(&self) -> u32 {
+        self.inner.entries().len() as u32
+    }
+
+    /// The step of entry `i`.
+    #[wasm_bindgen(js_name = "stepAt")]
+    pub fn step_at(&self, i: u32) -> Option<f64> {
+        self.inner.entries().get(i as usize).map(|e| e.0 as f64)
+    }
+
+    /// The bytes of entry `i`.
+    #[wasm_bindgen(js_name = "inputAt")]
+    pub fn input_at(&self, i: u32) -> Option<Vec<u8>> {
+        self.inner.entries().get(i as usize).map(|e| e.1.clone())
+    }
+
+    /// The log as a code, with the first bytes of the digest it reaches (32 bytes). `undefined` for another length.
+    #[wasm_bindgen(js_name = "toCode")]
+    pub fn to_code(&self, digest: &[u8]) -> Option<String> {
+        let digest: &[u8; 32] = digest.try_into().ok()?;
+        Some(self.inner.to_code(digest))
+    }
+
+    /// A code back into a log. `undefined` when it is not a code.
+    #[wasm_bindgen(js_name = "fromCode")]
+    pub fn from_code(code: &str) -> Option<WasmInputLog> {
+        let (_, inner) = crate::input_log::InputLog::from_code(code).ok()?;
+        Some(Self { inner })
+    }
+
+    /// The digest's first four bytes a code says it reaches. `undefined` when it is not a code.
+    #[wasm_bindgen(js_name = "codeHead")]
+    pub fn code_head(code: &str) -> Option<Vec<u8>> {
+        let (head, _) = crate::input_log::InputLog::<Vec<u8>>::from_code(code).ok()?;
+        Some(head.to_vec())
     }
 }

@@ -15,6 +15,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
+
 ### Changed
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
 - `scripts/land.py`: ALICE-Law の状態を確かめる時の時間切れで、子の process も止める Law の main の fetch の git と `land_law_state.py` を自分の process group (POSIX は `start_new_session` = setsid、Windows は `CREATE_NEW_PROCESS_GROUP`) で起こし、時間切れでその group 全体を止める (POSIX は `killpg`、Windows は `taskkill /T`) これまでは script だけが止まり、script が起こした git / gh が残った 試験 `scripts/test_land.py` の `LawState` (script が起こした子が時間切れの後に動いていないこと、拒否が上限の時刻に来ること) 止めた後の読み取りにも上限 (5 秒) を置き、process group を離れた子孫が pipe を開いたままでも着地は上限の時刻に止まる (試験: group を離れた子が pipe を持ったままでも拒否が遅れないこと)

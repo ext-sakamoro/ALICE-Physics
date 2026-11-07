@@ -181,6 +181,16 @@ pub(crate) struct MagnetMaterial {
 /// finite and positive, a susceptibility or saturation that is negative or not finite, a
 /// material id that does not fit `MaterialId`, or a material another magnet already names with
 /// different magnetic properties (the world keeps its fields unchanged).
+/// A blow from a point: a finite centre and strength, a positive radius.
+pub(crate) fn radial_impulse(
+    w: &mut PhysicsWorld,
+    center: Vec3Fix,
+    radius: f64,
+    strength: f64,
+) -> Option<usize> {
+    Some(w.apply_radial_impulse(center, positive(radius)?, finite(strength)?))
+}
+
 pub(crate) fn add_magnet(
     w: &mut PhysicsWorld,
     position: Vec3Fix,
