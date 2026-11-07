@@ -28,6 +28,12 @@ impl DeterministicRng {
     /// PCG multiplier
     const MULTIPLIER: u64 = 6364136223846793005;
 
+    /// The generator's whole state as `(state, increment)`, for a digest of what holds it.
+    #[must_use]
+    pub const fn raw_state(&self) -> (u64, u64) {
+        (self.state, self.inc)
+    }
+
     /// Create RNG with the given seed
     #[must_use]
     pub fn new(seed: u64) -> Self {
