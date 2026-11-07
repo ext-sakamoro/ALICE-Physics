@@ -466,7 +466,8 @@ fn incline_run(mu: f64, theta: f64, substeps: usize) -> (f64, f64) {
 /// friction impulse is capped at `p = μ λ / (h w_sum) = 0.3` and, the slip at
 /// the contact (`ω r = 3 m/s`) needing more, the cap binds: A's centre gets
 /// `−p` along `y`, B's `+p`, and both spins change by `I⁻¹ r p = 1.5`.
-/// After 1 s: `v_a,y = −0.3`, `v_b,y = +0.3` (budget `1e-3`), `ω_a = 4.5`,
+/// After 1 s: `v_a,y = −0.3`, `v_b,y = +0.3` (within the fixed-point floor `2⁻⁴⁰`:
+/// the cap is exact in fixed point), `ω_a = 4.5`,
 /// `ω_b = −1.5` within `Δω · depth / r` (the lever arm is read in the solved
 /// pose, `depth / 2` shorter); the pair's linear momentum is unchanged (`< 1e-12`), its
 /// angular momentum about the origin by at most `depth · p` (`6.3e-4`), and
@@ -534,8 +535,12 @@ fn two_free_balls_in_a_spinning_collision_are_capped_and_conserve_momentum() {
         println!(
             "{path:?}: v_a,y {va:.6} v_b,y {vb:.6} ω_a {wa:.6} ω_b {wb:.6} |ΔP| {dp:.3e} |ΔL| {dl:.3e} worst gain {gain:.3e} (p {p}, Δω {dw})"
         );
+        // the cap `μ λ / (h w_sum)` is a product and quotient of fixed-point
+        // quantities that are exact here (`λ = depth`, `h`, `w_sum = 2`), so the
+        // centre velocities carry only the fixed-point floor
+        let floor = 2f64.powi(-40);
         assert!(
-            (va + p).abs() < 1e-3 && (vb - p).abs() < 1e-3,
+            (va + p).abs() <= floor && (vb - p).abs() <= floor,
             "{path:?}: centre velocities v_a,y {va}, v_b,y {vb}; the capped impulse is {p}"
         );
         // the lever arm is read in the solved pose, after the position solve
