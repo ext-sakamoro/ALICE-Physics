@@ -1512,11 +1512,12 @@ fn hex(b: &[u8]) -> String {
 }
 
 /// The hold is not adhesive: a column standing settled on the plane, kicked upward by an
-/// impulse on every top vertex (`J = 2 M_total √(2 g h)` for a rise `h` of 2 mm, half the
-/// momentum going into the body's rise), leaves the plane with every bottom vertex released
-/// within the time the kick needs to lift the bottom (`√(2h/g)` plus the compression wave's
-/// transit, two periods at most), rises above it, and lands again (every bottom vertex held
-/// once more within the flight time plus two periods); no step ends below the plane.
+/// impulse on every top vertex (`J = M_total √(2 g h)`: the rigid-body rise of the whole
+/// momentum is `h`, 8 mm here), leaves the plane with every bottom vertex released once the
+/// compression wave reaches the bottom (within two periods of the first mode), rises above
+/// it, and lands again within the rigid-body flight time `2 √(2h/g)` plus two periods (the
+/// body's own oscillation shifts the landing by at most its amplitude over the landing speed,
+/// below that); no step ends below the plane.
 #[test]
 fn a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released() {
     let c = column();
@@ -1532,9 +1533,9 @@ fn a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released() {
         "settled on the plane"
     );
     let total_mass: f64 = c.masses_t.iter().sum();
-    let rise_mm = 2.0;
+    let rise_mm = 8.0;
     let g = G * 1000.0;
-    let kick = 2.0 * total_mass * (2.0 * g * rise_mm).sqrt();
+    let kick = total_mass * (2.0 * g * rise_mm).sqrt();
     let per_vertex = Fix128::from_f64(kick / c.top.len() as f64);
     let impulses: Vec<(u32, [Fix128; 3])> = c
         .top
@@ -1569,15 +1570,19 @@ fn a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released() {
     let released = released_at.expect("every bottom vertex is released");
     let landed = landed_at.expect("the column lands again");
     eprintln!(
-        "kick: every vertex free from step {released} ({:.3e} s), bottom rises {highest:.3e} mm (kick sized for {rise_mm} mm), lands at step {landed} ({:.3e} s, flight {flight:.3e} s)",
+        "kick: every vertex free from step {released} ({:.3e} s), bottom rises {highest:.3e} mm (rigid-body rise {rise_mm} mm), lands at step {landed} ({:.3e} s, flight {flight:.3e} s)",
         released as f64 * dt,
         landed as f64 * dt
     );
     assert!(
-        released as f64 * dt <= (2.0 * rise_mm / g).sqrt() + 2.0 * period,
+        released as f64 * dt <= 2.0 * period,
         "released at {released} steps"
     );
     assert!(highest > 0.0, "the bottom leaves the plane");
+    assert!(
+        highest <= rise_mm * 1.5,
+        "the bottom rose {highest:.3e} mm, more than the kick's rigid-body rise {rise_mm} mm allows with its elastic share"
+    );
     assert!(
         landed as f64 * dt <= flight + 2.0 * period,
         "landed at {landed} steps vs flight {flight:.3e} s"
