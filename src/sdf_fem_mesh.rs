@@ -762,6 +762,7 @@ impl WarpedLattice {
                         continue;
                     }
                     let mut best: Option<(f32, [f32; 3])> = None;
+                    let mut crossings: Vec<[f32; 3]> = Vec::new();
                     for d in Self::neighbour_offsets() {
                         let n = [ix + d[0], iy + d[1], iz + d[2]];
                         if n.iter().zip(counts).any(|(&c, limit)| c < 0 || c >= limit) {
@@ -783,8 +784,22 @@ impl WarpedLattice {
                         let dy = at[1] - p[1];
                         let dz = at[2] - p[2];
                         let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+                        crossings.push(at);
                         if dist < snap_distance && best.is_none_or(|(b, _)| dist < b) {
                             best = Some((dist, at));
+                        }
+                    }
+                    // A corner near a crease or a corner of the surface goes onto
+                    // it rather than onto one face: otherwise the crease is cut
+                    // between lattice corners and the boundary pass has to insert
+                    // its vertices into elements the lattice already squeezed.
+                    if let Some(x) =
+                        crate::sdf_fem_boundary::crease_target(sdf, p, &crossings, cell)
+                    {
+                        let d = [x[0] - p[0], x[1] - p[1], x[2] - p[2]];
+                        let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                        if dist < snap_distance {
+                            best = Some((dist, x));
                         }
                     }
                     if let Some((_, at)) = best {

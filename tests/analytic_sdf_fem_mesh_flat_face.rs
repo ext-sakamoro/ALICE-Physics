@@ -311,7 +311,7 @@ fn zz_diag_bottom() {
 #[ignore = "diagnostic"]
 fn zz_diag_corners() {
     let hb = [0.1f32, 0.03, 0.07];
-    for pad in [2.0f32, 0.5, 0.37] {
+    for pad in [0.5f32] {
         let (c, p) = (0.025f32, 0.025f32 * pad);
         let mesh = sdf_fem_mesh::generate_marching_tets(&BoxSdf(hb), [-hb[0] - p, -hb[1] - p, -hb[2] - p], [hb[0] + p + c, hb[1] + p + c, hb[2] + p + c], c);
         for sx in [-1.0f32, 1.0] { for sy in [-1.0f32, 1.0] { for sz in [-1.0f32, 1.0] {
@@ -323,6 +323,7 @@ fn zz_diag_corners() {
         let a = a * 0.04 / (4.0 * f64::from(hb[0] * hb[2]));
         let (dmax, _) = boundary_stats(&mesh, &BoxSdf(hb));
         let bf = mesh.boundary_faces().unwrap();
+        for f in &bf { let p = f.map(|i| mesh.vertices[i as usize]); let on = p.iter().filter(|v| (v[1] + hb[1]).abs() < 1e-6).count(); if tri_area(p) > 0.3 * f64::from(c * c) && { let n = [0usize, 1, 2].map(|k| [0usize, 1, 2].iter().filter(|&&j| ((p[j][k].abs() - hb[k]).abs()) < 1e-6).count()); n.iter().all(|&x| x < 3) } { eprintln!("  nb {on}: {p:?} area {:.2e}", tri_area(p)); } }
         let mut seen = std::collections::BTreeSet::new();
         for f in &bf { for &i in f { if seen.insert(i) { let v = mesh.vertices[i as usize]; let d = BoxSdf(hb).distance(v[0], v[1], v[2]); if d.abs() > 1e-6 { eprintln!("  off v{i} {v:?} d {d:.2e}"); } } } }
         let mut worst = 180.0f64;

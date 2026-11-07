@@ -317,6 +317,44 @@ fn feature_point<F: SdfField + ?Sized>(
     (field(sdf, x).abs() <= ON_SURFACE_CELLS * c).then_some((x, planes))
 }
 
+/// Where a lattice corner should warp to if it lies near a crease or a corner
+/// of the surface: the meeting point of the tangent planes of the distinct
+/// faces met by the corner's incident crossings (two faces: the crease point
+/// nearest the corner; three: the corner point). `None` when the crossings
+/// see one face only, or the meeting point is not on the surface.
+pub(crate) fn crease_target<F: SdfField + ?Sized>(
+    sdf: &F,
+    corner: [f32; 3],
+    crossings: &[[f32; 3]],
+    cell: f32,
+) -> Option<[f32; 3]> {
+    let h = NEWTON_STEP_CELLS * cell;
+    let mut planes: Vec<Plane> = Vec::new();
+    for c in crossings {
+        let Some(q) = project(sdf, to64(*c), h) else {
+            continue;
+        };
+        let Some(n) = unit(gradient(sdf, q, h)) else {
+            continue;
+        };
+        let pl = Plane {
+            n,
+            p: q,
+            refined: false,
+        };
+        if !planes.iter().any(|x| dot(x.n, pl.n) >= FEATURE_ANGLE_COS) {
+            planes.push(pl);
+        }
+    }
+    if planes.len() < 2 {
+        return None;
+    }
+    planes.truncate(3);
+    let owners: Vec<[f64; 3]> = planes.iter().map(|p| p.p).collect();
+    let (x, _) = feature_point(sdf, &planes, &owners, to64(corner), cell)?;
+    Some(to32(x))
+}
+
 /// `min sin(dihedral)` over the six edges of a tetrahedron, and its signed
 /// volume ×6. `sin θ_e = 3 V |e| / (2 A₁ A₂)`.
 fn tet_quality(p: [[f64; 3]; 4]) -> (f64, f64) {
@@ -354,6 +392,9 @@ struct Work<'a, F: SdfField + ?Sized> {
     planes: Vec<Vec<Plane>>,
     /// Tetrahedra incident to each vertex.
     incident: Vec<Vec<u32>>,
+    /// Vertices of proposals whose vertex could not reach its target; the
+    /// elements around them are refined before the next pass.
+    blocked: BTreeSet<u32>,
 }
 
 impl<F: SdfField + ?Sized> Work<'_, F> {
@@ -721,6 +762,7 @@ pub(crate) fn conform_boundary<F: SdfField + ?Sized>(
     let mut w = Work {
         planes: vec![Vec::new(); mesh.vertices.len()],
         incident: Vec::new(),
+        blocked: BTreeSet::new(),
         mesh,
         sdf,
         cell,
@@ -814,7 +856,10 @@ fn split_creases<F: SdfField + ?Sized>(w: &mut Work<'_, F>) -> usize {
             let Some((x, planes)) = feature_point(w.sdf, &planes, &owners, m, w.cell) else {
                 continue;
             };
-            if norm(sub(x, m)) > f64::from(w.cell) {
+            // the meeting point is within reach of the edge it replaces: no
+            // further from its midpoint than the edge is long (a crease cut by
+            // a long chamfer edge sits up to that far away)
+            if norm(sub(x, m)) > f64::from(w.cell).max(norm(sub(pb, pa))) {
                 continue;
             }
             // An end already on the crease (a lattice corner the rim passes
@@ -935,7 +980,10 @@ fn split_corners<F: SdfField + ?Sized>(w: &mut Work<'_, F>) -> usize {
             continue;
         };
         if dbg { eprintln!("  x {x:?}"); }
-        if norm(sub(x, c)) > f64::from(w.cell) {
+        let reach = (0..3)
+            .map(|k| norm(sub(pts[k], pts[(k + 1) % 3])))
+            .fold(f64::from(w.cell), f64::max);
+        if norm(sub(x, c)) > reach {
             continue;
         }
         // one vertex per corner: a second face reaching for the same point is
@@ -1032,16 +1080,22 @@ where
     w.rebuild_incidence();
     let moves: Vec<(u32, [f64; 3])> = proposals.iter().map(|(k, x, _)| (mid[k], *x)).collect();
     w.move_all(&moves);
-    let reached: Vec<(K, [f64; 3], Vec<Plane>)> = proposals
+    let (reached, missed): (Vec<_>, Vec<_>) = proposals
         .into_iter()
-        .filter(|(k, x, _)| w.mesh.vertices[mid[k] as usize] == to32(*x))
-        .collect();
+        .partition(|(k, x, _)| w.mesh.vertices[mid[k] as usize] == to32(*x));
+    for (k, _, _) in &missed {
+        w.blocked.extend(k.verts());
+    }
+    if std::env::var_os("SFB_DEBUG").is_some() {
+        eprintln!("place: proposed {} reached {}", mid.len(), reached.len());
+    }
     commit(w, base, old, reached, split)
 }
 
 /// The simplex a proposal splits: its centroid is the provisional position.
 trait Simplex {
     fn centroid<F: SdfField + ?Sized>(&self, w: &Work<'_, F>) -> [f64; 3];
+    fn verts(&self) -> Vec<u32>;
 }
 
 impl Simplex for (u32, u32) {
@@ -1050,12 +1104,18 @@ impl Simplex for (u32, u32) {
         let b = to64(w.mesh.vertices[self.1 as usize]);
         add_scaled(a, 0.5, sub(b, a))
     }
+    fn verts(&self) -> Vec<u32> {
+        vec![self.0, self.1]
+    }
 }
 
 impl Simplex for [u32; 3] {
     fn centroid<F: SdfField + ?Sized>(&self, w: &Work<'_, F>) -> [f64; 3] {
         let p = self.map(|v| to64(w.mesh.vertices[v as usize]));
         [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0)
+    }
+    fn verts(&self) -> Vec<u32> {
+        self.to_vec()
     }
 }
 
@@ -1108,6 +1168,11 @@ where
                 let (q, vol6) = tet_quality(p);
                 let collapsed = q < COLLAPSED_SIN && w.shares_face(&child.vertices);
                 if !collapsed && (!(vol6 > 0.0) || q < q_parent.min(floor_sin())) {
+                    if std::env::var_os("SFB_DEBUG").is_some() {
+                        let pts: Vec<[f32; 3]> = child.vertices.iter().map(|&v| w.mesh.vertices[v as usize]).collect();
+                        let np: Vec<usize> = child.vertices.iter().map(|&v| w.planes[v as usize].len()).collect();
+                        eprintln!("  withdraw: child vol6 {vol6:.2e} q {q:.3} parent q {q_parent:.3} planes {np:?} {pts:?}");
+                    }
                     bad.extend(child.vertices.iter().copied().filter(|&v| v as usize >= base));
                 }
             }
