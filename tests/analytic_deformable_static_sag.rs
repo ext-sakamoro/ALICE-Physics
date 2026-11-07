@@ -359,3 +359,39 @@ fn the_neo_hookean_law_refuses_values_outside_its_range_on_each_side() {
     assert!((mu.to_f64() - want_mu).abs() / want_mu < 1e-9);
     assert!((lambda.to_f64() - want_lambda).abs() / want_lambda < 1e-9);
 }
+
+/// The body's default material is the spring-like constraints (the stiffness of the law a
+/// caller gets without choosing), and `Material::NeoHookean` is a different law: on the same
+/// column, the same substeps and the same settle, the two give different sags, and the
+/// Neo-Hookean one is the one that lands on the finite element reference (the constraints
+/// law has no `E`, so its sag is whatever its compliance gives).
+#[test]
+fn the_default_material_is_constraints_and_neo_hookean_is_a_different_law() {
+    assert!(matches!(
+        DeformableConfig::default().material,
+        Material::Constraints
+    ));
+    let mesh = column_mesh(0.0125, BODY_HALF_W, BODY_HALF_H);
+    let fem = fem_sag(&mesh);
+    let dt = Fix128::from_ratio(1, 60);
+    let sag = |material: Material| {
+        let mut body = body_with(&mesh, material, 4 * SUBSTEPS);
+        for _ in 0..SETTLE_FRAMES {
+            body.step(dt);
+        }
+        let top = top_vertices(&mesh);
+        let rest = f64::from(max_y(&mesh));
+        top.iter()
+            .map(|&i| rest - body.positions[i].y.to_f64())
+            .sum::<f64>()
+            / top.len() as f64
+    };
+    let constraints = sag(Material::Constraints);
+    let neo = sag(neo_hookean());
+    eprintln!("constraints sag {constraints:.4e} m, neo-hookean {neo:.4e} m, fem {fem:.4e} m");
+    assert!((neo - fem).abs() / fem < SETTLE_TOL);
+    assert!(
+        (constraints - neo).abs() / neo > SETTLE_TOL,
+        "the two laws give the same sag: {constraints:.3e} vs {neo:.3e}"
+    );
+}

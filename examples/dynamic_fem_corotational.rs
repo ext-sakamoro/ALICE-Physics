@@ -232,4 +232,11 @@ fn main() {
         "free column hit by (1.2e-3, 1.6e-3, 0) N·s: momentum ({:.4e}, {:.4e}, {:.4e}) right after, ({:.4e}, {:.4e}, {:.4e}) after 200 steps",
         p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]
     );
+    // the state digest names the run: another machine replaying these inputs prints the same
+    let digest: String = solver
+        .state_digest()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    println!("state digest after the run: {digest}");
 }
