@@ -57,7 +57,9 @@ def tree(overrides: dict[str, str] | None = None, drop: tuple[str, ...] = ()) ->
         "docs/MODULES.md": "# Modules\n",
     }
     files.update(overrides or {})
-    d = tempfile.mkdtemp()
+    d = tempfile.mkdtemp(prefix="docs-lint-fixture-")
+    # removed after this module's tests (each case builds a tree; nothing of them stays in the temp directory)
+    unittest.addModuleCleanup(shutil.rmtree, d, True)
     for rel, text in files.items():
         if rel in drop:
             continue
