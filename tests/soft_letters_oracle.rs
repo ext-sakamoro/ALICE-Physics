@@ -584,7 +584,7 @@ fn digest_covers_soft_bodies_and_snapshot_round_trips() {
 
 /// Frozen digest of the throw script at frame 600 (E and O, spacing 0.1). Every CI OS
 /// and the wasm lane must agree with it; it moves only with an announced law change.
-const THROW_DIGEST_600: &str = "5f98d3980cd53857748317c8a3acb9abf7f2f6f56a564a0a2f56872e73105ebc";
+const THROW_DIGEST_600: &str = "303aeac1e640bb64fc26460550d4851ea84a4b905127683ccb3147d52528bb8e";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -688,4 +688,15 @@ fn rollback_blob_carries_the_letters() {
         .unwrap();
     assert!(!other.deserialize_state(&blob), "other letters: refused");
     assert!(!world().deserialize_state(&blob), "no letters: refused");
+    // the same letters with another tether: same particle counts, other structure
+    let mut stiffer = world();
+    let (k, c) = tether();
+    let mut e = desc(letter_e(), Fix128::ZERO, r(1, 10));
+    e.tether = Some((k + k, c));
+    stiffer.add_soft_body(&e).unwrap();
+    stiffer.add_soft_body(&desc(letter_o(), r(15, 10), r(1, 10))).unwrap();
+    assert_eq!(stiffer.soft_bodies[0].particle_count(), a.soft_bodies[0].particle_count());
+    let before = state(&stiffer, 0);
+    assert!(!stiffer.deserialize_state(&blob), "another structure: refused");
+    assert_eq!(state(&stiffer, 0), before, "a refused blob changed the letters");
 }
