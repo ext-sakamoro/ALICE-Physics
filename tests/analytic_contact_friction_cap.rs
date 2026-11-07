@@ -31,7 +31,11 @@
 //!   `tests/analytic_contact_static_friction.rs`.
 //!
 //! The slope is modelled by tilting the gravity by `θ` against a level ground,
-//! which is the same problem in the ground's frame.
+//! which is the same problem in the ground's frame. The ground is a sphere of
+//! radius `1e4`, so a ball that has slid `x` sits on a face tilted by `x / 1e4`
+//! and gains `(g / 1e4) ∫ x dt` of speed, and its normal force is short by the
+//! centripetal `v² / 1e4` (1.33e-3 + 0.06e-3 after 1 s from `v₀ = 3`, `μ = 0.1`):
+//! the closed forms include this drift; the tolerances are derived in `slide_tol`.
 //!
 //! Author: Moroya Sakamoto
 
@@ -50,6 +54,8 @@ mod damped_limits;
 use damped_limits::{both_rates, damped_displacement, damped_velocity, engine_beta};
 
 const DT: f64 = 1.0 / 60.0;
+/// Radius of the ground sphere (its curvature enters the closed form)
+const BIG: f64 = 1.0e4;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -138,14 +144,41 @@ fn run(
     modifier: Option<Box<dyn ContactModifier>>,
     path: Path,
 ) -> (f64, f64) {
+    run_with(
+        mu,
+        theta,
+        v0,
+        frames,
+        rate,
+        modifier,
+        path,
+        PhysicsConfig::default().substeps,
+    )
+}
+
+/// `run` with `substeps` per frame (for the derived tolerances).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the scene's parameters, one per physical quantity"
+)]
+fn run_with(
+    mu: f64,
+    theta: f64,
+    v0: f64,
+    frames: usize,
+    rate: Fix128,
+    modifier: Option<Box<dyn ContactModifier>>,
+    path: Path,
+    substeps: usize,
+) -> (f64, f64) {
     let g = g();
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: v3(g * theta.sin(), -g * theta.cos(), 0.0),
         damping_rate: rate,
+        substeps,
         ..PhysicsConfig::default()
     });
-    let big = 1.0e4;
-    let ground = w.add_body_with_radius(RigidBody::new_static(v3(0.0, -big, 0.0)), fx(big));
+    let ground = w.add_body_with_radius(RigidBody::new_static(v3(0.0, -BIG, 0.0)), fx(BIG));
     let ball = w.add_body_with_radius(
         RigidBody::new_dynamic(v3(0.0, 0.5, 0.0), Fix128::ONE),
         fx(0.5),
@@ -182,7 +215,39 @@ fn run(
 /// (`≤ 2.5` here, so `≤ 2.5e-2`). At rate 0 the damping term is 0 and the
 /// budget is the friction-impulse part alone. `β` is matched to the engine's
 /// `Fix128` factor (`engine_beta`), so `Fix128::exp`'s error adds nothing.
-const SLIDE_TOL: f64 = 3e-2;
+/// The ground is a sphere of radius `BIG`, so the face under a ball that has
+/// slid `x` tilts by `x / BIG`: gravity pulls it forward by `g x / BIG`, and
+/// the normal force is short by the centripetal `v² / BIG`, so the friction
+/// is `μ (g − v² / BIG)`. Over the run the speed gains
+/// `(g / BIG) ∫ x dt + (μ / BIG) ∫ v² dt
+///  = (g / BIG)(v₀ t² / 2 − μ g t³ / 6) + (μ / BIG)(v₀² t − v₀ μ g t² + μ² g² t³ / 3)`
+/// (undamped `x(τ) = v₀ τ − μ g τ² / 2`, `v(τ) = v₀ − μ g τ`): the scene's
+/// physics, part of the closed form; the damping changes it by less than 1 %.
+fn curvature_drift(mu: f64, v0: f64, t: f64) -> f64 {
+    let mg = mu * g();
+    g() / BIG * (v0 * t * t / 2.0 - mg * t * t * t / 6.0)
+        + mu / BIG * (v0 * v0 * t - v0 * mg * t * t + mg * mg * t * t * t / 3.0)
+}
+
+/// Derived tolerance of the sliding speed after `frames` frames at rate
+/// `rate` with the effective friction `μ`: 1 % of the curvature drift (the
+/// damping's effect on `x`), the per-frame damping term
+/// `DT · μ g (1 − e^{−βt})` (the `O(β·dt)` of the damping part, zero at rate
+/// 0), the Richardson bound `2 |v(h) − v(2h)|` of the friction-impulse part
+/// from the default and half the substeps, and the fixed-point floor.
+fn slide_tol(mu: f64, v0: f64, frames: usize, rate: Fix128) -> f64 {
+    let t = frames as f64 * DT;
+    let beta = engine_beta(rate, DT);
+    let damping = if rate.is_zero() {
+        0.0
+    } else {
+        DT * mu * g() * (1.0 - (-beta * t).exp())
+    };
+    let n = PhysicsConfig::default().substeps;
+    let (_, v1) = run_with(mu, 0.0, v0, frames, rate, None, Path::Serial, n);
+    let (_, v2) = run_with(mu, 0.0, v0, frames, rate, None, Path::Serial, n / 2);
+    0.01 * curvature_drift(mu, v0, t).abs() + damping + 2.0 * (v1 - v2).abs() + 2f64.powi(-40)
+}
 
 /// `(μ, v₀, frames)` of the sliding scenes, chosen so the ball is still
 /// sliding at the end (`v > 0.5`).
@@ -196,12 +261,14 @@ fn a_sliding_ball_decelerates_at_mu_g() {
     for rate in both_rates() {
         for path in paths() {
             for (mu, v0, frames) in SLIDES {
-                let want = sliding_velocity(v0, mu, rate, frames as f64 * DT);
+                let t = frames as f64 * DT;
+                let want = sliding_velocity(v0, mu, rate, t) + curvature_drift(mu, v0, t);
                 assert!(want > 0.5);
                 let (_, v) = run(mu, 0.0, v0, frames, rate, None, path);
+                let tol = slide_tol(mu, v0, frames, rate);
                 assert!(
-                    (v - want).abs() < SLIDE_TOL,
-                    "{path:?} rate {rate:?} μ {mu}: v = {v:.5}, closed form {want:.5}"
+                    (v - want).abs() <= tol,
+                    "{path:?} rate {rate:?} μ {mu}: v = {v:.5}, closed form {want:.5}, bound {tol:.2e}"
                 );
             }
         }
@@ -213,13 +280,14 @@ fn a_sliding_ball_decelerates_at_mu_g() {
 #[test]
 fn an_absolute_friction_modifier_sets_the_sliding_deceleration() {
     for rate in both_rates() {
-        let want = sliding_velocity(3.0, 0.1, rate, 1.0);
+        let want = sliding_velocity(3.0, 0.1, rate, 1.0) + curvature_drift(0.1, 3.0, 1.0);
         for path in paths() {
             let m = AbsoluteFriction(fx(0.1));
             let (_, v) = run(0.5, 0.0, 3.0, 60, rate, Some(Box::new(m)), path);
+            let tol = slide_tol(0.1, 3.0, 60, rate);
             assert!(
-                (v - want).abs() < SLIDE_TOL,
-                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}"
+                (v - want).abs() <= tol,
+                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}, bound {tol:.2e}"
             );
         }
     }
@@ -230,13 +298,14 @@ fn an_absolute_friction_modifier_sets_the_sliding_deceleration() {
 #[test]
 fn a_relative_friction_modifier_halves_the_sliding_deceleration() {
     for rate in both_rates() {
-        let want = sliding_velocity(5.0, 0.2, rate, 0.5);
+        let want = sliding_velocity(5.0, 0.2, rate, 0.5) + curvature_drift(0.2, 5.0, 0.5);
         for path in paths() {
             let m = ScaleFriction(Fix128::from_ratio(1, 2));
             let (_, v) = run(0.4, 0.0, 5.0, 30, rate, Some(Box::new(m)), path);
+            let tol = slide_tol(0.2, 5.0, 30, rate);
             assert!(
-                (v - want).abs() < SLIDE_TOL,
-                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}"
+                (v - want).abs() <= tol,
+                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}, bound {tol:.2e}"
             );
         }
     }
