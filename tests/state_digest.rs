@@ -235,16 +235,21 @@ fn hex(b: &[u8]) -> String {
 /// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
+/// Re-recorded when the contact friction began acting at the contact point
+/// of plain spheres and `PHYSICS_SEMANTICS_ID` moved (e90000da… → 2680b331…):
+/// the snapshot header carries the identifier and its law_id, the scene's
+/// bodies hash the same as before (checked by stepping the scene with the
+/// previous solver under the new identifier).
 const GOLDEN_STATE_DIGEST: &str =
-    "42baf81046676a57946a3fccf6dc36568cbe49e28e0e6c1105bedd172be0d564";
-const GOLDEN_LAW_ID: &str = "822f0f0d47bc9e822089404ffd6062e7174a0f94bb95e32c05437f3f4da486f4";
+    "b9277e53485352521d59d8e518f3bda3c2b2dca872f32d2f67f95852f729c1cf";
+const GOLDEN_LAW_ID: &str = "b8f508637ad5596137b8ff200ac233f3f3221f5264e765b85e2dfad60a973eab";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "896aeb283c3e4d19de33eec170d9ea7489a4086e996b552e23b611089c325b9c";
+    "a94c3dd3b761dcc027b6343dd1f771c239d3c202f3c71b5e1ee4373c3639da5d";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
