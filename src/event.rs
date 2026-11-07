@@ -13,6 +13,25 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A body meeting a static collider in the last step, with the speed it arrived at.
+///
+/// Static colliders are not bodies, so these are not [`ContactEvent`]s. A hit lasts
+/// for the step that reported it: it is not part of a snapshot, and a restored world
+/// has none until its next step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StaticHit {
+    /// The body
+    pub body: usize,
+    /// Index of the collider, in the order the colliders were added
+    pub collider: usize,
+    /// Surface normal at the contact, pointing to the body
+    pub normal: Vec3Fix,
+    /// Where the body touches the surface
+    pub point: Vec3Fix,
+    /// Speed into the surface when it was met; 0 when moving away or at rest
+    pub speed: Fix128,
+}
+
 /// Type of contact event
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContactEventType {
@@ -78,6 +97,8 @@ pub struct JointBreakEvent {
 pub struct EventCollector {
     /// Contact events this frame
     pub(crate) contact_events: Vec<ContactEvent>,
+    /// See [`StaticHit`]; not saved in a snapshot.
+    pub(crate) static_hits: Vec<StaticHit>,
     /// Trigger events this frame
     pub(crate) trigger_events: Vec<TriggerEvent>,
     /// Joints broken this frame
@@ -101,6 +122,7 @@ impl EventCollector {
     pub const fn new() -> Self {
         Self {
             contact_events: Vec::new(),
+            static_hits: Vec::new(),
             trigger_events: Vec::new(),
             joint_break_events: Vec::new(),
             prev_pairs: Vec::new(),
@@ -113,6 +135,7 @@ impl EventCollector {
     /// Begin a new frame: swap previous/current pair tracking
     pub fn begin_frame(&mut self) {
         self.contact_events.clear();
+        self.static_hits.clear();
         self.trigger_events.clear();
         self.joint_break_events.clear();
         // BTreeSet iterates in sorted order, so `prev_*` are sorted for
@@ -124,6 +147,26 @@ impl EventCollector {
         self.prev_triggers
             .extend(self.curr_triggers.iter().map(|(k, v)| (*k, *v)));
         self.curr_triggers.clear();
+    }
+
+    /// Report a body meeting a static collider. Contacts run once per substep; a
+    /// pair is kept once per step, with the highest speed it arrived at.
+    pub(crate) fn report_static_hit(&mut self, hit: StaticHit) {
+        let same = self
+            .static_hits
+            .iter_mut()
+            .find(|h| h.body == hit.body && h.collider == hit.collider);
+        match same {
+            Some(h) if h.speed < hit.speed => *h = hit,
+            Some(_) => {}
+            None => self.static_hits.push(hit),
+        }
+    }
+
+    /// Bodies that met a static collider in the last step.
+    #[must_use]
+    pub fn static_hits(&self) -> &[StaticHit] {
+        &self.static_hits
     }
 
     /// Report a contact between two bodies

@@ -4232,6 +4232,7 @@ pub fn alice_physics_core::event::EventCollector::joint_break_events(&self) -> &
 pub const fn alice_physics_core::event::EventCollector::new() -> Self
 pub fn alice_physics_core::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::event::EventCollector::report_trigger(&mut self, usize, usize)
+pub fn alice_physics_core::event::EventCollector::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::event::EventCollector::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 impl core::default::Default for alice_physics_core::event::EventCollector
 pub fn alice_physics_core::event::EventCollector::default() -> Self
@@ -4262,6 +4263,28 @@ impl core::marker::Unpin for alice_physics_core::event::JointBreakEvent
 impl core::marker::UnsafeUnpin for alice_physics_core::event::JointBreakEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::event::JointBreakEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::event::JointBreakEvent
+pub struct alice_physics_core::event::StaticHit
+pub alice_physics_core::event::StaticHit::body: usize
+pub alice_physics_core::event::StaticHit::collider: usize
+pub alice_physics_core::event::StaticHit::normal: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::event::StaticHit::point: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::event::StaticHit::speed: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::event::StaticHit
+pub fn alice_physics_core::event::StaticHit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::event::StaticHit
+impl core::cmp::PartialEq for alice_physics_core::event::StaticHit
+pub fn alice_physics_core::event::StaticHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::event::StaticHit
+pub fn alice_physics_core::event::StaticHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::event::StaticHit
+impl core::marker::StructuralPartialEq for alice_physics_core::event::StaticHit
+impl core::marker::Freeze for alice_physics_core::event::StaticHit
+impl core::marker::Send for alice_physics_core::event::StaticHit
+impl core::marker::Sync for alice_physics_core::event::StaticHit
+impl core::marker::Unpin for alice_physics_core::event::StaticHit
+impl core::marker::UnsafeUnpin for alice_physics_core::event::StaticHit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::event::StaticHit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::event::StaticHit
 pub struct alice_physics_core::event::TriggerEvent
 pub alice_physics_core::event::TriggerEvent::entered: bool
 pub alice_physics_core::event::TriggerEvent::other_body: usize
@@ -12054,6 +12077,7 @@ pub fn alice_physics_core::event::EventCollector::joint_break_events(&self) -> &
 pub const fn alice_physics_core::event::EventCollector::new() -> Self
 pub fn alice_physics_core::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::event::EventCollector::report_trigger(&mut self, usize, usize)
+pub fn alice_physics_core::event::EventCollector::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::event::EventCollector::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 impl core::default::Default for alice_physics_core::event::EventCollector
 pub fn alice_physics_core::event::EventCollector::default() -> Self
@@ -13611,6 +13635,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::solver::PhysicsWorld::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_parallel(&mut self, alice_physics_core::math::Fix128)
@@ -18586,6 +18611,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::solver::PhysicsWorld::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_parallel(&mut self, alice_physics_core::math::Fix128)
@@ -23682,6 +23708,7 @@ pub fn alice_physics_core::event::EventCollector::joint_break_events(&self) -> &
 pub const fn alice_physics_core::event::EventCollector::new() -> Self
 pub fn alice_physics_core::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::event::EventCollector::report_trigger(&mut self, usize, usize)
+pub fn alice_physics_core::event::EventCollector::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::event::EventCollector::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 impl core::default::Default for alice_physics_core::event::EventCollector
 pub fn alice_physics_core::event::EventCollector::default() -> Self
@@ -25281,6 +25308,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::solve_contact_constraints_with_
 pub fn alice_physics_core::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics_core::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics_core::math::Fix128)
 pub const fn alice_physics_core::solver::PhysicsWorld::stage_work(&self) -> alice_physics_core::solver::StageWork
 pub fn alice_physics_core::solver::PhysicsWorld::static_collider_count(&self) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::static_hits(&self) -> &[alice_physics_core::event::StaticHit]
 pub fn alice_physics_core::solver::PhysicsWorld::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::step_parallel(&mut self, alice_physics_core::math::Fix128)

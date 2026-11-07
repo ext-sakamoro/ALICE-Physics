@@ -619,6 +619,14 @@ impl WasmPhysicsWorld {
         out
     }
 
+    /// The contacts of the last step, 10 numbers each: `[bodyA, bodyB, kind, speed, px,
+    /// py, pz, nx, ny, nz]`. `kind` is 0 begin, 1 persist, 2 end, 3 a static collider, for
+    /// which `bodyB` is `-(collider index) - 1`. `speed` is the speed of approach in m/s.
+    #[wasm_bindgen(js_name = "getContactEvents")]
+    pub fn get_contact_events(&self) -> Vec<f64> {
+        binding_api::contact_events(&self.inner)
+    }
+
     // ------------------------------------------------------------------
     // Collision radius, shapes, static colliders, joints. Indices come back
     // as `number`, or `undefined` when an argument is refused (see
@@ -937,6 +945,58 @@ mod tests {
             Some(0)
         );
         (w, ball)
+    }
+
+    /// A ball falling onto a resting ball and a plane: each contact in the flat form, with
+    /// the speed of the fall.
+    #[test]
+    fn contact_events_report_bodies_and_static_colliders() {
+        let mut w = WasmPhysicsWorld::with_config(0.0, -10.0, 0.0, 4, 8);
+        let ball = w.add_dynamic_body(0.0, 2.5, 0.0, 1.0);
+        assert!(w.set_collision_radius(ball, 0.5));
+        assert_eq!(w.add_static_plane(0.0, 1.0, 0.0, 0.0), Some(0));
+        let mut hit = Vec::new();
+        for _ in 0..600 {
+            w.step(1.0 / 240.0);
+            hit = w.get_contact_events();
+            if !hit.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(hit.len(), 10);
+        assert_eq!(&hit[..3], &[0.0, -1.0, 3.0]);
+        // a fall of 2 m at 10 m/s2 with this binding's damping rate k: y = g/k t - g/k2 (1 -
+        // exp(-k t)), v = g/k (1 - exp(-k t)); bisection on t
+        let k = -(0.99_f64.ln()) * 60.0;
+        let fallen = |t: f64| 10.0 / k * t - 10.0 / (k * k) * (1.0 - (-k * t).exp());
+        let (mut low, mut high) = (0.0_f64, 2.0_f64);
+        for _ in 0..60 {
+            let mid = 0.5 * (low + high);
+            if fallen(mid) < 2.0 {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        let want = 10.0 / k * (1.0 - (-k * low).exp());
+        assert!(
+            (hit[3] - want).abs() < 0.03 * want,
+            "{} against {want}",
+            hit[3]
+        );
+        assert_eq!(hit[8], 1.0);
+
+        let mut w = WasmPhysicsWorld::with_config(0.0, 0.0, 0.0, 4, 8);
+        let a = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0);
+        let b = w.add_dynamic_body(1.5, 0.0, 0.0, 1.0);
+        assert!(w.set_collision_radius(a, 1.0));
+        assert!(w.set_collision_radius(b, 1.0));
+        w.set_velocity(a, 1.0, 0.0, 0.0);
+        w.set_velocity(b, -1.0, 0.0, 0.0);
+        w.step(1.0 / 60.0);
+        let hit = w.get_contact_events();
+        assert_eq!(&hit[..3], &[0.0, 1.0, 0.0]);
+        assert!((hit[3] - 2.0).abs() < 0.1, "{}", hit[3]);
     }
 
     /// The wasm calls build the world the Rust API builds: a registered material with friction and

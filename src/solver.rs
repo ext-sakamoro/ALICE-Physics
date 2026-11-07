@@ -2929,6 +2929,12 @@ impl PhysicsWorld {
 
     // ── Event Access ──────────────────────────────────────────────────
 
+    /// Bodies that met a static collider in the last step
+    #[must_use]
+    pub fn static_hits(&self) -> &[crate::event::StaticHit] {
+        self.events.static_hits()
+    }
+
     /// Get contact events from the last step
     #[inline]
     #[must_use]
@@ -6389,12 +6395,19 @@ impl PhysicsWorld {
                 .and_then(|r| *r)
                 .unwrap_or(default_radius);
             let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
-            for collider in &self.static_colliders {
+            for (collider_index, collider) in self.static_colliders.iter().enumerate() {
                 let hit = match shaped {
                     Some(c) => c.static_contact(body.position, body.rotation, collider),
                     None => collider.collide_sphere(body.position, radius),
                 };
                 if let Some(contact) = hit {
+                    self.events.report_static_hit(crate::event::StaticHit {
+                        body: i,
+                        collider: collider_index,
+                        normal: contact.normal,
+                        point: contact.point_a,
+                        speed: (-body.velocity.dot(contact.normal)).max(Fix128::ZERO),
+                    });
                     // How far the body moved into the surface this substep: the
                     // part of the push-out that cancels it is the body's motion
                     // and becomes velocity; the rest is overlap it started the

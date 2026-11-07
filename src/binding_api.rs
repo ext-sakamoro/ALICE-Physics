@@ -8,6 +8,7 @@
 //! that would panic (`add_joint`) or quietly store an unusable value.
 
 use crate::electromagnetic::MagneticResponse;
+use crate::event::ContactEventType;
 use crate::force::{ForceField, ForceFieldInstance};
 use crate::heightfield::HeightField;
 use crate::joint::Joint;
@@ -457,6 +458,47 @@ pub(crate) fn observe_body(w: &PhysicsWorld, body: usize) -> Option<Observation>
         sleeping: o.sleeping,
         in_contact: o.in_contact,
     })
+}
+
+/// The contacts of the last step, flat for a host that sees only numbers:
+/// `[bodyA, bodyB, kind, speed, px, py, pz, nx, ny, nz]` per contact. `kind` is 0 begin,
+/// 1 persist, 2 end, 3 a static collider (`bodyB` is then the collider's index, negated
+/// and less one, so it cannot be taken for a body). `speed` is the speed of approach.
+#[must_use]
+pub fn contact_events(world: &PhysicsWorld) -> Vec<f64> {
+    let mut out = Vec::new();
+    for e in world.contact_events() {
+        let kind = match e.event_type {
+            ContactEventType::Begin => 0.0,
+            ContactEventType::Persist => 1.0,
+            ContactEventType::End => 2.0,
+        };
+        // `relative_velocity` is `(v_a - v_b) . normal` with the normal from b to a, so
+        // approaching is negative.
+        let speed = (-e.relative_velocity).max(Fix128::ZERO).to_f64();
+        out.extend_from_slice(&[e.body_a as f64, e.body_b as f64, kind, speed]);
+        out.extend_from_slice(&[e.point.x.to_f64(), e.point.y.to_f64(), e.point.z.to_f64()]);
+        out.extend_from_slice(&[
+            e.normal.x.to_f64(),
+            e.normal.y.to_f64(),
+            e.normal.z.to_f64(),
+        ]);
+    }
+    for h in world.static_hits() {
+        out.extend_from_slice(&[
+            h.body as f64,
+            -(h.collider as f64) - 1.0,
+            3.0,
+            h.speed.to_f64(),
+        ]);
+        out.extend_from_slice(&[h.point.x.to_f64(), h.point.y.to_f64(), h.point.z.to_f64()]);
+        out.extend_from_slice(&[
+            h.normal.x.to_f64(),
+            h.normal.y.to_f64(),
+            h.normal.z.to_f64(),
+        ]);
+    }
+    out
 }
 
 #[cfg(test)]
