@@ -200,4 +200,36 @@ fn main() {
         })
         .fold(0.0, f64::max);
     println!("rotated by 36.87° and released: the largest move after 40 steps is {worst:.3e} mm");
+
+    // a free column (no fix, no ground, no load) hit at its top centre by an oblique impulse:
+    // the momentum of the body is the impulse, and stays so over the free steps
+    let bc = BoundaryConditions::new();
+    let mut solver = CorotationalTransientSolver::new(&mesh, &material, &bc, &dynamics, &config)
+        .expect("the free column solves");
+    let top_centre = top[top.len() / 2] as u32;
+    // 2e-3 N·s along (3, 4, 0)/5
+    let impulse = [
+        Fix128::from_f64(1.2e-3),
+        Fix128::from_f64(1.6e-3),
+        Fix128::ZERO,
+    ];
+    solver
+        .apply_impulses(&[(top_centre, impulse)])
+        .expect("the mass solve converges");
+    let momentum = |solver: &CorotationalTransientSolver| {
+        let mut p = [0.0f64; 3];
+        for (d, x) in solver.momentum().iter().enumerate() {
+            p[d % 3] += x.to_f64();
+        }
+        p
+    };
+    let p0 = momentum(&solver);
+    for _ in 0..200 {
+        solver.step().expect("the step converges");
+    }
+    let p1 = momentum(&solver);
+    println!(
+        "free column hit by (1.2e-3, 1.6e-3, 0) N·s: momentum ({:.4e}, {:.4e}, {:.4e}) right after, ({:.4e}, {:.4e}, {:.4e}) after 200 steps",
+        p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]
+    );
 }
