@@ -23,3 +23,15 @@ previous = "alice_physics_core::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS"
 # against it) is computed from it, so it moves only as an identifier does (a breaking version, both
 # values in CHANGELOG.md); tests/state_digest.rs pins its bytes and the golden digest it gives
 path = "alice_physics_core::PhysicsWorld::STATE_DIGEST_DOMAIN"
+
+
+[[id]]
+# the domain of TransientSolver::state_digest (the finite element solvers' own digest, not yet part
+# of the world's): a stored digest is computed from it, so it moves only as an identifier does
+# (a breaking version, both values in CHANGELOG.md); tests/analytic_dynamic_fem_corotational.rs
+# pins the replay and the digest it gives
+path = "alice_physics_core::dynamic_fem::TransientSolver::STATE_DIGEST_DOMAIN"
+
+[[id]]
+# the same bytes as TransientSolver::STATE_DIGEST_DOMAIN (the two solvers' states differ in content)
+path = "alice_physics_core::dynamic_fem::CorotationalTransientSolver::STATE_DIGEST_DOMAIN"
