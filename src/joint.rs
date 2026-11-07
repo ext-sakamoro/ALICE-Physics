@@ -14,59 +14,86 @@
 //!
 //! # MODEL — XPBD joint constraints
 //!
-//! - **方程式 (equations)**: position-level XPBD constraint rows (Macklin,
-//!   Müller, Chentanez, MIG 2016). Each positional row `C` (the anchor gap for
-//!   ball / hinge / fixed / cone-twist / D6, the off-axis gap for a slider) is
-//!   closed once per solve from `λ = 0`: `Δλ = −C / (w + α̃)`,
-//!   `α̃ = compliance / dt²`, with the generalised inverse mass
-//!   `w = 1/m_a + 1/m_b + (r_a × n)·I_a⁻¹(r_a × n) + (r_b × n)·I_b⁻¹(r_b × n)`;
-//!   body A moves by `+w_a λ n`, B by `−w_b λ n`, and each turns by
-//!   `I⁻¹(r × n) λ`. Angular rows (hinge axis alignment, fixed orientation,
-//!   cone and twist limits, D6 angular axes) rotate the bodies about the
-//!   error axis by the true angle `atan2(|a × b|, a·b)` split by the axial
-//!   inverse inertias `aᵀ I⁻¹ a`. Hinge and slider limits are rigid stops: a
-//!   violated bound is moved back exactly onto it. The spring joint is the
-//!   damped XPBD row (eq. 26): `λ = F h² / (1 + (k h² + c h) w)`,
-//!   `F = k (d − rest) + c (v_rel · n)`, one backward Euler step per substep.
-//!   The reaction force used for breaking is `|Σ λ n| / dt²` (eq. 10).
-//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; compliance in m/N
-//!   (`α = 1/k`), angular compliance in rad/(N m), stiffness N/m, damping
-//!   N s/m; quaternions unit. No f32 on the path.
-//! - **保存則 (conservation)**: every positional row applies equal and
-//!   opposite impulses through the lever arms, so the correction conserves
-//!   linear momentum and angular momentum about the anchor (a static body
-//!   absorbs its share); angular rows turn the bodies by `+w_a λ` and
-//!   `−w_b λ`, equal and opposite angular impulses along the axis. Energy is
-//!   not conserved: a rigid row removes the whole gap each solve (a
-//!   projection), compliance stores `λ² α / 2` per row, the spring damper
-//!   dissipates `c (v_rel · n)²`, and the projection of a swinging pendulum
-//!   loses swing energy at first order in the substep (amplitude 0.6 →
-//!   0.517 rad in 12 s at 4 substeps, 0.556 at 8, 0.578 at 16, measured on
-//!   both backends; no passing oracle pins the rate).
-//! - **適用範囲 (range)**: pairs of rigid bodies in 3D, one solve per substep
-//!   with `dt` the substep length; `λ` is not carried between calls, so `k`
-//!   calls at the same `dt` leave `d (α̃ / (w + α̃))^k` of the gap. A rigid
-//!   row is exact in one solve for any gap and an angular row uses the exact
-//!   angle, so a single correction has no small-angle limit; the motion over
-//!   a substep is first order in `dt` (the body pendulum's period holds to
-//!   1 % at the default substeps, the compliant stretch tends to `F α` once
-//!   the frame is split). `dt = 0` reports a zero reaction; a joint on one
-//!   body, or between two bodies that cannot move, applies nothing; a zero
-//!   gap or zero `w` is skipped; inverted limit intervals are rejected by the
-//!   builders; nothing is clamped outside the range. No sweep of the
-//!   convergence order across substeps yet.
-//! - **近似 (approximations)**: no joint friction; limits have no compliance
-//!   and no restitution; motors are not solved here ([`crate::motor`]); the
-//!   joints are swept once in order (Gauss–Seidel), so a chain carries the
-//!   load passed down in the same sweep and overshoots its static load from
-//!   rest; the reported reaction omits the angular rows (torques); the
-//!   deprecated separation-based breaking compares a length with a force;
-//!   the D6 frame of body B is stored but not read.
-//! - **検証 (validation)**: single rows, closed forms —
-//!   `tests/audit_joint.rs::ball_compliance_leaves_the_documented_fraction_of_the_error`
-//!   (`w / (w + α/dt²)`),
-//!   `::ball_offset_anchor_splits_the_correction_between_translation_and_rotation`
-//!   (generalised inverse mass), `::hinge_splits_the_angular_correction_by_inverse_inertia`,
+//! - **方程式 (equations)**: position-level XPBD rows (Macklin, Müller, Chentanez,
+//!   MIG 2016), each solved once from `λ = 0`. A point row `C` is the anchor gap
+//!   along its unit direction `n` (solve_ball_joint, l. 1052), the off-axis part of
+//!   the gap for the slider (solve_slider_joint, l. 1269) or its projection on a
+//!   frame-A axis for the D6 joint (solve_d6_joint, l. 1490): `λ = C / (w + α̃)`,
+//!   `α̃ = compliance / dt²` (l. 1074, l. 1081), `w = 1/m_a + 1/m_b +
+//!   (r_a × n)ᵀI_a⁻¹(r_a × n) + (r_b × n)ᵀI_b⁻¹(r_b × n)` (point_w_sum, l. 1779);
+//!   A translates by `+λ n / m_a`, B by `−λ n / m_b` and each turns by
+//!   `I⁻¹(r × n) λ` as a finite rotation (apply_point_correction, l. 1824). An
+//!   angular row measures an angle `θ` about an axis `n`: hinge alignment
+//!   `atan2(|a × b|, a·b)` about `a × b` (l. 1134), fixed orientation `2 atan2` of
+//!   the error quaternion (l. 1242), cone swing and twist beyond their limits
+//!   (l. 1642, l. 1669), hinge angle beyond a bound (l. 1164, l. 1177), D6 twist of
+//!   the relative frame about each frame-A axis beyond its bound (l. 1560);
+//!   `λ = θ / (w + α̃)`, `w = Σ nᵀI_i⁻¹n` (angular_w_sum, l. 1715); A turns by
+//!   `+w_a λ` and B by `−w_b λ` about `n` (apply_angular_correction, l. 1731) as
+//!   exact axis-angle rotations (rotate_by_angle, l. 1753). The spring is the
+//!   damped row, eq. 26: `λ = h² (k C + c (u·n)) / (1 + (k h² + c h) w)`
+//!   (solve_spring_joint, l. 1391; l. 1436, l. 1440), `C = |d| − L`, `n = d/|d|` (l. 1432)
+//!   or at `L = 0` `n` along `k d + c u` (l. 1421), `u` the relative anchor
+//!   velocity (l. 1411). The reaction used for breaking is `|Σ λ n| / dt²` over
+//!   the point rows (solve_joints_with_reaction_forces, l. 1005; l. 1018).
+//! - **単位 (units)**: `Fix128` fixed point throughout (l. 143): m, s, kg, rad.
+//!   Compliance is m/N, so `compliance / dt²` is 1/kg like `w` (l. 1074); angular
+//!   compliance rad/(N·m) over `dt²` is 1/(kg·m²) like `nᵀI⁻¹n` (l. 1135). A point
+//!   row's `λ` is kg·m and `λ / dt²` is N (l. 1018); stiffness N/m, damping N·s/m
+//!   (l. 1436); angles in rad from `atan2` (l. 1134, l. 1863); quaternions are
+//!   renormalised after every rotation (l. 1757).
+//! - **保存則 (conservation)**: a point row applies `λ n` at anchor A and `−λ n`
+//!   at anchor B: the mass-weighted translations cancel (l. 1837, l. 1840), so do
+//!   the inertia-weighted rotations `±(r × n) λ` (l. 1810); the pair keeps its
+//!   linear momentum and its angular momentum changes by `λ (anchor_a − anchor_b)
+//!   × n`: zero when `n` is the gap direction (ball, hinge, fixed, cone-twist,
+//!   spring with `L > 0`: l. 1068, l. 1427), not zero for the slider's off-axis
+//!   row (l. 1291), the D6 frame-axis rows (l. 1490) and the `L = 0` spring
+//!   (l. 1421). A static body stays put and absorbs its share (l. 1836, l. 1807).
+//!   An angular row turns A by `+w_a λ` and B by `−w_b λ` about `n` (l. 1741,
+//!   l. 1744), `w_i = nᵀI_i⁻¹n` (l. 1699): the angular momentum changes by
+//!   `λ (w_a I_a n − w_b I_b n)`, which cancels only when `n` is a principal axis
+//!   of both inertias (each term is then `±λ n`), not in general. Energy is not
+//!   conserved: rows move positions and rotations only, no velocity is written
+//!   (l. 1824, l. 1731), so a rigid row is a projection.
+//! - **適用範囲 (range)**: pairs of rigid bodies in one slice, each joint solved
+//!   once per call in order (solve_joints, l. 886), `dt` the substep. No `λ` is
+//!   stored (l. 1081), so `k` calls at one `dt` each remove `w / (w + α̃)` of the
+//!   gap again. A rigid point row with anchors on the centres of mass closes its
+//!   gap in one solve (l. 1081, l. 1837); with a lever arm the rotation share is
+//!   the linearised `I⁻¹(r × n) λ` applied as a finite rotation (l. 1810), exact
+//!   to first order in that angle. An angular row removes its measured angle
+//!   exactly, all rotations being about one axis (l. 1741, l. 1744). `dt = 0`:
+//!   `compliance / (dt²)` divides by zero, which `Fix128` returns as 0 (l. 1074,
+//!   l. 1135), so compliant rows act as rigid and still move the bodies; the
+//!   spring row applies nothing (`h² = 0`, l. 1440) and the reaction reads 0
+//!   (l. 1015). A joint on one body is skipped (l. 903); immovable bodies get no
+//!   translation or rotation (l. 1836, l. 1740); a row with `w = 0`, a zero gap or
+//!   a zero angle is skipped (l. 1077, l. 1070, l. 1132, l. 1235, l. 1644).
+//!   Builders panic on `min > max` and on negative cone or twist limits (l. 286,
+//!   l. 415, l. 631, l. 650, l. 730). Hinge axes are used as given (l. 1126): the
+//!   alignment angle is scale-free, the limit rows assume a unit axis (l. 1161).
+//! - **近似 (approximations)**: each solve fn has only the rows listed above
+//!   (solve_one, l. 900): no friction, restitution or motor term. Joints are swept
+//!   once in order (l. 887), each seeing the state the joints before it left
+//!   (Gauss–Seidel). Inside one joint some rows reuse state an earlier row of the
+//!   same solve already changed: the D6 linear rows read the gap `delta` taken
+//!   before any correction (l. 1457, l. 1490) and frame-A axes from the pre-solve
+//!   rotation (l. 1461, l. 1490, l. 1560); the D6 angular rows share one
+//!   `rel_quat` across the three axes (l. 1536, l. 1560); the slider limit uses
+//!   the axial offset measured before the off-axis row moved the bodies (l. 1288,
+//!   l. 1316); the cone-twist twist row uses the twist axis read before the cone
+//!   row turned body A (l. 1627, l. 1666). Those rows are not exact in one solve.
+//!   Hinge and slider limits are rigid stops without compliance (l. 1165,
+//!   l. 1318), the slider's from inverse masses alone, positions only (l. 1318,
+//!   l. 1325); cone, twist and D6 limits take the angular compliance (l. 1645,
+//!   l. 1675, l. 1578). The reported reaction sums the point rows only, angular
+//!   rows add nothing (l. 1083, l. 1119, l. 1310, l. 1521). The deprecated
+//!   breaking compares an anchor separation in metres with `break_force` (l. 958).
+//! - **検証 (validation)**: single rows, closed forms — `tests/audit_joint.rs::
+//!   ball_compliance_leaves_the_documented_fraction_of_the_error`,
+//!   `::ball_offset_anchor_splits_the_correction_between_translation_and_rotation`,
+//!   `::hinge_splits_the_angular_correction_by_inverse_inertia`,
 //!   `::hinge_limits_clamp_to_the_exact_limit_on_both_sides`,
 //!   `::slider_limits_clamp_both_ends_and_split_by_inverse_mass`,
 //!   `::fixed_rotation_lock_splits_by_inverse_inertia`,
@@ -77,46 +104,41 @@
 //!   `::solvers_are_deterministic_and_order_of_joints_is_sequential`;
 //!   `tests/analytic_joint_reaction_per_type.rs::ball_joint_transmits_m_g`,
 //!   `::hinge_joint_transmits_m_g`, `::slider_joint_transmits_m_g_across_its_axis`,
+//!   `::d6_joint_with_locked_linear_axes_transmits_m_g`,
 //!   `::spring_joint_transmits_its_xpbd_row_force` (`m g = 16 N` exactly);
 //!   `tests/analytic_slider_reaction_limit.rs::above_the_maximum_unequal_masses`;
-//!   compliance contract: `tests/analytic_joint_compliance_xpbd.rs::
+//!   compliance: `tests/analytic_joint_compliance_xpbd.rs::
 //!   compliant_joint_stretch_is_iteration_independent_and_equals_f_alpha`,
 //!   `::repeated_free_function_calls_compound_the_gap_fraction`; spring:
-//!   `tests/analytic_spring_joint.rs::
-//!   critical_return_follows_the_closed_form_without_overshoot` (critically
-//!   damped closed form within the derived bound),
-//!   `::result_does_not_depend_on_substeps_or_iterations` (substeps 1 / 4 / 8),
-//!   `::hanging_body_settles_at_the_static_extension` (`m g / k` exactly),
-//!   `::damper_acts_on_relative_velocity_of_a_moving_anchor`; pendulums and
-//!   kinematics inside the world's substep (TGS backend, joints solved here):
-//!   `tests/analytic_tgs_joints_in_substep.rs::
+//!   `tests/analytic_spring_joint.rs::critical_return_follows_the_closed_form_without_overshoot`,
+//!   `::result_does_not_depend_on_substeps_or_iterations`,
+//!   `::hanging_body_settles_at_the_static_extension` (`m g / k` within `1e-9`),
+//!   `::damper_acts_on_relative_velocity_of_a_moving_anchor`; inside the world's
+//!   substep: `tests/analytic_tgs_joints_in_substep.rs::
 //!   pendulums_of_every_pivoting_joint_keep_the_closed_form_period_and_stay_attached`
-//!   (damped body-pendulum period to 1 %, anchor drift `≤ 1e-2 L`),
-//!   `::a_hinge_keeps_the_bob_in_its_plane`,
-//!   `::a_fixed_joint_holds_the_relative_pose`,
-//!   `::a_slider_keeps_the_motion_on_its_axis` (`x = a t² φ₂(βt)`, 2 %),
-//!   `::a_spring_joint_oscillates_with_the_harmonic_period` (2 %);
+//!   (period to 1 %), `::a_hinge_keeps_the_bob_in_its_plane`,
+//!   `::a_fixed_joint_holds_the_relative_pose`, `::a_slider_keeps_the_motion_on_its_axis`
+//!   (2 %), `::a_spring_joint_oscillates_with_the_harmonic_period` (2 %);
 //!   `tests/indep_tgs_pendulum_static_plane.rs::
 //!   the_damped_pendulum_period_is_the_closed_form_with_amplitude_correction`
 //!   (`1.5e-3`), `::the_undamped_large_amplitude_period_is_the_elliptic_closed_form`
-//!   (elliptic integral, `1e-3`); breaking:
-//!   `tests/analytic_joint_wiring.rs::
+//!   (`1e-3`); breaking and the sweep's start-up transient: `tests/analytic_joint_wiring.rs::
 //!   solve_joints_breaking_on_force_ramp_breaks_exactly_at_k_star`,
 //!   `tests/analytic_joint_break_world.rs::xpbd_joint_below_its_load_breaks_and_reports_m_g`,
-//!   `::a_hanging_chain_settles_to_m_g_below_and_two_m_g_above`.
-//!   validation missing: conservation of the undamped pendulum's swing
-//!   energy (the oracle is red as a src gap: the projection loses amplitude
-//!   at first order in the substep, see 保存則).
-//!   validation missing: the order of convergence of the joint correction
-//!   (no sweep asserting the error ratio across substeps; the pendulum and
-//!   spring oracles check each substep count against a fixed budget).
+//!   `::a_hanging_chain_settles_to_m_g_below_and_two_m_g_above`,
+//!   `::a_chain_breaks_under_its_static_load_and_holds_above_its_start_up_peak`
+//!   (loads 16 / 32 N: thresholds 15 / 31 N break, 21 / 41 N hold).
+//!   validation missing: conservation of the undamped pendulum's swing energy
+//!   (no passing oracle pins the energy over many substeps, see 保存則).
+//!   validation missing: the order of convergence of the joint correction (no
+//!   sweep asserting the error ratio across substeps; the oracles above check
+//!   each substep count against a fixed budget).
 //! - **段 (tiers)**: L0 only.
 //! - **既知の欠陥 (known defects)**: `tests/tgs_joints_static_colliders.rs::
 //!   a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs`
 //!   (the ball-joint pendulum's anchor reach under the TGS backend over 240
-//!   frames is 0.0612 / 0.0041 / 0.0010 at substeps 1 / 4 / 8 against the
-//!   1/20 the test allows, more than the scheme's centripetal drift
-//!   `v² h² / 2L` explains; the energy never grows).
+//!   frames exceeds the 1/20 of the length the test allows by more than the
+//!   scheme's centripetal drift explains; the energy never grows).
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
