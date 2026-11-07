@@ -1,19 +1,18 @@
 //! A sleeping body wakes when a caller moves it through the world.
 //!
 //! oracle (analytic): after a wake a free body moves as `x = v t` with `v = J / m`, the
-//! closed form of a body with no force on it. Also pinned: what does not wake (a zero
-//! velocity, a static body), the island waking together, the bits of an awake body, and
+//! closed form of a body with no force on it, and a body moved into the air falls
+//! `y0 - g t^2 / 2`. Also pinned: what does not wake (zero, the same position, a static body), the island waking together, the bits of an awake body, and
 //! the sleep configuration deciding the frame a body falls asleep.
 
-use alice_physics_core::joint::{BallJoint, Joint};
-use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::sleeping::SleepConfig;
-use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-
-const DT: (i64, i64) = (1, 60);
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::{
+    BallJoint, Fix128, Joint, PhysicsConfig, PhysicsWorld, PlaneCollider, RigidBody, Vec3Fix,
+};
 
 fn dt() -> Fix128 {
-    Fix128::from_ratio(DT.0, DT.1)
+    Fix128::from_ratio(1, 60)
 }
 
 fn world() -> PhysicsWorld {
@@ -101,9 +100,8 @@ fn zero_does_not_wake() {
     assert!(w.is_sleeping(b));
 }
 
-fn pair() -> (PhysicsWorld, usize, usize, usize) {
+fn pair() -> (PhysicsWorld, usize, usize) {
     let mut w = world();
-    let top = w.add_body(RigidBody::new_static(Vec3Fix::from_int(0, 4, 0)));
     let a = free_body(&mut w, 0, 1);
     let c = free_body(&mut w, 2, 1);
     w.add_joint(Joint::Ball(BallJoint::new(
@@ -114,19 +112,19 @@ fn pair() -> (PhysicsWorld, usize, usize, usize) {
     )));
     sleep(&mut w, a);
     sleep(&mut w, c);
-    (w, top, a, c)
+    (w, a, c)
 }
 
 /// The bodies joined to the one that moved wake with it, through each of the three calls.
 #[test]
 fn the_island_wakes_together() {
-    let (mut w, _, a, c) = pair();
+    let (mut w, a, c) = pair();
     w.set_body_velocity(a, Vec3Fix::UNIT_Y);
     assert!(!w.is_sleeping(c), "set_body_velocity");
-    let (mut w, _, a, c) = pair();
+    let (mut w, a, c) = pair();
     w.apply_body_impulse(a, Vec3Fix::UNIT_Y);
     assert!(!w.is_sleeping(c), "apply_body_impulse");
-    let (mut w, _, a, c) = pair();
+    let (mut w, a, c) = pair();
     w.apply_body_impulse_at(a, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_X);
     assert!(!w.is_sleeping(c), "apply_body_impulse_at");
 }
@@ -152,12 +150,96 @@ fn a_static_body_wakes_nothing() {
     assert!(w.is_sleeping(a), "apply_body_impulse_at");
 }
 
+/// A ball of radius 1/2 asleep on the floor `y = 0`, under gravity.
+fn ball_asleep_on_a_floor() -> (PhysicsWorld, usize) {
+    let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        Vec3Fix::UNIT_Y,
+        Fix128::ZERO,
+    )));
+    let start = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 2), Fix128::ZERO);
+    let b = w.add_body_with_radius(
+        RigidBody::new_dynamic(start, Fix128::ONE),
+        Fix128::from_ratio(1, 2),
+    );
+    sleep(&mut w, b);
+    (w, b)
+}
+
+fn y_of(w: &PhysicsWorld, i: usize) -> f64 {
+    let y = w.bodies[i].position.y;
+    y.hi as f64 + y.lo as f64 / 2f64.powi(64)
+}
+
+/// Measured: the field write leaves the body hanging in the air, asleep. This is the
+/// defect the world's call removes, and the field stays as it was by design.
+#[test]
+fn a_position_written_to_the_field_leaves_the_body_hanging() {
+    let (mut w, b) = ball_asleep_on_a_floor();
+    w.bodies[b].position.y = Fix128::from_int(5);
+    for _ in 0..30 {
+        w.step(dt());
+    }
+    println!("field write: y {} asleep {}", y_of(&w, b), w.is_sleeping(b));
+    assert!(w.is_sleeping(b));
+    assert_eq!(w.bodies[b].position.y, Fix128::from_int(5));
+}
+
+/// oracle: a body moved through the world wakes and falls `y0 - g t^2 / 2`.
+#[test]
+fn a_moved_body_wakes_and_falls_in_free_fall() {
+    let (mut w, b) = ball_asleep_on_a_floor();
+    let g = -w.config.gravity.y.to_f64();
+    let to = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(5), Fix128::ZERO);
+    assert!(w.set_body_position(b, to));
+    assert!(!w.is_sleeping(b));
+    let frames = 30;
+    for _ in 0..frames {
+        w.step(dt());
+    }
+    let t = f64::from(frames) / 60.0;
+    let expect = 5.0 - g * t * t / 2.0;
+    println!("moved: y {} closed form {expect}", y_of(&w, b));
+    assert!((y_of(&w, b) - expect).abs() < 0.05, "y {}", y_of(&w, b));
+}
+
+/// The position the body already has does not wake it, so a caller that writes the
+/// same place every frame still lets it sleep.
+#[test]
+fn the_same_position_does_not_wake() {
+    let (mut w, b) = ball_asleep_on_a_floor();
+    let here = w.bodies[b].position;
+    assert!(w.set_body_position(b, here));
+    assert!(w.is_sleeping(b));
+}
+
+/// A moved body wakes the bodies joined to it, and a moved static body wakes nothing.
+#[test]
+fn a_move_wakes_the_island_and_a_static_move_wakes_nothing() {
+    let (mut w, a, c) = pair();
+    assert!(w.set_body_position(a, Vec3Fix::from_int(0, 1, 0)));
+    assert!(!w.is_sleeping(c));
+    let mut w = world();
+    let top = w.add_body(RigidBody::new_static(Vec3Fix::from_int(0, 4, 0)));
+    let a = free_body(&mut w, 0, 1);
+    w.add_joint(Joint::Ball(BallJoint::new(
+        top,
+        a,
+        Vec3Fix::from_int(0, -4, 0),
+        Vec3Fix::ZERO,
+    )));
+    sleep(&mut w, a);
+    assert!(w.set_body_position(top, Vec3Fix::from_int(0, 5, 0)));
+    assert!(w.is_sleeping(a));
+}
+
 /// An index past the last body answers `false` and changes nothing.
 #[test]
 fn an_index_past_the_last_body_is_refused() {
     let mut w = world();
     let b = free_body(&mut w, 0, 1);
     let before = w.state_digest();
+    assert!(!w.set_body_position(b + 1, Vec3Fix::UNIT_X));
     assert!(!w.set_body_velocity(b + 1, Vec3Fix::UNIT_X));
     assert!(!w.apply_body_impulse(b + 1, Vec3Fix::UNIT_X));
     assert!(!w.apply_body_impulse_at(b + 1, Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y));
@@ -170,6 +252,8 @@ fn an_awake_body_gets_the_same_bits_as_the_field_write() {
     let (mut a, mut b) = (world(), world());
     let (i, j) = (free_body(&mut a, 0, 3), free_body(&mut b, 0, 3));
     let v = Vec3Fix::new(Fix128::from_ratio(1, 3), Fix128::ONE, Fix128::ZERO);
+    a.set_body_position(i, v);
+    b.bodies[j].position = v;
     a.set_body_velocity(i, v);
     b.bodies[j].velocity = v;
     a.apply_body_impulse(i, v);

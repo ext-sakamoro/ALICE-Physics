@@ -16,7 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
-- `PhysicsWorld::set_body_velocity` / `apply_body_impulse` / `apply_body_impulse_at` を追加 0 でない速度と力積は dynamic な剛体をその island ごと起こす、0 では起こさない wasm / C / Python の速度と力積の入口 (一括を含む) はこれを通す `bodies[i].velocity` への直接の代入は従来どおり起こさない
+- `PhysicsWorld::set_body_position` / `set_body_velocity` / `apply_body_impulse` / `apply_body_impulse_at` を追加 位置の変更と 0 でない速度・力積は dynamic な剛体をその island ごと起こす、同じ位置と 0 では起こさない wasm / C / Python の位置・速度・力積の入口 (一括を含む) はこれを通すので、眠った剛体に掛けた時の動きが変わる field への直接の代入は従来どおり起こさない
 - wasm `wakeBody` / `setSleepConfig`、C `alice_physics_body_wake` / `alice_physics_world_set_sleep_config`、Python `wake_body` / `set_sleep_config`、C# `WakeBody` / `SetSleepConfig` を追加
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
 - `scripts/land.py`: ALICE-Law の状態を確かめる時の時間切れで、子の process も止める Law の main の fetch の git と `land_law_state.py` を自分の process group (POSIX は `start_new_session` = setsid、Windows は `CREATE_NEW_PROCESS_GROUP`) で起こし、時間切れでその group 全体を止める (POSIX は `killpg`、Windows は `taskkill /T`) これまでは script だけが止まり、script が起こした git / gh が残った 試験 `scripts/test_land.py` の `LawState` (script が起こした子が時間切れの後に動いていないこと、拒否が上限の時刻に来ること) 止めた後の読み取りにも上限 (5 秒) を置き、process group を離れた子孫が pipe を開いたままでも着地は上限の時刻に止まる (試験: group を離れた子が pipe を持ったままでも拒否が遅れないこと)

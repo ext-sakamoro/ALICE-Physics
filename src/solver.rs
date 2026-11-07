@@ -2846,6 +2846,22 @@ impl PhysicsWorld {
         self.islands.wake_island(body_idx);
     }
 
+    /// Move a body; a position other than the one it has wakes a dynamic body with its
+    /// island, otherwise a sleeping body would hang where it was put. Writing
+    /// `bodies[i].position` directly does not wake. Returns `false` for an index past the
+    /// last body.
+    pub fn set_body_position(&mut self, body_idx: usize, position: Vec3Fix) -> bool {
+        let Some(body) = self.bodies.get_mut(body_idx) else {
+            return false;
+        };
+        let moved = body.position != position;
+        body.position = position;
+        if body.is_dynamic() && moved {
+            self.islands.wake_island(body_idx);
+        }
+        true
+    }
+
     /// Set a body's velocity; a nonzero velocity wakes a dynamic body with its island.
     ///
     /// Writing `bodies[i].velocity` directly does not wake: a sleeping body keeps its

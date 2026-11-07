@@ -220,7 +220,7 @@ impl PyPhysicsWorld {
 
         py.detach(|| {
             for (i, pos) in positions.into_iter().enumerate() {
-                self.inner.bodies[i].position = pos;
+                self.inner.set_body_position(i, pos);
             }
         });
 

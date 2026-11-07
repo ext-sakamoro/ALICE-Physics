@@ -768,13 +768,10 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
     position: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&position)) {
-            (None, _) => 0,
-            (Some(_), None) => value_out_of_range(0),
-            (Some(b), Some(value)) => {
-                b.position = value;
-                1
-            }
+        Some(w) => match vec3_arg(&position) {
+            _ if w.bodies.get(body_id as usize).is_none() => 0,
+            None => value_out_of_range(0),
+            Some(value) => u8::from(w.set_body_position(body_id as usize, value)),
         },
         None => 0,
     })
@@ -2986,6 +2983,12 @@ mod tests {
             assert!(!(*world).is_sleeping(body as usize), "apply_impulse");
             assert_eq!(alice_physics_body_set_velocity(world, body, zero), 1);
             settle();
+            let up = AliceVec3 { x: 0.0, y: 3.0, z: 0.0 };
+            assert_eq!(alice_physics_body_set_position(world, body, up), 1);
+            assert!(!(*world).is_sleeping(body as usize), "set_position");
+            settle();
+            assert_eq!(alice_physics_body_set_position(world, body, up), 1);
+            assert!((*world).is_sleeping(body as usize), "the same position");
             assert_eq!(alice_physics_body_wake(world, body), 1);
             assert!(!(*world).is_sleeping(body as usize), "wake");
             assert_eq!(alice_physics_body_wake(world, body + 1), 0);
