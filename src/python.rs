@@ -174,8 +174,9 @@ impl PyPhysicsWorld {
         angular_threshold: f64,
         frames_to_sleep: u32,
     ) -> PyResult<()> {
-        let config = binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
-            .ok_or_else(out_of_range)?;
+        let config =
+            binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
+                .ok_or_else(out_of_range)?;
         self.inner.set_sleep_config(config);
         Ok(())
     }
@@ -203,7 +204,10 @@ impl PyPhysicsWorld {
         }
 
         // every value first: one out of range leaves all the bodies as they were
-        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+        if array
+            .iter()
+            .any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
+        {
             return Err(out_of_range());
         }
 
@@ -290,7 +294,9 @@ impl PyPhysicsWorld {
         let n = shape[0];
 
         // every value first: one out of range adds no body at all
-        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
+        if array
+            .iter()
+            .any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
             || (0..n).any(|i| binding_api::finite(array[[i, 3]]).is_none())
         {
             return Err(out_of_range());
@@ -349,7 +355,10 @@ impl PyPhysicsWorld {
         }
 
         // every value first: one out of range leaves all the bodies as they were
-        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+        if array
+            .iter()
+            .any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
+        {
             return Err(out_of_range());
         }
 
@@ -390,7 +399,10 @@ impl PyPhysicsWorld {
         let m = shape[0];
 
         // every value first: one out of range leaves all the bodies as they were
-        if array.iter().any(|v| binding_api::finite(f64::from(*v as f32)).is_none()) {
+        if array
+            .iter()
+            .any(|v| binding_api::finite(f64::from(*v as f32)).is_none())
+        {
             return Err(out_of_range());
         }
 
@@ -1084,7 +1096,11 @@ impl PyDeterministicSimulation {
     ///
     /// Returns:
     ///     Checksum (u64) for desync detection
-    fn advance_frame(&mut self, py: Python<'_>, inputs: Vec<(u8, f64, f64, f64, u32)>) -> PyResult<u64> {
+    fn advance_frame(
+        &mut self,
+        py: Python<'_>,
+        inputs: Vec<(u8, f64, f64, f64, u32)>,
+    ) -> PyResult<u64> {
         let frame_inputs: Vec<FrameInput> = inputs
             .iter()
             .map(|&(pid, mx, my, mz, act)| {

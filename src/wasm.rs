@@ -49,7 +49,9 @@ pub struct WasmPhysicsWorld {
 /// The error a value that is not a `Fix128` throws: not a number, or outside
 /// `-2^63 <= x < 2^63`. Nothing has changed when it is thrown.
 fn out_of_range() -> JsValue {
-    let err = js_sys::Error::new("alice-physics: a value is not a number or is outside the fixed-point range");
+    let err = js_sys::Error::new(
+        "alice-physics: a value is not a number or is outside the fixed-point range",
+    );
     err.set_name("ValueOutOfRange");
     err.into()
 }
@@ -73,7 +75,8 @@ impl WasmPhysicsWorld {
         substeps: u32,
         iterations: u32,
     ) -> Result<Self, JsValue> {
-        let gravity = binding_api::vec3(gravity_x, gravity_y, gravity_z).ok_or_else(out_of_range)?;
+        let gravity =
+            binding_api::vec3(gravity_x, gravity_y, gravity_z).ok_or_else(out_of_range)?;
         let config = PhysicsConfig {
             substeps: substeps as usize,
             iterations: iterations as usize,
@@ -94,7 +97,13 @@ impl WasmPhysicsWorld {
 
     /// Add a dynamic body at (x, y, z) with given mass. Returns body index.
     #[wasm_bindgen(js_name = "addDynamicBody")]
-    pub fn add_dynamic_body(&mut self, x: f64, y: f64, z: f64, mass: f64) -> Result<usize, JsValue> {
+    pub fn add_dynamic_body(
+        &mut self,
+        x: f64,
+        y: f64,
+        z: f64,
+        mass: f64,
+    ) -> Result<usize, JsValue> {
         let position = binding_api::vec3(x, y, z).ok_or_else(out_of_range)?;
         let mass = binding_api::finite(mass).ok_or_else(out_of_range)?;
         Ok(self.inner.add_body(RigidBody::new_dynamic(position, mass)))
@@ -126,7 +135,8 @@ impl WasmPhysicsWorld {
 
     /// Step the simulation by dt seconds.
     pub fn step(&mut self, dt: f64) -> Result<(), JsValue> {
-        self.inner.step(binding_api::finite(dt).ok_or_else(out_of_range)?);
+        self.inner
+            .step(binding_api::finite(dt).ok_or_else(out_of_range)?);
         Ok(())
     }
 
@@ -229,7 +239,13 @@ impl WasmPhysicsWorld {
 
     /// Set a body's velocity. A nonzero velocity wakes a sleeping dynamic body.
     #[wasm_bindgen(js_name = "setVelocity")]
-    pub fn set_velocity(&mut self, body_id: usize, vx: f64, vy: f64, vz: f64) -> Result<(), JsValue> {
+    pub fn set_velocity(
+        &mut self,
+        body_id: usize,
+        vx: f64,
+        vy: f64,
+        vz: f64,
+    ) -> Result<(), JsValue> {
         let velocity = binding_api::vec3(vx, vy, vz).ok_or_else(out_of_range)?;
         self.inner.set_body_velocity(body_id, velocity);
         Ok(())
@@ -237,7 +253,13 @@ impl WasmPhysicsWorld {
 
     /// Apply impulse at center of mass. A nonzero impulse wakes a sleeping dynamic body.
     #[wasm_bindgen(js_name = "applyImpulse")]
-    pub fn apply_impulse(&mut self, body_id: usize, ix: f64, iy: f64, iz: f64) -> Result<(), JsValue> {
+    pub fn apply_impulse(
+        &mut self,
+        body_id: usize,
+        ix: f64,
+        iy: f64,
+        iz: f64,
+    ) -> Result<(), JsValue> {
         let impulse = binding_api::vec3(ix, iy, iz).ok_or_else(out_of_range)?;
         self.inner.apply_body_impulse(body_id, impulse);
         Ok(())
@@ -257,8 +279,9 @@ impl WasmPhysicsWorld {
         angular_threshold: f64,
         frames_to_sleep: u32,
     ) -> Result<(), JsValue> {
-        let config = binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
-            .ok_or_else(out_of_range)?;
+        let config =
+            binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep)
+                .ok_or_else(out_of_range)?;
         self.inner.set_sleep_config(config);
         Ok(())
     }
@@ -995,8 +1018,8 @@ fn hit_array(hit: Option<binding_api::QueryHit>) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::math::Vec3Fix;
     use super::*;
+    use crate::math::Vec3Fix;
 
     /// A world with a magnet at the origin and a steel-mass ball of material 1 above it, no
     /// gravity; returns (world, ball)
@@ -1425,7 +1448,9 @@ mod tests {
         world.add_static_body(100.0, 0.0, 0.0).unwrap();
 
         // Ray pointing away from body
-        let result = world.raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0).unwrap();
+        let result = world
+            .raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0)
+            .unwrap();
         assert!(result.is_empty(), "Should miss body at x=100");
     }
 
@@ -1730,7 +1755,8 @@ mod tests {
         w.apply_impulse(body, 1.0, 0.0, 0.0).unwrap();
         assert!(!asleep(&w), "applyImpulse");
         settle(&mut w);
-        w.apply_impulses_batch(&[body as f64, 1.0, 0.0, 0.0]).unwrap();
+        w.apply_impulses_batch(&[body as f64, 1.0, 0.0, 0.0])
+            .unwrap();
         assert!(!asleep(&w), "applyImpulsesBatch");
         settle(&mut w);
         w.set_velocities_batch(&[1.0, 0.0, 0.0]).unwrap();

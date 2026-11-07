@@ -858,7 +858,10 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
     restitution: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(restitution)) {
+        Some(w) => match (
+            w.bodies.get_mut(body_id as usize),
+            binding_api::finite(restitution),
+        ) {
             (None, _) => 0,
             (Some(_), None) => value_out_of_range(0),
             (Some(b), Some(value)) => {
@@ -881,7 +884,10 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
     friction: f64,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), binding_api::finite(friction)) {
+        Some(w) => match (
+            w.bodies.get_mut(body_id as usize),
+            binding_api::finite(friction),
+        ) {
             (None, _) => 0,
             (Some(_), None) => value_out_of_range(0),
             (Some(b), Some(value)) => {
@@ -2112,8 +2118,8 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 
 #[cfg(test)]
 mod tests {
-    use crate::math::Fix128;
     use super::*;
+    use crate::math::Fix128;
 
     /// The C call builds the fluid the Rust API builds, every argument with its own value, and a
     /// bad value registers nothing.
@@ -2191,8 +2197,16 @@ mod tests {
             let call = |p: &[f64; 10]| {
                 alice_physics_world_add_buoyancy_zone(
                     c,
-                    AliceVec3 { x: p[0], y: p[1], z: p[2] },
-                    AliceVec3 { x: p[3], y: p[4], z: p[5] },
+                    AliceVec3 {
+                        x: p[0],
+                        y: p[1],
+                        z: p[2],
+                    },
+                    AliceVec3 {
+                        x: p[3],
+                        y: p[4],
+                        z: p[5],
+                    },
                     p[6],
                     p[7],
                     p[8],
@@ -2964,8 +2978,15 @@ mod tests {
         unsafe {
             let world = alice_physics_world_create();
             alice_physics_world_set_gravity(world, 0.0, 0.0, 0.0);
-            assert_eq!(alice_physics_world_set_sleep_config(world, 0.01, 0.01, 5), 1);
-            let at = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            assert_eq!(
+                alice_physics_world_set_sleep_config(world, 0.01, 0.01, 5),
+                1
+            );
+            let at = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             let body = alice_physics_body_add_dynamic(world, at, 1.0);
             let settle = || {
                 for _ in 0..20 {
@@ -2973,8 +2994,16 @@ mod tests {
                 }
                 assert!((*world).is_sleeping(body as usize));
             };
-            let push = AliceVec3 { x: 0.0, y: 0.0, z: 1.0 };
-            let zero = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let push = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            };
+            let zero = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
             settle();
             assert_eq!(alice_physics_body_set_velocity(world, body, push), 1);
             assert!(!(*world).is_sleeping(body as usize), "set_velocity");
@@ -2984,7 +3013,11 @@ mod tests {
             assert!(!(*world).is_sleeping(body as usize), "apply_impulse");
             assert_eq!(alice_physics_body_set_velocity(world, body, zero), 1);
             settle();
-            let up = AliceVec3 { x: 0.0, y: 3.0, z: 0.0 };
+            let up = AliceVec3 {
+                x: 0.0,
+                y: 3.0,
+                z: 0.0,
+            };
             assert_eq!(alice_physics_body_set_position(world, body, up), 1);
             assert!(!(*world).is_sleeping(body as usize), "set_position");
             settle();
@@ -2993,8 +3026,14 @@ mod tests {
             assert_eq!(alice_physics_body_wake(world, body), 1);
             assert!(!(*world).is_sleeping(body as usize), "wake");
             assert_eq!(alice_physics_body_wake(world, body + 1), 0);
-            assert_eq!(alice_physics_world_set_sleep_config(world, -1.0, 0.01, 5), 0);
-            assert_eq!(alice_physics_world_set_sleep_config(world, 0.01, 1e19, 5), 0);
+            assert_eq!(
+                alice_physics_world_set_sleep_config(world, -1.0, 0.01, 5),
+                0
+            );
+            assert_eq!(
+                alice_physics_world_set_sleep_config(world, 0.01, 1e19, 5),
+                0
+            );
             alice_physics_world_destroy(world);
         }
     }
