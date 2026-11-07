@@ -1158,6 +1158,7 @@ class Lander:
         self.law_git_timeout = 300.0
         self.law_state_timeout = 900.0
         self.preflight_runs = 0
+        self.receipts_reused = 0
         self.preflighted_tree = ""
         self.poll_seconds = 30
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
@@ -1250,6 +1251,35 @@ class Lander:
         if r.returncode != 0:
             errors = [l[len("error: "):] for l in r.stdout.splitlines() if l.startswith("error: ")]
             raise LandError("lib-test gate failed:\n  " + "\n  ".join(errors or [r.stderr.strip()]))
+
+    def accepted_receipt(self, tree: str) -> str | None:
+        """"local" / "remote" when HEAD's tree already has a receipt the push gate accepts (its own check, from the hooks
+        checkout: hooks/preflight_trust.py, then the remote-receipt check for an opted-in repository), else None"""
+        try:
+            hooks = hooks_tool("hooks/preflight_trust.py").parent
+        except LandError:
+            return None
+        # the check reads the receipts where run-preflight.sh writes them (its cache and opt-in list pass through)
+        keep = {k: os.environ[k] for k in ("ALICE_SIBLING_CACHE", "ALICE_REMOTE_RECEIPT_REPOS") if k in os.environ}
+        # the gate's check, and a mode at least land.py's own: --fast (the static gates and the affected tests) or full;
+        # a quick receipt passes the gate but would land without the affected tests, so it does not count here
+        code = ("import json, sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); import preflight_trust as p; "
+                "root = Path(sys.argv[2]); ok = p.receipt_problem(root, 'HEAD') is None; "
+                "f = p.receipt_path(root, sys.argv[3]); "
+                "mode = json.loads(f.read_text()).get('mode') if ok and f is not None and f.is_file() else None; "
+                "sys.exit(0 if mode in ('fast', 'full') else 1)")
+        try:
+            r = subprocess.run([sys.executable, "-c", code, str(hooks), str(self.root), tree], capture_output=True, text=True,
+                               env={**clean_env(), **keep}, timeout=120)
+            if r.returncode == 0:
+                return "local"
+            remote = hooks_tool("scripts/remote_receipt.py")
+            r = subprocess.run([sys.executable, str(remote), "verify", str(self.root), tree, "--modes", "fast,full"],
+                               capture_output=True, text=True,
+                               env={**clean_env(), **keep}, timeout=180)
+        except (OSError, subprocess.SubprocessError, LandError):
+            return None
+        return "remote" if r.returncode == 0 else None
 
     def run_preflight(self) -> None:
         """scripts/preflight.sh --fast through the hooks checkout's run-preflight.sh, which writes the receipt of this
@@ -1830,7 +1860,16 @@ class Lander:
         # documents-only or compile-only rebase used to push a tree no preflight had run on)
         tree = self.git("rev-parse", "HEAD^{tree}")
         if tree != self.preflighted_tree:
-            self.run_preflight()
+            # a tree that already holds a receipt the push gate takes (run here, or a remote receipt for a repository that
+            # opts in) is not run again: the same check the push applies decides, so a missing, changed or edited
+            # receipt runs the preflight as before (2026-11-07)
+            source = self.accepted_receipt(tree)
+            if source:
+                self.receipts_reused += 1
+                self.record.append(f"preflight: not run, the tree {tree[:12]} has an accepted {source} receipt")
+                self.log(f"preflight: the tree {tree[:12]} already has an accepted {source} receipt; not run again")
+            else:
+                self.run_preflight()
             self.preflighted_tree = tree
         elif verify == "compile":
             self.run_compile_check()

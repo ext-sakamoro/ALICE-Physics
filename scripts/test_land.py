@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 
@@ -432,6 +433,12 @@ class FakeLander(land.Lander):
     def run_preflight(self):
         self.preflight_runs += 1
         self.calls.append("preflight")
+
+    receipt_source = None  # what accepted_receipt answers (the real one reads the hooks checkout)
+
+    def accepted_receipt(self, tree):
+        self.calls.append("receipt?")
+        return self.receipt_source
 
     def regenerate(self):
         self.calls.append("regenerate")
@@ -875,6 +882,28 @@ class Landing(Isolated):
         self.assertLess(lander.calls.index("regenerate"), lander.calls.index("preflight"), lander.calls)
         landed = git(self.r.work, "show", "HEAD:docs/integration-status.md")
         self.assertIn("b.rs", landed)
+
+    def test_an_accepted_local_receipt_skips_the_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.receipt_source = "local"
+        lander.land()
+        self.assertEqual((lander.preflight_runs, lander.receipts_reused), (0, 1))
+        self.assertTrue(any("accepted local receipt" in l for l in lander.record), lander.record)
+
+    def test_an_accepted_remote_receipt_skips_the_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.receipt_source = "remote"
+        lander.land()
+        self.assertEqual(lander.preflight_runs, 0)
+        self.assertTrue(any("accepted remote receipt" in l for l in lander.record), lander.record)
+
+    def test_no_accepted_receipt_runs_the_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.land()
+        self.assertEqual((lander.preflight_runs, lander.receipts_reused), (1, 0))
 
     def test_docs_only_upstream_reruns_preflight_on_the_rebased_tree(self):
         # (2026-10-29: was "does not rerun". Every tree land.py pushes needs the receipt of a preflight run on it,
@@ -2022,6 +2051,82 @@ class ScipOutsideTarget(Isolated):
             with self.subTest(writer=name):
                 self.assertTrue(needs, f"{name} reads the index but is not marked as needing it (no --scip)")
         self.assertNotIn('"scripts/scip_index.sh")', src, "scip_index.sh is started without an output directory")
+
+
+class AcceptedReceipt(unittest.TestCase):
+    """Lander.accepted_receipt with the real hooks checkout: the push gate's own check decides (skipped where there
+    is no trusted hooks checkout, as in CI)"""
+
+    def setUp(self):
+        try:
+            self.hooks = land.hooks_tool("hooks/preflight_trust.py").parent
+        except land.LandError as e:
+            self.skipTest(f"no trusted hooks checkout here: {e}")
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
+        self.repo = self.d / "r"
+        self.git("init", "-q", "-b", "main")
+        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts" / "preflight.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        self.commit("a")
+        self.env = {"ALICE_SIBLING_CACHE": str(self.d / "cache"), "ALICE_REMOTE_RECEIPT_REPOS": str(self.d / "none.txt")}
+        self.old = {k: os.environ.get(k) for k in self.env}
+        os.environ.update(self.env)
+        self.addCleanup(self.restore)
+
+    def git(self, *args):
+        if args[0] == "init":
+            return subprocess.run(["git", *args, str(self.repo)], capture_output=True, text=True, check=True).stdout
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True).stdout
+
+    def commit(self, msg):
+        self.git("add", "-A")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg)
+        self.tree = self.git("rev-parse", "HEAD^{tree}").strip()
+
+    def restore(self):
+        for k, v in self.old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def write_receipt(self, mode="fast"):
+        sys.path.insert(0, str(self.hooks))
+        import preflight_trust
+        blob = self.git("rev-parse", "HEAD:scripts/preflight.sh").strip()
+        return preflight_trust.write_receipt(self.repo, self.tree, blob, mode)
+
+    def accepted(self):
+        return land.Lander.accepted_receipt(types.SimpleNamespace(root=self.repo), self.tree)
+
+    def test_a_receipt_the_push_gate_takes_is_accepted(self):
+        self.write_receipt()
+        self.assertEqual(self.accepted(), "local")
+
+    def test_a_quick_receipt_is_below_land_s_own_run_and_is_not_accepted(self):
+        self.write_receipt("quick")
+        self.assertIsNone(self.accepted())
+
+    def test_a_full_receipt_is_accepted(self):
+        self.write_receipt("full")
+        self.assertEqual(self.accepted(), "local")
+
+    def test_no_receipt_is_not_accepted(self):
+        self.assertIsNone(self.accepted())
+
+    def test_an_edited_receipt_is_not_accepted(self):
+        path = self.write_receipt()
+        r = json.loads(path.read_text())
+        r["skips"] = ["edited"]
+        path.write_text(json.dumps(r))
+        self.assertIsNone(self.accepted())
+
+    def test_a_receipt_of_another_tree_is_not_accepted(self):
+        self.write_receipt()
+        (self.repo / "b.txt").write_text("b\n")
+        self.commit("b")
+        self.assertIsNone(self.accepted())
 
 
 class BashProgram(unittest.TestCase):
