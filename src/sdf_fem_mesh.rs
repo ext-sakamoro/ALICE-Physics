@@ -552,7 +552,7 @@ impl SdfTetMesh {
 /// it keeps the orientation, so both children are wound as the parent is
 /// (listing them as `[a, mid, c, d]` / `[mid, b, c, d]` inverted half of them
 /// for the edges that are not `(v0, v1)` up to an even permutation).
-fn split_children(vs: [u32; 4], a: u32, b: u32, mid: u32) -> [[u32; 4]; 2] {
+pub(crate) fn split_children(vs: [u32; 4], a: u32, b: u32, mid: u32) -> [[u32; 4]; 2] {
     let replace = |from: u32| vs.map(|v| if v == from { mid } else { v });
     [replace(b), replace(a)]
 }
@@ -749,7 +749,7 @@ impl WarpedLattice {
 
         // Every warp decision reads `raw`, never the partially warped table, so
         // the result does not depend on the order corners are visited in.
-        let snap_distance = SNAP_CELL_FRACTION * cell;
+        let snap_distance = std::env::var("SFB_SNAP").ok().and_then(|x| x.parse::<f32>().ok()).unwrap_or(SNAP_CELL_FRACTION) * cell;
         let index =
             |id: [i32; 3]| -> usize { ((id[2] * counts[1] + id[1]) * counts[0] + id[0]) as usize };
         let mut nodes = raw.clone();
@@ -878,6 +878,18 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
             }
         }
     }
+    // Which vertices the zero level set put there: every crossing, and every
+    // lattice corner whose (possibly warped) value is exactly zero. A corner
+    // with a negative value is interior, or lies on a face the bounding box
+    // cut, and is left where it is.
+    let mut on_surface = vec![false; mesh.vertices.len()];
+    for (key, &index) in &table {
+        on_surface[index as usize] = match *key {
+            VertexKey::Crossing(..) => true,
+            VertexKey::Corner(id) => lattice.value(id) == 0.0,
+        };
+    }
+    crate::sdf_fem_boundary::conform_boundary(&mut mesh, sdf, cell, on_surface);
     mesh
 }
 
@@ -1097,7 +1109,7 @@ fn intern(
 /// corners warped to the same place is dropped by [`push_tet`]; the faces it
 /// would have contributed have collapsed with it, so no neighbour is left facing
 /// a hole. `tests/mesh_conformity.rs` re-measures that by face census.
-const SNAP_CELL_FRACTION: f32 = 0.30;
+const SNAP_CELL_FRACTION: f32 = 0.45;
 
 fn crossing_vertex(
     mesh: &mut SdfTetMesh,
