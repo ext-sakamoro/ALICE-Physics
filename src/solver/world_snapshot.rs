@@ -2471,66 +2471,9 @@ impl PhysicsWorld {
 }
 
 fn w_cloth(w: &mut W, c: &crate::cloth::Cloth) {
-    w.usize(c.positions.len());
-    for p in &c.positions {
-        w.vec3(*p);
-    }
-    for p in &c.prev_positions {
-        w.vec3(*p);
-    }
-    for v in &c.velocities {
-        w.vec3(*v);
-    }
-    for m in &c.inv_masses {
-        w.fix(*m);
-    }
-    w.usize(c.triangles.len());
-    for t in &c.triangles {
-        for &k in t {
-            w.usize(k);
-        }
-    }
-    w.usize(c.pinned.len());
-    for &i in &c.pinned {
-        w.usize(i);
-    }
-    w.usize(c.pin_released().len());
-    for &(i, m) in c.pin_released() {
-        w.usize(i);
-        w.fix(m);
-    }
-    w.vec3(c.wind);
-    w.usize(c.config.iterations);
-    w.usize(c.config.substeps);
-    w.vec3(c.config.gravity);
-    w.fix(c.config.damping);
-    w.fix(c.config.stretch_compliance);
-    w.fix(c.config.bend_compliance);
-    w.fix(c.config.sdf_friction);
-    w.fix(c.config.thickness);
-    w.bool(c.config.self_collision);
-    w.fix(c.config.self_collision_distance);
-    match c.rest_tether() {
-        Some((k, d)) => {
-            w.bool(true);
-            w.fix(k);
-            w.fix(d);
-        }
-        None => w.bool(false),
-    }
-    w.usize(c.rest_positions().len());
-    for p in c.rest_positions() {
-        w.vec3(*p);
-    }
-    w.usize(c.grabs().len());
-    for g in c.grabs() {
-        w.u32(g.id.0);
-        w.usize(g.particle);
-        w.vec3(g.target);
-        w.vec3(g.applied[0]);
-        w.vec3(g.applied[1]);
-    }
-    w.fix(c.last_dt());
+    // the section is [`crate::cloth::Cloth::write_state`], the bytes the cloth's own
+    // digest hashes, so a cloth's digest and its section in the world's digest agree
+    c.write_state(&mut w.0);
 }
 
 fn r_cloth(r: &mut R<'_>) -> Res<crate::cloth::Cloth> {

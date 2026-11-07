@@ -2241,6 +2241,112 @@ impl Cloth {
 }
 
 impl Cloth {
+    /// Domain separation of [`Self::state_digest`]: the SHA-256 of the text
+    /// `alice-physics/cloth-digest/v1`, as 32 fixed bytes (the text is not in the binary).
+    pub const CLOTH_DIGEST_DOMAIN: [u8; 32] = [
+        0x9c, 0x4d, 0x6b, 0x74, 0xbf, 0xe7, 0x55, 0x82, 0x30, 0x59, 0x70, 0xba, 0xcb, 0x02, 0x44,
+        0x93, 0xaf, 0xda, 0x3e, 0x7e, 0xa1, 0xc1, 0x6e, 0x2c, 0xfe, 0x50, 0x48, 0x32, 0x9a, 0xe8,
+        0x13, 0xa9,
+    ];
+
+    /// Every piece of state a step reads or writes, as one little-endian byte string:
+    /// `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each, 48
+    /// bytes) and inverse masses (`Fix128`, 16 bytes), `triangles: u64` then `u64 × 3`
+    /// each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`)
+    /// each, `wind`, the configuration (`iterations: u64`, `substeps: u64`, `gravity`,
+    /// `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`,
+    /// `self_collision: u8`, `self_collision_distance`), the rest tether (`u8`, then
+    /// `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then
+    /// per grab `id: u32`, `particle: u64`, `target`, the two applied targets, then
+    /// `last_dt`. This is the cloth's section of
+    /// [`PhysicsWorld::snapshot_world`](crate::solver::PhysicsWorld::snapshot_world).
+    /// Not included: the exact sleep's flag and snapshot (they change no bit) and the
+    /// edge / bend constraints (a function of the triangles and the rest shape).
+    pub fn write_state(&self, out: &mut Vec<u8>) {
+        let u = |out: &mut Vec<u8>, n: usize| out.extend_from_slice(&(n as u64).to_le_bytes());
+        u(out, self.positions.len());
+        for p in &self.positions {
+            push_vec3(out, *p);
+        }
+        for p in &self.prev_positions {
+            push_vec3(out, *p);
+        }
+        for v in &self.velocities {
+            push_vec3(out, *v);
+        }
+        for m in &self.inv_masses {
+            push_fix(out, *m);
+        }
+        u(out, self.triangles.len());
+        for t in &self.triangles {
+            for &k in t {
+                u(out, k);
+            }
+        }
+        u(out, self.pinned.len());
+        for &i in &self.pinned {
+            u(out, i);
+        }
+        u(out, self.pin_released.len());
+        for &(i, m) in &self.pin_released {
+            u(out, i);
+            push_fix(out, m);
+        }
+        push_vec3(out, self.wind);
+        u(out, self.config.iterations);
+        u(out, self.config.substeps);
+        push_vec3(out, self.config.gravity);
+        push_fix(out, self.config.damping);
+        push_fix(out, self.config.stretch_compliance);
+        push_fix(out, self.config.bend_compliance);
+        push_fix(out, self.config.sdf_friction);
+        push_fix(out, self.config.thickness);
+        out.push(u8::from(self.config.self_collision));
+        push_fix(out, self.config.self_collision_distance);
+        match self.rest_tether {
+            Some(t) => {
+                out.push(1);
+                push_fix(out, t.stiffness);
+                push_fix(out, t.damping);
+            }
+            None => out.push(0),
+        }
+        u(out, self.rest_positions.len());
+        for p in &self.rest_positions {
+            push_vec3(out, *p);
+        }
+        u(out, self.grabs.len());
+        for g in &self.grabs {
+            out.extend_from_slice(&g.id.0.to_le_bytes());
+            u(out, g.particle);
+            push_vec3(out, g.target);
+            push_vec3(out, g.applied[0]);
+            push_vec3(out, g.applied[1]);
+        }
+        push_fix(out, self.last_dt);
+    }
+
+    /// [`Self::write_state`] as a new vector.
+    #[must_use]
+    pub fn state_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.write_state(&mut out);
+        out
+    }
+
+    /// SHA-256 of [`Self::CLOTH_DIGEST_DOMAIN`] followed by [`Self::state_bytes`]: one
+    /// value two runs agree on exactly when their cloths are in the same state under
+    /// the same configuration, for a replay to be checked by its result. An independent
+    /// implementation recomputes it with any SHA-256.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::CLOTH_DIGEST_DOMAIN);
+        h.update(self.state_bytes());
+        h.finalize().into()
+    }
+
     /// FNV-1a 64 of what the rollback blob does not carry: triangles, rest shape,
     /// configuration, tether.
     pub(crate) fn structure_hash(&self) -> u64 {
