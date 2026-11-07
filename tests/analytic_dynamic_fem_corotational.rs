@@ -1270,12 +1270,14 @@ fn an_impulse_on_a_free_consistent_body_is_its_momentum_to_the_solve_tolerance()
     check_impulse(&c, MassLumping::Consistent, "consistent");
 }
 
-/// An impulse on a vertex held on the ground: the upward part releases it (the next step
-/// finds it above the plane, no longer held), the downward part is taken by the ground (the
-/// vertex's vertical velocity stays zero, the body's vertical momentum does not change, no
-/// step ends below the plane), and the horizontal part is the body's momentum as for a free
-/// vertex. The bound on the kept horizontal momentum is the one of `check_impulse` for one
-/// mass solve on the lumped matrix (rounding only).
+/// An impulse on a vertex held on the ground (asserted held, with zero vertical velocity,
+/// right before each impulse, since the hold is re-decided every step): the upward part
+/// releases it (its velocity becomes the impulse over its mass, the next step finds it above
+/// the plane, no longer held), the downward part is taken by the ground (the vertex's vertical
+/// velocity stays zero, the body's vertical momentum does not change, no step ends below the
+/// plane), and the horizontal part is the body's momentum as for a free vertex. The bound on
+/// the kept horizontal momentum is the mass solve's residual guarantee, as in
+/// `check_impulse`.
 #[test]
 fn an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_downward() {
     let c = column();
@@ -1303,6 +1305,11 @@ fn an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_dow
         .expect("a base");
     let corner = c.base[0];
     assert_ne!(corner, bottom_centre);
+    assert_eq!(
+        solver.velocities()[3 * corner + 1],
+        Fix128::ZERO,
+        "the corner is held with no vertical velocity before the downward impulse"
+    );
     let p_before = total_momentum(&solver);
     // the mass solve's guarantee for one impulse, as in `check_impulse` (tolerance 1e-7 here)
     let bound = |j_norm: f64| (3.0 * n_v as f64).sqrt() * residual_bound(1e-7, j_norm);
@@ -1340,6 +1347,22 @@ fn an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_dow
     assert!(
         solver.on_ground()[corner],
         "a pushed-down vertex stays held"
+    );
+
+    // let the kick die out, then check the target vertex is held with no vertical velocity
+    // right before the upward impulse: the hold is re-decided every step, so without this the
+    // impulse could land on a free vertex and the release would be asserted of nothing
+    for _ in 0..400 {
+        solver.step().expect("the step converges");
+    }
+    assert!(
+        c.base.iter().all(|&i| solver.on_ground()[i]),
+        "the whole bottom is held again before the upward impulse"
+    );
+    assert_eq!(
+        solver.velocities()[3 * bottom_centre + 1],
+        Fix128::ZERO,
+        "a held vertex has no vertical velocity"
     );
 
     // upward on the bottom centre: released, and above the plane at the next step
@@ -1486,4 +1509,77 @@ fn two_runs_of_the_same_inputs_replay_to_the_same_bits_and_digest() {
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The hold is not adhesive: a column standing settled on the plane, kicked upward by an
+/// impulse on every top vertex (`J = 2 M_total √(2 g h)` for a rise `h` of 2 mm, half the
+/// momentum going into the body's rise), leaves the plane with every bottom vertex released
+/// within the time the kick needs to lift the bottom (`√(2h/g)` plus the compression wave's
+/// transit, two periods at most), rises above it, and lands again (every bottom vertex held
+/// once more within the flight time plus two periods); no step ends below the plane.
+#[test]
+fn a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released() {
+    let c = column();
+    let (omega, _) = axial_mode(&c.mm, &c.material, &c.masses_t, &c.base, 12);
+    let period = 2.0 * std::f64::consts::PI / omega;
+    let dt = period / 64.0;
+    let (mut solver, ground, _) = standing_solver(&c, omega, 0.0, dt);
+    for _ in 0..400 {
+        solver.step().expect("the step converges");
+    }
+    assert!(
+        c.base.iter().all(|&i| solver.on_ground()[i]),
+        "settled on the plane"
+    );
+    let total_mass: f64 = c.masses_t.iter().sum();
+    let rise_mm = 2.0;
+    let g = G * 1000.0;
+    let kick = 2.0 * total_mass * (2.0 * g * rise_mm).sqrt();
+    let per_vertex = Fix128::from_f64(kick / c.top.len() as f64);
+    let impulses: Vec<(u32, [Fix128; 3])> = c
+        .top
+        .iter()
+        .map(|&i| (i as u32, [Fix128::ZERO, per_vertex, Fix128::ZERO]))
+        .collect();
+    solver
+        .apply_impulses(&impulses)
+        .expect("the mass solve converges");
+    let flight = 2.0 * (2.0 * rise_mm / g).sqrt();
+    let two_periods = (2.0 * period / dt).round() as usize;
+    let mut released_at = None;
+    let mut landed_at = None;
+    let mut highest = f64::NEG_INFINITY;
+    let steps = (flight / dt).round() as usize + 2 * two_periods;
+    for step in 1..=steps {
+        solver.step().expect("the step converges");
+        let lowest = lowest_y_mm(&c, solver.displacements());
+        assert!(lowest >= ground, "step {step}: penetration");
+        highest = highest.max(lowest - ground);
+        let any_held = solver.on_ground().iter().any(|&h| h);
+        if released_at.is_none() && !any_held {
+            released_at = Some(step);
+        }
+        if released_at.is_some()
+            && landed_at.is_none()
+            && c.base.iter().all(|&i| solver.on_ground()[i])
+        {
+            landed_at = Some(step);
+        }
+    }
+    let released = released_at.expect("every bottom vertex is released");
+    let landed = landed_at.expect("the column lands again");
+    eprintln!(
+        "kick: every vertex free from step {released} ({:.3e} s), bottom rises {highest:.3e} mm (kick sized for {rise_mm} mm), lands at step {landed} ({:.3e} s, flight {flight:.3e} s)",
+        released as f64 * dt,
+        landed as f64 * dt
+    );
+    assert!(
+        released as f64 * dt <= (2.0 * rise_mm / g).sqrt() + 2.0 * period,
+        "released at {released} steps"
+    );
+    assert!(highest > 0.0, "the bottom leaves the plane");
+    assert!(
+        landed as f64 * dt <= flight + 2.0 * period,
+        "landed at {landed} steps vs flight {flight:.3e} s"
+    );
 }

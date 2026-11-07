@@ -25,11 +25,16 @@
 //! `(K' + (2/dt) C + 4M/dt²) u' = f + (4M/dt²)·ũ − C ṽ − …` with `ṽ = v + (dt/2) a − (2/dt) ũ`
 //! (the trapezoidal rule on the damped system). Ground contact
 //! ([`CorotationalTransientSolver::set_ground`], a plane `y = y_g` with outward normal `+y`)
-//! is an active set per step: a vertex whose predictor `ũ` would cross the plane is held on
-//! it for that step (its `y` prescribed to the plane, `v_y = a_y = 0`), and stays held while
-//! the reaction `R = (A u' − rhs)_y` the hold provides is compressive, released the step it
-//! turns tensile; frictionless (`x`, `z` free), exact non-penetration at every step's end, no
-//! penalty stiffness. `M` is the consistent Galerkin mass
+//! is an active set per step, iterated to consistency: a vertex whose predictor `ũ` is at or
+//! below the plane is held on it (its `y` prescribed to the plane, `v_y = a_y = 0`), the step
+//! is solved, the reaction `R = (A u' − rhs)_y` each hold provides is read, the holds that
+//! turned tensile (the plane cannot pull) are released and the step solved again, a released
+//! vertex that would end below the plane is held again for good, until the set is unchanged
+//! (`CONTACT_ACTIVE_SET_CAP` passes at most, else [`FemError::ContactUnsettled`] with the
+//! state unchanged); a resting vertex's predictor is the plane exactly, so it stays held
+//! until something lifts it (an upward velocity from an impulse or the body pulling up);
+//! frictionless (`x`, `z` free), exact non-penetration at every step's end, no penalty
+//! stiffness. `M` is the consistent Galerkin mass
 //! `ρV/20 (1 + δᵢⱼ)` or its row-sum lumping `ρV/4` ([`MassLumping`]). The linear system is
 //! solved by a Jacobi-preconditioned conjugate gradient in `Fix128` to a relative residual
 //! ([`SolverConfig`]).
@@ -78,7 +83,8 @@
 //! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
 //! or none; contact is a single plane, frictionless, resolved to the step's end (no
 //! time-of-impact subdivision, a vertex arriving mid-step is held from the end of that step),
-//! no restitution (the hold is inelastic, `set_ground`); external impulses are applied between
+//! no restitution (the hold is inelastic, `set_ground`), no adhesion (a tensile hold is
+//! released within the step); external impulses are applied between
 //! steps, not inside one (`apply_impulses`); the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
 //! space, [`MassLumping`]); loads and prescribed displacements are constant over a run
@@ -125,6 +131,9 @@
 //! tolerance with the consistent one, and the momentum and centre-of-mass velocity are kept
 //! over 200 free steps within the derived bound),
 //! `::an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_downward`,
+//! `::a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released` (the hold is
+//! not adhesive: an upward impulse on the top of a standing column lifts the whole bottom
+//! off the plane within the flight time, every vertex free, and it lands again),
 //! `::two_runs_of_the_same_inputs_replay_to_the_same_bits_and_digest` (the linear and the
 //! co-rotational solver, with damping, ground, impulses: identical raw bits and digests, a
 //! changed input changes the digest), `tests/audit_dynamic_fem.rs`.
@@ -1150,6 +1159,10 @@ impl TransientSolver {
 const COROTATIONAL_DET_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 44);
 /// Iteration budget of the polar decomposition per element and step.
 const COROTATIONAL_POLAR_ITERATIONS: u32 = 64;
+/// Cap on the ground contact's active-set iterations per step (each a solve): every pass
+/// releases at least one tensile hold or locks at least one penetrating release, so the set
+/// settles within the number of bottom vertices; the cap is for a cycle, which is an error.
+const CONTACT_ACTIVE_SET_CAP: u32 = 32;
 
 impl Operators {
     /// `out = (R Kₑ Rᵀ + Ṁ) u`, one element loop in mesh order: the element stiffness warped
@@ -1438,7 +1451,7 @@ impl CorotationalTransientSolver {
     /// active set: a vertex whose Newmark predictor would cross the plane is held on it for
     /// that step (its `y` degree of freedom prescribed to the plane, velocity and
     /// acceleration in `y` zero), stays held while the reaction the hold provides pushes it
-    /// up, and is released the step the reaction turns tensile. Frictionless: `x` and `z`
+    /// up, and is released within the step the reaction turns tensile. Frictionless: `x` and `z`
     /// stay free. Exact non-penetration at the step's end, no penalty stiffness.
     pub fn set_ground(&mut self, ground: Option<Fix128>) {
         self.ground = ground;
@@ -1545,103 +1558,165 @@ impl CorotationalTransientSolver {
     pub fn step(&mut self) -> Result<u32, FemError> {
         let ndof = self.u.len();
         let rotations = self.ops.rotations(&self.u)?;
-        let mut predictor = vec![Fix128::ZERO; ndof];
-        for (d, slot) in predictor.iter_mut().enumerate() {
+        // the free predictor from the state as it is: a vertex held last step sits on the
+        // plane with zero velocity and acceleration, so its predictor is the plane exactly; an
+        // impulse that gave it an upward velocity lifts its predictor above the plane and it
+        // is not held this step
+        let mut free_predictor = vec![Fix128::ZERO; ndof];
+        for (d, slot) in free_predictor.iter_mut().enumerate() {
             *slot = if self.is_free[d] {
                 newmark_predictor(self.u[d], self.v[d], self.a[d], self.dt, self.half_dt)
             } else {
                 self.prescribed_value[d]
             };
         }
-        // the step's own free set and prescribed field: the boundary's, plus the vertices
-        // held on the ground (their predictor crosses the plane, or they were held and the
-        // reaction still pushed up): held in `y` at the plane, velocity and acceleration zero
-        let mut is_free = self.is_free.clone();
-        let mut prescribed = self.prescribed_value.clone();
+        // the held set: every vertex whose predictor is at or below the plane; then the
+        // active-set iteration releases the held vertices whose reaction turns tensile (the
+        // plane can only push) and re-solves, until no held vertex pulls, and a released
+        // vertex that would end the step below the plane is held again for good
         let mut held = vec![false; ndof / 3];
+        let mut locked = vec![false; ndof / 3];
         if let Some(ground) = self.ground {
             for (i, held_i) in held.iter_mut().enumerate() {
+                let d = 3 * i + 1;
+                if self.is_free[d] && free_predictor[d] <= ground - self.rest[d] {
+                    *held_i = true;
+                }
+            }
+        }
+        let two_over_dt = Fix128::ONE / self.half_dt;
+        let mut iteration = 0u32;
+        let (next_u, is_free, prescribed, predictor, rhs, iterations) = loop {
+            iteration += 1;
+            if iteration > CONTACT_ACTIVE_SET_CAP {
+                return Err(FemError::ContactUnsettled {
+                    iterations: iteration - 1,
+                });
+            }
+            // this trial's free set, prescribed field, predictor and state: the held vertices
+            // are prescribed to the plane with zero velocity and acceleration
+            let mut is_free = self.is_free.clone();
+            let mut prescribed = self.prescribed_value.clone();
+            let mut predictor = free_predictor.clone();
+            let mut v = self.v.clone();
+            let mut a = self.a.clone();
+            if let Some(ground) = self.ground {
+                for (i, &held_i) in held.iter().enumerate() {
+                    if held_i {
+                        let d = 3 * i + 1;
+                        let plane_u = ground - self.rest[d];
+                        is_free[d] = false;
+                        prescribed[d] = plane_u;
+                        predictor[d] = plane_u;
+                        v[d] = Fix128::ZERO;
+                        a[d] = Fix128::ZERO;
+                    }
+                }
+            }
+            let mut mass_predictor = vec![Fix128::ZERO; ndof];
+            self.ops.apply_mass(&predictor, &mut mass_predictor);
+            // the damped effective operator's scalars: (1 + 2β/dt) on K', (1 + α dt/2) on Ṁ
+            let (k_scale, m_scale, c_v) = match self.damping {
+                None => (Fix128::ONE, Fix128::ONE, None),
+                Some(c) => {
+                    // ṽ = v + (dt/2) a − (2/dt) ũ, then C ṽ = (α/c₀) Ṁ ṽ + β (K' ṽ), with K' ṽ the
+                    // rotated stiffness product alone
+                    let mut v_tilde = vec![Fix128::ZERO; ndof];
+                    for d in 0..ndof {
+                        v_tilde[d] = v[d] + self.half_dt * a[d] - two_over_dt * predictor[d];
+                    }
+                    let mut k_v = vec![Fix128::ZERO; ndof];
+                    self.ops.apply_scaled_rotated(
+                        &rotations,
+                        Fix128::ONE,
+                        Fix128::ZERO,
+                        &v_tilde,
+                        &mut k_v,
+                    );
+                    let mut m_v = vec![Fix128::ZERO; ndof];
+                    self.ops.apply_mass(&v_tilde, &mut m_v);
+                    let alpha_over_c0 = c.alpha / self.inv_beta_dt2;
+                    let c_v: Vec<Fix128> = k_v
+                        .iter()
+                        .zip(m_v.iter())
+                        .map(|(k, m)| c.beta * *k + alpha_over_c0 * *m)
+                        .collect();
+                    (
+                        Fix128::ONE + two_over_dt * c.beta,
+                        Fix128::ONE + self.half_dt * c.alpha,
+                        Some(c_v),
+                    )
+                }
+            };
+            let mut keff_prescribed = vec![Fix128::ZERO; ndof];
+            self.ops.apply_scaled_rotated(
+                &rotations,
+                k_scale,
+                m_scale,
+                &prescribed,
+                &mut keff_prescribed,
+            );
+            let mut offset = vec![Fix128::ZERO; ndof];
+            self.ops
+                .rotation_offset(&rotations, &self.rest, &mut offset);
+            // the right-hand side of the equation `A u' = rhs` on every degree of freedom (the
+            // held ones too: their residual after the solve is the reaction the hold provides);
+            // the free rows then move the prescribed columns over (`− A prescribed`)
+            let mut rhs = vec![Fix128::ZERO; ndof];
+            for d in 0..ndof {
+                let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
+                rhs[d] = self.load[d] + mass_predictor[d] - offset[d] - damping_term;
+            }
+            let mut b_free = vec![Fix128::ZERO; ndof];
+            for d in 0..ndof {
+                if is_free[d] {
+                    b_free[d] = rhs[d] - keff_prescribed[d];
+                }
+            }
+            let ops = &self.ops;
+            let (mut next_u, iterations) =
+                conjugate_gradient(&b_free, &is_free, &self.precond, &self.config, |p, out| {
+                    ops.apply_scaled_rotated(&rotations, k_scale, m_scale, p, out);
+                })?;
+            for d in 0..ndof {
+                if !is_free[d] {
+                    next_u[d] = prescribed[d];
+                }
+            }
+            let Some(ground) = self.ground else {
+                break (next_u, is_free, prescribed, predictor, rhs, iterations);
+            };
+            // the reaction at a held vertex: `(A u' − rhs)_y` with the full `u'` (held values
+            // included), the force the plane had to add; a tensile one (negative, pulling
+            // down) releases the vertex and the step is solved again; a released vertex that
+            // ended below the plane is held again, for good
+            let mut a_u = vec![Fix128::ZERO; ndof];
+            self.ops
+                .apply_scaled_rotated(&rotations, k_scale, m_scale, &next_u, &mut a_u);
+            let mut changed = false;
+            for i in 0..ndof / 3 {
                 let d = 3 * i + 1;
                 if !self.is_free[d] {
                     continue;
                 }
                 let plane_u = ground - self.rest[d];
-                if predictor[d] <= plane_u || self.on_ground[i] {
-                    *held_i = true;
-                    is_free[d] = false;
-                    prescribed[d] = plane_u;
-                    predictor[d] = plane_u;
-                    self.v[d] = Fix128::ZERO;
-                    self.a[d] = Fix128::ZERO;
+                if held[i] {
+                    if !locked[i] && a_u[d] - rhs[d] < Fix128::ZERO {
+                        held[i] = false;
+                        changed = true;
+                    }
+                } else if next_u[d] < plane_u {
+                    held[i] = true;
+                    locked[i] = true;
+                    changed = true;
                 }
             }
-        }
-        let mut mass_predictor = vec![Fix128::ZERO; ndof];
-        self.ops.apply_mass(&predictor, &mut mass_predictor);
-        // the damped effective operator's scalars: (1 + 2β/dt) on K', (1 + α dt/2) on Ṁ
-        let two_over_dt = Fix128::ONE / self.half_dt;
-        let (k_scale, m_scale, c_v) = match self.damping {
-            None => (Fix128::ONE, Fix128::ONE, None),
-            Some(c) => {
-                // ṽ = v + (dt/2) a − (2/dt) ũ, then C ṽ = (α/c₀) Ṁ ṽ + β (K' ṽ), with K' ṽ the
-                // rotated stiffness product alone
-                let mut v_tilde = vec![Fix128::ZERO; ndof];
-                for d in 0..ndof {
-                    v_tilde[d] = self.v[d] + self.half_dt * self.a[d] - two_over_dt * predictor[d];
-                }
-                let mut k_v = vec![Fix128::ZERO; ndof];
-                self.ops.apply_scaled_rotated(
-                    &rotations,
-                    Fix128::ONE,
-                    Fix128::ZERO,
-                    &v_tilde,
-                    &mut k_v,
-                );
-                let mut m_v = vec![Fix128::ZERO; ndof];
-                self.ops.apply_mass(&v_tilde, &mut m_v);
-                let alpha_over_c0 = c.alpha / self.inv_beta_dt2;
-                let c_v: Vec<Fix128> = k_v
-                    .iter()
-                    .zip(m_v.iter())
-                    .map(|(k, m)| c.beta * *k + alpha_over_c0 * *m)
-                    .collect();
-                (
-                    Fix128::ONE + two_over_dt * c.beta,
-                    Fix128::ONE + self.half_dt * c.alpha,
-                    Some(c_v),
-                )
+            if !changed {
+                break (next_u, is_free, prescribed, predictor, rhs, iterations);
             }
         };
-        let mut keff_prescribed = vec![Fix128::ZERO; ndof];
-        self.ops.apply_scaled_rotated(
-            &rotations,
-            k_scale,
-            m_scale,
-            &prescribed,
-            &mut keff_prescribed,
-        );
-        let mut offset = vec![Fix128::ZERO; ndof];
-        self.ops
-            .rotation_offset(&rotations, &self.rest, &mut offset);
-        // the right-hand side of the equation `A u' = rhs` on every degree of freedom (the held
-        // ones too: their residual after the solve is the reaction the hold provides); the
-        // free rows then move the prescribed columns over (`− A prescribed`)
-        let mut rhs = vec![Fix128::ZERO; ndof];
-        for d in 0..ndof {
-            let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
-            rhs[d] = self.load[d] + mass_predictor[d] - offset[d] - damping_term;
-        }
-        let mut b_free = vec![Fix128::ZERO; ndof];
-        for d in 0..ndof {
-            if is_free[d] {
-                b_free[d] = rhs[d] - keff_prescribed[d];
-            }
-        }
-        let ops = &self.ops;
-        let (mut next_u, iterations) =
-            conjugate_gradient(&b_free, &is_free, &self.precond, &self.config, |p, out| {
-                ops.apply_scaled_rotated(&rotations, k_scale, m_scale, p, out);
-            })?;
+        // commit: the corrector on the free degrees of freedom from the state as it was, the
+        // held ones at the plane with zero velocity and acceleration
         for d in 0..ndof {
             if is_free[d] {
                 let (next_v, next_a) = newmark_corrector(
@@ -1654,21 +1729,15 @@ impl CorotationalTransientSolver {
                 );
                 self.v[d] = next_v;
                 self.a[d] = next_a;
-            } else {
-                next_u[d] = prescribed[d];
+            } else if self.is_free[d] {
+                // held on the ground this step
+                self.v[d] = Fix128::ZERO;
+                self.a[d] = Fix128::ZERO;
             }
         }
-        // the reaction at a held vertex: `(A u' − rhs)_y` with the full `u'` (held values
-        // included), the force the plane had to add; a tensile one (negative, pulling down)
-        // releases the vertex for the next step
-        if self.ground.is_some() {
-            let mut a_u = vec![Fix128::ZERO; ndof];
-            self.ops
-                .apply_scaled_rotated(&rotations, k_scale, m_scale, &next_u, &mut a_u);
-            for (i, (on, &held_i)) in self.on_ground.iter_mut().zip(held.iter()).enumerate() {
-                let d = 3 * i + 1;
-                *on = held_i && (a_u[d] - rhs[d]) >= Fix128::ZERO;
-            }
+        let _ = (prescribed, rhs);
+        for (i, on) in self.on_ground.iter_mut().enumerate() {
+            *on = held[i];
         }
         self.u = next_u;
         Ok(iterations)
