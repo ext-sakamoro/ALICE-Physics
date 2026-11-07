@@ -1708,10 +1708,13 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// 取り直した 全 scene が `PhysicsConfig::default()` なので、動く体のある 12 件が動いた
 /// scene 3 の TGS (静止から始まる重なった 2 球) だけは不変だった
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0xe1cf59847572e985_u64),
+    // scene 0 (spheres against a static sphere with friction): re-recorded when the contact
+    // friction began acting at the contact point of plain spheres (was 0xe1cf59847572e985)
+    (0, SolverBackend::Xpbd, 0x5ad51465f56c7a38_u64),
     (1, SolverBackend::Xpbd, 0x36b5104395c14228_u64),
     (2, SolverBackend::Xpbd, 0xe1887bfb14a87bee_u64),
-    (3, SolverBackend::Xpbd, 0x807206918944a242_u64),
+    // scene 3: re-recorded for the same reason (was 0x807206918944a242)
+    (3, SolverBackend::Xpbd, 0x4a3c8c479db3b9e1_u64),
     (4, SolverBackend::Xpbd, 0x4baa81e4627924fb_u64),
     (5, SolverBackend::Xpbd, 0xdd401c85f62e8f51_u64),
     (6, SolverBackend::Xpbd, 0x6bfad6246e7bc457_u64),

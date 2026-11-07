@@ -947,7 +947,9 @@ fn crowd_hash(parallel: bool) -> String {
 /// Re-recorded (from `89174ad1…`) when damping became a rate per second with
 /// default 0 (the scene's default config had damped every body by a retention
 /// 0.99 per step).
-const GOLDEN_CROWD: &str = "20919b007c36afc242d04aac6b6c92a18eff0828d8c26518c97ef231633fc5cc";
+/// Re-recorded (from 20919b00…) when the contact friction began acting at the contact point of
+/// plain spheres (the crowd's spheres touch the ground and each other with friction).
+const GOLDEN_CROWD: &str = "d374415caf994bb0da663127a6fb2fca2f7fb4264be95bc98e03cbc5d03fdbc1";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
