@@ -1719,6 +1719,9 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
+    /// The soft bodies and the next grab id (version 7; none before)
+    soft_bodies: Vec<crate::soft_body::SoftBody>,
+    next_grab_id: u32,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -1750,7 +1753,7 @@ impl PhysicsWorld {
     /// ([`SolverConfig::damping_rate`], [`RigidBody::linear_damping_rate`],
     /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
     /// retentions per step; see [`Self::restore_world_legacy_damping`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 6;
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1818,6 +1821,7 @@ impl PhysicsWorld {
     /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
     /// | `fields` | saved | the committed values once ([`crate::world_participant::FieldBoard::write_values`]); the target world must declare the same fields ([`WorldSnapshotError::FieldState`]) |
     /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
+    /// | `soft_bodies` / next grab id | saved | every [`crate::soft_body::SoftBody`]: particles (position, previous, velocity, inverse mass), triangles, pins and the inverse masses they replaced, wind, [`crate::cloth::ClothConfig`], rest tether, rest positions, grabs, `last_dt` (version 7; an older blob restores no soft body). The sleep flag and the sleep snapshot are rebuilt (sleep on, awake): they change no bit, and if the body was at its fixed point the next step is the identity and puts it back to sleep with the same bits |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -1873,6 +1877,7 @@ impl PhysicsWorld {
     /// | section | content |
     /// |---|---|
     /// | `continuous_collision` | `enabled: u8` (`0` / `1`), `motion_threshold` ([`PhysicsWorld::continuous_collision`]) |
+    /// | `soft_bodies` (version 7) | `count: u64`, per body: `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each) and inverse masses (`Fix128`), `triangles: u64` then `u64 × 3` each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`) each, `wind`, config (`iterations: u64`, `substeps: u64`, `gravity`, `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`, `self_collision: u8`, `self_collision_distance`), tether (`u8`, then `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then per grab `id: u32`, `particle: u64`, `target`, `applied` × 2, then `last_dt`; after every body `next_grab_id: u32` |
     ///
     /// The version is raised for it because the reader rejects trailing
     /// bytes: a section appended to a version 2 blob could not be told apart
@@ -2077,6 +2082,11 @@ impl PhysicsWorld {
         self.fields().write_values(&mut w.0);
         w.bool(self.ccd.is_enabled());
         w.fix(self.ccd.motion_threshold());
+        w.usize(self.soft_bodies.len());
+        for b in &self.soft_bodies {
+            w_soft_body(&mut w, b);
+        }
+        w.u32(self.next_grab_id);
 
         let mut data = w.0;
         let payload_len = (data.len() - HEADER_LEN_V4) as u64;
@@ -2439,7 +2449,186 @@ impl PhysicsWorld {
         self.set_fault(d.fault);
         self.fields_mut().read_values(&d.fields);
         self.ccd = d.ccd;
+        self.soft_bodies = d.soft_bodies;
+        self.next_grab_id = d.next_grab_id;
     }
+}
+
+fn w_soft_body(w: &mut W, b: &crate::soft_body::SoftBody) {
+    let c = b.cloth();
+    w.usize(c.positions.len());
+    for p in &c.positions {
+        w.vec3(*p);
+    }
+    for p in &c.prev_positions {
+        w.vec3(*p);
+    }
+    for v in &c.velocities {
+        w.vec3(*v);
+    }
+    for m in &c.inv_masses {
+        w.fix(*m);
+    }
+    w.usize(c.triangles.len());
+    for t in &c.triangles {
+        for &k in t {
+            w.usize(k);
+        }
+    }
+    w.usize(c.pinned.len());
+    for &i in &c.pinned {
+        w.usize(i);
+    }
+    w.usize(c.pin_released().len());
+    for &(i, m) in c.pin_released() {
+        w.usize(i);
+        w.fix(m);
+    }
+    w.vec3(c.wind);
+    w.usize(c.config.iterations);
+    w.usize(c.config.substeps);
+    w.vec3(c.config.gravity);
+    w.fix(c.config.damping);
+    w.fix(c.config.stretch_compliance);
+    w.fix(c.config.bend_compliance);
+    w.fix(c.config.sdf_friction);
+    w.fix(c.config.thickness);
+    w.bool(c.config.self_collision);
+    w.fix(c.config.self_collision_distance);
+    match c.rest_tether() {
+        Some((k, d)) => {
+            w.bool(true);
+            w.fix(k);
+            w.fix(d);
+        }
+        None => w.bool(false),
+    }
+    w.usize(c.rest_positions().len());
+    for p in c.rest_positions() {
+        w.vec3(*p);
+    }
+    w.usize(b.grabs().len());
+    for g in b.grabs() {
+        w.u32(g.id.0);
+        w.usize(g.particle);
+        w.vec3(g.target);
+        w.vec3(g.applied[0]);
+        w.vec3(g.applied[1]);
+    }
+    w.fix(b.last_dt());
+}
+
+fn r_soft_body(r: &mut R<'_>) -> Res<crate::soft_body::SoftBody> {
+    use crate::cloth::{Cloth, ClothConfig};
+    use crate::soft_body::{Grab, GrabId, SoftBody};
+    const S: &str = "soft_bodies";
+    let bad = || WorldSnapshotError::InvalidValue { section: S };
+    let n = r.len(S, 48 * 3 + 16)?;
+    let mut positions = Vec::with_capacity(n);
+    for _ in 0..n {
+        positions.push(r.vec3()?);
+    }
+    let mut prev = Vec::with_capacity(n);
+    for _ in 0..n {
+        prev.push(r.vec3()?);
+    }
+    let mut velocities = Vec::with_capacity(n);
+    for _ in 0..n {
+        velocities.push(r.vec3()?);
+    }
+    let mut inv_masses = Vec::with_capacity(n);
+    for _ in 0..n {
+        inv_masses.push(r.fix()?);
+    }
+    let t = r.len(S, 24)?;
+    let mut triangles = Vec::with_capacity(t);
+    for _ in 0..t {
+        let mut tri = [0usize; 3];
+        for k in &mut tri {
+            *k = r.usize(S)?;
+            if *k >= n {
+                return Err(bad());
+            }
+        }
+        triangles.push(tri);
+    }
+    let k = r.len(S, 8)?;
+    let mut pinned = Vec::with_capacity(k);
+    for _ in 0..k {
+        let i = r.usize(S)?;
+        if i >= n {
+            return Err(bad());
+        }
+        pinned.push(i);
+    }
+    let k = r.len(S, 24)?;
+    let mut released = Vec::with_capacity(k);
+    for _ in 0..k {
+        let i = r.usize(S)?;
+        if i >= n {
+            return Err(bad());
+        }
+        released.push((i, r.fix()?));
+    }
+    let wind = r.vec3()?;
+    let config = ClothConfig {
+        iterations: r.usize(S)?,
+        substeps: r.usize(S)?,
+        gravity: r.vec3()?,
+        damping: r.fix()?,
+        stretch_compliance: r.fix()?,
+        bend_compliance: r.fix()?,
+        sdf_friction: r.fix()?,
+        thickness: r.fix()?,
+        self_collision: r.bool(S)?,
+        self_collision_distance: r.fix()?,
+    };
+    let tether = if r.bool(S)? {
+        Some((r.fix()?, r.fix()?))
+    } else {
+        None
+    };
+    let rn = r.len(S, 48)?;
+    if rn != n {
+        return Err(bad());
+    }
+    let mut rest = Vec::with_capacity(n);
+    for _ in 0..n {
+        rest.push(r.vec3()?);
+    }
+    let g = r.len(S, 4 + 8 + 48 * 3)?;
+    let mut grabs = Vec::with_capacity(g);
+    for _ in 0..g {
+        let id = GrabId(r.u32()?);
+        let particle = r.usize(S)?;
+        if particle >= n {
+            return Err(bad());
+        }
+        grabs.push(Grab {
+            id,
+            particle,
+            target: r.vec3()?,
+            applied: [r.vec3()?, r.vec3()?],
+        });
+    }
+    let last_dt = r.fix()?;
+    // the constraints are measured on the rest shape, as at creation
+    let mut cloth = Cloth::from_mesh(rest.clone(), triangles, Fix128::ZERO);
+    cloth.positions = positions;
+    cloth.prev_positions = prev;
+    cloth.velocities = velocities;
+    cloth.inv_masses = inv_masses;
+    cloth.pinned = pinned;
+    cloth.set_pin_released(released);
+    cloth.wind = wind;
+    cloth.config = config;
+    cloth.set_rest_positions(&rest).map_err(|_| bad())?;
+    if let Some((k, d)) = tether {
+        cloth.set_rest_tether(k, d);
+    }
+    // the exact sleep is on, as for a body just added (it changes no bit)
+    cloth.set_sleep(true);
+    Ok(SoftBody::from_parts(cloth, grabs, last_dt))
 }
 
 /// What a decoded blob's header identifiers verify against `expected`.
@@ -2790,6 +2979,16 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     } else {
         super::WorldCcdConfig::new()
     };
+    let (soft_bodies, next_grab_id) = if version >= 7 {
+        let n = r.len("soft_bodies", 8)?;
+        let mut v = Vec::with_capacity(n);
+        for _ in 0..n {
+            v.push(r_soft_body(r)?);
+        }
+        (v, r.u32()?)
+    } else {
+        (Vec::new(), 0)
+    };
 
     Ok(Decoded {
         config,
@@ -2825,6 +3024,8 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         fault,
         fields,
         ccd,
+        soft_bodies,
+        next_grab_id,
         ids: None,
     })
 }
@@ -4004,7 +4205,7 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4154,8 +4355,8 @@ mod tests {
         assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &6u16.to_le_bytes());
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(&b[4..6], &7u16.to_le_bytes());
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -4352,8 +4553,18 @@ mod tests {
             );
             payload[at..at + 16].copy_from_slice(&with);
         }
+        // version 7 appended the soft-body section (count u64 + next grab id u32)
+        // before the checksum: a world without soft bodies ends in 12 zero bytes
+        // that the older versions do not have
+        let n = payload.len();
+        assert!(
+            payload[n - 20..n - 8].iter().all(|&x| x == 0),
+            "empty section"
+        );
+        payload.drain(n - 20..n - 8);
         let mut b = plain[..super::header_len(version)].to_vec();
         b[4..6].copy_from_slice(&version.to_le_bytes());
+        b[8..16].copy_from_slice(&((payload.len() - 8) as u64).to_le_bytes());
         b.extend_from_slice(&payload);
         reseal(b)
     }
@@ -4414,7 +4625,7 @@ mod tests {
     /// Distinct non-zero rates in the config and in every body survive a
     /// version 6 round trip unchanged, and the blob holds them as given.
     #[test]
-    fn version_6_round_trip_keeps_damping_rates() {
+    fn version_7_round_trip_keeps_damping_rates() {
         let mut src = variant_world();
         src.config.damping_rate = fx(3, 10);
         for (i, b) in src.bodies.iter_mut().enumerate() {
@@ -4423,9 +4634,9 @@ mod tests {
             b.angular_damping_rate = fx(2 * i + 2, 11);
         }
         let blob = src.snapshot_world();
-        assert_eq!(&blob[4..6], &6u16.to_le_bytes());
+        assert_eq!(&blob[4..6], &7u16.to_le_bytes());
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        t.restore_world(&blob).expect("version 6 restores");
+        t.restore_world(&blob).expect("version 7 restores");
         assert_eq!(t.config.damping_rate, fx(3, 10));
         for (i, b) in t.bodies.iter().enumerate() {
             let i = i as i64;
