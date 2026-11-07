@@ -15,15 +15,6 @@ were introduced during that release window.
 
 ## [Unreleased]
 
-### Added
-
-- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
-  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
-  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
-- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
-  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
-- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
-
 ### Changed
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
@@ -95,6 +86,13 @@ were introduced during that release window.
 - すべての `allow` / `expect` に理由を必須にした: `Cargo.toml` の `[lints.clippy] allow_attributes_without_reason = "deny"` (`#[allow]` / `#![allow]` / `cfg_attr` の中 / `expect` / 空白を挟んだ path / rustc の lint のどの形でも clippy が拒否する) `clippy::disallowed_methods` (platform の libm と時計) の allow は種類 (`analytic reference` / `independent reference` / `measurement table` / `measured quantity` / `test input` / `timing harness` / `deprecated API`) と具体の参照で始まる理由を持ち (252 件)、何も禁止された呼び出しを含まない 111 件は外した 時計を読む行は文単位の allow にし、file・module・関数単位の allow が時計の読み取りを覆わないようにした (assert や format の引数の中の時計の読み取りは `let` に出した、挙動は同じ) それ以外の lint の allow 110 件に理由を書き、効いていない allow 49 件を外した: 既定で無効な lint (`float_cmp` や cast 系などの pedantic / nursery、crate 先頭の 11 件の一括 allow を含む) と、clippy を `expect` で 6 つの feature の組で回してどの組でも何も抑えていなかったもの 呼び出し元の無い試験 helper `non_newtonian::tests::approx_eq` は消した 検査 `scripts/allow_reason_guard.py` (試験 `scripts/test_allow_reason_guard.py`) は manifest の lint が deny のままで lint group を設定していないこと、lint group の allow が無いこと、理由が 25 字以上で placeholder や lint 名そのものでないこと、本番の code (`cfg(test)` の外) の `disallowed_methods` の allow (`privacy` の非推奨の時計の seed の 2 件だけ件数付きで許す) を見る `--clippy` では manifest の `[lints]` を写した canary の crate で理由の無い 7 つの形すべてに diagnostic が出ることと、clippy が見つけた時計の読み取り (別名や macro の中も含む、macro の本体で読む時は展開を外側の呼び出し位置まで辿る) が文単位の allow だけに覆われていることを確かめる 同じ検査をこの repository の clippy.toml を写した時計の canary (関数の allow の下で直接・別名・macro の 3 通りに読む関数と、文の allow の下で読む関数) に掛け、3 つすべてが報告され文の allow は報告されないことも確かめる (CI の clippy job と preflight) 比較 0 件は失敗する 検査を壊す変異 24 件はすべて失敗し、manifest の lint を warn に戻すと canary が失敗する 配線検査 `scripts/wiring_guard.py` は `allow(dead_code)` を 1 行ずつ探していたため、rustfmt が理由付きで複数行に分けた allow を見落としていた file 全体で探すようにした (試験を 1 本足した、変更前の検査では失敗する)
 
 ### Added
+
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
 - `sleeping::IslandManager::wake_islands(bodies)`: 渡した剛体の island をまとめて起こす (剛体の数に対して 1 回の走査、`wake_island` を剛体ごとに呼ぶと剛体の数の 2 乗になる)
 - binding の材料と磁石: wasm の `registerMaterial(friction, restitution)` / `setBodyMaterial(body, material)` / `addMagnet(x, y, z, mx, my, mz, radius, material, chiEff, saturation, density)`、C の `alice_physics_world_register_material` / `alice_physics_body_set_material` / `alice_physics_world_add_magnet`、Python の `register_material` / `set_body_material` / `add_magnet` (磁石は `ForceField::InducedDipole` を足す、値の検査は 3 つの binding で共通: 摩擦と反発は有限で負でない、半径と密度は有限で正、感受率と飽和磁化は有限で負でない、材料は 0〜65535、同じ材料を別の物性で名指す磁石は拒む) 既定でない材料の剛体は他の剛体との接触で材料表の値を使うので、磁石のために剛体に材料を付ける時はその剛体の摩擦と反発で材料を登録する (同じ値なら当たりは付ける前と bit 一致、試験で確認) wasm と C の呼び口が Rust の API と bit 一致すること (引数ごとに別の値、材料の値が効く衝突を含む)、Python は引数が正しい field に届く時だけ成り立つ比で確かめる、磁石のある run を保存して戻すと bit で続くこと、拒む値の各種と 0 を受け付けること、眠っている球を磁石が動かすことも試験した 名前を伏せたブラウザ向けパッケージの同値の確認は 3 つの呼び口を含めて 52 個すべてを呼ぶ
 - `scripts/build_neutral_pkg.sh`: ブラウザ向けパッケージをエンジンの名前を含まない形で作る wasm の export・glue の識別子と引数名を HMAC 鍵 (macOS Keychain、無ければ失敗) から作った名前に置き換え、data 中の source path と名前の文字列を同じ長さで上書きし、custom section `name` / `producers` を落とし、file 名を内容の hash にする 対応表は repository の外に mode 600 で書く 検査は `scripts/neutral_leak_check.py` (token は SHA-256 だけを持ち、平文を含まない)、data で上書きするエンジンの API の識別子と source の文字列 literal の照合 (literal に現れるものは `scripts/neutral_data_literals.txt` の確認済みの一覧にあること、その行と同じ file で束ねた名前を使う行に hash の語が無いこと、一覧に使われない行が無いこと、一覧と source の一致は CI の試験でも見る) と `scripts/neutral_equivalence.mjs` (元のパッケージと すべての export を呼ぶ 2 つのシーン (呼ばない export や無い名前は失敗) で位置・回転・直列化した状態・問い合わせの結果・id が bit 一致、source path とエンジンの名前の上書きはこの比較だけが覆う) 試験 `scripts/test_neutral_pkg.py` (架空の名前を全経路に埋めて検出と除去を見る、同じ入力は同じ bytes) を CI と preflight に加えた
