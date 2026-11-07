@@ -25,9 +25,32 @@ use alloc::vec::Vec;
 // Deformable Configuration
 // ============================================================================
 
+/// The constitutive law a [`DeformableBody`] solves per substep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Material {
+    /// The geometric constraints: edge length (`edge_compliance`), tetrahedral volume
+    /// (`volume_compliance`) and the blend toward the rest shape (`shape_stiffness`). No
+    /// material parameter: the stiffness depends on the iteration count and the compliances.
+    Constraints,
+    /// Stable Neo-Hookean tetrahedral constraints taking Young's modulus `E` (Pa) and
+    /// Poisson's ratio `ν`: per tetrahedron a deviatoric constraint of compliance `1/μ` and a
+    /// hydrostatic one of compliance `1/λ`, `μ = E / (2(1+ν))`, `λ = Eν / ((1+ν)(1−2ν))`
+    /// (Macklin & Müller, "A Constraint-based Formulation of Stable Neo-Hookean Materials",
+    /// MIG 2021). Not implemented yet: a step with this material panics
+    /// (`tests/analytic_deformable_static_sag.rs` is the red oracle it must turn green).
+    NeoHookean {
+        /// Young's modulus, Pa
+        young_modulus: Fix128,
+        /// Poisson's ratio, dimensionless, in `(-1, 0.5)`
+        poisson_ratio: Fix128,
+    },
+}
+
 /// Deformable body configuration
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DeformableConfig {
+    /// Constitutive law (`Material::Constraints` by default)
+    pub material: Material,
     /// Solver iterations
     pub iterations: usize,
     /// Number of substeps
@@ -49,6 +72,7 @@ pub struct DeformableConfig {
 impl Default for DeformableConfig {
     fn default() -> Self {
         Self {
+            material: Material::Constraints,
             iterations: 8,
             substeps: 4,
             gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
@@ -290,6 +314,9 @@ impl DeformableBody {
         }
 
         // 2. Solve constraints
+        if let Material::NeoHookean { .. } = self.config.material {
+            todo!("STUB: Material::NeoHookean tetrahedral constraints (E, ν) are not implemented")
+        }
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_volume_constraints(dt);

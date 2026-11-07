@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2569 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2570 |
 | live | reached without examples (crate-internal roots or a binding) | 687 |
-| | **total** | **3287** |
+| | **total** | **3288** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2569)
+## L1 — example-only (2570)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -152,7 +152,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cylinder.rs`: `Cylinder::surface_area`
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
 - `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::aabb`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `PhysicsWorld::debug_draw`, `debug_draw_world`
-- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`
+- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`, `Material`
 - `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::node_count`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::query`, `DynamicAabbTree::user_data`
 - `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
 - `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `induced_dipole_energy`, `lorentz_force`, `lorentz_force_sum`
