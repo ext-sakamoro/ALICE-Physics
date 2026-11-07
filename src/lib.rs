@@ -851,6 +851,8 @@ pub mod molecular_dynamics;
 pub mod motor;
 pub mod multiphase;
 pub mod nbody;
+pub mod holds;
+pub mod input_log;
 pub mod netcode;
 #[cfg(feature = "std")]
 pub mod netcode_prediction;
