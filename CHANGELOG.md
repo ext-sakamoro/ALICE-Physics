@@ -15,15 +15,6 @@ were introduced during that release window.
 
 ## [Unreleased]
 
-### Added
-
-- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
-  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
-  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
-- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
-  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
-- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
-
 ### Changed
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
@@ -99,6 +90,12 @@ were introduced during that release window.
 - `PhysicsWorld::static_hits` / `EventCollector::static_hits` / `event::StaticHit`: body が static collider に当たった時の collider の番号、法線、点、当たった速さ (step ごとに作り直し、snapshot には入らない) 接触 event は body 同士だけで、床や壁に当たったことを取れなかった 試験 `tests/analytic_static_hit_events.rs` (自由落下の `sqrt(2 g h)` と比べる)
 - WebAssembly `getContactEvents`: 直前の step の接触を 1 件 10 個の数で返す `[bodyA, bodyB, kind, speed, px, py, pz, nx, ny, nz]` kind 3 が static collider で、その時の bodyB は `-(collider の番号) - 1`
 - CI: 物理 module の MODEL 節の検査 `scripts/model_section_check.py` (試験 `scripts/test_model_section_check.py`) を CI の test job と preflight に足した `scripts/model-modules.txt` の module (A 流体 / B 風と抗力 / C 剛体と接触 / D 布・軟体・固体 / E 熱・電磁・音ほか、103 件) は module doc に `# MODEL` 節を持ち、方程式 / 単位 / 保存則 / 適用範囲 / 近似 / 検証 / 段 の 7 field を揃え (任意の 8 つ目 `既知の欠陥` は red のまま置く oracle を名指し、各々が実在し `#[ignore = "known defect: …"]` で `docs/oracle-status.md` に載ること、検証の field に `#[ignore]` の試験を書くと fail)、検証の field が名指す試験 (`tests/<file>.rs::<fn>` か backtick の fn 名) が実在し `#[ignore]` でなく、feature gate のある試験 file は ci.yml の `cargo test` のどれかが feature を揃えて走らせること、段の field は L0 を基準に軽い段ごとに L0 との誤差の試験を名指すことを見る `src/**/*.rs` は module 一覧か `scripts/model-exempt.txt` (物理モデルでない 88 件、理由付き) のどちらかに載せる (両方・不在・未分類は fail) 節の無い module は `scripts/model-section-baseline.txt` のラチェット (載っていない欠落、節が付いたのに残る行、で fail) 比較 0 件 (module 0 / 節 0 / 試験 0) で fail 最初の節として `src/damping_rayleigh.rs` に MODEL 節を書いた (ζ(ω) = α/(2ω) + βω/2 と 2 mode の fit、`tests/audit_damping_rayleigh.rs` と `tests/analytic_damping_rayleigh_wiring.rs` の試験を名指す)
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
 - `sleeping::IslandManager::wake_islands(bodies)`: 渡した剛体の island をまとめて起こす (剛体の数に対して 1 回の走査、`wake_island` を剛体ごとに呼ぶと剛体の数の 2 乗になる)
 - binding の材料と磁石: wasm の `registerMaterial(friction, restitution)` / `setBodyMaterial(body, material)` / `addMagnet(x, y, z, mx, my, mz, radius, material, chiEff, saturation, density)`、C の `alice_physics_world_register_material` / `alice_physics_body_set_material` / `alice_physics_world_add_magnet`、Python の `register_material` / `set_body_material` / `add_magnet` (磁石は `ForceField::InducedDipole` を足す、値の検査は 3 つの binding で共通: 摩擦と反発は有限で負でない、半径と密度は有限で正、感受率と飽和磁化は有限で負でない、材料は 0〜65535、同じ材料を別の物性で名指す磁石は拒む) 既定でない材料の剛体は他の剛体との接触で材料表の値を使うので、磁石のために剛体に材料を付ける時はその剛体の摩擦と反発で材料を登録する (同じ値なら当たりは付ける前と bit 一致、試験で確認) wasm と C の呼び口が Rust の API と bit 一致すること (引数ごとに別の値、材料の値が効く衝突を含む)、Python は引数が正しい field に届く時だけ成り立つ比で確かめる、磁石のある run を保存して戻すと bit で続くこと、拒む値の各種と 0 を受け付けること、眠っている球を磁石が動かすことも試験した 名前を伏せたブラウザ向けパッケージの同値の確認は 3 つの呼び口を含めて 52 個すべてを呼ぶ
 - `scripts/build_neutral_pkg.sh`: ブラウザ向けパッケージをエンジンの名前を含まない形で作る wasm の export・glue の識別子と引数名を HMAC 鍵 (macOS Keychain、無ければ失敗) から作った名前に置き換え、data 中の source path と名前の文字列を同じ長さで上書きし、custom section `name` / `producers` を落とし、file 名を内容の hash にする 対応表は repository の外に mode 600 で書く 検査は `scripts/neutral_leak_check.py` (token は SHA-256 だけを持ち、平文を含まない)、data で上書きするエンジンの API の識別子と source の文字列 literal の照合 (literal に現れるものは `scripts/neutral_data_literals.txt` の確認済みの一覧にあること、その行と同じ file で束ねた名前を使う行に hash の語が無いこと、一覧に使われない行が無いこと、一覧と source の一致は CI の試験でも見る) と `scripts/neutral_equivalence.mjs` (元のパッケージと すべての export を呼ぶ 2 つのシーン (呼ばない export や無い名前は失敗) で位置・回転・直列化した状態・問い合わせの結果・id が bit 一致、source path とエンジンの名前の上書きはこの比較だけが覆う) 試験 `scripts/test_neutral_pkg.py` (架空の名前を全経路に埋めて検出と除去を見る、同じ入力は同じ bytes) を CI と preflight に加えた
