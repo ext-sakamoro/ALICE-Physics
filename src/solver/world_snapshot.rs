@@ -668,6 +668,8 @@ fn r_body(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<Rigid
         rotation: r.quat()?,
         angular_velocity: r.vec3()?,
         prev_rotation: r.quat()?,
+        turn: QuatFix::IDENTITY,
+        turn_mixed: false,
         restitution: r.fix()?,
         friction: r.fix()?,
         gravity_scale: r.fix()?,

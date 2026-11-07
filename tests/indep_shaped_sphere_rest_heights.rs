@@ -76,8 +76,14 @@ fn static_shape(w: &mut PhysicsWorld, shape: &Shape, at: V, rotation: QuatFix) -
     k
 }
 
+/// A ball that cannot turn: these scenes measure the contact geometry (the
+/// rest height), and a ball with inertia on the top of an ellipsoid or a torus
+/// tube is in unstable equilibrium — it rolls off (the friction acts at the
+/// contact point), which is physics, not a wrong height.
 fn ball(w: &mut PhysicsWorld, at: V, r: f64) -> usize {
-    w.add_body_with_radius(RigidBody::new_dynamic(v3(at), Fix128::ONE), fx(r))
+    let b = w.add_body_with_radius(RigidBody::new_dynamic(v3(at), Fix128::ONE), fx(r));
+    w.bodies[b].inv_inertia = Vec3Fix::ZERO;
+    b
 }
 
 /// A ball on a turned box, an upright cylinder, an ellipsoid and in the hole

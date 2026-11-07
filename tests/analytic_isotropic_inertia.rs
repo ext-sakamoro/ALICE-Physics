@@ -263,22 +263,33 @@ fn tgs_isotropic_spheres_motion_does_not_depend_on_orientation() {
     }
 }
 
-/// oracle (b), XPBD: the same scene keeps bit-identical positions and
-/// velocities whatever the initial orientations. The XPBD contact solve is
-/// translational (no inverse inertia enters it), so this holds with or
-/// without the isotropic rule; the angular velocity is not compared because
-/// XPBD derives it from the rotation change `q · p⁻¹`, whose fixed-point
-/// rounding is not exactly the identity for an unchanged non-identity `q`.
+/// oracle (b), XPBD: two isotropic spheres colliding with friction move the
+/// same way whatever their initial orientations, bit for bit, including the
+/// angular velocity. The contact friction acts at the contact point and turns
+/// the balls; the turn it applies (`θ = I⁻¹(r × p)`, orientation-free for an
+/// isotropic body) is composed in `RigidBody::turn` and added to the
+/// angular velocity as `log(turn) / h`, so the stored orientation, whose
+/// products round in an orientation-dependent way, never enters the motion.
+///
+/// Mutants that must go red: a lever arm rotated by the body orientation
+/// (`q·(p − x)`); the angular velocity recovered from `q · q_pred⁻¹` instead
+/// of the composed turn (the rounding of the orientation then reaches the
+/// motion at ~1e-13).
 #[test]
 fn xpbd_isotropic_spheres_linear_motion_does_not_depend_on_orientation() {
     let base = run_two_balls(SolverBackend::Xpbd, QuatFix::IDENTITY, QuatFix::IDENTITY);
+    assert!(
+        base.iter()
+            .skip(1)
+            .any(|m| !(m[2].x.is_zero() && m[2].y.is_zero() && m[2].z.is_zero())),
+        "the friction must spin the balls, or the scene tests nothing"
+    );
     for (qa, qb) in orientation_pairs() {
         let other = run_two_balls(SolverBackend::Xpbd, qa, qb);
         for (i, (x, y)) in base.iter().zip(&other).enumerate() {
             assert_eq!(
-                (x[0], x[1]),
-                (y[0], y[1]),
-                "XPBD: body {i} linear motion depends on the initial orientation"
+                x, y,
+                "XPBD: body {i} motion depends on the initial orientation"
             );
         }
     }
@@ -339,7 +350,7 @@ fn anisotropic_hash(backend: SolverBackend, parallel: bool) -> String {
 const GOLDEN_ANISOTROPIC_XPBD: &str =
     // re-recorded (from 8a452449…) when the contact friction began acting at the contact point of
     // plain spheres: the body slides on the ground with friction and now turns
-    "c9052835683b90ccb983f15bb6ad18aa5871323c0bb79c64ed38f86be8da0676";
+    "a6fae363cc7372ef844a1cae8573ae93667fc4e76be13601224c9d67e07b8aa1";
 const GOLDEN_ANISOTROPIC_TGS: &str =
     "095f684372ceec9a468250679ad90119a010fdf225140d3adce059da0ccb0409";
 
