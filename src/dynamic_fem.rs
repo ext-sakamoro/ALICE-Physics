@@ -22,7 +22,13 @@
 //! ([`CorotationalTransientSolver::set_damping`], `C = α M + β K'`, the coefficients of
 //! [`crate::damping_rayleigh`]) the equation is `M ü + C u̇ + fᵢₙₜ(u) = f` and the step solves
 //! `(K' + (2/dt) C + 4M/dt²) u' = f + (4M/dt²)·ũ − C ṽ − …` with `ṽ = v + (dt/2) a − (2/dt) ũ`
-//! (the trapezoidal rule on the damped system). `M` is the consistent Galerkin mass
+//! (the trapezoidal rule on the damped system). Ground contact
+//! ([`CorotationalTransientSolver::set_ground`], a plane `y = y_g` with outward normal `+y`)
+//! is an active set per step: a vertex whose predictor `ũ` would cross the plane is held on
+//! it for that step (its `y` prescribed to the plane, `v_y = a_y = 0`), and stays held while
+//! the reaction `R = (A u' − rhs)_y` the hold provides is compressive, released the step it
+//! turns tensile; frictionless (`x`, `z` free), exact non-penetration at every step's end, no
+//! penalty stiffness. `M` is the consistent Galerkin mass
 //! `ρV/20 (1 + δᵢⱼ)` or its row-sum lumping `ρV/4` ([`MassLumping`]). The linear system is
 //! solved by a Jacobi-preconditioned conjugate gradient in `Fix128` to a relative residual
 //! ([`SolverConfig`]).
@@ -57,7 +63,9 @@
 //! (no hyperelastic law, no plasticity, no thermal strain here); the co-rotational frame is
 //! frozen over a step (first order in the rotation increment per step); damping is Rayleigh's
 //! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
-//! or none; no contact and no external impulses yet; the lumped mass lowers the frequencies and the
+//! or none; contact is a single plane, frictionless, resolved to the step's end (no
+//! time-of-impact subdivision, a vertex arriving mid-step is held from the end of that step),
+//! no restitution (the hold is inelastic); no external impulses yet; the lumped mass lowers the frequencies and the
 //! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
 //! space); loads and prescribed displacements are constant over a run.
 //!
@@ -79,7 +87,13 @@
 //! `::mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate` (`ζ = 0.05`
 //! by `β` alone and by `α` alone: the first mode's log-decrement per period within 2 % and
 //! its period within 0.5 % of the trapezoidal closed form, measured −0.23 % and +0.004 %),
-//! `tests/audit_dynamic_fem.rs`.
+//! `::a_column_standing_on_the_ground_settles_to_the_roller_static_sag_with_its_whole_bottom_in_contact`
+//! (no base fix, the plane under it: the sag is the static solve of the same mesh with a
+//! roller base within 1 %, measured +0.01 %, every bottom vertex held; the closed form
+//! `ρ g H² / (2E)` is the O(h) limit, 0.6 % away on this mesh),
+//! `::a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static_sag` (a
+//! 10 mm drop: no step ends below the plane, touchdown within one step of `√(2h/g)`, the
+//! same sag), `tests/audit_dynamic_fem.rs`.
 //!
 //! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
 //! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
@@ -1195,6 +1209,10 @@ pub struct CorotationalTransientSolver {
     rest: Vec<Fix128>,
     /// Rayleigh damping `C = α M + β K'` (`α` 1/s, `β` s), none by default
     damping: Option<RayleighCoefficients>,
+    /// the ground: a plane `y = ground` (mm) with outward normal `+y`, none by default
+    ground: Option<Fix128>,
+    /// per vertex, whether it rests on the ground this step (held on the plane in `y`)
+    on_ground: Vec<bool>,
     dt: Fix128,
     inv_beta_dt2: Fix128,
     half_dt: Fix128,
@@ -1267,6 +1285,8 @@ impl CorotationalTransientSolver {
             ops,
             rest,
             damping: None,
+            ground: None,
+            on_ground: vec![false; vertex_count],
             dt: dynamics.dt,
             inv_beta_dt2: dynamics.inv_beta_dt2,
             half_dt: dynamics.dt.half(),
@@ -1353,6 +1373,25 @@ impl CorotationalTransientSolver {
         }
     }
 
+    /// A ground plane `y = ground` (mm, outward normal `+y`), or none. Contact is a per-step
+    /// active set: a vertex whose Newmark predictor would cross the plane is held on it for
+    /// that step (its `y` degree of freedom prescribed to the plane, velocity and
+    /// acceleration in `y` zero), stays held while the reaction the hold provides pushes it
+    /// up, and is released the step the reaction turns tensile. Frictionless: `x` and `z`
+    /// stay free. Exact non-penetration at the step's end, no penalty stiffness.
+    pub fn set_ground(&mut self, ground: Option<Fix128>) {
+        self.ground = ground;
+        if ground.is_none() {
+            self.on_ground.fill(false);
+        }
+    }
+
+    /// The vertices held on the ground after the last step.
+    #[must_use]
+    pub fn on_ground(&self) -> &[bool] {
+        &self.on_ground
+    }
+
     /// Rayleigh damping `C = α M + β K'` with `K'` the warped stiffness: `α` in 1/s damps
     /// the low modes, `β` in s the high ones, the modal ratio
     /// `ζ(ω) = α/(2ω) + βω/2` ([`RayleighCoefficients::damping_ratio`]). `None` removes it.
@@ -1384,6 +1423,29 @@ impl CorotationalTransientSolver {
             } else {
                 self.prescribed_value[d]
             };
+        }
+        // the step's own free set and prescribed field: the boundary's, plus the vertices
+        // held on the ground (their predictor crosses the plane, or they were held and the
+        // reaction still pushed up): held in `y` at the plane, velocity and acceleration zero
+        let mut is_free = self.is_free.clone();
+        let mut prescribed = self.prescribed_value.clone();
+        let mut held = vec![false; ndof / 3];
+        if let Some(ground) = self.ground {
+            for (i, held_i) in held.iter_mut().enumerate() {
+                let d = 3 * i + 1;
+                if !self.is_free[d] {
+                    continue;
+                }
+                let plane_u = ground - self.rest[d];
+                if predictor[d] <= plane_u || self.on_ground[i] {
+                    *held_i = true;
+                    is_free[d] = false;
+                    prescribed[d] = plane_u;
+                    predictor[d] = plane_u;
+                    self.v[d] = Fix128::ZERO;
+                    self.a[d] = Fix128::ZERO;
+                }
+            }
         }
         let mut mass_predictor = vec![Fix128::ZERO; ndof];
         self.ops.apply_mass(&predictor, &mut mass_predictor);
@@ -1426,28 +1488,33 @@ impl CorotationalTransientSolver {
             &rotations,
             k_scale,
             m_scale,
-            &self.prescribed_value,
+            &prescribed,
             &mut keff_prescribed,
         );
         let mut offset = vec![Fix128::ZERO; ndof];
         self.ops
             .rotation_offset(&rotations, &self.rest, &mut offset);
-        let mut b = vec![Fix128::ZERO; ndof];
+        // the right-hand side of the equation `A u' = rhs` on every degree of freedom (the held
+        // ones too: their residual after the solve is the reaction the hold provides); the
+        // free rows then move the prescribed columns over (`− A prescribed`)
+        let mut rhs = vec![Fix128::ZERO; ndof];
         for d in 0..ndof {
-            b[d] = if self.is_free[d] {
-                let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
-                self.load[d] + mass_predictor[d] - keff_prescribed[d] - offset[d] - damping_term
-            } else {
-                Fix128::ZERO
-            };
+            let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
+            rhs[d] = self.load[d] + mass_predictor[d] - offset[d] - damping_term;
+        }
+        let mut b_free = vec![Fix128::ZERO; ndof];
+        for d in 0..ndof {
+            if is_free[d] {
+                b_free[d] = rhs[d] - keff_prescribed[d];
+            }
         }
         let ops = &self.ops;
         let (mut next_u, iterations) =
-            conjugate_gradient(&b, &self.is_free, &self.precond, &self.config, |p, out| {
+            conjugate_gradient(&b_free, &is_free, &self.precond, &self.config, |p, out| {
                 ops.apply_scaled_rotated(&rotations, k_scale, m_scale, p, out);
             })?;
         for d in 0..ndof {
-            if self.is_free[d] {
+            if is_free[d] {
                 let (next_v, next_a) = newmark_corrector(
                     next_u[d],
                     predictor[d],
@@ -1459,7 +1526,19 @@ impl CorotationalTransientSolver {
                 self.v[d] = next_v;
                 self.a[d] = next_a;
             } else {
-                next_u[d] = self.prescribed_value[d];
+                next_u[d] = prescribed[d];
+            }
+        }
+        // the reaction at a held vertex: `(A u' − rhs)_y` with the full `u'` (held values
+        // included), the force the plane had to add; a tensile one (negative, pulling down)
+        // releases the vertex for the next step
+        if self.ground.is_some() {
+            let mut a_u = vec![Fix128::ZERO; ndof];
+            self.ops
+                .apply_scaled_rotated(&rotations, k_scale, m_scale, &next_u, &mut a_u);
+            for (i, (on, &held_i)) in self.on_ground.iter_mut().zip(held.iter()).enumerate() {
+                let d = 3 * i + 1;
+                *on = held_i && (a_u[d] - rhs[d]) >= Fix128::ZERO;
             }
         }
         self.u = next_u;

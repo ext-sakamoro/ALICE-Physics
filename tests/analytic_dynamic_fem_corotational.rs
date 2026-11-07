@@ -22,7 +22,15 @@
 //!   average-acceleration step is) maps the continuous root `λ = −ζω₁ ± i ω₁√(1 − ζ²)`,
 //!   `ζ = α/(2ω₁) + βω₁/2`, to `z = (1 + λ dt/2) / (1 − λ dt/2)` per step: amplitude `|z|ⁿ`,
 //!   frequency `arg z / dt`. Checked for `α` alone and `β` alone, so each coefficient is seen
-//!   on its own.
+//!   on its own;
+//! * **ground contact**: a column with no base fix standing on the plane settles (with
+//!   damping) to the static solve of the same mesh with a roller base (bottom nodes held in
+//!   `y` only, the frictionless contact's exact counterpart) within 1 %, with every bottom
+//!   node held on the plane; dropped from 10 mm it never penetrates the plane at any step's
+//!   end, touches down near the free-fall time and settles to the same sag. The closed form
+//!   `ρ g H² / (2E)` is the limit the P1 mesh converges to at `O(h)` (the stress varies
+//!   linearly under self-weight, a P1 tetrahedron holds one strain), stated for the record,
+//!   not used as the oracle.
 //!
 //! Material: `E = 1.2725e6 Pa` (`G = 4.27e5 Pa`, `ν = 0.49`), `ρ = 1100 kg/m³`; in the finite
 //! element module's units `E = 1.2725 MPa`, `ρ = 1.1e-9 t/mm³`.
@@ -525,4 +533,180 @@ fn mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate() {
         beta: Fix128::ZERO,
     };
     check_damped(&c, omega, &phi, damping, "α only");
+}
+
+/// static sag with a roller base (bottom nodes held in `y` only), mm, positive downward: the
+/// exact counterpart of frictionless contact on the same mesh
+fn roller_static_sag_mm(c: &Column) -> f64 {
+    let mut bc = BoundaryConditions::new();
+    for &i in &c.base {
+        bc.prescribe(i as u32, linear_elastic_fem::Axis::Y, Fix128::ZERO);
+    }
+    // the lateral rigid modes: hold the centre column's bottom vertex in x and z, and one
+    // more bottom vertex in z against the rotation about y (the roller cannot see them)
+    let centre = *c
+        .base
+        .iter()
+        .min_by(|&&a, &&b| {
+            let r = |i: usize| {
+                let v = c.mm.vertices[i];
+                v[0] * v[0] + v[2] * v[2]
+            };
+            r(a).partial_cmp(&r(b)).expect("finite")
+        })
+        .expect("a base");
+    bc.prescribe(centre as u32, linear_elastic_fem::Axis::X, Fix128::ZERO);
+    bc.prescribe(centre as u32, linear_elastic_fem::Axis::Z, Fix128::ZERO);
+    let other = *c
+        .base
+        .iter()
+        .find(|&&i| i != centre && (c.mm.vertices[i][2] - c.mm.vertices[centre][2]).abs() < 1e-6)
+        .expect("a second bottom vertex on the centre's z line");
+    bc.prescribe(other as u32, linear_elastic_fem::Axis::Z, Fix128::ZERO);
+    for (i, m) in c.masses_t.iter().enumerate() {
+        bc.add_load(
+            i as u32,
+            linear_elastic_fem::Axis::Y,
+            Fix128::from_f64(-m * G * 1000.0),
+        );
+    }
+    let sol = linear_elastic_fem::solve(&c.mm, &c.material, &bc, &SolverConfig::default())
+        .expect("the roller column solves");
+    c.top
+        .iter()
+        .map(|&i| -sol.displacements[i][1].to_f64())
+        .sum::<f64>()
+        / c.top.len() as f64
+}
+
+/// the column with no base fix on the ground plane at `ground_mm` below its bottom (0 =
+/// standing on it), gravity, `ζ = 0.2` stiffness damping on the first mode so it settles
+fn standing_solver(
+    c: &Column,
+    omega: f64,
+    ground_below_mm: f64,
+    dt: f64,
+) -> (CorotationalTransientSolver, f64) {
+    let mut bc = BoundaryConditions::new();
+    for (i, m) in c.masses_t.iter().enumerate() {
+        bc.add_load(
+            i as u32,
+            linear_elastic_fem::Axis::Y,
+            Fix128::from_f64(-m * G * 1000.0),
+        );
+    }
+    let dynamics = DynamicsConfig::try_new(
+        Fix128::from_f64(DENSITY * 1e-12),
+        Fix128::from_f64(dt),
+        MassLumping::Lumped,
+    )
+    .expect("density and dt positive");
+    let config =
+        SolverConfig::try_new(20_000, Fix128::from_f64(1e-7)).expect("budget and tolerance");
+    let mut solver = CorotationalTransientSolver::new(&c.mm, &c.material, &bc, &dynamics, &config)
+        .expect("the column solves");
+    solver.set_damping(Some(RayleighCoefficients {
+        alpha: Fix128::ZERO,
+        beta: Fix128::from_f64(2.0 * 0.2 / omega),
+    }));
+    let bottom = f64::from(
+        c.mm.vertices
+            .iter()
+            .map(|v| v[1])
+            .fold(f32::INFINITY, f32::min),
+    );
+    let ground = bottom - ground_below_mm;
+    solver.set_ground(Some(Fix128::from_f64(ground)));
+    (solver, ground)
+}
+
+fn lowest_y_mm(c: &Column, u: &[Fix128]) -> f64 {
+    (0..c.mm.vertices.len())
+        .map(|i| f64::from(c.mm.vertices[i][1]) + u[3 * i + 1].to_f64())
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The column standing on the plane with no base fix settles to the roller static sag
+/// within 1 % (the same mesh, the frictionless contact's exact counterpart; the closed form
+/// `ρ g H² / (2E)` differs from it by the P1 discretisation, printed), and every bottom
+/// vertex is held on the plane.
+#[test]
+fn a_column_standing_on_the_ground_settles_to_the_roller_static_sag_with_its_whole_bottom_in_contact(
+) {
+    let c = column();
+    let (omega, _) = axial_mode(&c.mm, &c.material, &c.masses_t, &c.base, 12);
+    let period = 2.0 * std::f64::consts::PI / omega;
+    let dt = period / 64.0;
+    let (mut solver, ground) = standing_solver(&c, omega, 0.0, dt);
+    for _ in 0..64 * 8 {
+        solver.step().expect("the step converges");
+        assert!(
+            lowest_y_mm(&c, solver.displacements()) >= ground - 1e-9,
+            "penetration"
+        );
+    }
+    let sag = top_sag_mm(&c, solver.displacements());
+    let roller = roller_static_sag_mm(&c);
+    let closed = DENSITY * G * (2.0 * HALF_H).powi(2) / (2.0 * YOUNG_PA) * 1000.0;
+    let held = c.base.iter().filter(|&&i| solver.on_ground()[i]).count();
+    eprintln!(
+        "standing: sag {sag:.5e} mm vs roller static {roller:.5e} mm ({:+.4}); closed form {closed:.5e} mm ({:+.4} of roller); {held} of {} bottom vertices held",
+        sag / roller - 1.0,
+        closed / roller - 1.0,
+        c.base.len()
+    );
+    assert!(
+        (sag / roller - 1.0).abs() < 0.01,
+        "sag {sag:.5e} vs roller {roller:.5e}"
+    );
+    assert_eq!(held, c.base.len(), "every bottom vertex is held");
+}
+
+/// Dropped from 10 mm, the column never ends a step below the plane, touches down within
+/// one step of the free-fall time `√(2h/g)`, and settles to the roller static sag within 1 %.
+#[test]
+fn a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static_sag() {
+    let c = column();
+    let (omega, _) = axial_mode(&c.mm, &c.material, &c.masses_t, &c.base, 12);
+    let period = 2.0 * std::f64::consts::PI / omega;
+    let dt = period / 64.0;
+    let drop_mm = 10.0;
+    let (mut solver, ground) = standing_solver(&c, omega, drop_mm, dt);
+    let fall_time = (2.0 * drop_mm / (G * 1000.0)).sqrt();
+    let mut touched_at = None;
+    let steps = 64 * 24;
+    for step in 1..=steps {
+        solver.step().expect("the step converges");
+        let lowest = lowest_y_mm(&c, solver.displacements());
+        assert!(
+            lowest >= ground - 1e-9,
+            "step {step}: lowest {lowest:.6e} below ground {ground:.6e}"
+        );
+        if touched_at.is_none() && solver.on_ground().iter().any(|&h| h) {
+            touched_at = Some(step as f64 * dt);
+        }
+    }
+    let touched = touched_at.expect("the column touches down");
+    // the sag against the ground: the column's height above the plane, not its rest place
+    let u = solver.displacements();
+    let top_y = c
+        .top
+        .iter()
+        .map(|&i| f64::from(c.mm.vertices[i][1]) + u[3 * i + 1].to_f64())
+        .sum::<f64>()
+        / c.top.len() as f64;
+    let sag = ground + 2.0 * HALF_H * 1000.0 - top_y;
+    let roller = roller_static_sag_mm(&c);
+    eprintln!(
+        "drop: touchdown at {touched:.5e} s vs free fall {fall_time:.5e} s (dt {dt:.3e}); final sag {sag:.5e} mm vs roller static {roller:.5e} mm ({:+.4})",
+        sag / roller - 1.0
+    );
+    assert!(
+        (touched - fall_time).abs() <= dt,
+        "touchdown {touched:.5e} vs free fall {fall_time:.5e}"
+    );
+    assert!(
+        (sag / roller - 1.0).abs() < 0.01,
+        "sag {sag:.5e} vs roller {roller:.5e}"
+    );
 }
