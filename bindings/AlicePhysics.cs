@@ -382,7 +382,7 @@ namespace AlicePhysics
             return pos.ToVector3();
         }
 
-        /// <summary>Add a wind zone over a box: drag of a wind along direction (normalised), baseSpeed + gustAmplitude*sin(2*pi*gustHz*t) m/s. Part of the world's state. Returns its index, or uint.MaxValue for a bad value.</summary>
+        /// <summary>Add a wind zone over a box: drag of a wind along direction (normalised), baseSpeed + gustAmplitude*sin(2*pi*gustHz*t) m/s. Part of the world's state. Returns its index, or uint.MaxValue for a bad value. min, max and direction are Unity Vector3 (float): the zone is built from float-rounded corners, so a scene built here is bit-identical to the same scene built in C# but not to one built from doubles through wasm, C or Python.</summary>
         public uint AddWindZone(Vector3 min, Vector3 max, Vector3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area)
         {
             ThrowIfDisposed();
