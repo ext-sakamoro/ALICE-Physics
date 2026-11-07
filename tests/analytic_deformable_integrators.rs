@@ -162,8 +162,13 @@ fn run_newmark(mesh: &SdfTetMesh, steps_per_frame: usize, tolerance: f64) -> (f6
     .expect("density and dt positive");
     let config =
         SolverConfig::try_new(20_000, Fix128::from_f64(tolerance)).expect("budget and tolerance");
-    let mut solver =
-        TransientSolver::new(&mm, &material, &bc, &dynamics, &config).expect("the column solves");
+    let mut solver = match TransientSolver::new(&mm, &material, &bc, &dynamics, &config) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("  newmark  {steps_per_frame} step/frame tol {tolerance:.0e}: the consistent acceleration solve failed: {e:?} (the attainable residual depends on the mesh, see the MODEL's valid range)");
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+    };
     let top = top_vertices(mesh);
     let mut iterations = 0u64;
     let mut sag_sum = 0.0;
