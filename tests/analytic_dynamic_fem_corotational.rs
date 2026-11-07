@@ -16,7 +16,13 @@
 //!   average-acceleration scheme's period elongation is a closed form, so this is exact to the
 //!   crossing resolution. The thin-rod closed form `ω₁ = (π/2H)√(E/ρ)` holds only for a
 //!   slender rod with lateral inertia neglected and no lateral constraint at the base; it is
-//!   checked against the discrete mode as a stated-assumption bound, not used as the oracle.
+//!   checked against the discrete mode as a stated-assumption bound, not used as the oracle;
+//! * **Rayleigh damping decays at the closed-form rate**: with `C = α M + β K'` the first
+//!   mode's coordinate decays and oscillates as the trapezoidal rule (which the
+//!   average-acceleration step is) maps the continuous root `λ = −ζω₁ ± i ω₁√(1 − ζ²)`,
+//!   `ζ = α/(2ω₁) + βω₁/2`, to `z = (1 + λ dt/2) / (1 − λ dt/2)` per step: amplitude `|z|ⁿ`,
+//!   frequency `arg z / dt`. Checked for `α` alone and `β` alone, so each coefficient is seen
+//!   on its own.
 //!
 //! Material: `E = 1.2725e6 Pa` (`G = 4.27e5 Pa`, `ν = 0.49`), `ρ = 1100 kg/m³`; in the finite
 //! element module's units `E = 1.2725 MPa`, `ρ = 1.1e-9 t/mm³`.
@@ -26,6 +32,7 @@
     reason = "analytic reference: periods, means and the Newmark frequency relation are computed in f64 from the recorded displacements, never by the solver under test"
 )]
 
+use alice_physics_core::damping_rayleigh::RayleighCoefficients;
 use alice_physics_core::dynamic_fem::{
     CorotationalTransientSolver, DynamicsConfig, MassLumping, TransientSolver,
 };
@@ -384,4 +391,138 @@ fn the_corotational_oscillation_has_the_modal_period_and_the_static_mean() {
         (mean / static_sag - 1.0).abs() < 0.01,
         "mean {mean:.4e} vs static {static_sag:.4e}"
     );
+}
+
+/// the solver with Rayleigh damping, from rest under gravity, recording `q₁`
+fn damped_run(
+    c: &Column,
+    phi: &[f64],
+    damping: RayleighCoefficients,
+    dt: f64,
+    steps: usize,
+) -> Vec<f64> {
+    let dynamics = DynamicsConfig::try_new(
+        Fix128::from_f64(DENSITY * 1e-12),
+        Fix128::from_f64(dt),
+        MassLumping::Lumped,
+    )
+    .expect("density and dt positive");
+    let config =
+        SolverConfig::try_new(20_000, Fix128::from_f64(1e-7)).expect("budget and tolerance");
+    let mut solver = CorotationalTransientSolver::new(
+        &c.mm,
+        &c.material,
+        &gravity_boundary(c),
+        &dynamics,
+        &config,
+    )
+    .expect("the column solves");
+    solver.set_damping(Some(damping));
+    let mut q = Vec::with_capacity(steps + 1);
+    q.push(modal_coordinate(c, phi, solver.displacements()));
+    for _ in 0..steps {
+        solver.step().expect("the step converges");
+        q.push(modal_coordinate(c, phi, solver.displacements()));
+    }
+    q
+}
+
+/// the local maxima of a signal, parabolically interpolated: `(time, value)`
+fn peaks(signal: &[f64], dt: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    for k in 1..signal.len() - 1 {
+        let (a, b, c) = (signal[k - 1], signal[k], signal[k + 1]);
+        if b > a && b >= c {
+            let denom = a - 2.0 * b + c;
+            let offset = if denom == 0.0 {
+                0.0
+            } else {
+                0.5 * (a - c) / denom
+            };
+            let value = b - 0.25 * (a - c) * offset;
+            out.push(((k as f64 + offset) * dt, value));
+        }
+    }
+    out
+}
+
+/// `(|z|, arg z)` of the trapezoidal map of the damped root: the per-step amplitude factor
+/// and phase advance of the first mode
+fn trapezoidal_root(omega: f64, zeta: f64, dt: f64) -> (f64, f64) {
+    // λ = −ζω + i ω√(1 − ζ²); z = (1 + λ dt/2) / (1 − λ dt/2)
+    let (re, im) = (
+        -zeta * omega * dt / 2.0,
+        omega * (1.0 - zeta * zeta).sqrt() * dt / 2.0,
+    );
+    let (nr, ni) = (1.0 + re, im);
+    let (dr, di) = (1.0 - re, -im);
+    let d2 = dr * dr + di * di;
+    let zr = (nr * dr + ni * di) / d2;
+    let zi = (ni * dr - nr * di) / d2;
+    ((zr * zr + zi * zi).sqrt(), zi.atan2(zr))
+}
+
+/// The decay and the frequency of the damped first mode against the trapezoidal closed form,
+/// for one Rayleigh coefficient at a time (`ζ = 0.05` on the first mode): the log-decrement
+/// per period between successive peaks of `q₁ − mean` within 2 % of `−ln|z|` per step times
+/// the steps per period (the peaks are parabolically interpolated at 64 samples per period,
+/// 0.1 % in amplitude, and the mean is the tail's static value), the period within 0.5 % of
+/// `2π dt / arg z`.
+fn check_damped(c: &Column, omega: f64, phi: &[f64], damping: RayleighCoefficients, label: &str) {
+    let zeta = damping.damping_ratio(Fix128::from_f64(omega)).to_f64();
+    let period = 2.0 * std::f64::consts::PI / omega;
+    let dt = period / 64.0;
+    let steps = 64 * 8;
+    let q = damped_run(c, phi, damping, dt, steps);
+    // the mean the oscillation settles to: the static modal coordinate, read from the tail
+    let tail = &q[q.len() - 64..];
+    let mean = tail.iter().sum::<f64>() / tail.len() as f64;
+    let centred: Vec<f64> = q.iter().map(|x| x - mean).collect();
+    let pk = peaks(&centred, dt);
+    assert!(pk.len() >= 4, "{label}: {} peaks", pk.len());
+    let (abs_z, arg_z) = trapezoidal_root(omega, zeta, dt);
+    let expected_period = 2.0 * std::f64::consts::PI * dt / arg_z;
+    let expected_decrement = -abs_z.ln() * expected_period / dt;
+    let first = pk[1];
+    let last = pk[pk.len() - 1];
+    let periods = (last.0 - first.0) / expected_period;
+    let measured_period = (last.0 - first.0) / periods.round();
+    let measured_decrement = (first.1 / last.1).ln() / periods.round();
+    eprintln!(
+        "{label}: ζ {zeta:.4}; log-decrement per period {measured_decrement:.5} vs {expected_decrement:.5} ({:+.4}); period {measured_period:.6e} vs {expected_period:.6e} ({:+.5})",
+        measured_decrement / expected_decrement - 1.0,
+        measured_period / expected_period - 1.0
+    );
+    assert!(
+        (measured_decrement / expected_decrement - 1.0).abs() < 0.02,
+        "{label}: decrement"
+    );
+    assert!(
+        (measured_period / expected_period - 1.0).abs() < 0.005,
+        "{label}: period"
+    );
+}
+
+#[test]
+fn stiffness_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate() {
+    let c = column();
+    let (omega, phi) = axial_mode(&c.mm, &c.material, &c.masses_t, &c.base, 12);
+    // β alone: ζ = β ω / 2 = 0.05
+    let damping = RayleighCoefficients {
+        alpha: Fix128::ZERO,
+        beta: Fix128::from_f64(2.0 * 0.05 / omega),
+    };
+    check_damped(&c, omega, &phi, damping, "β only");
+}
+
+#[test]
+fn mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate() {
+    let c = column();
+    let (omega, phi) = axial_mode(&c.mm, &c.material, &c.masses_t, &c.base, 12);
+    // α alone: ζ = α / (2 ω) = 0.05
+    let damping = RayleighCoefficients {
+        alpha: Fix128::from_f64(2.0 * 0.05 * omega),
+        beta: Fix128::ZERO,
+    };
+    check_damped(&c, omega, &phi, damping, "α only");
 }
