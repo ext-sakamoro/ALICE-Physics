@@ -12,9 +12,8 @@
 //! The scripts are in the `x–z` plane with `y` the normal: the letters are flat, as on a
 //! page.
 
-use alice_physics_core::cloth::ClothConfig;
+use alice_physics_core::cloth::{Cloth, ClothConfig, GrabId, OutlineDesc, OutlineError};
 use alice_physics_core::math::{Fix128, Vec3Fix};
-use alice_physics_core::soft_body::{GrabId, SoftBodyDesc, SoftBodyError};
 use alice_physics_core::solver::{PhysicsWorld, SolverConfig, WorldSnapshotError};
 
 fn r(n: i64, d: i64) -> Fix128 {
@@ -80,8 +79,8 @@ fn tether() -> (Fix128, Fix128) {
     (omega * omega, omega * Fix128::from_f32(2.0 * 0.42))
 }
 
-fn desc(contours: Vec<Vec<[Fix128; 2]>>, x_offset: Fix128, spacing: Fix128) -> SoftBodyDesc {
-    SoftBodyDesc {
+fn desc(contours: Vec<Vec<[Fix128; 2]>>, x_offset: Fix128, spacing: Fix128) -> OutlineDesc {
+    OutlineDesc {
         origin: Vec3Fix::new(x_offset, Fix128::ZERO, Fix128::ZERO),
         u: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
         v: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
@@ -103,10 +102,8 @@ fn world() -> PhysicsWorld {
 /// E at the origin and O at `x = 1.5`, spacing 0.1.
 fn two_letters() -> PhysicsWorld {
     let mut w = world();
-    w.add_soft_body(&desc(letter_e(), Fix128::ZERO, r(1, 10)))
-        .expect("E");
-    w.add_soft_body(&desc(letter_o(), r(15, 10), r(1, 10)))
-        .expect("O");
+    w.add_cloth(Cloth::from_outline(&desc(letter_e(), Fix128::ZERO, r(1, 10))).expect("E"));
+    w.add_cloth(Cloth::from_outline(&desc(letter_o(), r(15, 10), r(1, 10))).expect("O"));
     w
 }
 
@@ -123,7 +120,7 @@ fn step(w: &mut PhysicsWorld, n: usize) {
 type State = (Vec<Vec3Fix>, Vec<Vec3Fix>, Vec<Vec3Fix>);
 
 fn state(w: &PhysicsWorld, b: usize) -> State {
-    let c = w.soft_bodies[b].cloth();
+    let c = &w.cloths[b];
     (
         c.positions.clone(),
         c.prev_positions.clone(),
@@ -136,7 +133,7 @@ fn dist(a: Vec3Fix, b: Vec3Fix) -> f32 {
 }
 
 fn max_dev(w: &PhysicsWorld, b: usize) -> f32 {
-    let c = w.soft_bodies[b].cloth();
+    let c = &w.cloths[b];
     c.positions
         .iter()
         .zip(c.rest_positions())
@@ -213,11 +210,11 @@ fn inside(p: [f32; 2], contours: &[Vec<[Fix128; 2]>]) -> bool {
 #[test]
 fn outline_e_is_one_connected_lattice_inside_the_fill() {
     let w = two_letters();
-    let e = &w.soft_bodies[0];
+    let e = &w.cloths[0];
     let contours = letter_e();
     let n = e.particle_count();
     assert!(n >= 40, "too few particles for a 0.1 lattice on the E: {n}");
-    for p in e.cloth().positions.iter() {
+    for p in e.positions.iter() {
         let q = [p.x.to_f32(), p.z.to_f32()];
         assert_eq!(p.y, Fix128::ZERO);
         assert!(
@@ -226,14 +223,14 @@ fn outline_e_is_one_connected_lattice_inside_the_fill() {
         );
     }
     assert_eq!(
-        components(n, e.cloth().triangles.as_slice()),
+        components(n, e.triangles.as_slice()),
         1,
         "E is not one piece"
     );
-    assert_eq!(e.cloth().rest_positions(), e.cloth().positions.as_slice());
+    assert_eq!(e.rest_positions(), e.positions.as_slice());
     let w2 = two_letters();
-    assert_eq!(w2.soft_bodies[0].cloth().positions, e.cloth().positions);
-    assert_eq!(w2.soft_bodies[0].cloth().triangles, e.cloth().triangles);
+    assert_eq!(w2.cloths[0].positions, e.positions);
+    assert_eq!(w2.cloths[0].triangles, e.triangles);
 }
 
 /// oracle: the O keeps its hole (no particle deeper than spacing/2 inside it) and is
@@ -241,8 +238,8 @@ fn outline_e_is_one_connected_lattice_inside_the_fill() {
 #[test]
 fn outline_hole_is_empty_and_pieces_are_counted() {
     let w = two_letters();
-    let o = &w.soft_bodies[1];
-    for p in o.cloth().positions.iter() {
+    let o = &w.cloths[1];
+    for p in o.positions.iter() {
         let (x, z) = (p.x.to_f32() - 1.5, p.z.to_f32());
         assert!(
             !(x > 0.35 && x < 0.65 && z > 0.35 && z < 0.65),
@@ -250,18 +247,16 @@ fn outline_hole_is_empty_and_pieces_are_counted() {
         );
     }
     assert_eq!(
-        components(o.particle_count(), &o.cloth().triangles),
+        components(o.particle_count(), &o.triangles),
         1,
         "O is not one ring"
     );
 
     let mut w = world();
-    let i = w
-        .add_soft_body(&desc(letter_i(), Fix128::ZERO, r(1, 10)))
-        .expect("i");
-    let body = &w.soft_bodies[i];
+    let i = w.add_cloth(Cloth::from_outline(&desc(letter_i(), Fix128::ZERO, r(1, 10))).expect("i"));
+    let body = &w.cloths[i];
     assert_eq!(
-        components(body.particle_count(), &body.cloth().triangles),
+        components(body.particle_count(), &body.triangles),
         2,
         "i is stem + dot"
     );
@@ -274,19 +269,13 @@ fn outline_smaller_than_the_spacing_is_refused() {
     let p = |x: i64, y: i64| [r(x, 1000), r(y, 1000)];
     let tiny = vec![vec![p(0, 0), p(10, 0), p(10, 10), p(0, 10)]];
     let mut w = world();
-    let err = w
-        .add_soft_body(&desc(tiny, Fix128::ZERO, Fix128::ONE))
-        .unwrap_err();
-    assert_eq!(err, SoftBodyError::NoTriangles);
-    assert!(w.soft_bodies.is_empty());
-    let err = w
-        .add_soft_body(&desc(letter_e(), Fix128::ZERO, Fix128::ZERO))
-        .unwrap_err();
-    assert_eq!(err, SoftBodyError::SpacingNotPositive);
-    let err = w
-        .add_soft_body(&desc(Vec::new(), Fix128::ZERO, r(1, 10)))
-        .unwrap_err();
-    assert_eq!(err, SoftBodyError::EmptyOutline);
+    let err = Cloth::from_outline(&desc(tiny, Fix128::ZERO, Fix128::ONE)).unwrap_err();
+    assert_eq!(err, OutlineError::NoTriangles);
+    assert!(w.cloths.is_empty());
+    let err = Cloth::from_outline(&desc(letter_e(), Fix128::ZERO, Fix128::ZERO)).unwrap_err();
+    assert_eq!(err, OutlineError::SpacingNotPositive);
+    let err = Cloth::from_outline(&desc(Vec::new(), Fix128::ZERO, r(1, 10))).unwrap_err();
+    assert_eq!(err, OutlineError::EmptyOutline);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,9 +288,9 @@ fn outline_smaller_than_the_spacing_is_refused() {
 fn rest_is_still_and_asleep() {
     let mut w = two_letters();
     let before = (state(&w, 0), state(&w, 1));
-    assert!(!w.soft_bodies[0].is_asleep());
+    assert!(!w.cloths[0].is_asleep());
     step(&mut w, 1);
-    assert!(w.soft_bodies[0].is_asleep() && w.soft_bodies[1].is_asleep());
+    assert!(w.cloths[0].is_asleep() && w.cloths[1].is_asleep());
     step(&mut w, 239);
     assert_eq!((state(&w, 0), state(&w, 1)), before);
 }
@@ -315,19 +304,19 @@ fn rest_is_still_and_asleep() {
 #[test]
 fn grab_stretches_the_letter_locally() {
     let mut w = two_letters();
-    let rest0 = w.soft_bodies[0].cloth().positions.clone();
+    let rest0 = w.cloths[0].positions.clone();
     let o_before = state(&w, 1);
     let id = w
-        .soft_grab(0, at(0.0, 0.0), r(34, 100))
+        .cloth_grab(0, at(0.0, 0.0), r(34, 100))
         .expect("corner within reach");
-    let g = w.soft_bodies[0].grab_particle(id).expect("grab is listed");
+    let g = w.cloths[0].grab_particle(id).expect("grab is listed");
     assert_eq!(rest0[g], at(0.0, 0.0));
     let target = at(-0.9, -0.5);
     for _ in 0..90 {
-        assert!(w.soft_move_grab(id, target));
+        assert!(w.cloth_move_grab(id, target));
         step(&mut w, 1);
     }
-    let p = w.soft_bodies[0].cloth().positions.clone();
+    let p = w.cloths[0].positions.clone();
     assert_eq!(p[g], target, "grabbed particle is held at the pointer");
     let far = (0..rest0.len())
         .max_by(|&a, &b| dist(rest0[a], rest0[g]).total_cmp(&dist(rest0[b], rest0[g])))
@@ -343,7 +332,7 @@ fn grab_stretches_the_letter_locally() {
         "letter moved rigidly: far {far_move} near {near_move}"
     );
     assert_eq!(state(&w, 1), o_before, "the O moved");
-    assert!(!w.soft_bodies[0].is_asleep());
+    assert!(!w.cloths[0].is_asleep());
 }
 
 /// oracle: two grabs on one letter hold two particles; releasing one keeps the other;
@@ -352,44 +341,44 @@ fn grab_stretches_the_letter_locally() {
 #[test]
 fn two_grabs_hold_two_particles() {
     let mut w = two_letters();
-    let a = w.soft_grab(0, at(0.0, 0.0), r(34, 100)).expect("a");
+    let a = w.cloth_grab(0, at(0.0, 0.0), r(34, 100)).expect("a");
     let b = w
-        .soft_grab(0, at(0.0, 0.0), r(34, 100))
+        .cloth_grab(0, at(0.0, 0.0), r(34, 100))
         .expect("b: next nearest");
     let (pa, pb) = (
-        w.soft_bodies[0].grab_particle(a).unwrap(),
-        w.soft_bodies[0].grab_particle(b).unwrap(),
+        w.cloths[0].grab_particle(a).unwrap(),
+        w.cloths[0].grab_particle(b).unwrap(),
     );
     assert_ne!(pa, pb);
-    assert_eq!(w.soft_bodies[0].grabs().len(), 2);
+    assert_eq!(w.cloths[0].grabs().len(), 2);
     let (ta, tb) = (at(-0.5, -0.5), at(0.5, -0.5));
     for _ in 0..30 {
-        w.soft_move_grab(a, ta);
-        w.soft_move_grab(b, tb);
+        w.cloth_move_grab(a, ta);
+        w.cloth_move_grab(b, tb);
         step(&mut w, 1);
     }
-    let c = w.soft_bodies[0].cloth();
+    let c = &w.cloths[0];
     assert_eq!(c.positions[pa], ta);
     assert_eq!(c.positions[pb], tb);
-    assert!(w.soft_release(a));
-    assert!(!w.soft_release(a), "released twice");
+    assert!(w.cloth_release(a));
+    assert!(!w.cloth_release(a), "released twice");
     step(&mut w, 30);
-    let c = w.soft_bodies[0].cloth();
+    let c = &w.cloths[0];
     assert_eq!(c.positions[pb], tb, "b is still held");
     assert_ne!(c.positions[pa], ta, "a is free again");
     assert_eq!(c.inv_masses[pa], Fix128::ONE, "a's mass is back");
     assert_eq!(c.inv_masses[pb], Fix128::ZERO);
     assert_eq!(
-        w.soft_grab(0, at(50.0, 50.0), r(34, 100)),
+        w.cloth_grab(0, at(50.0, 50.0), r(34, 100)),
         None,
         "out of reach"
     );
     assert_eq!(
-        w.soft_grab(7, at(0.0, 0.0), r(34, 100)),
+        w.cloth_grab(7, at(0.0, 0.0), r(34, 100)),
         None,
         "no such body"
     );
-    assert!(!w.soft_move_grab(GrabId(999), ta));
+    assert!(!w.cloth_move_grab(GrabId(999), ta));
 }
 
 // ---------------------------------------------------------------------------
@@ -403,60 +392,57 @@ fn two_grabs_hold_two_particles() {
 #[test]
 fn release_throws_with_the_pointers_velocity() {
     let mut w = two_letters();
-    let id = w.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
-    let g = w.soft_bodies[0].grab_particle(id).unwrap();
-    assert!(w.soft_release(id));
+    let id = w.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    let g = w.cloths[0].grab_particle(id).unwrap();
+    assert!(w.cloth_release(id));
     assert_eq!(
-        w.soft_bodies[0].cloth().velocities[g],
+        w.cloths[0].velocities[g],
         Vec3Fix::ZERO,
         "no step: no throw"
     );
 
-    let id = w.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
-    let g = w.soft_bodies[0].grab_particle(id).unwrap();
+    let id = w.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    let g = w.cloths[0].grab_particle(id).unwrap();
     let d = Vec3Fix::new(r(3, 100), Fix128::ZERO, r(-2, 100));
     let mut target = at(0.0, 0.0);
     for _ in 0..10 {
         target = target + d;
-        w.soft_move_grab(id, target);
+        w.cloth_move_grab(id, target);
         step(&mut w, 1);
     }
-    assert!(w.soft_release(id));
-    let v = w.soft_bodies[0].cloth().velocities[g];
+    assert!(w.cloth_release(id));
+    let v = w.cloths[0].velocities[g];
     assert_eq!(
         v,
         d / dt(),
         "throw velocity is the pointer's last-step velocity"
     );
-    assert_eq!(w.soft_bodies[0].cloth().inv_masses[g], Fix128::ONE);
+    assert_eq!(w.cloths[0].inv_masses[g], Fix128::ONE);
     // the same script released without a throw: the thrown particle is ahead of it
     // along the throw after one step (the tether and the neighbours pull both back)
     let mut still = two_letters();
-    let id2 = still.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    let id2 = still.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
     let mut t2 = at(0.0, 0.0);
     for _ in 0..10 {
         t2 = t2 + d;
-        still.soft_move_grab(id2, t2);
+        still.cloth_move_grab(id2, t2);
         step(&mut still, 1);
     }
-    assert!(still.soft_release_with_velocity(id2, Vec3Fix::ZERO));
+    assert!(still.cloth_release_with_velocity(id2, Vec3Fix::ZERO));
     step(&mut w, 1);
     step(&mut still, 1);
-    let (p1, q1) = (
-        w.soft_bodies[0].cloth().positions[g],
-        still.soft_bodies[0].cloth().positions[g],
-    );
+    let (p1, q1) = (w.cloths[0].positions[g], still.cloths[0].positions[g]);
     assert!(
         p1.x > q1.x && p1.z < q1.z,
         "the throw did not carry the particle: {p1:?} vs {q1:?}"
     );
 
-    let id = w.soft_grab(1, at(1.5, 0.0), r(34, 100)).unwrap();
-    let g = w.soft_bodies[1].grab_particle(id).unwrap();
+    let id = w.cloth_grab(1, at(1.5, 0.0), r(34, 100)).unwrap();
+    let g = w.cloths[1].grab_particle(id).unwrap();
     step(&mut w, 3);
     let v = Vec3Fix::from_f32(40.0, 0.0, -25.0);
-    assert!(w.soft_release_with_velocity(id, v));
-    assert_eq!(w.soft_bodies[1].cloth().velocities[g], v);
+    assert!(w.cloth_release_with_velocity(id, v));
+    assert_eq!(w.cloths[1].velocities[g], v);
 }
 
 // ---------------------------------------------------------------------------
@@ -464,12 +450,12 @@ fn release_throws_with_the_pointers_velocity() {
 // ---------------------------------------------------------------------------
 
 fn throw_script(w: &mut PhysicsWorld) {
-    let id = w.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    let id = w.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
     for _ in 0..30 {
-        w.soft_move_grab(id, at(-0.9, -0.5));
+        w.cloth_move_grab(id, at(-0.9, -0.5));
         step(w, 1);
     }
-    w.soft_release_with_velocity(id, Vec3Fix::from_f32(40.0, 0.0, -25.0));
+    w.cloth_release_with_velocity(id, Vec3Fix::from_f32(40.0, 0.0, -25.0));
 }
 
 /// oracle: after a hard throw the letter comes back to its rest shape, reaches the
@@ -497,7 +483,7 @@ fn thrown_letter_recovers_sleeps_and_wakes() {
     }
     let fixed_at = fixed_at.expect("no exact fixed point within 600 frames");
     assert!(
-        w.soft_bodies[0].is_asleep(),
+        w.cloths[0].is_asleep(),
         "not asleep at the fixed point (frame {fixed_at})"
     );
     assert!(
@@ -508,14 +494,11 @@ fn thrown_letter_recovers_sleeps_and_wakes() {
     let s = state(&w, 0);
     step(&mut w, 60);
     assert_eq!(state(&w, 0), s, "a sleeping step changed a bit");
-    assert!(w.soft_bodies[0].is_asleep());
-    let id = w.soft_grab(0, at(1.0, 1.0), r(34, 100)).unwrap();
-    w.soft_move_grab(id, at(1.3, 1.2));
+    assert!(w.cloths[0].is_asleep());
+    let id = w.cloth_grab(0, at(1.0, 1.0), r(34, 100)).unwrap();
+    w.cloth_move_grab(id, at(1.3, 1.2));
     step(&mut w, 1);
-    assert!(
-        !w.soft_bodies[0].is_asleep(),
-        "a grab did not wake the letter"
-    );
+    assert!(!w.cloths[0].is_asleep(), "a grab did not wake the letter");
     assert_ne!(state(&w, 0), s);
 }
 
@@ -525,9 +508,9 @@ fn thrown_letter_recovers_sleeps_and_wakes() {
 fn sleep_changes_no_bit_and_no_digest() {
     let mut a = two_letters();
     let mut b = two_letters();
-    b.soft_bodies[0].set_sleep(false);
-    b.soft_bodies[1].set_sleep(false);
-    assert!(a.soft_bodies[0].sleep_enabled() && !b.soft_bodies[0].sleep_enabled());
+    b.cloths[0].set_sleep(false);
+    b.cloths[1].set_sleep(false);
+    assert!(a.cloths[0].sleep_enabled() && !b.cloths[0].sleep_enabled());
     throw_script(&mut a);
     throw_script(&mut b);
     for f in 0..600 {
@@ -535,7 +518,7 @@ fn sleep_changes_no_bit_and_no_digest() {
         step(&mut b, 1);
         assert_eq!(state(&a, 0), state(&b, 0), "frame {f}");
     }
-    assert!(a.soft_bodies[0].is_asleep() && !b.soft_bodies[0].is_asleep());
+    assert!(a.cloths[0].is_asleep() && !b.cloths[0].is_asleep());
     assert_eq!(a.state_digest(), b.state_digest());
 }
 
@@ -547,14 +530,14 @@ fn sleep_changes_no_bit_and_no_digest() {
 /// and moved, two worlds built the same agree, and a snapshot restores to the same
 /// digest and the same bits 100 frames later.
 #[test]
-fn digest_covers_soft_bodies_and_snapshot_round_trips() {
+fn digest_covers_cloths_and_snapshot_round_trips() {
     let mut a = two_letters();
     let empty = world().state_digest();
     assert_ne!(a.state_digest(), empty, "letters are not in the digest");
     assert_eq!(a.state_digest(), two_letters().state_digest());
     let d0 = a.state_digest();
-    let id = a.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
-    a.soft_move_grab(id, at(-0.3, -0.2));
+    let id = a.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    a.cloth_move_grab(id, at(-0.3, -0.2));
     step(&mut a, 5);
     assert_ne!(
         a.state_digest(),
@@ -566,20 +549,20 @@ fn digest_covers_soft_bodies_and_snapshot_round_trips() {
     let mut b = world();
     b.restore_world(&blob).expect("restore");
     assert_eq!(b.state_digest(), a.state_digest());
-    assert_eq!(b.soft_bodies.len(), 2);
-    assert_eq!(b.soft_bodies[0].grabs().len(), 1, "the grab is state");
+    assert_eq!(b.cloths.len(), 2);
+    assert_eq!(b.cloths[0].grabs().len(), 1, "the grab is state");
     for f in 0..100 {
-        a.soft_move_grab(id, at(-0.3, -0.2));
-        b.soft_move_grab(id, at(-0.3, -0.2));
+        a.cloth_move_grab(id, at(-0.3, -0.2));
+        b.cloth_move_grab(id, at(-0.3, -0.2));
         step(&mut a, 1);
         step(&mut b, 1);
         assert_eq!(state(&a, 0), state(&b, 0), "frame {f}");
     }
-    assert!(a.soft_release(id) && b.soft_release(id));
+    assert!(a.cloth_release(id) && b.cloth_release(id));
     step(&mut a, 600);
     step(&mut b, 600);
     assert_eq!(a.state_digest(), b.state_digest());
-    assert!(a.soft_bodies[0].is_asleep() && b.soft_bodies[0].is_asleep());
+    assert!(a.cloths[0].is_asleep() && b.cloths[0].is_asleep());
 }
 
 /// Frozen digest of the throw script at frame 600 (E and O, spacing 0.1). Every CI OS
@@ -638,7 +621,7 @@ fn previous_version_has_no_letters_and_a_cut_section_is_refused() {
     let mut t = two_letters();
     t.restore_world(&old).expect("previous version restores");
     assert!(
-        t.soft_bodies.is_empty(),
+        t.cloths.is_empty(),
         "a previous-version blob carries no letters"
     );
     assert_eq!(t.state_digest(), world().state_digest());
@@ -661,31 +644,26 @@ fn previous_version_has_no_letters_and_a_cut_section_is_refused() {
 #[test]
 fn rollback_blob_carries_the_letters() {
     let mut a = two_letters();
-    let id = a.soft_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
+    let id = a.cloth_grab(0, at(0.0, 0.0), r(34, 100)).unwrap();
     for _ in 0..20 {
-        a.soft_move_grab(id, at(-0.6, -0.4));
+        a.cloth_move_grab(id, at(-0.6, -0.4));
         step(&mut a, 1);
     }
-    a.soft_release(id);
+    a.cloth_release(id);
     step(&mut a, 7);
     let blob = a.serialize_state();
     let mut b = two_letters();
     assert!(b.deserialize_state(&blob), "same letters: accepted");
     assert_eq!(state(&b, 0), state(&a, 0));
     assert_eq!(state(&b, 1), state(&a, 1));
-    assert_eq!(
-        b.soft_bodies[0].cloth().inv_masses,
-        a.soft_bodies[0].cloth().inv_masses
-    );
+    assert_eq!(b.cloths[0].inv_masses, a.cloths[0].inv_masses);
     for f in 0..50 {
         step(&mut a, 1);
         step(&mut b, 1);
         assert_eq!(state(&a, 0), state(&b, 0), "frame {f}");
     }
     let mut other = world();
-    other
-        .add_soft_body(&desc(letter_i(), Fix128::ZERO, r(1, 10)))
-        .unwrap();
+    other.add_cloth(Cloth::from_outline(&desc(letter_i(), Fix128::ZERO, r(1, 10))).unwrap());
     assert!(!other.deserialize_state(&blob), "other letters: refused");
     assert!(!world().deserialize_state(&blob), "no letters: refused");
     // the same letters with another tether: same particle counts, other structure
@@ -693,10 +671,20 @@ fn rollback_blob_carries_the_letters() {
     let (k, c) = tether();
     let mut e = desc(letter_e(), Fix128::ZERO, r(1, 10));
     e.tether = Some((k + k, c));
-    stiffer.add_soft_body(&e).unwrap();
-    stiffer.add_soft_body(&desc(letter_o(), r(15, 10), r(1, 10))).unwrap();
-    assert_eq!(stiffer.soft_bodies[0].particle_count(), a.soft_bodies[0].particle_count());
+    stiffer.add_cloth(Cloth::from_outline(&e).unwrap());
+    stiffer.add_cloth(Cloth::from_outline(&desc(letter_o(), r(15, 10), r(1, 10))).unwrap());
+    assert_eq!(
+        stiffer.cloths[0].particle_count(),
+        a.cloths[0].particle_count()
+    );
     let before = state(&stiffer, 0);
-    assert!(!stiffer.deserialize_state(&blob), "another structure: refused");
-    assert_eq!(state(&stiffer, 0), before, "a refused blob changed the letters");
+    assert!(
+        !stiffer.deserialize_state(&blob),
+        "another structure: refused"
+    );
+    assert_eq!(
+        state(&stiffer, 0),
+        before,
+        "a refused blob changed the letters"
+    );
 }

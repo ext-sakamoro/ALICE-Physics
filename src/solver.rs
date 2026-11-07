@@ -1779,10 +1779,11 @@ pub struct PhysicsWorld {
     park_generation: u64,
     /// Work counters of the last `step`.
     stage_work: StageWork,
-    /// Soft letters ([`crate::soft_body`]): stepped after the rigid bodies, in index
-    /// order, without contact with them; saved in the snapshot and the rollback blob.
-    pub soft_bodies: Vec<crate::soft_body::SoftBody>,
-    /// Next [`crate::soft_body::GrabId`] (unique in this world).
+    /// Cloths ([`crate::cloth::Cloth`], e.g. soft letters from [`crate::cloth::Cloth::from_outline`]):
+    /// stepped after the rigid bodies, in index order, without contact with them; saved in
+    /// the snapshot and the rollback blob.
+    pub cloths: Vec<crate::cloth::Cloth>,
+    /// Next [`crate::cloth::GrabId`] (unique in this world).
     next_grab_id: u32,
     /// SDF contacts resolved by the current (or last) step, in the order they
     /// were applied ([`Self::last_step_sdf_contacts`]). Cleared at the head of
@@ -1940,7 +1941,7 @@ impl PhysicsWorld {
             park: ParkState::default(),
             park_generation: 0,
             stage_work: StageWork::default(),
-            soft_bodies: Vec::new(),
+            cloths: Vec::new(),
             next_grab_id: 0,
             sdf_contact_log: Vec::new(),
             sdf_contact_substep: 0,
@@ -3538,8 +3539,8 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
 
-        // Phase 3.7: Soft bodies (independent of the rigid bodies)
-        self.step_soft_bodies(dt);
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping
         self.update_sleep_states(dt);
@@ -3554,70 +3555,62 @@ impl PhysicsWorld {
         self.events.end_frame();
     }
 
-    /// Step every soft body with the world's `dt` (grabbed particles placed first).
-    fn step_soft_bodies(&mut self, dt: Fix128) {
-        for b in &mut self.soft_bodies {
-            b.step(dt);
+    /// Step every cloth with the world's `dt` (grabbed particles placed first).
+    fn step_cloths(&mut self, dt: Fix128) {
+        for c in &mut self.cloths {
+            c.step(dt);
         }
     }
 
-    /// Add a soft body cut from `desc` ([`crate::soft_body`]); the exact sleep is on.
-    /// Returns its index in [`Self::soft_bodies`].
-    ///
-    /// # Errors
-    ///
-    /// [`SoftBodyError`](crate::soft_body::SoftBodyError) when the outline, spacing or
-    /// mass is unusable or the lattice keeps no triangle; the world is unchanged.
-    pub fn add_soft_body(
-        &mut self,
-        desc: &crate::soft_body::SoftBodyDesc,
-    ) -> Result<usize, crate::soft_body::SoftBodyError> {
-        let body = crate::soft_body::SoftBody::from_desc(desc)?;
-        self.soft_bodies.push(body);
-        Ok(self.soft_bodies.len() - 1)
+    /// Add a cloth (for a soft letter, [`crate::cloth::Cloth::from_outline`]); returns its
+    /// index in [`Self::cloths`].
+    pub fn add_cloth(&mut self, cloth: crate::cloth::Cloth) -> usize {
+        self.cloths.push(cloth);
+        self.cloths.len() - 1
     }
 
-    /// Grab soft body `body` at `point`: the nearest particle within `reach` that no
-    /// grab holds is pinned to the pointer (placed there by the next step). `None` when
-    /// there is no such body or no particle in reach.
-    pub fn soft_grab(
+    /// Grab cloth `cloth` at `point`: the nearest particle within `reach` that no grab
+    /// holds is pinned to the pointer (placed there by the next step) under a world-unique
+    /// id. `None` when there is no such cloth or no particle in reach.
+    pub fn cloth_grab(
         &mut self,
-        body: usize,
+        cloth: usize,
         point: Vec3Fix,
         reach: Fix128,
-    ) -> Option<crate::soft_body::GrabId> {
-        let id = crate::soft_body::GrabId(self.next_grab_id);
-        let taken = self.soft_bodies.get_mut(body)?.grab(id, point, reach)?;
+    ) -> Option<crate::cloth::GrabId> {
+        let id = crate::cloth::GrabId(self.next_grab_id);
+        let taken = self.cloths.get_mut(cloth)?.grab(id, point, reach)?;
         self.next_grab_id = self.next_grab_id.wrapping_add(1);
         Some(taken)
     }
 
     /// Move grab `id`'s pointer; `false` when no grab has that id.
-    pub fn soft_move_grab(&mut self, id: crate::soft_body::GrabId, point: Vec3Fix) -> bool {
-        self.soft_bodies.iter_mut().any(|b| b.move_grab(id, point))
+    pub fn cloth_move_grab(&mut self, id: crate::cloth::GrabId, point: Vec3Fix) -> bool {
+        self.cloths.iter_mut().any(|c| c.move_grab(id, point))
     }
 
     /// Release grab `id`: the particle gets its mass back and the pointer's velocity
-    /// over the last step; `false` when no grab has that id.
-    pub fn soft_release(&mut self, id: crate::soft_body::GrabId) -> bool {
-        self.soft_bodies.iter_mut().any(|b| b.release(id, None))
+    /// over the last step ([`crate::cloth::Cloth::release_grab`]); `false` when no grab
+    /// has that id.
+    pub fn cloth_release(&mut self, id: crate::cloth::GrabId) -> bool {
+        self.cloths.iter_mut().any(|c| c.release_grab(id))
     }
 
     /// Release grab `id` giving the particle exactly `velocity`.
-    pub fn soft_release_with_velocity(
+    pub fn cloth_release_with_velocity(
         &mut self,
-        id: crate::soft_body::GrabId,
+        id: crate::cloth::GrabId,
         velocity: Vec3Fix,
     ) -> bool {
-        self.soft_bodies
+        self.cloths
             .iter_mut()
-            .any(|b| b.release(id, Some(velocity)))
+            .any(|c| c.release_grab_with_velocity(id, velocity))
     }
 
-    /// Whether some soft body holds grab `id`.
+    /// Whether some cloth holds grab `id`.
     #[must_use]
-    pub fn has_soft_grab(&self, id: crate::soft_body::GrabId) -> bool {
-        self.soft_bodies.iter().any(|b| b.has_grab(id))
+    pub fn has_cloth_grab(&self, id: crate::cloth::GrabId) -> bool {
+        self.cloths.iter().any(|c| c.has_grab(id))
     }
 
     /// Run [`Self::step`] `n` times with the same `dt`.
@@ -4351,8 +4344,8 @@ impl PhysicsWorld {
         // `damping` factor, so this still needs to run here).
         self.apply_frame_damping(dt);
 
-        // Phase 3.7: Soft bodies (independent of the rigid bodies)
-        self.step_soft_bodies(dt);
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping (identical call to `step`).
         self.islands.update_sleep(&self.bodies, dt);
@@ -4474,8 +4467,8 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
 
-        // Phase 3.7: Soft bodies (independent of the rigid bodies)
-        self.step_soft_bodies(dt);
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies, dt);
@@ -5750,8 +5743,8 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
 
-        // Phase 3.7: Soft bodies (independent of the rigid bodies)
-        self.step_soft_bodies(dt);
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies, dt);
@@ -7096,7 +7089,7 @@ impl PhysicsWorld {
     /// | 続き | body ごとに 17 byte = [`SleepState`] u8 + `idle_time` Fix128 (v4、v3 までは 5 byte = u8 + `idle_frames` u32) |
     /// | 続き | world ごと overflow flag 1 byte (v2) |
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
-    /// | 続き | soft body 数 u32、body ごとに [`crate::soft_body::SoftBody`] の運動状態 (粒子数 u32 + 構造の hash u64 + 粒子ごと 160 byte + pin / grab の列 + last_dt)、world ごと次の grab id u32 構造 (三角形 / rest / config / tether) は復元しない: 不一致は拒否 (v5) |
+    /// | 続き | cloth 数 u32、cloth ごとに [`crate::cloth::Cloth`] の運動状態 (粒子数 u32 + 構造の hash u64 + 粒子ごと 160 byte + pin / grab の列 + last_dt)、world ごと次の grab id u32 構造 (三角形 / rest / config / tether) は復元しない: 不一致は拒否 (v5) |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -7200,9 +7193,9 @@ impl PhysicsWorld {
         // 「基準が内側」になり population 不一致を検出できなくなる
         data.extend_from_slice(&self.population_fingerprint().to_le_bytes());
 
-        // soft bodies (v5): their motion state; the structure is checked by hash
-        data.extend_from_slice(&(self.soft_bodies.len() as u32).to_le_bytes());
-        for b in &self.soft_bodies {
+        // cloths (v5): their motion state; the structure is checked by hash
+        data.extend_from_slice(&(self.cloths.len() as u32).to_le_bytes());
+        for b in &self.cloths {
             b.write_rollback(&mut data);
         }
         data.extend_from_slice(&self.next_grab_id.to_le_bytes());
@@ -7337,10 +7330,10 @@ impl PhysicsWorld {
             return false;
         }
 
-        // soft bodies (v5): checked before any byte is written, written after the
-        // rigid bodies; a blob of other soft bodies (count, particles, structure)
+        // cloths (v5): checked before any byte is written, written after the
+        // rigid bodies; a blob of other cloths (count, particles, structure)
         // is refused with the world unchanged
-        if self.read_soft_rollback(data, expected, false).is_none() {
+        if self.read_cloth_rollback(data, expected, false).is_none() {
             return false;
         }
 
@@ -7448,19 +7441,19 @@ impl PhysicsWorld {
             _ => return false,
         };
 
-        self.read_soft_rollback(data, expected, true)
+        self.read_cloth_rollback(data, expected, true)
             .expect("checked before the rigid bodies were written");
         true
     }
 
-    /// Read the soft-body section of a rollback blob at `offset` (see
+    /// Read the cloth section of a rollback blob at `offset` (see
     /// [`Self::serialize_state`]); with `apply` false only check it.
-    fn read_soft_rollback(&mut self, data: &[u8], offset: usize, apply: bool) -> Option<()> {
-        let mut cur = crate::soft_body::Cursor::new(data, offset);
-        if usize::try_from(cur.u32()?).ok()? != self.soft_bodies.len() {
+    fn read_cloth_rollback(&mut self, data: &[u8], offset: usize, apply: bool) -> Option<()> {
+        let mut cur = crate::cloth::Cursor::new(data, offset);
+        if usize::try_from(cur.u32()?).ok()? != self.cloths.len() {
             return None;
         }
-        for b in &mut self.soft_bodies {
+        for b in &mut self.cloths {
             b.read_rollback(&mut cur, apply)?;
         }
         let next = cur.u32()?;
