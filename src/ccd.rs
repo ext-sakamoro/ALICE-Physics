@@ -2,6 +2,100 @@
 //!
 //! Prevents fast-moving objects from tunneling through thin geometry.
 //!
+//! # MODEL — time of impact of translating shapes
+//!
+//! - **方程式 (equations)**: time of impact `t ∈ [0, 1]` of the step for
+//!   bodies translating at constant velocity; no response. Two spheres:
+//!   the smaller root of `|p + v t|² = (r_a + r_b)²` with `p = c_b − c_a`,
+//!   `v = v_b − v_a`; `|p| ≤ r_a + r_b` is `t = 0`. Sphere and plane
+//!   `n·x = o`, two-sided: `t = (s r − d) / (v·n)`, `d = n·c − o`,
+//!   `s = sign(d)`; `|d| ≤ r` is `t = 0`. Conservative advancement on a
+//!   signed distance `φ`: `t ← t + (φ(x(t)) − r) / |Δx|` until
+//!   `φ − r ≤ tol` (`tol = 10⁻³` m, 32 iterations by default). Swept AABB:
+//!   slab entry and exit per axis, `t = max(t_enter)` when `≤ min(t_exit)`.
+//!   Speculative contact: `gap = |p| − (r_a + r_b)`, a contact of depth
+//!   `(−v·p̂) dt − gap` when positive, normal from B to A. AABB and plane:
+//!   the support vertex against `n`, one-sided. Capsule and plane: the
+//!   endpoint sphere nearer the plane; sphere and capsule: the closest
+//!   segment point at `t = 0` as a still sphere. Sub-steps of a closing
+//!   pair: `n = ⌈|v|_∞ dt / (r_min / 2)⌉` clamped to `[1, max]` (with
+//!   `std` through `solver_tgs`, without it the maximum).
+//!   `PhysicsWorld::time_of_impact` casts the body's collision sphere
+//!   (`cast_sphere`) and divides the hit distance by `|v dt|`.
+//! - **単位 (units)**: SI in `Fix128` — m, s, m/s; `t` and the sub-step
+//!   count are dimensionless; plane normals are unit vectors. No `f32`
+//!   on these paths.
+//! - **保存則 (conservation)**: none applies — kinematic queries on
+//!   straight-line motion; they move no body and exchange no momentum or
+//!   energy (the response is `solver::world_ccd` and the contact solver).
+//! - **適用範囲 (range)**: straight-line motion within one step; the
+//!   sphere and plane forms are closed, exact in `Fix128` up to the
+//!   rounding of `√` and `/` (the bit-exact oracles use dyadic inputs).
+//!   Conservative advancement needs a 1-Lipschitz `φ` and takes about
+//!   `log(gap / tol) / log(1 / (1 − cos θ))` iterations at approach angle
+//!   `θ` to the normal, so a shallow approach exhausts the 32 iterations
+//!   and answers `None` (AUD-A-S2W2-013); no sweep over `tol` or the
+//!   budget exists yet. Outside the range nothing is clamped: `t` past
+//!   `1`, a separating pair or an exhausted budget is `None`, no error.
+//! - **近似 (approximations)**: translation only, no rotation within the
+//!   step; the moving body is a sphere (`time_of_impact` takes the
+//!   bounding radius of a shaped or compound body, so its `t` is early,
+//!   never late); capsule-plane judges one endpoint sphere and
+//!   sphere-capsule freezes the closest point, both at `t = 0`, wrong for
+//!   a sliding approach (AUD-A-S2W2-010 / -011); `aabb_plane_toi` is
+//!   one-sided where `sphere_plane_toi` is two-sided (-012); the sub-step
+//!   count uses the `L∞` speed, `√3` short of the Euclidean cap on a
+//!   diagonal (-014); `speculative_contact` is a linear prediction along
+//!   the line of centres at `t = 0` (a superset of the impacts, not an
+//!   exact `t`) and answers `None` for coincident centres (-009);
+//!   `needs_ccd` is a heuristic (`|v| dt > r / 2` and `|v| > 5` m/s).
+//! - **検証 (validation)**: against brute-force time sampling,
+//!   `tests/audit_ccd.rs::
+//!   sphere_sphere_toi_satisfies_the_touching_condition_on_random_scenes`
+//!   (600 scenes, `|p(t)| = r_a + r_b` within `10⁻⁶`, a miss only when
+//!   the sampled minimum stays above `r_a + r_b − 0.02`),
+//!   `::sphere_plane_toi_matches_brute_force_on_both_sides` (300 scenes,
+//!   `t` within `2 / 8192`),
+//!   `::swept_aabb_matches_brute_force_overlap_sampling`,
+//!   `::speculative_contact_covers_every_sphere_sphere_impact`,
+//!   `::conservative_advancement_head_on_stops_within_tolerance_before_contact`
+//!   (`t ∈ [0.9 − tol / |v|, 0.9]`),
+//!   `::adaptive_toi_substeps_counts_ceil_travel_over_half_the_smaller_radius`;
+//!   closed forms bit for bit on dyadic inputs,
+//!   `tests/analytic_ccd_wiring.rs::
+//!   sphere_capsule_toi_direct_approach_matches_closed_form`,
+//!   `::capsule_plane_toi_picks_nearer_endpoint_and_tie_breaks_to_b`,
+//!   `::speculative_contact_breach_and_overlap_match_closed_form`,
+//!   `::conservative_advancement_converges_on_a_colinear_sphere_obstacle`
+//!   (`t = 1/2`, the `t = 1` boundary, `gap = tol`); the world sweep
+//!   `tests/analytic_world_sweeps.rs::
+//!   two_spheres_approaching_touch_at_gap_over_travel` (`t = g / |v dt|`
+//!   within `10⁻¹²`),
+//!   `::sphere_falling_onto_plane_touches_at_height_minus_radius_over_travel`,
+//!   `::touching_or_overlapping_at_the_start_is_time_zero`,
+//!   `::parity_with_sphere_sphere_toi`,
+//!   `::shaped_body_uses_its_bounding_sphere`.
+//!   validation missing: no tunnelling at a stated speed through these
+//!   free functions (the world step's oracle is in `solver::world_ccd`);
+//!   validation missing: convergence of `conservative_advancement` over
+//!   `tol` and the iteration budget (no sweep yet);
+//!   validation missing: capsule-plane, sphere-capsule and AABB-plane
+//!   against a brute-force reference (single closed-form points only).
+//! - **段 (tiers)**: L0 only — these queries are the reference; no
+//!   lighter tier exists.
+//! - **既知の欠陥 (known defects)**: oracles kept `#[ignore = "known
+//!   defect: …"]`, all in `tests/audit_ccd.rs`:
+//!   `::speculative_contact_reports_coincident_overlapping_spheres`
+//!   (AUD-A-S2W2-009),
+//!   `::capsule_plane_toi_behind_the_plane_uses_the_nearer_endpoint` and
+//!   `::capsule_plane_toi_straddling_capsule_is_already_touching` (-010),
+//!   `::sphere_capsule_toi_sliding_approach_hits_at_the_right_time` (-011),
+//!   `::aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version`
+//!   (-012),
+//!   `::conservative_advancement_does_not_give_up_on_a_shallow_approach`
+//!   (-013),
+//!   `::adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (-014).
+//!
 //! # Algorithms
 //!
 //! - **Conservative Advancement**: Iteratively advance along trajectory

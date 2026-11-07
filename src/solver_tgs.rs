@@ -33,6 +33,83 @@
 //! [`RigidBody`]: crate::solver::RigidBody
 //! [`ContactConstraint`]: crate::solver::ContactConstraint
 //!
+//! # MODEL — sub-stepping TGS driver, warm-start cache and islands
+//!
+//! - **方程式 (equations)**: temporal Gauss–Seidel sub-stepping ("small
+//!   sub-steps, few iterations"). A frame `dt` is split into `N` equal
+//!   sub-steps `h = dt · (1/N)`; each sub-step runs `begin_substep` (the
+//!   hook integrates velocities), `velocity_iters` velocity iterations and
+//!   `position_iters` position iterations of the hook, then `end_substep`
+//!   (the hook integrates positions). The driver applies no force and
+//!   solves no constraint: the equations of motion are the hook's
+//!   (`solver_tgs_hooks_6dof_oriented`). Warm-starting keeps the
+//!   accumulated impulse `(λ_n, λ_t1, λ_t2)` per stable contact id for the
+//!   hook to re-apply as the first iterate of the next sub-step. Islands
+//!   are the connected components of the body graph with contacts and
+//!   joints as edges and static bodies as separators (union–find); a body
+//!   without an edge is its own island. The adaptive sub-step count is the
+//!   smallest `n` with `n · s_max ≥ v_∞ · dt`, `v_∞` the largest per-axis
+//!   speed over the bodies, clamped into `[min, max]`; the CCD form
+//!   tightens `s_max` to `min(s_max, r_min · f)`, `r_min` the smaller
+//!   collider radius, `f` the safety factor.
+//! - **単位 (units)**: SI in `Fix128` — s for `dt`, `h`; m/s for `v_∞`; m
+//!   for `max_translation_per_step` (default 0.1 m) and the radius;
+//!   impulses N·s in the contact frame. `f32` is on the path in
+//!   `tgs_step`: `h = dt · Fix128::from_f32(1 / N)`, so `N · h` equals
+//!   `dt` bit for bit only when `1/N` is exact in `f32` and `Fix128`
+//!   (powers of two); for other `N` the frame is shortened by the rounding
+//!   of `1/N`. The hit rate is `f64`, observability only.
+//! - **保存則 (conservation)**: nothing is conserved or dissipated by the
+//!   driver; the hook states what a sub-step conserves. The cache carries
+//!   impulses across frames and drops entries not touched in a tick
+//!   (`sweep`), so a contact that stops recurring restarts from zero.
+//! - **適用範囲 (range)**: `substeps ≥ 1` (`0` is a no-op); any iteration
+//!   count (`0` skips the phase); adaptive counts clamped into
+//!   `[max(min, 1), max(max, min)]`; a contact or joint with a body index
+//!   outside the slice makes `build_islands` return
+//!   `PhysicsError::InvalidConstraint` (no panic). Islands and their member
+//!   lists are sorted, so serial and parallel dispatch visit the same
+//!   islands in the same order. Convergence of a contact scene in `N` is
+//!   not measured for this driver (no sweep yet).
+//! - **近似 (approximations)**: contacts are detected once per frame and
+//!   their geometry held over all `N` sub-steps; the adaptive count uses
+//!   the per-axis maximum speed, not the Euclidean speed (known defect
+//!   below); the cap bounds translation only, not rotation per sub-step;
+//!   a static body is listed in every island it touches and solved there
+//!   as fixed, so two stacks on one floor are independent islands.
+//! - **検証 (validation)**: the loop and gravity hand-off
+//!   `tests/analytic_tgs_wiring.rs::
+//!   free_fall_matches_semi_implicit_euler_exactly_on_both_backends`
+//!   (exact recurrence); `tests/analytic_world_participant_wiring.rs::
+//!   tgs_with_a_participant_follows_the_same_closed_form` (constant force,
+//!   `x = x0 + v0 t + a t²/2 + a t h/2`); the sub-step width
+//!   `tests/analytic_xpbd_velocity.rs::
+//!   xpbd_and_tgs_agree_bit_for_bit_on_free_bodies_with_a_power_of_two_substep_count`;
+//!   the cache contract with hand-derived hit / miss counts
+//!   `tests/analytic_solver_tgs_dispatch_wiring.rs::
+//!   sweep_evicts_a_contact_that_stops_recurring`,
+//!   `::tgs_cache_stats_hit_rate_matches_hand_derived_ratio`,
+//!   `::reset_tgs_cache_stats_clears_counters_without_touching_cached_impulses`,
+//!   `::tgs_step_with_a_single_contact_free_body_reports_zero_stats_but_still_falls`;
+//!   stable keys under reordering `tests/tgs_stable_cache_keys.rs::
+//!   a_pair_whose_index_order_flips_still_hits_its_cached_impulse`,
+//!   `::a_pendulum_keeps_its_impulse_across_remove_body`; the adaptive
+//!   count by hand from the formula
+//!   `tests/analytic_ccd_adaptive_substeps_wiring.rs::
+//!   slow_closing_speed_yields_a_genuinely_scaled_substep_count_not_the_max`,
+//!   `::tiny_colliders_make_the_ccd_cap_dominate_and_clamp_at_max_substeps`;
+//!   the path bit for bit `tests/determinism_golden_paths.rs::golden_path_tgs_step`,
+//!   `::golden_path_tgs_step_n`, `::golden_path_tgs_try_step`.
+//!   validation missing: projectile (parabolic) motion under the TGS path.
+//!   validation missing: convergence sweep in the sub-step count of a
+//!   contact scene (error against a closed form at 2+ values of `N`).
+//! - **段 (tiers)**: L0 only — the driver is the reference tier; the
+//!   adaptive count changes the cost, not the model.
+//! - **既知の欠陥 (known defects)**: `tests/audit_ccd.rs::
+//!   adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (the count
+//!   is sized from the per-axis maximum speed, so a diagonal mover exceeds
+//!   the documented per-sub-step cap by up to `√3`).
+//!
 //! # Visibility (v0.14.0-preview.8+)
 //!
 //! The whole `solver_tgs` family is `pub(crate)`. It exists as a parallel

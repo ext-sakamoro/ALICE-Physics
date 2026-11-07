@@ -2,6 +2,66 @@
 //! metrics (time to collision, time headway), a stopping-distance meter and a
 //! lossless input replay.
 //!
+//! # MODEL — following metrics, stopping-distance meter and the runner
+//!
+//! - **方程式 (equations)**: time to collision on one line `TTC = max(gap,
+//!   0) / (v_rear − v_front)` for `v_rear > v_front`, time headway
+//!   `max(gap, 0) / v_rear` for `v_rear > 0`, from `gap = (p_front −
+//!   p_rear)·dir − extent` and the velocities along the unit `dir`; the
+//!   stopping-distance meter sums the per-frame chassis displacement with
+//!   its component along `up` removed and latches on the first frame whose
+//!   horizontal velocity, projected on the previous frame's horizontal
+//!   velocity direction, is `≤ rest_speed` (the forward speed reached the
+//!   threshold or reversed); the runner applies one [`DriverInput`] per
+//!   vehicle, runs [`DynamicVehicle::update`] in index order, then
+//!   `PhysicsWorld::step(dt)` once and `time += dt`; the recording stores
+//!   the initial world blob, wheel states, engine speed, gear, input, `dt`,
+//!   `time`, `frame` and every frame's inputs as raw `Fix128`.
+//! - **単位 (units)**: `Fix128` — s, m, m/s; no `f32` in this module (the
+//!   physics is the vehicle's and the world's).
+//! - **保存則 (conservation)**: none of its own — the metrics and the meter
+//!   read state, the runner only orders calls; what a vehicle conserves or
+//!   dissipates is stated in [`super::DynamicVehicle`]; vehicles that share no
+//!   collider exchange no momentum, so a car's path does not depend on its
+//!   company or its index.
+//! - **適用範囲 (range)**: TTC and headway are `None` when not closing / not
+//!   moving forward or when the quotient leaves the `Fix128` range; an
+//!   overlapping, closing pair gives `TTC = 0`; `dt ≤ 0` is a no-op (no
+//!   frame, nothing recorded); a negative `rest_speed` reads 0; a positive
+//!   `rest_speed` latches early by at most `rest_speed² / (2 a)` of travel
+//!   for a car still decelerating at `a`; a track shorter than the frame or
+//!   vehicle count means released inputs; a recording restores only into a
+//!   scenario of the same definition (vehicle count, chassis indices, wheel
+//!   counts, world blob length) and rejects malformed bytes by error.
+//! - **近似 (approximations)**: TTC and headway assume constant speeds on
+//!   one line (no acceleration term, no lateral offset); the gap uses the
+//!   body origins and a fixed `extent`, not the hulls; the meter measures
+//!   the chassis origin's path (brake dive and the pitch recoil after the
+//!   stop move it by up to `h θ`), not a wheel's; the definition
+//!   (configurations, road, condition, wind) is not recorded and must be
+//!   rebuilt identically.
+//! - **検証 (validation)**: `tests/analytic_vehicle_scenario.rs::ttc_and_headway_closed_form_on_values`
+//!   (30 / (20 − 10) = 3 s, 30 / 20 = 1.5 s, the `None` cases),
+//!   `::ttc_on_the_runner_matches_closed_form` (every frame to 1e-12
+//!   relative, falling by 1 s over 1 s),
+//!   `::stopping_distance_meter_matches_locked_closed_form` (s = v0² /
+//!   (2 μ_k g), stop time v0 / (μ g), then rest within the pitch recoil),
+//!   `::stopping_distance_meter_is_horizontal_path_length` (3-4-5 path,
+//!   vertical motion excluded), `::separated_cars_together_equal_each_alone_bitwise`,
+//!   `::run_tracks_and_step_with_equal_step`, `::wind_and_time_reach_every_vehicle`
+//!   (Δv = ½ ρ C_dA w² dt / M with the gust at t = 1/6 s),
+//!   `::replay_round_trip_is_bit_exact`,
+//!   `::replay_detects_one_bit_input_change_and_missing_restore`,
+//!   `::zero_vehicles`, `::short_tracks_mean_released_inputs`,
+//!   `::non_positive_dt_is_a_no_op`, `::decode_rejects_malformed_bytes`,
+//!   `::restore_rejects_mismatched_scenarios`.
+//!   validation missing: convergence of the measured stopping distance in
+//!   dt (the frame-quantisation term 2 v0 dt is derived, not swept at two
+//!   or more dt);
+//!   validation missing: TTC under a closing acceleration (not modelled, no
+//!   oracle yet).
+//! - **段 (tiers)**: L0 only.
+//!
 //! # Runner
 //!
 //! [`Scenario`] owns the world, the road, the road condition and the

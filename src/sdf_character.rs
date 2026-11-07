@@ -11,6 +11,82 @@
 //! be driven by ALICE-SDF's compiled fields for level geometry with a
 //! stable evaluation cost.
 //!
+//! # MODEL — kinematic SDF character (projection onto a distance field)
+//!
+//! - **方程式 (equations)**: no equation of motion is solved; the controller
+//!   is kinematic. Per frame `v += a·dt` (`apply_gravity`) and `x += v·dt +
+//!   control` (`step`). Penetration is resolved by fixed-point projection on
+//!   the field: while `d(x) < radius` and iterations remain, `x += n ·
+//!   min(radius − d + skin, max_push)` with `n` the field's normal at `x`
+//!   (`resolve`); a normal with `n · up < min_up_alignment` is replaced by
+//!   `up`, and on a sphere world a walkable contact (`n · up ≥
+//!   ground_up_threshold`) is pushed along `up` by `(radius − d + skin) /
+//!   (n · up)`. Contact response: the net correction is the contact normal
+//!   and the velocity component into it is removed, `v −= n (v · n)` for
+//!   `v · n < 0` (inelastic kinematic law); the tangent is kept. On a sphere
+//!   (`step_on_sphere`) the tangential velocity moves the character along the
+//!   great circle by `|v_t|·dt / r` and the velocity turns with the frame; at
+//!   rest inside the skin band on walkable ground it is lifted by
+//!   `(radius + skin − d) / (n · up)`. Ground: the field is sampled `radius +
+//!   ground_probe_epsilon` along `−up`; a sample within the epsilon is a
+//!   contact, grounded when `n · up ≥ ground_up_threshold`.
+//! - **単位 (units)**: SI in `f32` throughout — m, s, m/s, m/s²; `up` is
+//!   normalized on use. No `Fix128` is on the path, so the core's Fix128
+//!   bit-for-bit guarantee does not cover this module; what is claimed is
+//!   narrower: `sqrt`, `sin_cos`, `acos`, `min`, `clamp` go through
+//!   `det_math` and the cross-platform golden below pins the bits.
+//! - **保存則 (conservation)**: nothing is conserved. The character has no
+//!   mass and moves no body. The velocity component into a contact is dropped,
+//!   never reflected (energy removed); the arc step keeps `|v_t|·dt` as the
+//!   arc length and the distance from the centre exactly, and rotates the
+//!   velocity without changing its length.
+//! - **適用範囲 (range)**: exact distance fields (`|∇f| = 1`): the sample is
+//!   treated as a true distance. For `|∇f| > 1` the push overstates the
+//!   penetration and can tunnel through a sheet; `SdfCharacter::max_push` and
+//!   `SdfCharacter::min_up_alignment` (both off by default) are the opt-in
+//!   bounds. Any `dt`, 0 included, is accepted. An exhausted budget returns
+//!   `converged = false` with the least-penetrating sample
+//!   (`MoveOutcome::best_position`), which `step` adopts. A zero or non-finite
+//!   `up` falls back to `+Y`; at a sphere's centre the arc is skipped. A fixed
+//!   `+Y` up axis is wrong on a sphere unless `up` is set radially.
+//! - **近似 (approximations)**: only the centre is sampled — the capsule is a
+//!   sphere of `radius` and `SdfCharacter::height` is read by no move; no
+//!   step height, no slope-limited walking in `move_and_slide` (the threshold
+//!   decides `is_grounded` and the walkable push on a sphere only), no
+//!   friction, restitution, mass or reaction; one normal per iteration.
+//!   Surface orientation comes from the SDF gradient at every contact, as the
+//!   field reports it (`SdfField::normal`, analytic or finite-difference);
+//!   the up axis is a fixed `+Y` by default and radial only when set.
+//! - **検証 (validation)**: `tests/analytic_sdf_character_up_axis.rs::
+//!   ground_contact_reports_the_closed_form_distance_and_normal`,
+//!   `::equator_is_not_grounded_with_a_fixed_y_up_axis`,
+//!   `::equator_is_grounded_once_the_up_axis_is_radial`,
+//!   `::a_degenerate_up_axis_falls_back_to_y_instead_of_producing_nan`,
+//!   `::one_unclamped_push_overshoots_the_free_pocket_into_the_next_sheet` and
+//!   `::a_clamped_push_lands_in_the_analytic_free_band` (`|∇f| > 1`
+//!   tunnelling and its cap), `::the_outcome_reports_the_least_penetrating_sample_it_saw`,
+//!   `::a_free_fall_step_advances_by_velocity_times_dt_and_keeps_the_velocity`,
+//!   `::landing_removes_the_velocity_into_the_surface_and_keeps_the_tangent`,
+//!   `::a_wall_removes_only_the_component_into_the_wall`,
+//!   `::step_on_a_sphere_world_rests_at_the_surface_with_zero_radial_velocity`;
+//!   `tests/analytic_spherical_terrain.rs::
+//!   arc_step_travels_speed_times_time_along_the_great_circle`,
+//!   `::radial_velocity_stays_radial_across_an_arc_step`,
+//!   `::central_gravity_settles_on_the_sphere_at_every_latitude`,
+//!   `::walkable_slope_holds_and_steep_slope_slides` (the push along `up`
+//!   holds under the threshold, slides over it),
+//!   `::a_jump_from_the_ground_is_not_snapped_back`;
+//!   `tests/analytic_character_state_wiring.rs::ground_contact_closed_form_on_flat_plane`;
+//!   `tests/analytic_world_sweeps.rs::parity_with_move_and_slide_on_the_single_field`
+//!   (the world's SDF union as one field); the cross-platform bits
+//!   `tests/determinism_golden_f32.rs::golden_sdf_soft_family`.
+//!   validation missing: free fall onto a flat field compared with
+//!   `t = √(2h/g)` (the rest oracles check the final state, not the fall
+//!   time). validation missing: a slope on a flat world through `step` (the
+//!   slope oracle runs on the sphere path only). Momentum exchange in a
+//!   collision: not applicable, the controller carries no momentum.
+//! - **段 (tiers)**: L0 only.
+//!
 //! # Move-and-slide algorithm
 //!
 //! 1. Advance the tentative position by the full desired displacement.

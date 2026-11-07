@@ -4,6 +4,83 @@
 //! time of impact for arbitrary SDF shapes. Works with concave,
 //! CSG, and fractal geometry — anything expressible as an SDF.
 //!
+//! # MODEL — sphere tracing against a signed distance field
+//!
+//! - **方程式 (equations)**: time of impact `t ∈ [0, 1]` of a sphere of
+//!   radius `r` translating by `Δx` against a field `φ` placed by a
+//!   frame of uniform scale `k`: at `x(t) = x₀ + Δx t`,
+//!   `gap = k φ(x_local) − r`; a hit when `gap ≤ tol`, else
+//!   `t ← t + s · gap / |Δx|` with the safety factor `s` (default `0.9`,
+//!   `tol = 10⁻³`, 64 iterations). The hit's point is `x − n k φ` with
+//!   `n` the field's world normal there. The ray march is the same with
+//!   `r = 0`, `t` a distance along the unit direction, a hit when
+//!   `k φ < tol` (strict). The batch and `sdf_ccd_hits` sweep every
+//!   non-static, non-sensor body faster than the velocity threshold
+//!   (`5` m/s, equality swept) along `v dt`, skip an SDF attached to the
+//!   body itself and sort the hits by `t` (stable).
+//! - **単位 (units)**: positions, `Δx`, `r` and `t` are `Fix128` (m and
+//!   dimensionless); the field, `k`, `gap`, `tol`, `s` and each step are
+//!   `f32` before the step returns to `Fix128`. Bit identity across
+//!   platforms is claimed only for fields whose arithmetic is `+ − × ÷ √`
+//!   or goes through the crate's deterministic math (the golden below);
+//!   a user field with other transcendentals is not claimed.
+//! - **保存則 (conservation)**: none applies — a query on straight-line
+//!   motion; no body is moved and no momentum or energy is exchanged
+//!   (the world step's SDF response is the discrete push-out).
+//! - **適用範囲 (range)**: `φ` must be 1-Lipschitz (a true signed
+//!   distance or a lower bound of it): the safe step relies on no surface
+//!   within `gap`; a field that overestimates the distance is stepped
+//!   through and the hit is missed, undetected. A hit's `t` is never past
+//!   the true impact and short of it by at most `tol / (|Δx| cos θ)` at
+//!   approach angle `θ`; a grazing approach can exhaust the 64 iterations
+//!   and answer `None`. The absolute `tol` in `f32` loses meaning once
+//!   `|x|` exceeds about `2¹³` m (the `f32` spacing there is `2⁻¹⁰`);
+//!   not measured. Outside the range nothing is clamped: `t` past `1`, a zero
+//!   `Δx` (also when starting inside) or an exhausted budget is `None`.
+//! - **近似 (approximations)**: a translating sphere, no rotation and no
+//!   shape; uniform scale only; an attached SDF is swept at the pose of
+//!   the last step, not relative to its body's motion; the step stops
+//!   short of the surface by up to `tol`; no convergence sweep over `tol`,
+//!   `s` or the budget exists yet.
+//! - **検証 (validation)**: closed-form impact against a plane and a unit
+//!   sphere, `t` in `[t* − tol / |Δx|, t*]`:
+//!   `tests/analytic_sdf_ccd_wiring.rs::
+//!   plane_toi_matches_closed_form_and_never_overshoots` (`t* = 0.45`),
+//!   `::oblique_sphere_toi_matches_quadratic` (`t* = (5 − √2) / 10`),
+//!   `::scaled_and_translated_collider_toi`,
+//!   `::rotated_plane_reports_world_normal`,
+//!   `::misses_and_degenerate_inputs`,
+//!   `::step_safety_scales_iteration_count_not_the_answer`,
+//!   `::ray_march_hits_at_closed_form_distance`,
+//!   `::ray_march_with_a_non_unit_direction_does_not_tunnel`,
+//!   `::ray_march_step_is_scaled_by_step_safety`,
+//!   `::contact_exactly_at_tolerance_is_a_hit_at_t_zero`,
+//!   `::world_sweep_reports_fast_bodies_earliest_first`,
+//!   `::batch_filters_and_sorts_like_the_world_sweep`,
+//!   `::velocity_threshold_gates_on_the_bodys_speed_not_the_displacement`;
+//!   the borrowed-field entry point,
+//!   `tests/analytic_sdf_ccd_borrowed_field.rs::
+//!   borrowed_field_is_bit_identical_to_collider_entry_point` (30 cases,
+//!   `Option<TOI>` equal bit for bit),
+//!   `::closed_form_toi_against_unit_sphere` (`r = 0.5, 0.25, 0`),
+//!   `::closed_form_toi_through_translated_scaled_frame`,
+//!   `::degenerate_inputs`; the finite-difference normal through the
+//!   trace, `tests/analytic_sdf_distance_query.rs::
+//!   ccd_and_contacts_match_analytic_normal_query` (within `10⁻²`); the
+//!   cross-platform bits,
+//!   `tests/determinism_golden_f32.rs::golden_sdf_collision_family`.
+//!   validation missing: no tunnelling of a fast body through a thin SDF
+//!   wall inside the world step (the trace is a query; the step's SDF
+//!   response is discrete);
+//!   validation missing: a field that is not 1-Lipschitz (the overshoot
+//!   is described, not tested);
+//!   validation missing: convergence over `tol`, `s` and the iteration
+//!   budget (no sweep yet);
+//!   validation missing: a moving or rotating attached SDF swept with
+//!   relative motion.
+//! - **段 (tiers)**: L0 only — the trace is the reference; no lighter
+//!   tier exists.
+//!
 //! # Algorithm
 //!
 //! 1. Start at body position at t=0
