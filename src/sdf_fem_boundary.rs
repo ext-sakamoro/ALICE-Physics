@@ -808,6 +808,9 @@ pub(crate) fn conform_boundary<F: SdfField + ?Sized>(
         if dbg { eprintln!("T corners {corners} {:?} worst {:.4}", dbg_t.elapsed(), w.global_worst()); }
         let dropped = w.drop_collapsed();
         if std::env::var_os("SFB_DEBUG").is_some() { eprintln!("dropped {dropped}"); }
+        // refine_guarded measured 2026-11-08: thin box at a half-cell offset
+        // -0.46 % -> -0.04 %, but concave scenes 4x the elements and up to
+        // +1.8 % volume; not called until that is understood
         if creases + corners == 0 {
             break;
         }
@@ -1065,6 +1068,7 @@ where
     }
     let base = w.mesh.vertices.len();
     let old = w.mesh.tets.clone();
+    let snapshot = w.mesh.vertices.clone();
     let mut mid: BTreeMap<K, u32> = BTreeMap::new();
     for (k, _, planes) in &proposals {
         let c = k.centroid(w);
@@ -1089,7 +1093,7 @@ where
     if std::env::var_os("SFB_DEBUG").is_some() {
         eprintln!("place: proposed {} reached {}", mid.len(), reached.len());
     }
-    commit(w, base, old, reached, split)
+    commit(w, base, old, &snapshot, reached, split)
 }
 
 /// The simplex a proposal splits: its centroid is the provisional position.
@@ -1119,6 +1123,53 @@ impl Simplex for [u32; 3] {
     }
 }
 
+/// Make room around blocked proposals: bisect the longest edge of each element
+/// around them, interior edges only, through [`commit`], so a bisection is
+/// kept only if none of its children inverts or falls under the floor (or
+/// under its parent). Returns the number of edges split.
+#[allow(dead_code, reason = "measured and parked, see the pass loop")]
+fn refine_guarded<F: SdfField + ?Sized>(w: &mut Work<'_, F>) -> usize {
+    if w.blocked.is_empty() {
+        return 0;
+    }
+    let mut boundary_edges: BTreeSet<(u32, u32)> = BTreeSet::new();
+    for f in boundary_faces(w.mesh) {
+        for (a, b) in [(f[0], f[1]), (f[1], f[2]), (f[0], f[2])] {
+            boundary_edges.insert((a.min(b), a.max(b)));
+        }
+    }
+    let mut proposals: BTreeMap<(u32, u32), [f64; 3]> = BTreeMap::new();
+    for tet in &w.mesh.tets {
+        if !tet.vertices.iter().any(|v| w.blocked.contains(v)) {
+            continue;
+        }
+        let mut longest: Option<((u32, u32), f64)> = None;
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                let (a, b) = (tet.vertices[i], tet.vertices[j]);
+                let key = (a.min(b), a.max(b));
+                let l = norm(sub(to64(w.mesh.vertices[b as usize]), to64(w.mesh.vertices[a as usize])));
+                if longest.is_none_or(|(k, m)| l > m || (l == m && key < k)) {
+                    longest = Some((key, l));
+                }
+            }
+        }
+        if let Some((key, _)) = longest {
+            if !boundary_edges.contains(&key) {
+                let pa = to64(w.mesh.vertices[key.0 as usize]);
+                let pb = to64(w.mesh.vertices[key.1 as usize]);
+                proposals.insert(key, add_scaled(pa, 0.5, sub(pb, pa)));
+            }
+        }
+    }
+    w.blocked.clear();
+    let base = w.mesh.vertices.len();
+    let old = w.mesh.tets.clone();
+    let snapshot = w.mesh.vertices.clone();
+    let list = proposals.into_iter().map(|(k, x)| (k, x, Vec::new())).collect();
+    commit(w, base, old, &snapshot, list, split_rec)
+}
+
 /// Insert a vertex per proposal at its target, split the tetrahedra that hold
 /// it, and check every child: none may invert, and none may fall under the
 /// dihedral floor (or under its parent, if the parent was already lower),
@@ -1131,6 +1182,7 @@ fn commit<F, K>(
     w: &mut Work<'_, F>,
     base: usize,
     old: Vec<Tetrahedron>,
+    snapshot: &[[f32; 3]],
     mut proposals: Vec<(K, [f64; 3], Vec<Plane>)>,
     split: fn([u32; 4], &BTreeMap<K, u32>, &mut Vec<Tetrahedron>),
 ) -> usize
@@ -1138,13 +1190,14 @@ where
     F: SdfField + ?Sized,
     K: Ord + Copy,
 {
+    // the reference every element is held to: its quality before this step
+    let q_ref: Vec<f64> = old
+        .iter()
+        .map(|t| tet_quality(t.vertices.map(|v| to64(snapshot[v as usize]))).0)
+        .collect();
     loop {
         w.mesh.vertices.truncate(base);
         w.planes.truncate(base);
-        if proposals.is_empty() {
-            w.mesh.tets = old;
-            return 0;
-        }
         let mut mid: BTreeMap<K, u32> = BTreeMap::new();
         for (k, x, planes) in &proposals {
             mid.insert(*k, w.mesh.vertices.len() as u32);
@@ -1153,31 +1206,34 @@ where
         }
         let mut out: Vec<Tetrahedron> = Vec::with_capacity(old.len() + 4 * proposals.len());
         let mut bad: BTreeSet<u32> = BTreeSet::new();
-        for tet in &old {
+        let mut restored = false;
+        for (tet, &q0) in old.iter().zip(&q_ref) {
             let start = out.len();
             split(tet.vertices, &mid, &mut out);
-            if out.len() - start == 1 && out[start].vertices == tet.vertices {
-                continue;
-            }
-            let q_parent = {
-                let p = tet.vertices.map(|v| to64(w.mesh.vertices[v as usize]));
-                tet_quality(p).0
-            };
+            let floor = q0.min(floor_sin());
             for child in &out[start..] {
                 let p = child.vertices.map(|v| to64(w.mesh.vertices[v as usize]));
                 let (q, vol6) = tet_quality(p);
                 let collapsed = q < COLLAPSED_SIN && w.shares_face(&child.vertices);
-                if !collapsed && (!(vol6 > 0.0) || q < q_parent.min(floor_sin())) {
-                    if std::env::var_os("SFB_DEBUG").is_some() {
-                        let pts: Vec<[f32; 3]> = child.vertices.iter().map(|&v| w.mesh.vertices[v as usize]).collect();
-                        let np: Vec<usize> = child.vertices.iter().map(|&v| w.planes[v as usize].len()).collect();
-                        eprintln!("  withdraw: child vol6 {vol6:.2e} q {q:.3} parent q {q_parent:.3} planes {np:?} {pts:?}");
+                if collapsed || (vol6 > 0.0 && q >= floor) {
+                    continue;
+                }
+                let new: Vec<u32> = child.vertices.iter().copied().filter(|&v| v as usize >= base).collect();
+                if new.is_empty() {
+                    // an element no proposal split, made worse by smoothing:
+                    // put its vertices back
+                    for v in child.vertices {
+                        if w.mesh.vertices[v as usize] != snapshot[v as usize] {
+                            w.mesh.vertices[v as usize] = snapshot[v as usize];
+                            restored = true;
+                        }
                     }
-                    bad.extend(child.vertices.iter().copied().filter(|&v| v as usize >= base));
+                } else {
+                    bad.extend(new);
                 }
             }
         }
-        if bad.is_empty() {
+        if bad.is_empty() && !restored {
             w.mesh.tets = out;
             w.rebuild_incidence();
             return proposals.len();
