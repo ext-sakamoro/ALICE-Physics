@@ -30,7 +30,11 @@
 //!   end, touches down near the free-fall time and settles to the same sag. The closed form
 //!   `ρ g H² / (2E)` is the limit the P1 mesh converges to at `O(h)` (the stress varies
 //!   linearly under self-weight, a P1 tetrahedron holds one strain), stated for the record,
-//!   not used as the oracle.
+//!   not used as the oracle;
+//! * **external impulses conserve momentum**: a free body (no base, no ground, no load) given
+//!   an impulse `J` at one vertex has total momentum `Σ M v = J` — bit for bit with the lumped
+//!   mass, to the solve tolerance with the consistent one — and keeps it over the following
+//!   steps (nothing acts on it), its centre of mass moving at `J / M_total`.
 //!
 //! Material: `E = 1.2725e6 Pa` (`G = 4.27e5 Pa`, `ν = 0.49`), `ρ = 1100 kg/m³`; in the finite
 //! element module's units `E = 1.2725 MPa`, `ρ = 1.1e-9 t/mm³`.
@@ -709,4 +713,107 @@ fn a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static
         (sag / roller - 1.0).abs() < 0.01,
         "sag {sag:.5e} vs roller {roller:.5e}"
     );
+}
+
+/// a free column (no base, no ground, no load) of the given mass distribution
+fn free_solver(c: &Column, lumping: MassLumping, dt: f64) -> CorotationalTransientSolver {
+    let bc = BoundaryConditions::new();
+    let dynamics = DynamicsConfig::try_new(
+        Fix128::from_f64(DENSITY * 1e-12),
+        Fix128::from_f64(dt),
+        lumping,
+    )
+    .expect("density and dt positive");
+    let config =
+        SolverConfig::try_new(20_000, Fix128::from_f64(1e-9)).expect("budget and tolerance");
+    CorotationalTransientSolver::new(&c.mm, &c.material, &bc, &dynamics, &config)
+        .expect("a free body solves")
+}
+
+fn total_momentum(solver: &CorotationalTransientSolver) -> [f64; 3] {
+    let p = solver.momentum();
+    let mut sum = [0.0; 3];
+    for (d, x) in p.iter().enumerate() {
+        sum[d % 3] += x.to_f64();
+    }
+    sum
+}
+
+fn check_impulse(c: &Column, lumping: MassLumping, tol: f64, label: &str) {
+    let dt = 1.0 / 2000.0;
+    let mut solver = free_solver(c, lumping, dt);
+    // an oblique impulse at the top centre vertex: 2e-3 N·s (t·mm/s) along (3, 4, 0)/5
+    let top_centre = *c
+        .top
+        .iter()
+        .min_by(|&&a, &&b| {
+            let r = |i: usize| {
+                let v = c.mm.vertices[i];
+                v[0] * v[0] + v[2] * v[2]
+            };
+            r(a).partial_cmp(&r(b)).expect("finite")
+        })
+        .expect("a top");
+    let j = [1.2e-3, 1.6e-3, 0.0];
+    solver
+        .apply_impulses(&[(
+            top_centre as u32,
+            [Fix128::from_f64(j[0]), Fix128::from_f64(j[1]), Fix128::ZERO],
+        )])
+        .expect("the mass solve converges");
+    let p0 = total_momentum(&solver);
+    let total_mass: f64 = c.masses_t.iter().sum();
+    for _ in 0..200 {
+        solver.step().expect("the step converges");
+    }
+    let p1 = total_momentum(&solver);
+    // centre of mass velocity from the lumped vertex masses (the same total for both distributions)
+    let v = solver.velocities();
+    let mut com_v = [0.0; 3];
+    for i in 0..c.mm.vertices.len() {
+        for k in 0..3 {
+            com_v[k] += c.masses_t[i] * v[3 * i + k].to_f64();
+        }
+    }
+    for x in &mut com_v {
+        *x /= total_mass;
+    }
+    // over the free steps the momentum moves by the conjugate gradient tolerance amplified by
+    // the corrector: a displacement error of `tol · |u|` per step becomes a velocity error of
+    // `(2/dt) · tol · |u|`, so after `n` steps the momentum is within
+    // `n · (2/dt) · tol · |u| · M_total` of `J` (`|u| ≤ 2 mm` here: 200 × 4000 × 1e-9 × 2 ×
+    // M_total), far above the measured drift of about 1e-8 N·s
+    let kept = 200.0 * (2.0 / dt) * 1e-9 * 2.0 * total_mass;
+    for k in 0..3 {
+        assert!(
+            (p0[k] - j[k]).abs() <= tol * 2e-3,
+            "{label}: momentum {p0:?} vs J {j:?}"
+        );
+        assert!(
+            (p1[k] - j[k]).abs() <= kept,
+            "{label}: momentum after 200 steps {p1:?} vs J {j:?} (bound {kept:.3e})"
+        );
+        assert!(
+            (com_v[k] - j[k] / total_mass).abs() <= kept / total_mass,
+            "{label}: centre of mass velocity"
+        );
+    }
+}
+
+/// With the lumped mass the impulse lands exactly: `Σ M v = J` to the bits of the division by
+/// the vertex mass (the mass solve of a diagonal system is one division per degree of
+/// freedom, the momentum sum its inverse), and is kept over 200 free steps within the bound
+/// the solve tolerance allows (derived in `check_impulse`).
+#[test]
+fn an_impulse_on_a_free_lumped_body_is_its_momentum_exactly_and_is_kept() {
+    let c = column();
+    check_impulse(&c, MassLumping::Lumped, 1e-12, "lumped");
+}
+
+/// With the consistent mass the impulse is distributed by the mass solve: `Σ M v = J` to the
+/// conjugate gradient tolerance (`1e-9` relative), kept over 200 free steps.
+#[test]
+fn an_impulse_on_a_free_consistent_body_is_its_momentum_to_the_solve_tolerance() {
+    let c = column();
+    check_impulse(&c, MassLumping::Consistent, 1e-6, "consistent");
 }
