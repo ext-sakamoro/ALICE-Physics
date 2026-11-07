@@ -51,7 +51,7 @@
 //! reaction on the pointer; the throw velocity is the pointer's velocity over the last step).
 //! An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass (mass
 //! per particle, not per area) and the sheet has no thickness. A cloth held by a world does
-//! not collide with rigid bodies or static colliders. Tiers: L0 only (no lighter tier yet).
+//! not collide with rigid bodies or static colliders.
 //!
 //! **Validation.** `tests/analytic_cloth_rest_tether.rs` (oscillator closed form: period,
 //! decay, critical damping), `tests/cloth_sleep_oracle.rs` (exact fixed point, wake on
@@ -59,6 +59,9 @@
 //! still, local stretch, throw velocity bit identity, recovery to rest within 600 frames,
 //! digest coverage, frozen replay digest), `tests/cloth_state_digest.rs` (replay bit
 //! identity, every state field moves the digest), `tests/determinism_cloth_step_digest.rs`.
+//!
+//! **Tiers.** L0 only: no lighter tier yet (a coarser lattice would be one, with its error
+//! against this lattice measured on the same outline).
 //!
 //! Author: Moroya Sakamoto
 
