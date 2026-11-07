@@ -58,9 +58,14 @@
 //! arithmetic wraps and the result is not a simulation (no detection at this layer). The
 //! geometric set has no material range: its stiffness is the iteration count's.
 //!
-//! **Approximations.** P1 (constant strain) tetrahedra; Gauss–Seidel projection, so before
-//! convergence the body is softer than the material (measured: 8 vs 16 iterations within 1 %
-//! of the sag, see validation); no plasticity, viscosity, damage or thermal strain; contact
+//! **Approximations.** P1 (constant strain) tetrahedra; XPBD Gauss–Seidel projection, which
+//! converges first order in the substep `h` only once `α̃ = 1/h²` is comparable to
+//! `Σ w|∇C|²` (≈ `μ / (ρ L²)`): below that the body is far softer than the material, and
+//! more iterations do not help because the multipliers reset every substep (measured: a
+//! 1.25 cm column at 64 substeps per frame sags 18 % more than the finite element solve, at
+//! 256 substeps 2.8 %, at 4 substeps it collapses). For a stiff solid an implicit solve
+//! (`crate::dynamic_fem`) reaches 1 % at one step per frame, 17–100 times cheaper (measured
+//! by `tests/analytic_deformable_integrators.rs`); no plasticity, viscosity, damage or thermal strain; contact
 //! with SDF colliders is a position projection to the surface with the normal velocity dropped
 //! and the tangential one scaled by `1 − sdf_friction` (no Coulomb law, no reaction on the
 //! collider), with rigid bodies a mass-weighted push-out; particle masses are what the caller
@@ -70,11 +75,11 @@
 //!
 //! **Validation.** `tests/analytic_deformable_static_sag.rs::the_neo_hookean_body_settles_to_the_finite_element_sag`
 //! (a fixed-base column's sag under its own weight equals the linear elastic finite element
-//! solve on the same tetrahedra within 2 %),
-//! `::the_neo_hookean_sag_converges_to_the_closed_form_as_the_cell_halves` (three cell sizes,
-//! the error against `ρ g H² / (2E)` does not grow as the cell halves),
-//! `::the_neo_hookean_sag_does_not_depend_on_the_iteration_count` (8 vs 16 iterations within
-//! 1 %), `::an_inverted_tetrahedron_recovers_its_rest_shape`,
+//! solve on the same tetrahedra within 5 % at 256 substeps per frame, the bound derived from
+//! the measured first-order convergence),
+//! `::the_neo_hookean_sag_converges_to_the_finite_element_sag_as_the_substeps_double` (32 to
+//! 256 substeps: 1.78, 0.18, 0.092, 0.028 of the finite element sag, shrinking at every
+//! doubling), `::an_inverted_tetrahedron_recovers_its_rest_shape`,
 //! `::a_neo_hookean_run_replays_to_the_same_bits`,
 //! `::the_finite_element_sag_of_a_column_lies_below_rho_g_h_squared_over_two_e_by_at_most_the_base_layer`
 //! (the reference itself against the closed form: the fixed base takes at most the bottom
@@ -83,9 +88,18 @@
 //! `tests/analytic_deformable_wiring.rs` (the cube constructor, centre of mass in free fall,
 //! rigid-body push-out).
 //!
-//! **Tiers.** L0 only: the tetrahedral solid at the mesh resolution given. A coarse cage
-//! tier with the fine surface embedded is planned; its error against L0 will be measured by
-//! the same sag and vibration problems.
+//! **Tiers.** This body is not the reference tier for a stiff solid. Measured on the same
+//! Kuhn-split column of 1.25 cm tetrahedra (`E = 1.27e6 Pa`, `ν = 0.49`, `ρ = 1100 kg/m³`,
+//! base fixed, reference = the static linear finite element sag on the same mesh,
+//! `tests/analytic_deformable_integrators.rs`): the Neo-Hookean XPBD body needs 64 substeps
+//! per frame for 21 % and 256 for 2.8 % of the sag (0.013 and 0.05 s per frame on 24
+//! tetrahedra; 0.24 s per frame at 64 substeps on 384), while the implicit Newmark solve of
+//! `crate::dynamic_fem` on the same tetrahedra reaches 0.6–1 % at one step per frame for
+//! 0.0002 and 0.026 s per frame: 17 to 100 times cheaper at better accuracy. So L0 for a
+//! stiff elastic solid is the implicit finite element step (co-rotational for large rotation),
+//! and this body is the coupling path (contact with the rest of the world through its
+//! particles) and a candidate for a coarse cage tier, its error against L0 to be measured by
+//! the same sag and vibration problems when that tier exists.
 //!
 //! Author: Moroya Sakamoto
 
@@ -147,8 +161,6 @@ impl core::error::Error for MaterialError {}
 /// [`NeoHookeanLaw::new`], which refuses the values the constraint cannot carry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NeoHookeanLaw {
-    young_modulus: Fix128,
-    poisson_ratio: Fix128,
     mu: Fix128,
     lambda: Fix128,
 }
@@ -180,24 +192,7 @@ impl NeoHookeanLaw {
         }
         let mu = young_modulus / (one_plus + one_plus);
         let lambda = young_modulus * poisson_ratio / (one_plus * one_minus_two);
-        Ok(Self {
-            young_modulus,
-            poisson_ratio,
-            mu,
-            lambda,
-        })
-    }
-
-    /// Young's modulus, Pa
-    #[must_use]
-    pub const fn young_modulus(&self) -> Fix128 {
-        self.young_modulus
-    }
-
-    /// Poisson's ratio
-    #[must_use]
-    pub const fn poisson_ratio(&self) -> Fix128 {
-        self.poisson_ratio
+        Ok(Self { mu, lambda })
     }
 
     /// The Lamé parameters `(μ, λ)`, Pa
@@ -529,7 +524,6 @@ impl DeformableBody {
     }
 
     /// Solve edge constraints
-    #[inline(never)] // PROFILE-TEMP
     fn solve_edge_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.edge_compliance / (dt * dt);
 
@@ -565,7 +559,6 @@ impl DeformableBody {
     }
 
     /// Solve tetrahedral volume constraints
-    #[inline(never)] // PROFILE-TEMP
     fn solve_volume_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.volume_compliance / (dt * dt);
 
@@ -634,7 +627,6 @@ impl DeformableBody {
     /// A projection to `C = 0` restores the rest
     /// shape (any rotation), so the stiff limit is right; the multiplier `λ_t` persists over
     /// the iterations of one substep.
-    #[inline(never)] // PROFILE-TEMP
     fn solve_neo_hookean(
         &mut self,
         dt: Fix128,
@@ -645,7 +637,7 @@ impl DeformableBody {
         let alpha_tilde = Fix128::ONE / (dt * dt);
         let two = Fix128::from_int(2);
         let three = Fix128::from_int(3);
-        for t in 0..self.tetrahedra.len() {
+        for (t, multiplier) in multipliers.iter_mut().enumerate() {
             let Some((dm_inv, rest_volume)) = self.rest_inverse[t] else {
                 continue;
             };
@@ -660,20 +652,6 @@ impl DeformableBody {
                 + lambda * j_minus_one * j_minus_one / two;
             let c2 = two * rest_volume * psi;
             if c2 <= Fix128::ZERO {
-                #[cfg(feature = "std")] // DEBUG-TEMP
-                if std::env::var_os("NH_DEBUG").is_some() {
-                    std::eprintln!(
-                        "skip tet {t}: psi {:.3e} J-1 {:.3e} I_C-3 {:.3e} det(Dm) sign {}",
-                        psi.to_f64(),
-                        j_minus_one.to_f64(),
-                        (i_c - three).to_f64(),
-                        if dm_inv.determinant().is_negative() {
-                            "-"
-                        } else {
-                            "+"
-                        }
-                    );
-                }
                 continue;
             }
             let c = c2.sqrt();
@@ -707,17 +685,8 @@ impl DeformableBody {
             if denom.is_zero() {
                 continue;
             }
-            let delta = -(c + alpha_tilde * multipliers[t]) / denom;
-            #[cfg(feature = "std")] // DEBUG-TEMP
-            if t < 3 && std::env::var_os("NH_DEBUG").is_some() {
-                let gm: Vec<f64> = grads.iter().map(|g| g.length().to_f64()).collect();
-                std::eprintln!(
-                    "tet {t}: psi {:.3e} c {:.3e} J-1 {:.3e} I_C-3 {:.3e} V {:.3e} |g| {:?} w {:?} denom {:.3e} alpha {:.3e} delta {:.3e}",
-                    psi.to_f64(), c.to_f64(), j_minus_one.to_f64(), (i_c - three).to_f64(), rest_volume.to_f64(), gm,
-                    w.iter().map(|x| x.to_f64()).collect::<Vec<_>>(), denom.to_f64(), alpha_tilde.to_f64(), delta.to_f64()
-                );
-            }
-            multipliers[t] = multipliers[t] + delta;
+            let delta = -(c + alpha_tilde * *multiplier) / denom;
+            *multiplier = *multiplier + delta;
             let idx = [i0, i1, i2, i3];
             for k in 0..4 {
                 if !w[k].is_zero() {
@@ -746,7 +715,6 @@ impl DeformableBody {
     }
 
     /// Shape matching: move particles toward their rest pose
-    #[inline(never)] // PROFILE-TEMP
     fn apply_shape_matching(&mut self) {
         let alpha = self.config.shape_stiffness;
         if alpha.is_zero() {
@@ -771,7 +739,6 @@ impl DeformableBody {
 
     /// Resolve SDF collisions
     #[cfg(feature = "std")]
-    #[inline(never)] // PROFILE-TEMP
     fn resolve_sdf_collisions(&mut self, sdf_colliders: &[SdfCollider]) {
         for i in 0..self.particle_count() {
             if self.inv_masses[i].is_zero() {

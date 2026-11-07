@@ -293,6 +293,8 @@ use alice_physics::deformable as _;
 use alice_physics::deformable::DeformableBody as _;
 use alice_physics::deformable::DeformableConfig as _;
 use alice_physics::deformable::Material as _;
+use alice_physics::deformable::MaterialError as _;
+use alice_physics::deformable::NeoHookeanLaw as _;
 use alice_physics::det_math as _;
 use alice_physics::det_math::acos as _;
 use alice_physics::det_math::acos64 as _;
@@ -1870,7 +1872,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1852 paths, checked at compile time
+    // 1854 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
