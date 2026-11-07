@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5954 |
+| 🟢 Not ignored (run by CI) | 5955 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 29 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6055** |
+| **Total** | **6056** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -158,7 +158,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5954)
+## 🟢 Not ignored (5955)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -344,6 +344,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_beam_stress_wiring.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
+| `analytic_dynamic_fem_corotational.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
 | `analytic_filter_wiring.rs` | 13 |
 | `analytic_gyroscopic.rs` | 13 |
@@ -367,7 +368,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_collision_mesh_gen_wiring.rs` | 12 |
 | `analytic_contact_cache_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
-| `analytic_dynamic_fem_corotational.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_sdf_contact_record.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
