@@ -272,7 +272,7 @@ fn every_part_of_the_state_moves_the_digest() {
     assert_ne!(s.state_digest(&r), base, "the generator");
 }
 
-const RAIN_DIGEST: &str = "unmeasured";
+const RAIN_DIGEST: &str = "1801e895a99e5182e2f2a9f56bf7c5693d7484648310c84cdbb8d6bcc0b5f664";
 
 /// golden (determinism): the digest of the rain scene after 240 frames, printed so the log
 /// shows the bits.
