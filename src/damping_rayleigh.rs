@@ -29,8 +29,8 @@
 //! `β = 2·(ω_2·ζ_2 − ω_1·ζ_1) / (ω_2² − ω_1²)`, `α = 2·ω_1·ζ_1 − β·ω_1²`
 //! ([`RayleighCoefficients::fit_two_modes`]); when that exact fit needs a negative
 //! coefficient, the result is the non-negative least squares fit of the two ratios (the better
-//! of `(α, 0)` and `(0, β)`, each in closed form), since `C` is positive semi-definite only
-//! for `α, β ≥ 0`. `ω = 2π·f` ([`hz_to_omega`], [`omega_to_hz`]).
+//! of `(α, 0)` and `(0, β)`, each in closed form, `fit_two_modes`), since `C` is positive
+//! semi-definite only for `α, β ≥ 0`. `ω = 2π·f` ([`hz_to_omega`], [`omega_to_hz`]).
 //!
 //! **Units.** SI: `ω` rad/s, `f` Hz, `α` 1/s, `β` s, `ζ` dimensionless; `M` kg, `K` N/m and
 //! `C` N·s/m when the matrices are assembled by the structural solver. Every quantity is
@@ -39,19 +39,22 @@
 //! **Conservation.** Dissipative by construction: a mode of amplitude `A` loses energy at the
 //! rate `2·ζ(ω)·ω` per unit of its energy (the decay `e^{−ζ ω t}` of the amplitude), and the
 //! loss is never negative for `α, β ≥ 0`. Mass and momentum are untouched (the model adds a
-//! velocity-proportional force only). Energy leaves the system and is not tracked as heat.
+//! velocity-proportional force only, [`RayleighCoefficients`]). Energy leaves the system and is
+//! not tracked as heat (`damping_ratio` gives the rate, nothing collects it).
 //!
 //! **Valid range.** Classically damped linear structures (the damping matrix must be a
 //! combination of `M` and `K` for the modes to decouple); `ω > 0`. `damping_ratio` at `ω = 0`
 //! returns 0 (no division), `fit_two_modes` with a zero or two equal frequencies returns the
 //! default `(0, 0)` (singular system, documented, not an error), and the fit never returns a
 //! negative coefficient. Values must keep `ω²` and `ω·ζ` inside `Fix128` (|value| < 2^63);
-//! beyond that the arithmetic wraps and the result is not a fit (no detection here).
+//! beyond that the arithmetic wraps and the result is not a fit (no detection in
+//! `fit_two_modes`).
 //!
-//! **Approximations.** Linear viscous damping only: no hysteretic (structural) damping, no
-//! friction (Coulomb) damping, no frequency-dependent material loss factor, no dependence on
-//! amplitude or temperature. Two target modes fix the whole curve, so modes between them are
-//! under-damped and modes outside them over-damped relative to a constant target.
+//! **Approximations.** Linear viscous damping only ([`RayleighCoefficients`]): no hysteretic
+//! (structural) damping, no friction (Coulomb) damping, no frequency-dependent material loss
+//! factor, no dependence on amplitude or temperature. Two target modes (`fit_two_modes`) fix
+//! the whole curve, so modes between them are under-damped and modes outside them over-damped
+//! relative to a constant target.
 //!
 //! **Validation.** `tests/audit_damping_rayleigh.rs::fit_reproduces_both_targets_to_fix128_precision`
 //! (the fit returns both target ratios), `::fit_two_modes_is_symmetric_in_mode_order`,

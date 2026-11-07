@@ -75,6 +75,10 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "known defects": ("known defect", "既知の欠陥", "欠陥"),
 }
 REQUIRED = tuple(f for f in FIELDS if f != "known defects")
+# the fields whose every sentence must cite code: a claim about the physics is tied to the
+# `fn`, type or `path:line` a reader must check (the citation does not prove the claim; it
+# catches drift when the cited item is renamed or removed)
+CITED_FIELDS = ("equations", "conservation", "range", "approximations")
 ORACLE_STATUS = "docs/oracle-status.md"
 KNOWN_DEFECT_REASON = "known defect:"
 
@@ -87,6 +91,13 @@ BARE_FN_RE = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
 TIER_RE = re.compile(r"\bL(\d+)\b")
 CFG_FEATURE_RE = re.compile(r'feature\s*=\s*"([^"]+)"')
 CARGO_TEST_RE = re.compile(r"\bcargo\s+test\b([^\n]*)")
+# a sentence ends at `.`, `;` or `。` followed by white space (or the field's end)
+SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;。])\s+")
+# a code reference in prose: a backticked path (`foo`, `Type::item`, `crate::a::b`, with or
+# without a `()`), an intra-doc link `[`…`]`, or a `path.rs:line`
+IDENT_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)(?:\(\))?`")
+PATH_LINE_RE = re.compile(r"\b((?:src|tests|examples|benches|fuzz)/[A-Za-z0-9_./-]+\.rs):(\d+)\b")
+DEF_RE = re.compile(r"\b(?:fn|struct|enum|const|static|trait|type|mod|union)\s+([A-Za-z_][A-Za-z0-9_]*)|macro_rules!\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
 @dataclass
@@ -97,6 +108,8 @@ class Report:
     baseline: int = 0
     exempt: int = 0
     tests_resolved: int = 0
+    sentences: int = 0
+    citations_resolved: int = 0
 
     def add(self, what: str) -> None:
         self.findings.append(what)
@@ -295,6 +308,7 @@ class Resolver:
         self._fns: dict[str, dict[str, str | None]] = {}
         self._oracle_status: str | None = None
         self._all_fns: set[str] | None = None
+        self._defined: set[str] | None = None
 
     def fns_of(self, rel: str) -> dict[str, str | None] | None:
         if rel not in self._fns:
@@ -316,6 +330,62 @@ class Resolver:
                                 names.update(test_fn_lines(fh.read()))
             self._all_fns = names
         return self._all_fns
+
+    def defined_names(self) -> set[str]:
+        """every item name defined in src/ (`fn`, `struct`, `enum`, `const`, `static`, `trait`,
+        `type`, `mod`, `union`, `macro_rules!`)"""
+        if self._defined is None:
+            names: set[str] = set()
+            for dirpath, _d, files in os.walk(os.path.join(self.root, "src")):
+                for f in files:
+                    if f.endswith(".rs"):
+                        with open(os.path.join(dirpath, f), encoding="utf-8") as fh:
+                            for m in DEF_RE.finditer(fh.read()):
+                                names.add(m.group(1) or m.group(2))
+            self._defined = names
+        return self._defined
+
+    def path_line_exists(self, rel: str, line: int) -> bool:
+        p = os.path.join(self.root, rel)
+        if not os.path.isfile(p):
+            return False
+        with open(p, encoding="utf-8") as fh:
+            return 1 <= line <= sum(1 for _ in fh)
+
+    def resolve_citations(self, module: str, fieldname: str, text: str) -> tuple[int, int]:
+        """every sentence of the field cites at least one code reference that resolves;
+        returns (sentences, sentences with a resolved citation)"""
+        sentences = 0
+        resolved = 0
+        for k, raw in enumerate(SENTENCE_SPLIT_RE.split(text), 1):
+            sentence = raw.strip()
+            # a claim has at least two words; a stray abbreviation or an empty tail is none
+            if len(re.findall(r"[A-Za-z\u3040-\u9fff]+", sentence)) < 2:
+                continue
+            sentences += 1
+            cited: list[str] = []
+            ok = False
+            for m in IDENT_RE.finditer(sentence):
+                name = m.group(1).split("::")[-1]
+                cited.append(m.group(1))
+                if name in self.defined_names():
+                    ok = True
+            for m in PATH_LINE_RE.finditer(sentence):
+                cited.append(f"{m.group(1)}:{m.group(2)}")
+                if self.path_line_exists(m.group(1), int(m.group(2))):
+                    ok = True
+            if ok:
+                resolved += 1
+                continue
+            head = sentence if len(sentence) <= 72 else sentence[:69] + "…"
+            if cited:
+                self.rep.add(f"{module}: MODEL section field `{fieldname}`, sentence {k} cites "
+                             f"{', '.join('`%s`' % c for c in cited)}, which is not defined in src/ "
+                             f"(a `fn`, type, `mod` or `path.rs:line` that exists): «{head}»")
+            else:
+                self.rep.add(f"{module}: MODEL section field `{fieldname}`, sentence {k} cites no code "
+                             f"(a `fn` name, type or `path.rs:line` in backticks): «{head}»")
+        return sentences, resolved
 
     def resolve(self, module: str, fieldname: str, text: str) -> int:
         """check every test reference of a field; returns how many resolved"""
@@ -470,6 +540,11 @@ def check_module(root: str, rel: str, resolver: Resolver, rep: Report) -> bool:
             rep.add(f"{rel}: MODEL section lacks the field `{name}`")
         elif not fields[name].strip():
             rep.add(f"{rel}: MODEL section field `{name}` is empty")
+    for name in CITED_FIELDS:
+        if name in fields and fields[name].strip():
+            sentences, resolved = resolver.resolve_citations(rel, name, fields[name])
+            rep.sentences += sentences
+            rep.citations_resolved += resolved
     if "validation" in fields:
         n = resolver.resolve(rel, "validation", fields["validation"])
         if n == 0:
@@ -569,6 +644,8 @@ def run(root: str, write_baseline: bool) -> Report:
         rep.add("no MODEL section was read (compared 0 sections)")
     elif rep.tests_resolved == 0:
         rep.add("no test named by a MODEL section was resolved (compared 0 tests)")
+    elif rep.citations_resolved == 0:
+        rep.add("no code citation of a MODEL section was resolved (compared 0 citations)")
     return rep
 
 
@@ -580,7 +657,9 @@ def main(argv: list[str]) -> int:
     rep = run(args.root, args.write_baseline)
     print("MODEL-SECTION-CHECK: " + json.dumps({"modules": rep.modules, "with_model": rep.with_model,
                                                 "baseline": rep.baseline, "exempt": rep.exempt,
-                                                "tests_resolved": rep.tests_resolved}))
+                                                "tests_resolved": rep.tests_resolved,
+                                                "sentences": rep.sentences,
+                                                "citations_resolved": rep.citations_resolved}))
     for f in rep.findings:
         print(f"model-section-check: {f}")
     return 1 if rep.findings else 0

@@ -11,7 +11,8 @@
      載る時だけ通る、検証の field に既知の欠陥を書くと落ちる (red の oracle は検証ではない)
 (6) src の分類: 未分類 / 両方に載る / 一覧にあって不在 で落ちる
 (7) ratchet: baseline に無い欠落 / 節が付いたのに残る行 / module でない行 で落ちる、--write-baseline で揃う
-(8) 比較 0 件: module 0 / 節 0 / 試験 0 で落ちる
+(8) 比較 0 件: module 0 / 節 0 / 試験 0 / 引用 0 で落ちる
+(9) 方程式 / 保存則 / 適用範囲 / 近似 の各文 (`.` `;` `。` で区切る) が src で解決する code 参照 (backtick の `fn` / 型 / `path.rs:line`) を 1 つ以上引く、無い / rename された / 行が無い / 数式だけ で落ちる 単位の field は対象外
 を固定する 期待値は fixture の構造から決め、検査器を呼んで作らない
 
 run: python3 scripts/test_model_section_check.py
@@ -42,16 +43,16 @@ SECTION_PARAGRAPH = textwrap.dedent("""\
     //!
     //! # MODEL — free fall
     //!
-    //! **Equations.** `v' = g`, `x' = v`, symplectic Euler per step.
+    //! **Equations.** `v' = g`, `x' = v`, symplectic Euler per step (`drop`).
     //!
     //! **Units.** SI: m, s, m/s².
     //!
-    //! **Conservation.** Energy `½ m v² + m g h` is conserved by the exact solution; the
-    //! integrator drifts by O(h).
+    //! **Conservation.** Energy `½ m v² + m g h` is conserved by the exact solution
+    //! ([`drop`]); the integrator drifts by O(h) (`src/fall.rs:1`).
     //!
-    //! **Valid range.** Any `h > 0`; nothing is clamped.
+    //! **Valid range.** Any `h > 0` (`fall::drop`); nothing is clamped (`drop()`).
     //!
-    //! **Approximations.** No drag.
+    //! **Approximations.** No drag (`drop`).
     //!
     //! **Validation.** `tests/analytic_fall.rs::a_body_falls_g_h_squared_over_two` (closed form),
     //! `::drop_replays_bit_for_bit`.
@@ -64,12 +65,12 @@ SECTION_BULLETS = textwrap.dedent("""\
     //!
     //! # MODEL — free fall
     //!
-    //! - **方程式 (equations)**: `v' = g`, `x' = v`.
+    //! - **方程式 (equations)**: `v' = g`, `x' = v` (`drop`).
     //! - **単位 (units)**: SI.
     //! - **保存則 (conservation)**: energy up to O(h)
-    //!   (`a_body_falls_g_h_squared_over_two`).
-    //! - **適用範囲 (range)**: any `h > 0`.
-    //! - **近似 (approximations)**: no drag.
+    //!   (`drop`, `a_body_falls_g_h_squared_over_two`).
+    //! - **適用範囲 (range)**: any `h > 0` (`drop`).
+    //! - **近似 (approximations)**: no drag (`drop`).
     //! - **検証 (verification)**: `tests/analytic_fall.rs::
     //!   a_body_falls_g_h_squared_over_two` (closed form) and
     //!   `::drop_replays_bit_for_bit`.
@@ -140,6 +141,47 @@ def run(root: Path, write_baseline: bool = False) -> msc.Report:
     return msc.run(str(root), write_baseline)
 
 
+class Citations(unittest.TestCase):
+    """(9) every sentence of equations / conservation / range / approximations cites code
+    that resolves; the citation count is compared"""
+
+    def test_sentence_without_a_citation_fails(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("No drag (`drop`).", "No drag.")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertTrue(any("field `approximations`, sentence 1 cites no code" in f for f in rep.findings), rep.findings)
+
+    def test_each_clause_after_a_semicolon_is_a_sentence(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("nothing is clamped (`drop()`).", "nothing is clamped.")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertTrue(any("field `range`, sentence 2 cites no code" in f for f in rep.findings), rep.findings)
+
+    def test_renamed_fn_fails(self) -> None:
+        body = BODY.replace("pub fn drop(", "pub fn fall(")
+        test = TEST_FALL.replace("fall::drop(", "fall::fall(")
+        rep = run(crate({"src/fall.rs": SECTION_PARAGRAPH + body, "tests/analytic_fall.rs": test}))
+        self.assertTrue(any("sentence 1 cites `drop`, which is not defined in src/" in f for f in rep.findings), rep.findings)
+
+    def test_path_line_past_the_file_fails(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("`src/fall.rs:1`", "`src/fall.rs:9999`")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertTrue(any("cites `src/fall.rs:9999`, which is not defined" in f for f in rep.findings), rep.findings)
+
+    def test_math_in_backticks_is_no_citation(self) -> None:
+        sec = SECTION_PARAGRAPH.replace("No drag (`drop`).", "No drag on `v`.")
+        rep = run(crate({"src/fall.rs": sec + BODY}))
+        self.assertTrue(any("sentence 1 cites `v`, which is not defined" in f for f in rep.findings), rep.findings)
+
+    def test_units_need_no_citation(self) -> None:
+        rep = run(crate({}))
+        self.assertEqual(rep.findings, [])
+
+    def test_counts_sentences_and_citations(self) -> None:
+        rep = run(crate({}))
+        # equations 1, conservation 2, range 2, approximations 1
+        self.assertEqual(rep.sentences, 6)
+        self.assertEqual(rep.citations_resolved, 6)
+
+
 class Passes(unittest.TestCase):
     def test_paragraph_form_passes_and_counts(self) -> None:
         rep = run(crate({}))
@@ -184,7 +226,7 @@ class Fields(unittest.TestCase):
             self.assertTrue(any("no field: **Notes.**" in f for f in rep.findings), (label, rep.findings))
 
     def test_empty_field_fails(self) -> None:
-        sec = SECTION_PARAGRAPH.replace("**Approximations.** No drag.", "**Approximations.**")
+        sec = SECTION_PARAGRAPH.replace("**Approximations.** No drag (`drop`).", "**Approximations.**")
         rep = run(crate({"src/fall.rs": sec + BODY}))
         self.assertTrue(any("`approximations` is empty" in f for f in rep.findings), rep.findings)
 
