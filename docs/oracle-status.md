@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5946 |
+| 🟢 Not ignored (run by CI) | 5950 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6042** |
+| **Total** | **6046** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -151,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5946)
+## 🟢 Not ignored (5950)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -503,6 +503,8 @@ Per-file counts (the test names are in `tests/`):
 | `world_snapshot_previous_semantics.rs` | 7 |
 | `analytic_analytics_bridge_wiring.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
+| `analytic_contact_friction_spin.rs` | 6 |
+| `analytic_contact_static_friction_spin.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
@@ -524,9 +526,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm08_checksum_coverage.rs` | 6 |
 | `analytic_cfd_wall_bc.rs` | 5 |
 | `analytic_cloth_crossings_wiring.rs` | 5 |
-| `analytic_contact_friction_spin.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
-| `analytic_contact_static_friction_spin.rs` | 5 |
 | `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
@@ -614,6 +614,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
+| `analytic_contact_turn_composition.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
 | `analytic_impulse_sign_exact.rs` | 2 |
 | `analytic_impulsive_burn_vis_viva.rs` | 2 |

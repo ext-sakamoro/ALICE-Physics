@@ -1177,7 +1177,7 @@ source = "Erleben et al. ch.6"
 status = "partial"
 evidence = "球: tests/analytic_contact_friction_spin.rs::a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_theta と analytic_contact_static_friction_spin.rs (5/7 g sinθ、すべり限界の両側) 円柱 (2/3 g sinθ) の test は無い"
 oracle_candidate = "a = 5/7 g sinθ (球)、2/3 g sinθ (円柱)"
-limitation = ""
+limitation = "src/solver.rs::static_friction_correction 'a cylinder's contact point is an EPA support vertex, not its contact line, so a cylinder rolling down an incline (2/3 g sin θ) has no oracle'"
 
 [[item]]
 id = "COV-RIGID-114"
