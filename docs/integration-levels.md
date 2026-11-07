@@ -13,9 +13,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Level | Meaning | Modules |
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 27 |
-| world API | used through another `PhysicsWorld` method | 13 |
+| world API | used through another `PhysicsWorld` method | 14 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 122 |
+| standalone | a Rust API that only examples call | 121 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -48,6 +48,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
+| `cloth` | world API (step 6 of 48 items) | 6 / 25 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -58,7 +59,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 54 of 209 items) | 54 / 123 / 9 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 54 of 215 items) | 54 / 129 / 9 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
@@ -81,7 +82,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `cloth` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `cloth_fluid` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `collision_mesh_gen` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -136,7 +136,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `physics2d` | standalone | 0 / 0 / 0 / 60 / 0 | — |
+| `physics2d` | standalone (step 1 of 60 items) | 1 / 0 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
