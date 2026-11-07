@@ -18,6 +18,105 @@
 //!
 //! Call [`DynamicVehicle::update`] once per frame before `PhysicsWorld::step`,
 //! like the legacy model.
+//!
+//! # MODEL — per-wheel contact, tyre friction, wheel spin and brakes
+//!
+//! - **方程式 (equations)**: one frame of [`DynamicVehicle::update`] (its doc
+//!   has the full derivation), every force an impulse `F dt` at its wheel's
+//!   contact point. Contact: each attachment probes the road along `−up` up
+//!   to `rest + radius`, compression `c = 1 − (distance − radius) / rest`
+//!   clamped to `[0, 1]`; strut `S = k (1 + p c) c + k_bs max(0, c − c_bs)
+//!   − d (v + ω × r)·up` plus anti-roll `k_ar (c_l − c_r)`, along `up`; the
+//!   contact carries `F_z = max(0, S up·n)`. Tyre: slip `κ = (ω r − v_x) /
+//!   v̄`, `tan α = v_y / v̄`, `v̄ = max(|v_x|, v_floor)` in the wheel frame,
+//!   force from [`tire::TireModel`] on the grip of [`surface::RoadCondition`].
+//!   Spin `I ω̇ = T_drive − T_brake − F_x r`, semi-implicit in `F_x`, the
+//!   brake Coulomb (reduces `|ω|` without crossing 0), ABS stopping the
+//!   brake at `ω_t = max v_x (1 − target) / r`. Friction: projected
+//!   Gauss-Seidel over the loaded wheels, both axes and the spin together
+//!   (≤ 64 sweeps, stop at a 1e-12 N s change), one Newton step per axis
+//!   `Δλ = (F dt − λ) / (1 + c dt / (v̄ m_eff))`, `λ` projected onto the
+//!   static ellipse `(μ_x,s F_z dt, μ_y,s F_z dt)`; a locked wheel sliding
+//!   slower than the static budget can stop in the frame is held to a
+//!   position anchor, the static / kinetic split a fixed point. Rolling
+//!   resistance `C_rr F_z` against `v_x`, never reversing it. Air at the
+//!   centre of mass: `−½ ρ C_dA |v_rel| v_rel`, `½ ρ C_lA |v_rel|²` along
+//!   `up`, `v_rel = v − w`. Steering `δ₀ = s · max_steer_angle`, with
+//!   Ackermann `tan δ = L tan δ₀ / (L − d tan δ₀)` per front wheel.
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, Nm, rad, kg m²; `k`,
+//!   `k_bs`, `k_ar` N per unit compression ratio, `d` N s/m, `ρ` kg/m³,
+//!   `C_dA` / `C_lA` m², `C_rr` and the slips dimensionless. No `f32` on the
+//!   path except inside a [`surface::SdfRoad`] probe (see that module).
+//! - **保存則 (conservation)**: the road is immovable and takes no reaction,
+//!   so the chassis momentum is not conserved: it changes by the contact,
+//!   friction, rolling-resistance and air impulses, its angular momentum by
+//!   their lever arms (steering yaws, braking pitches), and the wheels trade
+//!   angular momentum with it through `F_x r`. Energy is dissipated by the
+//!   damper, tyre slip (`F · v_slip ≤ 0`), brakes, rolling resistance and
+//!   drag, added by the drive and the spring; a held car gains none (the
+//!   anchor correction is `O(g dt²)` per frame, bounded).
+//! - **適用範囲 (range)**: `dt > 0`, a dynamic chassis. The suspension is
+//!   explicit once per frame, stable while `(ω_n dt)² + 2 c dt / m_share
+//!   < 4`, `ω_n = √(k_eff / m_share)` (outside it a light chassis on stiff
+//!   springs oscillates with growing amplitude; not clamped, not reported).
+//!   Below `|v_x| = v_floor` the slip reads `κ = −v_x / v_floor`, so a
+//!   locked wheel's force leaves the full sliding value (the oracles'
+//!   `v_floor² / (μ g)` term). Gauss-Seidel order fixed; measured asymmetry
+//!   of symmetric scenes 2.4e-13 rad/s yaw at 24 sweeps, below 1e-6 N at 64.
+//!   Out-of-range inputs clamp to the boundary; `dt ≤ 0` or a static chassis
+//!   changes nothing; no wheels applies only aerodynamics.
+//! - **近似 (approximations)**: the contact is a ray hit (a point, no patch,
+//!   no tyre radius against bumps); one impulse per frame, not substepped;
+//!   aerodynamics at the centre of mass, no moment (COV-MBD-044); rolling
+//!   resistance on the chassis, not on the spin (COV-MBD-014); the wind is
+//!   the zone's instantaneous vector at the chassis position; no tyre
+//!   relaxation, camber or load-sensitive stiffness (see [`tire`]); anti-roll
+//!   on the pairs (0,1), (2,3); handbrake on the rear wheels only; locked
+//!   differential = one shared spin, open = equal torque split; the held
+//!   contacts move as one rigid translation (mean anchor offset).
+//! - **検証 (validation)**: `tests/analytic_vehicle_dynamics.rs::stopping_distance_dry_locked_wheels`
+//!   (s = v0² / (2 μ_k g) = 25 m), `::stopping_distance_wet_and_ratio_to_dry`,
+//!   `::stopping_distance_ice_and_ratio_to_dry` (ratio 1 / f_w),
+//!   `::locked_car_comes_to_exact_rest` (≤ 1e-9 m/s after 5 s),
+//!   `::abs_keeps_wheels_rolling_and_respects_peak_grip_bound` (ω > 0,
+//!   s ≥ v0² / (2 μ_s g) − v0 dt), `::braking_with_steering_yaws_only_with_abs`,
+//!   `::low_speed_turning_radius_matches_wheelbase_over_tan_delta` and
+//!   `::low_speed_turning_radius_with_ackermann_beats_parallel_steering`
+//!   (R_cg = √((L / tan δ)² + b²) to 1 % / 0.5 %),
+//!   `::linear_bicycle_model_steady_yaw_rate` (r = v δ / (L + K v²) to 1 %),
+//!   `::braking_load_transfer_to_front_axle` (F_zf = M g b / L + M a h / L),
+//!   `::braking_pitches_nose_down_through_contact_points` (φ = M a h / (L² k_w)),
+//!   `::steering_produces_yaw_through_contact_points`,
+//!   `::slope_below_static_friction_holds_the_car` (drift ≤ g sin θ dt², not
+//!   accumulating), `::slope_above_static_friction_slides_with_kinetic_deceleration`
+//!   (a = g (sin θ − μ_k cos θ)), `::rolling_resistance_coast_down_is_linear`
+//!   (a = C_rr M g / (M + 4 I_w / r²)), `::launch_within_grip_follows_drive_torque`
+//!   (a = ΣF / (M + Σ I_w / r²)), `::launch_beyond_grip_is_limited_by_rear_axle_load`
+//!   (a ≤ μ_s g b / (L − μ_s h)), `::gear_top_speed_converges_to_rev_limit`,
+//!   `::hydroplaning_reduces_deceleration_only_above_onset_speed`,
+//!   `::cross_wind_force_follows_relative_velocity_squared` (Δv = F dt / M to
+//!   1e-9), `::cross_wind_on_the_road_is_carried_by_lateral_tyre_force`;
+//!   degenerate inputs, `tests/vehicle_dynamics_degenerate.rs::zero_dt_changes_nothing`,
+//!   `::zero_wheel_config_falls_freely`, `::airborne_car_falls_freely`,
+//!   `::airborne_driven_wheels_spin_up_freely`, `::static_chassis_is_left_untouched`,
+//!   `::heavy_chassis_settles_at_closed_form_ride_height` and
+//!   `::light_chassis_settles_at_closed_form_ride_height` (ride height
+//!   0.2 + r + rest (1 − m g / (4 k)) at ω_n dt = 0.10 and 0.5),
+//!   `::out_of_range_inputs_clamp_to_the_boundary`,
+//!   `::out_of_range_steering_stops_at_max_steer_angle`.
+//!   validation missing: suspension natural frequency and damping ratio
+//!   against the spring–damper closed form (only the static ride height and
+//!   the stability edge are pinned, no sweep of dt);
+//!   validation missing: convergence of the stopping distance in dt (the
+//!   tolerance is derived from one frame of travel, not measured at two dt);
+//!   validation missing: terminal speed under aerodynamic drag with the
+//!   drive (v* = √(2 F / (ρ C_dA)), no steady-state oracle);
+//!   validation missing: the Magic Formula tyre, the locked differential,
+//!   the handbrake, the bump stop and a height-field / mesh / SDF road
+//!   through the vehicle (unit oracles only).
+//! - **段 (tiers)**: L0 only — the reference tier; [`crate::vehicle`] is a
+//!   separate older model, not a lighter tier of this one (its force laws
+//!   differ, no error against this model is measured).
 
 pub mod powertrain;
 pub mod scenario;

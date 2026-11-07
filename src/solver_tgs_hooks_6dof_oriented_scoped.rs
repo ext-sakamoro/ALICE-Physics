@@ -20,6 +20,61 @@
 //! the parallel dispatch is bit-perfect identical to the serial
 //! variant thanks to Fix128 arithmetic and canonical island ordering.
 //!
+//! # MODEL — per-island scoping of the 6-DOF oriented solve
+//!
+//! - **方程式 (equations)**: no equation of its own. For each island this
+//!   layer copies the island's bodies, contacts and joints into local
+//!   buffers with body indices remapped to `[0..N)`, runs
+//!   `tgs_step` with `Pgs6DofOrientedHooks` on the copy (the contact,
+//!   friction, joint and orientation laws of
+//!   `solver_tgs_hooks_6dof_oriented`), and writes the bodies and the
+//!   accumulated impulses back at their world indices. The serial form
+//!   visits islands in canonical order through `dispatch_islands` with one
+//!   shared impulse cache; the parallel form (`parallel` feature) solves
+//!   islands through `par_dispatch_islands` with one cache per island and
+//!   writes back in canonical order.
+//! - **単位 (units)**: those of the hook — SI in `Fix128`; `dt` in s. No
+//!   arithmetic of its own; `f32` is on the path only inside the hook
+//!   (friction cone scale) and `tgs_step` (sub-step width), where
+//!   determinism is not claimed as stated there.
+//! - **保存則 (conservation)**: unchanged from the hook. Islands share no
+//!   dynamic body, so a static body listed in several islands is written
+//!   back from each unchanged, and gravity is integrated exactly once per
+//!   dynamic body per sub-step (the reason the solve is scoped: a hook run
+//!   per island over the whole world slice would add `g h` once per
+//!   island).
+//! - **適用範囲 (range)**: islands from `build_islands` over the same
+//!   bodies, contacts and joints (every contact and joint of an island
+//!   must name bodies of that island; otherwise the remap panics);
+//!   `caches.len() == islands.len()` for the parallel form (otherwise a
+//!   panic in `par_dispatch_islands`). The production path uses the serial
+//!   form with the world's cache; the parallel form has no production
+//!   caller (its serial-equivalence is pinned by a unit test only).
+//! - **近似 (approximations)**: none beyond the hook's. The split-cache
+//!   policy of the parallel form means a contact that moves between
+//!   islands across frames warm-starts from the cache of its new island,
+//!   a caller-visible difference from the shared cache of the serial form.
+//! - **検証 (validation)**: island dispatch through the production entry
+//!   `tests/analytic_solver_tgs_dispatch_wiring.rs::
+//!   tgs_step_on_an_empty_world_does_not_panic_and_reports_zero_stats`
+//!   (zero islands), `::tgs_step_with_a_single_contact_free_body_reports_zero_stats_but_still_falls`
+//!   (one single-body island, gravity once), `::sweep_evicts_a_contact_that_stops_recurring`
+//!   (the shared cache across ticks); independence of islands and
+//!   write-back at the right index `tests/tgs_stable_cache_keys.rs::
+//!   a_new_contact_ahead_in_the_list_does_not_shuffle_the_others`,
+//!   `::removing_a_distance_constraint_keeps_the_others_on_their_own_impulse`,
+//!   `::a_pendulum_keeps_its_impulse_across_remove_body` (twin worlds with
+//!   and without an extra non-interacting element step bit for bit);
+//!   `tests/analytic_tgs_wiring.rs::world_with_only_a_static_body_under_tgs_does_not_move_it`
+//!   (a static-only island is written back unchanged); the whole path
+//!   bit for bit `tests/determinism_golden_paths.rs::golden_path_tgs_step`,
+//!   `::golden_path_tgs_step_n`, `::golden_path_tgs_try_step`. The physics
+//!   benchmarks of the solve are those of the oriented hook's MODEL section.
+//!   validation missing: bit identity of the parallel island solve against
+//!   the serial one through a public entry point (no production caller).
+//! - **段 (tiers)**: L0 only — scoping changes where the solve runs, not
+//!   the model.
+//!
 //! # Visibility
 //!
 //! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the

@@ -4,6 +4,88 @@
 //! force fields, and particle lifetimes. Uses the deterministic RNG for
 //! reproducible emission patterns.
 //!
+//! # MODEL — point particles under gravity, damping and force fields
+//!
+//! - **方程式 (equations)**: massive points with no rotation and no mutual
+//!   interaction. Per step of length `dt`, in this order: `v ← v + g·dt`,
+//!   `v ← v · damping`, `x ← x + v·dt` (semi-implicit Euler), `age ← age + dt`,
+//!   dead once `age ≥ lifetime`. Emission releases `⌊rate · t⌋` particles
+//!   (the fractional remainder is carried over) at the emitter position with
+//!   the emitter's speed inside a cone of full apex angle `spread_angle`
+//!   (deflection `≤ spread/2`, capped at a hemisphere), directions drawn from
+//!   [`DeterministicRng`]. [`ParticleSystem::apply_force_field`] adds
+//!   `F/m · (1/60 s)` to the velocity with `F` from
+//!   [`crate::force::field_force_at`] (the rigid-body laws: directional,
+//!   inverse-square point, linear drag, buoyancy, vortex, explosion, dipole).
+//!   [`ParticleSystem::step_with_landing`] samples the straight path
+//!   `x → x + v·dt` at points at most `max_travel` apart, stops a particle at
+//!   the first sample inside a [`LandingTarget`] (normal from the target's
+//!   SDF gradient or the query), reports it and re-emits it.
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, m/s, rad; emission rate in
+//!   1/s; `damping` is a dimensionless factor applied once per step (not per
+//!   second). The probe of a `LandingTarget::Field` evaluates the field in f32
+//!   (the sample point is converted to f32 and the distance and normal back),
+//!   so the landing position and normal of an SDF target are f32-rounded
+//!   (`|y| < 1e-6` on a floor) and bit-for-bit agreement across platforms is
+//!   not claimed for them; the particle state itself stays `Fix128`.
+//! - **保存則 (conservation)**: nothing is conserved by construction — the
+//!   forces are external. Momentum changes by `m g dt` and by the field
+//!   impulses; energy is dissipated by `damping` (a fraction `1 − damping` of
+//!   the velocity per step, 1 % at the default `0.99`, so the decay rate
+//!   depends on `dt`) and by drag fields; a landing discards the particle's
+//!   momentum (re-emission, no bounce). The number of live particles is
+//!   conserved by a landing and bounded by `max_particles`; each particle's
+//!   mass is constant.
+//! - **適用範囲 (range)**: 3D, any `dt > 0` (`dt = 0` is a no-op, nothing
+//!   is emitted or aged). The integrator is first order: the landing time of
+//!   a free fall lies in `[t* − 3dt/2, t* + dt]` for `dt = 1/7 … 1/240` and
+//!   the error shrinks with `dt` (sweep 1/16 … 1/256). A target thinner than
+//!   `max_travel` along the path can be stepped over; one at least that thick
+//!   cannot. A step needing more than `2²⁰` samples, `max_travel ≤ 0` or a
+//!   respawn emitter index out of range panics; emission stops at the live
+//!   cap instead of exceeding it; a dead or massless particle ignores force
+//!   fields. Nothing is clamped otherwise.
+//! - **近似 (approximations)**: no rotation, no particle–particle
+//!   interaction (no collisions, no SPH), no drag unless a drag field is
+//!   applied, no restitution or sticking on landing (the particle is
+//!   re-emitted), straight-line sampling inside a step instead of a continuous
+//!   collision test, per-step rather than per-second damping, force fields
+//!   integrated with a fixed `1/60 s` whatever the step, emission count
+//!   truncated to an integer per step, emission directions blended toward a
+//!   uniform random direction rather than drawn uniformly on the cone.
+//! - **検証 (validation)**: `tests/analytic_particle_wiring.rs::
+//!   single_particle_follows_the_semi_implicit_recursion` (the recursion in
+//!   3D with gravity and damping, `1e-12`),
+//!   `::cumulative_emission_is_floor_of_rate_times_time`,
+//!   `::two_emitters_add_their_rates`,
+//!   `::particle_dies_exactly_when_age_reaches_its_lifetime`,
+//!   `::dead_particles_are_frozen`, `::live_cap_holds_under_a_burst_emitter`,
+//!   `::zero_spread_emits_exactly_along_the_direction_at_the_initial_speed`,
+//!   `::spread_is_the_full_cone_angle_and_keeps_the_speed`,
+//!   `::directional_field_is_force_over_mass_times_one_sixtieth`,
+//!   `::point_field_is_inverse_square_clamped_and_signed_by_repulsion`,
+//!   `::drag_opposes_velocity_and_scales_with_inverse_mass`,
+//!   `::buoyancy_field_acts_only_below_the_surface_with_depth_proportional_lift`,
+//!   `::emission_is_reproducible_for_a_given_seed_and_differs_across_seeds`
+//!   (determinism); `tests/analytic_particle_landing.rs::
+//!   free_fall_landing_matches_the_closed_form_and_sqrt_2h_over_g` (free fall
+//!   from rest, `t* = √(2h/g)`, and the sampled closed form to `1e-12`),
+//!   `::landing_time_error_shrinks_with_dt` (first-order sweep),
+//!   `::a_band_thinner_than_one_step_of_travel_is_never_skipped`,
+//!   `::same_seed_gives_a_bit_identical_landing_sequence`,
+//!   `::landed_particles_return_to_the_emitter_and_the_live_count_is_conserved`,
+//!   `::without_targets_it_is_bit_identical_to_step`;
+//!   `tests/audit_force.rs::
+//!   particle_system_agrees_with_compute_force_for_directional_point_drag_and_buoyancy`,
+//!   `::particle_system_agrees_with_compute_force_for_magnetic_explosion_and_vortex`
+//!   (the particle impulse equals the rigid-body force law).
+//!   validation missing: projectile (parabolic) flight against the continuous
+//!   closed form `x = v₀ t`, `y = v₀ t − g t²/2` with a step sweep (the
+//!   recursion oracle pins the discrete map only).
+//!   validation missing: terminal velocity of a falling particle under drag
+//!   (`v_t = m g / c` for the linear drag field; no quadratic drag exists).
+//! - **段 (tiers)**: L0 only.
+//!
 //! # Features
 //!
 //! - Multiple particle emitters with configurable spread, speed, and rate

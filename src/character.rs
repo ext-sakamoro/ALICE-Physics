@@ -4,6 +4,92 @@
 //! Handles ground detection, stair stepping, slope limiting,
 //! and SDF terrain collision.
 //!
+//! # MODEL — kinematic capsule move-and-slide (sphere-approximated bodies, SDF terrain)
+//!
+//! - **方程式 (equations)**: no equation of motion is solved; the controller
+//!   is kinematic. The caller's displacement `D` (plus the platform velocity
+//!   carried from the previous call) is swept as a ray from the capsule centre
+//!   against every static body, each seen as a sphere of the character's
+//!   radius inflated by the radius again (`sweep_against_bodies`): at a hit of
+//!   normal `n` at parameter `t` the centre stops at `t − skin` and the rest
+//!   is projected onto the contact plane, `rest − n (rest · n)`, for at most
+//!   `CharacterConfig::max_slides` passes. SDF colliders (`std`) are then
+//!   resolved once at the two hemisphere centres and the centre by a push
+//!   `n (radius − d)` along the field's normal where the sample `d < radius`
+//!   (`resolve_sdf`). Stair step: grounded and under 25 % of the horizontal
+//!   displacement covered, the centre is raised by the step height, moved
+//!   horizontally, kept if clear of every body (centre distance ≥ radius +
+//!   skin) and SDF (`d ≥ radius`), and snapped down by a ray against the plane
+//!   through the previous feet height. Ground (`detect_ground`): a ray from
+//!   the lower hemisphere centre along `−Y` over probe + skin either hits a
+//!   static body's sphere (ground, no slope test) or finds the SDF distance
+//!   under `probe + radius` with `n · Y ≥ cos(max_slope_angle)`.
+//!   `apply_gravity` is `v += g·dt` while airborne; it never moves the position.
+//! - **単位 (units)**: SI in `Fix128` — m, s, m/s, rad. `push_force` is a
+//!   dimensionless gain (a push is `n · overlap · push_force`, metres, not
+//!   N·s). The SDF branch samples distance and normal in `f32` (`SdfField`)
+//!   and converts back with `Fix128::from_f32`, so the core's Fix128
+//!   bit-for-bit guarantee does not cover the SDF path; it is not claimed.
+//! - **保存則 (conservation)**: nothing is conserved. The controller has no
+//!   mass; a move is a position projection, so its momentum and energy are
+//!   undefined. `compute_push_impulses` hands dynamic bodies one-sided penalty
+//!   impulses with no reaction on the character: the body's momentum is
+//!   created, not exchanged (the oracle pins the formula, not a balance).
+//!   Static bodies and SDF colliders never move; a platform under the feet
+//!   passes its velocity into the next displacement.
+//! - **適用範囲 (range)**: a vertical capsule with a fixed `+Y` up axis; static
+//!   bodies only (dynamic ones are skipped), each as a sphere whatever its
+//!   shape; the world's static colliders (planes, height fields, meshes) are
+//!   not seen — use [`crate::world_character`] for them. No time step enters.
+//!   A displacement shorter than the skin is dropped before any sweep (known
+//!   defect). Outside the range nothing is clamped or reported; convergence
+//!   in the slide count or the displacement is not measured.
+//! - **近似 (approximations)**: a point ray instead of a capsule sweep (the
+//!   bottom can end one radius inside a body it lands on, known defect);
+//!   bodies as spheres; one SDF push pass over three samples, no iteration;
+//!   the stair check samples only the centre, so the step height does not
+//!   bound what is climbed (known defect); the snap-down is against the
+//!   previous feet plane, not the terrain; body ground ignores the normal
+//!   (any hit is ground), the slope limit applies to SDF ground only;
+//!   `MoveResult::velocity` is the input displacement (known defect); no
+//!   friction, mass or reaction. Surface orientation: the SDF push and slope
+//!   test take the normal from the field's gradient (`SdfField::normal`); the
+//!   body path uses the inflated sphere's normal; the ground probe and the
+//!   snap-down use the fixed `−Y` axis, not a surface normal.
+//! - **検証 (validation)**: `tests/audit_character.rs::
+//!   free_move_translates_exactly_by_the_displacement` (no contact: `x += D`),
+//!   `::head_on_static_body_stops_one_skin_before_the_inflated_sphere`,
+//!   `::slide_along_an_oblique_contact_matches_the_collide_and_slide_closed_form`
+//!   (hit point and projected rest by hand),
+//!   `::flat_sdf_floor_grounds_within_probe_of_the_capsule_bottom`,
+//!   `::slope_limit_decides_grounded_on_a_tilted_sdf_plane` (30°, 40° grounded;
+//!   50°, 60° not; normal from the SDF),
+//!   `::sdf_push_out_applies_below_the_radius_by_the_exact_shortfall`,
+//!   `::stair_step_lifts_by_step_height_and_advances_the_full_displacement_when_clear`,
+//!   `::stair_snap_down_settles_the_character_on_the_ledge`,
+//!   `::max_slope_angle_is_compared_through_its_cosine`,
+//!   `::platform_velocity_is_added_to_the_next_displacement`;
+//!   `tests/default_configs.rs::character_config_default_lands_on_floor_and_walks_level`
+//!   (a drop onto an SDF floor lands within 3 frames of `t = √(2h/g)`, then
+//!   walks `x = v t` level); `tests/analytic_character_wiring.rs::
+//!   apply_gravity_integrates_while_airborne`, `::apply_gravity_frozen_while_grounded`,
+//!   `::compute_push_impulses_momentum_conserving_single_overlap` (the push
+//!   formula). validation missing: motion along an inclined SDF surface with
+//!   the gradient normal (sliding or holding; only the grounded decision is
+//!   pinned). validation missing: step height limit against a closed-form
+//!   obstacle (red, known defect). validation missing: landing on a static
+//!   body at the closed-form height (red, known defect). Momentum exchange in
+//!   a collision: not applicable, the controller carries no momentum.
+//! - **段 (tiers)**: L0 only.
+//! - **既知の欠陥 (known defects)**: `tests/audit_character.rs::
+//!   displacement_shorter_than_skin_width_is_not_discarded`,
+//!   `::result_velocity_has_no_component_into_the_wall_after_a_head_on_slide`,
+//!   `::static_body_grounds_within_probe_of_the_capsule_bottom_like_an_sdf_floor`,
+//!   `::feet_position_is_the_capsule_bottom`,
+//!   `::step_height_limit_blocks_obstacles_taller_than_step_height`,
+//!   `::capsule_bottom_does_not_sink_into_a_static_body_it_lands_on`,
+//!   `::stair_step_with_a_short_capsule_does_not_lower_the_character`.
+//!
 //! # Features
 //!
 //! - Capsule-based collision shape

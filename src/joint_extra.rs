@@ -9,6 +9,81 @@
 //! - **`MouseJoint`**: Soft constraint that drives a body toward a target position
 //!
 //! All constraints use XPBD-style position-level corrections with compliance.
+//!
+//! # MODEL — mechanical linkage constraints
+//!
+//! - **方程式 (equations)**: one XPBD position projection per joint and
+//!   solve, `λ = C / (w + compliance / dt²)` from `λ = 0` at every call.
+//!   Pulley: `C = len_a + ratio·len_b − total`, `w = w_a + ratio² w_b`, the
+//!   bodies moved along their rope directions by `w_a λ` and `ratio w_b λ`
+//!   (`total` is the length at the bodies' previous pose, or an explicit rest
+//!   length in [`solve_pulley_to_length`], which corrects an excess `C > 0`
+//!   only). Gear: `C = θ_a + ratio·θ_b` on the per-step twists about world
+//!   `z`, `w` from the axial inverse inertias, each body turned about `z`.
+//!   Weld: the anchor gap closed by inverse mass, and the orientation error
+//!   (shortest arc to `R_a · local_rotation`) closed with the full 3×3
+//!   effective mass `K = W_a + W_b + α̃ 1`, `K λ = θ`, turns `+W_a λ` and
+//!   `−W_b λ`; skipped once the separation or `sin(φ/2)` exceeds the break
+//!   thresholds. Rack and pinion: `C = s − ratio·φ` (`s` the rack's travel
+//!   along its axis and `φ` the pinion's turn about its axis this step),
+//!   `w = w_lin + ratio² w_ang`. Mouse: a spring-damper
+//!   `F = clamp(k d − c (v·n), ±max_force)` toward the target applied as the
+//!   position step `F dt² / m`.
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; compliance m/N
+//!   (positional) or rad/(N m) (angular); `ratio` m/rad for the rack,
+//!   dimensionless for pulley and gear. No f32 on the path.
+//! - **保存則 (conservation)**: the weld's corrections are equal and opposite
+//!   (linear momentum, and `I_a Δθ_a + I_b Δθ_b = 0` for any inertia,
+//!   isotropic or tilted); the pulley and rack transmit the row impulse through
+//!   the ratio, so momentum is exchanged with the ground anchors and the
+//!   pinion axis rather than conserved between the two bodies; the gear
+//!   exchanges angular impulse in the ratio; the mouse joint is an external
+//!   force. Energy is not conserved: a projection removes the gap, the mouse
+//!   damper dissipates, and a compliant pulley stretches for good (the gap
+//!   left becomes the next step's rest total).
+//! - **適用範囲 (range)**: two rigid bodies (one for the mouse), one solve
+//!   per substep, 3D. The gear and rack read the rotation since the previous
+//!   pose with the small-angle form `θ ≈ 2 (xyz · axis)` (0.17 % low at
+//!   0.2 rad per step), so they hold for small per-step turns; the pulley
+//!   moves nothing when both ropes have zero length; a rigid weld closes a
+//!   small angular error in one solve, and for nearly locked tilted axes the
+//!   eigenvalue damping keeps each turn under `max(4|θ|, 1/8 rad)` or applies
+//!   nothing (a fixed, deterministic number of damping steps); static bodies
+//!   are not moved; nothing is clamped otherwise. No substep sweep yet.
+//! - **近似 (approximations)**: the gear measures twist about world `z` only
+//!   and does not consult the hinge joints it names; the rack ignores rotation
+//!   about other axes; the pulley and rack rows are positional only (no
+//!   lever-arm rotation from the anchors); no rope slack, friction or inertia
+//!   of the pulley or gear; the mouse joint damps the velocity along the pull
+//!   only; the pulley has no persistent rest length in [`solve_extra_joints`].
+//! - **検証 (validation)**: `tests/audit_joint_extra.rs::
+//!   pulley_solver_restores_the_total_rope_length`,
+//!   `::pulley_to_length_uses_the_ratio_in_the_gradient_and_effective_mass`
+//!   (moves of 0.2 and 0.4 exactly), `::pulley_to_length_does_not_pull_a_slack_rope`,
+//!   `::weld_position_correction_is_split_by_inverse_mass` (0.75),
+//!   `::weld_compliance_softens_the_position_correction`,
+//!   `::rigid_weld_closes_a_small_angular_error_in_one_projection`,
+//!   `::weld_angular_correction_is_split_by_inverse_inertia`,
+//!   `::weld_correction_conserves_angular_momentum_for_tilted_anisotropic_bodies`,
+//!   `::rigid_weld_closes_a_tilted_anisotropic_error_in_one_solve`,
+//!   `::rack_and_pinion_static_pinion_pulls_the_rack_back`,
+//!   `::rack_and_pinion_consistent_motion_is_untouched`,
+//!   `::rack_and_pinion_constraint_is_signed`,
+//!   `::rack_and_pinion_uses_the_axis_inverse_inertia`,
+//!   `::gear_solver_reduces_the_signed_angle_residual`,
+//!   `::mouse_spring_moves_the_body_by_f_dt_squared_over_m`,
+//!   `::mouse_step_scales_with_dt_squared`, `::mouse_clamp_and_mass_scaling`;
+//!   `tests/analytic_joint_extra_wiring.rs::total_length_exact_pythagorean_closed_form`,
+//!   `::set_target_then_solve_moves_body_by_exact_spring_impulse`,
+//!   `::solve_extra_joints_clamps_to_max_force`,
+//!   `::with_break_torque_breaks_above_and_holds_below_sin_pi_over_6`,
+//!   `::with_break_force_holding_weld_lands_exactly_on_anchor`.
+//!   validation missing: a pulley with two hanging masses against the Atwood
+//!   closed form `a = (m₁ − m₂) g / (m₁ + m₂)` over many steps.
+//!   validation missing: a gear pair's angular-rate ratio over many steps, and
+//!   the mouse spring's oscillation period (the oracles above pin single
+//!   projections only; no time integration against a closed form).
+//! - **段 (tiers)**: L0 only.
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::motor::shortest_arc;

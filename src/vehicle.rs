@@ -10,6 +10,96 @@
 //! stopping distances, cornering, wheel spin, ABS, tyre models, road
 //! surfaces or weather, use [`crate::vehicle_dynamics`].
 //!
+//! # MODEL — frame-coupled wheel, suspension and drive forces (legacy)
+//!
+//! - **方程式 (equations)**: per wheel, a vertical probe of the attachment
+//!   point against the plane `y = VehicleConfig::ground_height`: contact
+//!   while the height above the plane is below `rest + radius`, compression
+//!   ratio `c = 1 − (height − radius) / rest` clamped to `[0, 1]`; strut
+//!   `k (1 + p c) c + k_bs max(0, c − c_bs) − d v_up` (spring, progressive
+//!   rate `p`, bump stop, damper on the chassis velocity along the body's
+//!   up axis with bump / rebound rates) along `up`; anti-roll
+//!   `k_ar (c_left − c_right)` on the pairs (0,1), (2,3), pushing the
+//!   compressed side down; drive `max_torque · throttle · gear_ratio /
+//!   (n_driven · radius)` along `forward` per driven grounded wheel; brake
+//!   `brake_force · brake` against the forward velocity while
+//!   `|v_forward| > 0.1 m/s`; lateral damping `−5000 v_right` and the
+//!   steering force `1000 |v_forward| (right sin δ + forward (cos δ − 1))`,
+//!   `δ = steering · max_steer_angle`; drag `−aero_drag |v| v`, downforce
+//!   `−downforce |v|²` along `up`. The sum is one force at the centre of
+//!   mass, applied by [`Vehicle::update`] as the impulse `F dt` at the head
+//!   of the frame or staged by [`VehicleParticipant`] in every substep.
+//!   Wheel spin is kinematic (`ω = v_forward / radius` while grounded).
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; `k`, `k_bs`,
+//!   `k_ar` N per unit compression ratio (not N/m), `d` N s/m, `aero_drag`
+//!   and `downforce` kg/m; the lateral (5000) and steering (1000) gains
+//!   are N s/m constants of the code. No `f32` on the update path.
+//! - **保存則 (conservation)**: nothing is conserved by construction: the
+//!   plane is immovable and takes no reaction, so the chassis momentum
+//!   changes by `F dt` each frame and the wheels carry no angular momentum;
+//!   energy is dissipated by the damper, brake, lateral damping and drag,
+//!   added by the drive and the spring; at rest the spring carries the
+//!   weight (`k c = m g` per wheel, a closed-form ride height).
+//! - **適用範囲 (range)**: a horizontal plane only (height fields, meshes
+//!   and SDF roads are not read); all forces at the centre of mass, so no
+//!   yaw from steering and no load transfer (COV-MBD-051); the suspension is
+//!   explicit, one impulse per frame while the world integrates gravity per
+//!   substep: at rest the frame-end vertical velocity samples `≈ −g dt / 2`
+//!   (read positions, not velocities), staged per substep the chassis
+//!   rests; stiff springs on a light chassis at a coarse `dt` leave the
+//!   stable range of the explicit coupling (bound in
+//!   [`crate::vehicle_dynamics`]), nothing clamps or reports it; a static
+//!   chassis gets no force; a wheel at or below the plane keeps full spring.
+//! - **近似 (approximations)**: no tyre model (lateral force is linear
+//!   damping, longitudinal slip is not computed, the slip fields stay 0);
+//!   no wheel inertia; constant engine torque (`EngineConfig::max_rpm`,
+//!   `engine_brake`, `num_gears` are not read); brake force independent of
+//!   load and grip; the steering force is neither Ackermann nor a slip law;
+//!   no rolling resistance, no wind. Use [`crate::vehicle_dynamics`] for
+//!   stopping distance, cornering, wheel spin, ABS, tyre and road models.
+//! - **検証 (validation)**: each force term against hand computation,
+//!   `tests/analytic_vehicle_wiring.rs::spring_force_is_stiffness_times_compression`,
+//!   `::progressive_rate_and_bump_stop_add_to_the_spring`,
+//!   `::damping_resists_velocity_with_separate_bump_and_rebound_rates`,
+//!   `::damping_uses_the_chassis_up_axis_not_world_y`,
+//!   `::anti_roll_bar_acts_on_the_compression_difference`,
+//!   `::drive_force_is_torque_over_radius_split_across_driven_grounded_wheels`,
+//!   `::brake_force_opposes_motion_only_above_a_small_speed`,
+//!   `::lateral_friction_and_steering_follow_the_coded_model`,
+//!   `::aero_drag_and_downforce_scale_with_speed_squared`,
+//!   `::wheel_spin_and_speed_readouts`, `::grounded_wheels_follow_the_raycast_window`,
+//!   `::ground_window_edges_are_exclusive_with_exact_numbers`,
+//!   `::wheel_below_the_ground_keeps_the_full_spring_force`,
+//!   `::shifting_is_clamped_to_the_gear_table`, `::static_chassis_is_left_alone`;
+//!   statics (ride height radius + rest (1 − m g / k) to 0.01) and the
+//!   first frame (Δv = T gear / (r m) dt),
+//!   `tests/default_configs.rs::wheel_config_default_static_deflection_matches_mg_over_k`,
+//!   `::engine_config_default_full_throttle_accelerates_by_closed_form_first_frame`;
+//!   the substep path, `tests/analytic_vehicle_participant.rs::suspension_rests_with_zero_frame_end_velocity`
+//!   (ride height to 1e-9 m, frame-end vertical velocity below 1e-12 m/s),
+//!   `::drag_follows_the_closed_form_to_first_order_in_the_substep`
+//!   (v = v0 / (1 + (c/m) v0 t), error ratio 4.0 from 1 to 4 substeps),
+//!   `::throttle_drive_follows_the_tanh_closed_form` (terminal speed
+//!   v* = √(F/c), v = v* tanh(t √(F c) / m) to 1e-6),
+//!   `::an_action_is_held_for_the_whole_next_frame`, `::actions_are_world_state_replay_and_fork`
+//!   (replay bit for bit), `::snapshot_fork_and_another_vehicle_is_refused`,
+//!   `::bad_inputs_are_faults_that_change_nothing`, `::a_static_chassis_is_left_alone`,
+//!   `::drive_digest_is_pinned` (golden); the bits of a drive,
+//!   `tests/vehicle_update_bits.rs::drop_and_turn_bits_are_pinned`,
+//!   `::airborne_start_bits_are_pinned`; settling grounded,
+//!   `tests/integration_physics.rs::test_vehicle_ground_contact`.
+//!   validation missing: suspension natural frequency and damping ratio
+//!   against the spring–damper closed form (only the static deflection and
+//!   the rest state are pinned, no sweep of dt or of k / m);
+//!   validation missing: stopping distance under the constant brake force
+//!   (s = M v0² / (2 F_b), no oracle yet);
+//!   validation missing: cornering radius (no closed form applies to the
+//!   coded steering force, no oracle yet).
+//! - **段 (tiers)**: L0 only — a separate model, not a tier of
+//!   [`crate::vehicle_dynamics`]: its lateral and steering forces are linear
+//!   damping rather than a reduced form of the tyre law, so no error against
+//!   that model is measured.
+//!
 //! # Components
 //!
 //! - **Wheel**: vertical contact test against the ground plane; the spin

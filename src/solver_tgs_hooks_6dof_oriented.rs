@@ -17,6 +17,91 @@
 //! consumers that need a full symmetric world-frame inertia can rebuild one before
 //! each sub-step using [`crate::math::Mat3Fix`].
 //!
+//! # MODEL — 6-DOF contact, Coulomb friction and distance joint (impulse PGS)
+//!
+//! - **方程式 (equations)**: per sub-step `h`, `begin_substep` sets
+//!   `v += g h` on every dynamic body and integrates the torque-free
+//!   rotation by the symplectic splitting of `crate::gyroscopic` (`ω` at
+//!   the end of the sub-step; `None` for isotropic inertia keeps `ω`), then
+//!   stores the Newton restitution bias `b = −e · v_n` for `v_n < 0` and
+//!   re-applies the cached impulse. Each velocity iteration is projected
+//!   Gauss–Seidel: normal `Δλ_n = (b − v_n) m_n`, accumulated and clamped
+//!   `λ_n ≥ 0`; tangents `Δλ_t = −v_t m_t` per axis, accumulated and
+//!   clamped to the disc `λ_t1² + λ_t2² ≤ (μ λ_n)²`; `v_rel = v_b + ω_b × r_b
+//!   − v_a − ω_a × r_a`, effective mass
+//!   `m_n = 1 / (w_a + w_b + (r_a × n)·I_a⁻¹(r_a × n) + (r_b × n)·I_b⁻¹(r_b × n))`
+//!   with `I⁻¹ = R diag(I_local⁻¹) Rᵀ`; an impulse `J` changes `v` by `w J`
+//!   and `ω` by `I⁻¹ (r × J)`, equal and opposite on the pair. A distance
+//!   joint is bilateral: `Δλ = −v_n m_n` along the current anchor axis.
+//!   Each position iteration is Baumgarte: contact `Δx = β (d − slop) m_n n`
+//!   split by inverse mass (positions only, no rotation, no velocity
+//!   change), joint `Δx = β (|Δa| − L ∓ slop) m_n n` beyond `slop`.
+//!   `end_substep`: `p += v h` (checked) and `q ← exp(½ h (ω − ω_free)) ⊗
+//!   q_free` (exact exponential map; `q ← exp(½ h ω) ⊗ q` without a split).
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N·s, rad; `g` default
+//!   `(0, −9.81, 0)` m/s², `slop` 0.005 m, `β` 0.2 and `μ`, `e`
+//!   dimensionless; quaternions unit. `f32` is on the path in the friction
+//!   cone: the scale `μ λ_n / √(λ_t1² + λ_t2²)` is computed in `f32`
+//!   (`sqrt`) and converted back, so determinism is not claimed for a
+//!   clamped tangential impulse (a golden pins the recorded value).
+//! - **保存則 (conservation)**: contact and joint impulses are equal and
+//!   opposite through the lever arms, so linear momentum of a dynamic pair
+//!   is conserved and angular momentum about the contact point is
+//!   consistent with `r_a`, `r_b`; the free rotation conserves `|L_b|` and
+//!   the world angular momentum up to rounding, energy of order `h²`
+//!   without drift (`crate::gyroscopic`). Dissipated: energy by friction
+//!   (work of the clamped impulse over the slip) and by `e < 1`; the
+//!   Baumgarte pass moves positions without a momentum change (its energy
+//!   effect is not measured).
+//! - **適用範囲 (range)**: rigid bodies with diagonal (principal) inertia;
+//!   dry point contacts whose normal, lever arms, depth, `μ` and `e` are
+//!   fixed for the whole frame; any sub-step rotation (no small-angle
+//!   limit). A pair whose effective mass is `≤ 0` and a joint whose anchors
+//!   coincide are skipped for that iteration; a position step whose
+//!   `|v h|` or `|p + v h|` reaches `2⁶³` leaves `p` unchanged and sets the
+//!   sticky `overflow` flag. Convergence in the sub-step count is measured
+//!   only for the orientation (exact at 1 / 2 / 4 / 8); for contact and
+//!   joint scenes no sweep yet.
+//! - **近似 (approximations)**: static and kinetic `μ` equal, isotropic
+//!   cone, no rolling or spinning resistance, no compliance; one contact
+//!   point per pair, its frame and depth frozen over the frame's sub-steps
+//!   (the position pass sees the start-of-frame depth every sub-step);
+//!   restitution from the sub-step's pre-iteration normal speed; Baumgarte
+//!   stabilisation with set values of `β`, `slop` (not derived), applied
+//!   to positions only; the joint is a distance rod (other joints are the
+//!   world's); semi-implicit Euler for gravity and position.
+//! - **検証 (validation)**: free fall `tests/analytic_tgs_wiring.rs::
+//!   free_fall_matches_semi_implicit_euler_exactly_on_both_backends`
+//!   (exact), resting sphere-on-sphere contact
+//!   `::resting_contact_settles_and_stays_settled_under_tgs`,
+//!   `::resting_contact_does_not_accelerate_downward_through_the_ground`
+//!   (normal sign), the distance joint
+//!   `::tgs_joint_scene_keeps_the_orbiter_near_target_distance` (band from
+//!   both passes), `::tgs_joint_already_at_target_distance_with_zero_velocity_stays_bit_exact`,
+//!   `::tgs_joint_starting_violated_with_zero_velocity_is_corrected_by_position_pass`;
+//!   kinetic friction
+//!   `tests/analytic_tgs_backend_coverage.rs::
+//!   an_absolute_friction_modifier_sets_the_sliding_deceleration`
+//!   (`v = v0 − μ g t`, 3 %); the cone scale bit for bit
+//!   `tests/determinism_law_outputs.rs::law_output_tgs_oriented_6dof_hooks`;
+//!   orientation `tests/analytic_tgs_rotation.rs::
+//!   tgs_isotropic_rotation_follows_the_closed_form_angle` (`|ω| t`, no
+//!   `h²` lag, 1e-9), `::tgs_anisotropic_principal_spin_is_unchanged`,
+//!   `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t`,
+//!   `tests/analytic_gyroscopic.rs::f_tgs_contact_change_of_omega_reaches_the_orientation`
+//!   (the solve's `Δω` reaches `q` on top of the split); the warm start
+//!   `tests/analytic_solver_tgs_dispatch_wiring.rs::sweep_evicts_a_contact_that_stops_recurring`.
+//!   validation missing: coefficient of restitution of a two-body impact
+//!   (separation speed `= e ×` approach speed) through the TGS path.
+//!   validation missing: momentum conservation across a contact impulse
+//!   between two dynamic bodies under TGS.
+//!   validation missing: static friction hold (`tan θ = μ`, `F = μ m g`).
+//!   validation missing: incline sliding `a = g (sin θ − μ cos θ)` and
+//!   rolling `5/7 g sin θ` under TGS.
+//!   validation missing: convergence sweep of a contact scene in `h`.
+//! - **段 (tiers)**: L0 only — this hook is the reference tier of the TGS
+//!   contact model; no lighter tier exists.
+//!
 //! # Visibility
 //!
 //! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the

@@ -21,6 +21,85 @@
 //! equation, orbital elements, vis-viva) are [`crate::kepler`]; one fixed
 //! attractor acting on world bodies is [`crate::force::ForceField::Point`].
 //!
+//! # MODEL — direct-sum gravitation and the leapfrog
+//!
+//! - **方程式 (equations)**: Newton's law of gravitation summed over every
+//!   pair, with optional Plummer softening `ε`:
+//!   `aᵢ = Σ_{j≠i} G·mⱼ·(xⱼ − xᵢ) / (|xⱼ − xᵢ|² + ε²)^{3/2}`, potential
+//!   `U = −Σ_{i<j} G·mᵢ·mⱼ / √(|xⱼ − xᵢ|² + ε²)` ([`DirectSum`], `O(N²)` per
+//!   evaluation, no tree or multipole). Time integration is the
+//!   kick–drift–kick leapfrog (velocity Verlet): `v += a·h/2`, `x += v·h`,
+//!   recompute `a`, `v += a·h/2` ([`VelocityVerlet`], and
+//!   [`DirectSum::step_world`] with [`PhysicsWorld::step`] as the drift).
+//!   [`NBodyParticipant`] stages the same pair forces into a world substep,
+//!   where the world's velocity update makes the scheme symplectic Euler at
+//!   the substep width (first order; the swing of a circular pair is `h/2`).
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg; `G` in m³ kg⁻¹ s⁻²; energy
+//!   in J, momentum in kg m/s. No f32 on the path.
+//! - **保存則 (conservation)**: each pair force is computed once and applied
+//!   with opposite signs, so the staged forces sum to exactly zero and linear
+//!   momentum is conserved to the rounding of `a·h` (`2⁻⁶⁴` per operation;
+//!   measured `≤ 1e-15` over 2000 steps standalone, `3.8e-15` over 25 600
+//!   substeps through the world); angular momentum is conserved by the
+//!   central force to the same rounding (`< 2e-14` through the world).
+//!   Nothing dissipates energy: the symplectic scheme keeps the energy error
+//!   bounded (the last of 20 periods within 1.2× the first, no secular
+//!   drift) and the error falls by ≈ 4 per halving of `h` (second order); the
+//!   leapfrog is time reversible to `1e-11` after 3000 + 3000 steps.
+//! - **適用範囲 (range)**: tens to a few thousand bodies (`O(N²)`), 3D, any
+//!   `dt` that resolves the closest approach: the one-period closure of a
+//!   circular pair is `2π h²/3` and its separation swings `h²/2` (`h = ω dt`),
+//!   checked at 200 / 400 / 800 / 1000 steps per period. `1/(d² + ε²)^{3/2}`
+//!   must stay below `≈ 9·10¹⁸`, i.e. a separation above `≈ 10⁻⁶` with
+//!   `ε = 0`; two bodies at exactly the same position with `ε = 0` are
+//!   skipped (no force, no potential), not an error. `G ≤ 0`, `ε < 0`, a
+//!   negative mass or mismatched slice lengths are refused with
+//!   [`NBodyError`] and nothing is written. Through the world a product or sum
+//!   that leaves the range of `Fix128` is a [`ParticipantFault::OutOfRange`]:
+//!   nothing is staged and the bodies move as without the law. `dt ≤ 0` in
+//!   `step_world` does nothing; `VelocityVerlet::step` with `dt < 0`
+//!   integrates backward.
+//! - **近似 (approximations)**: point masses (a Plummer sphere when `ε > 0`);
+//!   no relativistic terms, no tidal or finite-size effects, no collisions or
+//!   mergers, no tree / multipole / adaptive step; static and kinematic bodies
+//!   neither feel nor exert the attraction (no finite mass); the frame-head
+//!   kick (`kick_bodies` before `step`) is first order only; mirror and
+//!   rotation symmetry hold to rounding only (`Fix128` products round toward
+//!   −∞).
+//! - **検証 (validation)**: `tests/analytic_nbody.rs::
+//!   two_body_acceleration_is_inverse_square` (Newton `G m / d²`, `1e-15`),
+//!   `::plummer_softened_force_and_potential` (exact `0.048` / `−0.4`),
+//!   `::accelerations_superpose`, `::circular_two_body_matches_leapfrog_closed_form`
+//!   (closure `2π h²/3`, swing `h²/2`), `::leapfrog_is_second_order` (error
+//!   ratio in `[3, 5]`), `::energy_error_is_bounded_and_momentum_is_conserved`
+//!   (`e = 0.5`, 20 periods), `::figure_eight_three_body_orbit_is_periodic`
+//!   (Chenciner–Montgomery choreography, return `< 1e-6`),
+//!   `::step_world_follows_the_leapfrog_closed_form` (world vs standalone
+//!   `1e-11`), `::frame_head_kick_is_first_order`,
+//!   `::step_world_keeps_slow_bodies_awake` (radial free-fall series),
+//!   `::integration_is_bit_reproducible`; `tests/indep_orbit_nbody.rs::
+//!   eccentric_pair_converges_to_kepler_at_second_order` (Kepler orbit,
+//!   `e = 0.3`, ratio in `[3.5, 4.5]`),
+//!   `::test_particle_around_fixed_mass_follows_kepler` (`e = 0.6`, one period
+//!   within `2e-6 a`), `::leapfrog_is_time_reversible`,
+//!   `::total_momentum_is_conserved`,
+//!   `::figure_eight_is_a_choreography_with_zero_angular_momentum`,
+//!   `::figure_eight_energy_error_is_second_order`,
+//!   `::acceleration_is_minus_gradient_of_potential_over_mass`;
+//!   `tests/analytic_nbody_participant.rs::
+//!   staged_forces_are_equal_and_opposite_and_match_the_direct_sum`,
+//!   `::swing_is_half_the_substep_width` (symplectic Euler at the substep),
+//!   `::momenta_are_conserved_and_energy_is_bounded` (three bodies, 100 time
+//!   units), `::static_and_kinematic_bodies_neither_feel_nor_exert`,
+//!   `::a_slow_attraction_keeps_bodies_awake`,
+//!   `::an_out_of_range_force_is_a_fault_that_changes_nothing`,
+//!   `::three_body_scene_digest_is_pinned` (determinism golden on every CI
+//!   platform). No standard benchmark of the rule is missing for this
+//!   module: closed orbits, energy, momentum and the order of accuracy are
+//!   all pinned.
+//! - **段 (tiers)**: L0 only — the direct sum is the reference; no tree or
+//!   multipole tier exists.
+//!
 //! # Softening
 //!
 //! `ε > 0` replaces the point mass by a Plummer sphere: the force is finite
