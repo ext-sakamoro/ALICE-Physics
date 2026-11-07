@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5948 |
+| 🟢 Not ignored (run by CI) | 5949 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6044** |
+| **Total** | **6045** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -151,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5948)
+## 🟢 Not ignored (5949)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -309,6 +309,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_fem_mesh_wiring.rs` | 15 |
 | `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
+| `analytic_wind_zone_participant.rs` | 15 |
 | `audit_fsi_advanced.rs` | 15 |
 | `audit_modal.rs` | 15 |
 | `audit_sdf_fem_mesh.rs` | 15 |
@@ -324,7 +325,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_smoke_fire_wiring.rs` | 14 |
 | `analytic_thermal_wiring.rs` | 14 |
 | `analytic_vehicle_scenario.rs` | 14 |
-| `analytic_wind_zone_participant.rs` | 14 |
 | `analytic_world_query_margins.rs` | 14 |
 | `audit_box_collider.rs` | 14 |
 | `audit_cylinder.rs` | 14 |
