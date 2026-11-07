@@ -485,6 +485,108 @@ mod tests {
     /// term just above the skip threshold must not be doubled by `tau^2`
     /// leaving Fix128.
     #[test]
+    fn principal_axes_keep_the_sign_of_terms_of_2_62_and_above() {
+        // oracle: a diagonal tensor is its own decomposition, and [[a, s], [s, a]] has the moments
+        // a + s and a - s on the axes (1, 1, 0) and (1, -1, 0) over sqrt 2. A symmetric term of 2^62
+        // doubled in Fix128 wraps to -2^63, which turned its sign.
+        let p = |k: u32| Fix128::from_int(1i64 << k);
+        let max = Fix128::from_raw(i64::MAX, u64::MAX);
+        for big in [p(62), p(62) + Fix128::ONE, max] {
+            let (moments, axes) = principal_axes(Mat3Fix::from_cols(
+                Vec3Fix::new(big, Fix128::ZERO, Fix128::ZERO),
+                Vec3Fix::new(Fix128::ZERO, p(61), Fix128::ZERO),
+                Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+            ));
+            // the arithmetic is scaled to the largest term, so a moment is exact to a few units
+            // of 2^-64 of that term
+            let tolerance = big.to_f64() * 2f64.powi(-62);
+            for (got, want) in [
+                (moments.x, big),
+                (moments.y, p(61)),
+                (moments.z, Fix128::ONE),
+            ] {
+                assert!(
+                    (got - want).to_f64().abs() <= tolerance,
+                    "{big:?}: {got:?} against {want:?}"
+                );
+            }
+            assert_eq!(axes, Mat3Fix::IDENTITY);
+        }
+
+        let (moments, axes) = principal_axes(Mat3Fix::from_cols(
+            Vec3Fix::new(p(61), p(62), Fix128::ZERO),
+            Vec3Fix::new(p(62), p(61), Fix128::ZERO),
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+        ));
+        let relative = |got: Fix128, want: f64| ((got.to_f64() - want) / want).abs();
+        let unit = 2f64.powi(61);
+        assert!(relative(moments.x, -unit) < 1e-12 || relative(moments.y, -unit) < 1e-12);
+        assert!(relative(moments.x, 3.0 * unit) < 1e-12 || relative(moments.y, 3.0 * unit) < 1e-12);
+        let along = if moments.x > moments.y {
+            axes.col0
+        } else {
+            axes.col1
+        };
+        assert!((along.x.to_f64().abs() - core::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+        assert!(
+            (along.x.to_f64() - along.y.to_f64()).abs() < 1e-12,
+            "{along:?}"
+        );
+    }
+
+    #[test]
+    fn half_sum_is_the_floor_of_the_half_sum_at_the_lowest_bit() {
+        // oracle: the smallest unit is 2^-64. Two odd values halve to a whole unit between them,
+        // which the halves alone lose; (1 + 1) / 2 = 1, (1 + 0) / 2 floors to 0, and
+        // (-1 + -1) / 2 = -1, (-1 + 0) / 2 floors to -1, in units of 2^-64
+        let unit = Fix128 { hi: 0, lo: 1 };
+        let minus = Fix128 {
+            hi: -1,
+            lo: u64::MAX,
+        };
+        assert_eq!(half_sum(unit, unit), unit);
+        assert_eq!(half_sum(unit, Fix128::ZERO), Fix128::ZERO);
+        assert_eq!(half_sum(minus, minus), minus);
+        assert_eq!(half_sum(minus, Fix128::ZERO), minus);
+        assert_eq!(half_sum(unit, minus), Fix128::ZERO);
+    }
+
+    #[test]
+    fn principal_axes_symmetrise_as_the_floor_of_the_half_sum_below_2_62() {
+        // oracle: (x + y) * 1/2 in Fix128, the form this replaced, exact while x + y fits. A tensor
+        // with odd raw values either side of the diagonal gives the same answer as its symmetric
+        // part written out with that form.
+        let mut state = 0x5359_4d31_u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            // odd raw values around 1, the size the rounding of a half reaches the result at
+            Fix128::from_raw(((state >> 62) as i64) - 2, (state << 2) | 1)
+        };
+        let half = Fix128::from_ratio(1, 2);
+        let mut odd_pairs = 0u32;
+        for _ in 0..256 {
+            let (xy, yx, xz, zx, yz, zy) = (next(), next(), next(), next(), next(), next());
+            let (xx, yy, zz) = (next(), next(), next());
+            let asymmetric = Mat3Fix::from_cols(
+                Vec3Fix::new(xx, yx, zx),
+                Vec3Fix::new(xy, yy, zy),
+                Vec3Fix::new(xz, yz, zz),
+            );
+            let (sxy, sxz, syz) = ((xy + yx) * half, (xz + zx) * half, (yz + zy) * half);
+            let symmetric = Mat3Fix::from_cols(
+                Vec3Fix::new(xx, sxy, sxz),
+                Vec3Fix::new(sxy, yy, syz),
+                Vec3Fix::new(sxz, syz, zz),
+            );
+            assert_eq!(principal_axes(asymmetric), principal_axes(symmetric));
+            odd_pairs += 3;
+        }
+        assert_eq!(odd_pairs, 768);
+    }
+
+    #[test]
     fn principal_axes_resolve_a_tiny_off_diagonal_term() {
         for k in [30u32, 36, 40] {
             let off = Fix128::ONE / Fix128::from_int(1i64 << k);
@@ -514,6 +616,17 @@ mod tests {
     }
 }
 
+/// `⌊(a + b) / 2⌋` for any two values: each halved first, so the sum stays in range, and the unit
+/// lost when both are odd put back
+fn half_sum(a: Fix128, b: Fix128) -> Fix128 {
+    a.half()
+        + b.half()
+        + Fix128 {
+            hi: 0,
+            lo: a.lo & b.lo & 1,
+        }
+}
+
 /// The principal moments and principal axes of a symmetric 3×3 tensor (an inertia
 /// tensor): `tensor = R · diag(moments) · Rᵀ`, with `R` the returned matrix whose
 /// **columns** are the axes — orthonormal and right-handed (`det R = +1`).
@@ -523,9 +636,12 @@ mod tests {
 /// angles never overflow whatever the magnitudes, and an off-diagonal term below
 /// the resolution of the scaled arithmetic is left alone (an already diagonal
 /// tensor, or a sphere's repeated moments, gives the identity frame). The moments
-/// come back in the order of the axes; they are not sorted.
+/// come back in the order of the axes; they are not sorted. A moment is exact to a few units of
+/// `2⁻⁶⁴` of the largest term, since the arithmetic is scaled to it.
 ///
-/// Only the lower triangle's symmetric part is read: `(I + Iᵀ)/2`.
+/// Only the symmetric part is read: `(I + Iᵀ)/2`, the exact floor of the half sum for every term
+/// of `Fix128`, so it does not overflow. A symmetrised term of exactly `-2⁶³` is outside what the
+/// scaling can read, since its absolute value is not a `Fix128`; an inertia tensor has no such term.
 #[must_use]
 pub fn principal_axes(tensor: Mat3Fix) -> (Vec3Fix, Mat3Fix) {
     const SWEEPS: usize = 24;
@@ -534,12 +650,11 @@ pub fn principal_axes(tensor: Mat3Fix) -> (Vec3Fix, Mat3Fix) {
         [tensor.col0.y, tensor.col1.y, tensor.col2.y],
         [tensor.col0.z, tensor.col1.z, tensor.col2.z],
     ];
-    let half = Fix128::from_ratio(1, 2);
     let mut a = [[Fix128::ZERO; 3]; 3];
     let mut scale = Fix128::ZERO;
     for r in 0..3 {
         for c in 0..3 {
-            a[r][c] = (t[r][c] + t[c][r]) * half;
+            a[r][c] = half_sum(t[r][c], t[c][r]);
             if a[r][c].abs() > scale {
                 scale = a[r][c].abs();
             }
