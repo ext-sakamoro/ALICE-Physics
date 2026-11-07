@@ -7219,8 +7219,8 @@ impl PhysicsWorld {
             return false;
         }
 
-        // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep + overflow + fingerprint)
-        let expected = 12 + count * 208 + count * 5 + 1 + 8;
+        // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep 17 + overflow + fingerprint)
+        let expected = 12 + count * 208 + count * 17 + 1 + 8;
         if data.len() < expected {
             return false;
         }
@@ -9681,7 +9681,7 @@ mod tests {
         let src = snapshot_world();
         let bytes = src.serialize_state();
         // v3: header 12 + body ごと 208 + body ごと sleep 5 + world ごと flag 1 + fingerprint 8
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 5 + 1 + 8);
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -9766,7 +9766,7 @@ mod tests {
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
             assert!(dst.deserialize_state(&bad), "sleep byte {pos}");
-            let i = (pos - body_end) / 5;
+            let i = (pos - body_end) / 17;
             assert_ne!(
                 dst.islands.sleep_data[i], src.islands.sleep_data[i],
                 "sleep byte {pos} は body {i} の sleep_data を変えるべき"
@@ -9860,7 +9860,7 @@ mod tests {
         one.extend_from_slice(&0u16.to_le_bytes());
         one.extend_from_slice(&1u32.to_le_bytes());
         one.extend_from_slice(&bytes[12..12 + 208]);
-        one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 5]);
+        one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 17]);
         one.push(0); // v2: flag
         one.extend_from_slice(&exact.population_fingerprint().to_le_bytes()); // v3: fingerprint
         assert!(exact.deserialize_state(&one));

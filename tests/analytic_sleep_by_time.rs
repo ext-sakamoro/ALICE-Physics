@@ -29,7 +29,10 @@ fn steps_until_asleep(dt: Fix128, max: usize) -> Option<usize> {
         gravity: Vec3Fix::ZERO,
         ..SolverConfig::default()
     });
-    let i = w.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), Fix128::ONE);
+    let i = w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+        Fix128::ONE,
+    );
     for n in 1..=max {
         w.step(dt);
         if w.is_sleeping(i) {
@@ -65,7 +68,10 @@ fn a_sequence_of_mixed_steps_sleeps_when_their_sum_reaches_one_second() {
         gravity: Vec3Fix::ZERO,
         ..SolverConfig::default()
     });
-    let i = w.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), Fix128::ONE);
+    let i = w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+        Fix128::ONE,
+    );
     for _ in 0..30 {
         w.step(Fix128::from_ratio(1, 60));
     }
@@ -82,11 +88,17 @@ fn a_sequence_of_mixed_steps_sleeps_when_their_sum_reaches_one_second() {
         gravity: Vec3Fix::ZERO,
         ..SolverConfig::default()
     });
-    let j = w.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), Fix128::ONE);
+    let j = w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
+        Fix128::ONE,
+    );
     for _ in 0..42 {
         w.step(Fix128::from_ratio(1, 60));
     }
     assert!(!w.is_sleeping(j), "0.7 s idle: awake");
     w.step(Fix128::from_ratio(1, 2));
-    assert!(w.is_sleeping(j), "0.7 + 0.5 s: asleep (1 s reached within half a step)");
+    assert!(
+        w.is_sleeping(j),
+        "0.7 + 0.5 s: asleep (1 s reached within half a step)"
+    );
 }
