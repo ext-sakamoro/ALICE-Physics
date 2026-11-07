@@ -247,7 +247,8 @@ fn advance_then_restore_matches_the_older_snapshot() {
 /// touching each other), under the same loose sleep config as `base_scene`.
 /// Falling under gravity onto the big sphere and settling takes well under
 /// 60 steps; by 120 steps (`frames_to_sleep: 3` past settling) all four are
-/// asleep. Unlike `base_scene`'s two bodies, which only hang from a joint
+/// asleep. The balls cannot turn (`inv_inertia = 0`): a ball with inertia
+/// would roll down the big sphere's curve under the outer two and never rest. Unlike `base_scene`'s two bodies, which only hang from a joint
 /// and free-fall forever if nothing is actually resting them, these bodies
 /// reach, and stay at, genuine rest — the scenario `remove_body`'s sleep
 /// reset actually needs to disturb anything.
@@ -267,10 +268,15 @@ fn resting_scene(kind: Broadphase) -> PhysicsWorld {
     w.add_body_with_radius(RigidBody::new_static(v3(0.0, -10.0, 0.0)), big_radius);
     for i in 0..4 {
         let x = f64::from(i) * 2.0 - 3.0; // -3, -1, 1, 3
-        w.add_body_with_radius(
+        let b = w.add_body_with_radius(
             RigidBody::new_dynamic(v3(x, 0.5, 0.0), Fix128::ONE),
             small_radius,
         );
+        // balls that cannot turn: the big sphere's surface is tilted by up
+        // to 17° under the outer two, and a ball with inertia rolls down
+        // such a slope (the contact friction acts at the contact point)
+        // instead of resting, which is what this scene must do
+        w.bodies[b].inv_inertia = Vec3Fix::ZERO;
     }
     w
 }
