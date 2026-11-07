@@ -147,6 +147,43 @@ fn terminal_velocity_in_an_upward_wind() {
     }
 }
 
+/// The relative speed after `steps` single-substep frames of width `h`, for a body of
+/// mass 2 starting at rest in a wind of `U = 4` with `k = 1`, so `x0 = k·U·h/m = 2h`;
+/// `None` when a step faults (the force left the fixed-point range).
+fn relative_speeds(h: f64, steps: usize) -> Option<Vec<f64>> {
+    let mut w = world(1, Vec3Fix::ZERO, SolverBackend::Xpbd);
+    w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, fx(2.0)));
+    w.add_participant(resident(zone(big_box(), v(1.0, 0.0, 0.0), 4.0, 0.0, 0.0)))
+        .expect("register");
+    let mut out = Vec::new();
+    for _ in 0..steps {
+        w.try_step(fx(h)).ok()?;
+        out.push(4.0 - f64_of(w.bodies[0].velocity.x));
+    }
+    Some(out)
+}
+
+/// oracle (the explicit step's range, both sides close in): one substep maps `u` to
+/// `u·(1 − c·h·|u|)` with `c = k/m`. At `x0 = 1.9` the speed flips sign and
+/// shrinks, at `x0 = 2.1` it grows, at `x0 = 0.9` it keeps its sign and at
+/// `x0 = 1.1` it flips: the bounds `x < 2` and `x < 1` of the module doc.
+#[test]
+fn the_explicit_drag_is_bounded_below_x_2_and_grows_above() {
+    let below = relative_speeds(0.95, 40).expect("bounded below 2");
+    assert!(below.iter().all(|u| u.abs() < 4.0), "{below:?}");
+    assert!(below[39].abs() < 0.5, "{below:?}");
+    assert!(below[0] < 0.0, "x0 = 1.9 flips the sign: {below:?}");
+    match relative_speeds(1.05, 4) {
+        None => {}
+        Some(above) => assert!(above[3].abs() > 4.0, "x0 = 2.1 grows: {above:?}"),
+    }
+    assert!(relative_speeds(0.45, 40)
+        .expect("x0 = 0.9")
+        .iter()
+        .all(|u| *u > 0.0));
+    assert!(relative_speeds(0.55, 1).expect("x0 = 1.1")[0] < 0.0);
+}
+
 /// oracle (the force of one substep, by hand in `f64`): with a gust at clock
 /// `t`, a body at velocity `(1, 2, 0)` in a wind along `(0.6, 0, 0.8)` of
 /// `3 + 0.5·sin(2π·2·t)` takes `k·|w − v|·(w − v)`. The clock is advanced by
