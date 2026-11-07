@@ -12,7 +12,7 @@
 
 use crate::binding_api;
 use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
-use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::math::{QuatFix, Vec3Fix};
 use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 // ============================================================================
@@ -243,9 +243,9 @@ impl AliceVec3 {
     #[cfg(test)]
     fn to_vec3fix_for_test(self) -> Vec3Fix {
         Vec3Fix::new(
-            Fix128::from_f64(self.x),
-            Fix128::from_f64(self.y),
-            Fix128::from_f64(self.z),
+            crate::math::Fix128::from_f64(self.x),
+            crate::math::Fix128::from_f64(self.y),
+            crate::math::Fix128::from_f64(self.z),
         )
     }
 
@@ -2085,6 +2085,7 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 
 #[cfg(test)]
 mod tests {
+    use crate::math::Fix128;
     use super::*;
 
     /// The C call builds the fluid the Rust API builds, every argument with its own value, and a
