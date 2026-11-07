@@ -89,6 +89,20 @@ def test_restore_world_brings_back_the_joint_and_refuses_with_its_kind():
     assert bytes(fresh.state_digest()) == before
 
 
+def test_a_fixed_joint_takes_a_rotation_of_any_size():
+    w = ap.PhysicsWorld()
+    a = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0)
+    b = w.add_dynamic_body(0.0, 0.0, 0.0, 1.0)
+    origin = (0.0, 0.0, 0.0)
+    assert w.add_fixed_joint(a, b, origin, origin, (8.3e15, -1.5e16, 3.1e15, -2.2e17)) >= 0
+    try:
+        w.add_fixed_joint(a, b, origin, origin, (0.0, 0.0, 0.0, 0.0))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("the zero quaternion was accepted")
+
+
 def test_a_spin_wakes_a_sleeping_body():
     # a box at rest on a floor is asleep after 240 steps; a spin makes it turn
     w = ap.PhysicsWorld()

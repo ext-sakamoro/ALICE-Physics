@@ -136,6 +136,7 @@ were introduced during that release window.
 
 ### Fixed
 - `Fix128::from_f64` / `from_f32`: -2^63 未満は debug で panic、release で符号が反転して +9.2e18 になっていた 範囲外は両側とも飽和し、全 profile で同じ結果にした 2^63 以上は `(i64::MAX, 0)` と `(i64::MAX, u64::MAX)` に分かれていたのを最大値に揃えた 範囲内の bits は変えていない NaN が 0 になることは doc に書いた契約とし、`tests/determinism_from_f64.rs` で固定する
+- C / wasm / Python の `set_rotation` と fixed joint の回転: 成分が約 3e9 を超えると長さの二乗が `Fix128` で wrap し、成功を返して違う回転や単位でない四元数になっていた (0 でない入力を断ることもあった) 回転は大きさに依らないので、最大の成分が 2^-16 から 2^30 の外なら先に割ってから正規化する その範囲の内の bit は変えない 範囲の外は、以前は wrap しなかった入力 (最大の成分が 2^30 から約 3e9、および 2^-16 未満) も bit が変わる 断るのは 0 と有限でない成分だけ
 - C / wasm / Python の `set_angular_velocity`、`set_rotation`: 眠っている物体に掛けると成功を返すのに動かなかった 動的な物体の island を起こす 角速度 0 は起こさない
 - `scripts/ci_base.py` と `scripts/test_ci_base.py` (共有 file、canonical は ALICE-DetMath): git の出力を UTF-8 で読む (`encoding="utf-8"`、これまでは locale の code page で Windows の cp1252 では非 ASCII で止まった) 試験は locale を cp1252 にした子 interpreter で非 ASCII の commit 件名を読む
 - ビューア (`web/`): body が床を突き抜けて落ち続けていた (4 秒後には画面に球が残らない) 床を静的な body 1 つ (`addStaticBody(0, -1, 0)`) から平面の当たり判定 `addStaticPlane(0, 1, 0, 0)` (描いている床 y = 0) にした 球の当たり判定の半径を描いている半径 0.5 に揃えた (`setCollisionRadius`) 床が body でなくなったので mesh と body の番号のずれ (+1) を外した `Web viewer` の smoke が 1200 step 後に全 body が床か別の body の上で止まっていることを確かめる

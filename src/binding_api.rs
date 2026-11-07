@@ -69,7 +69,14 @@ const UNIT_QUAT_LARGEST: f64 = 1_073_741_824.0;
 
 /// A finite, non-zero quaternion, normalised.
 pub(crate) fn unit_quat(x: f64, y: f64, z: f64, w: f64) -> Option<QuatFix> {
-    let largest = x.abs().max(y.abs()).max(z.abs()).max(w.abs());
+    // the largest size, by comparison only, so no value is chosen by a max of equal zeros; a NaN
+    // component leaves a NaN or a finite size that its own division then refuses
+    let mut largest = x.abs();
+    for c in [y.abs(), z.abs(), w.abs()] {
+        if c > largest {
+            largest = c;
+        }
+    }
     // Inside these sizes the squared length of four components is a `Fix128` with digits to spare.
     // Outside, it overflows or rounds to zero, and a rotation does not depend on the scale.
     // The zero quaternion and a component that is not finite give NaN here, which `finite` refuses.
@@ -1050,6 +1057,136 @@ mod tests {
             assert_eq!(unit_quat(0.0, bad, 0.0, 1.0), None);
             assert_eq!(unit_quat(0.0, 0.0, bad, 1.0), None);
             assert_eq!(unit_quat(0.0, 0.0, 0.0, bad), None);
+        }
+    }
+
+    /// The unit quaternion by the closed form, scaled first so that no square overflows in f64
+    fn closed_form(q: [f64; 4]) -> [f64; 4] {
+        let largest = q
+            .iter()
+            .fold(0.0_f64, |m, c| crate::det_math::max64(m, c.abs()));
+        let s = q.map(|c| c / largest);
+        let length = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2] + s[3] * s[3]).sqrt();
+        s.map(|c| c / length)
+    }
+
+    /// How far a component may be from the closed form: rounding in f64 and, inside the sizes
+    /// that are not scaled, the unit u = 2^-64 of `Fix128`. Four products in the squared length are
+    /// off by at most 4u, so the length is off by at most 2u / length, relative 2u / length^2, and
+    /// `length >= largest`. The inverse of the length is off by u, and multiplies `largest`. The
+    /// square root and the division add a unit each, so the bound is doubled.
+    fn close_enough(q: [f64; 4]) -> f64 {
+        let largest = q
+            .iter()
+            .fold(0.0_f64, |m, c| crate::det_math::max64(m, c.abs()));
+        let unit = 5.421_010_862_427_522e-20; // 2^-64
+        let kept_as_it_is = if (UNIT_QUAT_SMALLEST..=UNIT_QUAT_LARGEST).contains(&largest) {
+            4.0 * unit / (largest * largest) + 4.0 * unit * largest
+        } else {
+            0.0
+        };
+        1e-14 + kept_as_it_is
+    }
+
+    fn assert_is_the_closed_form(q: [f64; 4]) {
+        let got = unit_quat(q[0], q[1], q[2], q[3]).unwrap_or_else(|| panic!("refused {q:?}"));
+        let got = [
+            got.x.to_f64(),
+            got.y.to_f64(),
+            got.z.to_f64(),
+            got.w.to_f64(),
+        ];
+        let want = closed_form(q);
+        let tolerance = close_enough(q);
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() <= tolerance, "{q:?}: {got:?}, not {want:?}");
+        }
+    }
+
+    // oracle: q / |q|. These inputs came back wrong with success, or were refused, when the squared
+    // length wrapped in `Fix128`: components past about 3e9
+    #[test]
+    fn quaternions_whose_squares_wrap_give_the_closed_form() {
+        for q in [
+            [8.3e15, -1.5e16, 3.1e15, -2.2e17],
+            [-1.9e17, -1.4e17, -1.7e17, 1.07e18],
+            [2.3e17, -4.1e14, 1.6e17, -7e15],
+            [3.1e9, 0.0, 0.0, 0.0],
+            [4.3e9, 0.0, 0.0, 0.0],
+            [1e10, 1e10, 0.0, 0.0],
+            [1e10, 0.0, 0.0, 0.0],
+            [1e18, 0.0, 0.0, 0.0],
+            [1e-10, 0.0, 0.0, 0.0],
+            [1e-12, 1e-12, 0.0, 1e-12],
+        ] {
+            assert_is_the_closed_form(q);
+        }
+    }
+
+    // the same oracle over the sizes the first report scanned, 1e-14 to 3e18, from a fixed sequence
+    #[test]
+    fn every_size_gives_the_closed_form() {
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut unit = move || f64::from(u32::try_from(next() >> 32).unwrap()) / 4_294_967_296.0;
+        let mut compared = 0;
+        for _ in 0..100_000 {
+            let exponent = unit() * 32.5 - 14.0;
+            let size = crate::det_math::exp64(exponent * core::f64::consts::LN_10);
+            let q = [
+                (unit() - 0.5) * size,
+                (unit() - 0.5) * size,
+                (unit() - 0.5) * size,
+                (unit() - 0.5) * size,
+            ];
+            assert_is_the_closed_form(q);
+            compared += 1;
+        }
+        assert_eq!(compared, 100_000);
+    }
+
+    // the sizes on each side of where scaling starts both give the closed form, and the sizes kept
+    // as they are give the bits of normalising the value itself
+    #[test]
+    fn the_edges_of_the_sizes_not_scaled() {
+        for largest in [
+            UNIT_QUAT_SMALLEST * 0.99,
+            UNIT_QUAT_SMALLEST,
+            UNIT_QUAT_LARGEST,
+            UNIT_QUAT_LARGEST * 1.01,
+        ] {
+            assert_is_the_closed_form([largest, -largest, largest, largest]);
+        }
+        // written out, not from the constants, so that moving a limit shows: 2^30 and 2^-16 give
+        // the bits of normalising the value itself, which scaling would not
+        for largest in [1_073_741_824.0, 1.0 / 65_536.0] {
+            let q = [largest, -0.3 * largest, 0.7 * largest, 0.1 * largest];
+            let direct = QuatFix::new(
+                Fix128::from_f64(q[0]),
+                Fix128::from_f64(q[1]),
+                Fix128::from_f64(q[2]),
+                Fix128::from_f64(q[3]),
+            )
+            .normalize();
+            let got = unit_quat(q[0], q[1], q[2], q[3]);
+            assert_eq!(got, Some(direct), "{largest}");
+            let scaled = QuatFix::new(
+                Fix128::from_f64(1.0),
+                Fix128::from_f64(-0.3),
+                Fix128::from_f64(0.7),
+                Fix128::from_f64(0.1),
+            )
+            .normalize();
+            assert_ne!(
+                got,
+                Some(scaled),
+                "{largest}: the row does not tell the two apart"
+            );
         }
     }
 
