@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5946 |
+| 🟢 Not ignored (run by CI) | 5940 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6043** |
+| **Total** | **6037** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5946)
+## 🟢 Not ignored (5940)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -525,6 +525,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm08_checksum_coverage.rs` | 6 |
 | `analytic_cfd_wall_bc.rs` | 5 |
 | `analytic_cloth_crossings_wiring.rs` | 5 |
+| `analytic_contact_friction_spin.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
 | `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
@@ -549,10 +550,8 @@ Per-file counts (the test names are in `tests/`):
 | `reduction_order_independence.rs` | 5 |
 | `trimesh_raycast_exact.rs` | 5 |
 | `world_snapshot_broadphase_kind_sensitivity.rs` | 5 |
-| `zz_scratch_roll_measure.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
-| `analytic_contact_friction_spin.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_damping_rate.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
@@ -634,7 +633,6 @@ Per-file counts (the test names are in `tests/`):
 | `vehicle_update_bits.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |
-| `zz_scratch_roll_measure2.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
