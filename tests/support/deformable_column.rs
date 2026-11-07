@@ -51,7 +51,12 @@ impl SdfField for BoxSdf {
 pub const FACE_TOL: f32 = 1e-4;
 
 /// a `2 half_w × 2 half_h × 2 half_w` column centred at the origin, `cell`-sized cubes split
-/// into six Kuhn tetrahedra each
+/// into six Kuhn tetrahedra each. With an even number of cubes across, the split is mirrored
+/// in the halves `x < 0` and `z < 0`, so the mesh (vertices and connectivity) is symmetric
+/// under `x → −x` and `z → −z`: the modal analysis keeps its iterate in the symmetric
+/// subspace, which is invariant only then. The mirrored faces on the planes `x = 0`, `z = 0`
+/// carry the same diagonal from both sides (the mirror maps the Kuhn face diagonal onto
+/// itself), so the mesh stays conforming.
 pub fn column_mesh(cell: f32, half_w: f64, half_h: f64) -> SdfTetMesh {
     let nx = ((2.0 * half_w / f64::from(cell)).round() as usize).max(1);
     let ny = ((2.0 * half_h / f64::from(cell)).round() as usize).max(1);
@@ -80,14 +85,20 @@ pub fn column_mesh(cell: f32, half_w: f64, half_h: f64) -> SdfTetMesh {
         [(0, 0, 1), (1, 0, 1)],
         [(0, 0, 1), (0, 1, 1)],
     ];
+    let mirrored = nx % 2 == 0;
     for i in 0..nx {
         for j in 0..ny {
             for k in 0..nz {
-                let v000 = at(i, j, k);
-                let v111 = at(i + 1, j + 1, k + 1);
+                // local cube coordinates run away from the mirror planes in the far halves
+                let flip_x = mirrored && i >= nx / 2;
+                let flip_z = mirrored && k >= nz / 2;
+                let gi = |dx: usize| if flip_x { i + 1 - dx } else { i + dx };
+                let gk = |dz: usize| if flip_z { k + 1 - dz } else { k + dz };
+                let v000 = at(gi(0), j, gk(0));
+                let v111 = at(gi(1), j + 1, gk(1));
                 for [(a0, a1, a2), (b0, b1, b2)] in paths {
-                    let a = at(i + a0, j + a1, k + a2);
-                    let b = at(i + b0, j + b1, k + b2);
+                    let a = at(gi(a0), j + a1, gk(a2));
+                    let b = at(gi(b0), j + b1, gk(b2));
                     tets.push(Tetrahedron {
                         vertices: [v000, a, b, v111],
                     });
