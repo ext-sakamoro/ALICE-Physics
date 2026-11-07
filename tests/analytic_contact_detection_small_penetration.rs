@@ -24,7 +24,7 @@
 //! sliding ball (`analytic_contact_friction_convergence.rs`) at 32 and 64
 //! substeps; at 8 substeps the increment (3.5e-5) is above the threshold and
 //! no kick occurs. Root fix: a sphere's depth from GJK's exact closest point
-//! (`r − d`, no EPA). Backlog `shallow contact depth`.
+//! (`r − d`, no EPA), filed as `shallow contact depth`.
 //!
 //! Author: Moroya Sakamoto
 
