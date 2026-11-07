@@ -36,7 +36,7 @@ impl LogInput for Vec<u8> {
         loop {
             let (&b, after) = bytes.split_first()?;
             *bytes = after;
-            if shift >= usize::BITS {
+            if shift >= usize::MAX.count_ones() {
                 return None;
             }
             n |= usize::from(b & 0x7f).checked_shl(shift)?;
