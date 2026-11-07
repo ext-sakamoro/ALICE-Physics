@@ -6,6 +6,79 @@
 //! a `dt`, so "add Newmark" was not a missing integrator but a missing *system
 //! to integrate*: this module supplies both halves, `M u'' + K u = f`.
 //!
+//! # MODEL — transient linear and co-rotational elasticity on P1 tetrahedra
+//!
+//! **Equations.** `M ü + fᵢₙₜ(u) = f` on the nodes of a tetrahedral mesh, advanced by the
+//! average-acceleration Newmark step (`β = 1/4`, `γ = 1/2`): predictor
+//! `ũ = u + dt·v + (dt²/4)·a`, the linear solve `(K + 4M/dt²) u' = f + (4M/dt²)·ũ`, corrector
+//! `a' = (4/dt²)(u' − ũ)`, `v' = v + (dt/2)(a + a')`. [`TransientSolver`]: small strain,
+//! `fᵢₙₜ = K u` with the P1 stiffness `K = Σₑ ∫ Bᵀ D B dV` of isotropic Hooke's law
+//! (`σ = λ tr(ε) I + 2μ ε`, `μ = E/(2(1+ν))`, `λ = Eν/((1+ν)(1−2ν))`).
+//! [`CorotationalTransientSolver`]: `fᵢₙₜ(x) = Σₑ Rₑ Kₑ (Rₑᵀ x − x₀)` with `Rₑ` the polar
+//! factor of the element's deformation gradient `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ` at the start of the
+//! step (Müller & Gross, "Interactive Virtual Materials", GI 2004), so the step solves
+//! `(Rₑ Kₑ Rₑᵀ + 4M/dt²) u' = f + (4M/dt²)·ũ − Σₑ Rₑ Kₑ (Rₑᵀ x₀ − x₀)`: one warped
+//! linearisation per step, no inner Newton loop. `M` is the consistent Galerkin mass
+//! `ρV/20 (1 + δᵢⱼ)` or its row-sum lumping `ρV/4` ([`MassLumping`]). The linear system is
+//! solved by a Jacobi-preconditioned conjugate gradient in `Fix128` to a relative residual
+//! ([`SolverConfig`]).
+//!
+//! **Units.** mm, N, MPa, s and tonne (`N = t·mm/s²`): density in t/mm³, displacements mm,
+//! velocities mm/s, accelerations mm/s², loads N; every quantity is `Fix128` (Q64.64), so a
+//! run replays bit for bit on every target.
+//!
+//! **Conservation.** The scheme is unconditionally stable and, for a linear system,
+//! conserves the discrete energy `½ vᵀMv + ½ uᵀKu` up to the rounding of the Newmark
+//! coefficients (exact for a dyadic `dt`, a measured `1.5e-5` drift over 500 steps for a
+//! general one before the coefficient was formed by inverting first; see the section on the
+//! arithmetic below); there is no damping term. Momentum of a free body follows the applied
+//! force exactly. The co-rotational step conserves the same quantities within one
+//! linearisation per step: a rotation as a whole produces no elastic force or energy.
+//!
+//! **Valid range.** Any `dt > 0` (unconditional stability); the modes resolved are those with
+//! `ω dt ≲ 1`, above that the period is elongated by `ω̄ = (2/dt)·atan(ω dt/2)` with no
+//! amplitude change. Small strain (a few per cent) in the element frame; the co-rotational
+//! form admits any rigid rotation and refuses an element whose `det F` falls to `2⁻²⁰` or
+//! below ([`FemError::RotationFailed`], the state unchanged). `E > 0`, `−1 < ν < 0.5`
+//! ([`ElasticMaterial::new`] refuses the rest); density and `dt` positive and
+//! `4ρ/dt²` within `Fix128` ([`DynamicsConfig::try_new`]). A conjugate gradient that does
+//! not reach its tolerance within its budget, or stagnates (measured at about `1e-9`
+//! relative in `Fix128`), is [`FemError::NotConverged`] / [`FemError::Stagnated`], never a
+//! wrong answer.
+//!
+//! **Approximations.** P1 (constant strain) tetrahedra; Hooke's law in the element frame
+//! (no hyperelastic law, no plasticity, no thermal strain here); the co-rotational frame is
+//! frozen over a step (first order in the rotation increment per step); no damping; no
+//! contact and no external impulses yet; the lumped mass lowers the frequencies and the
+//! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
+//! space); loads and prescribed displacements are constant over a run.
+//!
+//! **Validation.** `tests/analytic_dynamic_fem.rs` (a free body under a total force follows
+//! the closed-form parabola, a single degree of freedom tracks the closed-form step response,
+//! the two mass distributions differ by the closed-form ratio, the axial bar's peak arrives
+//! at the closed-form wave transit time and scales as the square root of density, prescribed
+//! displacements are held exactly, degenerate configurations are refused),
+//! `tests/analytic_dynamic_fem_corotational.rs::a_rigidly_rotated_body_feels_no_elastic_force`
+//! (a column rotated by 30° and released does not move),
+//! `::the_corotational_oscillation_has_the_modal_period_and_the_static_mean` and
+//! `::the_linear_newmark_oscillation_has_the_modal_period_and_the_static_mean` (the first
+//! axial modal coordinate of a column under its own weight oscillates at `2π/ω̄` of the mesh's
+//! own `ω₁` from inverse iteration on `K φ = ω² M φ`, within 0.5 %, and its mean is the
+//! static sag within 1 %),
+//! `::the_discrete_axial_mode_lies_above_the_thin_rod_frequency_by_at_most_the_base_layer_share`
+//! (the discrete mode against `(π/2H)√(E/ρ)` with the rod's assumptions stated),
+//! `tests/audit_dynamic_fem.rs`.
+//!
+//! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
+//! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
+//! tetrahedra (`E = 1.27e6 Pa`, `ν = 0.49`, `ρ = 1100 kg/m³`,
+//! `tests/analytic_deformable_integrators.rs`) it reaches 0.6–1 % of the static sag at one
+//! step per frame for 0.0002 s (24 tetrahedra) to 0.026 s (384) per frame, where the XPBD
+//! Neo-Hookean body of [`crate::deformable`] needs 256 substeps per frame for 2.8 % at 17 to
+//! 100 times the cost. No lighter tier yet (a coarse cage with the fine surface embedded is
+//! the candidate; its error against this L0 will be measured by the same sag and period
+//! problems).
+//!
 //! # Units
 //!
 //! Millimetre / newton / megapascal as in [`crate::linear_elastic_fem`], plus
@@ -88,7 +161,7 @@ use crate::linear_elastic_fem::{
     BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig, StressTensor,
     RESIDUAL_NORM_FLOOR,
 };
-use crate::math::Fix128;
+use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
 
 // ---------------------------------------------------------------------------
@@ -974,6 +1047,353 @@ impl TransientSolver {
     }
 
     /// Nodal accelerations (mm/s²), laid out like [`Self::displacements`].
+    #[must_use]
+    pub fn accelerations(&self) -> &[Fix128] {
+        &self.a
+    }
+}
+
+// ---------------------------------------------------------------------------
+// the co-rotational solver
+// ---------------------------------------------------------------------------
+
+/// Floor on `det F` below which an element's rotation is refused: the same `2⁻²⁰` the static
+/// co-rotational solve uses (an element that flat or inverted has no polar factor).
+const COROTATIONAL_DET_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 44);
+/// Iteration budget of the polar decomposition per element and step.
+const COROTATIONAL_POLAR_ITERATIONS: u32 = 64;
+
+impl Operators {
+    /// `out = (R Kₑ Rᵀ + Ṁ) u`, one element loop in mesh order: the element stiffness warped
+    /// by its rotation `R` (the nodal displacements are rotated into the element frame, the
+    /// small-strain stress and force formed there, the force rotated back), the mass term
+    /// unrotated.
+    fn apply_effective_rotated(&self, rotations: &[Mat3Fix], u: &[Fix128], out: &mut [Fix128]) {
+        out.fill(Fix128::ZERO);
+        for ((element, &scale), r) in self
+            .elements
+            .iter()
+            .zip(self.mass_scale.iter())
+            .zip(rotations)
+        {
+            let local = gather(element, u);
+            let rt = r.transpose();
+            let mut frame = [[Fix128::ZERO; 3]; 4];
+            for (slot, node_u) in frame.iter_mut().zip(local.iter()) {
+                let v = rt.mul_vec(Vec3Fix::new(node_u[0], node_u[1], node_u[2]));
+                *slot = [v.x, v.y, v.z];
+            }
+            let stress = element_stress_local(element, &frame, self.lambda, self.mu);
+            let stiffness = element_force_from_stress(element, stress);
+            let mass = Self::element_mass_force(self.lumping, scale, &local);
+            for ((k, m), &node) in stiffness.iter().zip(mass.iter()).zip(element.nodes.iter()) {
+                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2]));
+                let base = node * 3;
+                out[base] = out[base] + f.x + m[0];
+                out[base + 1] = out[base + 1] + f.y + m[1];
+                out[base + 2] = out[base + 2] + f.z + m[2];
+            }
+        }
+    }
+
+    /// `out = Σₑ R Kₑ (Rᵀ x₀ − x₀)`: the part of the warped element force that does not
+    /// depend on the displacement (the rest positions seen from the rotated frame).
+    fn rotation_offset(&self, rotations: &[Mat3Fix], rest: &[Fix128], out: &mut [Fix128]) {
+        out.fill(Fix128::ZERO);
+        for (element, r) in self.elements.iter().zip(rotations) {
+            let local = gather(element, rest);
+            let rt = r.transpose();
+            let mut frame = [[Fix128::ZERO; 3]; 4];
+            for (slot, x0) in frame.iter_mut().zip(local.iter()) {
+                let v = rt.mul_vec(Vec3Fix::new(x0[0], x0[1], x0[2]));
+                *slot = [v.x - x0[0], v.y - x0[1], v.z - x0[2]];
+            }
+            let stress = element_stress_local(element, &frame, self.lambda, self.mu);
+            let force = element_force_from_stress(element, stress);
+            for (k, &node) in force.iter().zip(element.nodes.iter()) {
+                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2]));
+                let base = node * 3;
+                out[base] = out[base] + f.x;
+                out[base + 1] = out[base + 1] + f.y;
+                out[base + 2] = out[base + 2] + f.z;
+            }
+        }
+    }
+
+    /// The rotation of every element at the displacement `u`: the polar factor of
+    /// `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ`.
+    fn rotations(&self, u: &[Fix128]) -> Result<Vec<Mat3Fix>, FemError> {
+        let mut out = Vec::with_capacity(self.elements.len());
+        for (tet, element) in self.elements.iter().enumerate() {
+            let local = gather(element, u);
+            // `cols[b][a]` is row `a`, column `b`: F_ab = δ_ab + Σᵢ u_i,a ∇N_i,b
+            let mut cols = [[Fix128::ZERO; 3]; 3];
+            for (g, node_u) in element.grad.iter().zip(local.iter()) {
+                for (b, gb) in g.iter().enumerate() {
+                    for (a, ua) in node_u.iter().enumerate() {
+                        cols[b][a] = cols[b][a] + *ua * *gb;
+                    }
+                }
+            }
+            for (k, col) in cols.iter_mut().enumerate() {
+                col[k] = col[k] + Fix128::ONE;
+            }
+            let f = Mat3Fix::from_cols(
+                Vec3Fix::new(cols[0][0], cols[0][1], cols[0][2]),
+                Vec3Fix::new(cols[1][0], cols[1][1], cols[1][2]),
+                Vec3Fix::new(cols[2][0], cols[2][1], cols[2][2]),
+            );
+            match f.polar_rotation(COROTATIONAL_DET_FLOOR, COROTATIONAL_POLAR_ITERATIONS) {
+                Ok(r) => out.push(r),
+                Err(cause) => return Err(FemError::RotationFailed { tet, cause }),
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// A transient co-rotational FEM solve, advanced one Newmark step at a time: the element
+/// stiffness is warped by each element's rotation (the polar factor of its deformation
+/// gradient at the start of the step, Müller & Gross 2004), so a rotation as a whole
+/// produces no elastic force and the small-strain law holds in the rotated frame; the
+/// time integration is the average-acceleration Newmark step of [`TransientSolver`] with the
+/// warped stiffness frozen over the step (one linearisation per step, no inner Newton loop).
+/// The internal force is `fᵢₙₜ(x) = Σₑ R Kₑ (Rᵀ x − x₀)`, so the step solves
+/// `(R Kₑ Rᵀ + Ṁ) u_{n+1} = f + Ṁ ũ − Σₑ R Kₑ (Rᵀ x₀ − x₀)` on the free degrees of freedom.
+/// Checked by `tests/analytic_dynamic_fem_corotational.rs`.
+pub struct CorotationalTransientSolver {
+    ops: Operators,
+    /// rest positions (mm), three per vertex
+    rest: Vec<Fix128>,
+    dt: Fix128,
+    inv_beta_dt2: Fix128,
+    half_dt: Fix128,
+    is_free: Vec<bool>,
+    prescribed_value: Vec<Fix128>,
+    load: Vec<Fix128>,
+    precond: Vec<Fix128>,
+    mass_precond: Vec<Fix128>,
+    config: SolverConfig,
+    u: Vec<Fix128>,
+    v: Vec<Fix128>,
+    a: Vec<Fix128>,
+}
+
+impl CorotationalTransientSolver {
+    /// The same inputs as [`TransientSolver::new`]; the initial state is the prescribed
+    /// field with zero velocity and the consistent acceleration.
+    ///
+    /// # Errors
+    ///
+    /// As [`TransientSolver::new`], plus [`FemError::RotationFailed`] when an element's
+    /// deformation gradient at the initial state has no polar factor.
+    pub fn new(
+        mesh: &SdfTetMesh,
+        material: &ElasticMaterial,
+        boundary: &BoundaryConditions,
+        dynamics: &DynamicsConfig,
+        config: &SolverConfig,
+    ) -> Result<Self, FemError> {
+        let vertex_count = mesh.vertices.len();
+        if vertex_count == 0 || mesh.tets.is_empty() {
+            return Err(FemError::EmptyMesh);
+        }
+        for &(vertex, _, _) in boundary.prescribed().iter().chain(boundary.loads().iter()) {
+            if vertex as usize >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex,
+                    vertex_count,
+                });
+            }
+        }
+        let elements = build_elements(mesh)?;
+        let ops = Operators::new(elements, material, dynamics)?;
+        let ndof = vertex_count * 3;
+        let mut rest = Vec::with_capacity(ndof);
+        for v in &mesh.vertices {
+            rest.push(Fix128::from_f32(v[0]));
+            rest.push(Fix128::from_f32(v[1]));
+            rest.push(Fix128::from_f32(v[2]));
+        }
+        let mut prescribed_value = vec![Fix128::ZERO; ndof];
+        let mut is_free = vec![true; ndof];
+        for &(vertex, axis, value) in boundary.prescribed() {
+            let d = vertex as usize * 3 + axis.index();
+            is_free[d] = false;
+            prescribed_value[d] = value;
+        }
+        let mut load = vec![Fix128::ZERO; ndof];
+        for &(vertex, axis, force) in boundary.loads() {
+            let d = vertex as usize * 3 + axis.index();
+            if is_free[d] {
+                load[d] = load[d] + force;
+            }
+        }
+        let mass_diag = ops.mass_diagonal(ndof);
+        let mass_precond = build_preconditioner(&mass_diag, &is_free, config)?;
+        let diag = ops.effective_diagonal(ndof);
+        let precond = build_preconditioner(&diag, &is_free, config)?;
+        let mut solver = Self {
+            ops,
+            rest,
+            dt: dynamics.dt,
+            inv_beta_dt2: dynamics.inv_beta_dt2,
+            half_dt: dynamics.dt.half(),
+            is_free,
+            prescribed_value: prescribed_value.clone(),
+            load,
+            precond,
+            mass_precond,
+            config: *config,
+            u: prescribed_value,
+            v: vec![Fix128::ZERO; ndof],
+            a: vec![Fix128::ZERO; ndof],
+        };
+        solver.a = solver.consistent_acceleration()?;
+        Ok(solver)
+    }
+
+    /// `a` from `Ṁ a / c₀ = f − fᵢₙₜ(u)` at the current displacement (`Ṁ = c₀ M`).
+    fn consistent_acceleration(&self) -> Result<Vec<Fix128>, FemError> {
+        let ndof = self.u.len();
+        let rotations = self.ops.rotations(&self.u)?;
+        let mut keff_u = vec![Fix128::ZERO; ndof];
+        self.ops
+            .apply_effective_rotated(&rotations, &self.u, &mut keff_u);
+        let mut mass_u = vec![Fix128::ZERO; ndof];
+        self.ops.apply_mass(&self.u, &mut mass_u);
+        let mut offset = vec![Fix128::ZERO; ndof];
+        self.ops
+            .rotation_offset(&rotations, &self.rest, &mut offset);
+        let mut rhs = vec![Fix128::ZERO; ndof];
+        for d in 0..ndof {
+            rhs[d] = if self.is_free[d] {
+                self.load[d] - (keff_u[d] - mass_u[d]) - offset[d]
+            } else {
+                Fix128::ZERO
+            };
+        }
+        let ops = &self.ops;
+        let (scaled, _) = conjugate_gradient(
+            &rhs,
+            &self.is_free,
+            &self.mass_precond,
+            &self.config,
+            |p, out| {
+                ops.apply_mass(p, out);
+            },
+        )?;
+        Ok(scaled.iter().map(|x| *x * self.inv_beta_dt2).collect())
+    }
+
+    /// Replace the displacement field (mm, three components per vertex in vertex order),
+    /// keeping the velocities and recomputing the accelerations: the initial state of a body
+    /// that starts rotated or deformed. The prescribed degrees of freedom keep their
+    /// prescribed values whatever `u` says.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::VertexOutOfRange`] when `u` is not three values per vertex,
+    /// [`FemError::RotationFailed`] when an element of the new state has no polar factor, and
+    /// the conjugate gradient errors of the acceleration solve.
+    pub fn set_displacements(&mut self, u: &[Fix128]) -> Result<(), FemError> {
+        let ndof = self.u.len();
+        if u.len() != ndof {
+            return Err(FemError::VertexOutOfRange {
+                vertex: (u.len() / 3) as u32,
+                vertex_count: ndof / 3,
+            });
+        }
+        let previous = core::mem::replace(&mut self.u, u.to_vec());
+        for d in 0..ndof {
+            if !self.is_free[d] {
+                self.u[d] = self.prescribed_value[d];
+            }
+        }
+        match self.consistent_acceleration() {
+            Ok(a) => {
+                self.a = a;
+                Ok(())
+            }
+            Err(e) => {
+                self.u = previous;
+                Err(e)
+            }
+        }
+    }
+
+    /// Advance one Newmark step with the element rotations of the current state. Returns
+    /// the conjugate gradient iterations used.
+    ///
+    /// # Errors
+    ///
+    /// As [`TransientSolver::step`], plus [`FemError::RotationFailed`] when an element's
+    /// deformation gradient has no polar factor; the state is unchanged on an error.
+    pub fn step(&mut self) -> Result<u32, FemError> {
+        let ndof = self.u.len();
+        let rotations = self.ops.rotations(&self.u)?;
+        let mut predictor = vec![Fix128::ZERO; ndof];
+        for (d, slot) in predictor.iter_mut().enumerate() {
+            *slot = if self.is_free[d] {
+                newmark_predictor(self.u[d], self.v[d], self.a[d], self.dt, self.half_dt)
+            } else {
+                self.prescribed_value[d]
+            };
+        }
+        let mut mass_predictor = vec![Fix128::ZERO; ndof];
+        self.ops.apply_mass(&predictor, &mut mass_predictor);
+        let mut keff_prescribed = vec![Fix128::ZERO; ndof];
+        self.ops
+            .apply_effective_rotated(&rotations, &self.prescribed_value, &mut keff_prescribed);
+        let mut offset = vec![Fix128::ZERO; ndof];
+        self.ops
+            .rotation_offset(&rotations, &self.rest, &mut offset);
+        let mut b = vec![Fix128::ZERO; ndof];
+        for d in 0..ndof {
+            b[d] = if self.is_free[d] {
+                self.load[d] + mass_predictor[d] - keff_prescribed[d] - offset[d]
+            } else {
+                Fix128::ZERO
+            };
+        }
+        let ops = &self.ops;
+        let (mut next_u, iterations) =
+            conjugate_gradient(&b, &self.is_free, &self.precond, &self.config, |p, out| {
+                ops.apply_effective_rotated(&rotations, p, out);
+            })?;
+        for d in 0..ndof {
+            if self.is_free[d] {
+                let (next_v, next_a) = newmark_corrector(
+                    next_u[d],
+                    predictor[d],
+                    self.v[d],
+                    self.a[d],
+                    self.inv_beta_dt2,
+                    self.half_dt,
+                );
+                self.v[d] = next_v;
+                self.a[d] = next_a;
+            } else {
+                next_u[d] = self.prescribed_value[d];
+            }
+        }
+        self.u = next_u;
+        Ok(iterations)
+    }
+
+    /// Nodal displacements (mm), three components per vertex in vertex order.
+    #[must_use]
+    pub fn displacements(&self) -> &[Fix128] {
+        &self.u
+    }
+
+    /// Nodal velocities (mm/s), three components per vertex in vertex order.
+    #[must_use]
+    pub fn velocities(&self) -> &[Fix128] {
+        &self.v
+    }
+
+    /// Nodal accelerations (mm/s²), three components per vertex in vertex order.
     #[must_use]
     pub fn accelerations(&self) -> &[Fix128] {
         &self.a
