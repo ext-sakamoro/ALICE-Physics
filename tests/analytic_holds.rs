@@ -45,14 +45,21 @@ const DT: f64 = 1.0 / 60.0;
 fn a_blow_gives_each_body_the_impulse_it_states() {
     let mut w = world(0.0, 1);
     let cases = [(1.0, 1.0), (2.0, 4.0), (3.0, 0.5)];
-    let ids: Vec<usize> = cases.iter().map(|&(d, m)| body(&mut w, v(d, 0.0, 0.0), m)).collect();
+    let ids: Vec<usize> = cases
+        .iter()
+        .map(|&(d, m)| body(&mut w, v(d, 0.0, 0.0), m))
+        .collect();
     let far = body(&mut w, v(10.0, 0.0, 0.0), 1.0);
     let n = w.apply_radial_impulse(Vec3Fix::ZERO, fx(5.0), fx(8.0));
     assert_eq!(n, 3);
     for (&(d, m), &i) in cases.iter().zip(&ids) {
         let want = 8.0 * (1.0 - d / 5.0) / m;
         let got = vel(&w, i);
-        assert!((got[0] - want).abs() < 1e-9, "d {d} m {m}: {} vs {want}", got[0]);
+        assert!(
+            (got[0] - want).abs() < 1e-9,
+            "d {d} m {m}: {} vs {want}",
+            got[0]
+        );
         assert_eq!(got[1], 0.0);
         assert_eq!(got[2], 0.0);
     }
@@ -125,7 +132,9 @@ fn against_closed_form(mass: f64, substeps: usize, gravity: f64) {
     let start = [4.0, 2.0, -3.0];
     let i = body(&mut w, v(start[0], start[1], start[2]), mass);
     let hands = Holds::new(&mut w);
-    hands.hold(&mut w, i, v(target[0], target[1], target[2]), fx(omega)).expect("hold");
+    hands
+        .hold(&mut w, i, v(target[0], target[1], target[2]), fx(omega))
+        .expect("hold");
     let h = DT / substeps as f64;
     let bound = 2.0 * omega * h * 3.0 + 1e-6;
     let mut compared = 0;
@@ -134,14 +143,22 @@ fn against_closed_form(mass: f64, substeps: usize, gravity: f64) {
         let t = k as f64 * DT;
         let want = target[0] + closed(start[0] - target[0], omega, t);
         let got = pos(&w, i)[0];
-        assert!((got - want).abs() <= bound, "m {mass} s {substeps} t {t}: {got} vs {want} (bound {bound})");
+        assert!(
+            (got - want).abs() <= bound,
+            "m {mass} s {substeps} t {t}: {got} vs {want} (bound {bound})"
+        );
         compared += 1;
     }
     assert_eq!(compared, 180);
     // it has come to rest at the place, under gravity too
     let p = pos(&w, i);
     for k in 0..3 {
-        assert!((p[k] - target[k]).abs() < 0.01, "at rest {k}: {} vs {}", p[k], target[k]);
+        assert!(
+            (p[k] - target[k]).abs() < 0.01,
+            "at rest {k}: {} vs {}",
+            p[k],
+            target[k]
+        );
     }
 }
 
@@ -191,7 +208,10 @@ fn moved_it_follows_to_the_new_place() {
         w.step(fx(DT));
     }
     let p = pos(&w, i);
-    assert!((p[1] - 3.0).abs() < 0.01 && (p[2] - 1.0).abs() < 0.01, "{p:?}");
+    assert!(
+        (p[1] - 3.0).abs() < 0.01 && (p[2] - 1.0).abs() < 0.01,
+        "{p:?}"
+    );
 }
 
 #[test]
@@ -200,7 +220,9 @@ fn let_go_it_keeps_its_velocity_and_falls_as_free_fall() {
     let mut w = world(g, 4);
     let i = body(&mut w, v(0.0, 0.0, 0.0), 1.0);
     let hands = Holds::new(&mut w);
-    hands.hold(&mut w, i, v(5.0, 5.0, 0.0), fx(4.0)).expect("hold");
+    hands
+        .hold(&mut w, i, v(5.0, 5.0, 0.0), fx(4.0))
+        .expect("hold");
     for _ in 0..20 {
         w.step(fx(DT));
     }
@@ -219,7 +241,12 @@ fn let_go_it_keeps_its_velocity_and_falls_as_free_fall() {
     }
     let t = n as f64 * DT;
     let p = pos(&w, i);
-    assert!((p[0] - (at[0] + speed[0] * t)).abs() < 0.02, "x {} vs {}", p[0], at[0] + speed[0] * t);
+    assert!(
+        (p[0] - (at[0] + speed[0] * t)).abs() < 0.02,
+        "x {} vs {}",
+        p[0],
+        at[0] + speed[0] * t
+    );
     let want = at[1] + speed[1] * t - 0.5 * g * t * t;
     assert!((p[1] - want).abs() < 0.1, "y {} vs {want}", p[1]);
 }
@@ -231,15 +258,33 @@ fn what_cannot_be_held_is_refused_and_nothing_changes() {
     let i = body(&mut w, Vec3Fix::ZERO, 1.0);
     let hands = Holds::new(&mut w);
     let before = w.joints.len();
-    assert_eq!(hands.hold(&mut w, 999, Vec3Fix::ZERO, fx(1.0)), Err(HoldError::NoBody(999)));
-    assert_eq!(hands.hold(&mut w, fixed, Vec3Fix::ZERO, fx(1.0)), Err(HoldError::NotDynamic(fixed)));
-    assert_eq!(hands.hold(&mut w, i, Vec3Fix::ZERO, fx(0.0)), Err(HoldError::BadOmega));
-    assert_eq!(hands.hold(&mut w, i, Vec3Fix::ZERO, fx(-1.0)), Err(HoldError::BadOmega));
-    assert_eq!(hands.move_to(&mut w, i, Vec3Fix::ZERO), Err(HoldError::NotHeld(i)));
+    assert_eq!(
+        hands.hold(&mut w, 999, Vec3Fix::ZERO, fx(1.0)),
+        Err(HoldError::NoBody(999))
+    );
+    assert_eq!(
+        hands.hold(&mut w, fixed, Vec3Fix::ZERO, fx(1.0)),
+        Err(HoldError::NotDynamic(fixed))
+    );
+    assert_eq!(
+        hands.hold(&mut w, i, Vec3Fix::ZERO, fx(0.0)),
+        Err(HoldError::BadOmega)
+    );
+    assert_eq!(
+        hands.hold(&mut w, i, Vec3Fix::ZERO, fx(-1.0)),
+        Err(HoldError::BadOmega)
+    );
+    assert_eq!(
+        hands.move_to(&mut w, i, Vec3Fix::ZERO),
+        Err(HoldError::NotHeld(i))
+    );
     assert_eq!(hands.release(&mut w, i), Err(HoldError::NotHeld(i)));
     assert_eq!(w.joints.len(), before);
     hands.hold(&mut w, i, Vec3Fix::ZERO, fx(1.0)).expect("hold");
-    assert_eq!(hands.hold(&mut w, i, Vec3Fix::ZERO, fx(1.0)), Err(HoldError::AlreadyHeld(i)));
+    assert_eq!(
+        hands.hold(&mut w, i, Vec3Fix::ZERO, fx(1.0)),
+        Err(HoldError::AlreadyHeld(i))
+    );
     assert_eq!(w.joints.len(), before + 1);
 }
 
@@ -251,7 +296,9 @@ fn a_hold_leaves_other_joints_and_other_hands_alone() {
     let first = Holds::new(&mut w);
     let second = Holds::new(&mut w);
     first.hold(&mut w, a, Vec3Fix::ZERO, fx(4.0)).expect("hold");
-    second.hold(&mut w, b, Vec3Fix::ZERO, fx(4.0)).expect("hold");
+    second
+        .hold(&mut w, b, Vec3Fix::ZERO, fx(4.0))
+        .expect("hold");
     assert!(!first.holds(&w, b));
     assert!(!second.holds(&w, a));
     assert_eq!(first.release_all(&mut w), 1);
@@ -264,7 +311,9 @@ fn a_hold_leaves_other_joints_and_other_hands_alone() {
 #[test]
 fn pieces_form_at_their_places_and_when_let_go_they_fall() {
     let mut w = world(10.0, 2);
-    let bodies: Vec<usize> = (0..12).map(|k| body(&mut w, v(f64::from(k) * 0.1, 0.0, 0.0), 1.0)).collect();
+    let bodies: Vec<usize> = (0..12)
+        .map(|k| body(&mut w, v(f64::from(k) * 0.1, 0.0, 0.0), 1.0))
+        .collect();
     let spots: Vec<Vec3Fix> = (0..12).map(|k| v(f64::from(k) - 6.0, 4.0, -2.0)).collect();
     let hands = Holds::new(&mut w);
     hands.form(&mut w, &bodies, &spots, fx(5.0)).expect("form");
@@ -291,11 +340,20 @@ fn a_form_that_cannot_be_is_refused_whole() {
     let a = body(&mut w, Vec3Fix::ZERO, 1.0);
     let hands = Holds::new(&mut w);
     let before = w.joints.len();
-    assert_eq!(hands.form(&mut w, &[a, 999], &[Vec3Fix::ZERO, Vec3Fix::ZERO], fx(1.0)), Err(HoldError::NoBody(999)));
+    assert_eq!(
+        hands.form(&mut w, &[a, 999], &[Vec3Fix::ZERO, Vec3Fix::ZERO], fx(1.0)),
+        Err(HoldError::NoBody(999))
+    );
     assert_eq!(w.joints.len(), before);
     assert!(!hands.holds(&w, a));
-    assert_eq!(hands.form(&mut w, &[a], &[], fx(1.0)), Err(HoldError::NoBody(a)));
-    assert_eq!(hands.form(&mut w, &[a, a], &[Vec3Fix::ZERO, Vec3Fix::ZERO], fx(1.0)), Err(HoldError::AlreadyHeld(a)));
+    assert_eq!(
+        hands.form(&mut w, &[a], &[], fx(1.0)),
+        Err(HoldError::NoBody(a))
+    );
+    assert_eq!(
+        hands.form(&mut w, &[a, a], &[Vec3Fix::ZERO, Vec3Fix::ZERO], fx(1.0)),
+        Err(HoldError::AlreadyHeld(a))
+    );
     assert_eq!(w.joints.len(), before);
 }
 
@@ -312,8 +370,14 @@ fn a_hold_is_in_the_digest_and_survives_a_snapshot_bit_for_bit() {
     let (mut a, i, hands) = build();
     let (mut other, ..) = build();
     assert_eq!(a.state_digest(), other.state_digest());
-    hands.hold(&mut a, i, v(5.0, 5.0, 5.0), fx(4.0)).expect("hold");
-    assert_ne!(a.state_digest(), other.state_digest(), "a hold is not in the digest");
+    hands
+        .hold(&mut a, i, v(5.0, 5.0, 5.0), fx(4.0))
+        .expect("hold");
+    assert_ne!(
+        a.state_digest(),
+        other.state_digest(),
+        "a hold is not in the digest"
+    );
     for _ in 0..30 {
         a.step(fx(DT));
         other.step(fx(DT));
@@ -339,9 +403,13 @@ fn a_hold_is_in_the_digest_and_survives_a_snapshot_bit_for_bit() {
 fn the_same_hands_give_the_same_bits() {
     let run = || {
         let mut w = world(9.81, 2);
-        let ids: Vec<usize> = (0..6).map(|k| body(&mut w, v(f64::from(k), 0.0, 0.0), 1.0)).collect();
+        let ids: Vec<usize> = (0..6)
+            .map(|k| body(&mut w, v(f64::from(k), 0.0, 0.0), 1.0))
+            .collect();
         let hands = Holds::new(&mut w);
-        hands.hold(&mut w, ids[0], v(0.0, 2.0, 0.0), fx(5.0)).expect("hold");
+        hands
+            .hold(&mut w, ids[0], v(0.0, 2.0, 0.0), fx(5.0))
+            .expect("hold");
         w.apply_radial_impulse(v(2.0, 0.0, 0.0), fx(6.0), fx(9.0));
         for _ in 0..40 {
             w.step(fx(DT));

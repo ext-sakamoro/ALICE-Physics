@@ -143,6 +143,8 @@ this file or listed twice, or when a linked example or test does not exist.
 | `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | world API |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) |  | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) | standalone |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag |  | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) | standalone |
+| `holds` | a blow from a point, and holding bodies at places by critically damped springs |  | [`analytic_holds`](../tests/analytic_holds.rs) |
+| `input_log` | the inputs of a run by step, replayed to the same state digest and carried as a short code |  | [`input_log`](../tests/input_log.rs) |
 | `wind_zone` | bounded wind volume applying drag and lift |  | [`wind_zone_forces`](../examples/wind_zone_forces.rs) | standalone |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |

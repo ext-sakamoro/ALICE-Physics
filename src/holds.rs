@@ -31,8 +31,31 @@ impl PhysicsWorld {
     /// way from the centre to it, a negative strength pulling it in. A body at the very centre has no such way and
     /// is left alone. Bodies it reaches are woken. Returns how many it reached; none for a radius that is not
     /// positive.
-    pub fn apply_radial_impulse(&mut self, _center: Vec3Fix, _radius: Fix128, _strength: Fix128) -> usize {
-        todo!("radial impulse")
+    pub fn apply_radial_impulse(
+        &mut self,
+        center: Vec3Fix,
+        radius: Fix128,
+        strength: Fix128,
+    ) -> usize {
+        if radius <= Fix128::ZERO {
+            return 0;
+        }
+        let mut reached = 0;
+        for i in 0..self.bodies.len() {
+            if self.bodies[i].body_type != BodyType::Dynamic {
+                continue;
+            }
+            let way = self.bodies[i].position - center;
+            let d = way.length();
+            if d >= radius || d <= Fix128::ZERO {
+                continue;
+            }
+            let along = strength * (Fix128::ONE - d / radius) / d;
+            self.bodies[i].apply_impulse(way * along);
+            self.wake_body(i);
+            reached += 1;
+        }
+        reached
     }
 }
 
@@ -44,56 +67,151 @@ pub struct Holds {
 }
 
 impl Holds {
-    /// New hands: adds one static body that collides with nothing
+    /// New hands: adds one static body at the origin that collides with nothing
     #[must_use]
-    pub fn new(_world: &mut PhysicsWorld) -> Self {
-        todo!("holds")
+    pub fn new(world: &mut PhysicsWorld) -> Self {
+        let anchor = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        world.set_body_filter(anchor, CollisionFilter::NONE);
+        Self { anchor }
+    }
+
+    /// The joint that holds `body`, if any
+    fn joint_of(&self, world: &PhysicsWorld, body: usize) -> Option<usize> {
+        world.joints.iter().position(
+            |j| matches!(j, Joint::Spring(s) if s.body_a == self.anchor && s.body_b == body),
+        )
+    }
+
+    fn holdable(&self, world: &PhysicsWorld, body: usize) -> Result<(), HoldError> {
+        let b = world.bodies.get(body).ok_or(HoldError::NoBody(body))?;
+        if b.body_type != BodyType::Dynamic || body == self.anchor {
+            return Err(HoldError::NotDynamic(body));
+        }
+        if self.joint_of(world, body).is_some() {
+            return Err(HoldError::AlreadyHeld(body));
+        }
+        Ok(())
+    }
+
+    /// Where the spring has to start for `body` to rest at `target` under its weight, `sag_per_omega2` being the
+    /// inverse of ω²: the body hangs below the spring's end by `g / ω²`
+    fn lifted(
+        world: &PhysicsWorld,
+        body: usize,
+        target: Vec3Fix,
+        inverse_omega2: Fix128,
+    ) -> Vec3Fix {
+        let g = world.config.gravity * world.bodies[body].gravity_scale;
+        target - g * inverse_omega2
     }
 
     /// Hold `body` at `target`, reaching it at the rate `omega` (radians per second)
     pub fn hold(
         &self,
-        _world: &mut PhysicsWorld,
-        _body: usize,
-        _target: Vec3Fix,
-        _omega: Fix128,
+        world: &mut PhysicsWorld,
+        body: usize,
+        target: Vec3Fix,
+        omega: Fix128,
     ) -> Result<(), HoldError> {
-        todo!("hold")
+        self.holdable(world, body)?;
+        if omega <= Fix128::ZERO {
+            return Err(HoldError::BadOmega);
+        }
+        self.add_hold(world, body, target, omega);
+        Ok(())
+    }
+
+    fn add_hold(&self, world: &mut PhysicsWorld, body: usize, target: Vec3Fix, omega: Fix128) {
+        let mass = Fix128::ONE / world.bodies[body].inv_mass;
+        let start = Self::lifted(world, body, target, Fix128::ONE / (omega * omega));
+        world.add_joint(Joint::Spring(SpringJoint::new(
+            self.anchor,
+            body,
+            start,
+            Vec3Fix::ZERO,
+            Fix128::ZERO,
+            mass * omega * omega,
+            Fix128::from_int(2) * mass * omega,
+        )));
+        world.wake_body(body);
     }
 
     /// Move the place a held body is going to
-    pub fn move_to(&self, _world: &mut PhysicsWorld, _body: usize, _target: Vec3Fix) -> Result<(), HoldError> {
-        todo!("move")
+    pub fn move_to(
+        &self,
+        world: &mut PhysicsWorld,
+        body: usize,
+        target: Vec3Fix,
+    ) -> Result<(), HoldError> {
+        let idx = self.joint_of(world, body).ok_or(HoldError::NotHeld(body))?;
+        let mass = Fix128::ONE / world.bodies[body].inv_mass;
+        let stiffness = match &world.joints[idx] {
+            Joint::Spring(s) => s.stiffness,
+            _ => return Err(HoldError::NotHeld(body)),
+        };
+        let start = Self::lifted(world, body, target, mass / stiffness);
+        if let Joint::Spring(s) = &mut world.joints[idx] {
+            s.local_anchor_a = start;
+        }
+        world.wake_body(body);
+        Ok(())
     }
 
     /// Let go: the body keeps its velocity and its weight
-    pub fn release(&self, _world: &mut PhysicsWorld, _body: usize) -> Result<(), HoldError> {
-        todo!("release")
+    pub fn release(&self, world: &mut PhysicsWorld, body: usize) -> Result<(), HoldError> {
+        let idx = self.joint_of(world, body).ok_or(HoldError::NotHeld(body))?;
+        world.remove_joint(idx);
+        world.wake_body(body);
+        Ok(())
     }
 
-    /// Hold each of `bodies` at the place at the same position in `targets`, one after the other: all, or on an
-    /// error none. The pieces of something that forms
+    /// Hold each of `bodies` at the place at the same position in `targets`: all, or on an error none. The pieces of
+    /// something that forms
     pub fn form(
         &self,
-        _world: &mut PhysicsWorld,
-        _bodies: &[usize],
-        _targets: &[Vec3Fix],
-        _omega: Fix128,
+        world: &mut PhysicsWorld,
+        bodies: &[usize],
+        targets: &[Vec3Fix],
+        omega: Fix128,
     ) -> Result<(), HoldError> {
-        todo!("form")
+        if omega <= Fix128::ZERO {
+            return Err(HoldError::BadOmega);
+        }
+        for (k, &body) in bodies.iter().enumerate() {
+            self.holdable(world, body)?;
+            if targets.get(k).is_none() {
+                return Err(HoldError::NoBody(body));
+            }
+            if bodies[..k].contains(&body) {
+                return Err(HoldError::AlreadyHeld(body));
+            }
+        }
+        for (&body, &target) in bodies.iter().zip(targets) {
+            self.add_hold(world, body, target, omega);
+        }
+        Ok(())
     }
 
     /// Let go of everything these hands hold. Returns how many
-    pub fn release_all(&self, _world: &mut PhysicsWorld) -> usize {
-        todo!("release all")
+    pub fn release_all(&self, world: &mut PhysicsWorld) -> usize {
+        let mut count = 0;
+        // from the end, which keeps the order of what stays: it is part of the state
+        for idx in (0..world.joints.len()).rev() {
+            if let Joint::Spring(s) = &world.joints[idx] {
+                if s.body_a == self.anchor {
+                    let body = s.body_b;
+                    world.remove_joint(idx);
+                    world.wake_body(body);
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     /// Whether `body` is held
     #[must_use]
-    pub fn holds(&self, _world: &PhysicsWorld, _body: usize) -> bool {
-        todo!("holds")
+    pub fn holds(&self, world: &PhysicsWorld, body: usize) -> bool {
+        self.joint_of(world, body).is_some()
     }
 }
-
-#[allow(dead_code)]
-fn _kept(_: Joint, _: SpringJoint, _: CollisionFilter, _: BodyType, _: RigidBody) {}

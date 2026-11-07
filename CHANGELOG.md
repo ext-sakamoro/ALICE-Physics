@@ -15,6 +15,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `holds`: `PhysicsWorld::apply_radial_impulse` (a blow from a point, a negative strength pulling in) and `Holds`
+  (hold, move and let go of bodies by critically damped springs in the world's joints; `form` holds many at once).
+  Under gravity a held body rests at the place. In `snapshot_world` and `state_digest`
+- `input_log`: `InputLog` records a run's inputs by step, replays them to the same `state_digest`, and carries them
+  with the digest's first bytes as a short code. Bytes are an input for a host that writes its own
+- wasm: `applyRadialImpulse`, `holdBody`, `moveHold`, `releaseHold`, `formBodies`, `releaseHolds`, `WasmInputLog`
+
 ### Changed
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
