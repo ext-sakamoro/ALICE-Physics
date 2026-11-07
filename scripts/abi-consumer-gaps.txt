@@ -25,3 +25,5 @@ unreal alice_physics_state_digest a 32-byte digest has no Blueprint type yet; C+
 unreal alice_physics_law_id a 32-byte identifier has no Blueprint type yet; C++ code in a project calls the C ABI directly
 unreal alice_physics_world_add_wind_zone the component exposes no wind zone Blueprint function yet; C++ code calls the C ABI directly
 unreal alice_physics_world_add_buoyancy_zone the component exposes no buoyancy zone Blueprint function yet; C++ code calls the C ABI directly
+unreal alice_physics_world_add_rope the component exposes no rope Blueprint function yet; C++ code calls the C ABI directly
+unreal alice_physics_world_rope_positions the component exposes no rope Blueprint function yet; C++ code calls the C ABI directly

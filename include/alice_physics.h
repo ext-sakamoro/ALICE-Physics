@@ -236,6 +236,10 @@ uint32_t alice_physics_world_add_magnet(AlicePhysicsWorld* world, AliceVec3 posi
 uint32_t alice_physics_world_add_wind_zone(AlicePhysicsWorld* world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double base_speed, double gust_amplitude, double gust_hz, double air_density, double drag_coefficient, double area);
 /** Add a box of fluid min to max, surface at max.y: lift of the volume a body displaces (from its collision radius, density, gravity) and drag drag_linear*v + drag_quadratic*v*|v|. Part of the world: a snapshot keeps it, a restore needs the same zones in the same order. Returns its index or UINT32_MAX. */
 uint32_t alice_physics_world_add_buoyancy_zone(AlicePhysicsWorld* world, AliceVec3 min, AliceVec3 max, double density, double gravity, double drag_linear, double drag_quadratic);
+/** Add a rope from start to end, falling under the world gravity, an end tied to a body at a local anchor (UINT32_MAX = free). Part of the world snapshot. Returns its index or UINT32_MAX. */
+uint32_t alice_physics_world_add_rope(AlicePhysicsWorld* world, AliceVec3 start, AliceVec3 end, uint32_t segments, double mass, double damping, uint32_t start_body, AliceVec3 start_local, uint32_t end_body, AliceVec3 end_local);
+/** Write the particles of a rope to out. Returns how many it has (nothing written above capacity) or UINT32_MAX. */
+uint32_t alice_physics_world_rope_positions(const AlicePhysicsWorld* world, uint32_t index, AliceVec3* out, uint32_t capacity);
 /** Drop a body's own collision radius (falls back to the world default). Returns 1 on success. */
 uint8_t alice_physics_body_clear_collision_radius(AlicePhysicsWorld* world, uint32_t body_id);
 /** Add a dynamic body with a shape; mass and inertia from density. Returns body index or UINT32_MAX. */
