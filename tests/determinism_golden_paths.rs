@@ -475,8 +475,9 @@ fn golden_path_tgs_try_step() {
 /// Re-recorded when the contact friction began acting at the contact point:
 /// the balls at `x = ±3` bounce on a surface tilted by `3e-6` and keep a turn
 /// of `2e-8` about `z` (and move `6e-9` along `x`); the centre ball and the
-/// sleep decisions are unchanged.
-const GOLDEN_SLEEPING: &str = "cb84f34c3f218683abcc25f42eb7c1310cb74b770eca785eb40d1378066f1503";
+/// sleep decisions are unchanged. Re-recorded again when the static friction
+/// did too: the turn is `1.0e-6`, the shift `1.1e-6`, still asleep.
+const GOLDEN_SLEEPING: &str = "fd10def88190b9f82db629f98e0f290b6074cb4a9bf53a93a1450f833c9ece22";
 
 #[test]
 fn golden_sleeping() {

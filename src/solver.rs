@@ -147,6 +147,16 @@ pub struct RigidBody {
     pub body_type: BodyType,
     /// Kinematic target position and rotation
     pub kinematic_target: Option<(Vec3Fix, QuatFix)>,
+    /// The rotation the position-level contact friction applied to this body
+    /// in the current substep, composed in the world frame (`exp(θ_n) ⋯
+    /// exp(θ_1)`); the identity when it applied none. The velocity update
+    /// adds `log(turn) / h` to the predicted angular velocity instead of
+    /// recovering the turn from the stored orientation, so the turn's effect
+    /// is independent of how the body is oriented, bit for bit.
+    pub turn: QuatFix,
+    /// Another writer (a kinematic target) set the rotation this substep, so
+    /// the angular velocity is derived from the rotation change instead.
+    pub turn_mixed: bool,
 }
 
 /// `a - b`, or `None` when the difference leaves the range of [`Fix128`];
@@ -287,6 +297,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
+            turn: QuatFix::IDENTITY,
+            turn_mixed: false,
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ONE,
@@ -317,6 +329,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
+            turn: QuatFix::IDENTITY,
+            turn_mixed: false,
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
@@ -340,6 +354,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
+            turn: QuatFix::IDENTITY,
+            turn_mixed: false,
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ZERO,
@@ -366,6 +382,8 @@ impl RigidBody {
             rotation: QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: QuatFix::IDENTITY,
+            turn: QuatFix::IDENTITY,
+            turn_mixed: false,
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
@@ -534,6 +552,8 @@ impl RigidBody {
         let rotation = rotation.unit_rotation();
         self.rotation = rotation;
         self.prev_rotation = rotation;
+        self.turn = QuatFix::IDENTITY;
+        self.turn_mixed = false;
     }
 
     /// The stored rotations (`rotation`, `prev_rotation` and the rotation of
@@ -1161,11 +1181,21 @@ fn derive_linear_velocity(
 /// turned it). Any other body predicted this substep (`predicted =
 /// Some(q_pred)`, `body.angular_velocity` still the `ω_pred` that predicted
 /// `q_pred`) does the same with `ω_pred` and `q_pred`: a body the solve did
-/// not turn keeps `ω_pred` bit for bit (re-deriving it from
-/// `log(q · q_prev⁻¹)` rounds through the axis-angle, the normalisation and
-/// the logarithm). A body not predicted (`None`: static, kinematic,
-/// sleeping, parked) derives `ω` from its rotation change, as
-/// [`angular_from_rotations`] always did.
+/// not turn keeps `ω_pred` bit for bit.
+///
+/// The turn the solve added comes from [`RigidBody::turn`], the composition
+/// of the turns the contact friction applied (`exp(θ_n) ⋯ exp(θ_1)`, world
+/// frame): `ω = ω_pred + log(turn) / h`. In real arithmetic this equals
+/// `log(q · q_pred⁻¹) / h` (the stored rotation is `turn · q_pred`), but it
+/// does not pass through the stored orientation, whose products round in a
+/// way that depends on the orientation; `θ` for an isotropic body is
+/// orientation-free, so such a body's motion is independent of how it is
+/// oriented, bit for bit. When something else also wrote the rotation
+/// (`turn_mixed`: a kinematic target), or the rotation differs from the
+/// prediction with no turn recorded, the change is recovered from the
+/// orientations with [`angular_from_rotations`] as before. A body not
+/// predicted (`None`: static, kinematic, sleeping, parked) derives `ω` from
+/// its rotation change, as [`angular_from_rotations`] always did.
 #[inline]
 fn derived_angular_velocity(
     body: &RigidBody,
@@ -1173,12 +1203,22 @@ fn derived_angular_velocity(
     predicted: Option<QuatFix>,
     inv_dt: Fix128,
 ) -> Vec3Fix {
-    match (free, predicted) {
-        (Some(f), _) if body.rotation == f.rotation => f.omega,
-        (Some(f), _) => f.omega + angular_from_rotations(body.rotation, f.rotation, inv_dt),
-        (None, Some(q)) if body.rotation == q => body.angular_velocity,
-        (None, Some(q)) => body.angular_velocity + angular_from_rotations(body.rotation, q, inv_dt),
-        (None, None) => angular_from_rotations(body.rotation, body.prev_rotation, inv_dt),
+    let (omega_pred, q_pred) = match (free, predicted) {
+        (Some(f), _) => (f.omega, f.rotation),
+        (None, Some(q)) => (body.angular_velocity, q),
+        (None, None) => return angular_from_rotations(body.rotation, body.prev_rotation, inv_dt),
+    };
+    if body.turn_mixed {
+        return omega_pred + angular_from_rotations(body.rotation, q_pred, inv_dt);
+    }
+    if body.turn == QuatFix::IDENTITY {
+        if body.rotation == q_pred {
+            omega_pred
+        } else {
+            omega_pred + angular_from_rotations(body.rotation, q_pred, inv_dt)
+        }
+    } else {
+        omega_pred + angular_from_rotations(body.turn, QuatFix::IDENTITY, inv_dt)
     }
 }
 
@@ -1437,6 +1477,160 @@ fn static_friction_correction(
     ))
 }
 
+/// Position-level static friction at the contact point (Müller et al. 2020,
+/// eq. (26)–(28)): the tangential displacement of the two contact *material
+/// points* since the substep start — each body's centre motion plus the turn
+/// of its lever arm, `(x − x̄) + (r − q̄ q⁻¹ r)` — is cancelled when it is under
+/// `μ λ` through the generalised inverse mass `w_a + w_b + (r_a × t)·I_a⁻¹(r_a × t)
+/// + (r_b × t)·I_b⁻¹(r_b × t)`, moving the centres by `p w` and turning the
+/// bodies by `I⁻¹ (r × p)`, so a ball with inertia held on an incline rolls
+/// instead of staying put. `pos_a` / `pos_b` are the positions after the
+/// normal correction. Returns the new `(position, rotation)` of each body, or
+/// `None` when the contact slides (the velocity pass then applies kinetic
+/// friction). Bodies that cannot turn (`inv_inertia = 0`, static) make their
+/// lever term vanish; when both vanish the centre form of
+/// [`static_friction_correction`] is used unchanged, bit for bit.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the contact-point friction needs both bodies, both solved positions, the contact, the weight sum, mu and the normal lambda"
+)]
+#[inline]
+fn static_friction_correction_at_point(
+    a: &RigidBody,
+    b: &RigidBody,
+    pos_a: Vec3Fix,
+    pos_b: Vec3Fix,
+    contact: &Contact,
+    turns: (bool, bool),
+    dt: Fix128,
+    inv_w_sum: Fix128,
+    mu: Fix128,
+    lambda: Fix128,
+) -> Option<(PosRotTurn, PosRotTurn)> {
+    let limit = mu * lambda;
+    if limit <= Fix128::ZERO {
+        return None;
+    }
+    let normal = contact.normal;
+    let r_a = contact.point_a - pos_a;
+    let r_b = contact.point_b - pos_b;
+    // `turns`: the body's contact point is the point under the contact (a
+    // plain sphere) and it may turn; a shaped body's point is a support vertex
+    // and a static body does not move, both keep the centre form
+    let turns_a = turns.0 && !a.is_static();
+    let turns_b = turns.1 && !b.is_static();
+    // lever-arm term of each body along a tangent
+    let lever = |turns: bool, body: &RigidBody, r: Vec3Fix, t: Vec3Fix| -> Fix128 {
+        if turns {
+            let rt = r.cross(t);
+            rt.dot(inv_inertia_world_apply(body.rotation, body.inv_inertia, rt))
+        } else {
+            Fix128::ZERO
+        }
+    };
+    // displacement of each body's contact material point since the substep
+    // start (its centre's for a body that does not turn)
+    // `r_then`: where the material point was at the substep start. An isotropic body turned by
+    // exactly `exp(ω dt)` in the prediction (`predict_rotation`), so its lever arm is turned back
+    // by `|ω| dt` about `ω` directly from the predicted `ω` — no quaternion of the absolute
+    // orientation enters, and a sphere's motion stays independent of how it is oriented, bit for
+    // bit. An anisotropic body may have followed the free (gyroscopic) rotation, so its lever arm
+    // is turned back through the two orientations, `q̄ q⁻¹ r`.
+    let moved = |turns: bool, body: &RigidBody, pos: Vec3Fix, r: Vec3Fix| -> Vec3Fix {
+        if body.is_static() {
+            Vec3Fix::ZERO
+        } else if turns {
+            let r_then = if inv_inertia_is_isotropic(body.inv_inertia) {
+                let omega = body.angular_velocity;
+                let (axis, speed) = omega.normalize_with_length();
+                if speed.is_zero() {
+                    r
+                } else {
+                    QuatFix::from_axis_angle(axis, -(speed * dt)).rotate_vec(r)
+                }
+            } else {
+                body.prev_rotation
+                    .rotate_vec(body.rotation.conjugate().rotate_vec(r))
+            };
+            (pos - body.prev_position) + (r - r_then)
+        } else {
+            pos - body.prev_position
+        }
+    };
+    let dp = moved(turns_a, a, pos_a, r_a) - moved(turns_b, b, pos_b, r_b);
+    let dp_t = dp - normal * dp.dot(normal);
+    let len_sq = dp_t.length_squared();
+    if len_sq.is_zero() || len_sq >= limit * limit {
+        return None;
+    }
+    let (t, len) = dp_t.normalize_with_length();
+    let lever_a = lever(turns_a, a, r_a, t);
+    let lever_b = lever(turns_b, b, r_b, t);
+    if lever_a.is_zero() && lever_b.is_zero() {
+        // no rotational response possible: the centre form, unchanged
+        let (fa, fb) = static_friction_correction(
+            moved(turns_a, a, pos_a, r_a),
+            moved(turns_b, b, pos_b, r_b),
+            normal,
+            a.inv_mass,
+            b.inv_mass,
+            inv_w_sum,
+            mu,
+            lambda,
+        )?;
+        return Some((
+            (
+                select_vec3(!a.inv_mass.is_zero(), pos_a - fa, pos_a),
+                a.rotation,
+                QuatFix::IDENTITY,
+            ),
+            (
+                select_vec3(!b.inv_mass.is_zero(), pos_b + fb, pos_b),
+                b.rotation,
+                QuatFix::IDENTITY,
+            ),
+        ));
+    }
+    let w = a.inv_mass + b.inv_mass + lever_a + lever_b;
+    let p = t * (len / w);
+    // body A is moved by −p through its centre and turned by I⁻¹ (r_a × −p),
+    // body B by +p and I⁻¹ (r_b × p)
+    // returns (the new rotation, the applied turn `exp(θ)`; identity when none)
+    let turn =
+        |turns: bool, body: &RigidBody, r: Vec3Fix, impulse: Vec3Fix| -> (QuatFix, QuatFix) {
+            if !turns {
+                return (body.rotation, QuatFix::IDENTITY);
+            }
+            let theta = inv_inertia_world_apply(body.rotation, body.inv_inertia, r.cross(impulse));
+            let (axis, angle) = theta.normalize_with_length();
+            if angle.is_zero() {
+                (body.rotation, QuatFix::IDENTITY)
+            } else {
+                let dq = QuatFix::from_axis_angle(axis, angle);
+                (dq.mul(body.rotation).normalize(), dq)
+            }
+        };
+    let (qa, da) = turn(turns_a, a, r_a, -p);
+    let (qb, db) = turn(turns_b, b, r_b, p);
+    Some((
+        (
+            select_vec3(!a.inv_mass.is_zero(), pos_a - p * a.inv_mass, pos_a),
+            qa,
+            da,
+        ),
+        (
+            select_vec3(!b.inv_mass.is_zero(), pos_b + p * b.inv_mass, pos_b),
+            qb,
+            db,
+        ),
+    ))
+}
+
+/// A body's corrected position, corrected rotation and the turn applied to
+/// reach it (`exp(θ)`, identity when none), as the position-level friction
+/// returns them.
+type PosRotTurn = (Vec3Fix, QuatFix, QuatFix);
+
 /// Body access handed to the parallel pair solvers.
 ///
 /// Dynamic bodies are borrowed exclusively and receive position writes;
@@ -1463,6 +1657,23 @@ impl BodyRef<'_> {
     fn set_position(&mut self, position: Vec3Fix) {
         if let BodyRef::Dynamic(b) = self {
             b.position = position;
+        }
+    }
+
+    #[inline(always)]
+    fn set_rotation(&mut self, rotation: QuatFix) {
+        if let BodyRef::Dynamic(b) = self {
+            b.rotation = rotation;
+        }
+    }
+
+    /// Compose a turn the friction applied (`turn ← dq · turn`, world frame).
+    #[inline(always)]
+    fn compose_turn(&mut self, dq: QuatFix) {
+        if let BodyRef::Dynamic(b) = self {
+            if dq != QuatFix::IDENTITY {
+                b.turn = dq.mul(b.turn);
+            }
         }
     }
 }
@@ -3453,6 +3664,11 @@ impl PhysicsWorld {
         #[cfg(feature = "std")]
         if matches!(self.config.solver_backend, SolverBackend::Tgs) {
             self.step_tgs(dt, &mut frozen);
+            // the turns are consumed: between steps no body carries one
+            for body in &mut self.bodies {
+                body.turn = QuatFix::IDENTITY;
+                body.turn_mixed = false;
+            }
             return;
         }
 
@@ -3869,10 +4085,13 @@ impl PhysicsWorld {
             }
             body.prev_position = body.position;
             body.prev_rotation = body.rotation;
+            body.turn = QuatFix::IDENTITY;
+            body.turn_mixed = false;
             if let Some((target_pos, target_rot)) = body.kinematic_target {
                 body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
                 body.position = target_pos;
                 body.rotation = target_rot;
+                body.turn_mixed = true;
             }
         }
     }
@@ -4560,6 +4779,8 @@ impl PhysicsWorld {
                         BodyType::Kinematic => {
                             body.prev_position = body.position;
                             body.prev_rotation = body.rotation;
+                            body.turn = QuatFix::IDENTITY;
+                            body.turn_mixed = false;
                             if let Some((target_pos, target_rot)) = body.kinematic_target {
                                 let (p, r) = kinematic_substep_pose(
                                     body.position,
@@ -4571,6 +4792,7 @@ impl PhysicsWorld {
                                 body.velocity = (p - body.position) * (Fix128::ONE / dt);
                                 body.position = p;
                                 body.rotation = r;
+                                body.turn_mixed = true;
                             }
                             return;
                         }
@@ -4584,12 +4806,16 @@ impl PhysicsWorld {
                     {
                         body.prev_position = body.position;
                         body.prev_rotation = body.rotation;
+                        body.turn = QuatFix::IDENTITY;
+                        body.turn_mixed = false;
                         return;
                     }
 
                     // Store previous state
                     body.prev_position = body.position;
                     body.prev_rotation = body.rotation;
+                    body.turn = QuatFix::IDENTITY;
+                    body.turn_mixed = false;
 
                     // Apply gravity (with per-body scale)
                     body.velocity = body.velocity + gravity * body.gravity_scale * dt;
@@ -4638,6 +4864,8 @@ impl PhysicsWorld {
                     BodyType::Kinematic => {
                         self.bodies[i].prev_position = self.bodies[i].position;
                         self.bodies[i].prev_rotation = self.bodies[i].rotation;
+                        self.bodies[i].turn = QuatFix::IDENTITY;
+                        self.bodies[i].turn_mixed = false;
                         if let Some((target_pos, target_rot)) = self.bodies[i].kinematic_target {
                             let (p, r) = kinematic_substep_pose(
                                 self.bodies[i].position,
@@ -4650,6 +4878,7 @@ impl PhysicsWorld {
                                 (p - self.bodies[i].position) * (Fix128::ONE / dt);
                             self.bodies[i].position = p;
                             self.bodies[i].rotation = r;
+                            self.bodies[i].turn_mixed = true;
                         }
                         continue;
                     }
@@ -4660,12 +4889,16 @@ impl PhysicsWorld {
                 if self.islands.is_sleeping(i) {
                     self.bodies[i].prev_position = self.bodies[i].position;
                     self.bodies[i].prev_rotation = self.bodies[i].rotation;
+                    self.bodies[i].turn = QuatFix::IDENTITY;
+                    self.bodies[i].turn_mixed = false;
                     continue;
                 }
 
                 // Store previous state
                 self.bodies[i].prev_position = self.bodies[i].position;
                 self.bodies[i].prev_rotation = self.bodies[i].rotation;
+                self.bodies[i].turn = QuatFix::IDENTITY;
+                self.bodies[i].turn_mixed = false;
 
                 // Apply gravity (with per-body scale)
                 let grav = self.config.gravity * self.bodies[i].gravity_scale * dt;
@@ -4856,6 +5089,13 @@ impl PhysicsWorld {
                 body.angular_velocity =
                     derived_angular_velocity(body, f, pose.map(|(_, q)| q), inv_dt);
             }
+        }
+
+        // The turns are consumed: between substeps no body carries one (every
+        // body, staged or not, so a snapshot round trip sees the same fields).
+        for body in &mut self.bodies {
+            body.turn = QuatFix::IDENTITY;
+            body.turn_mixed = false;
         }
 
         // --- Phase 2: Apply restitution and friction at contacts ---
@@ -5189,6 +5429,7 @@ impl PhysicsWorld {
                     len: self.contact_constraints.len(),
                 };
                 let indices = &self.constraint_batches[batch_idx].contact_indices;
+                let colliders = &self.body_colliders;
                 indices.par_iter().for_each(|&idx| {
                     if discarded.get(idx).copied().unwrap_or(false) {
                         return;
@@ -5198,11 +5439,15 @@ impl PhysicsWorld {
                     // each constraint index in exactly one batch.
                     unsafe {
                         let constraint = contacts.get_mut(idx);
+                        let turns = (
+                            colliders.get(constraint.body_a).is_none_or(Option::is_none),
+                            colliders.get(constraint.body_b).is_none_or(Option::is_none),
+                        );
                         let body_a =
                             bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
                         let body_b =
                             bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
-                        Self::solve_contact_pair(body_a, body_b, constraint);
+                        Self::solve_contact_pair(body_a, body_b, constraint, turns, dt);
                     }
                 });
             }
@@ -5283,14 +5528,16 @@ impl PhysicsWorld {
         mut body_a: BodyRef<'_>,
         mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
+        turns: (bool, bool),
+        dt: Fix128,
     ) {
-        let (pos_a, prev_a, inv_mass_a, sensor_a) = {
+        let (pos_a, inv_mass_a, sensor_a) = {
             let a = body_a.get();
-            (a.position, a.prev_position, a.inv_mass, a.is_sensor)
+            (a.position, a.inv_mass, a.is_sensor)
         };
-        let (pos_b, prev_b, inv_mass_b, sensor_b) = {
+        let (pos_b, inv_mass_b, sensor_b) = {
             let b = body_b.get();
-            (b.position, b.prev_position, b.inv_mass, b.is_sensor)
+            (b.position, b.inv_mass, b.is_sensor)
         };
 
         // Skip physics response for sensor/trigger bodies
@@ -5332,25 +5579,33 @@ impl PhysicsWorld {
             pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b - correction_b, pos_b);
         }
 
-        // Static friction (Müller et al. 2020, eq. (26)), see
-        // `static_friction_correction`.
-        if let Some((fa, fb)) = static_friction_correction(
-            pos_a - prev_a,
-            pos_b - prev_b,
-            contact.normal,
-            inv_mass_a,
-            inv_mass_b,
+        // Static friction at the contact point (Müller et al. 2020, eq.
+        // (26)–(28)), see `static_friction_correction_at_point`.
+        let (mut rot_a, mut rot_b) = (body_a.get().rotation, body_b.get().rotation);
+        let (mut turn_a, mut turn_b) = (QuatFix::IDENTITY, QuatFix::IDENTITY);
+        if let Some(((xa, qa, da), (xb, qb, db))) = static_friction_correction_at_point(
+            body_a.get(),
+            body_b.get(),
+            pos_a,
+            pos_b,
+            &contact,
+            turns,
+            dt,
             inv_w_sum,
             constraint.friction,
             constraint.cached_lambda,
         ) {
-            pos_a = select_vec3(!inv_mass_a.is_zero(), pos_a - fa, pos_a);
-            pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b + fb, pos_b);
+            (pos_a, rot_a, pos_b, rot_b) = (xa, qa, xb, qb);
+            (turn_a, turn_b) = (da, db);
         }
 
-        // `set_position` is a no-op for `BodyRef::Static`.
+        // `set_position` / `set_rotation` / `compose_turn` are no-ops for `BodyRef::Static`.
         body_a.set_position(pos_a);
+        body_a.set_rotation(rot_a);
+        body_a.compose_turn(turn_a);
         body_b.set_position(pos_b);
+        body_b.set_rotation(rot_b);
+        body_b.compose_turn(turn_b);
     }
 
     /// Solve distance constraints (sequential) with warm-starting (Gap 3.1).
@@ -5436,7 +5691,7 @@ impl PhysicsWorld {
     ///
     /// If no bridge is installed, the existing CPU-only code path runs
     /// unchanged.
-    fn solve_contact_constraints(&mut self, _dt: Fix128) {
+    fn solve_contact_constraints(&mut self, dt: Fix128) {
         #[cfg(feature = "gpu-solver-bridge")]
         if let Some(mut bridge) = self.gpu_solver_bridge.take() {
             self.solve_contact_pass_with_bridge(bridge.as_mut());
@@ -5500,7 +5755,7 @@ impl PhysicsWorld {
 
             // Static friction (Müller et al. 2020, eq. (26)), see
             // `static_friction_correction`.
-            self.apply_static_friction(i, inv_w_sum);
+            self.apply_static_friction(i, inv_w_sum, dt);
         }
     }
 
@@ -5509,24 +5764,42 @@ impl PhysicsWorld {
     /// batched pass calls [`static_friction_correction`] on its pair
     /// references). The caller has already skipped sensor, discarded and
     /// non-penetrating contacts.
-    fn apply_static_friction(&mut self, i: usize, inv_w_sum: Fix128) {
+    fn apply_static_friction(&mut self, i: usize, inv_w_sum: Fix128, dt: Fix128) {
         let constraint = self.contact_constraints[i];
         let a = self.bodies[constraint.body_a];
         let b = self.bodies[constraint.body_b];
-        if let Some((fa, fb)) = static_friction_correction(
-            a.position - a.prev_position,
-            b.position - b.prev_position,
-            constraint.contact.normal,
-            a.inv_mass,
-            b.inv_mass,
+        let turns = (
+            self.contact_point_is_exact(constraint.body_a),
+            self.contact_point_is_exact(constraint.body_b),
+        );
+        if let Some(((xa, qa, da), (xb, qb, db))) = static_friction_correction_at_point(
+            &a,
+            &b,
+            a.position,
+            b.position,
+            &constraint.contact,
+            turns,
+            dt,
             inv_w_sum,
             constraint.friction,
             constraint.cached_lambda,
         ) {
-            self.bodies[constraint.body_a].position =
-                select_vec3(!a.inv_mass.is_zero(), a.position - fa, a.position);
-            self.bodies[constraint.body_b].position =
-                select_vec3(!b.inv_mass.is_zero(), b.position + fb, b.position);
+            if !a.is_static() {
+                let body = &mut self.bodies[constraint.body_a];
+                body.position = xa;
+                body.rotation = qa;
+                if da != QuatFix::IDENTITY {
+                    body.turn = da.mul(body.turn);
+                }
+            }
+            if !b.is_static() {
+                let body = &mut self.bodies[constraint.body_b];
+                body.position = xb;
+                body.rotation = qb;
+                if db != QuatFix::IDENTITY {
+                    body.turn = db.mul(body.turn);
+                }
+            }
         }
     }
 
@@ -7670,6 +7943,46 @@ mod tests {
         assert!(
             combined.friction > Fix128::ZERO,
             "Combined friction should be positive"
+        );
+    }
+
+    /// `derived_angular_velocity`: the composed turn gives, up to the rounding
+    /// of two normalisations and one logarithm, the same angular velocity the
+    /// orientation change gives (`log(turn) = log(q · q_pred⁻¹)` when
+    /// `q = turn · q_pred`), and the mixed flag selects the orientation path
+    /// exactly.
+    #[test]
+    fn derived_angular_velocity_composed_turn_matches_the_orientation_change() {
+        let inv_dt = Fix128::from_int(480);
+        let q_pred = QuatFix::from_axis_angle(v3(1, 2, 3).normalize(), Fix128::from_ratio(5, 7));
+        let t1 = QuatFix::from_axis_angle(v3(0, 1, 0), Fix128::from_ratio(1, 300));
+        let t2 = QuatFix::from_axis_angle(v3(1, 0, 1).normalize(), Fix128::from_ratio(-1, 450));
+        let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        body.angular_velocity = v3(2, -1, 3);
+        body.rotation = t2.mul(t1.mul(q_pred).normalize()).normalize();
+        body.turn = t2.mul(t1);
+        let composed = derived_angular_velocity(&body, None, Some(q_pred), inv_dt);
+        let from_q = body.angular_velocity + angular_from_rotations(body.rotation, q_pred, inv_dt);
+        let d = composed - from_q;
+        let tol = Fix128::from_raw(0, 1 << 36); // 2⁻²⁸ ≈ 3.7e-9: far above the ~1e-15 rounding, far below the 1e-3 turn
+        for c in [d.x, d.y, d.z] {
+            assert!(c.abs() <= tol, "composed turn vs orientation change: {c:?}");
+        }
+        assert_ne!(
+            composed, from_q,
+            "the two paths round differently, or the test compares nothing"
+        );
+        body.turn_mixed = true;
+        assert_eq!(
+            derived_angular_velocity(&body, None, Some(q_pred), inv_dt),
+            from_q
+        );
+        body.turn_mixed = false;
+        body.turn = QuatFix::IDENTITY;
+        body.rotation = q_pred;
+        assert_eq!(
+            derived_angular_velocity(&body, None, Some(q_pred), inv_dt),
+            body.angular_velocity
         );
     }
 

@@ -280,13 +280,10 @@ fn a_ball_dropped_straight_down_gets_no_spin() {
 /// after 1 s the displacement down the slope is `(5/7) g sin θ t² / 2` and
 /// `|v + ω r| < 1e-3`. Budget `2 %` (one substep of phase, `a h t`).
 ///
-/// Measured (step, t = 1 s): displacement `0.000000` (want 1.055): the
-/// position-level static friction (`static_friction_correction`) cancels the
-/// centre's tangential displacement when it is under `μ λ`, taking no lever
-/// arm, so the ball is held like one that cannot turn; the velocity pass then
-/// sees no slip at the contact and adds no spin.
+/// Before the static friction acted at the contact point (step, t = 1 s):
+/// displacement `0.000000` (want 1.055), the centre was held like a ball
+/// that cannot turn.
 #[test]
-#[ignore = "src gap: the position-level static friction holds the centre of a ball that should roll down the incline"]
 fn a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_theta() {
     let (mu, theta) = (0.5, 0.3_f64);
     for path in paths() {

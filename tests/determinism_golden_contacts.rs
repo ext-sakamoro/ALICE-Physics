@@ -370,8 +370,12 @@ fn determinism_contact_slide() {
 ///
 /// Budget: `2 μ g h` on `v` as in `slide`, plus the slip the velocity
 /// derivation leaves (`≤ 1e-3`); `2e-2` on `x`.
+///
+/// Re-recorded when the static friction began acting at the contact point:
+/// once the ball rolls, its material point's displacement is under `μ λ`
+/// and the position pass now keeps it (`x` at 2 s 4.470471 → 4.470459).
 const GOLDEN_CONTACT_ROLL: &str =
-    "8f718f5f75c8082bb4ed61a17ed8fc83eca7df6e10854e9dc612547685dc32dd";
+    "0531ae7c5d21526d5d3909d213e82c385c0cdb2d5a529bd9db6ecba9be14660a";
 
 #[test]
 fn determinism_contact_roll() {
@@ -440,7 +444,8 @@ fn determinism_contact_roll() {
 // (c) Slope and stack: resting contacts
 // ============================================================================
 
-/// **Slope**: a ball at rest on the ground under a gravity tilted by `θ`
+/// **Slope**: a ball that cannot turn (`inv_inertia = 0`) at rest on the
+/// ground under a gravity tilted by `θ`
 /// with `sin θ = 3/5`, `cos θ = 4/5` (`g = (6, −8, 0)`, a slope of 36.9°),
 /// `μ = 1` (friction angle 45°), `e = 0`, 120 frames.
 ///
@@ -473,6 +478,9 @@ fn determinism_contact_slope() {
             v3(Fix128::ZERO, fr(1, 2), Fix128::ZERO),
             Vec3Fix::ZERO,
         );
+        // a ball that cannot turn: a free ball on a slope rolls (see
+        // `slope_roll`), only one without inertia is held inside the cone
+        w.bodies[ball].inv_inertia = Vec3Fix::ZERO;
         let mut contacts = 0usize;
         for _ in 0..120 {
             step(&mut w, path);
@@ -493,6 +501,70 @@ fn determinism_contact_slope() {
         assert!((y - 0.5).abs() < 1e-6, "{path:?}: the ball at y {y:.9}");
         assert_no_rotation("contact_slope", &w);
         assert_golden("contact_slope", path, &hash_world(&w), GOLDEN_CONTACT_SLOPE);
+    }
+}
+
+/// **Slope, rolling**: the slope scene with a solid ball (`I = 2/5 m r²`,
+/// `r = 1/2`): `g = (6, −8, 0)`, `μ = 1`, `e = 0`, released from rest, 120
+/// frames.
+///
+/// Invariants (a free ball on a slope rolls without slipping whenever
+/// `tan θ ≤ 7μ/2`; here `tan θ = 3/4`): `a = (5/7) g sin θ = 30/7 m/s²`, so
+/// at `t = 2 s` `v = 60/7 m/s`, `x = 60/7 m`, and `v = −ω_z r`.
+///
+/// Budget: `2 %` plus one substep of phase (`a h t`) on `x` and `v`; `1e-3`
+/// on the slip `v + ω_z r`.
+const GOLDEN_CONTACT_SLOPE_ROLL: &str =
+    "06d66f0d5952011228c8ad897d0dba431e0bb4ffc276f7f1f97f492bf93691a5";
+
+#[test]
+fn determinism_contact_slope_roll() {
+    let a = 5.0 / 7.0 * 6.0;
+    let t = 2.0;
+    for path in paths() {
+        let (mut w, id) = world_with_ground(
+            v3(Fix128::from_int(6), Fix128::from_int(-8), Fix128::ZERO),
+            Fix128::ONE,
+            Fix128::ZERO,
+        );
+        let ball = add_ball(
+            &mut w,
+            id,
+            v3(Fix128::ZERO, fr(1, 2), Fix128::ZERO),
+            Vec3Fix::ZERO,
+        );
+        w.bodies[ball].inv_inertia = v3(
+            Fix128::from_int(10),
+            Fix128::from_int(10),
+            Fix128::from_int(10),
+        );
+        let mut contacts = 0usize;
+        for _ in 0..120 {
+            step(&mut w, path);
+            contacts += w.contact_constraints.len();
+        }
+        assert!(contacts > 0, "{path:?}: no contact was generated");
+        let b = &w.bodies[ball];
+        let (x, v, wr) = (
+            b.position.x.to_f64(),
+            b.velocity.x.to_f64(),
+            b.angular_velocity.z.to_f64() / 2.0,
+        );
+        let (x_want, v_want) = (a * t * t / 2.0, a * t);
+        println!("{path:?}: t=2 x {x:.6} ({x_want:.6}), v {v:.6} ({v_want:.6}), ω_z r {wr:.6}");
+        assert!(
+            (x - x_want).abs() < 0.02 * x_want + a * h() * t
+                && (v - v_want).abs() < 0.02 * v_want + a * h()
+                && (v + wr).abs() < 1e-3,
+            "{path:?}: t = 2 s: x {x:.6} / {x_want:.6}, v {v:.6} / {v_want:.6}, v + ω_z r {:.3e}",
+            v + wr
+        );
+        assert_golden(
+            "contact_slope_roll",
+            path,
+            &hash_world(&w),
+            GOLDEN_CONTACT_SLOPE_ROLL,
+        );
     }
 }
 
@@ -578,9 +650,11 @@ fn determinism_contact_stack() {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`), and again when the
 /// contact friction began acting at the contact point (the kept ball's
-/// bounces on the tilted ground leave it a spin of `1e-7`).
+/// bounces on the tilted ground leave it a spin of `1e-7`), and once more
+/// when the static friction did too (the spin is `5e-5` and the ball sits
+/// `2.6e-5` downhill, `|v|` `2.3e-5`: a free ball on a `3e-4` slope rolls).
 const GOLDEN_CONTACT_VETO: &str =
-    "a359c51d79716028c0d55c9b53a4ab0d45854519b6aa2461c2b30a928246665e";
+    "ec659b05ed9fbd38463d8041828a6ed85bb96d1ff2ac5f4c328d00bf6d7d709a";
 
 #[test]
 fn determinism_contact_veto() {
@@ -653,7 +727,7 @@ fn determinism_contact_veto() {
         let b = &w.bodies[kept];
         let spin = b.angular_velocity.length().to_f64();
         assert!(
-            spin < 1e-6 && b.rotation.z.to_f64().abs() < 1e-6,
+            spin < 1e-4 && b.rotation.z.to_f64().abs() < 1e-4,
             "{path:?}: kept ball spin {spin:.3e}, rotation z {:.3e}",
             b.rotation.z.to_f64()
         );

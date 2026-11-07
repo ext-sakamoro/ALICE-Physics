@@ -256,6 +256,8 @@ mod tests {
             rotation: crate::math::QuatFix::IDENTITY,
             angular_velocity: Vec3Fix::ZERO,
             prev_rotation: crate::math::QuatFix::IDENTITY,
+            turn: crate::math::QuatFix::IDENTITY,
+            turn_mixed: false,
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ONE,
