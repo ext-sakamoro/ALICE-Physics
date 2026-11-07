@@ -248,12 +248,8 @@ pub(crate) struct MagnetMaterial {
     pub density: f64,
 }
 
-/// Add a permanent magnet ([`ForceField::InducedDipole`]) at `position` with dipole `moment`
-/// and its own `radius`; returns the field index. `None` for a radius or density that is not
-/// finite and positive, a susceptibility or saturation that is negative or not finite, a
-/// material id that does not fit `MaterialId`, or a material another magnet already names with
-/// different magnetic properties (the world keeps its fields unchanged).
 /// A blow from a point: a finite centre and strength, a positive radius.
+#[cfg(feature = "wasm")]
 pub(crate) fn radial_impulse(
     w: &mut PhysicsWorld,
     center: Vec3Fix,
@@ -263,6 +259,11 @@ pub(crate) fn radial_impulse(
     Some(w.apply_radial_impulse(center, positive(radius)?, finite(strength)?))
 }
 
+/// Add a permanent magnet ([`ForceField::InducedDipole`]) at `position` with dipole `moment`
+/// and its own `radius`; returns the field index. `None` for a radius or density that is not
+/// finite and positive, a susceptibility or saturation that is negative or not finite, a
+/// material id that does not fit `MaterialId`, or a material another magnet already names with
+/// different magnetic properties (the world keeps its fields unchanged).
 pub(crate) fn add_magnet(
     w: &mut PhysicsWorld,
     position: Vec3Fix,
