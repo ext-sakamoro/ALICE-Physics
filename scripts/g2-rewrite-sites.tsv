@@ -16,7 +16,7 @@ src/audio_physics.rs	speed_ratio	expr	ratio > Fix128 :: ONE	fixed-point	operands
 src/bimaterial.rs	interfacial_bond_strength_mpa	expr	a . yield_strength_mpa <= b . yield_strength_mpa	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/binding_api.rs	unit_quat	assign	c > largest	equivalent	f64 largest of four absolute values: no operand is -0, so equal sizes keep the same bits whichever is kept; a NaN component is refused by its own division whatever the comparison keeps
 src/body_collider.rs	ball_triangle_boundary_contact	assign	d2 < best	fixed-point	Fix128 squared distances: a later edge replaces the closest only when strictly closer, so a tie keeps the first
-src/body_collider.rs	bounding_radius	assign	d > radius	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/body_collider.rs	checked_bounding_radius	assign	d > radius	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/bridging.rs	analyze_bridges	assign	c . length_mm > max_length	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/bvh.rs	point_to_morton	assign	size . y > scale	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/bvh.rs	point_to_morton	assign	size . z > scale	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
@@ -229,8 +229,8 @@ src/sdf_manifold.rs	reduce_manifold	assign	d > best_dist	fixed-point	operands ar
 src/sdf_manifold.rs	reduce_manifold	assign	q > hull	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	score > best_score	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sensors.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/shape.rs	bounding_radius	expr	apex > rim	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/shape.rs	bounding_radius	expr	corner > apex	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape.rs	checked_bounding_radius	expr	apex > rim	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape.rs	checked_bounding_radius	expr	corner > apex	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	ray_heightfield	assign	a > t_lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	ray_heightfield	assign	b < t_hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
