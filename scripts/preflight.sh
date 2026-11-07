@@ -246,6 +246,19 @@ python3 scripts/build_config_guard.py
 python3 scripts/test_build_flags_check.py
 python3 scripts/test_run_tests.py
 
+step "browser package without names: the real build, renaming, overwrite review and leak check"
+# a check build with a fixed key that is no secret: the package and its name map are thrown away
+if [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  skip "build_neutral_pkg.sh --check (full runs only: a release wasm build)"
+elif command -v wasm-bindgen >/dev/null 2>&1; then
+  neutral_tmp=$(mktemp -d)
+  scripts/build_neutral_pkg.sh --check "$neutral_tmp/out" "$neutral_tmp/private"
+  rm -rf "$neutral_tmp"
+else
+  echo "wasm-bindgen CLI not installed (the version in Cargo.lock): cargo install wasm-bindgen-cli --version <it>" >&2
+  exit 1
+fi
+
 step "mutants.toml exclude_re entries still match a real mutant (needs cargo-mutants)"
 if command -v cargo-mutants >/dev/null 2>&1; then
   python3 scripts/mutants_exclude_check.py

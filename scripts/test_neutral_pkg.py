@@ -280,6 +280,25 @@ class DataLiterals(unittest.TestCase):
             with self.assertRaisesRegex(npk.CheckError, "reaches a hash", msg=call):
                 npk.check_data_literals(["frob_tag"], src, {("frob_tag", "src/a.rs")})
 
+    def test_a_hash_word_inside_the_literal_itself_is_no_hash(self):
+        # an error name that contains a hash word, returned as text: nothing hashes it
+        src = {"src/e.rs": 'Self::FrobChecksumBad { .. } => "FrobChecksumBad",\n'}
+        self.assertEqual(npk.check_data_literals(["FrobChecksumBad"], src, {("FrobChecksumBad", "src/e.rs")}),
+                         {"checked": 1, "literals": 1})
+        # the same literal handed to a hash on its line still stops
+        hashed = {"src/e.rs": 'h.update(b"FrobChecksumBad");\n'}
+        with self.assertRaisesRegex(npk.CheckError, "reaches a hash at line 1"):
+            npk.check_data_literals(["FrobChecksumBad"], hashed, {("FrobChecksumBad", "src/e.rs")})
+
+    def test_a_literal_in_a_comment_is_no_data_and_a_hash_word_in_a_comment_is_no_call(self):
+        src = {"src/e.rs": '/// throws `"FrobChecksumBad"` when the digest differs\nfn f() {}\n'}
+        with self.assertRaisesRegex(npk.CheckError, "stale"):
+            # listing it is refused: the comment holds no literal of the build
+            npk.check_data_literals(["FrobChecksumBad"], src, {("FrobChecksumBad", "src/e.rs")})
+        bound = {"src/e.rs": 'const S: &str = "frob_tag";\nlet n = len(S); // not a hash of S\n'}
+        self.assertEqual(npk.check_data_literals(["frob_tag"], bound, {("frob_tag", "src/e.rs")}),
+                         {"checked": 1, "literals": 1})
+
     def test_a_list_is_checked_also_when_no_identifier_is_overwritten(self):
         with self.assertRaisesRegex(npk.CheckError, "stale"):
             npk.check_data_literals([], self.SOURCES, {("frob_index", "src/scene.rs")})
@@ -345,6 +364,17 @@ class CommandLine(unittest.TestCase):
         empty = self.root / "empty"
         empty.mkdir()
         self.assertEqual(self.main("--source-root", str(empty), "--data-literals", str(listed)), 2)
+
+
+    def test_a_check_build_uses_the_fixed_key_and_never_the_keychain(self):
+        def no_keychain(*a):
+            raise AssertionError("the Keychain was read for a check build")
+        npk.keychain_key = no_keychain
+        listed = self.root / "ok.txt"
+        listed.write_text("ZorblatError src/err.rs error kind returned as text\n")
+        repo = str(self.root / "repo")
+        self.assertEqual(self.main("--source-root", repo, "--data-literals", str(listed), "--check-key"), 0)
+        self.assertGreaterEqual(len(npk.CHECK_KEY), 32)
 
 
 class CommittedList(unittest.TestCase):
