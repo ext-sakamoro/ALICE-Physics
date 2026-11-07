@@ -2,7 +2,7 @@
 # Build the WebAssembly package for the browser with no name of the engine in it, named by its
 # content hash (scripts/neutral_pkg.py), and check it (scripts/neutral_leak_check.py).
 #
-#   scripts/build_neutral_pkg.sh <out-dir> <private-dir>
+#   scripts/build_neutral_pkg.sh [--check] <out-dir> <private-dir>
 #
 # <out-dir> receives p-<h12>.wasm / .js / .d.ts / .manifest.json and nothing else; <out-dir>.tokens.json
 # is the SHA-256 token set the leak check reads (copy both to the consumer). <private-dir> must be
@@ -11,6 +11,9 @@
 # build fails without it. Re-running on the same commit with the same key gives the same bytes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# --check: build and check with a fixed key that is no secret (scripts/preflight.sh), no Keychain
+check=()
+if [ "${1:-}" = "--check" ]; then check=(--check-key); shift; fi
 out=${1:?usage: build_neutral_pkg.sh <out-dir> <private-dir>}
 private=${2:?usage: build_neutral_pkg.sh <out-dir> <private-dir>}
 mkdir -p "$private"
@@ -52,7 +55,7 @@ while IFS= read -r c; do tokens+=(--token "$c"); done <<< "$family"
 rm -rf "$out"
 python3 scripts/neutral_pkg.py --in "$raw" --out "$out" --map "$private/name-map.json" \
   --tokens "$out.tokens.json" --identifiers docs/PUBLIC_API_SNAPSHOT.txt \
-  --source-root . --data-literals scripts/neutral_data_literals.txt "${tokens[@]}"
+  --source-root . --data-literals scripts/neutral_data_literals.txt "${check[@]}" "${tokens[@]}"
 python3 scripts/neutral_leak_check.py --tokens "$out.tokens.json" "$out"
 # the neutral package must behave as the package it was made from: positions, rotations and the
 # whole serialized state, bit for bit
