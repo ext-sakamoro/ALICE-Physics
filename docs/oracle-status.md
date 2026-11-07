@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5934 |
+| 🟢 Not ignored (run by CI) | 5962 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6030** |
+| **Total** | **6058** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -151,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5934)
+## 🟢 Not ignored (5962)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -269,6 +269,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_anomaly_wiring.rs` | 17 |
 | `analytic_ccd_wiring.rs` | 17 |
 | `analytic_gpu_sdf_wiring.rs` | 17 |
+| `analytic_holds.rs` | 17 |
 | `analytic_interpolation_wiring.rs` | 17 |
 | `analytic_modal_wiring.rs` | 17 |
 | `analytic_nbody.rs` | 17 |
@@ -402,6 +403,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_vibration_wall.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
 | `indep_participant_order.rs` | 11 |
+| `input_log.rs` | 11 |
 | `law_id_world.rs` | 11 |
 | `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
