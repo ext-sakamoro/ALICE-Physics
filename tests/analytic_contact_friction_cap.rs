@@ -313,11 +313,12 @@ fn a_relative_friction_modifier_halves_the_sliding_deceleration() {
 
 /// On a slope with `tan θ = 0.6 > μ = 0.2` the ball slides down with
 /// `a = g (sin θ − μ cos θ)` from rest: `x(t) = a t² φ₂(βt)` (`a t²/2`
-/// undamped) after one second, at both rates. Tolerance 2 % of
-/// `x ≈ 2.0 m` (damped) / `2.1 m` (undamped): the symplectic sub-step
-/// integration offsets `x` by `a t h / 2` (`≈ 2e-3`), per-frame damping by
-/// `O(β·dt)` of the damping term (0 at rate 0), and the surface tilt by
-/// `< 3e-4`.
+/// undamped) after one second, at both rates. Tolerance derived: the
+/// Richardson bound `2 |x(h) − x(2h)|` from the default and half the substeps
+/// (the symplectic offset `a t h / 2` is first order), per-frame damping at
+/// `β·dt` of the damping term `|x_damped − a t² / 2|` (0 at rate 0), and the
+/// ground's curvature at `(g / BIG) x t² / 2` (the face under the ball tilts by
+/// `x / BIG`), plus the fixed-point floor.
 #[test]
 fn a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate() {
     let g = g();
@@ -325,12 +326,21 @@ fn a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate() {
     let mu = 0.2;
     let a = g * (theta.sin() - mu * theta.cos());
     for rate in both_rates() {
-        let want = damped_displacement(a, engine_beta(rate, DT), 1.0);
+        let beta = engine_beta(rate, DT);
+        let want = damped_displacement(a, beta, 1.0);
+        let n = PhysicsConfig::default().substeps;
+        let (x1, _) = run_with(mu, theta, 0.0, 60, rate, None, Path::Serial, n);
+        let (x2, _) = run_with(mu, theta, 0.0, 60, rate, None, Path::Serial, n / 2);
+        let damping_part = (want - a * 0.5).abs();
+        let tol = 2.0 * (x1 - x2).abs()
+            + beta * DT * damping_part
+            + g / BIG * want * 0.5
+            + 2f64.powi(-40);
         for path in paths() {
             let (x, _) = run(mu, theta, 0.0, 60, rate, None, path);
             assert!(
-                (x - want).abs() < 2e-2 * want,
-                "{path:?} rate {rate:?}: x = {x:.5}, closed form {want:.5}"
+                (x - want).abs() <= tol,
+                "{path:?} rate {rate:?}: x = {x:.5}, closed form {want:.5}, bound {tol:.2e}"
             );
         }
     }

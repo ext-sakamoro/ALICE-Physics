@@ -117,9 +117,31 @@ fn run(
     filter: Filter,
     path: Path,
 ) -> (Vec3Fix, Vec3Fix) {
+    run_with(
+        mu,
+        a_t,
+        g_n,
+        rate,
+        filter,
+        path,
+        PhysicsConfig::default().substeps,
+    )
+}
+
+/// `run` with `substeps` per frame (for the derived tolerances).
+fn run_with(
+    mu: f64,
+    a_t: f64,
+    g_n: f64,
+    rate: Fix128,
+    filter: Filter,
+    path: Path,
+    substeps: usize,
+) -> (Vec3Fix, Vec3Fix) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: v3(a_t, -g_n, 0.0),
         damping_rate: rate,
+        substeps,
         ..PhysicsConfig::default()
     });
     let big = 1.0e4;
@@ -254,12 +276,12 @@ fn the_static_friction_uses_the_modified_friction() {
 
 /// A vetoed contact gets neither a normal nor a static friction response:
 /// on the `tan θ = 0.3` slope with `μ = 0.5` the ball moves freely,
-/// `x(t)` with `a = g sin θ` and `y(t)` with `a = −g cos θ` (tolerance
-/// `2e-2 m`: the sub-step integration offset `a t h / 2 ≤ 1e-2`; per-frame
-/// rather than continuous damping changes the damping term
-/// `a t²(1/2 − φ₂(βt)) ≈ a β t³/6` (`≤ 0.95 m`, for `y`) by `≈ β·dt/2 = 5e-3`
-/// of it, `≤ 5e-3 m`; `≤ 1.5e-2` in all, and the damping part is 0 at rate
-/// 0), at both rates.
+/// `x(t)` with `a = g sin θ` and `y(t)` with `a = −g cos θ`, each within a
+/// derived tolerance: the Richardson bound `2 |x(h) − x(2h)|` from the
+/// default and half the substeps (the sub-step offset `a t h / 2` is first
+/// order), plus per-frame rather than continuous damping at `β·dt / 2` of the
+/// damping term `|x_damped − a t² / 2|` (0 at rate 0), plus the fixed-point
+/// floor; at both rates.
 #[test]
 fn a_vetoed_contact_gets_no_static_friction() {
     let g = g();
@@ -269,12 +291,22 @@ fn a_vetoed_contact_gets_no_static_friction() {
         let beta = engine_beta(rate, DT);
         let want_x = damped_displacement(a_t, beta, 1.0);
         let want_y = 0.5 + damped_displacement(-g_n, beta, 1.0);
+        let n = PhysicsConfig::default().substeps;
+        let (p1, _) = run_with(0.5, a_t, g_n, rate, Filter::Veto, Path::Serial, n);
+        let (p2, _) = run_with(0.5, a_t, g_n, rate, Filter::Veto, Path::Serial, n / 2);
+        let floor = 2f64.powi(-40);
+        let tol_x = 2.0 * (p1.x.to_f64() - p2.x.to_f64()).abs()
+            + 0.5 * beta * DT * (want_x - a_t * 0.5).abs()
+            + floor;
+        let tol_y = 2.0 * (p1.y.to_f64() - p2.y.to_f64()).abs()
+            + 0.5 * beta * DT * (want_y - 0.5 + g_n * 0.5).abs()
+            + floor;
         for path in paths() {
             let (p, _) = run(0.5, a_t, g_n, rate, Filter::Veto, path);
             let (x, y) = (p.x.to_f64(), p.y.to_f64());
             assert!(
-                (x - want_x).abs() < 2e-2 && (y - want_y).abs() < 2e-2,
-                "{path:?} rate {rate:?}: ({x:.5}, {y:.5}), free motion ({want_x:.5}, {want_y:.5})"
+                (x - want_x).abs() <= tol_x && (y - want_y).abs() <= tol_y,
+                "{path:?} rate {rate:?}: ({x:.5}, {y:.5}), free motion ({want_x:.5}, {want_y:.5}), bounds ({tol_x:.2e}, {tol_y:.2e})"
             );
         }
     }
@@ -376,8 +408,11 @@ mod bridge {
         }
         let b = w.get_body(ball).expect("ball");
         let (x, y) = (b.position.x.to_f64(), b.position.y.to_f64());
+        // the ball rests on the ground within the contact depth's accuracy: EPA's
+        // threshold 2⁻¹⁶ (the standing penetration it can leave,
+        // `analytic_contact_detection_small_penetration.rs`) plus the fixed-point floor
         assert!(
-            (y - 0.5).abs() < 1e-3,
+            (y - 0.5).abs() <= 2f64.powi(-16) + 2f64.powi(-40),
             "the bridge must hold the ball on the ground, y = {y:.6}"
         );
         assert!(x.abs() < HOLD_TOL, "bridge: x = {x:.3e}");
