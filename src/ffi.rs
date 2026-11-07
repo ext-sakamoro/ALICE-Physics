@@ -2010,6 +2010,91 @@ pub unsafe extern "C" fn alice_physics_body_observe(
 mod tests {
     use super::*;
 
+    /// A world with a box of half size 1/2 at rest and asleep on the floor `y = 0`
+    unsafe fn box_asleep_on_a_floor() -> *mut PhysicsWorld {
+        let c = alice_physics_world_create();
+        let up = AliceVec3 {
+            x: 0.0,
+            y: 1.0,
+            z: 0.0,
+        };
+        assert_ne!(alice_physics_static_add_plane(c, up, 0.0), u32::MAX);
+        let shape = AlicePhysicsShape {
+            kind: 0,
+            a: 0.5,
+            b: 0.5,
+            c: 0.5,
+        };
+        let at = AliceVec3 {
+            x: 0.0,
+            y: 0.5,
+            z: 0.0,
+        };
+        let b = alice_physics_body_add_shaped(c, shape, 1000.0, at);
+        assert_eq!(b, 0);
+        for _ in 0..240 {
+            assert_eq!(alice_physics_world_step(c, 1.0 / 60.0), 1);
+        }
+        assert!((&*c).is_sleeping(0), "the scene does not sleep");
+        c
+    }
+
+    /// oracle: a body set spinning is not at rest, so it turns, and each setter returns 1; a body
+    /// that stayed asleep would not move at all. A zero spin leaves it asleep, so a caller that
+    /// stops a body every frame still lets it sleep.
+    ///
+    /// Limit: a body set off its balance does not topple, asleep or awake, since a contact gives
+    /// it no turning moment. So `set_rotation` is held to being awake and to its closed-form height,
+    /// not to falling over.
+    #[test]
+    fn a_setter_wakes_a_sleeping_body() {
+        // SAFETY: the world pointers come from alice_physics_world_create and are destroyed here
+        unsafe {
+            let c = box_asleep_on_a_floor();
+            let before = (&*c).bodies[0].rotation;
+            let still = AliceVec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            assert_eq!(alice_physics_body_set_angular_velocity(c, 0, still), 1);
+            assert!((&*c).is_sleeping(0), "a zero spin woke it");
+            let about_y = AliceVec3 {
+                x: 0.0,
+                y: 3.0,
+                z: 0.0,
+            };
+            assert_eq!(alice_physics_body_set_angular_velocity(c, 0, about_y), 1);
+            assert!(!(&*c).is_sleeping(0));
+            for _ in 0..10 {
+                alice_physics_world_step(c, 1.0 / 60.0);
+            }
+            assert_ne!((&*c).bodies[0].rotation, before, "not turned");
+            alice_physics_world_destroy(c);
+
+            // tilted 30 degrees about z: awake again, and the lowest edge is pushed out of the
+            // floor, so the centre ends at 1/2 (cos 30 + sin 30) above it. The contact gives this
+            // body no turning moment, so it stays at that angle, asleep or awake.
+            let c = box_asleep_on_a_floor();
+            let (s, co) = (0.258_819_045_102_520_74, 0.965_925_826_289_068_3);
+            let tilted = AliceQuat {
+                x: 0.0,
+                y: 0.0,
+                z: s,
+                w: co,
+            };
+            assert_eq!(alice_physics_body_set_rotation(c, 0, tilted), 1);
+            assert!(!(&*c).is_sleeping(0));
+            for _ in 0..60 {
+                alice_physics_world_step(c, 1.0 / 60.0);
+            }
+            let y = (&*c).bodies[0].position.y.to_f64();
+            let edge = 0.5 * (3f64.sqrt() / 2.0 + 0.5);
+            assert!((y - edge).abs() < 0.01, "{y} against {edge}");
+            alice_physics_world_destroy(c);
+        }
+    }
+
     /// oracle: (0.1, 0.2, 0.3, 0.9) has length sqrt 0.95, so each component comes back divided by
     /// it; a swapped or dropped component shows, since all four differ, and likewise (1, 2, 3)
     #[test]
@@ -2056,7 +2141,7 @@ mod tests {
                 z: 3.0,
             };
             assert_eq!(alice_physics_body_set_angular_velocity(c, b, omega), 1);
-            let stored = (*c).bodies[b as usize].angular_velocity;
+            let stored = (&*c).bodies[b as usize].angular_velocity;
             assert_eq!(stored, Vec3Fix::from_int(1, 2, 3));
 
             // refused: an unknown body, the zero quaternion, a component that is not finite

@@ -136,6 +136,7 @@ were introduced during that release window.
 
 ### Fixed
 - `Fix128::from_f64` / `from_f32`: -2^63 未満は debug で panic、release で符号が反転して +9.2e18 になっていた 範囲外は両側とも飽和し、全 profile で同じ結果にした 2^63 以上は `(i64::MAX, 0)` と `(i64::MAX, u64::MAX)` に分かれていたのを最大値に揃えた 範囲内の bits は変えていない NaN が 0 になることは doc に書いた契約とし、`tests/determinism_from_f64.rs` で固定する
+- C / wasm / Python の `set_angular_velocity`、`set_rotation`: 眠っている物体に掛けると成功を返すのに動かなかった 動的な物体の island を起こす 角速度 0 は起こさない
 - `scripts/ci_base.py` と `scripts/test_ci_base.py` (共有 file、canonical は ALICE-DetMath): git の出力を UTF-8 で読む (`encoding="utf-8"`、これまでは locale の code page で Windows の cp1252 では非 ASCII で止まった) 試験は locale を cp1252 にした子 interpreter で非 ASCII の commit 件名を読む
 - ビューア (`web/`): body が床を突き抜けて落ち続けていた (4 秒後には画面に球が残らない) 床を静的な body 1 つ (`addStaticBody(0, -1, 0)`) から平面の当たり判定 `addStaticPlane(0, 1, 0, 0)` (描いている床 y = 0) にした 球の当たり判定の半径を描いている半径 0.5 に揃えた (`setCollisionRadius`) 床が body でなくなったので mesh と body の番号のずれ (+1) を外した `Web viewer` の smoke が 1200 step 後に全 body が床か別の body の上で止まっていることを確かめる
 - `trimesh::ray_triangle` / `TriMesh::raycast` / `TriMesh::occluded`: 2 つの三角形が共有する辺や頂点をちょうど通る ray が、丸めで両方の三角形の外に出て閉じた mesh を素通りしていた 例 `examples/trimesh_shadow_rays.rs` の床から屋根への 384 本のうち影になる 64 本 (どれも格子の対角を通る) を 0 本と数えていた 判定を厳密にして直した (上の Changed) 閉じた mesh の共有の辺と頂点を通る ray が当たる試験 `rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it`

@@ -89,6 +89,19 @@ def test_restore_world_brings_back_the_joint_and_refuses_with_its_kind():
     assert bytes(fresh.state_digest()) == before
 
 
+def test_a_spin_wakes_a_sleeping_body():
+    # a box at rest on a floor is asleep after 240 steps; a spin makes it turn
+    w = ap.PhysicsWorld()
+    w.add_static_plane(0.0, 1.0, 0.0, 0.0)
+    b = w.add_shaped_body(0, 0.5, 0.5, 0.5, 1000.0, 0.0, 0.5, 0.0)
+    for _ in range(240):
+        w.step(1.0 / 60.0)
+    w.set_angular_velocity(b, 0.0, 3.0, 0.0)
+    for _ in range(10):
+        w.step(1.0 / 60.0)
+    assert abs(w.observe_body(b)[2][3] - 1.0) > 1e-6, w.observe_body(b)
+
+
 def test_set_rotation_normalises_and_refuses():
     w = ap.PhysicsWorld()
     b = w.add_dynamic_body(0.0, 5.0, 0.0, 1.0)

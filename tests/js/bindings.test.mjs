@@ -190,6 +190,17 @@ test("setRotation normalises, refuses the zero quaternion and a bad id, and is s
   assert.deepEqual(Array.from(w.getRotations().slice(4 * b, 4 * b + 4)), [0, 0, 1, 0]);
 });
 
+// a box at rest on a floor is asleep after 240 steps; a spin makes it turn
+test("a spin wakes a sleeping body", () => {
+  const w = new WasmPhysicsWorld();
+  w.addStaticPlane(0, 1, 0, 0);
+  const b = w.addShapedBody(0, 0.5, 0.5, 0.5, 1000, 0, 0.5, 0);
+  for (let i = 0; i < 240; i++) w.step(DT);
+  assert.equal(w.setAngularVelocity(b, 0, 3, 0), true);
+  for (let i = 0; i < 10; i++) w.step(DT);
+  assert.ok(Math.abs(w.getRotations()[4 * b + 3] - 1) > 1e-6);
+});
+
 // withConfig keeps the world's per-step damping, so the closed form (a half turn for pi rad/s
 // over 1 s with no damping) is checked in the Rust test of binding_api; here: the turn is about
 // z only, in the positive sense, and grows with time
