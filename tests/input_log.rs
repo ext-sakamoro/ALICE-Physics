@@ -146,7 +146,11 @@ fn a_step_before_the_last_is_refused() {
 fn a_code_carries_the_log_and_the_digest_and_replays_to_the_same_bits() {
     let (want, log) = live();
     let code = log.to_code(&want);
-    assert!(code.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'), "{code}");
+    assert!(
+        code.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+        "{code}"
+    );
     let (head, back) = InputLog::<Input>::from_code(&code).expect("a code");
     assert_eq!(head, [want[0], want[1], want[2], want[3]]);
     assert_eq!(back, log);
@@ -167,7 +171,8 @@ fn an_empty_log_has_a_code_too() {
 #[test]
 fn large_steps_survive_a_code() {
     let mut log = InputLog::new();
-    log.record(u64::from(u32::MAX) + 5, Input::Rest).expect("in order");
+    log.record(u64::from(u32::MAX) + 5, Input::Rest)
+        .expect("in order");
     log.record(u64::MAX, Input::Blow(-1, 1)).expect("in order");
     let (_, back) = InputLog::<Input>::from_code(&log.to_code(&[0; 32])).expect("a code");
     assert_eq!(back, log);
@@ -177,8 +182,21 @@ fn large_steps_survive_a_code() {
 fn what_is_not_a_code_is_refused() {
     let (want, log) = live();
     let good = log.to_code(&want);
-    for bad in ["", "-", "abc", "not a code", "zzzzzzzz-!!!!", "aaaaaaa-AAAA", "gggggggg-AAAA", "aaaaaaaa"] {
-        assert_eq!(InputLog::<Input>::from_code(bad), Err(LogError::NotACode), "{bad:?}");
+    for bad in [
+        "",
+        "-",
+        "abc",
+        "not a code",
+        "zzzzzzzz-!!!!",
+        "aaaaaaa-AAAA",
+        "gggggggg-AAAA",
+        "aaaaaaaa",
+    ] {
+        assert_eq!(
+            InputLog::<Input>::from_code(bad),
+            Err(LogError::NotACode),
+            "{bad:?}"
+        );
     }
     // cut off anywhere it must be either refused or a shorter log, and never panic
     for k in 0..good.len() {
@@ -193,4 +211,72 @@ fn what_is_not_a_code_is_refused() {
     log.record(u64::MAX, Input::Rest).expect("in order");
     let (_, back) = InputLog::<Input>::from_code(&log.to_code(&[0; 32])).expect("a code");
     assert_eq!(back.entries().len(), 2);
+}
+
+#[test]
+fn bytes_are_an_input_and_a_code_carries_them() {
+    let mut log = InputLog::<Vec<u8>>::new();
+    log.record(3, vec![1, 2, 3]).expect("in order");
+    log.record(9, Vec::new()).expect("in order");
+    log.record(9, vec![0xAB; 300]).expect("in order");
+    let (_, back) = InputLog::<Vec<u8>>::from_code(&log.to_code(&[0; 32])).expect("a code");
+    assert_eq!(back, log);
+    // a length past the end of the bytes
+    let code = format!("00000000-{}", letters(&[0, 200, 1, 1, 2]));
+    assert_eq!(
+        InputLog::<Vec<u8>>::from_code(&code),
+        Err(LogError::NotACode)
+    );
+    // a length that does not fit
+    let mut long = vec![0];
+    long.extend_from_slice(&[0xff; 12]);
+    let code = format!("00000000-{}", letters(&long));
+    assert_eq!(
+        InputLog::<Vec<u8>>::from_code(&code),
+        Err(LogError::NotACode)
+    );
+}
+
+/// Raw bytes as the letters of a code, written apart from the code's own writer
+fn letters(bytes: &[u8]) -> String {
+    const L: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    for c in bytes.chunks(3) {
+        let n = c.iter().fold(0u32, |n, b| (n << 8) | u32::from(*b)) << (8 * (3 - c.len()));
+        for k in 0..=c.len() {
+            out.push(char::from(L[((n >> (18 - 6 * k)) & 63) as usize]));
+        }
+    }
+    out
+}
+
+#[test]
+fn steps_that_run_past_the_end_are_refused() {
+    let mut b = vec![0xff; 9];
+    b.push(0x01); // u64::MAX
+    b.push(2);
+    b.push(1); // one more
+    b.push(2);
+    let code = format!("00000000-{}", letters(&b));
+    assert_eq!(InputLog::<Input>::from_code(&code), Err(LogError::NotACode));
+    // the same bytes without the last gap are a log, so it is the sum that is refused
+    let ok = format!("00000000-{}", letters(&b[..11]));
+    assert_eq!(
+        InputLog::<Input>::from_code(&ok)
+            .expect("a code")
+            .1
+            .entries()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_letter_alone_at_the_end_is_refused() {
+    assert_eq!(
+        InputLog::<Input>::from_code("00000000-A"),
+        Err(LogError::NotACode)
+    );
+    let log = InputLog::<Input>::new();
+    assert!(InputLog::<Input>::from_code(&log.to_code(&[0; 32])).is_ok());
 }
