@@ -2,40 +2,55 @@
 //!
 //! # MODEL — engine torque curve, gearbox and engine braking
 //!
-//! - **方程式 (equations)**: a quasi-static driveline. Crank speed from the
-//!   mean driven-wheel spin `ω` (rad/s): `rpm = |ω| |R| · 60 / 2π`,
-//!   `R = gear_ratio · final_drive` of the current gear (`0` in neutral,
-//!   negative in reverse), the read-out floored at `idle_rpm`. Full-throttle
-//!   torque `T(rpm)` piecewise linear through the `(rpm, Nm)` points, held
-//!   flat below the first and above the last point, `0` at and above
-//!   `max_rpm` (rev limiter). Axle torque for throttle `θ ∈ [0, 1]`:
-//!   `τ = θ T(max(rpm, idle)) R − (1 − θ) sign(ω) k_b rpm |R|` with the
-//!   engine-braking coefficient `k_b` (Nm per rpm at the crank) on the
-//!   un-floored crank speed, so engine braking is proportional to `ω`,
-//!   opposes it and vanishes at rest. The open differential splits `τ`
-//!   equally over the driven wheels, the locked one gives them one spin
-//!   (the coupling is done by [`super::DynamicVehicle`]). The legacy
-//!   [`EngineConfig`] maps to a flat curve at `max_torque` and
-//!   `k_b = engine_brake · max_torque / max_rpm`.
-//! - **単位 (units)**: `Fix128` — torque Nm, crank speed rpm (1/min), wheel
-//!   spin rad/s, ratios dimensionless, `k_b` Nm/rpm. No `f32`.
-//! - **保存則 (conservation)**: no state and no crank inertia, so no energy
-//!   is stored: the drive part injects the power `τ ω` the curve allows,
-//!   the engine-braking part dissipates `k_b rpm |R| |ω|`; the torque is not
-//!   limited by engine power (a flat curve supplies full torque from rest).
-//! - **適用範囲 (range)**: any `ω` (a reverse spin reads a positive rpm, the
-//!   drive keeps the sign of `R`); `max_rpm ≤ 0` means no drive and no
-//!   engine braking; an empty gear table is neutral (`R = 0`); a gear index
-//!   past the table reads as the top gear; an unsorted table is evaluated
-//!   on the last point `≤ rpm` and is right-continuous at a repeated rpm; a
-//!   negative `k_b` and a throttle outside `[0, 1]` are clamped. No error.
-//! - **近似 (approximations)**: no crank or flywheel inertia; no clutch
-//!   (below idle the clutch is taken as slipping: drive at the idle torque,
-//!   engine braking from the wheel-coupled speed); no torque converter, no
-//!   shift time or torque interruption, no driveline compliance or losses;
-//!   no limited-slip differential (open = equal torque, locked = equal
-//!   speed); engine braking linear in rpm; part throttle a linear blend.
-//! - **検証 (validation)**: `tests/analytic_vehicle_dynamics.rs::gear_top_speed_converges_to_rev_limit`
+//! - **方程式 (equations)**: a quasi-static driveline; `Powertrain` holds
+//!   parameters only (l. 99–117). Crank speed from the mean driven-wheel spin
+//!   `ω` (rad/s): `rpm_c = |ω| |R| · 60 / 2π` (`coupled_rpm`, l. 218), floored
+//!   at `idle_rpm` for the read-out (`engine_rpm`, l. 227–234).
+//!   `R = gear_ratios[min(current_gear, len − 1)] · final_drive`, `0` for an
+//!   empty table (`total_ratio`, l. 208–213). Full-throttle torque `T(rpm)`:
+//!   `0` for `rpm ≥ max_rpm` or an empty table, the first point's torque
+//!   below the first point, else linear from the last point with `r_i ≤ rpm`
+//!   to the next one, the last point's torque when there is none
+//!   (`torque_at`, l. 137–158). With `θ = clamp(throttle, 0, 1)` (l. 257–263):
+//!   `τ = θ T(engine_rpm(ω)) R + (1 − θ) b`, `b = −sign(ω) k_b rpm_c |R|`,
+//!   `k_b = engine_brake_per_rpm` used as stored (`axle_torque`, l. 264–276).
+//!   This module only declares `Differential` (`Open` / `Locked`, l. 90–95);
+//!   the torque split or shared spin is applied by the vehicle module.
+//!   `from_engine_config` maps the legacy `EngineConfig` to the one-point curve
+//!   `(0, max_torque)`, `final_drive = 1`, `Open`, gear `0`, the table cut at `num_gears`,
+//!   `k_b = engine_brake · max_torque / max_rpm` (l. 177–201).
+//! - **単位 (units)**: every quantity is `Fix128` (l. 83–117): torque Nm, crank
+//!   speed rpm (1/min) from rad/s via `60 / 2π` (`coupled_rpm`, l. 218), ratios
+//!   dimensionless, `k_b` Nm/rpm; `f64` only in the unit tests' oracles (l. 307).
+//! - **保存則 (conservation)**: nothing is stored and there is no crank inertia
+//!   (no state field, l. 99–117). The drive part of `τ` supplies the power
+//!   `θ T R ω`, the braking part removes `(1 − θ) k_b rpm_c |R| |ω|`
+//!   (`axle_torque`, l. 265–276). Drive torque is not limited by engine power:
+//!   the idle-floored speed gives `T(idle_rpm) R` at `ω = 0` (l. 265–269).
+//! - **適用範囲 (range)**: any `ω`; `rpm_c` uses `|ω|` and `|R|`, so a reverse
+//!   spin or gear reads a positive rpm and the drive keeps the sign of `R`
+//!   (l. 218, l. 265–269). `rpm_c ≥ 0` and the floor only raises it (l. 218,
+//!   l. 229–233), so `max_rpm ≤ 0` gives no drive (`torque_at`, l. 138–140).
+//!   Engine braking for `max_rpm ≤ 0` or a negative `k_b` depends on the
+//!   path: `from_engine_config` stores `k_b = 0` in both cases (l. 179–188);
+//!   a `Powertrain` built directly uses `engine_brake_per_rpm` as given, so a
+//!   negative value drives the car with the throttle closed (`axle_torque`,
+//!   l. 270–276). An empty gear table is neutral, `R = 0` (l. 210); a
+//!   `current_gear` past the table reads as the top gear (l. 211); shifting
+//!   clamps to `[0, top]` (`shift_up` / `shift_down`, l. 282–294). An unsorted
+//!   table is evaluated on the last point with `r_i ≤ rpm`: a repeated rpm is
+//!   a right-continuous step and the divisor is never zero (`torque_at`,
+//!   l. 147–157). A throttle outside `[0, 1]` is clamped (l. 257–263). No path
+//!   returns an error (l. 137–294).
+//! - **近似 (approximations)**: no crank or flywheel inertia and no clutch: the
+//!   drive part reads the idle-floored speed, the braking part the coupled one,
+//!   so below idle the clutch is taken as slipping (l. 265–270). No torque
+//!   converter, shift time, torque interruption, driveline compliance or loss:
+//!   `τ` is the curve times `R` (l. 265–269). No limited-slip differential, only
+//!   `Open` and `Locked` (l. 90–95). Engine braking is linear in `rpm_c`
+//!   (l. 270); part throttle is a linear blend (l. 276).
+//! - **検証 (validation)**:
+//!   `tests/analytic_vehicle_dynamics.rs::gear_top_speed_converges_to_rev_limit`
 //!   (rev limiter: the speed converges to v_n = max_rpm · 2π/60 · r / R_n in
 //!   gears 1 and 2), `::launch_within_grip_follows_drive_torque` (axle
 //!   torque θ · 300 · 3.5 split equally over the two driven wheels,
@@ -44,12 +59,11 @@
 //!   `tests/vehicle_dynamics_degenerate.rs::airborne_driven_wheels_spin_up_freely`
 //!   (open differential: half the axle torque per driven wheel,
 //!   ω = (T · 3.5 / 2) dt / I_w after one frame). The module's own unit
-//!   oracles compare the curve, the rpm and the axle torque to f64 closed
-//!   forms (interpolation on and between points, the rev limit, the idle
-//!   floor, engine braking proportional to rpm, the legacy mapping, the
-//!   degenerate tables).
-//!   validation missing: engine-braking coast-down through the vehicle
-//!   (closed form a = k_b rpm |R| / (r M) per driven wheel, no oracle yet);
+//!   tests (l. 354–781) compare curve, rpm and axle torque to f64 closed
+//!   forms (interpolation, rev limit, idle floor, engine braking, throttle
+//!   blend and clamp, legacy mapping, degenerate tables, reverse gear, shifting).
+//!   validation missing: engine-braking coast-down through the vehicle (every
+//!   vehicle-level run sets engine_brake_per_rpm to 0; unit oracles only);
 //!   validation missing: a sloped torque curve through the vehicle (every
 //!   vehicle-level run pins a flat 300 Nm curve);
 //!   validation missing: the locked differential and a reverse gear through

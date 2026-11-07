@@ -12,51 +12,73 @@
 //!
 //! # MODEL — frame-coupled wheel, suspension and drive forces (legacy)
 //!
-//! - **方程式 (equations)**: per wheel, a vertical probe of the attachment
-//!   point against the plane `y = VehicleConfig::ground_height`: contact
-//!   while the height above the plane is below `rest + radius`, compression
-//!   ratio `c = 1 − (height − radius) / rest` clamped to `[0, 1]`; strut
-//!   `k (1 + p c) c + k_bs max(0, c − c_bs) − d v_up` (spring, progressive
-//!   rate `p`, bump stop, damper on the chassis velocity along the body's
-//!   up axis with bump / rebound rates) along `up`; anti-roll
-//!   `k_ar (c_left − c_right)` on the pairs (0,1), (2,3), pushing the
-//!   compressed side down; drive `max_torque · throttle · gear_ratio /
-//!   (n_driven · radius)` along `forward` per driven grounded wheel; brake
-//!   `brake_force · brake` against the forward velocity while
-//!   `|v_forward| > 0.1 m/s`; lateral damping `−5000 v_right` and the
-//!   steering force `1000 |v_forward| (right sin δ + forward (cos δ − 1))`,
-//!   `δ = steering · max_steer_angle`; drag `−aero_drag |v| v`, downforce
-//!   `−downforce |v|²` along `up`. The sum is one force at the centre of
-//!   mass, applied by [`Vehicle::update`] as the impulse `F dt` at the head
-//!   of the frame or staged by [`VehicleParticipant`] in every substep.
-//!   Wheel spin is kinematic (`ω = v_forward / radius` while grounded).
-//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; `k`, `k_bs`,
-//!   `k_ar` N per unit compression ratio (not N/m), `d` N s/m, `aero_drag`
-//!   and `downforce` kg/m; the lateral (5000) and steering (1000) gains
-//!   are N s/m constants of the code. No `f32` on the update path.
-//! - **保存則 (conservation)**: nothing is conserved by construction: the
-//!   plane is immovable and takes no reaction, so the chassis momentum
-//!   changes by `F dt` each frame and the wheels carry no angular momentum;
-//!   energy is dissipated by the damper, brake, lateral damping and drag,
-//!   added by the drive and the spring; at rest the spring carries the
-//!   weight (`k c = m g` per wheel, a closed-form ride height).
-//! - **適用範囲 (range)**: a horizontal plane only (height fields, meshes
-//!   and SDF roads are not read); all forces at the centre of mass, so no
-//!   yaw from steering and no load transfer (COV-MBD-051); the suspension is
-//!   explicit, one impulse per frame while the world integrates gravity per
-//!   substep: at rest the frame-end vertical velocity samples `≈ −g dt / 2`
-//!   (read positions, not velocities), staged per substep the chassis
-//!   rests; stiff springs on a light chassis at a coarse `dt` leave the
-//!   stable range of the explicit coupling (bound in
-//!   [`crate::vehicle_dynamics`]), nothing clamps or reports it; a static
-//!   chassis gets no force; a wheel at or below the plane keeps full spring.
-//! - **近似 (approximations)**: no tyre model (lateral force is linear
-//!   damping, longitudinal slip is not computed, the slip fields stay 0);
-//!   no wheel inertia; constant engine torque (`EngineConfig::max_rpm`,
-//!   `engine_brake`, `num_gears` are not read); brake force independent of
-//!   load and grip; the steering force is neither Ackermann nor a slip law;
-//!   no rolling resistance, no wind. Use [`crate::vehicle_dynamics`] for
-//!   stopping distance, cornering, wheel spin, ABS, tyre and road models.
+//! - **方程式 (equations)**: per wheel the attachment point `x_w = x + R p_w` is
+//!   probed against the plane `y = ground_height`: contact while `h = x_w.y −
+//!   ground_height < rest + radius` (`chassis_force`, l. 466-481), `c = 1 −
+//!   (h − radius) / rest` clamped to `[0, 1]` (l. 488-496). Per grounded wheel
+//!   the strut force along the body up axis `up = R ŷ` is `k (1 + p c) c + k_bs
+//!   max(0, c − c_bs) − d v_up`: progressive rate `p` (l. 499-501), bump stop
+//!   above `c_bs` (l. 504-509), damper on the centre-of-mass `v_up = v · up` with
+//!   the bump rate while `v_up < 0`, the rebound rate otherwise, each falling
+//!   back to `damping` when 0 (l. 512-529, sum l. 534). Drive per driven grounded
+//!   wheel `forward · T throttle g_r / (n_driven radius)`, `n_driven` counting
+//!   every driven wheel grounded or not, `g_r` the gear ratio or 1 past the
+//!   table (l. 444-458, 537-540). Brake per braked grounded wheel `brake_force ·
+//!   brake` against the sign of `v_f = v · forward` while `|v_f| > 0.1 m/s`
+//!   (l. 543-553). Per grounded wheel `−5000 v_r right`, `v_r = v · right`
+//!   (l. 557-559), and if steerable `1000 |v_f| (right sin δ + forward (cos δ −
+//!   1))`, `δ = steering · max_steer_angle` (l. 562-569). Anti-roll on the pairs
+//!   (0,1), (2,3), …: `k_ar (c_left − c_right)` along `−up` on the left and `+up`
+//!   on the right wheel, each only while grounded (l. 586-602). Drag `−aero_drag
+//!   |v| v` and downforce `−downforce |v|² up`, skipped at `|v| = 0` (l. 605-612).
+//!   The sum is one force at the centre of mass (l. 460, 620): `Vehicle::update`
+//!   applies the impulse `F dt` at the head of the frame (l. 418-419, no torque),
+//!   the participant stages it with `add_force` every substep (l. 922-939). Spin
+//!   `ω = v_f / radius` while grounded, `θ += ω dt` (l. 576-581).
+//! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad, `c` a ratio in `[0, 1]`:
+//!   `k`, `k_bs`, `k_ar` are N per unit compression ratio, not N/m, because they
+//!   multiply `c` (l. 501, 508, 593) although the field docs say N/m (l. 187,
+//!   259); `d` N s/m (l. 528); `aero_drag`, `downforce` kg/m (l. 609, 611); the
+//!   gains 5000 (l. 558) and 1000 (l. 568) N s/m; `max_torque` N m over `radius`
+//!   m gives N (l. 538); `brake_force` N (l. 551); `speed_kmh` km/h (l. 441).
+//!   `f32` appears only in the default wheel positions (l. 269-287).
+//! - **保存則 (conservation)**: nothing is conserved by construction: the plane
+//!   is a number (l. 474) and takes no reaction; the chassis momentum changes by
+//!   `F dt` per frame (l. 419) or `F h` per substep (l. 938), angular momentum
+//!   never (`apply_impulse` takes no point, l. 419). The damper (l. 528-529),
+//!   lateral (l. 558), drag (l. 609) and brake (l. 546-552) terms oppose their own
+//!   velocity component, so their power is never positive; the drive adds energy
+//!   while `v_f > 0` (l. 538); downforce `−downforce |v|² v_up` has the sign of
+//!   `−v_up` (l. 611); the steering term along `forward`, `1000 |v_f|
+//!   (cos δ − 1) v_f`, drains energy while `v_f > 0` and adds it while reversing
+//!   (`v_f < 0`), because the force scales with `|v_f|` and does not flip with
+//!   the sign of `v_f` (l. 565-568). At rest (`v = 0`: no damper, brake, lateral,
+//!   steering, drag, l. 528, 545, 558, 566, 606) the grounded wheels share the
+//!   weight, `Σ_i [k_i (1 + p_i c_i) c_i + k_bs,i max(0, c_i − c_bs,i)] = m g`
+//!   (l. 499-509, 534; the anti-roll pair terms cancel at the centre of mass
+//!   while both wheels are grounded, l. 596, 599); with one wheel and
+//!   `p = k_bs = 0` this is `k c = m g`, the case the cited static test sets up.
+//! - **適用範囲 (range)**: a horizontal plane only (`ground_height` is the only
+//!   ground read, l. 474); all forces at the centre of mass, so no yaw from
+//!   steering and no load transfer (COV-MBD-051, l. 460, 620). `update` lands
+//!   one impulse per frame while the world integrates gravity per substep
+//!   (l. 418-419): at rest the position is stationary but the frame-end vertical
+//!   velocity is not 0 (the cited static test bounds it by one frame of
+//!   gravity); staged per substep (l. 936-938) the chassis rests. Nothing checks
+//!   `k`, `m` or `dt` for stability (l. 499-529). A static chassis gets no force
+//!   and no state change (l. 415-417, 432-434); a wheel at or below the plane
+//!   keeps `c = 1` and the full spring (l. 477-481, 492-493).
+//! - **近似 (approximations)**: no tyre model: the lateral force is linear
+//!   damping (l. 558), slip is not computed, `lateral_slip` and
+//!   `longitudinal_slip` are written only by `read_state` (l. 1027-1028); no
+//!   wheel inertia (l. 578); constant engine torque, `max_rpm`, `engine_brake`
+//!   and `num_gears` are not read (l. 449-450); brake force independent of load
+//!   and grip (l. 551); the steering force is neither Ackermann nor a slip law,
+//!   and its lateral part `1000 |v_f| sin δ` points the same way in reverse as
+//!   forward (l. 565-568); the anti-roll bar changes the net force only while
+//!   exactly one wheel of a pair is grounded (l. 595-600); the damper rate
+//!   follows the sign of the centre-of-mass `v_up`, the chassis angular velocity
+//!   is never read (l. 512-513, 544, 557); no rolling resistance, no wind.
 //! - **検証 (validation)**: each force term against hand computation,
 //!   `tests/analytic_vehicle_wiring.rs::spring_force_is_stiffness_times_compression`,
 //!   `::progressive_rate_and_bump_stop_add_to_the_spring`,
@@ -65,28 +87,30 @@
 //!   `::anti_roll_bar_acts_on_the_compression_difference`,
 //!   `::drive_force_is_torque_over_radius_split_across_driven_grounded_wheels`,
 //!   `::brake_force_opposes_motion_only_above_a_small_speed`,
-//!   `::lateral_friction_and_steering_follow_the_coded_model`,
+//!   `::lateral_friction_and_steering_follow_the_coded_model` (forward speed only),
 //!   `::aero_drag_and_downforce_scale_with_speed_squared`,
 //!   `::wheel_spin_and_speed_readouts`, `::grounded_wheels_follow_the_raycast_window`,
 //!   `::ground_window_edges_are_exclusive_with_exact_numbers`,
 //!   `::wheel_below_the_ground_keeps_the_full_spring_force`,
 //!   `::shifting_is_clamped_to_the_gear_table`, `::static_chassis_is_left_alone`;
-//!   statics (ride height radius + rest (1 − m g / k) to 0.01) and the
-//!   first frame (Δv = T gear / (r m) dt),
+//!   statics of one wheel with `p = k_bs = 0` (compression `m g / k` and ride
+//!   height `radius + rest (1 − m g / k)` to 0.01, force to 2 %, `|v_y| < g dt`)
+//!   and the first frame of the default car (`Δv = T g_r / (r m) dt` to 1e-6),
 //!   `tests/default_configs.rs::wheel_config_default_static_deflection_matches_mg_over_k`,
 //!   `::engine_config_default_full_throttle_accelerates_by_closed_form_first_frame`;
-//!   the substep path, `tests/analytic_vehicle_participant.rs::suspension_rests_with_zero_frame_end_velocity`
-//!   (ride height to 1e-9 m, frame-end vertical velocity below 1e-12 m/s),
+//!   the substep path, `tests/analytic_vehicle_participant.rs`
+//!   `::suspension_rests_with_zero_frame_end_velocity` (ride height to 1e-9 m,
+//!   frame-end vertical velocity below 1e-12 m/s),
 //!   `::drag_follows_the_closed_form_to_first_order_in_the_substep`
-//!   (v = v0 / (1 + (c/m) v0 t), error ratio 4.0 from 1 to 4 substeps),
-//!   `::throttle_drive_follows_the_tanh_closed_form` (terminal speed
-//!   v* = √(F/c), v = v* tanh(t √(F c) / m) to 1e-6),
-//!   `::an_action_is_held_for_the_whole_next_frame`, `::actions_are_world_state_replay_and_fork`
-//!   (replay bit for bit), `::snapshot_fork_and_another_vehicle_is_refused`,
+//!   (v = v0 / (1 + (c/m) v0 t); error ratio 1 vs 4 substeps in 3..5, e4 < 2e-4),
+//!   `::throttle_drive_follows_the_tanh_closed_form` (v* = √(F/c),
+//!   v = v* tanh(t √(F c) / m) to 1e-6 v*), `::an_action_is_held_for_the_whole_next_frame`,
+//!   `::actions_are_world_state_replay_and_fork` (replayed and forked snapshots equal),
+//!   `::snapshot_fork_and_another_vehicle_is_refused`,
 //!   `::bad_inputs_are_faults_that_change_nothing`, `::a_static_chassis_is_left_alone`,
 //!   `::drive_digest_is_pinned` (golden); the bits of a drive,
 //!   `tests/vehicle_update_bits.rs::drop_and_turn_bits_are_pinned`,
-//!   `::airborne_start_bits_are_pinned`; settling grounded,
+//!   `::airborne_start_bits_are_pinned`; grounded after settling,
 //!   `tests/integration_physics.rs::test_vehicle_ground_contact`.
 //!   validation missing: suspension natural frequency and damping ratio
 //!   against the spring–damper closed form (only the static deflection and
@@ -94,11 +118,11 @@
 //!   validation missing: stopping distance under the constant brake force
 //!   (s = M v0² / (2 F_b), no oracle yet);
 //!   validation missing: cornering radius (no closed form applies to the
-//!   coded steering force, no oracle yet).
+//!   coded steering force, no oracle yet);
+//!   validation missing: the steering force while reversing (`v_f < 0`).
 //! - **段 (tiers)**: L0 only — a separate model, not a tier of
-//!   [`crate::vehicle_dynamics`]: its lateral and steering forces are linear
-//!   damping rather than a reduced form of the tyre law, so no error against
-//!   that model is measured.
+//!   `crate::vehicle_dynamics`: its lateral and steering forces are linear
+//!   damping rather than a reduced form of the tyre law, so no error is measured.
 //!
 //! # Components
 //!

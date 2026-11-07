@@ -4,57 +4,72 @@
 //!
 //! # MODEL — following metrics, stopping-distance meter and the runner
 //!
-//! - **方程式 (equations)**: time to collision on one line `TTC = max(gap,
-//!   0) / (v_rear − v_front)` for `v_rear > v_front`, time headway
-//!   `max(gap, 0) / v_rear` for `v_rear > 0`, from `gap = (p_front −
-//!   p_rear)·dir − extent` and the velocities along the unit `dir`; the
-//!   stopping-distance meter sums the per-frame chassis displacement with
-//!   its component along `up` removed and latches on the first frame whose
-//!   horizontal velocity, projected on the previous frame's horizontal
-//!   velocity direction, is `≤ rest_speed` (the forward speed reached the
-//!   threshold or reversed); the runner applies one [`DriverInput`] per
-//!   vehicle, runs [`DynamicVehicle::update`] in index order, then
-//!   `PhysicsWorld::step(dt)` once and `time += dt`; the recording stores
-//!   the initial world blob, wheel states, engine speed, gear, input, `dt`,
-//!   `time`, `frame` and every frame's inputs as raw `Fix128`.
-//! - **単位 (units)**: `Fix128` — s, m, m/s; no `f32` in this module (the
-//!   physics is the vehicle's and the world's).
-//! - **保存則 (conservation)**: none of its own — the metrics and the meter
-//!   read state, the runner only orders calls; what a vehicle conserves or
-//!   dissipates is stated in [`super::DynamicVehicle`]; vehicles that share no
-//!   collider exchange no momentum, so a car's path does not depend on its
-//!   company or its index.
-//! - **適用範囲 (range)**: TTC and headway are `None` when not closing / not
-//!   moving forward or when the quotient leaves the `Fix128` range; an
-//!   overlapping, closing pair gives `TTC = 0`; `dt ≤ 0` is a no-op (no
-//!   frame, nothing recorded); a negative `rest_speed` reads 0; a positive
-//!   `rest_speed` latches early by at most `rest_speed² / (2 a)` of travel
-//!   for a car still decelerating at `a`; a track shorter than the frame or
-//!   vehicle count means released inputs; a recording restores only into a
-//!   scenario of the same definition (vehicle count, chassis indices, wheel
-//!   counts, world blob length) and rejects malformed bytes by error.
-//! - **近似 (approximations)**: TTC and headway assume constant speeds on
-//!   one line (no acceleration term, no lateral offset); the gap uses the
-//!   body origins and a fixed `extent`, not the hulls; the meter measures
-//!   the chassis origin's path (brake dive and the pitch recoil after the
-//!   stop move it by up to `h θ`), not a wheel's; the definition
-//!   (configurations, road, condition, wind) is not recorded and must be
-//!   rebuilt identically.
-//! - **検証 (validation)**: `tests/analytic_vehicle_scenario.rs::ttc_and_headway_closed_form_on_values`
-//!   (30 / (20 − 10) = 3 s, 30 / 20 = 1.5 s, the `None` cases),
-//!   `::ttc_on_the_runner_matches_closed_form` (every frame to 1e-12
-//!   relative, falling by 1 s over 1 s),
-//!   `::stopping_distance_meter_matches_locked_closed_form` (s = v0² /
-//!   (2 μ_k g), stop time v0 / (μ g), then rest within the pitch recoil),
-//!   `::stopping_distance_meter_is_horizontal_path_length` (3-4-5 path,
-//!   vertical motion excluded), `::separated_cars_together_equal_each_alone_bitwise`,
+//! - **方程式 (equations)**: `TTC = max(gap, 0) / (v_rear − v_front)` for
+//!   `v_rear > v_front` (time_to_collision, l. 137-141); headway
+//!   `max(gap, 0) / v_rear` for `v_rear > 0` (time_headway, l. 150-153); with
+//!   `gap = (p_front − p_rear)·dir − extent` and speeds `v·dir` along the unit
+//!   `dir` (longitudinal_state, l. 170-171). The meter adds per frame
+//!   `|Δp − up (Δp·up)|` of the chassis origin (sample, l. 257-258; horizontal,
+//!   l. 185-186) and latches when the horizontal velocity `v_h` has
+//!   `v_h·dir(v_h,prev) ≤ rest_speed`, or `|v_h| ≤ rest_speed` if the previous
+//!   `v_h` is zero (sample, l. 260-268). A frame sets every input (step,
+//!   l. 377-378), runs `DynamicVehicle::update` per vehicle in index order at
+//!   environment time `time`, then `PhysicsWorld::step(dt)` once, `time += dt`,
+//!   `frame += 1` (advance, l. 429-440). A recording holds `dt`, `time`, `frame`,
+//!   the world blob and each vehicle's body index, engine speed, gear, input and
+//!   wheels at the start (start_recording, l. 451-469), then each frame's inputs
+//!   (advance, l. 441-444).
+//! - **単位 (units)**: `gap` m, speeds m/s, `TTC` / headway s, all `Fix128`
+//!   (time_to_collision, l. 136; time_headway, l. 149); distance m, `rest_speed`
+//!   m/s (StoppingDistanceMeter, l. 225-228); `dt`, `time` s (Scenario,
+//!   l. 328-330); engine speed rpm (VehicleSnapshot, l. 499); bytes hold each
+//!   `Fix128` as little-endian `hi: i64`, `lo: u64` (put_fix, l. 803-806).
+//! - **保存則 (conservation)**: none of its own: the metrics are functions of
+//!   their arguments (time_to_collision, l. 136-142), the meter only reads the
+//!   chassis (sample, l. 252-272), the runner orders calls (advance, l. 428-446).
+//!   Each `update` gets its own chassis body alone, so vehicles meet only in
+//!   `PhysicsWorld::step`, whose balance is the world's (advance, l. 434-438).
+//! - **適用範囲 (range)**: `TTC` is `None` for `v_rear ≤ v_front`
+//!   (time_to_collision, l. 137-140), headway for `v_rear ≤ 0` (time_headway,
+//!   l. 150-152); the divisor is then non-zero, the only case `checked_div`
+//!   refuses (time_to_collision, l. 141; time_headway, l. 153). An overlapping,
+//!   closing pair gives `TTC = 0` (time_to_collision, l. 141). A negative
+//!   `rest_speed` reads 0 (new, l. 241); a positive one latches on the first
+//!   frame the forward speed is at or below it (sample, l. 267-268). `dt ≤ 0`
+//!   is a no-op, nothing recorded (step, l. 374-376; step_with, l. 391-393;
+//!   run_tracks, l. 412-414). Vehicles past the end of `inputs`, missing and
+//!   short tracks get `DriverInput::default()` (step, l. 378; run_tracks,
+//!   l. 417-421). `restore` rejects, before writing anything, a differing
+//!   vehicle count (restore, l. 621-626), chassis body index (l. 628-634) or
+//!   wheel count (l. 635-642), and a world blob `PhysicsWorld::deserialize_state`
+//!   refuses (restore, l. 645-647): that function checks the blob's magic,
+//!   version and reserved bytes, its body count against the world's, its length
+//!   from that count and its population fingerprint, all before writing a body
+//!   (deserialize_state, src/solver.rs l. 7192-7242). `from_bytes` errors on
+//!   another magic or version, a short input, a count that does not fit
+//!   `usize`, a flag byte not 0 / 1 and trailing bytes (from_bytes, l. 736-786;
+//!   Reader::take, l. 863-866; Reader::flag, l. 890-896).
+//! - **近似 (approximations)**: `TTC` and headway divide a gap by a speed:
+//!   constant speeds, no acceleration term (time_to_collision, l. 137-141;
+//!   time_headway, l. 150-153). The gap is between body origins less a given
+//!   `extent`, not between hulls, and only components along `dir` count
+//!   (longitudinal_state, l. 170-171). The meter follows the chassis origin, so
+//!   horizontal motion of the body from pitch is travel (sample, l. 257-259);
+//!   the stop is judged against the previous frame's velocity direction, not a
+//!   fixed heading (sample, l. 260-265). The recording stores no configuration,
+//!   road, condition or wind; `restore` writes only the world blob, wheel
+//!   states, engine speed, gear, input, `dt`, `time`, `frame`, so the scenario
+//!   is rebuilt identically (start_recording, l. 451-469; restore, l. 648-656).
+//! - **検証 (validation)**: `tests/analytic_vehicle_scenario.rs`
+//!   `::ttc_and_headway_closed_form_on_values`, `::ttc_on_the_runner_matches_closed_form`,
+//!   `::stopping_distance_meter_matches_locked_closed_form` (s = v0² / (2 μ_k g)),
+//!   `::stopping_distance_meter_is_horizontal_path_length` (3-4-5 path),
+//!   `::separated_cars_together_equal_each_alone_bitwise`,
 //!   `::run_tracks_and_step_with_equal_step`, `::wind_and_time_reach_every_vehicle`
-//!   (Δv = ½ ρ C_dA w² dt / M with the gust at t = 1/6 s),
-//!   `::replay_round_trip_is_bit_exact`,
-//!   `::replay_detects_one_bit_input_change_and_missing_restore`,
-//!   `::zero_vehicles`, `::short_tracks_mean_released_inputs`,
-//!   `::non_positive_dt_is_a_no_op`, `::decode_rejects_malformed_bytes`,
-//!   `::restore_rejects_mismatched_scenarios`.
+//!   (Δv = ½ ρ C_dA w² dt / M, gust at t = 1/6 s), `::replay_round_trip_is_bit_exact`,
+//!   `::replay_detects_one_bit_input_change_and_missing_restore`, `::zero_vehicles`,
+//!   `::short_tracks_mean_released_inputs`, `::non_positive_dt_is_a_no_op`,
+//!   `::decode_rejects_malformed_bytes`, `::restore_rejects_mismatched_scenarios`.
 //!   validation missing: convergence of the measured stopping distance in
 //!   dt (the frame-quantisation term 2 v0 dt is derived, not swept at two
 //!   or more dt);
