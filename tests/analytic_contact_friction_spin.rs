@@ -37,7 +37,7 @@
 #![cfg(feature = "std")]
 #![allow(
     clippy::disallowed_methods,
-    reason = "analytic reference in f64: rolling closed forms and conservation sums"
+    reason = "analytic reference: f64 rolling closed forms and conservation sums"
 )]
 
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
