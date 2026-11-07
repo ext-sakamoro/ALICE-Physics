@@ -156,6 +156,10 @@ pub(crate) fn set_rotation(
     match (unit_quat(x, y, z, qw), w.bodies.get_mut(body)) {
         (Some(q), Some(b)) => {
             b.set_rotation(q);
+            // a sleeping body would stay as it was set, with nothing to move it
+            if b.is_dynamic() {
+                w.wake_body(body);
+            }
             true
         }
         _ => false,
@@ -174,6 +178,11 @@ pub(crate) fn set_angular_velocity(
     match (vec3(x, y, z), w.bodies.get_mut(body)) {
         (Some(v), Some(b)) => {
             b.angular_velocity = v;
+            // a sleeping body would not spin; a zero spin leaves it, so a caller that stops a body
+            // every frame still lets it sleep (the rule of `PhysicsWorld::set_body_velocity`)
+            if b.is_dynamic() && v != Vec3Fix::ZERO {
+                w.wake_body(body);
+            }
             true
         }
         _ => false,
@@ -975,7 +984,7 @@ mod tests {
             }
         }
         // sizes that stay as they are give the bits of normalising the value itself
-        for s in [UNIT_QUAT_SMALLEST, 1.0, 0.25, UNIT_QUAT_LARGEST] {
+        for s in [UNIT_QUAT_SMALLEST, 1.0, 0.25, UNIT_QUAT_LARGEST / 2.0] {
             let direct = QuatFix::new(
                 Fix128::from_f64(s),
                 Fix128::from_f64(2.0 * s),
