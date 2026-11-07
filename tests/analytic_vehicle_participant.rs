@@ -654,8 +654,10 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "3b0a4232d223b6a393c5561b4518265c597f2b9d2e45d247d48c9ccea12fd005";
-const DRIVE_TGS: &str = "489d4bb5288ef5a151c31a9250d7541f0260d64c66889ec3e31e60668cc01431";
+// re-recorded when the contact friction began acting at the contact point of plain spheres (PHYSICS_SEMANTICS_ID e90000da… → 2680b331…): the header moved; the chassis state and payload are those of the previous solver (the
+// ground is the vehicle's own plane, no contact)
+const DRIVE_XPBD: &str = "bfe86083f71ef07ad9219a912f352c07997a41d5b171961b44b0a6379dc40af3";
+const DRIVE_TGS: &str = "1d72229d1de5c54e2fbd9d382bd1f5460ac9e785ca8e47992d7ca6454fe1d2bc";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
