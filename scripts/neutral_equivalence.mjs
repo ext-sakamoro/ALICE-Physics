@@ -142,7 +142,13 @@ function wide(a) {
   a.call(w, "stepN", 1 / 60, 90);
   a.call(w, "setGravity", 0, -9.5, 0.3);
   out.shapeSet = val(a.call(w, "setBodyShape", b[8], 2, 0.3, 0.6, 0), "setBodyShape");
-  for (let i = 0; i < 60; i++) a.call(w, "step", 1 / 60);
+  // the contacts of a step that has some (an empty array compares nothing)
+  for (let i = 0; i < 60; i++) {
+    a.call(w, "step", 1 / 60);
+    const events = a.call(w, "getContactEvents");
+    if (out.contactEvents === undefined && events.length > 0) out.contactEvents = events;
+  }
+  if (out.contactEvents === undefined) throw new Error("getContactEvents returned nothing in 60 steps");
   out.removed = val(a.call(w, "removeJoint", 1), "removeJoint");
   out.removedStatic = val(a.call(w, "removeStaticCollider", 2), "removeStaticCollider");
   out.counts = f(["bodyCount", "jointCount", "staticColliderCount"].map((n) => val(a.call(w, n), n)[0]));
