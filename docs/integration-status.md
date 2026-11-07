@@ -9,8 +9,8 @@ References are resolved to one definition each, so items that share a name are t
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
 | L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2568 |
-| live | reached without examples (crate-internal roots or a binding) | 697 |
-| | **total** | **3296** |
+| live | reached without examples (crate-internal roots or a binding) | 698 |
+| | **total** | **3297** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -122,7 +122,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/audio_physics.rs`: `AudioConfig`, `AudioEvent`, `AudioEventType`, `AudioGenerator`, `AudioGenerator::begin_frame`, `AudioGenerator::get_events`, `AudioGenerator::new`, `AudioGenerator::process_contact`, `AudioGenerator::set_material`, `AudioMaterial`, `AudioMaterial::METAL`, `AudioMaterial::RUBBER`, `AudioMaterial::STONE`, `AudioMaterial::WOOD`, `MaterialType`, `PhysicsWorld::emit_contact_audio`
 - `src/beam_stress.rs`: `BeamAnalysis`, `BeamAnalysis::analyze`, `BeamAnalysis::new`, `BeamAnalysis::with_end_condition`, `BeamAnalysis::with_min_fos`, `BeamReport`, `ColumnEndCondition`, `ColumnEndCondition::k_factor`, `CrossSection`, `CrossSection::area_mm2`, `CrossSection::max_c_mm`, `CrossSection::second_moment_of_area_mm4`, `CrossSection::section_modulus_mm3`, `LoadCase`, `LoadCase::length_mm`, `LoadCase::max_bending_moment_nmm`, `LoadCase::max_deflection_mm`, `euler_critical_load_n`
 - `src/bimaterial.rs`: `BimaterialReport`, `BimaterialSide`, `BimaterialSide::from_material`, `analyze_bimaterial`, `effective_modulus_reuss_mpa`, `effective_modulus_voigt_mpa`, `interfacial_bond_strength_mpa`, `published_cte_per_c`, `thermal_residual_stress_mpa`
-- `src/body_collider.rs`: `BodyCollider::bounding_radius`, `collider_meets_sphere`, `colliders_meet`, `quat_from_rotation`
+- `src/body_collider.rs`: `BodyCollider::checked_bounding_radius`, `collider_meets_sphere`, `colliders_meet`, `quat_from_rotation`
 - `src/box_collider.rs`: `OrientedBox::axis_aligned`, `OrientedBox::corner`, `OrientedBox::corners`, `OrientedBox::surface_area`
 - `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgeSpan::length_mm`, `BridgeSpan::z_delta_mm`, `BridgingReport`, `BridgingReport::has_unsafe`, `BridgingReport::unsafe_checks`, `analyze_bridges`, `check_span`
 - `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `SnapThroughError`, `analyze_column`, `critical_stress_mpa`, `plate_buckling_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `snap_through_load_n`, `transition_slenderness`, `weak_axis_second_moment_mm4`
