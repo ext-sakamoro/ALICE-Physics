@@ -96,8 +96,14 @@ fn substep() -> f64 {
 /// and a solid ball of radius `R` resting on it at `x = 0`, one material
 /// `(μ, e = 0)` on both.
 fn flat(mu: f64) -> (PhysicsWorld, usize) {
+    flat_with(mu, PhysicsConfig::default().substeps)
+}
+
+/// `flat` with `substeps` per frame (for the derived bounds)
+fn flat_with(mu: f64, substeps: usize) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         damping_rate: Fix128::ZERO,
+        substeps,
         ..PhysicsConfig::default()
     });
     let slab = w.add_body(RigidBody::new_static(v3(0.0, -0.5, 0.0)));
@@ -140,16 +146,64 @@ fn kinetic(w: &PhysicsWorld, ball: usize) -> f64 {
 
 /// oracle: launched at `v₀ = 4` with `μ = 0.3`, no spin. While sliding
 /// (`t < t* = 2 v₀ / (7 μ g) = 0.381 s`): `v = v₀ − μ g t`, `ω_z r = −(5/2) μ g t`
-/// (`t = 0.2 s`, budget `2e-2`); no frame removes more than the cap
-/// `μ g Δt` from `v`, and frames 2 to 11 together remove `10 μ g Δt` (the cap
-/// binds; budget `1e-3`, the normal multiplier settles to `g h²` over the
-/// first frames and frame 1 starts from an exact touch). Rolling
-/// (`t = 1.5 s`):
-/// `v = 5 v₀ / 7`, `|v + ω_z r| < 1e-3`.
+/// at `t = 0.2 s`; no frame removes more than the cap `μ g Δt` from `v` plus
+/// the slack the contact depth's accuracy allows (`μ 2⁻¹⁶ / h` per substep,
+/// `analytic_contact_detection_small_penetration.rs`); frames 2 to 11
+/// together remove `10 μ g Δt`. Rolling (`t = 1.5 s`): `v = 5 v₀ / 7` and
+/// `v + ω_z r = 0`. The tolerances are the Richardson bound `2 |x(h) − x(2h)|`
+/// of each observable from the default and half the substeps (the substep is
+/// first order in `h`), plus, for the sliding phase, the impulse the contact
+/// depth's accuracy can withhold while the ball sinks to its standing
+/// penetration (`μ 2⁻¹⁶ / h`, `2.5 ×` for the spin).
 #[test]
 fn a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths() {
     let (mu, v0) = (0.3, 4.0);
     let t_star = 2.0 * v0 / (7.0 * mu * g());
+    let floor = 2f64.powi(-40);
+    let n = PhysicsConfig::default().substeps;
+    // the contact depth EPA reports is accurate to its threshold 2⁻¹⁶ (see
+    // `analytic_contact_detection_small_penetration.rs`), so a substep's normal
+    // multiplier, and with it the friction cap μ λ / h, can exceed the steady
+    // value by μ 2⁻¹⁶ / h; over a frame of n substeps that is the slack below
+    let cap_slack = mu * 2f64.powi(-16) / substep() * n as f64;
+    // the same accuracy lets the ball sink to a standing penetration of up to
+    // 2⁻¹⁶ before the multiplier matches the load, which costs the sliding
+    // phase one impulse of μ 2⁻¹⁶ / h (measured 1.1e-3 m/s at 8 substeps
+    // against a 7.6 µm standing penetration); the spin gets 2.5 times it
+    let depth_slack = mu * 2f64.powi(-16) / substep();
+    // the observables at t = 0.2 s (frame 12), the sum removed over frames
+    // 2..=11, and at t = 1.5 s, on the serial path at `substeps` per frame
+    let observe = |substeps: usize| {
+        let (mut w, ball) = flat_with(mu, substeps);
+        w.bodies[ball].velocity = v3(v0, 0.0, 0.0);
+        let (mut v_prev, mut removed, mut at12) = (v0, 0.0, (0.0, 0.0));
+        for frame in 1..=90 {
+            w.step(fx(DT));
+            let (_, v, wr) = state(&w, ball);
+            if frame > 1 && frame <= 11 {
+                removed += v_prev - v;
+            }
+            v_prev = v;
+            if frame == 12 {
+                at12 = (v, wr);
+            }
+        }
+        let (_, v, wr) = state(&w, ball);
+        [at12.0, at12.1, removed, v, v + wr]
+    };
+    let (o1, o2) = (observe(n), observe(n / 2));
+    // first order in h: e(h) ≤ 2 |x(h) − x(2h)|
+    let bound = |k: usize| 2.0 * (o1[k] - o2[k]).abs() + floor;
+    let (bound_v12, bound_wr12, bound_removed, bound_v, bound_slip) = (
+        bound(0) + depth_slack,
+        bound(1) + 2.5 * depth_slack,
+        bound(2) + depth_slack,
+        bound(3),
+        bound(4),
+    );
+    println!(
+        "launched-ball bounds: v12 {bound_v12:.2e} ωr12 {bound_wr12:.2e} removed {bound_removed:.2e} v {bound_v:.2e} slip {bound_slip:.2e} cap slack {cap_slack:.2e}"
+    );
     for path in paths() {
         let (mut w, ball) = flat(mu);
         w.bodies[ball].velocity = v3(v0, 0.0, 0.0);
@@ -164,7 +218,7 @@ fn a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths() {
             if frame > 1 && frame <= 11 {
                 let dv = v_prev - v;
                 assert!(
-                    dv < mu * g() * DT + 1e-3,
+                    dv <= mu * g() * DT + cap_slack,
                     "{path:?} t={t:.3}: frame removed {dv:.9} from v, above the cap μ g Δt = {:.9}",
                     mu * g() * DT
                 );
@@ -177,13 +231,13 @@ fn a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths() {
                     "{path:?} t={t:.3}: x {x:.6} v {v:.6} ({want_v}) ω_z r {wr:.6} ({want_wr})"
                 );
                 assert!(
-                    (v - want_v).abs() < 2e-2 && (wr - want_wr).abs() < 2e-2,
+                    (v - want_v).abs() <= bound_v12 && (wr - want_wr).abs() <= bound_wr12,
                     "{path:?} t={t:.3} < t*={t_star:.3}: v {v} (want {want_v}), ω_z r {wr} (want {want_wr})"
                 );
             }
         }
         assert!(
-            (removed - 10.0 * mu * g() * DT).abs() < 1e-3,
+            (removed - 10.0 * mu * g() * DT).abs() <= bound_removed,
             "{path:?}: frames 2..=11 removed {removed:.6} from v, the cap gives {:.6}",
             10.0 * mu * g() * DT
         );
@@ -191,7 +245,7 @@ fn a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths() {
         let roll = 5.0 * v0 / 7.0;
         println!("{path:?} t=1.5: x {x:.6} v {v:.6} ({roll:.6}) ω_z r {wr:.6}");
         assert!(
-            (v - roll).abs() < 2e-2 && (v + wr).abs() < 1e-3,
+            (v - roll).abs() <= bound_v && (v + wr).abs() <= bound_slip,
             "{path:?} t=1.5 s > t*: v {v} (want {roll}), v + ω_z r = {}",
             v + wr
         );
@@ -199,12 +253,45 @@ fn a_launched_ball_spins_up_at_the_capped_rate_and_rolls_at_five_sevenths() {
 }
 
 /// oracle: launched rolling (`v₀ = 4`, `ω_z = −v₀ / r`) the ball has no slip
-/// to remove: after 1 s `|v − v₀| < 1e-3`, `|v + ω_z r| < 1e-3`, and the
-/// kinetic energy never grows by more than `1e-6` in a frame (what remains
-/// is the velocity derivation's rounding of the turn, `θ² / 24` per substep).
+/// to remove: after 1 s `v − v₀` and `v + ω_z r` are within the Richardson
+/// bound `2 |x(h) − x(2h)|` from the default and half the substeps, and the
+/// worst kinetic-energy gain in a frame is within `s · m · v₀` for the slip
+/// bound `s` (the most a friction impulse removing that slip can add).
 #[test]
 fn a_rolling_ball_keeps_rolling_and_gains_no_energy() {
     let v0 = 4.0;
+    let floor = 2f64.powi(-40);
+    let n = PhysicsConfig::default().substeps;
+    let run = |substeps: usize| {
+        let (mut w, ball) = flat_with(0.3, substeps);
+        w.bodies[ball].velocity = v3(v0, 0.0, 0.0);
+        w.bodies[ball].angular_velocity = v3(0.0, 0.0, -v0 / R);
+        let mut e_prev = kinetic(&w, ball);
+        let mut worst = 0.0f64;
+        for _ in 0..60 {
+            w.step(fx(DT));
+            let e = kinetic(&w, ball);
+            worst = worst.max(e - e_prev);
+            e_prev = e;
+        }
+        let (_, v, wr) = state(&w, ball);
+        (v - v0, v + wr, worst)
+    };
+    let (a1, a2) = (run(n), run(n / 2));
+    let bound_slip = 2.0 * (a1.1 - a2.1).abs() + floor;
+    // a friction impulse that removes a slip `s` at speed `v₀` changes the
+    // kinetic energy by at most `s · m · v₀` (unit mass); the rounding gain is
+    // not first order in h, so it is not a Richardson quantity
+    let bounds = (
+        2.0 * (a1.0 - a2.0).abs() + floor,
+        bound_slip,
+        bound_slip * v0,
+    );
+    let _ = a1.2 + a2.2;
+    println!(
+        "rolling-ball bounds: v {:.2e} slip {:.2e} energy {:.2e}",
+        bounds.0, bounds.1, bounds.2
+    );
     for path in paths() {
         let (mut w, ball) = flat(0.3);
         w.bodies[ball].velocity = v3(v0, 0.0, 0.0);
@@ -220,7 +307,7 @@ fn a_rolling_ball_keeps_rolling_and_gains_no_energy() {
         let (_, v, wr) = state(&w, ball);
         println!("{path:?} t=1: v {v:.6} ω_z r {wr:.6} worst energy gain per frame {worst:.3e}");
         assert!(
-            (v - v0).abs() < 1e-3 && (v + wr).abs() < 1e-3 && worst < 1e-6,
+            (v - v0).abs() <= bounds.0 && (v + wr).abs() <= bounds.1 && worst <= bounds.2,
             "{path:?}: v {v} (want {v0}), v + ω_z r {}, worst energy gain {worst:.3e}",
             v + wr
         );
@@ -278,7 +365,9 @@ fn a_ball_dropped_straight_down_gets_no_spin() {
 /// oracle: released from rest on a static box turned by `θ = 0.3` about `z`
 /// with `μ = 0.5` (`> (2/7) tan θ = 0.088`, so it rolls without slipping):
 /// after 1 s the displacement down the slope is `(5/7) g sin θ t² / 2` and
-/// `|v + ω r| < 1e-3`. Budget `2 %` (one substep of phase, `a h t`).
+/// the slip `v − ω r` is zero, each within the Richardson bound
+/// `2 |x(h) − x(2h)|` from the default and half the substeps (the substep is
+/// first order in `h`, `analytic_contact_friction_convergence.rs`).
 ///
 /// Before the static friction acted at the contact point (step, t = 1 s):
 /// displacement `0.000000` (want 1.055), the centre was held like a ball
@@ -286,52 +375,83 @@ fn a_ball_dropped_straight_down_gets_no_spin() {
 #[test]
 fn a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_theta() {
     let (mu, theta) = (0.5, 0.3_f64);
+    let a = 5.0 / 7.0 * g() * theta.sin();
+    let want = a * 0.5;
+    // derived bounds: the substep is first order, so `e(h) ≤ 2 |x(h) − x(2h)|`
+    // from the default and half the substeps (serial path)
+    let n = PhysicsConfig::default().substeps;
+    let (d1, slip1) = incline_run(mu, theta, n);
+    let (d2, slip2) = incline_run(mu, theta, n / 2);
+    let bound_d = 2.0 * (d1 - d2).abs() + 2f64.powi(-40);
+    let bound_slip = 2.0 * (slip1 - slip2).abs() + 2f64.powi(-40);
     for path in paths() {
-        let mut w = PhysicsWorld::new(PhysicsConfig {
-            damping_rate: Fix128::ZERO,
-            ..PhysicsConfig::default()
-        });
-        let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
-        w.bodies[slab].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fx(theta)).normalize();
-        assert!(w.set_body_shape(
-            slab,
-            &Shape::Box {
-                half_extents: v3(20.0, 0.5, 2.0),
-            }
-        ));
-        let normal = [-theta.sin(), theta.cos(), 0.0];
-        let up = 0.5 + R;
-        let ball = w.add_body_with_radius(
-            RigidBody::new_dynamic(v3(normal[0] * up, normal[1] * up, 0.0), Fix128::ONE),
-            fx(R),
-        );
-        w.bodies[ball].inv_inertia = v3(INV_I, INV_I, INV_I);
-        let id = w
-            .material_table
-            .register(PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
-        w.set_body_material(slab, id);
-        w.set_body_material(ball, id);
+        let (mut w, ball) = incline_world(mu, theta, n);
         let start = w.bodies[ball].position;
         for _ in 0..60 {
             advance(&mut w, path);
         }
-        let b = &w.bodies[ball];
-        let d = b.position - start;
-        // downhill along the face: −(cos θ, sin θ, 0)
-        let down = -(d.x.to_f64() * theta.cos() + d.y.to_f64() * theta.sin());
-        let speed = -(b.velocity.x.to_f64() * theta.cos() + b.velocity.y.to_f64() * theta.sin());
-        let a = 5.0 / 7.0 * g() * theta.sin();
-        let want = a * 0.5;
-        // rolling downhill (−x-ish) turns the ball about +z: `speed = ω_z r`
-        let slip = speed - b.angular_velocity.z.to_f64() * R;
+        let (down, speed, slip) = incline_state(&w, ball, start, theta);
         println!(
-            "{path:?} incline t=1: down {down:.6} ({want:.6}) speed {speed:.6} slip {slip:.3e}"
+            "{path:?} incline t=1: down {down:.6} ({want:.6}, bound {bound_d:.2e}) speed {speed:.6} slip {slip:.3e} (bound {bound_slip:.2e})"
         );
         assert!(
-            (down - want).abs() < 0.02 * want + a * substep() && slip.abs() < 1e-3,
+            (down - want).abs() <= bound_d && slip.abs() <= bound_slip,
             "{path:?}: rolled {down:.6} m, closed form {want:.6}; slip {slip:.3e}"
         );
     }
+}
+
+/// Static box turned by `θ` about `z` and a solid ball on its face, with
+/// `substeps` per frame.
+fn incline_world(mu: f64, theta: f64, substeps: usize) -> (PhysicsWorld, usize) {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        damping_rate: Fix128::ZERO,
+        substeps,
+        ..PhysicsConfig::default()
+    });
+    let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+    w.bodies[slab].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fx(theta)).normalize();
+    assert!(w.set_body_shape(
+        slab,
+        &Shape::Box {
+            half_extents: v3(20.0, 0.5, 2.0),
+        }
+    ));
+    let normal = [-theta.sin(), theta.cos(), 0.0];
+    let up = 0.5 + R;
+    let ball = w.add_body_with_radius(
+        RigidBody::new_dynamic(v3(normal[0] * up, normal[1] * up, 0.0), Fix128::ONE),
+        fx(R),
+    );
+    w.bodies[ball].inv_inertia = v3(INV_I, INV_I, INV_I);
+    let id = w
+        .material_table
+        .register(PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
+    w.set_body_material(slab, id);
+    w.set_body_material(ball, id);
+    (w, ball)
+}
+
+/// `(downhill displacement, downhill speed, slip v − ω_z r)` of the ball
+fn incline_state(w: &PhysicsWorld, ball: usize, start: Vec3Fix, theta: f64) -> (f64, f64, f64) {
+    let b = &w.bodies[ball];
+    let d = b.position - start;
+    // downhill along the face: −(cos θ, sin θ, 0)
+    let down = -(d.x.to_f64() * theta.cos() + d.y.to_f64() * theta.sin());
+    let speed = -(b.velocity.x.to_f64() * theta.cos() + b.velocity.y.to_f64() * theta.sin());
+    // rolling downhill (−x-ish) turns the ball about +z: `speed = ω_z r`
+    (down, speed, speed - b.angular_velocity.z.to_f64() * R)
+}
+
+/// `(displacement, slip)` after 1 s on the serial path at `substeps`
+fn incline_run(mu: f64, theta: f64, substeps: usize) -> (f64, f64) {
+    let (mut w, ball) = incline_world(mu, theta, substeps);
+    let start = w.bodies[ball].position;
+    for _ in 0..60 {
+        w.step(fx(DT));
+    }
+    let (down, _, slip) = incline_state(&w, ball, start, theta);
+    (down, slip)
 }
 
 // ---------------------------------------------------------------------------
@@ -442,8 +562,14 @@ fn two_free_balls_in_a_spinning_collision_are_capped_and_conserve_momentum() {
 /// Static box turned by `θ` about `z` and a unit cube resting on its face,
 /// turned the same way, `inv_inertia = 6` (a unit cube), `μ = 0.5`.
 fn cube_on_incline(theta: f64, mu: f64) -> (PhysicsWorld, usize) {
+    cube_on_incline_with(theta, mu, PhysicsConfig::default().substeps)
+}
+
+/// `cube_on_incline` with `substeps` per frame (for the derived bound)
+fn cube_on_incline_with(theta: f64, mu: f64, substeps: usize) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         damping_rate: Fix128::ZERO,
+        substeps,
         ..PhysicsConfig::default()
     });
     let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
@@ -505,10 +631,24 @@ fn a_cube_on_an_incline_is_held_below_mu_and_slides_without_turning_above() {
             if slides {
                 let a = g() * (theta.sin() - 0.5 * theta.cos());
                 let want = a * 2.0;
-                println!("{path:?} cube θ={theta} t=2: down {down:.6} ({want:.6})");
+                // derived bound `2 |d(h) − d(2h)|` from the default and half the substeps
+                let n = PhysicsConfig::default().substeps;
+                let slide = |substeps: usize| {
+                    let (mut w, cube) = cube_on_incline_with(theta, 0.5, substeps);
+                    let start = w.bodies[cube].position;
+                    for _ in 0..120 {
+                        w.step(fx(DT));
+                    }
+                    let d = w.bodies[cube].position - start;
+                    -(d.x.to_f64() * theta.cos() + d.y.to_f64() * theta.sin())
+                };
+                let bound = 2.0 * (slide(n) - slide(n / 2)).abs() + 2f64.powi(-40);
+                println!(
+                    "{path:?} cube θ={theta} t=2: down {down:.6} ({want:.6}, bound {bound:.2e})"
+                );
                 assert!(
-                    (down - want).abs() < 0.02 * want + a * substep() * 2.0,
-                    "{path:?}: cube slid {down:.6}, closed form {want:.6}"
+                    (down - want).abs() <= bound,
+                    "{path:?}: cube slid {down:.6}, closed form {want:.6}, bound {bound:.2e}"
                 );
             } else {
                 println!("{path:?} cube θ={theta} t=2: down {down:.3e}");
