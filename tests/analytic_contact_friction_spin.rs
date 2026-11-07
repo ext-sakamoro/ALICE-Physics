@@ -18,6 +18,11 @@
 //!   without slipping at `a = (5/7) g sin θ`;
 //! - dropped straight down (on a ground sphere, whose normal is exact): no
 //!   tangential slip, no spin at all;
+//! - a unit box on an incline: held exactly below the friction angle and
+//!   sliding without any turn above it — a shaped body's contact point is the
+//!   support vertex EPA reports, not the point under the contact, so the
+//!   rotational response is reserved for plain spheres and a box keeps the
+//!   centre form (the box's own rotational friction is a listed gap);
 //! - two free balls (no gravity), one spinning, meeting head on with `e = 0`:
 //!   the friction impulse of the collision substep is capped at
 //!   `μ λ_n / (h w_sum)`, the pair's linear momentum is unchanged, the angular
@@ -430,5 +435,88 @@ fn two_free_balls_in_a_spinning_collision_are_capped_and_conserve_momentum() {
             "{path:?}: |ΔP| {dp:.3e}, |ΔL| {dl:.3e} (bound {:.3e}), worst energy gain {gain:.3e}",
             depth * p
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shaped bodies keep the centre form
+// ---------------------------------------------------------------------------
+
+/// Static box turned by `θ` about `z` and a unit cube resting on its face,
+/// turned the same way, `inv_inertia = 6` (a unit cube), `μ = 0.5`.
+fn cube_on_incline(theta: f64, mu: f64) -> (PhysicsWorld, usize) {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        damping_rate: Fix128::ZERO,
+        ..PhysicsConfig::default()
+    });
+    let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+    let q = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fx(theta)).normalize();
+    w.bodies[slab].rotation = q;
+    assert!(w.set_body_shape(
+        slab,
+        &Shape::Box {
+            half_extents: v3(20.0, 0.5, 2.0),
+        }
+    ));
+    let normal = [-theta.sin(), theta.cos(), 0.0];
+    let cube = w.add_body(RigidBody::new_dynamic(
+        v3(normal[0], normal[1], 0.0),
+        Fix128::ONE,
+    ));
+    w.bodies[cube].rotation = q;
+    assert!(w.set_body_shape(
+        cube,
+        &Shape::Box {
+            half_extents: v3(0.5, 0.5, 0.5),
+        }
+    ));
+    w.bodies[cube].inv_inertia = v3(6.0, 6.0, 6.0);
+    let id = w
+        .material_table
+        .register(PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
+    w.set_body_material(slab, id);
+    w.set_body_material(cube, id);
+    (w, cube)
+}
+
+/// oracle: a unit cube on `θ = 0.25` with `μ = 0.5` (`tan θ = 0.255 < μ`) is
+/// held: after 2 s it has not moved along the slope (`< 1e-9` m) and has not
+/// turned at all (its rotation is still the slab's, its angular velocity
+/// zero). On `θ = 0.6` (`tan θ = 0.684 > μ`) it slides at
+/// `g (sin θ − μ cos θ)` (2 s, budget 2 %) and, its contact point being a
+/// support vertex rather than the point under it, it must not turn either
+/// (a sliding cube on a plane does not tip with `μ < 1`).
+#[test]
+fn a_cube_on_an_incline_is_held_below_mu_and_slides_without_turning_above() {
+    for path in paths() {
+        for (theta, slides) in [(0.25_f64, false), (0.6, true)] {
+            let (mut w, cube) = cube_on_incline(theta, 0.5);
+            let start = w.bodies[cube].position;
+            let q0 = w.bodies[cube].rotation;
+            for _ in 0..120 {
+                advance(&mut w, path);
+            }
+            let b = &w.bodies[cube];
+            let d = b.position - start;
+            let down = -(d.x.to_f64() * theta.cos() + d.y.to_f64() * theta.sin());
+            assert!(
+                b.rotation == q0 && b.angular_velocity.length_squared().is_zero(),
+                "{path:?} θ={theta}: the cube turned: q {:?} ω {:?}",
+                b.rotation,
+                b.angular_velocity
+            );
+            if slides {
+                let a = g() * (theta.sin() - 0.5 * theta.cos());
+                let want = a * 2.0;
+                println!("{path:?} cube θ={theta} t=2: down {down:.6} ({want:.6})");
+                assert!(
+                    (down - want).abs() < 0.02 * want + a * substep() * 2.0,
+                    "{path:?}: cube slid {down:.6}, closed form {want:.6}"
+                );
+            } else {
+                println!("{path:?} cube θ={theta} t=2: down {down:.3e}");
+                assert!(down.abs() < 1e-9, "{path:?}: held cube crept {down:.3e} m");
+            }
+        }
     }
 }
