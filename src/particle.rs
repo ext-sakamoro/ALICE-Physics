@@ -157,6 +157,35 @@ impl LandingTarget<'_> {
             Self::Query(query) => query(point).map(|normal| (point, normal)),
         }
     }
+
+    /// `(point on the surface, outward normal)` when `point` is on this target or within
+    /// `reach` of it, on either side. A query has no distance: it answers for occupied points.
+    fn surface(&self, point: Vec3Fix, reach: Fix128) -> Option<(Vec3Fix, Vec3Fix)> {
+        let on_field = |field: &dyn SdfField, x: f32, y: f32, z: f32| {
+            let d = Fix128::from_f32(field.distance(x, y, z));
+            (d.abs() <= reach).then(|| (d, field.normal(x, y, z)))
+        };
+        match self {
+            Self::Field(field) => {
+                let (x, y, z) = point.to_f32();
+                let (d, (nx, ny, nz)) = on_field(*field, x, y, z)?;
+                let normal = Vec3Fix::from_f32(nx, ny, nz).normalize();
+                Some((point - normal * d, normal))
+            }
+            #[cfg(feature = "std")]
+            Self::Collider(collider) => {
+                let (x, y, z) = collider.world_to_local(point);
+                let d = Fix128::from_f32(collider.field.distance(x, y, z) * collider.scale_f32);
+                if d.abs() > reach {
+                    return None;
+                }
+                let (nx, ny, nz) = collider.field.normal(x, y, z);
+                let normal = collider.local_normal_to_world(nx, ny, nz);
+                Some((point - normal * d, normal))
+            }
+            Self::Query(query) => query(point).map(|normal| (point, normal)),
+        }
+    }
 }
 
 /// One particle landing on a [`LandingTarget`] during [`ParticleSystem::step_with_landing`].
@@ -176,6 +205,25 @@ pub struct LandingEvent {
     pub time_in_step: Fix128,
 }
 
+/// How a landed particle runs off, for [`ParticleSystem::step_with_run_off`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RunOff {
+    /// Viscous drag along the surface, per second: the terminal speed is `|g_t| / drag`.
+    pub drag: Fix128,
+    /// The particle drips when the surface normal, against the direction of gravity, reaches
+    /// this cosine: 0 is a vertical wall, 1 the very underside of a surface.
+    pub drip_cos: Fix128,
+}
+
+/// What happened in one [`ParticleSystem::step_with_run_off`].
+#[derive(Clone, Debug, Default)]
+pub struct RunOffEvents {
+    /// Particles that landed on a target in this step.
+    pub landed: Vec<LandingEvent>,
+    /// Indices of the particles that left their surface in this step.
+    pub dripped: Vec<usize>,
+}
+
 /// A particle system managing particles and emitters.
 pub struct ParticleSystem {
     /// All particles (alive and dead)
@@ -188,6 +236,9 @@ pub struct ParticleSystem {
     pub damping: Fix128,
     /// Maximum number of particles allowed
     pub max_particles: usize,
+    /// The target each particle is running down in [`Self::step_with_run_off`], by
+    /// particle index; shorter than `particles` when the later ones are not on anything.
+    on_surface: Vec<Option<usize>>,
 }
 
 impl ParticleSystem {
@@ -205,6 +256,7 @@ impl ParticleSystem {
             gravity,
             damping: Fix128::from_ratio(99, 100),
             max_particles,
+            on_surface: Vec::new(),
         }
     }
 
@@ -399,6 +451,165 @@ impl ParticleSystem {
             }
         }
         events
+    }
+
+    /// Step like [`Self::step_with_landing`], except that a particle that lands stays on what
+    /// it hit: it runs down the surface and drips off it instead of being re-emitted.
+    ///
+    /// On a surface with outward normal `n`, `g` less its part along `n` accelerates the
+    /// particle and `run_off.drag` slows it (implicitly, so the terminal speed on a plane is
+    /// `|g_t| / drag` for any `dt`). After each move the particle is put back on the surface.
+    /// It leaves as a free particle, keeping its velocity, when it gets further than
+    /// `max_travel` from the surface (it ran past an edge) or when `n·ĝ >= run_off.drip_cos`
+    /// (it hangs under an overhang). A particle on a [`LandingTarget::Query`] stays where the
+    /// query says the point is occupied, since a query gives no distance to the surface.
+    ///
+    /// Particles die at the end of their lifetime wherever they are; emitters replace them.
+    /// [`Self::particle_on_surface`] says which target a particle is on.
+    ///
+    /// # Panics
+    ///
+    /// When `max_travel` is not positive, or a free particle's step needs more samples than
+    /// the cap of [`Self::step_with_landing`].
+    pub fn step_with_run_off(
+        &mut self,
+        dt: Fix128,
+        rng: &mut DeterministicRng,
+        targets: &[LandingTarget<'_>],
+        max_travel: Fix128,
+        run_off: RunOff,
+    ) -> RunOffEvents {
+        assert!(
+            max_travel > Fix128::ZERO,
+            "step_with_run_off: max_travel must be positive"
+        );
+        let mut events = RunOffEvents::default();
+        if dt.is_zero() {
+            return events;
+        }
+        for ei in 0..self.emitters.len() {
+            self.emit_particles(ei, dt, rng);
+        }
+        self.on_surface.resize(self.particles.len(), None);
+
+        let gravity = self.gravity;
+        let damping = self.damping;
+        let down = gravity.normalize();
+        let slowing = Fix128::ONE / (Fix128::ONE + run_off.drag * dt);
+        for (index, particle) in self.particles.iter_mut().enumerate() {
+            if !particle.alive {
+                self.on_surface[index] = None;
+                continue;
+            }
+            let on = self.on_surface[index].filter(|t| *t < targets.len());
+            if let Some(t) = on {
+                let surface = targets[t].surface(particle.position, max_travel);
+                let normal = surface.map_or(down, |(_, n)| n);
+                let pull = gravity - normal * gravity.dot(normal);
+                let along = particle.velocity - normal * particle.velocity.dot(normal);
+                particle.velocity = (along + pull * dt) * slowing;
+                let moved = particle.position + particle.velocity * dt;
+                match targets[t].surface(moved, max_travel) {
+                    Some((position, n)) if n.dot(down) < run_off.drip_cos => {
+                        particle.position = position;
+                    }
+                    _ => {
+                        particle.position = moved;
+                        self.on_surface[index] = None;
+                        events.dripped.push(index);
+                    }
+                }
+            } else {
+                particle.velocity = (particle.velocity + gravity * dt) * damping;
+                let start = particle.position;
+                let displacement = particle.velocity * dt;
+                let hit = if targets.is_empty() {
+                    None
+                } else {
+                    first_landing(start, displacement, dt, targets, max_travel)
+                };
+                if let Some((target, position, normal, time_in_step)) = hit {
+                    events.landed.push(LandingEvent {
+                        particle: index,
+                        target,
+                        position,
+                        normal,
+                        time_in_step,
+                    });
+                    particle.position = position;
+                    particle.velocity =
+                        particle.velocity - normal * particle.velocity.dot(normal);
+                    self.on_surface[index] = Some(target);
+                } else {
+                    particle.position = start + displacement;
+                }
+            }
+            particle.age = particle.age + dt;
+            if particle.age >= particle.lifetime {
+                particle.alive = false;
+                self.on_surface[index] = None;
+            }
+        }
+        events
+    }
+
+    /// The target particle `index` is running down, `None` when it is free.
+    #[must_use]
+    pub fn particle_on_surface(&self, index: usize) -> Option<usize> {
+        self.on_surface.get(index).copied().flatten()
+    }
+
+    /// SHA-256 of everything that decides the next step: gravity, damping, the cap, every
+    /// emitter (with its fractional emission), every particle, which surface each is on, and
+    /// `rng`, which the caller holds. Equal for two systems exactly when they will go on to
+    /// the same bits under the same calls.
+    #[must_use]
+    pub fn state_digest(&self, rng: &DeterministicRng) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        let fix = |h: &mut Sha256, f: Fix128| {
+            h.update(f.hi.to_le_bytes());
+            h.update(f.lo.to_le_bytes());
+        };
+        let vec = |h: &mut Sha256, v: Vec3Fix| {
+            fix(h, v.x);
+            fix(h, v.y);
+            fix(h, v.z);
+        };
+        h.update(b"alice-physics/particle-system-digest/v1");
+        let (state, inc) = rng.raw_state();
+        h.update(state.to_le_bytes());
+        h.update(inc.to_le_bytes());
+        vec(&mut h, self.gravity);
+        fix(&mut h, self.damping);
+        h.update((self.max_particles as u64).to_le_bytes());
+        h.update((self.emitters.len() as u64).to_le_bytes());
+        for e in &self.emitters {
+            vec(&mut h, e.position);
+            vec(&mut h, e.direction);
+            for f in [
+                e.spread_angle,
+                e.emission_rate,
+                e.initial_speed,
+                e.lifetime,
+                e.particle_mass,
+                e.emission_accumulator,
+            ] {
+                fix(&mut h, f);
+            }
+        }
+        h.update((self.particles.len() as u64).to_le_bytes());
+        for (i, p) in self.particles.iter().enumerate() {
+            vec(&mut h, p.position);
+            vec(&mut h, p.velocity);
+            fix(&mut h, p.age);
+            fix(&mut h, p.lifetime);
+            fix(&mut h, p.mass);
+            h.update([u8::from(p.alive)]);
+            let on = self.particle_on_surface(i).map_or(u64::MAX, |t| t as u64);
+            h.update(on.to_le_bytes());
+        }
+        h.finalize().into()
     }
 
     /// Emit particles from a specific emitter.
