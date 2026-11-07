@@ -875,7 +875,7 @@ axis = "contact"
 item = "contact at the contact point (torque from contact and friction forces)"
 source = "Erleben et al., Physics-Based Animation ch.6; Müller et al. 2020 §3.4"
 status = "partial"
-evidence = "XPBD の速度段の摩擦は接触点で働く (すべりに ω × r、衝撃は腕を通して ω へ、tests/analytic_contact_friction_spin.rs と indep_contact_restitution_friction.rs の 5/7 転がり) 位置段 (法線の押し戻しと静止摩擦) は重心で並進のみ TGS backend は腕の長さ r_a を使い同じ oracle で転がる"
+evidence = "XPBD の速度段の摩擦は接触点で働く (すべりに ω × r、衝撃は腕を通して ω へ、tests/analytic_contact_friction_spin.rs と indep_contact_restitution_friction.rs の 5/7 転がり) ただし形のない球だけ: 形のある体の接触点は EPA の support 頂点なので重心の形のまま (同 file の斜面の箱: 回らない) 位置段 (法線の押し戻しと静止摩擦) は重心で並進のみ TGS backend は腕の長さ r_a を使い同じ oracle で転がる"
 oracle_candidate = "斜面を転がる球の加速度 5/7 g sinθ (test は在るが位置段の静止摩擦が重心を止めるので ignore)、角で支えた箱の転倒"
 limitation = "src/solver.rs::static_friction_correction 'Contact points are taken at the body centres: the contact solve is translational only.' (位置段)"
 
