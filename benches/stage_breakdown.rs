@@ -25,7 +25,7 @@ use alice_physics_core::{
 
 fn fast_sleep_config() -> SleepConfig {
     SleepConfig {
-        frames_to_sleep: 1, // sleep after a single idle frame
+        time_to_sleep: Fix128::from_ratio(1, 60), // sleep after a single idle frame
         ..SleepConfig::default()
     }
 }

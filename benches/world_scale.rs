@@ -44,7 +44,7 @@ fn world(n: usize, sleep_percent: usize, skip: bool) -> PhysicsWorld {
     }
     for i in awake..n {
         w.islands.sleep_data[i].state = SleepState::Sleeping;
-        w.islands.sleep_data[i].idle_frames = 100;
+        w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
     }
     // The first step parks the sleeping bodies and fills the tree.
     w.step(dt());

@@ -145,7 +145,7 @@ impl Laws {
             sleep: SleepConfig {
                 linear_threshold: fx(1, 11),
                 angular_threshold: fx(1, 13),
-                frames_to_sleep: 17,
+                time_to_sleep: Fix128::from_ratio(17, 60),
             },
             default_friction_combine: CombineRule::Max,
             default_restitution_combine: CombineRule::Multiply,
@@ -725,7 +725,7 @@ fn every_covered_field_moves_the_law_id() {
             "sleep frames",
             Box::new(|w| {
                 w.set_sleep_config(SleepConfig {
-                    frames_to_sleep: 7,
+                    time_to_sleep: Fix128::from_ratio(7, 60),
                     ..SleepConfig::default()
                 })
             }),
