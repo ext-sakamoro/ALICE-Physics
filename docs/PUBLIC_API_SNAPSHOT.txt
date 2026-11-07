@@ -3482,9 +3482,7 @@ pub fn alice_physics_core::debug_render::debug_draw_world(&alice_physics_core::s
 pub mod alice_physics_core::deformable
 pub enum alice_physics_core::deformable::Material
 pub alice_physics_core::deformable::Material::Constraints
-pub alice_physics_core::deformable::Material::NeoHookean
-pub alice_physics_core::deformable::Material::NeoHookean::poisson_ratio: alice_physics_core::math::Fix128
-pub alice_physics_core::deformable::Material::NeoHookean::young_modulus: alice_physics_core::math::Fix128
+pub alice_physics_core::deformable::Material::NeoHookean(alice_physics_core::deformable::NeoHookeanLaw)
 impl core::clone::Clone for alice_physics_core::deformable::Material
 pub fn alice_physics_core::deformable::Material::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::deformable::Material
@@ -3501,6 +3499,29 @@ impl core::marker::Unpin for alice_physics_core::deformable::Material
 impl core::marker::UnsafeUnpin for alice_physics_core::deformable::Material
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::deformable::Material
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::deformable::Material
+pub enum alice_physics_core::deformable::MaterialError
+pub alice_physics_core::deformable::MaterialError::PoissonRatioOutOfRange
+pub alice_physics_core::deformable::MaterialError::YoungModulusNotPositive
+pub alice_physics_core::deformable::MaterialError::YoungModulusTooLarge
+impl core::clone::Clone for alice_physics_core::deformable::MaterialError
+pub fn alice_physics_core::deformable::MaterialError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::deformable::MaterialError
+impl core::cmp::PartialEq for alice_physics_core::deformable::MaterialError
+pub fn alice_physics_core::deformable::MaterialError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics_core::deformable::MaterialError
+impl core::fmt::Debug for alice_physics_core::deformable::MaterialError
+pub fn alice_physics_core::deformable::MaterialError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::deformable::MaterialError
+pub fn alice_physics_core::deformable::MaterialError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::deformable::MaterialError
+impl core::marker::StructuralPartialEq for alice_physics_core::deformable::MaterialError
+impl core::marker::Freeze for alice_physics_core::deformable::MaterialError
+impl core::marker::Send for alice_physics_core::deformable::MaterialError
+impl core::marker::Sync for alice_physics_core::deformable::MaterialError
+impl core::marker::Unpin for alice_physics_core::deformable::MaterialError
+impl core::marker::UnsafeUnpin for alice_physics_core::deformable::MaterialError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::deformable::MaterialError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::deformable::MaterialError
 pub struct alice_physics_core::deformable::DeformableBody
 pub alice_physics_core::deformable::DeformableBody::config: alice_physics_core::deformable::DeformableConfig
 pub alice_physics_core::deformable::DeformableBody::inv_masses: alloc::vec::Vec<alice_physics_core::math::Fix128>
@@ -3553,6 +3574,29 @@ impl core::marker::Unpin for alice_physics_core::deformable::DeformableConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::deformable::DeformableConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::deformable::DeformableConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::deformable::DeformableConfig
+pub struct alice_physics_core::deformable::NeoHookeanLaw
+impl alice_physics_core::deformable::NeoHookeanLaw
+pub const alice_physics_core::deformable::NeoHookeanLaw::MAX_YOUNG_MODULUS: alice_physics_core::math::Fix128
+pub const alice_physics_core::deformable::NeoHookeanLaw::POISSON_MARGIN: alice_physics_core::math::Fix128
+pub fn alice_physics_core::deformable::NeoHookeanLaw::lambda_energy(&self) -> alice_physics_core::math::Fix128
+pub const fn alice_physics_core::deformable::NeoHookeanLaw::lame(&self) -> (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::deformable::NeoHookeanLaw::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::deformable::MaterialError>
+impl core::clone::Clone for alice_physics_core::deformable::NeoHookeanLaw
+pub fn alice_physics_core::deformable::NeoHookeanLaw::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::deformable::NeoHookeanLaw
+impl core::cmp::PartialEq for alice_physics_core::deformable::NeoHookeanLaw
+pub fn alice_physics_core::deformable::NeoHookeanLaw::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::deformable::NeoHookeanLaw
+pub fn alice_physics_core::deformable::NeoHookeanLaw::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::StructuralPartialEq for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::Freeze for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::Send for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::Sync for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::Unpin for alice_physics_core::deformable::NeoHookeanLaw
+impl core::marker::UnsafeUnpin for alice_physics_core::deformable::NeoHookeanLaw
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::deformable::NeoHookeanLaw
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::deformable::NeoHookeanLaw
 pub mod alice_physics_core::det_math
 pub use alice_physics_core::det_math::acos64
 pub use alice_physics_core::det_math::asin64
