@@ -8,7 +8,6 @@
 //! that would panic (`add_joint`) or quietly store an unusable value.
 
 use crate::electromagnetic::MagneticResponse;
-use crate::event::ContactEventType;
 use crate::force::{ForceField, ForceFieldInstance};
 use crate::heightfield::HeightField;
 use crate::joint::Joint;
@@ -464,8 +463,11 @@ pub(crate) fn observe_body(w: &PhysicsWorld, body: usize) -> Option<Observation>
 /// `[bodyA, bodyB, kind, speed, px, py, pz, nx, ny, nz]` per contact. `kind` is 0 begin,
 /// 1 persist, 2 end, 3 a static collider (`bodyB` is then the collider's index, negated
 /// and less one, so it cannot be taken for a body). `speed` is the speed of approach.
+#[cfg(feature = "wasm")]
 #[must_use]
-pub fn contact_events(world: &PhysicsWorld) -> Vec<f64> {
+pub(crate) fn contact_events(world: &PhysicsWorld) -> Vec<f64> {
+    use crate::event::ContactEventType;
+
     let mut out = Vec::new();
     for e in world.contact_events() {
         let kind = match e.event_type {
