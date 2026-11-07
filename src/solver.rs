@@ -3698,6 +3698,15 @@ impl PhysicsWorld {
                         if left_range {
                             self.note_rigid_overflow();
                         }
+                        // the pairs this body makes with the parked bodies it meets
+                        // never reach the narrow phase (two parked bodies are not
+                        // staged): the same predicate decides their flag here
+                        let met = self.park.tree.query(&aabb);
+                        if met.iter().any(|&j| {
+                            j as usize != i && self.pair_radius_sum_overflows(i, j as usize)
+                        }) {
+                            self.note_rigid_overflow();
+                        }
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
                         self.park.proxy_live += 1;
                         self.stage_work.tree_inserts += 1;
@@ -6721,9 +6730,13 @@ impl PhysicsWorld {
             // in 4 frames). `tests/analytic_physics.rs::head_on_collision_*`.
             let delta = self.bodies[a].position - self.bodies[b].position;
             // 半径和が `|·| ≥ 2⁶³` だと wrap して負になり、どの距離とも比べられない
-            // (`velocity_of` が `self` を借りているので、印は loop の後で立てる)
+            // 印は「解く組」の箱が重なる時だけ (`pair_radius_sum_overflows`、どの
+            // broad-phase でも park の挿入でも同じ述語) `velocity_of` が `self` を
+            // 借りているので、印は loop の後で立てる
             let Some(combined_radius) = radius_a.checked_add(radius_b) else {
-                radius_overflow = true;
+                if self.pair_radius_sum_overflows(a, b) {
+                    radius_overflow = true;
+                }
                 continue;
             };
             // Squared-distance early out *first*: the BVH candidate set is a
@@ -6972,6 +6985,38 @@ impl PhysicsWorld {
     /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)) 落とす経路は [`Self::reset_world`] と
     /// 状態の復元だけ
     #[inline]
+    /// The one rule for the overflow flag on a pair whose radius sum leaves the
+    /// range: raised when the pair is one the simulation solves (neither body
+    /// static, their layers collide) **and** their broad-phase boxes (the ones
+    /// [`Self::broadphase_box_checked`] builds) meet, the test the exact-overlap
+    /// broad-phase makes. Evaluated only when the sum does not fit, so a world
+    /// in range never reaches it. The narrow phase (every broad-phase kind) and
+    /// the insertion into the tree of parked bodies (the sleep skip) call this
+    /// same function, so the flag does not depend on the path that found the
+    /// pair; a static pair never raises it under any kind. `false` for a body
+    /// without a collision radius.
+    pub(crate) fn pair_radius_sum_overflows(&self, a: usize, b: usize) -> bool {
+        let (Some(Some(ra)), Some(Some(rb))) = (
+            self.body_collision_radii.get(a),
+            self.body_collision_radii.get(b),
+        ) else {
+            return false;
+        };
+        if ra.checked_add(*rb).is_some() {
+            return false;
+        }
+        if self.bodies[a].is_static() && self.bodies[b].is_static() {
+            return false;
+        }
+        let filter_of = |i: usize| self.body_filters.get(i).copied().unwrap_or_default();
+        if !CollisionFilter::can_collide(&filter_of(a), &filter_of(b)) {
+            return false;
+        }
+        let box_a = self.broadphase_box_checked(a, *ra).0;
+        let box_b = self.broadphase_box_checked(b, *rb).0;
+        box_a.intersects(&box_b)
+    }
+
     pub(crate) fn note_rigid_overflow(&mut self) {
         self.overflow_detected = true;
     }
@@ -7348,6 +7393,9 @@ impl PhysicsWorld {
             // 未知の値は拒否 (silent に false へ倒すと undecided が消える)
             _ => return false,
         };
+        // 印を下げて読み込んだ時、park の木に残った組は再検査されない: 次の
+        // step で全 body を park し直させ、挿入時の述語をもう一度通す
+        self.park_generation = self.park_generation.wrapping_add(1);
 
         true
     }

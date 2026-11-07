@@ -316,6 +316,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "golden_installed_bridge",
         "gpu-solver-bridge",
     ),
+    (
+        "overflow flag",
+        "overflow_flag_previous_bits.rs",
+        "the_overflow_flag_scenes_have_their_pinned_sha256",
+        "",
+    ),
 ];
 
 /// Required combinations pinned by a relation to another pinned combination:
@@ -378,6 +384,13 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("physics2d", &["PhysicsWorld2D"], 1),
     // an installed bridge reroutes the contact solve of `step` / `substep`
     ("installed bridge", &["set_gpu_solver_bridge("], 1),
+    // the overflow flag on a pair whose radius sum leaves the range, under every
+    // broad-phase kind with the sleep skip on and off (one predicate on every path)
+    (
+        "overflow flag",
+        &["overflow_detected(", "set_sleep_skip("],
+        1,
+    ),
     // two distance constraints share a body (joints are solved the same way
     // on both paths; the batched order applies to distance constraints and
     // contacts)
