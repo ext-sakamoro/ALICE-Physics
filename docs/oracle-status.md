@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5947 |
+| 🟢 Not ignored (run by CI) | 5949 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 29 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6048** |
+| **Total** | **6050** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -158,7 +158,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5947)
+## 🟢 Not ignored (5949)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -460,6 +460,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_broadphase.rs` | 8 |
 | `analytic_contact_event_normals.rs` | 8 |
 | `analytic_cubic_fem.rs` | 8 |
+| `analytic_dynamic_fem_corotational.rs` | 8 |
 | `analytic_fillet_stress_wiring.rs` | 8 |
 | `analytic_fluid_block_wiring.rs` | 8 |
 | `analytic_ik_physics_bridge_wiring.rs` | 8 |
@@ -510,7 +511,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_analytics_bridge_wiring.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
 | `analytic_deformable_static_sag.rs` | 6 |
-| `analytic_dynamic_fem_corotational.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
