@@ -4775,6 +4775,15 @@ impl PhysicsWorld {
 
     /// Update velocities from position changes, then apply restitution and friction
     /// for active contact constraints.
+    /// Whether body `i`'s contact point is the point under the contact: true
+    /// for a plain sphere (collision detection puts it on the centre line,
+    /// `centre − n r`), false for a shaped collider (EPA reports a support
+    /// vertex, not the point under the contact), so the friction's rotational
+    /// response is reserved for spheres until shaped contacts carry a manifold.
+    fn contact_point_is_exact(&self, i: usize) -> bool {
+        self.body_colliders.get(i).is_none_or(Option::is_none)
+    }
+
     #[inline]
     fn update_velocities(&mut self, dt: Fix128) {
         let inv_dt = Fix128::ONE / dt;
@@ -4931,11 +4940,24 @@ impl PhysicsWorld {
             // lever arms from each body's own contact point (Müller et al.
             // 2020 use `r₁`, `r₂` the same way); the two points differ by the
             // penetration depth along the normal, so the pair's angular
-            // momentum changes by `depth · (n × p)` while they overlap
+            // momentum changes by `depth · (n × p)` while they overlap. The
+            // rotational response needs the point under the contact: a plain
+            // sphere's is exact (centre − n r), a shaped body's is the support
+            // vertex EPA found, so shaped bodies keep the centre form.
+            let turns_a = !post_a.is_static() && self.contact_point_is_exact(constraint.body_a);
+            let turns_b = !post_b.is_static() && self.contact_point_is_exact(constraint.body_b);
             let r_a = constraint.contact.point_a - post_a.position;
             let r_b = constraint.contact.point_b - post_b.position;
-            let spin_a = post_a.angular_velocity.cross(r_a);
-            let spin_b = post_b.angular_velocity.cross(r_b);
+            let spin_a = if turns_a {
+                post_a.angular_velocity.cross(r_a)
+            } else {
+                Vec3Fix::ZERO
+            };
+            let spin_b = if turns_b {
+                post_b.angular_velocity.cross(r_b)
+            } else {
+                Vec3Fix::ZERO
+            };
             let relative_vel2 = (post_a.velocity + spin_a) - (post_b.velocity + spin_b);
             let vn2 = relative_vel2.dot(n);
             let tangent_vel = relative_vel2 - n * vn2;
@@ -4961,15 +4983,15 @@ impl PhysicsWorld {
                 // + (r_b × t)·I_b⁻¹(r_b × t)` (static bodies add nothing)
                 let ra_t = r_a.cross(friction_dir);
                 let rb_t = r_b.cross(friction_dir);
-                let rot_a = if post_a.is_static() {
-                    Fix128::ZERO
-                } else {
+                let rot_a = if turns_a {
                     ra_t.dot(post_a.world_inv_inertia_apply(ra_t))
-                };
-                let rot_b = if post_b.is_static() {
-                    Fix128::ZERO
                 } else {
+                    Fix128::ZERO
+                };
+                let rot_b = if turns_b {
                     rb_t.dot(post_b.world_inv_inertia_apply(rb_t))
+                } else {
+                    Fix128::ZERO
                 };
                 if rot_a.is_zero() && rot_b.is_zero() {
                     // no rotational response possible: the centre-velocity
@@ -4998,18 +5020,22 @@ impl PhysicsWorld {
                     };
                     let impulse = friction_dir * p;
                     if !post_a.is_static() {
-                        let torque = r_a.cross(impulse);
                         let ba = &mut self.bodies[constraint.body_a];
                         ba.velocity = ba.velocity - impulse * post_a.inv_mass;
-                        ba.angular_velocity =
-                            ba.angular_velocity - post_a.world_inv_inertia_apply(torque);
+                        if turns_a {
+                            let torque = r_a.cross(impulse);
+                            ba.angular_velocity =
+                                ba.angular_velocity - post_a.world_inv_inertia_apply(torque);
+                        }
                     }
                     if !post_b.is_static() {
-                        let torque = r_b.cross(impulse);
                         let bb = &mut self.bodies[constraint.body_b];
                         bb.velocity = bb.velocity + impulse * post_b.inv_mass;
-                        bb.angular_velocity =
-                            bb.angular_velocity + post_b.world_inv_inertia_apply(torque);
+                        if turns_b {
+                            let torque = r_b.cross(impulse);
+                            bb.angular_velocity =
+                                bb.angular_velocity + post_b.world_inv_inertia_apply(torque);
+                        }
                     }
                 }
             }
