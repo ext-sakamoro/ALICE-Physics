@@ -89,8 +89,8 @@
 //!   `::a_jump_from_the_ground_is_not_snapped_back`;
 //!   `tests/analytic_character_state_wiring.rs::ground_contact_closed_form_on_flat_plane`;
 //!   `tests/analytic_world_sweeps.rs::parity_with_move_and_slide_on_the_single_field`
-//!   (the world's SDF union as one field); the cross-platform bits of 12 `move_and_slide`
-//!   + `is_grounded` steps on one field, `tests/determinism_golden_f32.rs::golden_sdf_soft_family`.
+//!   (the world's SDF union as one field); the cross-platform bits of 12 `move_and_slide` and
+//!   `is_grounded` steps on one field, `tests/determinism_golden_f32.rs::golden_sdf_soft_family`.
 //!   validation missing: free fall onto a flat field compared with `t = √(2h/g)` (the
 //!   rest oracles check the final state, not the fall time). validation missing: a
 //!   slope on a flat world through `step` (the slope oracle runs on the sphere path
