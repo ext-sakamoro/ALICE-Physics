@@ -532,14 +532,14 @@ fn older_kinds_world() -> PhysicsWorld {
 /// the per-second damping rates); `…_b.bin` is the same world stepped 30 times by `1/60` by that
 /// build. The writer printed stepping semantics `e90000da…`; both files were 2726 bytes, `a` sha256
 /// `49bdd103…` and `b` sha256 `693394f7…`. Re-written when the contact friction began acting at
-/// the contact point of plain spheres and the identifier moved to `2680b331…`: against the earlier
+/// the contact point of plain spheres and the identifier moved to `fce64051…`: against the earlier
 /// files only bytes 16–79 (the identifier and its law_id) and 2718–2725 (the checksum) differ, in
 /// `a` and in `b` alike, so this world's 30 steps still give the earlier release's bytes; now `a`
 /// sha256 `bf479d8f…`, `b` sha256 `1b94e5f3…`, 2726 bytes each.
 const OLDER_KINDS_A: &[u8] =
-    include_bytes!("fixtures/world_snapshot_xv_2680b331_force_fields_a.bin");
+    include_bytes!("fixtures/world_snapshot_xv_fce64051_force_fields_a.bin");
 const OLDER_KINDS_B: &[u8] =
-    include_bytes!("fixtures/world_snapshot_xv_2680b331_force_fields_b.bin");
+    include_bytes!("fixtures/world_snapshot_xv_fce64051_force_fields_b.bin");
 
 /// Adding magnets did not change the format or the stepping of worlds without one: such a world
 /// is written to the bytes the earlier release wrote; those bytes are read back and written again

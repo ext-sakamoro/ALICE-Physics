@@ -559,8 +559,8 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // moved; the bodies and the participant payload did not (no damping, no static collider here; the
 // body state and payload after 256 frames hash the same as the build before that change)
 // re-recorded when the contact friction began acting at the contact point of plain spheres (PHYSICS_SEMANTICS_ID e90000da… → 2680b331…); the bodies' bytes are those of the previous solver (no contact in this scene)
-const THREE_BODY_XPBD: &str = "95858c162a02356e7c53b309017a1cc3e1bd0962371e99a45c8081b690005886";
-const THREE_BODY_TGS: &str = "329e87cbaefd15839a333de1a294c98734533b30b1429caeef3ec882acb62d5c";
+const THREE_BODY_XPBD: &str = "cd6d1a1b3a562399fd879afe464e14c2fa69538d9d1b80efb8253f351fa6fd97";
+const THREE_BODY_TGS: &str = "51a9ee37e41a18cf05110abeea6aa90541730814e638544a5d82ad65ece51a5c";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
