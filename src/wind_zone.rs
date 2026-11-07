@@ -1,3 +1,35 @@
+//! # MODEL
+//!
+//! - **Equations**: quadratic drag `F = ½ ρ C_d A |v_rel| v_rel` with
+//!   `v_rel = u(t) − v_body`, in a prescribed wind field
+//!   `u(t) = d · U + d · a · sin(2π f t)`, uniform inside the zone and zero
+//!   outside. No flow equation is solved for the air.
+//! - **Units**: SI. ρ kg/m³, A m², U and a m/s, f Hz, t s, F N; `C_d` is
+//!   dimensionless.
+//! - **Conservation**: the air is an external reservoir, so the bodies'
+//!   momentum and energy are not conserved: drag adds momentum along the wind
+//!   and dissipates relative kinetic energy. The air carries no state except the
+//!   gust clock, which is in the world's state and digest.
+//! - **Range**: the force is integrated explicitly once per substep, stable while
+//!   `2 k |v_rel| inv_mass h < 2` with `k = ½ ρ C_d A`. A force out of the
+//!   fixed-point range is a participant fault that changes nothing. `C_d` and
+//!   `A` are constants, so the model holds where the drag coefficient does not
+//!   vary with the Reynolds number over the speeds used.
+//! - **Approximations**: the wind passes through bodies and shapes (no shelter,
+//!   no wake, no flow around an obstacle); no height profile (no boundary layer
+//!   or log law near the ground); one sinusoidal gust along the mean direction
+//!   (no turbulence spectrum such as von Kármán or Kaimal, no cross-wind); the
+//!   force acts at the body's centre with a constant area, independent of the
+//!   surface orientation.
+//! - **Validation** (`tests/analytic_wind_zone_participant.rs`):
+//!   `release_into_a_steady_wind_follows_quadratic_drag` (closed form
+//!   `v(t) = U − U/(1 + c U t)` and the first-order step error),
+//!   `terminal_velocity_in_an_upward_wind` (`v = U − √(m g / k)`),
+//!   `staged_force_matches_the_formula_at_the_clock`,
+//!   `outside_the_zone_nothing_changes`, `rewind_and_fork_are_bit_identical`,
+//!   `gust_scene_digest_is_pinned`. Not validated, because not modelled: the log
+//!   law, the shelter and wake of an obstacle, and a gust spectrum.
+//!
 //! `WindZone` — bounded aerodynamic force field applied to rigid bodies
 //! and cloth / hair particles.
 //!
@@ -16,18 +48,6 @@
 //! where `v_rel = wind_velocity(t) − body_velocity` and
 //! `wind_velocity(t) = base_direction · base_speed
 //!                     + turbulence · sin(2π · gust_frequency · t)`.
-//!
-//! # What it models and what it does not
-//!
-//! | | |
-//! |---|---|
-//! | Flow | A prescribed field: one uniform vector inside the zone, nothing outside. No flow equation is solved |
-//! | Obstacles | The wind passes through bodies and shapes: no shelter, no wake, no flow around an obstacle |
-//! | Drag | Quadratic in the relative velocity, `½ ρ C_d A |v_rel| v_rel`, SI units (kg/m³, m², m/s, N). `C_d` and `A` are constants given by the caller; no Reynolds dependence |
-//! | Terminal velocity | Follows from the drag law; tests pin `v = U − √(m g / k)` against the closed form |
-//! | Height profile | None: the speed does not depend on height, so there is no boundary layer or log law near the ground |
-//! | Gusts | One sinusoid along the mean direction; not a turbulence spectrum (von Kármán, Kaimal) and no cross-wind component |
-//! | Orientation | The force acts at the centre of the body; the projected area does not change with the surface orientation |
 //!
 // LIMITATION(COV-SOFT-072): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
 // LIMITATION(COV-ENV-103): The MVP evaluates the aerodynamic force in the body's centre and ignores surface-orientation dependence
