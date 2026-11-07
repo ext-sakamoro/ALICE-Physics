@@ -24,7 +24,11 @@ use alice_physics_core::sdf_collider::ClosureSdf;
 const G: f64 = 10.0;
 
 fn v(x: f64, y: f64, z: f64) -> Vec3Fix {
-    Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::from_f64(z))
+    Vec3Fix::new(
+        Fix128::from_f64(x),
+        Fix128::from_f64(y),
+        Fix128::from_f64(z),
+    )
 }
 
 fn f(x: Fix128) -> f64 {
@@ -35,8 +39,12 @@ fn f(x: Fix128) -> f64 {
 fn one_drop(from: Vec3Fix) -> ParticleSystem {
     let mut s = ParticleSystem::new(4, v(0.0, -G, 0.0));
     s.damping = Fix128::ONE;
-    s.particles
-        .push(Particle::new(from, Vec3Fix::ZERO, Fix128::from_int(1000), Fix128::ONE));
+    s.particles.push(Particle::new(
+        from,
+        Vec3Fix::ZERO,
+        Fix128::from_int(1000),
+        Fix128::ONE,
+    ));
     s
 }
 
@@ -80,7 +88,10 @@ fn on_an_incline_the_speed_reaches_the_closed_form() {
     let p = &s.particles[0];
     let closed = G * theta.sin() / drag;
     let speed = f(p.velocity.length());
-    assert!((speed - closed).abs() < closed * 1e-3, "{speed} against {closed}");
+    assert!(
+        (speed - closed).abs() < closed * 1e-3,
+        "{speed} against {closed}"
+    );
     let off = f64::from(nx) * f(p.position.x) + f64::from(ny) * f(p.position.y);
     assert!(off.abs() < 1e-2, "{off} off the plane");
     assert!(f(p.velocity.x) > 0.0, "down the slope");
@@ -119,7 +130,10 @@ fn on_a_sphere_the_drop_drips_at_the_cosine_it_was_told() {
         let p = dripped.expect("it dripped");
         let along = -f(p.y) / f(p.length());
         let step = f(s.particles[0].velocity.length()) * DT;
-        assert!((along - drip_cos).abs() < step + 2e-3, "{along} against {drip_cos}");
+        assert!(
+            (along - drip_cos).abs() < step + 2e-3,
+            "{along} against {drip_cos}"
+        );
         assert_eq!(s.particle_on_surface(0), None);
         // free again: it falls
         let before = f(s.particles[0].velocity.y);
@@ -280,7 +294,11 @@ const RAIN_DIGEST: &str = "1801e895a99e5182e2f2a9f56bf7c5693d7484648310c84cdbb8d
 fn rain_scene_digest_is_pinned() {
     let (mut s, mut rng) = rain(7);
     run_rain(&mut s, &mut rng, 240);
-    let hex: String = s.state_digest(&rng).iter().map(|b| format!("{b:02x}")).collect();
+    let hex: String = s
+        .state_digest(&rng)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     println!("rain digest {hex}");
     assert_eq!(hex, RAIN_DIGEST);
 }
