@@ -124,7 +124,7 @@ fn bridge_solve_stores_the_modified_friction_and_restitution_in_the_constraint()
         restitution: Some(Fix128::from_ratio(3, 4)),
     }));
     let mut bridge = PassThrough::default();
-    w.solve_contact_constraints_with_bridge(&mut bridge)
+    w.solve_contact_constraints_with_bridge(&mut bridge, Fix128::from_ratio(1, 60))
         .expect("the bridge computes under this build's semantics");
     assert_eq!(bridge.calls, 1, "the contact must reach the bridge");
     assert_eq!(w.contact_constraints[0].friction, Fix128::from_ratio(1, 8));
@@ -153,7 +153,7 @@ fn bridge_solve_keeps_the_constraint_values_without_a_modifier() {
         cached_lambda: Fix128::ZERO,
     });
     let mut bridge = PassThrough::default();
-    w.solve_contact_constraints_with_bridge(&mut bridge)
+    w.solve_contact_constraints_with_bridge(&mut bridge, Fix128::from_ratio(1, 60))
         .expect("the bridge computes under this build's semantics");
     assert_eq!(w.contact_constraints[0].friction, fx(0.5));
     assert_eq!(w.contact_constraints[0].restitution, fx(0.25));

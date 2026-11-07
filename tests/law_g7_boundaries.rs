@@ -312,7 +312,7 @@ mod gpu {
             Err(expect("substep_with_bridge"))
         );
         assert_eq!(
-            w.solve_contact_constraints_with_bridge(&mut Other(other)),
+            w.solve_contact_constraints_with_bridge(&mut Other(other), dt),
             Err(expect("solve_contact_constraints_with_bridge"))
         );
         assert_eq!(
