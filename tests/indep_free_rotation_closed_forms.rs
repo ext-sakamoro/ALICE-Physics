@@ -321,20 +321,21 @@ fn a_principal_spin_keeps_omega_and_turns_by_omega_t_at_every_substep_count() {
 
 /// The same oracle for an isotropic body under TGS.
 ///
-/// Closed form of the measured lag: the TGS path that does not split the
-/// rotation turns the quaternion by `q ← normalize(q + ½ h ω̃ q)`, with
+/// Closed form of the lag this once had: the TGS path that does not split the
+/// rotation turned the quaternion by `q ← normalize(q + ½ h ω̃ q)`, with
 /// `ω̃ = (ω, 0)`. For `q = (sin(φ/2) n, cos(φ/2))` and `ω = |ω| n` this is
 /// `(sin(φ/2) + ½|ω|h cos(φ/2), cos(φ/2) − ½|ω|h sin(φ/2)) n`, i.e. the half
-/// angle grows by `atan(|ω| h / 2)`, so each substep turns the body by
+/// angle grows by `atan(|ω| h / 2)`, so each substep turned the body by
 /// `2 atan(|ω| h / 2) = |ω| h − |ω|³ h³ / 12 + O(h⁵)` instead of `|ω| h`.
-/// Over `t / h` substeps the angle lags by `Δθ = |ω|³ h² t / 12`: for
+/// Over `t / h` substeps the angle lagged by `Δθ = |ω|³ h² t / 12`: for
 /// `|ω| = 6`, `t = 10`, frame `1/60`, that is 5.00e-2 / 1.25e-2 / 3.13e-3 /
-/// 7.81e-4 rad at substeps 1 / 2 / 4 / 8, and the measured lags are
-/// 4.993e-2 / 1.250e-2 / 3.125e-3 / 7.812e-4. `ω` itself is kept exactly.
-/// The anisotropic principal spin under TGS (split path) holds to `1e-8` in
-/// the previous test, which stays green as the control.
+/// 7.81e-4 rad at substeps 1 / 2 / 4 / 8, and the measured lags were
+/// 4.993e-2 / 1.250e-2 / 3.125e-3 / 7.812e-4. Since the orientation is
+/// integrated by the exact exponential map (`integrate_orientation`,
+/// 8f765c2c) the turn is `|ω| h` per substep and this passes at every substep
+/// count. `ω` itself is kept exactly. The anisotropic principal spin under
+/// TGS (split path) holds to `1e-8` in the previous test, the control.
 #[test]
-#[ignore = "src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12"]
 fn tgs_isotropic_spin_turns_by_omega_t() {
     let tgs = [(SolverBackend::Tgs, Entry::Step)];
     let failures = principal_spin_failures(&tgs, &[ISOTROPIC_SPIN]);

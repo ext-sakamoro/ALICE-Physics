@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5933 |
-| 🔴 Red by design | 71 |
+| 🟢 Not ignored (run by CI) | 5934 |
+| 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **6030** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (70)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -82,7 +82,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
-- `tgs_isotropic_spin_turns_by_omega_t` (indep_free_rotation_closed_forms.rs) — src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
 - `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
@@ -152,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5933)
+## 🟢 Not ignored (5934)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -518,6 +517,7 @@ Per-file counts (the test names are in `tests/`):
 | `cloth_fluid_sub_iteration.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
+| `indep_free_rotation_closed_forms.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
 | `p3_quadrature_fix128.rs` | 6 |
 | `wm01_overflow_is_not_silent.rs` | 6 |
@@ -542,7 +542,6 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
-| `indep_free_rotation_closed_forms.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
