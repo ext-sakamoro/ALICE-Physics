@@ -1707,18 +1707,24 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// 減衰を 1 秒あたりの率 (既定 0、以前の既定は 1 step あたり 0.99 の保持) にした時に
 /// 取り直した 全 scene が `PhysicsConfig::default()` なので、動く体のある 12 件が動いた
 /// scene 3 の TGS (静止から始まる重なった 2 球) だけは不変だった
+///
+/// 休止を時間で判定するようにした時 (`serialize_state` v4、body ごとの sleep 記録が
+/// 17 byte) に取り直した blob の形式が動くので 13 件すべてが動く body の運動状態
+/// (`[12..12 + n·208)`) は scene 0〜5 で修正前と bit 一致 (両 backend、別に測った)
+/// scene 6 (`dt = 2²⁰`) だけは body も動く: 時間の規則では 1 step (2²⁰ s) 遊んだ体が
+/// 既定の 1 s を越えて眠るのに対し、step 数の規則は 60 step 待っていた
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0xe1cf59847572e985_u64),
-    (1, SolverBackend::Xpbd, 0x36b5104395c14228_u64),
-    (2, SolverBackend::Xpbd, 0xe1887bfb14a87bee_u64),
-    (3, SolverBackend::Xpbd, 0x807206918944a242_u64),
-    (4, SolverBackend::Xpbd, 0x4baa81e4627924fb_u64),
-    (5, SolverBackend::Xpbd, 0xdd401c85f62e8f51_u64),
-    (6, SolverBackend::Xpbd, 0x6bfad6246e7bc457_u64),
-    (0, SolverBackend::Tgs, 0x915631b49ab58b1b_u64),
-    (1, SolverBackend::Tgs, 0x11757b14dcf526d0_u64),
-    (2, SolverBackend::Tgs, 0xe1887bfb14a87bee_u64),
-    (3, SolverBackend::Tgs, 0xa26ed4428533826f_u64),
-    (4, SolverBackend::Tgs, 0x97cb05c4e5a8543c_u64),
-    (5, SolverBackend::Tgs, 0x73151ef6173670a7_u64),
+    (0, SolverBackend::Xpbd, 0x42b8972f0e32020f_u64),
+    (1, SolverBackend::Xpbd, 0x5ff326d19f3c27d1_u64),
+    (2, SolverBackend::Xpbd, 0x8cb9dc0f3abc06e1_u64),
+    (3, SolverBackend::Xpbd, 0x2d1bd9b5c044109b_u64),
+    (4, SolverBackend::Xpbd, 0x95078e1af194808c_u64),
+    (5, SolverBackend::Xpbd, 0x3d60aac1e24b9c2c_u64),
+    (6, SolverBackend::Xpbd, 0x9a400ef0ee374330_u64),
+    (0, SolverBackend::Tgs, 0x8a78987e715f560e_u64),
+    (1, SolverBackend::Tgs, 0x366486bdbfcf3ae1_u64),
+    (2, SolverBackend::Tgs, 0x8cb9dc0f3abc06e1_u64),
+    (3, SolverBackend::Tgs, 0xa98e5e1fdb765758_u64),
+    (4, SolverBackend::Tgs, 0xcacab819e9dd859f_u64),
+    (5, SolverBackend::Tgs, 0xa3388efe7c9a2796_u64),
 ];

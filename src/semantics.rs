@@ -10,7 +10,7 @@
 //! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6
+//! c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb
 //! ```
 //!
 //! # Entries
@@ -189,6 +189,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "installed bridge",
         hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    // sleep by elapsed time (`idle + dt/2 >= time_to_sleep`), pinned by four spheres
+    // dropped on a plane at dt = 1/30 s (`tests/analytic_sleep_by_time.rs`)
+    (
+        "sleep by time",
+        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
     ),
     // the Law outputs: one golden per src file that calls the Law max / min /
     // clamp (`LAW_OUTPUT_PINS` in tests/determinism_law_outputs.rs)
@@ -403,28 +409,30 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("843d34228f621e62bab094e3c9b579b0706396aebfc64e9237bf474694ae820b"),
+        hex32("68dc9ebc5301977bf145e528c2f2566dec5c57c3819d252e9535b9292fb9c7cd"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("5e6510a288012cabc82a3db6e8dfe0069d4f5a7aa5a39abb01d481e30427e4f0"),
+        hex32("1fa7459d92cfbeb04a3259ef238cf5b3f0bf24c7221983b5e119d2cd71afceae"),
     ),
     // alice-det-math 0.5.2 at 39507d1b (its clamp follows the G2 order: three Law outputs
     // moved, see PHYSICS_PINS_BY_DET_MATH)
     (
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
-        hex32("9c29277a88e920b78d8d5e3f4d7089c3c8acc305b03f68ea9434fad2915f6e4b"),
+        hex32("50b4192d402ffa0bf188da26e4566103cbe1ac003a8369d6cde5e4feb52ca17e"),
     ),
     // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
     // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
     // entry and the peers' identifiers did (31eb4ab8… once the secondary chain was pinned);
     // then the stepping change (damping a rate per second, shaped bodies against static
     // colliders, static overlap pushed out without velocity) moved three pins
-    // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations)
+    // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations);
+    // then sleep by elapsed time was pinned (the rule `idle + dt/2 >= time_to_sleep`), moving
+    // every row from its value before (this one from e90000da…)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"),
+        hex32("c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb"),
     ),
 ];
 
@@ -568,7 +576,8 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
-/// `e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6`.
+/// `c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb`
+/// (`e90000da…` before sleep by time was pinned).
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 

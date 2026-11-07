@@ -37,6 +37,20 @@ use alice_physics_core::{
     PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 
+#[path = "support/law_rows.rs"]
+mod law_rows;
+use law_rows::{spec, Laws};
+
+/// The rules of `writer_scene()` folded as the writing builds encoded them: gravity (0, −7, 0),
+/// the damping field holding the retention 0.99, the sleep rule as the step count 60.
+fn writer_laws() -> Laws {
+    let mut laws = Laws::defaults();
+    laws.config.gravity = Vec3Fix::from_int(0, -7, 0);
+    laws.config.damping_rate = Fix128::from_ratio(99, 100);
+    laws.legacy_sleep_steps = Some(60);
+    laws
+}
+
 const BLOB: &[u8] = include_bytes!("fixtures/world_snapshot_v4_semantics_cd9aa3b8.bin");
 const SEMANTICS_AT: usize = 16;
 const LAW_AT: usize = 48;
@@ -82,6 +96,16 @@ fn scene() -> PhysicsWorld {
 /// (row 5), so the writers' `law_id` is reproduced only from the value they
 /// held; the field is set to that raw value to recompute it, not used as a
 /// rate.
+///
+/// # History
+///
+/// Up to the identifier `e90000da…` this build recomputed the writer's `law_id` directly
+/// (`writer_scene().law_id(&writer_id)`), the damping field set to the writer's value. Sleep by
+/// elapsed time (identifier `c131f541…`) changed row 11's encoding from a `u32` idle-step count
+/// to a `Fix128` time, so no world of this build folds to the writer's value any more; the
+/// fixture's header is instead checked against the documented rows folded with the writer's
+/// encoding (`tests/support/law_rows.rs`, row 11 as the step count 60), and this build's own
+/// `law_id` for the same scene is shown to differ.
 fn writer_scene() -> PhysicsWorld {
     let mut w = scene();
     w.config.damping_rate = Fix128::from_ratio(99, 100);
@@ -139,11 +163,15 @@ fn the_fixture_header_is_what_the_writer_printed() {
     // this build's identifier is another one, so the blob is from an
     // earlier semantics, not this one
     assert_ne!(hex(&PHYSICS_SEMANTICS_ID), WRITER_SEMANTICS);
-    // and the header law_id is the scene's rule under the writer's semantics,
-    // with the world damping field holding the value the writer held
-    // (retention 0.99 per step; this build's own `scene()` holds rate 0
-    // there, so it gives another id)
+    // and the header law_id is the scene's rule under the writer's semantics, folded as
+    // the writer encoded it (damping as the retention 0.99 per step, the sleep rule as 60
+    // idle steps); this build's own `law_id` folds the sleep rule as a time (row 11 changed
+    // at c131f541…), so even with the writer's damping value it gives another id
     assert_eq!(
+        hex(&spec(&writer_laws(), &unhex(WRITER_SEMANTICS))),
+        WRITER_LAW_ID
+    );
+    assert_ne!(
         hex(&writer_scene().law_id(&unhex(WRITER_SEMANTICS))),
         WRITER_LAW_ID
     );
@@ -174,11 +202,14 @@ fn the_released_3_1_0_fixture_header_is_what_the_writer_printed() {
     );
     assert_eq!(hex(&BLOB_3_1_0[LAW_AT..LAW_AT + 32]), WRITER_3_1_0_LAW_ID);
     assert_ne!(hex(&PHYSICS_SEMANTICS_ID), WRITER_3_1_0_SEMANTICS);
-    // the header law_id is the scene's rule under 3.1.0's semantics, with
-    // the world damping field holding the value 3.1.0 held (see
-    // `writer_scene`); the frozen blob is not re-derived from this build's
-    // writer, whose damping field now holds a rate
+    // the header law_id is the scene's rule under 3.1.0's semantics, folded as 3.1.0
+    // encoded it (damping as the retention 0.99, the sleep rule as 60 idle steps); the
+    // frozen blob is not re-derived from this build's writer, whose row 11 is a time
     assert_eq!(
+        hex(&spec(&writer_laws(), &unhex(WRITER_3_1_0_SEMANTICS))),
+        WRITER_3_1_0_LAW_ID
+    );
+    assert_ne!(
         hex(&writer_scene().law_id(&unhex(WRITER_3_1_0_SEMANTICS))),
         WRITER_3_1_0_LAW_ID
     );
