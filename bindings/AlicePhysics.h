@@ -109,6 +109,8 @@ uint8_t  alice_physics_body_apply_impulse_at(AlicePhysicsWorldHandle world, uint
 AlicePhysicsConfig alice_physics_config_default();
 uint8_t  alice_physics_world_set_gravity(AlicePhysicsWorldHandle world, double x, double y, double z);
 void     alice_physics_world_set_substeps(AlicePhysicsWorldHandle world, uint32_t substeps);
+uint8_t  alice_physics_world_set_sleep_config(AlicePhysicsWorldHandle world, double linear_threshold, double angular_threshold, uint32_t frames_to_sleep);
+uint8_t  alice_physics_body_wake(AlicePhysicsWorldHandle world, uint32_t body_id);
 
 // --- State serialization (rollback netcode) ---
 uint8_t* alice_physics_state_serialize(const AlicePhysicsWorldHandle world, uint32_t* out_len);

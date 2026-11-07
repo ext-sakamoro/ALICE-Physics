@@ -181,6 +181,12 @@ uint8_t alice_physics_world_set_gravity(AlicePhysicsWorld* world, double x, doub
 /** Set substeps on an existing world. */
 void alice_physics_world_set_substeps(AlicePhysicsWorld* world, uint32_t substeps);
 
+/** Set when a body goes to sleep. 0 when a threshold is out of range or negative. */
+uint8_t alice_physics_world_set_sleep_config(AlicePhysicsWorld* world, double linear_threshold, double angular_threshold, uint32_t frames_to_sleep);
+
+/** Wake a body and the bodies connected to it. 0 for an index past the last body. */
+uint8_t alice_physics_body_wake(AlicePhysicsWorld* world, uint32_t body_id);
+
 /* ========================================================================== */
 /* State Serialization (Rollback Netcode)                                      */
 /* ========================================================================== */

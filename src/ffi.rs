@@ -524,8 +524,8 @@ pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
         else {
             return value_out_of_range(0);
         };
-        for (body, velocity) in w.bodies.iter_mut().zip(velocities) {
-            body.velocity = velocity;
+        for (i, velocity) in velocities.into_iter().enumerate() {
+            w.set_body_velocity(i, velocity);
         }
         1
     })
@@ -561,9 +561,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
             return value_out_of_range(0);
         };
         for (body_id, impulse) in impulses {
-            if let Some(body) = w.bodies.get_mut(body_id) {
-                body.apply_impulse(impulse);
-            }
+            w.apply_body_impulse(body_id, impulse);
         }
         1
     })
@@ -818,13 +816,10 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
     velocity: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&velocity)) {
-            (None, _) => 0,
-            (Some(_), None) => value_out_of_range(0),
-            (Some(b), Some(value)) => {
-                b.velocity = value;
-                1
-            }
+        Some(w) => match vec3_arg(&velocity) {
+            _ if w.bodies.get(body_id as usize).is_none() => 0,
+            None => value_out_of_range(0),
+            Some(value) => u8::from(w.set_body_velocity(body_id as usize, value)),
         },
         None => 0,
     })
@@ -912,13 +907,10 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
     impulse: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (w.bodies.get_mut(body_id as usize), vec3_arg(&impulse)) {
-            (None, _) => 0,
-            (Some(_), None) => value_out_of_range(0),
-            (Some(b), Some(impulse)) => {
-                b.apply_impulse(impulse);
-                1
-            }
+        Some(w) => match vec3_arg(&impulse) {
+            _ if w.bodies.get(body_id as usize).is_none() => 0,
+            None => value_out_of_range(0),
+            Some(impulse) => u8::from(w.apply_body_impulse(body_id as usize, impulse)),
         },
         None => 0,
     })
@@ -936,15 +928,10 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
     point: AliceVec3,
 ) -> u8 {
     ffi_guard_world(world, 0, || match writable(world) {
-        Some(w) => match (
-            w.bodies.get_mut(body_id as usize),
-            vec3_arg(&impulse),
-            vec3_arg(&point),
-        ) {
-            (None, _, _) => 0,
-            (Some(b), Some(impulse), Some(point)) => {
-                b.apply_impulse_at(impulse, point);
-                1
+        Some(w) => match (vec3_arg(&impulse), vec3_arg(&point)) {
+            _ if w.bodies.get(body_id as usize).is_none() => 0,
+            (Some(impulse), Some(point)) => {
+                u8::from(w.apply_body_impulse_at(body_id as usize, impulse, point))
             }
             _ => value_out_of_range(0),
         },
@@ -1016,6 +1003,49 @@ pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWor
         if let Some(w) = writable(world) {
             w.config.substeps = substeps as usize;
         }
+    })
+}
+
+/// Wake a body and the bodies connected to it. Returns 1, or 0 for an index past the
+/// last body or a world that refuses changes.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_wake(world: *mut PhysicsWorld, body_id: u32) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) if (body_id as usize) < w.bodies.len() => {
+            w.wake_body(body_id as usize);
+            1
+        }
+        _ => 0,
+    })
+}
+
+/// Set when a body goes to sleep: below both speeds for `frames_to_sleep` frames.
+/// Returns 1, or 0 when a threshold is out of range or negative (see
+/// `alice_physics_last_error`) or the world refuses changes.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_set_sleep_config(
+    world: *mut PhysicsWorld,
+    linear_threshold: f64,
+    angular_threshold: f64,
+    frames_to_sleep: u32,
+) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) => {
+            match binding_api::sleep_config(linear_threshold, angular_threshold, frames_to_sleep) {
+                Some(config) => {
+                    w.set_sleep_config(config);
+                    1
+                }
+                None => value_out_of_range(0),
+            }
+        }
+        None => 0,
     })
 }
 
@@ -2928,6 +2958,40 @@ mod tests {
             // garbage state
             let junk = [0xFFu8; 13];
             assert_eq!(alice_physics_state_deserialize(world, junk.as_ptr(), 13), 0);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    #[test]
+    fn velocity_impulse_and_wake_reach_a_sleeping_body() {
+        unsafe {
+            let world = alice_physics_world_create();
+            alice_physics_world_set_gravity(world, 0.0, 0.0, 0.0);
+            assert_eq!(alice_physics_world_set_sleep_config(world, 0.01, 0.01, 5), 1);
+            let at = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            let body = alice_physics_body_add_dynamic(world, at, 1.0);
+            let settle = || {
+                for _ in 0..20 {
+                    assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
+                }
+                assert!((*world).is_sleeping(body as usize));
+            };
+            let push = AliceVec3 { x: 0.0, y: 0.0, z: 1.0 };
+            let zero = AliceVec3 { x: 0.0, y: 0.0, z: 0.0 };
+            settle();
+            assert_eq!(alice_physics_body_set_velocity(world, body, push), 1);
+            assert!(!(*world).is_sleeping(body as usize), "set_velocity");
+            assert_eq!(alice_physics_body_set_velocity(world, body, zero), 1);
+            settle();
+            assert_eq!(alice_physics_body_apply_impulse(world, body, push), 1);
+            assert!(!(*world).is_sleeping(body as usize), "apply_impulse");
+            assert_eq!(alice_physics_body_set_velocity(world, body, zero), 1);
+            settle();
+            assert_eq!(alice_physics_body_wake(world, body), 1);
+            assert!(!(*world).is_sleeping(body as usize), "wake");
+            assert_eq!(alice_physics_body_wake(world, body + 1), 0);
+            assert_eq!(alice_physics_world_set_sleep_config(world, -1.0, 0.01, 5), 0);
+            assert_eq!(alice_physics_world_set_sleep_config(world, 0.01, 1e19, 5), 0);
             alice_physics_world_destroy(world);
         }
     }

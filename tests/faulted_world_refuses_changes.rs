@@ -300,6 +300,11 @@ mod c_api {
             alice_physics_world_set_substeps(wp, 3);
             refused.push(("world_set_substeps", (*wp).snapshot_world() == before));
             refused.push((
+                "world_set_sleep_config",
+                alice_physics_world_set_sleep_config(wp, 1.0, 1.0, 1) == 0,
+            ));
+            refused.push(("body_wake", alice_physics_body_wake(wp, 0) == 0));
+            refused.push((
                 "state_deserialize",
                 alice_physics_state_deserialize(wp, [0_u8; 4].as_ptr(), 4) == 0,
             ));

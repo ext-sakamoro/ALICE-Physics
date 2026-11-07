@@ -211,6 +211,8 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern AlicePhysicsConfig alice_physics_config_default();
         [DllImport(DLL)] public static extern byte alice_physics_world_set_gravity(IntPtr world, double x, double y, double z);
         [DllImport(DLL)] public static extern void alice_physics_world_set_substeps(IntPtr world, uint substeps);
+        [DllImport(DLL)] public static extern byte alice_physics_world_set_sleep_config(IntPtr world, double linearThreshold, double angularThreshold, uint framesToSleep);
+        [DllImport(DLL)] public static extern byte alice_physics_body_wake(IntPtr world, uint bodyId);
 
         // State serialization
         [DllImport(DLL)] public static extern IntPtr alice_physics_state_serialize(IntPtr world, out uint len);
@@ -518,6 +520,22 @@ namespace AlicePhysics
         {
             ThrowIfDisposed();
             Native.alice_physics_world_set_substeps(_ptr, substeps);
+        }
+
+        /// <summary>Set when a body goes to sleep: below both speeds for the given frames.</summary>
+        public void SetSleepConfig(double linearThreshold, double angularThreshold, uint framesToSleep)
+        {
+            ThrowIfDisposed();
+            if (Native.alice_physics_world_set_sleep_config(_ptr, linearThreshold, angularThreshold, framesToSleep) == 0)
+                throw new ArgumentOutOfRangeException(nameof(linearThreshold));
+        }
+
+        /// <summary>Wake a body and the bodies connected to it.</summary>
+        public void WakeBody(uint bodyId)
+        {
+            ThrowIfDisposed();
+            if (Native.alice_physics_body_wake(_ptr, bodyId) == 0)
+                throw new ArgumentOutOfRangeException(nameof(bodyId));
         }
 
         // -- State serialization (rollback netcode) --

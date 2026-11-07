@@ -309,6 +309,35 @@ test("a refused restoreWorld throws an Error named by its kind and changes nothi
   assert.deepEqual(Array.from(w.stateDigest()), before);
 });
 
+test("setVelocity and applyImpulse wake a sleeping body, wakeBody wakes it, setSleepConfig sets when", () => {
+  const SLEEPING = 13;
+  const world = WasmPhysicsWorld.withConfig(0, 0, 0, 4, 4);
+  world.setSleepConfig(0.01, 0.01, 5);
+  const body = world.addDynamicBody(0, 0, 0, 1);
+  const asleep = () => world.observeBody(body)[SLEEPING] === 1;
+  const settle = () => {
+    let frames = 0;
+    while (!asleep() && frames < 20) {
+      world.setVelocity(body, 0, 0, 0);
+      world.step(1 / 60);
+      frames += 1;
+    }
+    return frames;
+  };
+  assert.ok(settle() < 20, "asleep through the configured frames");
+  world.setVelocity(body, 1, 0, 0);
+  assert.equal(asleep(), false, "setVelocity");
+  settle();
+  world.applyImpulse(body, 1, 0, 0);
+  assert.equal(asleep(), false, "applyImpulse");
+  settle();
+  assert.ok(asleep());
+  world.wakeBody(body);
+  assert.equal(asleep(), false, "wakeBody");
+  assert.throws(() => world.setSleepConfig(-1, 0.01, 5), { name: "ValueOutOfRange" });
+  assert.throws(() => world.setSleepConfig(0.01, 1e19, 5), { name: "ValueOutOfRange" });
+});
+
 test("one impulse changes the digest, the same calls do not", () => {
   const a = jointedScene();
   const b = jointedScene();

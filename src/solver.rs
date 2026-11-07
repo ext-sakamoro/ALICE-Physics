@@ -2846,6 +2846,54 @@ impl PhysicsWorld {
         self.islands.wake_island(body_idx);
     }
 
+    /// Set a body's velocity; a nonzero velocity wakes a dynamic body with its island.
+    ///
+    /// Writing `bodies[i].velocity` directly does not wake: a sleeping body keeps its
+    /// place whatever the field says. A zero velocity leaves the body as it is, so a
+    /// caller that stops a body every frame still lets it sleep. Returns `false` for an
+    /// index past the last body.
+    pub fn set_body_velocity(&mut self, body_idx: usize, velocity: Vec3Fix) -> bool {
+        let Some(body) = self.bodies.get_mut(body_idx) else {
+            return false;
+        };
+        body.velocity = velocity;
+        if body.is_dynamic() && velocity != Vec3Fix::ZERO {
+            self.islands.wake_island(body_idx);
+        }
+        true
+    }
+
+    /// Apply an impulse at the center of mass; a nonzero impulse wakes a dynamic body with
+    /// its island. Returns `false` for an index past the last body.
+    pub fn apply_body_impulse(&mut self, body_idx: usize, impulse: Vec3Fix) -> bool {
+        let Some(body) = self.bodies.get_mut(body_idx) else {
+            return false;
+        };
+        body.apply_impulse(impulse);
+        if body.is_dynamic() && impulse != Vec3Fix::ZERO {
+            self.islands.wake_island(body_idx);
+        }
+        true
+    }
+
+    /// Apply an impulse at a world-space point; a nonzero impulse wakes a dynamic body with
+    /// its island. Returns `false` for an index past the last body.
+    pub fn apply_body_impulse_at(
+        &mut self,
+        body_idx: usize,
+        impulse: Vec3Fix,
+        point: Vec3Fix,
+    ) -> bool {
+        let Some(body) = self.bodies.get_mut(body_idx) else {
+            return false;
+        };
+        body.apply_impulse_at(impulse, point);
+        if body.is_dynamic() && impulse != Vec3Fix::ZERO {
+            self.islands.wake_island(body_idx);
+        }
+        true
+    }
+
     /// Set the sleep configuration
     pub fn set_sleep_config(&mut self, config: SleepConfig) {
         self.islands.config = config;
