@@ -94,7 +94,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `crowd_force` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `deformable` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone (step 5 of 12 items) | 5 / 0 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
 | `erosion` | standalone | 0 / 0 / 0 / 10 / 0 | — |
