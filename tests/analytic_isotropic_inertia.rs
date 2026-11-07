@@ -337,7 +337,9 @@ fn anisotropic_hash(backend: SolverBackend, parallel: bool) -> String {
 // velocities from the position change (unrelated to the isotropic rule: the
 // anisotropic bodies of this scene never take it).
 const GOLDEN_ANISOTROPIC_XPBD: &str =
-    "8a452449c79b52f0cc3efe5be060e24a36b8da2970b3ff81b439d239b88fae28";
+    // re-recorded (from 8a452449…) when the contact friction began acting at the contact point of
+    // plain spheres: the body slides on the ground with friction and now turns
+    "c9052835683b90ccb983f15bb6ad18aa5871323c0bb79c64ed38f86be8da0676";
 const GOLDEN_ANISOTROPIC_TGS: &str =
     "095f684372ceec9a468250679ad90119a010fdf225140d3adce059da0ccb0409";
 
