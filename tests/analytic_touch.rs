@@ -215,3 +215,125 @@ fn every_part_of_the_cloth_is_in_its_digest() {
         assert_ne!(c.state_digest(), base, "{what}");
     }
 }
+
+/// A hand holding with a finite grip: a spring of stiffness `kg` from the point to the hand, which lets go when its
+/// pull reaches `fmax`. The point is held to rest by the cloth's tether `kt` (sheet(): kt = m ω², m = 1, ω = 2π)
+fn gripped(kg: f64, fmax: f64) -> (Vec<Cloth>, Hand) {
+    let bodies = vec![sheet()];
+    let hand = Hand::with_grip(
+        Fix128::from_ratio(1, 2),
+        Fix128::from_f64(kg),
+        Fix128::from_f64(fmax),
+    );
+    (bodies, hand)
+}
+
+fn steps(bodies: &mut [Cloth], hand: &mut Hand, n: usize) {
+    for _ in 0..n {
+        hand.pull(bodies, Fix128::from_f64(DT));
+        bodies[0].step(Fix128::from_f64(DT));
+    }
+}
+
+// oracle: the scheme's own rest. Each step the grip gives the impulse kg (d − x) dt (a velocity kick c (d − x),
+// c = kg dt / m), then the tether runs exactly: (x, v) ← Φ (x, v + kick), Φ the underdamped oscillator over dt,
+//   x(t) = e^(−ζωt) [x0 cos ω_d t + (v0 + ζω x0) / ω_d sin ω_d t]
+//   v(t) = e^(−ζωt) [v0 cos ω_d t − (ω² x0 + ζω v0) / ω_d sin ω_d t]
+// Its fixed point solves two linear equations; as dt → 0 it is the continuous balance kg (d − x) = kt x
+fn scheme_rest(kg: f64, d: f64) -> f64 {
+    let (w, z, m) = (std::f64::consts::TAU, 0.4, 1.0);
+    let wd = w * (1.0f64 - z * z).sqrt();
+    let e = (-z * w * DT).exp();
+    let (cs, sn) = ((wd * DT).cos(), (wd * DT).sin());
+    let (a11, a12) = (e * (cs + z * w / wd * sn), e * sn / wd);
+    let (a21, a22) = (-e * w * w / wd * sn, e * (cs - z * w / wd * sn));
+    let c = kg * DT / m;
+    // x = a11 x + a12 (v + c (d − x)),  v = a21 x + a22 (v + c (d − x))
+    // (1 − a11 + a12 c) x − a12 v = a12 c d;  (−a21 + a22 c) x + (1 − a22) v = a22 c d
+    let (p, q, r) = (1.0 - a11 + a12 * c, -a12, a12 * c * d);
+    let (s, t, u) = (-a21 + a22 * c, 1.0 - a22, a22 * c * d);
+    (r * t - q * u) / (p * t - q * s)
+}
+
+// oracle: two springs in series against the hand, at rest: kg (d − x) = kt x, so x = kg d / (kg + kt) (continuous),
+// and the scheme's rest above (discrete), to which the cloth comes
+#[test]
+fn a_finite_grip_holds_the_point_where_the_springs_balance() {
+    let kt = std::f64::consts::TAU.powi(2);
+    for (kg, d) in [(40.0, 0.05), (100.0, 0.03), (20.0, 0.08)] {
+        let (mut bodies, mut hand) = gripped(kg, 1000.0);
+        assert!(hand.apply(&mut bodies, &Touch::grab(0, v(0.0, 0.0, 0.0))));
+        hand.apply(&mut bodies, &Touch::drag(v(0.0, d, 0.0)));
+        // it is not pinned: the cloth moves it, the grip only pulls
+        assert!(!bodies[0].pinned.contains(&0));
+        steps(&mut bodies, &mut hand, 600);
+        let x = bodies[0].positions[0].y.to_f64();
+        let d_grid = match Touch::drag(v(0.0, d, 0.0)) {
+            Touch::Drag { to } => to.y.to_f64(),
+            _ => unreachable!(),
+        };
+        let balance = kg * d_grid / (kg + kt);
+        let want = scheme_rest(kg, d_grid);
+        println!("kg {kg} d {d}: held at {x:.9}, the scheme's rest {want:.9}, the continuous balance {balance:.9}");
+        // the cloth settles onto the scheme's rest (600 steps of a decay e^(−ζω t) at ζω ≈ 2.5/s leave e^(−25) of it)
+        assert!((x - want).abs() < 1e-9, "kg {kg}: {x} against {want}");
+        // and the scheme is the continuous law to first order in the step: within (kg/m) dt² of the balance per unit d
+        assert!(
+            (want - balance).abs() < kg * DT * DT * d_grid,
+            "kg {kg}: {want} against {balance}"
+        );
+        assert!(hand.held().is_some(), "still held");
+    }
+}
+
+// oracle: a slow drag lets go where the grip's pull at balance reaches fmax: kg kt d / (kg + kt) = fmax
+#[test]
+fn a_finite_grip_slips_where_its_pull_reaches_its_strength() {
+    let kt = std::f64::consts::TAU.powi(2);
+    let (kg, fmax) = (60.0, 2.0);
+    let d_slip = fmax * (kg + kt) / (kg * kt);
+    let (mut bodies, mut hand) = gripped(kg, fmax);
+    hand.apply(&mut bodies, &Touch::grab(0, v(0.0, 0.0, 0.0)));
+    // the hand moves 0.1 mm a step: slow beside the springs' periods, so the point is near its balance throughout
+    let mut slipped_at = None;
+    for n in 1..=4000 {
+        let d = n as f64 * 1e-4;
+        hand.apply(&mut bodies, &Touch::drag(v(0.0, d, 0.0)));
+        steps(&mut bodies, &mut hand, 1);
+        if hand.held().is_none() {
+            slipped_at = Some(d);
+            break;
+        }
+    }
+    let at = slipped_at.expect("the grip never let go");
+    // the scheme's rest is linear in d, so it slips where kg (d − x(d)) = fmax: d = fmax / (kg (1 − x(1)))
+    let d_scheme = fmax / (kg * (1.0 - scheme_rest(kg, 1.0)));
+    println!("slipped at d = {at:.5}, the scheme's {d_scheme:.5}, the continuous {d_slip:.5}");
+    // the drag moves 1e-4 a step and the point trails its rest by the drag's speed over the decay rate (1e-4 / (ζω dt)
+    // ≈ 2.4e-3 of travel at most, reached only after many steps): it slips within that of the scheme's point, early
+    assert!(
+        at <= d_scheme + 1e-4 && d_scheme - at < 1e-4 / (0.4 * std::f64::consts::TAU * DT),
+        "{at} against {d_scheme}"
+    );
+    // and the scheme's point is the continuous one to first order in the step
+    assert!(
+        (d_scheme - d_slip).abs() < kg * DT * DT * d_slip,
+        "{d_scheme} against {d_slip}"
+    );
+    // let go, the point is the cloth's again and springs back to rest
+    steps(&mut bodies, &mut hand, 600);
+    assert!(bodies[0].positions[0].y.to_f64().abs() < 1e-3);
+}
+
+/// Degenerate grips take nothing: no strength, no stiffness, or not finite
+#[test]
+fn a_grip_of_no_strength_takes_nothing() {
+    for (kg, fmax) in [(0.0, 1.0), (10.0, 0.0), (-1.0, 1.0), (10.0, -1.0)] {
+        let (mut bodies, mut hand) = gripped(kg, fmax);
+        assert!(
+            !hand.apply(&mut bodies, &Touch::grab(0, v(0.0, 0.0, 0.0))),
+            "kg {kg} fmax {fmax}"
+        );
+        assert_eq!(hand.held(), None);
+    }
+}
