@@ -426,6 +426,48 @@ impl Cloth {
         self.positions.len()
     }
 
+    /// The cloth's state as a digest: SHA-256 over a domain tag, then every particle's position, previous position,
+    /// velocity and inverse mass, the pinned list in order, and the rest tether with its rest positions. Two cloths
+    /// with the same digest step the same (with the same config)
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"alice-physics cloth state v1");
+        let fix = |h: &mut Sha256, f: Fix128| {
+            h.update(f.hi.to_le_bytes());
+            h.update(f.lo.to_le_bytes());
+        };
+        let vec = |h: &mut Sha256, v: Vec3Fix| {
+            for f in [v.x, v.y, v.z] {
+                fix(h, f);
+            }
+        };
+        h.update((self.positions.len() as u64).to_le_bytes());
+        for i in 0..self.positions.len() {
+            vec(&mut h, self.positions[i]);
+            vec(&mut h, self.prev_positions[i]);
+            vec(&mut h, self.velocities[i]);
+            fix(&mut h, self.inv_masses[i]);
+        }
+        h.update((self.pinned.len() as u64).to_le_bytes());
+        for &i in &self.pinned {
+            h.update((i as u64).to_le_bytes());
+        }
+        match self.rest_tether() {
+            None => h.update([0u8]),
+            Some((k, c)) => {
+                h.update([1u8]);
+                fix(&mut h, k);
+                fix(&mut h, c);
+                for &p in self.rest_positions() {
+                    vec(&mut h, p);
+                }
+            }
+        }
+        h.finalize().into()
+    }
+
     /// Pin a particle in place
     pub fn pin(&mut self, idx: usize) {
         self.inv_masses[idx] = Fix128::ZERO;
