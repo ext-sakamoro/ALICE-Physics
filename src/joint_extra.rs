@@ -38,12 +38,12 @@
 //! - **単位 (units)**: all `Fix128`; m, s, 1/kg, 1/(kg m²), rad; compliance m/N
 //!   on the position rows, rad/(N m) on the gear and the weld's rotation; `ratio`
 //!   dimensionless for pulley and gear, m/rad for the rack (solve_pulley,
-//!   l. 610-613; solve_gear, l. 739-742; solve_weld, l. 809, 842; solve_rack_and_pinion,
+//!   l. 610-613; solve_gear, l. 769-772; solve_weld, l. 809, 842; solve_rack_and_pinion,
 //!   l. 945-954); `stiffness` N/m, `damping` N s/m, `max_force` N (solve_mouse,
 //!   l. 998-1013). `break_force` is compared with the anchor separation in m, not
 //!   N (compute_force, l. 336-341; is_broken, l. 358); `break_torque` with `|xyz|`
 //!   of the error quaternion, `sin(φ/2)` of the angular error, dimensionless in
-//!   `[0, 1]`, not N m (compute_torque, l. 346-352; is_broken, l. 363).
+//!   `[0, 1]`, not N m (compute_torque, l. 346-351; is_broken, l. 363).
 //! - **保存則 (conservation)**: the weld's position corrections, split by inverse
 //!   mass along one direction, carry no net momentum (solve_weld, l. 816-825),
 //!   and its turns `+W_a λ`, `−W_b λ` give `I_a Δθ_a + I_b Δθ_b = 0` for any
@@ -67,7 +67,7 @@
 //!   `w ≥ 0` quaternion, `2 sin(θ/2)` for a turn `θ`, so they hold for small
 //!   per-step turns, and read exactly zero while `(xyz · axis)² < 2⁻⁴⁸`, a dead
 //!   zone of about `2⁻²³` rad per step in which nothing is corrected
-//!   (extract_angle_around_axis, l. 1067-1073; ANGLE_EPSILON_SQ, l. 1053-1056). The
+//!   (extract_angle_around_axis, l. 1067-1073; ANGLE_EPSILON_SQ, l. 1052-1055). The
 //!   gear reads and corrects about the current world axes of the two hinges it
 //!   names, taken from the joint list the caller passes (solve_gear, l. 753-754);
 //!   a gear whose `joint_a` / `joint_b` is past that list, names a joint that is
@@ -77,13 +77,13 @@
 //!   weld's break thresholds are re-evaluated from the current pose at every
 //!   call and never latched: a weld whose separation or `sin(φ/2)` is strictly
 //!   above its threshold is skipped that call and solved again once at or below
-//!   (solve_weld, l. 796-798; is_broken, l. 356-368). A direction whose
+//!   (solve_weld, l. 796-798; is_broken, l. 356-367). A direction whose
 //!   eigenvalue of `K` is at most `max(2⁻⁵⁰ largest, 2⁻⁵⁶)` gets no correction,
 //!   and a correction that would turn a body by more than `max(4 |θ|, 1/8 rad)`
 //!   is damped in up to 64 doublings of `μ` or dropped (weld_turns, l. 907-948).
 //!   A pulley with both ropes of zero length, zero error or zero `w`, and a mouse
 //!   joint on a static body or at its target, do nothing (solve_pulley,
-//!   l. 592-616; solve_mouse, l. 986-995); static bodies are never moved
+//!   l. 592-616; solve_mouse, l. 1011-1020); static bodies are never moved
 //!   (rotate_by, l. 1102-1104); nothing else is clamped, and no substep sweep: the
 //!   caller supplies the substep `dt` (solve_extra_joints, l. 527-532).
 //! - **近似 (approximations)**: the rack projects the rack's travel on its own
@@ -112,10 +112,10 @@
 //!   total, exact spring impulse, the max-force clamp, break thresholds at
 //!   `sin(π/6)` and at the anchor);
 //!   `tests/analytic_joint_extra_gear.rs` (every test: one projection about world
-//!   `z`, world `x` and a tilted hinge axis against the closed form
-//!   `θ³/24 + (a³ + r b³)/12`, the 120-step rate ratio `−1/r` of a driven pair
-//!   within the summed bound, and the refusal of a gear whose hinges are absent,
-//!   not hinges, or not on its bodies, with no body moved).
+//!   `z`, `x`, a tilted axis, and a pre-rotated body whose hinge has different
+//!   local axes on its two sides, against the closed form `θ³/24 + (a³ + r b³)/12`;
+//!   the 120-step rate ratio `−1/r` of a driven pair within the summed bound; the
+//!   refusal of a gear whose hinges are absent, not hinges, or not on its bodies).
 //!   validation missing: a pulley with two hanging masses against the Atwood
 //!   closed form `a = (m₁ − m₂) g / (m₁ + m₂)` over many steps.
 //!   validation missing: the mouse spring's oscillation period (its oracle pins a
