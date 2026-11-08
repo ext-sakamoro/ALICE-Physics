@@ -1144,26 +1144,80 @@ fn ray_bilinear_cell(
 }
 
 /// A static surface.
+/// A static collider. Beyond [`DIRECT_LIMIT`] a plane is met at the scale `2⁻ᵏ`
+/// (one quotient, so the distance is within `2ᵏ⁻⁶⁰` divided by the cosine of
+/// incidence); a height field or a triangle mesh of ordinary size anywhere in
+/// the range is met by advancing the ray to its box first, as a body is. A
+/// height field or mesh whose own extent reaches 2²⁹ is not scaled (its data
+/// would have to be copied per query) and is met with the direct arithmetic.
 fn ray_static(
     origin: Vec3Fix,
     direction: Vec3Fix,
     collider: &StaticCollider,
     max_t: Fix128,
 ) -> Option<LocalHit> {
-    let ray = Ray { origin, direction };
     match collider {
         StaticCollider::Plane(plane) => {
-            ray_plane(&ray, plane.normal, plane.offset, max_t).map(|h| LocalHit {
-                t: h.t,
+            let inputs = [origin.x, origin.y, origin.z, plane.offset, max_t];
+            let k = if direct(&inputs) {
+                0
+            } else {
+                scale_bits(&inputs)
+            };
+            let ray = Ray {
+                origin: shrink(origin, k),
+                direction,
+            };
+            ray_plane(
+                &ray,
+                plane.normal,
+                plane.offset.shr_bits(k),
+                max_t.shr_bits(k),
+            )
+            .map(|h| LocalHit {
+                // t ≤ floor(max_t / 2ᵏ), so t · 2ᵏ ≤ max_t fits
+                t: shl_bits(h.t, k),
                 normal: h.normal,
             })
         }
-        StaticCollider::HeightField(field) => ray_heightfield(origin, direction, field, max_t),
-        StaticCollider::TriMesh(mesh) => mesh.raycast(&ray, max_t).map(|h| LocalHit {
-            t: h.t,
-            normal: h.normal,
-        }),
+        StaticCollider::HeightField(field) => {
+            let (origin, t0, max_t) = advance_to_box(origin, direction, &field.aabb(), max_t)?;
+            ray_heightfield(origin, direction, field, max_t).map(|h| LocalHit {
+                t: t0 + h.t,
+                normal: h.normal,
+            })
+        }
+        StaticCollider::TriMesh(mesh) => {
+            let (origin, t0, max_t) = advance_to_box(origin, direction, &mesh.bounds, max_t)?;
+            let ray = Ray { origin, direction };
+            mesh.raycast(&ray, max_t).map(|h| LocalHit {
+                t: t0 + h.t,
+                normal: h.normal,
+            })
+        }
     }
+}
+
+/// [`advance_to`] for geometry inside `aabb`: unchanged (`t₀ = 0`) when the ray
+/// and the box are within the direct limit.
+fn advance_to_box(
+    origin: Vec3Fix,
+    direction: Vec3Fix,
+    aabb: &AABB,
+    max_t: Fix128,
+) -> Option<(Vec3Fix, Fix128, Fix128)> {
+    let inputs = [
+        origin.x, origin.y, origin.z, aabb.min.x, aabb.min.y, aabb.min.z, aabb.max.x, aabb.max.y,
+        aabb.max.z, max_t,
+    ];
+    if direct(&inputs) {
+        return Some((origin, Fix128::ZERO, max_t));
+    }
+    // halves first: the sum of the corners may not fit
+    let (lo, hi) = (shrink(aabb.min, 1), shrink(aabb.max, 1));
+    let center = lo + hi;
+    let reach = reach_of(hi - lo);
+    advance_to(origin, direction, center, reach, max_t)
 }
 
 /// An SDF collider: inside (negative distance at the origin) is a hit at `t = 0`;
