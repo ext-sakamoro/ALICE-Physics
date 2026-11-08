@@ -212,6 +212,67 @@ fn a_driven_gear_turns_the_follower_at_the_ratio_over_many_steps() {
     }
 }
 
+/// The hinge axis is read on the gear body's own side of the hinge and in that body's
+/// rotation. A's hinge has different local axes on its two sides (`y` on A's side, `z`
+/// on the frame's) and A is pre-rotated by a quarter turn about `z`, which takes its
+/// local `y` to world `x`; B's hinge has `x` on B's side and `y` on the frame's. A twist
+/// of A about world `x` is then coupled exactly as in the aligned cases and B turns
+/// about `x` only. Reading the frame's side (`z`, or `y` for B) or skipping the
+/// rotation (`y` for A) reads a zero twist on A, or turns B off `x`.
+#[test]
+fn the_hinge_axis_is_read_on_the_gear_body_side_and_in_its_rotation() {
+    let ratio = Fix128::ONE;
+    let theta = Fix128::from_ratio(1, 8);
+    let pre = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, -Fix128::HALF_PI);
+    let mut bodies = pair_with_twist(Vec3Fix::UNIT_X, Fix128::ZERO);
+    bodies[0].prev_rotation = pre;
+    bodies[0].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, theta)
+        .mul(pre)
+        .normalize();
+    let o = Vec3Fix::ZERO;
+    let list = vec![
+        Joint::Hinge(HingeJoint::new(
+            0,
+            2,
+            o,
+            o,
+            Vec3Fix::UNIT_Y,
+            Vec3Fix::UNIT_Z,
+        )),
+        Joint::Hinge(HingeJoint::new(
+            1,
+            2,
+            o,
+            o,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Y,
+        )),
+    ];
+    solve_extra_joints(&mut bodies, &gear(ratio), &list, dt())
+        .expect("both hinges are in the list");
+    let ta = twist_about(&bodies[0], Vec3Fix::UNIT_X);
+    let tb = twist_about(&bodies[1], Vec3Fix::UNIT_X);
+    let residual = ta + ratio.to_f64() * tb;
+    let bound = residual_bound(theta.to_f64(), 1.0, 1.0, 1.0);
+    eprintln!(
+        "pre-rotated, mixed sides: θ_a {ta:.6e} θ_b {tb:.6e} residual {residual:.3e} bound {bound:.3e}"
+    );
+    assert!(
+        tb != 0.0,
+        "B stayed at rest: A's axis was not read on A's side in A's rotation"
+    );
+    assert!(
+        residual.abs() <= bound,
+        "residual {residual:.3e} above {bound:.3e}"
+    );
+    let q = bodies[1].rotation;
+    assert!(
+        q.y.to_f64().abs() < 1e-15 && q.z.to_f64().abs() < 1e-15,
+        "B turned off world x ({:?}): its axis was read on the frame's side",
+        (q.x.to_f64(), q.y.to_f64(), q.z.to_f64())
+    );
+}
+
 /// A gear whose hinges are not there to read is refused before it touches a body:
 /// an index past the list, a joint that is not a hinge, a body on neither side.
 #[test]
