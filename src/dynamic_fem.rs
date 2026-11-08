@@ -1547,6 +1547,46 @@ impl CorotationalTransientSolver {
         out
     }
 
+    /// The total mechanical energy of the state (N·mm = mJ): the kinetic energy `½ vᵀ M v`,
+    /// the co-rotated strain energy `Σₑ ½ dₑᵀ Kₑ dₑ` with `dₑ = Rₑᵀ (x₀ + u) − x₀` the element's
+    /// displacement seen from its rotated frame, and the potential of the constant nodal loads
+    /// `− fᵀ u`. Undamped, with no ground contact and no prescribed motion, the continuous
+    /// system conserves it.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::RotationFailed`] when an element of the state has no polar factor.
+    pub fn energy(&self) -> Result<Fix128, FemError> {
+        let rotations = self.ops.rotations(&self.u)?;
+        let half = Fix128::from_ratio(1, 2);
+        let momentum = self.momentum();
+        let mut kinetic = Fix128::ZERO;
+        for (p, v) in momentum.iter().zip(&self.v) {
+            kinetic = kinetic + *p * *v;
+        }
+        let mut strain = Fix128::ZERO;
+        for (element, r) in self.ops.elements.iter().zip(&rotations) {
+            let x0 = gather(element, &self.rest);
+            let u = gather(element, &self.u);
+            let rt = r.transpose();
+            let mut frame = [[Fix128::ZERO; 3]; 4];
+            for ((slot, x), d) in frame.iter_mut().zip(x0.iter()).zip(u.iter()) {
+                let p = rt.mul_vec(Vec3Fix::new(x[0] + d[0], x[1] + d[1], x[2] + d[2]));
+                *slot = [p.x - x[0], p.y - x[1], p.z - x[2]];
+            }
+            let stress = element_stress_local(element, &frame, self.ops.lambda, self.ops.mu);
+            let force = element_force_from_stress(element, stress);
+            for (f, d) in force.iter().zip(frame.iter()) {
+                strain = strain + f[0] * d[0] + f[1] * d[1] + f[2] * d[2];
+            }
+        }
+        let mut work = Fix128::ZERO;
+        for (f, d) in self.load.iter().zip(&self.u) {
+            work = work + *f * *d;
+        }
+        Ok(half * kinetic + half * strain - work)
+    }
+
     /// Rayleigh damping `C = α M + β K'` with `K'` the warped stiffness: `α` in 1/s damps
     /// the low modes, `β` in s the high ones, the modal ratio
     /// `ζ(ω) = α/(2ω) + βω/2` ([`RayleighCoefficients::damping_ratio`]). `None` removes it.
