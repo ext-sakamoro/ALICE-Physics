@@ -1122,3 +1122,141 @@ mod tests {
         assert_eq!(a.velocities, b.velocities);
     }
 }
+
+/// Fast oracles of the Neo-Hookean law and its solve on one tetrahedron and on the unit
+/// cube; the convergence sweep against the finite element sag is in
+/// `tests/analytic_deformable_static_sag.rs`.
+#[cfg(test)]
+mod neo_hookean_tests {
+    use super::*;
+
+    fn volume(p: &[Vec3Fix], t: &[usize; 4]) -> Fix128 {
+        compute_tet_volume(p[t[0]], p[t[1]], p[t[2]], p[t[3]])
+    }
+
+    fn law() -> NeoHookeanLaw {
+        // E = 2.6 MPa, ν = 0.3: μ = 1 MPa, λ = 1.5 MPa exactly
+        NeoHookeanLaw::new(
+            Fix128::from_ratio(26, 10) * Fix128::from_int(1_000_000),
+            Fix128::from_ratio(3, 10),
+        )
+        .expect("E > 0, ν in range")
+    }
+
+    /// The Lamé parameters are the closed forms `μ = E/(2(1+ν))`, `λ = Eν/((1+ν)(1−2ν))`,
+    /// and the energy's volumetric coefficient is `λ + μ`.
+    #[test]
+    fn the_lame_parameters_are_the_closed_forms() {
+        let (mu, lambda) = law().lame();
+        let close = |a: Fix128, b: f64| (a.to_f64() - b).abs() <= 1e-9 * b;
+        assert!(close(mu, 1.0e6), "μ {mu:?}");
+        assert!(close(lambda, 1.5e6), "λ {lambda:?}");
+        assert_eq!(law().lambda_energy(), lambda + mu);
+    }
+
+    /// The law refuses `E ≤ 0`, `E` above its ceiling, `ν ≤ −1` and `ν` at or past the margin
+    /// below 1/2, and accepts the last value inside the margin.
+    #[test]
+    fn the_law_refuses_values_outside_its_range() {
+        let e = Fix128::from_int(1000);
+        assert_eq!(
+            NeoHookeanLaw::new(Fix128::ZERO, Fix128::ZERO),
+            Err(MaterialError::YoungModulusNotPositive)
+        );
+        assert_eq!(
+            NeoHookeanLaw::new(NeoHookeanLaw::MAX_YOUNG_MODULUS + Fix128::ONE, Fix128::ZERO),
+            Err(MaterialError::YoungModulusTooLarge)
+        );
+        assert_eq!(
+            NeoHookeanLaw::new(e, -Fix128::ONE),
+            Err(MaterialError::PoissonRatioOutOfRange)
+        );
+        assert_eq!(
+            NeoHookeanLaw::new(e, Fix128::from_ratio(1, 2)),
+            Err(MaterialError::PoissonRatioOutOfRange)
+        );
+        let last = Fix128::from_ratio(1, 2) - NeoHookeanLaw::POISSON_MARGIN;
+        assert!(NeoHookeanLaw::new(e, last).is_ok());
+        assert_eq!(
+            NeoHookeanLaw::new(e, last + Fix128::from_raw(0, 1)),
+            Err(MaterialError::PoissonRatioOutOfRange)
+        );
+    }
+
+    fn nh_cube() -> DeformableBody {
+        let mut body =
+            DeformableBody::new_cube(Vec3Fix::from_int(0, 1, 0), Fix128::ONE, Fix128::ONE);
+        body.config.material = Material::NeoHookean(law());
+        body.config.gravity = Vec3Fix::ZERO;
+        body.config.substeps = 16;
+        body
+    }
+
+    /// A cube at rest in its rest shape with no gravity has zero Neo-Hookean energy and
+    /// zero gradient: a step moves no particle (every rotation of the rest shape is a
+    /// minimum, and so is the rest shape itself).
+    #[test]
+    fn a_cube_at_rest_stays_at_rest() {
+        let mut body = nh_cube();
+        let before = body.positions.clone();
+        for _ in 0..4 {
+            body.step(Fix128::from_ratio(1, 60));
+        }
+        assert_eq!(body.positions, before);
+    }
+
+    /// A squashed cube (every particle's height halved) recovers its rest volume under the
+    /// Neo-Hookean constraints: after a second of steps the total tetrahedral volume is back
+    /// within 2 % of the rest volume (from 50 %), and every particle is finite.
+    #[test]
+    fn a_squashed_cube_recovers_its_volume() {
+        let mut body = nh_cube();
+        let rest: Fix128 = body
+            .tetrahedra
+            .iter()
+            .map(|t| volume(&body.positions, t).abs())
+            .fold(Fix128::ZERO, |a, b| a + b);
+        let base = Fix128::from_int(1);
+        for p in &mut body.positions {
+            p.y = base + (p.y - base).half();
+        }
+        for _ in 0..60 {
+            body.step(Fix128::from_ratio(1, 60));
+        }
+        let now: Fix128 = body
+            .tetrahedra
+            .iter()
+            .map(|t| volume(&body.positions, t).abs())
+            .fold(Fix128::ZERO, |a, b| a + b);
+        let ratio = now.to_f64() / rest.to_f64();
+        assert!((ratio - 1.0).abs() < 0.02, "volume {ratio:.4} of rest");
+    }
+
+    /// One tetrahedron turned inside out (its apex pushed through the base) is driven back
+    /// to a positive volume: the energy constraint stays finite at `J ≤ 0`.
+    #[test]
+    fn an_inverted_tetrahedron_turns_back() {
+        let positions = vec![
+            Vec3Fix::from_int(0, 0, 0),
+            Vec3Fix::from_int(1, 0, 0),
+            Vec3Fix::from_int(0, 0, 1),
+            Vec3Fix::from_int(0, 1, 0),
+        ];
+        let mut body =
+            DeformableBody::new(positions, &[[0, 1, 2, 3]], vec![[0, 1, 2]], Fix128::ONE);
+        body.config.material = Material::NeoHookean(law());
+        body.config.gravity = Vec3Fix::ZERO;
+        body.config.substeps = 16;
+        let rest = volume(&body.positions, &body.tetrahedra[0]);
+        body.positions[3].y = -Fix128::from_ratio(1, 2);
+        assert!(
+            volume(&body.positions, &body.tetrahedra[0]) * rest < Fix128::ZERO,
+            "fixture: the tetrahedron is inverted"
+        );
+        for _ in 0..60 {
+            body.step(Fix128::from_ratio(1, 60));
+        }
+        let now = volume(&body.positions, &body.tetrahedra[0]);
+        assert!(now * rest > Fix128::ZERO, "still inverted: {now:?}");
+    }
+}
