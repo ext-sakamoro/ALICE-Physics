@@ -279,39 +279,139 @@ pub mod deformable;
 pub mod det_math {
     pub use alice_det_math::{acos64, asin64, round, round64, sin_cos, sqrt, sqrt64};
 
-    macro_rules! delegate {
-        ($(fn $name:ident($($arg:ident: $ty:ty),*) -> $ret:ty;)*) => {
-            $(
-                #[doc = concat!("Delegates to [`alice_det_math::", stringify!($name), "`].")]
-                #[inline]
-                #[must_use]
-                pub fn $name($($arg: $ty),*) -> $ret {
-                    alice_det_math::$name($($arg),*)
-                }
-            )*
-        };
+    // written out one by one (not through a macro), so a reader of the calls (ALICE-Law's
+    // scripts/fold_set_check.py) sees each alice-det-math function this crate calls
+    /// Delegates to [`alice_det_math::sin`].
+    #[inline]
+    #[must_use]
+    pub fn sin(x: f32) -> f32 {
+        alice_det_math::sin(x)
     }
 
-    delegate! {
-        fn sin(x: f32) -> f32;
-        fn cos(x: f32) -> f32;
-        fn exp(x: f32) -> f32;
-        fn ln(x: f32) -> f32;
-        fn powf(x: f32, y: f32) -> f32;
-        fn powi(x: f32, n: i32) -> f32;
-        fn cbrt(x: f32) -> f32;
-        fn hypot(x: f32, y: f32) -> f32;
-        fn atan(x: f32) -> f32;
-        fn atan2(y: f32, x: f32) -> f32;
-        fn asin(x: f32) -> f32;
-        fn acos(x: f32) -> f32;
-        fn tan(x: f32) -> f32;
-        fn tanh(x: f32) -> f32;
-        fn atan64(x: f64) -> f64;
-        fn atan2_64(y: f64, x: f64) -> f64;
-        fn exp64(x: f64) -> f64;
-        fn ln64(x: f64) -> f64;
-        fn powf64(x: f64, y: f64) -> f64;
+    /// Delegates to [`alice_det_math::cos`].
+    #[inline]
+    #[must_use]
+    pub fn cos(x: f32) -> f32 {
+        alice_det_math::cos(x)
+    }
+
+    /// Delegates to [`alice_det_math::exp`].
+    #[inline]
+    #[must_use]
+    pub fn exp(x: f32) -> f32 {
+        alice_det_math::exp(x)
+    }
+
+    /// Delegates to [`alice_det_math::ln`].
+    #[inline]
+    #[must_use]
+    pub fn ln(x: f32) -> f32 {
+        alice_det_math::ln(x)
+    }
+
+    /// Delegates to [`alice_det_math::powf`].
+    #[inline]
+    #[must_use]
+    pub fn powf(x: f32, y: f32) -> f32 {
+        alice_det_math::powf(x, y)
+    }
+
+    /// Delegates to [`alice_det_math::powi`].
+    #[inline]
+    #[must_use]
+    pub fn powi(x: f32, n: i32) -> f32 {
+        alice_det_math::powi(x, n)
+    }
+
+    /// Delegates to [`alice_det_math::cbrt`].
+    #[inline]
+    #[must_use]
+    pub fn cbrt(x: f32) -> f32 {
+        alice_det_math::cbrt(x)
+    }
+
+    /// Delegates to [`alice_det_math::hypot`].
+    #[inline]
+    #[must_use]
+    pub fn hypot(x: f32, y: f32) -> f32 {
+        alice_det_math::hypot(x, y)
+    }
+
+    /// Delegates to [`alice_det_math::atan`].
+    #[inline]
+    #[must_use]
+    pub fn atan(x: f32) -> f32 {
+        alice_det_math::atan(x)
+    }
+
+    /// Delegates to [`alice_det_math::atan2`].
+    #[inline]
+    #[must_use]
+    pub fn atan2(y: f32, x: f32) -> f32 {
+        alice_det_math::atan2(y, x)
+    }
+
+    /// Delegates to [`alice_det_math::asin`].
+    #[inline]
+    #[must_use]
+    pub fn asin(x: f32) -> f32 {
+        alice_det_math::asin(x)
+    }
+
+    /// Delegates to [`alice_det_math::acos`].
+    #[inline]
+    #[must_use]
+    pub fn acos(x: f32) -> f32 {
+        alice_det_math::acos(x)
+    }
+
+    /// Delegates to [`alice_det_math::tan`].
+    #[inline]
+    #[must_use]
+    pub fn tan(x: f32) -> f32 {
+        alice_det_math::tan(x)
+    }
+
+    /// Delegates to [`alice_det_math::tanh`].
+    #[inline]
+    #[must_use]
+    pub fn tanh(x: f32) -> f32 {
+        alice_det_math::tanh(x)
+    }
+
+    /// Delegates to [`alice_det_math::atan64`].
+    #[inline]
+    #[must_use]
+    pub fn atan64(x: f64) -> f64 {
+        alice_det_math::atan64(x)
+    }
+
+    /// Delegates to [`alice_det_math::atan2_64`].
+    #[inline]
+    #[must_use]
+    pub fn atan2_64(y: f64, x: f64) -> f64 {
+        alice_det_math::atan2_64(y, x)
+    }
+
+    /// Delegates to [`alice_det_math::exp64`].
+    #[inline]
+    #[must_use]
+    pub fn exp64(x: f64) -> f64 {
+        alice_det_math::exp64(x)
+    }
+
+    /// Delegates to [`alice_det_math::ln64`].
+    #[inline]
+    #[must_use]
+    pub fn ln64(x: f64) -> f64 {
+        alice_det_math::ln64(x)
+    }
+
+    /// Delegates to [`alice_det_math::powf64`].
+    #[inline]
+    #[must_use]
+    pub fn powf64(x: f64, y: f64) -> f64 {
+        alice_det_math::powf64(x, y)
     }
 
     // max / min with a defined result on every target and profile
