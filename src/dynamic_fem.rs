@@ -138,7 +138,20 @@
 //! co-rotational solver, with damping, ground, impulses: identical raw bits and digests, a
 //! changed input changes the digest), `tests/audit_dynamic_fem.rs`.
 //!
-//! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step
+//! **Known defects.** `tests/analytic_fem_cantilever_bending.rs::a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3`
+//! and `::a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49`:
+//! the P1 tetrahedra lock in bending (one constant strain per element, so the linear strain
+//! of bending is not representable): a cantilever under its own weight
+//! deflects 0.49 of the Timoshenko closed form with 2 cells through the depth and 0.78 with 4
+//! at ν 0.3, 0.09 and 0.26 at ν 0.49 (volumetric locking on top); the static solve
+//! (`linear_elastic_fem::solve`) shows it, and this transient solver shares the element, so
+//! no bending accuracy is claimed for the tier until the quadratic tier (P2, with a
+//! volumetric treatment if ν 0.49 still locks) replaces it. The axial sag and modes above are
+//! unaffected (measured against the closed form within 6 % by the base layer, see
+//! `tests/analytic_deformable_static_sag.rs`).
+//!
+//! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step (axial and
+//! shear response of the P1 mesh; its bending is a known defect above)
 //! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
 //! tetrahedra (`E = 1.27e6 Pa`, `ν = 0.49`, `ρ = 1100 kg/m³`,
 //! `tests/analytic_deformable_integrators.rs`) it reaches 0.6–1 % of the static sag at one
