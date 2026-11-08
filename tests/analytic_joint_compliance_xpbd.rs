@@ -195,7 +195,7 @@ fn repeated_free_function_calls_compound_the_gap_fraction() {
             let extra = [ExtraJoint::Weld(weld)];
             let mut bodies_e = fresh();
             for _ in 0..k {
-                solve_extra_joints(&mut bodies_e, &extra, fx(h));
+                solve_extra_joints(&mut bodies_e, &extra, &[], fx(h)).expect("no gear in the list");
             }
             let gap_e = -bodies_e[1].position.y.to_f64();
 

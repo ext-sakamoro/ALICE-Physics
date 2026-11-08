@@ -16,6 +16,8 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- **Breaking:** `solve_extra_joints(bodies, joints, hinges, dt) -> Result<(), ExtraJointError>`: 世界の joint 列 (`&[Joint]`) を受け取り、歯車 (`GearJoint`) が名指す hinge (`joint_a` / `joint_b`) の軸をそこから読む 歯車の無い列は `&[]` でよい 名指した index が列の外 / hinge でない / 歯車の body がその hinge のどちら側でもない時は `ExtraJointError` で止まり、その歯車は body に触れない (黙って skip しない)
+- `GearJoint` の拘束 `θ_a + ratio θ_b = const` は、各 body の 1 step の twist を**名指した hinge の現在の world 軸**について読み、各 body をその軸まわりに直す 以前は world `z` の twist だけを読み `z` まわりにしか直さなかったので、他の軸の hinge の対は結合されていなかった (`tests/analytic_joint_extra_gear.rs` の world `x` の oracle が red だった既知の欠陥、解消) oracle は `z` / `x` / 傾いた軸の 1 射影、120 step の回転比 `−1/r`、hinge 不在の拒否の 5 本
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
 - `scripts/land.py`: ALICE-Law の状態を確かめる時の時間切れで、子の process も止める Law の main の fetch の git と `land_law_state.py` を自分の process group (POSIX は `start_new_session` = setsid、Windows は `CREATE_NEW_PROCESS_GROUP`) で起こし、時間切れでその group 全体を止める (POSIX は `killpg`、Windows は `taskkill /T`) これまでは script だけが止まり、script が起こした git / gh が残った 試験 `scripts/test_land.py` の `LawState` (script が起こした子が時間切れの後に動いていないこと、拒否が上限の時刻に来ること) 止めた後の読み取りにも上限 (5 秒) を置き、process group を離れた子孫が pipe を開いたままでも着地は上限の時刻に止まる (試験: group を離れた子が pipe を持ったままでも拒否が遅れないこと)
