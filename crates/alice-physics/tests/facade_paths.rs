@@ -295,18 +295,13 @@ use alice_physics::deformable::DeformableConfig as _;
 use alice_physics::det_math as _;
 use alice_physics::det_math::acos as _;
 use alice_physics::det_math::acos64 as _;
-use alice_physics::det_math::asin as _;
 use alice_physics::det_math::asin64 as _;
-use alice_physics::det_math::atan as _;
 use alice_physics::det_math::atan2 as _;
-use alice_physics::det_math::atan2_64 as _;
-use alice_physics::det_math::atan64 as _;
 use alice_physics::det_math::cbrt as _;
 use alice_physics::det_math::cos as _;
 use alice_physics::det_math::exp as _;
 use alice_physics::det_math::exp64 as _;
 use alice_physics::det_math::hypot as _;
-use alice_physics::det_math::ln as _;
 use alice_physics::det_math::ln64 as _;
 use alice_physics::det_math::powf as _;
 use alice_physics::det_math::powf64 as _;
@@ -317,8 +312,6 @@ use alice_physics::det_math::sin as _;
 use alice_physics::det_math::sin_cos as _;
 use alice_physics::det_math::sqrt as _;
 use alice_physics::det_math::sqrt64 as _;
-use alice_physics::det_math::tan as _;
-use alice_physics::det_math::tanh as _;
 use alice_physics::dynamic_bvh as _;
 use alice_physics::dynamic_bvh::DynamicAabbTree as _;
 use alice_physics::dynamic_fem as _;
@@ -1325,6 +1318,8 @@ use alice_physics::semantics::check_peer as _;
 use alice_physics::semantics::expected_peer_id as _;
 use alice_physics::semantics::semantics_id_for as _;
 use alice_physics::semantics::PeerMismatch as _;
+use alice_physics::semantics::DET_MATH_FUNCTIONS as _;
+use alice_physics::semantics::DET_MATH_PINS as _;
 use alice_physics::semantics::PHYSICS_PEER_IDS as _;
 use alice_physics::semantics::PHYSICS_PINS_BY_DET_MATH as _;
 use alice_physics::semantics::PHYSICS_SEMANTICS_BY_DET_MATH as _;
@@ -1860,6 +1855,8 @@ use alice_physics::WorldSnapshotError as _;
 use alice_physics::XorShift64 as _;
 use alice_physics::ZScoreDetector as _;
 use alice_physics::AABB as _;
+use alice_physics::DET_MATH_FUNCTIONS as _;
+use alice_physics::DET_MATH_PINS as _;
 use alice_physics::PHYSICS_PEER_IDS as _;
 use alice_physics::PHYSICS_PINS_BY_DET_MATH as _;
 use alice_physics::PHYSICS_SEMANTICS_BY_DET_MATH as _;
@@ -1870,7 +1867,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1852 paths, checked at compile time
+    // 1849 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
