@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `tests/analytic_scene_io_wiring.rs` は test ごとに `tempfile::TempDir` を使い、終わると directory ごと消える 以前は process ごとの `w4_scene_io_<pid>` directory を作って file だけ消していたので、directory が一時 directory に残っていた (全 492 の test binary を個別の一時 directory で走らせて、残すのはこの 1 本だけと確かめた)
 - 剛体まわりの 20 module (solver_tgs、6 自由度 hook 2 本、ccd、sdf_ccd、world_ccd、joint、joint_extra、articulation、nbody、particle、character、sdf_character、world_character、vehicle、vehicle_dynamics の 5 module) の module doc に MODEL 節 (方程式 / 単位 / 保存則 / 適用範囲 / 近似 / 検証 / 段) を書いた 各主張の行に関数名と行番号を付けた MODEL 節の検査の baseline から 20 行を外した 歯車 joint の hinge 軸の結合の欠陥は `tests/analytic_joint_extra_gear.rs` の赤の oracle で固定し、articulation の `solve_with_mass_splitting` の doc を実装どおりの文に直した
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する

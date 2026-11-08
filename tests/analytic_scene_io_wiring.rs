@@ -14,10 +14,15 @@ use alice_physics_core::scene_io::{
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("w4_scene_io_{}", std::process::id()));
-    std::fs::create_dir_all(&d).unwrap();
-    d.join(name)
+/// a fresh directory for one test and the path `name` in it; the directory and whatever the test
+/// wrote there are removed when the returned `TempDir` drops (keep it bound for the test's length)
+fn tmp(name: &str) -> (tempfile::TempDir, PathBuf) {
+    let d = tempfile::Builder::new()
+        .prefix("scene_io_")
+        .tempdir()
+        .expect("a temporary directory");
+    let p = d.path().join(name);
+    (d, p)
 }
 fn body(seed: i64, ty: u8) -> SerializedBody {
     SerializedBody {
@@ -54,7 +59,7 @@ fn json_of(body_a: &str, joint_type: &str) -> String {
     )
 }
 fn load_text(name: &str, text: &str) -> std::io::Result<PhysicsScene> {
-    let p = tmp(name);
+    let (_dir, p) = tmp(name);
     std::fs::write(&p, text).unwrap();
     let r = load_scene_json(&p);
     std::fs::remove_file(&p).ok();
@@ -64,7 +69,7 @@ fn load_text(name: &str, text: &str) -> std::io::Result<PhysicsScene> {
 #[test]
 fn current_version_is_one_and_is_what_the_file_records() {
     assert_eq!(CURRENT_SCENE_VERSION, 1);
-    let p = tmp("ver.json");
+    let (_dir, p) = tmp("ver.json");
     save_scene_json(
         &PhysicsScene::new(vec![], vec![], config(), CURRENT_SCENE_VERSION),
         &p,
@@ -83,7 +88,7 @@ fn current_version_is_one_and_is_what_the_file_records() {
 
 #[test]
 fn json_text_matches_the_hand_written_layout() {
-    let p = tmp("layout.json");
+    let (_dir, p) = tmp("layout.json");
     let s = PhysicsScene::new(vec![], vec![], config(), CURRENT_SCENE_VERSION);
     save_scene_json(&s, &p).unwrap();
     let want = "{\n  \"version\": 1,\n  \"config\": {\n    \"substeps\": 2,\n    \"iterations\": 3,\n    \"gravity\": [10, 20, 30, 40, 50, 60],\n    \"damping\": [7, 8]\n  },\n  \"bodies\": [\n  ],\n  \"joints\": [\n  ]\n}\n";
@@ -102,7 +107,7 @@ fn json_text_matches_the_hand_written_layout() {
 
 #[test]
 fn json_round_trip_is_exact_including_extreme_limbs() {
-    let p = tmp("rt.json");
+    let (_dir, p) = tmp("rt.json");
     let mut bodies = Vec::new();
     for i in 0..40i64 {
         bodies.push(body(i - 20, (i % 3) as u8));
@@ -229,7 +234,7 @@ fn malformed_documents_are_errors() {
         );
     }
     assert_eq!(
-        load_scene_json(&tmp("does-not-exist.json"))
+        load_scene_json(&tmp("does-not-exist.json").1)
             .unwrap_err()
             .kind(),
         ErrorKind::NotFound
@@ -246,7 +251,7 @@ fn le64s(a: &[i64]) -> Vec<u8> {
 #[test]
 fn binary_layout_is_byte_exact() {
     let s = scene();
-    let p = tmp("layout.aphys");
+    let (_dir, p) = tmp("layout.aphys");
     save_scene(&s, &p).unwrap();
     let got = std::fs::read(&p).unwrap();
     let mut want = b"APHYS\0".to_vec();
@@ -278,10 +283,10 @@ fn binary_layout_is_byte_exact() {
 
 #[test]
 fn every_strict_prefix_of_a_binary_file_is_an_error() {
-    let p = tmp("full.aphys");
+    let (_dir, p) = tmp("full.aphys");
     save_scene(&scene(), &p).unwrap();
     let bytes = std::fs::read(&p).unwrap();
-    let cut = tmp("cut.aphys");
+    let (_dir_cut, cut) = tmp("cut.aphys");
     for n in 0..bytes.len() {
         std::fs::write(&cut, &bytes[..n]).unwrap();
         let e = load_scene(&cut).expect_err(&format!("prefix of {n} bytes must fail"));
@@ -305,7 +310,7 @@ fn a_header_claiming_four_billion_entries_ends_in_an_error() {
         bytes.extend(le32(8));
         bytes.extend(le32(4));
         bytes.extend(le64s(&[0; 8]));
-        let p = tmp("huge.aphys");
+        let (_dir, p) = tmp("huge.aphys");
         std::fs::write(&p, bytes).unwrap();
         let e = load_scene(&p).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::UnexpectedEof);
@@ -320,13 +325,13 @@ fn files_with_more_entries_than_the_preallocation_hint_still_load() {
         .map(|i| joint(i, i + 1, (i % 5) as u8))
         .collect();
     let s = PhysicsScene::new(bodies, joints, config(), 1);
-    let p = tmp("big.aphys");
+    let (_dir, p) = tmp("big.aphys");
     save_scene(&s, &p).unwrap();
     let back = load_scene(&p).unwrap();
     assert_eq!(back.bodies.len(), 10_000);
     assert_eq!(back.joints.len(), 5_000);
     assert_eq!(back, s);
-    let pj = tmp("big.json");
+    let (_dir_json, pj) = tmp("big.json");
     save_scene_json(&s, &pj).unwrap();
     assert_eq!(load_scene_json(&pj).unwrap(), s);
     std::fs::remove_file(&p).ok();
@@ -335,19 +340,19 @@ fn files_with_more_entries_than_the_preallocation_hint_still_load() {
 
 #[test]
 fn binary_rejects_bad_magic_and_missing_files() {
-    let p = tmp("badmagic.aphys");
+    let (_dir, p) = tmp("badmagic.aphys");
     std::fs::write(&p, b"NOPE!!\x01\0\0\0").unwrap();
     assert_eq!(load_scene(&p).unwrap_err().kind(), ErrorKind::InvalidData);
     std::fs::remove_file(&p).ok();
     assert_eq!(
-        load_scene(&tmp("nope.aphys")).unwrap_err().kind(),
+        load_scene(&tmp("nope.aphys").1).unwrap_err().kind(),
         ErrorKind::NotFound
     );
 }
 
 #[test]
 fn binary_keeps_the_version_it_was_given() {
-    let p = tmp("ver.aphys");
+    let (_dir, p) = tmp("ver.aphys");
     for v in [0u32, 1, 2, 0xDEAD_BEEF] {
         save_scene(&PhysicsScene::new(vec![], vec![], config(), v), &p).unwrap();
         assert_eq!(load_scene(&p).unwrap().version, v);
