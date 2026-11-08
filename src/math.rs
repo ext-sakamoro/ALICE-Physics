@@ -596,6 +596,77 @@ fn div_shifted(a: u128, b: u128) -> u128 {
     limbs_to_u128(&[quotient[0], quotient[1], quotient[2], quotient[3]])
 }
 
+/// A divisor below `2⁶⁴` prepared once for several divisions: shifted so its top bit is set, with
+/// the reciprocal `v = floor((2¹²⁸ − 1) / d) − 2⁶⁴` of Möller and Granlund, "Improved division by
+/// invariant integers" (IEEE Trans. Computers 60(2), 2011), Algorithm 4. Each 128-by-64-bit step
+/// is then two products and a correction instead of a division.
+#[derive(Clone, Copy)]
+struct WordDivisor {
+    /// the divisor shifted left by `shift`, top bit set
+    d: u64,
+    shift: u32,
+    v: u64,
+}
+
+impl WordDivisor {
+    /// `b` must be in `1..2⁶⁴`.
+    #[inline]
+    fn new(b: u64) -> Self {
+        let shift = b.leading_zeros();
+        let d = b << shift;
+        // floor((2¹²⁸ − 1) / d) − 2⁶⁴ = floor(((2⁶⁴ − 1 − d) · 2⁶⁴ + 2⁶⁴ − 1) / d), below 2⁶⁴ for d ≥ 2⁶³
+        let v = ((u128::from(!d) << 64) | u128::from(u64::MAX)) / u128::from(d);
+        Self {
+            d,
+            shift,
+            v: v as u64,
+        }
+    }
+
+    /// `floor((u1 · 2⁶⁴ + u0) / d)` and the remainder, for `u1 < d` (Möller–Granlund Algorithm 4).
+    #[inline]
+    fn div_2by1(self, u1: u64, u0: u64) -> (u64, u64) {
+        let (p1, p0) = widening_mul(self.v, u1);
+        let (q0, carry) = p0.overflowing_add(u0);
+        let q1 = p1
+            .wrapping_add(u1)
+            .wrapping_add(u64::from(carry))
+            .wrapping_add(1);
+        let mut q = q1;
+        let mut r = u0.wrapping_sub(q.wrapping_mul(self.d));
+        if r > q0 {
+            q = q.wrapping_sub(1);
+            r = r.wrapping_add(self.d);
+        }
+        if r >= self.d {
+            q += 1;
+            r -= self.d;
+        }
+        (q, r)
+    }
+
+    /// The low 128 bits of `floor(a · 2⁶⁴ / b)`, the value `div_shifted(a, b)` returns.
+    #[inline]
+    fn div_shifted(self, a: u128) -> u128 {
+        // a · 2⁶⁴ · 2^shift as four words, high first; the quotient by d · 2^shift is the same
+        let wide = a << self.shift;
+        let top = if self.shift == 0 {
+            0
+        } else {
+            (a >> (128 - self.shift)) as u64
+        };
+        let words = [top, (wide >> 64) as u64, wide as u64, 0];
+        let mut r = 0u64;
+        let mut q = [0u64; 4];
+        for (qi, &w) in q.iter_mut().zip(&words) {
+            let (qd, rd) = self.div_2by1(r, w);
+            *qi = qd;
+            r = rd;
+        }
+        (u128::from(q[2]) << 64) | u128::from(q[3])
+    }
+}
+
 /// One step of the square root recurrence of Zimmermann, "Karatsuba Square Root" (INRIA RR-3805):
 /// from the root `s` and remainder `r` of the digits so far, take two more digits of `bits` bits.
 #[inline]
@@ -1854,12 +1925,41 @@ impl Mul<Fix128> for Vec3Fix {
 impl Div<Fix128> for Vec3Fix {
     type Output = Self;
 
+    /// Each component bit for bit equal to `component / rhs`. When `|rhs|` is below `2⁶⁴` raw (a
+    /// divisor under 1.0) the divisor is prepared once for the three components;
+    /// the quotients are exact (the reciprocal step of Möller and Granlund is exact, not rounded),
+    /// so the bits are those of `/` (`tests/fix128_vec_div.rs`).
     #[inline]
     fn div(self, rhs: Fix128) -> Self {
+        let b = if rhs.is_negative() { -rhs } else { rhs };
+        if rhs.is_zero() || b.hi != 0 {
+            return Self {
+                x: self.x / rhs,
+                y: self.y / rhs,
+                z: self.z / rhs,
+            };
+        }
+        let divisor = WordDivisor::new(b.lo);
+        let rhs_negative = rhs.is_negative();
+        let one = |x: Fix128| {
+            // the sign rule and the magnitude of `Fix128 / Fix128`
+            let neg = x.is_negative() != rhs_negative;
+            let a = if x.is_negative() { -x } else { x };
+            let q = divisor.div_shifted(((a.hi as u128) << 64) | u128::from(a.lo));
+            let r = Fix128 {
+                hi: (q >> 64) as i64,
+                lo: q as u64,
+            };
+            if neg {
+                -r
+            } else {
+                r
+            }
+        };
         Self {
-            x: self.x / rhs,
-            y: self.y / rhs,
-            z: self.z / rhs,
+            x: one(self.x),
+            y: one(self.y),
+            z: one(self.z),
         }
     }
 }

@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `Vec3Fix / Fix128`: 割る数の生の大きさが 2⁶⁴ 未満 (1.0 未満) の時、割る数を 1 回だけ準備し (最上位 bit を立てる shift と Möller–Granlund の逆数 `floor((2¹²⁸ − 1) / d) − 2⁶⁴`)、3 成分をそれぞれ 64 bit 語 4 段の積と補正で割る 各段は厳密な商を返すので、各成分の bits は `成分 / rhs` と同じ (`tests/fix128_vec_div.rs`: 経路の端の割る数 1 ulp / 2⁶³ ± 1 / 2⁶⁴ ± 1 と MIN / MAX、20 000 標本、長さ 1 未満の方向 20 000 標本を `Fix128 / Fix128` と比べる 補正の 2 段・最上位語・語の取り出し・逆数・経路の分岐を壊した変異 6 件はすべて red) 2⁶⁴ 以上は従来どおり成分ごとの `/` 軟体の 1 step (3301 粒子 / 13264 四面体、辺の拘束の `delta / dist`) は 129.8 ms から 101.7 ms (7 回の中央値、前後に従来版を挟んで同じ digest)
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
