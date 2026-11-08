@@ -695,17 +695,6 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
     hex32("c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f");
 
-const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    let mut i = 0;
-    while i < 32 {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
-
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
 ///
