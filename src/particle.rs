@@ -11,6 +11,49 @@
 //! - Gravity and linear damping
 //! - Integration with the force field system
 //! - Deterministic via `DeterministicRng`
+//!
+//! # MODEL — landing and running off a surface
+//!
+//! **Equations.** A free particle moves by semi-implicit Euler, `v ← (v + g·dt)·d`,
+//! `x ← x + v·dt` (`d` = [`ParticleSystem::damping`]). It lands at the first sample of its
+//! path inside a [`LandingTarget`]. The target's surface is the zero set of an SDF, with the
+//! outward normal `n` taken from the SDF's gradient. The landing keeps only the tangential
+//! part of the velocity, `v ← v − n (v·n)`. On the surface
+//! ([`ParticleSystem::step_with_run_off`]) the particle feels gravity less its normal part,
+//! `g_t = g − n (g·n)`, and a viscous drag `c` along the surface, integrated implicitly:
+//! `v ← (v_t + g_t·dt) / (1 + c·dt)`. On a plane this converges to the terminal speed
+//! `|g_t| / c = |g| sin α / c` (α the incline) for every `dt > 0`. After each move the
+//! particle is projected back onto the surface. It drips (becomes free, keeping its
+//! velocity) when the new normal satisfies `n·ĝ ≥ drip_cos`, or when the moved point is
+//! further than `max_travel` from the surface (it ran past an edge).
+//!
+//! **Units.** SI: positions m, velocities m/s, `g` m/s², `c` 1/s, `dt` s, `drip_cos`
+//! dimensionless. All quantities are `Fix128` (Q64.64), so a run replays bit for bit.
+//! [`ParticleSystem::state_digest`] fixes everything the next step depends on.
+//!
+//! **Conservation.** Mass per particle is constant: particles are neither split nor merged.
+//! Energy is not conserved: drag dissipates it, and the landing discards the normal
+//! velocity (a perfectly inelastic impact). Momentum is not conserved: the surface is an
+//! external constraint.
+//!
+//! **Valid range.** Rain-sized drops on rigid surfaces given as an SDF, with `c > 0` and
+//! `0 ≤ drip_cos ≤ 1`. The SDF must be close to a true distance within `max_travel`, so
+//! that the projection lands on the surface. A [`LandingTarget::Query`] gives occupancy
+//! only, so a particle on it is held where it landed.
+//!
+//! **Approximations.** No particle-particle interaction (no coalescence, no film). No
+//! contact angle or hysteresis: a drop on a gentle slope always moves (pinning by
+//! `ρ V g sin α < γ w (cos θ_r − cos θ_a)` is not modelled). No splash or bounce. The drag
+//! is linear (a viscous film), not inertial.
+//!
+//! **Verified by** `tests/analytic_particle_run_off.rs`:
+//! - `on_an_incline_the_speed_reaches_the_closed_form` (`|g| sin α / c`)
+//! - `on_a_sphere_the_drop_drips_at_the_cosine_it_was_told`
+//! - `past_an_edge_the_drop_falls_free`
+//! - `a_query_surface_holds_the_drop_where_it_is_occupied`
+//! - `rain_scene_digest_is_pinned`
+//! - `the_same_calls_give_the_same_bits`
+//! - `every_part_of_the_state_moves_the_digest`
 
 use crate::force::{field_force_at, ForceField};
 use crate::math::{Fix128, Vec3Fix};
