@@ -2,10 +2,65 @@
 //!
 //! Puts low-energy bodies to sleep and groups connected bodies into islands.
 //!
-//! # Sleeping
+//! # MODEL
 //!
-//! Bodies whose velocities remain below a threshold for a sustained period
-//! are put to sleep, skipping integration and constraint solving.
+//! - **Equations.** A body is idle at a step when `|v| < linear_threshold` and
+//!   `|ω| < angular_threshold`; its idle time is the sum of the steps' `dt` while idle and
+//!   restarts at 0 otherwise. Bodies joined by a joint (static anchors included) form an
+//!   island, rebuilt at every step. An island sleeps or wakes as a whole: it sleeps at the end
+//!   of a step when every member that is not static has an idle time within half a step of
+//!   `time_to_sleep`, and a sleeping member is not moved by the step (it ends the step in the
+//!   state it started it in). An island that holds an elastic joint (a spring) must in
+//!   addition end the step in a state it already ended a step in within the last
+//!   [`ORBIT_WINDOW`] = 256 steps, compared bit for bit (the state: the members' position,
+//!   velocity, rotation and angular velocity, and the cached impulses of their contacts and
+//!   distance constraints; the record holds only steps at which the velocity rule held and
+//!   restarts when it does not). The hash of a state only finds a candidate. Such an island
+//!   wakes as a whole at the next step head when anything its step reads changed since it
+//!   fell asleep: the step width, the solver or sleep configuration, a member's mass,
+//!   material, collider or filter, the island's joints and distance constraints, force
+//!   fields, static or SDF colliders, participants' state, field values, or its held state
+//!   (an impulse, a moved body).
+//! - **Units.** Time and `time_to_sleep` in s, speeds in m/s and rad/s, positions in m.
+//! - **Conservation.** Sleeping conserves nothing by itself: it freezes a state. A body
+//!   that sleeps at rest under the velocity rule keeps the kinetic energy below the
+//!   thresholds it had (at most `m |v|² / 2` with `|v| < linear_threshold`). A spring-held
+//!   body is frozen on its late orbit, so its distance from the spring's rest is at most the
+//!   orbit's amplitude (the table below) and the spring's force on it is at most
+//!   `k × amplitude`.
+//! - **Range.** The recurrence is found for an orbit of period at most 256 steps. The late
+//!   orbit of a spring in `Q64.64` has a period equal to the step rate in steps per second
+//!   or one of its divisors (measured: 60 at `1/60 s`, 100 at `1/100 s`, 37 at `1/37 s`,
+//!   257 at `1/257 s`, 1000 at `1/1000 s`; 80 at `1/240 s`, 75 at `1/300 s`), so the window
+//!   covers step rates up to 256 Hz. Above that an island with a spring may never sleep: it
+//!   keeps being solved, by design, not an error. The record costs per elastic island at
+//!   most 256 states of `208 B` per member plus its contacts (two members: about 106 KiB),
+//!   and is saved in the world snapshot and the rollback state blob, so a restored world
+//!   falls asleep at the same step as the original.
+//! - **Approximations.** The thresholds are a cut-off, not a model of rest; a body creeping
+//!   below them under the velocity rule is frozen where it is (only islands with a spring are
+//!   held to the recurrence rule). Callbacks (pre-solve hooks, contact modifiers) are code
+//!   and are not part of the inputs an elastic island compares: a callback that changes its
+//!   output does not wake it.
+//! - **Validation.** `tests/analytic_sleep_spring_creep.rs::a_spring_held_body_stays_at_its_place_with_sleep_off::a_spring_held_body_stays_at_its_place_with_sleep_on::a_sleeper_jointed_to_a_moving_body_wakes_with_it::an_orbit_longer_than_the_window_never_sleeps::a_restored_world_snapshot_falls_asleep_with_the_original::a_rolled_back_world_falls_asleep_with_the_original::a_sleeping_orbit_wakes_when_its_inputs_change`
+//!   (in order: a spring-held body stays within
+//!   the backward Euler bound of its place with sleeping on as off; a sleeper jointed to a
+//!   moving kinematic body moves as with sleeping off; an orbit longer than the window never
+//!   sleeps while one within it does; a restored snapshot and a rolled-back state fall asleep
+//!   at the original's step and place; a change of gravity, stiffness or an impulse wakes a
+//!   sleeping orbit at the next step). Measured time to sleep and frozen error of a
+//!   critically damped spring-held body (`dt = 1/60 s`, 8 substeps, released 2 m from its
+//!   place):
+//!
+//!   | `ω` (rad/s) | asleep at frame | time | frozen distance from the place |
+//!   |---|---|---|---|
+//!   | 0.6 | 5748 | 95.8 s | 1.8e-13 m |
+//!   | 6 | 543 | 9.05 s | 2.2e-15 m |
+//!   | 60 | 132 | 2.2 s | 0 |
+//!
+//!   (the ignored measurement of the time to sleep in the same file prints these; at `ω` 60 the orbit is reached at frame 115 and the velocity rule's one
+//!   second holds the sleep to frame 132.)
+//! - **Tiers.** L0 only.
 //!
 //! # Islands
 //!
