@@ -105,6 +105,76 @@ pub struct Island {
     pub all_sleeping: bool,
 }
 
+/// The number of end-of-step states an island holding an elastic joint keeps for the
+/// recurrence rule (see [`crate::solver::PhysicsWorld`]'s sleep rules and the MODEL section
+/// of this module): an orbit whose period is at most this many steps is recognised.
+///
+/// 256 covers the period measured for a spring-held body in `Q64.64` (60 steps at
+/// `dt = 1/60 s`, 8 substeps, for `ω` from 0.6 to 60 rad/s) four times over; an orbit with
+/// a longer period is never recognised and its island never sleeps.
+pub const ORBIT_WINDOW: usize = 256;
+
+/// The recent end-of-step states of one island that holds an elastic joint (the recurrence
+/// rule of [`crate::solver::PhysicsWorld`]'s sleep).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct IslandOrbit {
+    /// The island's bodies, ascending (the first is the island's key)
+    pub members: Vec<usize>,
+    /// Everything the island's step reads that the step itself does not change (the step
+    /// width, the solver and sleep configuration, the members' mass, material and
+    /// collider data, the island's joints, force fields, static and SDF colliders,
+    /// participants' state and field values), as bytes: a change empties `states` and
+    /// wakes the island
+    pub inputs: Vec<u8>,
+    /// Whether the island fell asleep on a recurrence and is held at `states`' last entry
+    pub asleep: bool,
+    /// The end-of-step states (the members' position, velocity, rotation and angular
+    /// velocity, and the cached impulses of the contacts and distance constraints they take
+    /// part in), oldest first, at most [`ORBIT_WINDOW`]
+    pub states: Vec<Vec<u8>>,
+    /// FNV-1a 64 of each entry of `states`: a lookup key only, every hit is confirmed by
+    /// comparing the bytes
+    pub(crate) hashes: Vec<u64>,
+}
+
+impl IslandOrbit {
+    /// FNV-1a 64 of `bytes`
+    #[must_use]
+    pub(crate) fn hash(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h
+    }
+
+    /// Whether `state` equals one of the kept states bit for bit (found through its hash)
+    #[must_use]
+    pub fn recurs(&self, state: &[u8]) -> bool {
+        let h = Self::hash(state);
+        self.hashes
+            .iter()
+            .zip(&self.states)
+            .any(|(&k, s)| k == h && s.as_slice() == state)
+    }
+
+    /// Keep `state` as the newest entry, dropping the oldest beyond [`ORBIT_WINDOW`]
+    pub fn push(&mut self, state: Vec<u8>) {
+        self.hashes.push(Self::hash(&state));
+        self.states.push(state);
+        if self.states.len() > ORBIT_WINDOW {
+            self.states.remove(0);
+            self.hashes.remove(0);
+        }
+    }
+
+    /// Rebuild the hashes from `states` (after a restore)
+    pub(crate) fn rehash(&mut self) {
+        self.hashes = self.states.iter().map(|s| Self::hash(s)).collect();
+    }
+}
+
 /// Island manager using Union-Find (disjoint set)
 pub struct IslandManager {
     /// Parent array for union-find
@@ -115,6 +185,9 @@ pub struct IslandManager {
     pub sleep_data: Vec<SleepData>,
     /// Sleep configuration
     pub config: SleepConfig,
+    /// The recurrence records of the islands that hold an elastic joint, by ascending first
+    /// member
+    pub orbits: Vec<IslandOrbit>,
 }
 
 impl IslandManager {
@@ -132,6 +205,7 @@ impl IslandManager {
             rank,
             sleep_data,
             config,
+            orbits: Vec::new(),
         }
     }
 

@@ -46,7 +46,9 @@ use crate::material::{
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::semantics::{PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS};
 use crate::shape::Shape;
-use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
+use crate::sleeping::{
+    IslandManager, IslandOrbit, SleepConfig, SleepData, SleepState, ORBIT_WINDOW,
+};
 use crate::static_collider::StaticCollider;
 use crate::world_participant::WorldFault;
 
@@ -1694,6 +1696,232 @@ fn r_tree(r: &mut R<'_>) -> Res<crate::dynamic_bvh::DynamicAabbTree> {
 // ── Whole world ───────────────────────────────────────────────────────────
 
 /// Everything decoded from a blob, before it is moved into a world.
+/// The recurrence records of the elastic islands ([`IslandOrbit`]): `count`, then per
+/// island its members (`count`, indices), its inputs (`len`, bytes), `asleep: u8` and its
+/// states (`count`, then `len`, bytes each), oldest first.
+fn w_orbits(w: &mut W, orbits: &[IslandOrbit]) {
+    w.usize(orbits.len());
+    for o in orbits {
+        w.usize(o.members.len());
+        for &m in &o.members {
+            w.usize(m);
+        }
+        w.usize(o.inputs.len());
+        w.0.extend_from_slice(&o.inputs);
+        w.bool(o.asleep);
+        w.usize(o.states.len());
+        for st in &o.states {
+            w.usize(st.len());
+            w.0.extend_from_slice(st);
+        }
+    }
+}
+
+/// Reads [`w_orbits`]. Refused: an island with no member, members not strictly ascending
+/// or not below the body count, islands not in ascending order of their first member, more
+/// than [`ORBIT_WINDOW`] states, and an island marked asleep with no state to be held at.
+fn r_orbits(r: &mut R<'_>, bodies: usize) -> Res<Vec<IslandOrbit>> {
+    const S: &str = "islands";
+    let n = r.len(S, 8)?;
+    let mut orbits: Vec<IslandOrbit> = Vec::with_capacity(n);
+    for _ in 0..n {
+        let k = r.len(S, 8)?;
+        let mut members: Vec<usize> = Vec::with_capacity(k);
+        for _ in 0..k {
+            let m = r.usize(S)?;
+            if m >= bodies || members.last().is_some_and(|&p| p >= m) {
+                return Err(invalid(S));
+            }
+            members.push(m);
+        }
+        let first = *members.first().ok_or(invalid(S))?;
+        if orbits.last().is_some_and(|p| p.members[0] >= first) {
+            return Err(invalid(S));
+        }
+        let len = r.len(S, 1)?;
+        let inputs = r.take(len)?.to_vec();
+        let asleep = r.bool(S)?;
+        let count = r.len(S, 8)?;
+        if count > ORBIT_WINDOW || (asleep && count == 0) {
+            return Err(invalid(S));
+        }
+        let mut states = Vec::with_capacity(count);
+        for _ in 0..count {
+            let len = r.len(S, 1)?;
+            states.push(r.take(len)?.to_vec());
+        }
+        let mut o = IslandOrbit {
+            members,
+            inputs,
+            asleep,
+            states,
+            ..IslandOrbit::default()
+        };
+        o.rehash();
+        orbits.push(o);
+    }
+    Ok(orbits)
+}
+
+/// [`w_orbits`] alone, for [`PhysicsWorld::serialize_state`].
+pub(super) fn encode_orbits(orbits: &[IslandOrbit]) -> Vec<u8> {
+    let mut w = W(Vec::new());
+    w_orbits(&mut w, orbits);
+    w.0
+}
+
+/// [`r_orbits`] over the whole of `data` (nothing may follow), for
+/// [`PhysicsWorld::deserialize_state`]; `None` for anything [`r_orbits`] refuses.
+pub(super) fn decode_orbits(data: &[u8], bodies: usize) -> Option<Vec<IslandOrbit>> {
+    let mut r = R { data, pos: 0 };
+    let orbits = r_orbits(&mut r, bodies).ok()?;
+    (r.pos == data.len()).then_some(orbits)
+}
+
+impl PhysicsWorld {
+    /// What the step of the island `members` (ascending) reads and does not itself change,
+    /// as bytes ([`IslandOrbit::inputs`]). Callbacks (pre-solve hooks, contact modifiers)
+    /// are code and not covered.
+    pub(super) fn orbit_inputs(&self, members: &[usize], dt: Fix128) -> Vec<u8> {
+        let mut w = W(Vec::new());
+        w.fix(dt);
+        w_config(&mut w, &self.config);
+        w.fix(self.islands.config.linear_threshold);
+        w.fix(self.islands.config.angular_threshold);
+        w.fix(self.islands.config.time_to_sleep);
+        let has = |i: usize| members.binary_search(&i).is_ok();
+        w.usize(members.len());
+        for &m in members {
+            w.usize(m);
+            let b = &self.bodies[m];
+            w.fix(b.inv_mass);
+            w.vec3(b.inv_inertia);
+            w.fix(b.restitution);
+            w.fix(b.friction);
+            w.fix(b.gravity_scale);
+            w.fix(b.linear_damping_rate);
+            w.fix(b.angular_damping_rate);
+            w.bool(b.is_sensor);
+            w.u8(b.body_type as u8);
+            match b.kinematic_target {
+                Some((p, q)) => {
+                    w.u8(1);
+                    w.vec3(p);
+                    w.quat(q);
+                }
+                None => w.u8(0),
+            }
+            w.opt_fix(self.body_collision_radii.get(m).copied().flatten());
+            w_body_collider(&mut w, self.body_colliders.get(m).and_then(Option::as_ref));
+            let f = self.body_filter(m);
+            w.u32(f.layer);
+            w.u32(f.mask);
+            w.u32(f.group);
+            w.u16(
+                self.body_materials
+                    .get(m)
+                    .copied()
+                    .unwrap_or(crate::material::DEFAULT_MATERIAL),
+            );
+        }
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if has(a) || has(b) {
+                w_joint(&mut w, j);
+            }
+        }
+        for c in &self.distance_constraints {
+            if has(c.body_a) || has(c.body_b) {
+                w.usize(c.body_a);
+                w.usize(c.body_b);
+                w.vec3(c.local_anchor_a);
+                w.vec3(c.local_anchor_b);
+                w.fix(c.target_distance);
+                w.fix(c.compliance);
+            }
+        }
+        w.usize(self.force_fields.len());
+        for f in &self.force_fields {
+            w_force_field(&mut w, f);
+        }
+        w.usize(self.static_colliders.len());
+        for c in &self.static_colliders {
+            w_static_collider(&mut w, c);
+        }
+        w.usize(self.sdf_colliders.len());
+        for (k, c) in self.sdf_colliders.iter().enumerate() {
+            w.vec3(c.position);
+            w.quat(c.rotation);
+            w.fix(c.scale);
+            w.usize(c.body_index);
+            w.u64(self.sdf_generations.get(k).copied().unwrap_or(0));
+        }
+        w.fix(self.sdf_collision_radius);
+        w_material_table(&mut w, &self.material_table);
+        #[cfg(feature = "std")]
+        {
+            let mut out = Vec::new();
+            self.write_participants(&mut out);
+            w.usize(out.len());
+            for (kind, payload) in &out {
+                w.u32(*kind);
+                w.usize(payload.len());
+                w.0.extend_from_slice(payload);
+            }
+        }
+        self.fields().write_values(&mut w.0);
+        w.0
+    }
+
+    /// The state of the island `members` (ascending) at the end of a step, as bytes
+    /// ([`IslandOrbit::states`]): the members' position, velocity, rotation and angular
+    /// velocity, the cached impulses of the distance and contact constraints they take
+    /// part in, and the contact cache's manifolds that touch them.
+    pub(super) fn orbit_state(&self, members: &[usize]) -> Vec<u8> {
+        let mut w = W(Vec::new());
+        let has = |i: usize| members.binary_search(&i).is_ok();
+        for &m in members {
+            let b = &self.bodies[m];
+            w.vec3(b.position);
+            w.vec3(b.velocity);
+            w.quat(b.rotation);
+            w.vec3(b.angular_velocity);
+        }
+        for c in &self.distance_constraints {
+            if has(c.body_a) || has(c.body_b) {
+                w.fix(c.cached_lambda);
+            }
+        }
+        for c in &self.contact_constraints {
+            if has(c.body_a) || has(c.body_b) {
+                w.usize(c.body_a);
+                w.usize(c.body_b);
+                w_contact(&mut w, &c.contact);
+                w.fix(c.cached_lambda);
+            }
+        }
+        for m in &self.contact_cache.manifolds {
+            if has(m.pair.body_a as usize) || has(m.pair.body_b as usize) {
+                w.u32(m.pair.body_a);
+                w.u32(m.pair.body_b);
+                w.usize(m.points.len());
+                for p in &m.points {
+                    w.vec3(p.local_point_a);
+                    w.vec3(p.local_point_b);
+                    w.vec3(p.normal);
+                    w.fix(p.depth);
+                    w.fix(p.lambda_n);
+                    w.fix(p.lambda_t1);
+                    w.fix(p.lambda_t2);
+                    w.u32(p.age);
+                }
+                w.u32(m.stale_frames);
+            }
+        }
+        w.0
+    }
+}
+
 struct Decoded {
     config: SolverConfig,
     bodies: Vec<RigidBody>,
@@ -1717,6 +1945,7 @@ struct Decoded {
     events: EventCollector,
     sleep_config: SleepConfig,
     sleep_data: Vec<SleepData>,
+    orbits: Vec<IslandOrbit>,
     body_collision_radii: Vec<Option<Fix128>>,
     broadphase: Broadphase,
     broadphase_tree: crate::dynamic_bvh::DynamicAabbTree,
@@ -2016,6 +2245,7 @@ impl PhysicsWorld {
             });
             w.fix(sd.idle_time);
         }
+        w_orbits(&mut w, &self.islands.orbits);
 
         w.usize(self.body_collision_radii.len());
         for &r in &self.body_collision_radii {
@@ -2416,6 +2646,7 @@ impl PhysicsWorld {
             }
         }
         islands.sleep_data = d.sleep_data;
+        islands.orbits = d.orbits;
         self.islands = islands;
 
         self.body_collision_radii = d.body_collision_radii;
@@ -2755,6 +2986,11 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         };
         sleep_data.push(SleepData { state, idle_time });
     }
+    let orbits = if version >= 7 {
+        r_orbits(r, sleep_data.len())?
+    } else {
+        Vec::new()
+    };
 
     let n = r.len("body_collision_radii", 1)?;
     let mut body_collision_radii = Vec::with_capacity(n);
@@ -2848,6 +3084,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         events,
         sleep_config,
         sleep_data,
+        orbits,
         body_collision_radii,
         broadphase,
         broadphase_tree,
