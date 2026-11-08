@@ -1,0 +1,28 @@
+# Line-anchored mutants exclusions: <file>\t<fn>\t<offsets>\t<line digests>\t<mutation regex>
+# the source of the `# BEGIN line anchors` block of .cargo/mutants.toml (scripts/mutants_exclude_lines.py)
+src/ccd.rs	sphere_plane_toi	29	66f3c7a605406734	replace \* with / in sphere_plane_toi
+src/ccd.rs	sphere_plane_toi	45	66f3c7a605406734	replace \* with / in sphere_plane_toi
+src/ccd.rs	swept_aabb	12	cc7154c497661ed6	replace > with >= in swept_aabb
+src/ccd.rs	swept_aabb	29	cc7154c497661ed6	replace > with >= in swept_aabb
+src/ccd.rs	swept_aabb	46	cc7154c497661ed6	replace > with >= in swept_aabb
+src/ccd.rs	swept_aabb	13	b0e85a1a0b68fdfe	replace < with <= in swept_aabb
+src/ccd.rs	swept_aabb	30	b0e85a1a0b68fdfe	replace < with <= in swept_aabb
+src/ccd.rs	swept_aabb	47	b0e85a1a0b68fdfe	replace < with <= in swept_aabb
+src/ccd.rs	swept_aabb	57	cf189cdfea769fff	replace < with <= in swept_aabb
+src/ccd.rs	slab_test	19	607f5dbd2cfcb58c	replace > with >= in slab_test
+src/joint.rs	solve_cone_twist_joint	40	e9c0cc0afe0b925c	replace < with <= in solve_cone_twist_joint
+src/joint.rs	solve_cone_twist_joint	46	e4094d3ee389b7b8	replace > with >= in solve_cone_twist_joint
+src/joint.rs	solve_cone_twist_joint	73	334b0caf30e5d055	replace > with >= in solve_cone_twist_joint
+src/bvh.rs	build_recursive	51	9b2df9cf243275c0	replace \| with \^ in LinearBvh::build_recursive
+src/math.rs	cordic_sin_cos	3	54ae0713b1ee3610	replace (> with >=|< with <=) in cordic_sin_cos
+src/math.rs	cordic_sin_cos	10	7570b19b4a9aaacd	replace > with (==|>=) in cordic_sin_cos
+src/math.rs	cordic_sin_cos	11	b5b862442df838b3	replace - with (\+|/) in cordic_sin_cos
+src/math.rs	cordic_sin_cos	12	86bb6ec2ac1731b5	replace < with (==|<=) in cordic_sin_cos
+src/math.rs	cordic_sin_cos	44	7ae178977443b610	replace > with >= in cordic_sin_cos
+src/math.rs	cordic_atan	12	7ae178977443b610	replace > with >= in cordic_atan
+src/bvh.rs	point_to_morton	8,11	7109401af168dbcb,00e494488a44ff2f	replace > with >= in point_to_morton
+src/bvh.rs	build_recursive	12	e2c320bd16f31d21	replace \+ with \* in LinearBvh::build_recursive
+src/bvh.rs	find_split	14	a7ccec93c60399ee	replace - with / in LinearBvh::find_split
+src/bvh.rs	find_split	20	f6e9cdd3eda772d8	replace >> with << in LinearBvh::find_split
+src/bvh.rs	find_split	29	88119d513bb1b91c	replace (\+ with \*|- with \+|- with /) in LinearBvh::find_split
+src/bvh.rs	query_pairs	16	44d905caac1aa2c8	replace \+ with \* in BroadphaseHybrid::query_pairs

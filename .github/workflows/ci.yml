@@ -198,6 +198,12 @@ jobs:
         run: python scripts/test_mutants_ratchet.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
         run: python scripts/test_mutants_exclude_check.py
+      - name: Line-anchored mutants exclusions (tests)
+        run: python scripts/test_mutants_exclude_lines.py
+      # the line-numbered exclude_re entries are generated from function + offset anchors:
+      # a stale block, a moved or edited anchored line, or no anchor compared fails here
+      - name: Line-anchored mutants exclusions are current
+        run: python scripts/mutants_exclude_lines.py --check
       - name: Equivalent mutants (tests)
         run: python scripts/test_mutants_equivalent.py
       # every equivalent-mutant entry has a reason and still matches its source line
