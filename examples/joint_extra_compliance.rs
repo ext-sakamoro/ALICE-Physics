@@ -22,12 +22,21 @@
 //!
 //! Run with: `cargo run --example joint_extra_compliance`
 
+use alice_physics_core::joint::{HingeJoint, Joint};
 use alice_physics_core::joint_extra::{
     solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, PulleyJoint,
     RackAndPinionJoint, WeldJoint,
 };
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
+
+/// a joint list whose entries 7 and 8 (the hinges the gear below names) are
+/// hinges about world `z` between bodies 0 and 1
+fn z_hinges() -> Vec<Joint> {
+    let o = Vec3Fix::ZERO;
+    let h = HingeJoint::new(0, 1, o, o, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z);
+    vec![Joint::Hinge(h); 9]
+}
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -128,7 +137,8 @@ fn gear(dt: Fix128) {
             "GearJoint::new stores its arguments"
         );
         let mut bodies = [a, b];
-        solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(joint)], dt);
+        solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(joint)], &z_hinges(), dt)
+            .expect("the gear names hinges 7 and 8");
         // w_a = 1, w_b = 0: λ w_a = C / (1 + α/dt²).
         let h = error / (1.0 + compliance_over_dt2 as f64) / 2.0;
         let (z, w) = turned_back(za.to_f64(), wa.to_f64(), h);
@@ -149,7 +159,8 @@ fn weld(dt: Fix128) {
     ];
     let joint = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
         .with_compliance(Fix128::from_int(2) * dt * dt);
-    solve_extra_joints(&mut bodies, &[ExtraJoint::Weld(joint)], dt);
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Weld(joint)], &z_hinges(), dt)
+        .expect("the gear names hinges 7 and 8");
     // d = 5 along (3/5, 4/5, 0), Σw = 2, α/dt² = 2: λ = 5/4, each body moves λ.
     let lambda = 5.0 / (1.0 + 1.0 + 2.0);
     close(bodies[0].position.x, 0.6 * lambda, "weld: A toward B (x)");
@@ -192,7 +203,13 @@ fn rack_and_pinion(dt: Fix128) {
             "RackAndPinionJoint::new stores its arguments"
         );
         let mut bodies = [rack, pinion];
-        solve_extra_joints(&mut bodies, &[ExtraJoint::RackAndPinion(joint)], dt);
+        solve_extra_joints(
+            &mut bodies,
+            &[ExtraJoint::RackAndPinion(joint)],
+            &z_hinges(),
+            dt,
+        )
+        .expect("the gear names hinges 7 and 8");
         // w_linear = 1, w_angular = 0: the rack moves back by C / (1 + α/dt²).
         let want = 1.0 - error / (1.0 + compliance_over_dt2 as f64);
         close(bodies[0].position.x, want, "rack moved back along its axis");

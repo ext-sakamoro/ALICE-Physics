@@ -12,12 +12,21 @@
     reason = "analytic reference: f64 z-rotation and weld torque sin(phi/2) for pulley / gear / weld joint_extra solves"
 )]
 
+use alice_physics_core::joint::{HingeJoint, Joint};
 use alice_physics_core::joint_extra::{
     solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, MouseJoint, PulleyJoint,
     RackAndPinionJoint, WeldJoint,
 };
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
+
+/// the hinges the gears of this file name: two hinges about world `z` between
+/// bodies 0 and 1 (index 0 read by body 0, index 1 by body 1)
+fn z_hinges() -> Vec<Joint> {
+    let o = Vec3Fix::ZERO;
+    let h = HingeJoint::new(0, 1, o, o, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z);
+    vec![Joint::Hinge(h), Joint::Hinge(h)]
+}
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -53,7 +62,7 @@ fn angle_z(q: QuatFix) -> f64 {
 }
 
 fn solve(bodies: &mut [RigidBody], j: ExtraJoint, dt: f64) {
-    solve_extra_joints(bodies, &[j], fx(dt));
+    solve_extra_joints(bodies, &[j], z_hinges(), fx(dt)).expect("the gear names hinges 0 and 1");
 }
 
 // ---------------------------------------------------------------------------
