@@ -360,3 +360,57 @@ fn measure_the_energy_per_period() {
         );
     }
 }
+
+/// A refused step changes nothing: a particle whose stencil leaves the grid makes the step
+/// return the error with every particle as it was, and so does an inversion.
+#[test]
+fn a_refused_step_changes_nothing() {
+    let mut w = world(0.0, None, [16, 16]);
+    block(&mut w, 0.05, 0.05, 0.02, 0.02, |_, _| [0.0, 0.0]);
+    // one particle flying out of the grid within a step
+    w.add_particle(
+        [fx(0.135), fx(0.08)],
+        [fx(30.0), fx(0.0)],
+        fx(CELL * CELL / 4.0),
+    );
+    let before = w.particles().to_vec();
+    let mut refused = None;
+    for n in 0..20 {
+        match w.step() {
+            Ok(()) => {}
+            Err(e) => {
+                refused = Some((n, e));
+                break;
+            }
+        }
+    }
+    let (n, e) = refused.expect("the particle leaves the grid");
+    assert!(
+        matches!(e, alice_physics_core::mpm2d::Mpm2dError::OutOfGrid { .. }),
+        "{e:?}"
+    );
+    let _ = n;
+    let snapshot = w.particles().to_vec();
+    assert!(w.step().is_err());
+    assert_eq!(
+        w.particles(),
+        &snapshot[..],
+        "the refused step left the particles as they were"
+    );
+    assert_ne!(before, snapshot);
+    // an inversion: a particle squeezed through itself in one step
+    let mut w = world(0.0, None, [16, 16]);
+    block(&mut w, 0.05, 0.05, 0.02, 0.02, |x, _| {
+        [if x < 0.06 { 400.0 } else { -400.0 }, 0.0]
+    });
+    let start = w.particles().to_vec();
+    let got = w.step();
+    assert!(
+        matches!(
+            got,
+            Err(alice_physics_core::mpm2d::Mpm2dError::Inverted { .. })
+        ),
+        "{got:?}"
+    );
+    assert_eq!(w.particles(), &start[..]);
+}
