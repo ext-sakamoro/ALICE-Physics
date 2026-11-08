@@ -18,9 +18,9 @@
     reason = "analytic reference: the backward Euler bound is computed in f64, never by the solver under test"
 )]
 
-use alice_physics_core::joint::{Joint, SpringJoint};
-use alice_physics_core::math::{Fix128, Vec3Fix};
-use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::joint::{BallJoint, Joint, SpringJoint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{BodyType, PhysicsWorld, RigidBody, SolverConfig};
 use alice_physics_core::SleepConfig;
 
 const OMEGA: f64 = 6.0;
@@ -127,4 +127,118 @@ fn a_spring_held_body_stays_at_its_place_with_sleep_on() {
     let (worst, allowed, compared) = held_for_long(true);
     assert_eq!(compared, FRAMES - FROM + 1);
     assert!(worst <= allowed, "{worst:.3e} m, allowed {allowed:.3e} m");
+}
+
+/// A measurement, not a check: when the held body falls asleep with sleeping on, how far
+/// it is from its place then, and how it moves while asleep.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn measure_when_the_held_body_sleeps_and_how_it_moves() {
+    let mut w = PhysicsWorld::new(SolverConfig {
+        substeps: SUBSTEPS,
+        gravity: v3(0.0, -G, 0.0),
+        ..SolverConfig::default()
+    });
+    let anchor = w.add_body(RigidBody::new_static(v3(
+        0.0,
+        1.0 + G / (OMEGA * OMEGA),
+        5.0,
+    )));
+    let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 3.0, 5.0), fx(1.0)));
+    w.add_joint(Joint::Spring(SpringJoint::new(
+        anchor,
+        body,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::ZERO,
+        fx(OMEGA * OMEGA),
+        fx(2.0 * OMEGA),
+    )));
+    let mut was = false;
+    for frame in 1..=FRAMES {
+        let before = w.bodies[body].position.y.to_f64();
+        w.step(fx(DT));
+        let p = w.bodies[body].position.y.to_f64();
+        let s = w.is_sleeping(body);
+        if s != was || (s && frame % 60 == 0) {
+            println!(
+                "frame {frame}: sleeping {s}, offset {:+.3e} m, moved {:+.3e} m, v {:+.3e} m/s",
+                p - 1.0,
+                p - before,
+                w.bodies[body].velocity.y.to_f64()
+            );
+        }
+        was = s;
+    }
+}
+
+/// A body jointed to a moving one does not stay asleep, and sleeping is invisible to it:
+/// a dynamic body hangs from a kinematic one by a ball joint (zero gravity), both at rest
+/// for 2 s, so with sleeping on the hung body falls asleep; then the kinematic body moves
+/// 1 mm a step for 60 steps. The hung body must follow it exactly as it does in the same
+/// world with sleeping off (positions bit for bit at every step: at rest, sleeping or not,
+/// the two worlds are the same, and once the neighbour moves the island must be awake),
+/// and it must not be flagged asleep in any step its neighbour moved.
+#[test]
+#[ignore = "known defect: physics-hold-sleep-creep: a sleeper jointed to a moving body is moved by the joint while still flagged asleep (the island is not woken)"]
+fn a_sleeper_jointed_to_a_moving_body_wakes_with_it() {
+    let scene = |sleep: bool| {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            substeps: SUBSTEPS,
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        if !sleep {
+            w.set_sleep_config(SleepConfig {
+                time_to_sleep: Fix128 {
+                    hi: i64::MAX,
+                    lo: u64::MAX,
+                },
+                ..SleepConfig::default()
+            });
+        }
+        let mut k = RigidBody::new_dynamic(v3(0.0, 2.0, 0.0), fx(1.0));
+        k.body_type = BodyType::Kinematic;
+        let kin = w.add_body(k);
+        let hung = w.add_body(RigidBody::new_dynamic(v3(0.0, 1.0, 0.0), fx(1.0)));
+        w.add_joint(Joint::Ball(BallJoint::new(
+            kin,
+            hung,
+            v3(0.0, -0.5, 0.0),
+            v3(0.0, 0.5, 0.0),
+        )));
+        for _ in 0..120 {
+            w.step(fx(DT));
+        }
+        (w, kin, hung)
+    };
+    let (mut on, kin, hung) = scene(true);
+    let (mut off, _, _) = scene(false);
+    assert!(
+        on.is_sleeping(hung),
+        "fixture: the hung body must be asleep"
+    );
+    assert_eq!(
+        on.bodies[hung].position, off.bodies[hung].position,
+        "at rest the two agree"
+    );
+    let mut asleep_while_pulled = 0usize;
+    for step in 1..=60i64 {
+        let target = v3(0.001 * step as f64, 2.0, 0.0);
+        on.bodies[kin].set_kinematic_target(target, QuatFix::IDENTITY);
+        off.bodies[kin].set_kinematic_target(target, QuatFix::IDENTITY);
+        on.step(fx(DT));
+        off.step(fx(DT));
+        if on.is_sleeping(hung) {
+            asleep_while_pulled += 1;
+        }
+        assert_eq!(
+            on.bodies[hung].position, off.bodies[hung].position,
+            "step {step}: sleeping changed the hung body's motion"
+        );
+    }
+    assert_eq!(
+        asleep_while_pulled, 0,
+        "steps the hung body stayed asleep while pulled"
+    );
 }
