@@ -533,6 +533,7 @@ use alice_physics::joint_extra as _;
 use alice_physics::joint_extra::solve_extra_joints as _;
 use alice_physics::joint_extra::solve_pulley_to_length as _;
 use alice_physics::joint_extra::ExtraJoint as _;
+use alice_physics::joint_extra::ExtraJointError as _;
 use alice_physics::joint_extra::GearJoint as _;
 use alice_physics::joint_extra::MouseJoint as _;
 use alice_physics::joint_extra::PulleyJoint as _;
