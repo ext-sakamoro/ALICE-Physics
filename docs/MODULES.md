@@ -162,6 +162,9 @@ this file or listed twice, or when a linked example or test does not exist.
 | `sdf_sph` | SPH particle fluid with SDF boundaries | std | [`sph_boundary_demo`](../examples/sph_boundary_demo.rs) | standalone |
 | `sdf_wind_field` | wind field shaped by an SDF |  |  | standalone |
 | `sdf_fem_mesh` | conforming tetrahedral meshes from an SDF, with marked refinement | std | [`sdf_fem_mesh_generation`](../examples/sdf_fem_mesh_generation.rs) | standalone |
+| `polygon_cdt` | quality triangulation of polygons with holes, exact predicates on an integer grid | std | [`rounded_letter_mesh`](../examples/rounded_letter_mesh.rs) | standalone |
+| `polygon_offset` | inward offset of polygons with holes, with the outward normals of each vertex | std | [`rounded_letter_mesh`](../examples/rounded_letter_mesh.rs) | standalone |
+| `extruded_tet_mesh` | conforming tetrahedral mesh of a rounded extruded outline (a raised letter) | std | [`rounded_letter_mesh`](../examples/rounded_letter_mesh.rs) | standalone |
 | `convex_decompose` | convex decomposition from an SDF voxel grid | std | [`convex_decomposition`](../examples/convex_decomposition.rs) | standalone |
 | `collision_mesh_gen` | marching-cubes mesh from an SDF, with simplification |  | [`collision_mesh_from_sdf`](../examples/collision_mesh_from_sdf.rs) | standalone |
 | `gpu_sdf` | batched SDF evaluation interface for compute shaders | std | [`gpu_sdf_batch_queries`](../examples/gpu_sdf_batch_queries.rs) | standalone (step 2 of 23 items) |

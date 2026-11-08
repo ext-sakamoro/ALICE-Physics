@@ -1,10 +1,11 @@
 //! Oracles for [`polygon_cdt::triangulate`], against closed forms.
 //!
 //! - **Area**: the triangles tile the domain, so their summed area equals the
-//!   shoelace area of the contours (outer minus holes), exactly in grid units
-//!   when no boundary segment had to be split off its line, and within
-//!   `perimeter x grid / 2` when some were (a split point is rounded to the
-//!   grid, half a step at most).
+//!   shoelace area of the contours (outer minus holes), within
+//!   `perimeter x (√2/2) grid`: every boundary split point is computed from its
+//!   input segment and rounded once, so it lies within half a grid diagonal of
+//!   the input line (the inputs here are on the grid, so the input lines are
+//!   exact).
 //! - **Boundary**: every input segment is a union of boundary edges, and every
 //!   boundary edge lies on an input segment.
 //! - **Delaunay**: no point is strictly inside the circumcircle of a triangle
@@ -16,7 +17,7 @@
 #![cfg(feature = "std")]
 #![allow(
     clippy::disallowed_methods,
-    reason = "analytic reference in f64: areas, angles and the circle points are computed from the input, never by the code under test"
+    reason = "analytic reference: in f64, areas, angles and the circle points are computed from the input, never by the code under test"
 )]
 
 use alice_physics_core::polygon_cdt::{incircle, orient, triangulate, Cdt, CdtConfig, CdtError};
@@ -172,6 +173,9 @@ fn perimeter(c: &[Vec<[f64; 2]>]) -> f64 {
         .sum()
 }
 
+/// Half a grid diagonal at the default 1 µm grid, plus f64 rounding.
+const HALF_DIAG: f64 = std::f64::consts::FRAC_1_SQRT_2 * 1.0e-6 * (1.0 + 1e-9);
+
 fn cfg(max_edge: f64) -> CdtConfig {
     CdtConfig {
         max_edge,
@@ -183,6 +187,8 @@ fn cfg(max_edge: f64) -> CdtConfig {
 fn a_square_is_tiled_exactly_with_quality_and_delaunay() {
     let c = vec![rect(0.0, 0.0, 0.2, 0.2, true)];
     let t = triangulate(&c, &cfg(0.03)).expect("square");
+    // regression pin, not derived: the refinement made 50 or more triangles
+    // when this test was written (a coarser mesh means the edge bound broke)
     assert!(t.triangles.len() >= 50, "{} triangles", t.triangles.len());
     // all split points of axis-aligned edges with even grid sums stay on the line
     assert!(
@@ -196,7 +202,7 @@ fn a_square_is_tiled_exactly_with_quality_and_delaunay() {
         "min angle {}",
         min_angle_deg(&t, &[])
     );
-    assert!(boundary_on_input(&t, &c) <= 0.5e-6 * 1.5);
+    assert!(boundary_on_input(&t, &c) <= HALF_DIAG);
     assert_eq!(euler(&t), 1);
     let max_edge = t
         .triangles
@@ -207,7 +213,9 @@ fn a_square_is_tiled_exactly_with_quality_and_delaunay() {
             ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt()
         })
         .fold(0.0, f64::max);
-    assert!(max_edge <= 0.03 + 1e-6, "longest edge {max_edge}");
+    // the bound is tested in grid units on the exact grid points: the f64 length
+    // here only adds conversion rounding
+    assert!(max_edge <= 0.03 * (1.0 + 1e-12), "longest edge {max_edge}");
 }
 
 #[test]
@@ -221,15 +229,16 @@ fn holes_by_winding_and_area_minus_holes() {
     let truth: f64 = c.iter().map(|r| shoelace(r)).sum();
     let t = triangulate(&c, &cfg(0.04)).expect("holed");
     assert!(
-        (area(&t) - truth).abs() <= perimeter(&c) * 0.5e-6,
+        (area(&t) - truth).abs() <= perimeter(&c) * HALF_DIAG,
         "area {} vs {truth}",
         area(&t)
     );
     assert_eq!(euler(&t), 1 - 2);
     assert_eq!(check_delaunay(&t), 0);
     assert!(min_angle_deg(&t, &[]) >= 20.0);
-    assert!(boundary_on_input(&t, &c) <= 0.75e-6);
-    // the hole's inside is not meshed
+    assert!(boundary_on_input(&t, &c) <= HALF_DIAG);
+    // the hole's inside is not meshed (test margins: 5 mm inside the round hole,
+    // 1 mm inside the square one)
     for tri in &t.triangles {
         let p = tri.map(|i| t.point(i));
         let cx = (p[0][0] + p[1][0] + p[2][0]) / 3.0;
@@ -274,7 +283,7 @@ fn a_53_degree_corner_terminates_and_keeps_quality_elsewhere() {
         "min angle away from the tip {}",
         min_angle_deg(&t, &[tip])
     );
-    assert!((area(&t) - shoelace(&c[0])).abs() <= perimeter(&c) * 0.5e-6);
+    assert!((area(&t) - shoelace(&c[0])).abs() <= perimeter(&c) * HALF_DIAG);
 }
 
 /// A much sharper corner (10°) is outside what the refinement handles: it
@@ -371,4 +380,33 @@ fn degenerate_input_is_refused() {
         triangulate(&[rect(0.0, 0.0, 1.0, 1.0, true)], &tight),
         Err(CdtError::Budget { .. })
     ));
+}
+
+/// Deep splitting of an oblique segment does not drift off it: a long thin
+/// parallelogram at 31°, meshed with a short edge bound, splits its long sides
+/// many levels deep, and every boundary point stays within half a grid
+/// diagonal of the input line (splitting from the already rounded subsegment
+/// ends drifted by several grid steps here).
+#[test]
+fn deep_splits_of_an_oblique_edge_stay_on_it() {
+    let a = 31.0f64.to_radians();
+    let g = |x: f64, y: f64| [(x * 1e6).round() / 1e6, (y * 1e6).round() / 1e6];
+    let (c, s) = (a.cos(), a.sin());
+    let c4 = vec![vec![
+        g(0.0, 0.0),
+        g(0.3 * c, 0.3 * s),
+        g(0.3 * c - 0.02 * s, 0.3 * s + 0.02 * c),
+        g(-0.02 * s, 0.02 * c),
+    ]];
+    let t = triangulate(&c4, &cfg(0.004)).expect("parallelogram");
+    let deepest = t.segments.len();
+    assert!(
+        deepest >= 150,
+        "{deepest} boundary subsegments: not deep enough to test drift"
+    );
+    assert!(
+        boundary_on_input(&t, &c4) <= HALF_DIAG,
+        "drift {}",
+        boundary_on_input(&t, &c4)
+    );
 }

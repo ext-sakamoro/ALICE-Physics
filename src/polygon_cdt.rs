@@ -13,9 +13,11 @@
 //! (which triangle is too skinny, where its circumcentre is) use `f64`
 //! arithmetic on the same integers, which is deterministic too (IEEE add,
 //! multiply, divide, square root; no fused multiply-add, no transcendental).
-//! A point the refinement creates (a segment midpoint, a circumcentre) is
-//! rounded to the grid, so a split boundary segment can sit up to half a grid
-//! step off the input line; with the default 1 µm grid that is 0.5 µm.
+//! A point the refinement creates is rounded to the grid once: a boundary
+//! split point is computed from the input segment it lies on (not from the
+//! subsegment being split, whose ends are already rounded), so it is within
+//! half a grid diagonal (`√2/2` grid steps) of the input line however deep the
+//! splitting goes; with the default 1 µm grid that is 0.71 µm.
 //!
 //! # Domain
 //!
@@ -36,6 +38,8 @@
 //! running out of it is an error, not a silently worse mesh.
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use crate::det_math::{max64, min64, round64, sqrt64};
 
 /// Parameters of [`triangulate`].
 #[derive(Debug, Clone, Copy)]
@@ -79,6 +83,12 @@ pub enum CdtError {
     OutOfRange,
     /// The point budget ran out before the mesh met the quality bounds.
     Budget {
+        /// Points at the time.
+        points: usize,
+    },
+    /// Refinement could not go on: a boundary segment one grid step long had
+    /// to be split, or a circumcentre fell on an existing point.
+    Stuck {
         /// Points at the time.
         points: usize,
     },
@@ -181,7 +191,7 @@ pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, C
                 clippy::cast_possible_truncation,
                 reason = "bounded by MAX_COORD just above"
             )]
-            let g = [q[0].round() as i64, q[1].round() as i64];
+            let g = [round64(q[0]) as i64, round64(q[1]) as i64];
             if ring.last() != Some(&g) {
                 ring.push(g);
             }
@@ -205,6 +215,9 @@ pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, C
             let (a, b) = (ids[i], ids[(i + 1) % ids.len()]);
             if a != b {
                 segs.insert((a.min(b), a.max(b)));
+                let (pa, pb) = (m.pts[a as usize], m.pts[b as usize]);
+                m.seg_of
+                    .insert((a.min(b), a.max(b)), (a, b, pa, pb, 0.0, 1.0));
             }
         }
     }
@@ -226,6 +239,10 @@ pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, C
     })
 }
 
+/// A boundary subsegment's ends (at the lower and the higher parameter) and the
+/// input segment it lies on with the two parameters.
+type SegOrigin = (u32, u32, [i64; 2], [i64; 2], f64, f64);
+
 /// The working triangulation: points 0..3 are a super-triangle.
 struct Mesh {
     cfg: CdtConfig,
@@ -234,6 +251,12 @@ struct Mesh {
     segs: BTreeSet<(u32, u32)>,
     /// The input contours, for telling the domain's triangles from the rest.
     rings: Vec<Vec<[i64; 2]>>,
+    /// For each boundary subsegment: its end at the lower parameter, the end
+    /// at the higher one, and the input segment it lies on with the two
+    /// parameters. A split point is computed from the input segment and
+    /// rounded once, so it is within half a grid diagonal of the input line
+    /// however deep the splitting goes.
+    seg_of: BTreeMap<(u32, u32), SegOrigin>,
 }
 
 impl Mesh {
@@ -246,6 +269,7 @@ impl Mesh {
             tris: vec![Some([0, 1, 2])],
             segs: BTreeSet::new(),
             rings: Vec::new(),
+            seg_of: BTreeMap::new(),
         }
     }
 
@@ -334,18 +358,35 @@ impl Mesh {
         }
     }
 
-    /// Split segment `(a, b)` at its grid midpoint. Returns `false` when the
-    /// segment is too short to split.
+    /// Split segment `(a, b)` at the grid point nearest the middle of its
+    /// stretch of the input segment. Returns `false` when that point is one of
+    /// its ends (the segment is about a grid step long).
     fn split(&mut self, a: u32, b: u32) -> Result<bool, CdtError> {
-        let (pa, pb) = (self.pts[a as usize], self.pts[b as usize]);
-        let mid = [(pa[0] + pb[0]).div_euclid(2), (pa[1] + pb[1]).div_euclid(2)];
-        if mid == pa || mid == pb {
+        let key = (a.min(b), a.max(b));
+        let Some(&(lo, hi, oa, ob, ta, tb)) = self.seg_of.get(&key) else {
+            return Ok(false);
+        };
+        let t = 0.5 * (ta + tb);
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a point of the input segment, inside the checked grid range"
+        )]
+        let mid = [
+            round64(oa[0] as f64 + t * (ob[0] - oa[0]) as f64) as i64,
+            round64(oa[1] as f64 + t * (ob[1] - oa[1]) as f64) as i64,
+        ];
+        if mid == self.pts[a as usize] || mid == self.pts[b as usize] {
             return Ok(false);
         }
-        self.segs.remove(&(a.min(b), a.max(b)));
+        self.segs.remove(&key);
+        self.seg_of.remove(&key);
         let m = self.insert(mid);
-        self.segs.insert((a.min(m), a.max(m)));
-        self.segs.insert((m.min(b), m.max(b)));
+        self.segs.insert((lo.min(m), lo.max(m)));
+        self.segs.insert((m.min(hi), m.max(hi)));
+        self.seg_of
+            .insert((lo.min(m), lo.max(m)), (lo, m, oa, ob, ta, t));
+        self.seg_of
+            .insert((m.min(hi), m.max(hi)), (m, hi, oa, ob, t, tb));
         self.budget()?;
         Ok(true)
     }
@@ -370,7 +411,7 @@ impl Mesh {
                 }
             }
             if !progress {
-                return Err(CdtError::Budget {
+                return Err(CdtError::Stuck {
                     points: self.pts.len() - 3,
                 });
             }
@@ -446,16 +487,16 @@ impl Mesh {
                     continue;
                 }
                 let l = [dist2(p[0], p[1]), dist2(p[1], p[2]), dist2(p[2], p[0])];
-                let lmin = l[0].min(l[1]).min(l[2]);
-                let lmax = l[0].max(l[1]).max(l[2]);
+                let lmin = min64(min64(l[0], l[1]), l[2]);
+                let lmax = max64(max64(l[0], l[1]), l[2]);
                 let area2 = orient(p[0], p[1], p[2]) as f64;
                 if area2 <= 0.0 {
                     continue;
                 }
                 // R = abc / (2 * area2) ; R / lmin
-                let r = (l[0] * l[1] * l[2]).sqrt() / (2.0 * area2);
-                let ratio = r / lmin.sqrt();
-                let too_long = lmax.sqrt() > max_edge_g;
+                let r = sqrt64(l[0] * l[1] * l[2]) / (2.0 * area2);
+                let ratio = r / sqrt64(lmin);
+                let too_long = sqrt64(lmax) > max_edge_g;
                 if (ratio > ratio_max && !self.small_input_angle(t, &l)) || too_long {
                     let score = if too_long { f64::INFINITY } else { ratio };
                     if worst
@@ -477,7 +518,7 @@ impl Mesh {
                 .collect();
             if hit.is_empty() {
                 if self.pts.contains(&c) {
-                    return Err(CdtError::Budget {
+                    return Err(CdtError::Stuck {
                         points: self.pts.len() - 3,
                     });
                 }
@@ -489,7 +530,7 @@ impl Mesh {
                     any |= self.split(a, b)?;
                 }
                 if !any {
-                    return Err(CdtError::Budget {
+                    return Err(CdtError::Stuck {
                         points: self.pts.len() - 3,
                     });
                 }
@@ -519,7 +560,7 @@ impl Mesh {
             let u = [(pa[0] - pc[0]) as f64, (pa[1] - pc[1]) as f64];
             let w = [(pb[0] - pc[0]) as f64, (pb[1] - pc[1]) as f64];
             let cos = (u[0] * w[0] + u[1] * w[1])
-                / ((u[0] * u[0] + u[1] * u[1]).sqrt() * (w[0] * w[0] + w[1] * w[1]).sqrt());
+                / (sqrt64(u[0] * u[0] + u[1] * u[1]) * sqrt64(w[0] * w[0] + w[1] * w[1]));
             // cos 60° = 0.5
             return cos > 0.5;
         }
@@ -565,7 +606,7 @@ fn circumcentre(p: [[i64; 2]; 3]) -> [i64; 2] {
         clippy::cast_possible_truncation,
         reason = "inside the super-triangle, far below i64 range"
     )]
-    let r = [(ax + ux).round() as i64, (ay + uy).round() as i64];
+    let r = [round64(ax + ux) as i64, round64(ay + uy) as i64];
     r
 }
 

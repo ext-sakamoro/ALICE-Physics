@@ -26,10 +26,23 @@
 //!    arc all the stations meet at the arc's centre at `r = skin`) loses its
 //!    degenerate tetrahedra.
 //!
-//! Every vertex lies on the solid's surface or inside it by construction:
-//! core and wall vertices exactly (up to the triangulation's grid), rim
-//! vertices on the quarter-round. The round itself is inscribed, short by the
-//! chords of [`RoundedSlab::round_segments`].
+//! # How close to the solid
+//!
+//! Flat faces and side walls are exact up to the triangulation's grid. The
+//! eroded outline is chords where it has arcs (reflex corners, sagitta
+//! `skin (1 - cos 22.5°)`), and vertices within half that sagitta of the chord
+//! of their neighbours are dropped; the two add, so a boundary vertex can be up
+//! to 1.5 sagitta off the solid, inside or outside (0.31 mm and 1.4 mm at a
+//! 12 mm skin). The round is inscribed by two chords per quarter.
+//!
+//! **Bends tighter than the skin.** Where the outline turns convexly with a
+//! radius under the skin (the bowl of an `a`, the arm of an `r`), the erosion
+//! drops edges and the two neighbours meet at a corner. The slices of the solid
+//! between that eroded corner and the wall bring the bend back gradually; the
+//! rim here sweeps the eroded corner's miter instead, an approximation held to
+//! the same 1.5-sagitta bound on the vertices (measured on the logo letters, one
+//! test per letter). A corner whose miter is longer than [`MAX_MITER`] skins
+//! is refused ([`ExtrudeError::SharpCorner`]).
 
 use std::collections::BTreeMap;
 
@@ -47,6 +60,17 @@ use crate::sdf_fem_mesh::{prism_to_tets, push_tet, SdfTetMesh};
 /// fall under the dihedral floor. Two chords leave a sagitta of
 /// `skin (1 - cos 22.5°)`, 7.6 % of the skin.
 pub const ROUND_SEGMENTS: usize = 2;
+
+/// Longest miter, as a multiple of the skin, that a convex corner of the eroded
+/// outline may have: `1 / sin(15°)`, a corner of 30°. The sharpest logo corner
+/// is 53.1° (2.24).
+pub const MAX_MITER: f64 = 3.863_703_305_156_273;
+
+/// Most layers between the two rounds.
+pub const MAX_LAYERS: f64 = 4096.0;
+
+/// Most points on the densified eroded outline.
+pub const MAX_BOUNDARY_POINTS: f64 = 200_000.0;
 
 /// Parameters of [`mesh_rounded_slab`] (input units, e.g. metres).
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +102,15 @@ pub enum ExtrudeError {
     /// A boundary vertex of the triangulation could not be traced back to the
     /// eroded outline.
     LostBoundary,
+    /// A convex corner of the eroded outline sharper than [`MAX_MITER`] allows
+    /// (a spike, or a bend of radius under the skin that the erosion closed).
+    SharpCorner {
+        /// The corner of the eroded outline.
+        at: [f64; 2],
+    },
+    /// The settings ask for more than [`MAX_LAYERS`] layers or
+    /// [`MAX_BOUNDARY_POINTS`] boundary points.
+    TooLarge,
 }
 
 fn sub(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
@@ -115,7 +148,11 @@ pub fn mesh_rounded_slab(
 ) -> Result<SdfTetMesh, ExtrudeError> {
     let s = cfg.skin;
     let h = cfg.half_depth;
-    if !(s > 0.0
+    let finite = [s, h, cfg.boundary_step, cfg.max_edge, cfg.layer, cfg.grid]
+        .iter()
+        .all(|x| x.is_finite());
+    if !(finite
+        && s > 0.0
         && h > s
         && cfg.boundary_step > 0.0
         && cfg.max_edge > 0.0
@@ -131,12 +168,13 @@ pub fn mesh_rounded_slab(
     let eroded = erode(contours, s, &OffsetConfig { sagitta }).map_err(ExtrudeError::Offset)?;
 
     // 2. densify the eroded outline; remember each point's growth
+    let mut budget = 0.0f64;
     let mut rings: Vec<Vec<[f64; 2]>> = Vec::new();
     let mut growth_at: Vec<([f64; 2], Growth)> = Vec::new();
     // and, per densified segment, the growth of a point inserted on it
     let mut seg_growth: Vec<SegGrowth> = Vec::new();
     for c in &eroded.contours {
-        let c = &simplify(c, sagitta);
+        let c = &simplify(c, 0.5 * sagitta);
         let mut ring = Vec::new();
         let n = c.len();
         for i in 0..n {
@@ -145,7 +183,15 @@ pub fn mesh_rounded_slab(
                 OffsetNormal::Edge(nrm) => Growth::Along(nrm),
                 OffsetNormal::Corner(a, b) => {
                     let d = 1.0 + dot(a, b);
-                    Growth::Along([(a[0] + b[0]) / d, (a[1] + b[1]) / d])
+                    let m = [(a[0] + b[0]) / d, (a[1] + b[1]) / d];
+                    // the miter reaches `skin / sin(θ/2)`; past MAX_MITER the
+                    // corner is a spike, or the two lines met only because the
+                    // erosion dropped a bend of radius under the skin between
+                    // them, and the slices there are not a miter: refuse
+                    if len(m).partial_cmp(&MAX_MITER) != Some(std::cmp::Ordering::Less) {
+                        return Err(ExtrudeError::SharpCorner { at: v.p });
+                    }
+                    Growth::Along(m)
                 }
                 OffsetNormal::Arc { centre, normal } => Growth::Arc { u: normal, centre },
             };
@@ -166,11 +212,19 @@ pub fn mesh_rounded_slab(
                 }
                 _ => 0.0,
             };
-            let step = cfg.boundary_step.max(reach(v.normal)).max(reach(w.normal));
+            let step = crate::det_math::max64(
+                crate::det_math::max64(cfg.boundary_step, reach(v.normal)),
+                reach(w.normal),
+            );
             let pieces = if on_arc {
                 1
             } else {
-                (l / step).ceil().max(1.0) as usize
+                let p = crate::det_math::max64((l / step).ceil(), 1.0);
+                budget += p;
+                if budget > MAX_BOUNDARY_POINTS {
+                    return Err(ExtrudeError::TooLarge);
+                }
+                p as usize
             };
             for j in 1..pieces {
                 let t = j as f64 / pieces as f64;
@@ -234,7 +288,9 @@ pub fn mesh_rounded_slab(
                     .map(|(a, b, arc, out)| (seg_dist(p, *a, *b), *arc, *out))
                     .min_by(|x, y| x.0.total_cmp(&y.0))
                     .ok_or(ExtrudeError::LostBoundary)?;
-                if best.0 > 4.0 * cfg.grid {
+                // a split point is within half a grid diagonal of its input
+                // segment, whose ends were rounded by as much: √2 grid steps
+                if best.0 > std::f64::consts::SQRT_2 * cfg.grid * (1.0 + 1.0e-9) {
                     return Err(ExtrudeError::LostBoundary);
                 }
                 match best.1 {
@@ -255,7 +311,11 @@ pub fn mesh_rounded_slab(
 
     // 3. z levels: -h, -(h - s), middle layers, h - s, h
     let hp = h - s;
-    let mid = ((2.0 * hp) / cfg.layer).ceil().max(1.0) as usize;
+    let mid_f = crate::det_math::max64((2.0 * hp / cfg.layer).ceil(), 1.0);
+    if mid_f > MAX_LAYERS {
+        return Err(ExtrudeError::TooLarge);
+    }
+    let mid = mid_f as usize;
     let mut zs = vec![-h];
     for j in 0..=mid {
         zs.push(-hp + 2.0 * hp * j as f64 / mid as f64);

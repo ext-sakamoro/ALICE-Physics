@@ -4,11 +4,12 @@
 //! Each edge is shifted inward by `delta`. At a convex vertex the two shifted
 //! edges meet at a point (erosion keeps a convex corner sharp); at a reflex
 //! vertex the eroded boundary is an arc of radius `delta` about the vertex,
-//! flattened into chords whose sagitta stays under [`OffsetConfig::sagitta`]
-//! (subdivided by bisecting the end normals, so no trigonometry and equal
-//! angles). An edge whose shifted segment comes out reversed (a run of short
-//! edges around a convex bend of radius under `delta`) is dropped and its
-//! neighbours are intersected instead, until none is reversed.
+//! stood for by the polygon of its tangents at equal angles (subdivided by
+//! bisecting the normals, no trigonometry), which lies outside the circle by at
+//! most [`OffsetConfig::sagitta`]. Every junction is then the intersection of
+//! two lines. A line whose stretch between its two junctions comes out reversed
+//! (an edge eaten by its convex corners, or the part of an arc the erosion cuts
+//! off) is dropped and its neighbours are intersected instead, until none is.
 //!
 //! Each output vertex carries its outward normal(s) with respect to the
 //! eroded domain, which is what a rounded rim of radius `delta` swept back
@@ -20,8 +21,19 @@
 //!
 //! A result that would not be a valid domain is an error, never a returned
 //! polygon: a contour that erodes away entirely, two shifted lines left
-//! parallel after a drop, and output contours that intersect themselves or
-//! each other (a stroke thinner than `2 delta`).
+//! parallel and apart after a drop, and output contours that intersect
+//! themselves or each other (a stroke thinner than `2 delta`). So is input
+//! that is not a domain: no contours, a coordinate that is not finite, a
+//! contour with fewer than three points, no area or a half turn (a zero-width
+//! spike or slit), and a contour whose winding disagrees with its nesting.
+//!
+//! # Winding
+//!
+//! The contour with the largest absolute area sets the outside's winding. A
+//! contour inside an even number of others runs the same way (an island, like
+//! the dot of an `i`), one inside an odd number runs the other way (a hole).
+//! Two lines left on one line by drops (a notch shorter than the offset on a
+//! straight edge) are merged back into one.
 
 use crate::det_math::{acos64, sqrt64};
 
@@ -55,6 +67,20 @@ pub enum OffsetError {
     },
     /// Output contours cross themselves or each other.
     SelfIntersection,
+    /// No contours.
+    NoContours,
+    /// A coordinate is not finite.
+    NonFinite {
+        /// Index of the contour.
+        contour: usize,
+    },
+    /// A contour's winding disagrees with how deep it is nested: a contour
+    /// inside an odd number of others is a hole and must run against the
+    /// outermost one, a contour inside an even number runs with it.
+    WindingMismatch {
+        /// Index of the contour.
+        contour: usize,
+    },
 }
 
 /// The outward normal(s) of an eroded vertex.
@@ -126,10 +152,16 @@ fn area2(c: &[[f64; 2]]) -> f64 {
 struct Line {
     p: [f64; 2],
     d: [f64; 2],
-    /// Inward unit normal of the original edge.
+    /// Inward unit normal (of the edge, or of the arc at the tangent point).
     n: [f64; 2],
-    /// Index of the original edge (its start vertex).
-    edge: usize,
+    /// Position in the ring's element sequence.
+    seq: usize,
+    /// Position of the last element this line stands for (the same as `seq`
+    /// unless collinear neighbours were merged into it).
+    last_seq: usize,
+    /// The reflex vertex whose arc the junction at this line's end belongs
+    /// to, if it does.
+    end_reflex: Option<[f64; 2]>,
 }
 
 fn intersect(a: &Line, b: &Line) -> Option<[f64; 2]> {
@@ -155,8 +187,14 @@ pub fn erode(
         return Err(OffsetError::BadConfig);
     }
     // clean and orient: the largest contour's sign decides; inside on the left
+    if contours.is_empty() {
+        return Err(OffsetError::NoContours);
+    }
     let mut rings: Vec<Vec<[f64; 2]>> = Vec::new();
     for (ci, c) in contours.iter().enumerate() {
+        if c.iter().any(|p| !(p[0].is_finite() && p[1].is_finite())) {
+            return Err(OffsetError::NonFinite { contour: ci });
+        }
         let mut r: Vec<[f64; 2]> = Vec::new();
         for &p in c {
             if r.last() != Some(&p) {
@@ -166,7 +204,15 @@ pub fn erode(
         while r.len() > 1 && r.first() == r.last() {
             r.pop();
         }
-        if r.len() < 3 || area2(&r) == 0.0 {
+        // a half turn (two edges back to back) is a zero-width spike or slit:
+        // degenerate, it has no erosion of its own
+        let n = r.len();
+        let half_turn = (0..n).any(|i| {
+            let e = sub(r[i], r[(i + n - 1) % n]);
+            let f = sub(r[(i + 1) % n], r[i]);
+            cross(e, f) == 0.0 && dot(e, f) < 0.0
+        });
+        if r.len() < 3 || area2(&r) == 0.0 || half_turn {
             return Err(OffsetError::DegenerateContour { contour: ci });
         }
         rings.push(r);
@@ -177,13 +223,23 @@ pub fn erode(
             .total_cmp(&area2(&rings[b]).abs())
             .then(b.cmp(&a))
     }) else {
-        return Ok(Eroded {
-            contours: Vec::new(),
-        });
+        return Err(OffsetError::NoContours);
     };
     if area2(&rings[outer]) < 0.0 {
         for r in &mut rings {
             r.reverse();
+        }
+    }
+    // winding against nesting: inside an even number of others, inside on the
+    // left (counter-clockwise); inside an odd number, a hole (clockwise)
+    for (ci, r) in rings.iter().enumerate() {
+        let depth = rings
+            .iter()
+            .enumerate()
+            .filter(|(cj, other)| *cj != ci && point_in_ring(r[0], other))
+            .count();
+        if (area2(r) > 0.0) != (depth % 2 == 0) {
+            return Err(OffsetError::WindingMismatch { contour: ci });
         }
     }
     let mut out = Vec::with_capacity(rings.len());
@@ -193,6 +249,8 @@ pub fn erode(
         // keeps its orientation: otherwise the drops left a contour that is
         // not the erosion (it eroded away and folded over)
         let pts: Vec<[f64; 2]> = ring.iter().map(|v| v.p).collect();
+        // `delta` less f64 rounding of the shifted points (relative 1e-9,
+        // far above the ~1e-16 of the arithmetic, far below any real shortfall)
         let floor = delta * (1.0 - 1.0e-9);
         let own = std::slice::from_ref(r);
         if pts.iter().any(|&p| boundary_distance(own, p) < floor) || area2(&pts) * area2(r) <= 0.0 {
@@ -219,37 +277,87 @@ fn erode_ring(
     cfg: &OffsetConfig,
 ) -> Result<Vec<OffsetVertex>, OffsetError> {
     let n = r.len();
-    let lines: Vec<Line> = (0..n)
-        .map(|i| {
-            let d = sub(r[(i + 1) % n], r[i]);
-            let u = unit(d);
-            let nrm = [-u[1], u[0]];
-            Line {
-                p: [r[i][0] + delta * nrm[0], r[i][1] + delta * nrm[1]],
-                d,
-                n: nrm,
-                edge: i,
+    let edge_line = |i: usize| -> Line {
+        let d = sub(r[(i + 1) % n], r[i]);
+        let u = unit(d);
+        let nrm = [-u[1], u[0]];
+        Line {
+            p: [r[i][0] + delta * nrm[0], r[i][1] + delta * nrm[1]],
+            d,
+            n: nrm,
+            seq: 0,
+            last_seq: 0,
+            end_reflex: None,
+        }
+    };
+    // the element sequence: for each vertex, the tangents of its arc (if it
+    // is reflex), then the edge leaving it. An arc is the polygon of its
+    // tangents, outside the circle by at most the sagitta, so every junction is
+    // a line intersection and an arc that the erosion cuts short is trimmed by
+    // the same drops as the edges.
+    let mut elems: Vec<Line> = Vec::new();
+    let mut first_reflex: Option<[f64; 2]> = None;
+    for (i, &v) in r.iter().enumerate() {
+        let (prev, cur) = (edge_line((i + n - 1) % n), edge_line(i));
+        if cross(prev.d, cur.d) < 0.0 {
+            match elems.last_mut() {
+                Some(last) => last.end_reflex = Some(v),
+                None => first_reflex = Some(v),
             }
-        })
-        .collect();
-    // active edges, in order; drop reversed ones until none is
-    let mut active: Vec<Line> = lines;
+            for nrm in tangent_normals(prev.n, cur.n, delta, cfg.sagitta) {
+                elems.push(Line {
+                    p: [v[0] + delta * nrm[0], v[1] + delta * nrm[1]],
+                    d: [nrm[1], -nrm[0]],
+                    n: nrm,
+                    seq: 0,
+                    last_seq: 0,
+                    end_reflex: Some(v),
+                });
+            }
+        }
+        elems.push(cur);
+    }
+    if let (Some(c), Some(last)) = (first_reflex, elems.last_mut()) {
+        last.end_reflex = Some(c);
+    }
+    let total = elems.len();
+    for (k, e) in elems.iter_mut().enumerate() {
+        e.seq = k;
+        e.last_seq = k;
+    }
+    let adjacent = |a: &Line, b: &Line| (a.last_seq + 1) % total == b.seq;
+    let junction = |a: &Line, b: &Line| -> Result<[f64; 2], OffsetError> {
+        match intersect(a, b) {
+            Some(p) => Ok(p),
+            None if adjacent(a, b) && collinear(a, b) => Ok(b.p),
+            None => Err(parallel_error(a, b, ci)),
+        }
+    };
+    // drop reversed lines until none is
+    let mut active: Vec<Line> = elems;
     loop {
         if active.len() < 3 {
             return Err(OffsetError::Vanished { contour: ci });
         }
         let m = active.len();
+        // neighbours left on one line by drops are one line again
+        if let Some(k) = (0..m).find(|&k| {
+            let (a, b) = (&active[k], &active[(k + 1) % m]);
+            !adjacent(a, b) && collinear(a, b)
+        }) {
+            let next = (k + 1) % m;
+            active[k].last_seq = active[next].last_seq;
+            active[k].end_reflex = active[next].end_reflex;
+            active.remove(next);
+            continue;
+        }
         let mut reversed: Option<usize> = None;
         for k in 0..m {
             let (prev, cur, next) = (&active[(k + m - 1) % m], &active[k], &active[(k + 1) % m]);
-            // two neighbours left parallel by drops: the strip between them
-            // has eroded away
-            let s = start_of(prev, cur, r, delta, ci)
-                .map_err(|_| OffsetError::Vanished { contour: ci })?;
-            let e = start_of(cur, next, r, delta, ci)
-                .map_err(|_| OffsetError::Vanished { contour: ci })?;
-            let (s, e) = (s.1, e.0);
-            if dot(sub(e, s), cur.d) < 0.0 {
+            let s = junction(prev, cur)?;
+            let e = junction(cur, next)?;
+            // reversed, or shrunk to a point (its two junctions meet)
+            if dot(sub(e, s), cur.d) <= 0.0 {
                 reversed = Some(k);
                 break;
             }
@@ -261,85 +369,34 @@ fn erode_ring(
             None => break,
         }
     }
-    // emit
     let m = active.len();
-    let mut verts: Vec<OffsetVertex> = Vec::new();
+    let mut verts: Vec<OffsetVertex> = Vec::with_capacity(m);
     for k in 0..m {
         let (prev, cur) = (&active[(k + m - 1) % m], &active[k]);
-        let adjacent = (prev.edge + 1) % r.len() == cur.edge;
-        let turn = cross(prev.d, cur.d);
-        if adjacent && turn < 0.0 {
-            // reflex vertex: arc about it, from the previous normal to this one
-            let v = r[cur.edge];
-            let arc = arc_normals(prev.n, cur.n, delta, cfg.sagitta);
-            for nrm in arc {
-                let p = [v[0] + delta * nrm[0], v[1] + delta * nrm[1]];
-                verts.push(OffsetVertex {
-                    p,
-                    normal: OffsetNormal::Arc {
-                        centre: v,
-                        normal: [-nrm[0], -nrm[1]],
-                    },
-                });
+        let p = junction(prev, cur)?;
+        let normal = match (adjacent(prev, cur), prev.end_reflex) {
+            (true, Some(c)) => OffsetNormal::Arc {
+                centre: c,
+                normal: unit(sub(c, p)),
+            },
+            (true, None) if cross(prev.d, cur.d) == 0.0 => {
+                OffsetNormal::Edge([-cur.n[0], -cur.n[1]])
             }
-        } else if adjacent && turn == 0.0 {
-            let v = r[cur.edge];
-            let p = [v[0] + delta * cur.n[0], v[1] + delta * cur.n[1]];
-            verts.push(OffsetVertex {
-                p,
-                normal: OffsetNormal::Edge([-cur.n[0], -cur.n[1]]),
-            });
-        } else {
-            let p = intersect(prev, cur).ok_or(OffsetError::Parallel { contour: ci })?;
-            verts.push(OffsetVertex {
-                p,
-                normal: OffsetNormal::Corner([-prev.n[0], -prev.n[1]], [-cur.n[0], -cur.n[1]]),
-            });
-        }
+            _ => OffsetNormal::Corner([-prev.n[0], -prev.n[1]], [-cur.n[0], -cur.n[1]]),
+        };
+        verts.push(OffsetVertex { p, normal });
     }
     Ok(verts)
 }
 
-/// The end of the shifted `prev` and the start of the shifted `cur` at the
-/// corner between them.
-fn start_of(
-    prev: &Line,
-    cur: &Line,
-    r: &[[f64; 2]],
-    delta: f64,
-    ci: usize,
-) -> Result<([f64; 2], [f64; 2]), OffsetError> {
-    let adjacent = (prev.edge + 1) % r.len() == cur.edge;
-    if adjacent && cross(prev.d, cur.d) <= 0.0 {
-        let v = r[cur.edge];
-        Ok((
-            [v[0] + delta * prev.n[0], v[1] + delta * prev.n[1]],
-            [v[0] + delta * cur.n[0], v[1] + delta * cur.n[1]],
-        ))
-    } else {
-        let p = intersect(prev, cur).ok_or(OffsetError::Parallel { contour: ci })?;
-        Ok((p, p))
-    }
-}
-
-/// Unit normals from `a` to `b` (turning clockwise through less than half a
-/// turn) at equal angles, fine enough that the chords of radius `delta` stay
-/// within `sagitta`; both ends included, except that an arc one chord covers
-/// is given by its middle normal alone.
-fn arc_normals(a: [f64; 2], b: [f64; 2], delta: f64, sagitta: f64) -> Vec<[f64; 2]> {
+/// The inward normals of the tangents that stand for the arc from `a` to `b`
+/// (turning clockwise through less than half a turn), ends excluded: at equal
+/// angles, fine enough that two neighbouring tangents meet within `sagitta` of
+/// the circle (a junction over angle `t` sits `delta (1/cos(t/2) - 1)`
+/// outside it). None when the two edges' own lines already meet within it.
+fn tangent_normals(a: [f64; 2], b: [f64; 2], delta: f64, sagitta: f64) -> Vec<[f64; 2]> {
     let phi = acos64(crate::det_math::raw_clamp64(dot(a, b), -1.0, 1.0));
-    // a chord over angle t has sagitta delta (1 - cos(t / 2))
-    let max_t = if sagitta >= delta {
-        std::f64::consts::PI
-    } else {
-        2.0 * acos64(1.0 - sagitta / delta)
-    };
-    // an arc one chord covers is its midpoint alone: its two ends would sit a
-    // fraction of a chord apart (a slight reflex bend of a flattened curve),
-    // and the midpoint is on the arc within the same sagitta
-    if phi <= max_t {
-        return vec![unit([a[0] + b[0], a[1] + b[1]])];
-    }
+    let max_t = 2.0 * acos64(delta / (delta + sagitta));
     let mut out = vec![a, b];
     let mut t = phi;
     while t > max_t {
@@ -352,7 +409,39 @@ fn arc_normals(a: [f64; 2], b: [f64; 2], delta: f64, sagitta: f64) -> Vec<[f64; 
         out = next;
         t *= 0.5;
     }
-    out
+    out[1..out.len() - 1].to_vec()
+}
+
+/// Whether two shifted lines are the same line, running the same way.
+fn collinear(a: &Line, b: &Line) -> bool {
+    let scale = 1.0 + dot(a.p, a.p) + dot(b.p, b.p);
+    let la = sqrt64(dot(a.d, a.d));
+    cross(a.d, b.d) == 0.0
+        && dot(a.d, b.d) > 0.0
+        && (cross(a.d, sub(b.p, a.p)) / la).abs() <= 1.0e-12 * scale
+}
+
+fn parallel_error(a: &Line, b: &Line, ci: usize) -> OffsetError {
+    if dot(a.d, b.d) < 0.0 {
+        OffsetError::Vanished { contour: ci }
+    } else {
+        OffsetError::Parallel { contour: ci }
+    }
+}
+
+/// Point-in-polygon by crossing parity.
+fn point_in_ring(p: [f64; 2], r: &[[f64; 2]]) -> bool {
+    let n = r.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (r[i], r[(i + 1) % n]);
+        if (a[1] > p[1]) != (b[1] > p[1])
+            && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
+        {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 /// Distance from `p` to the nearest segment of the rings.
@@ -364,7 +453,7 @@ fn boundary_distance(rings: &[Vec<[f64; 2]>], p: [f64; 2]) -> f64 {
             let e = sub(b, a);
             let s = crate::det_math::raw_clamp64(dot(sub(p, a), e) / dot(e, e), 0.0, 1.0);
             let q = [a[0] + s * e[0], a[1] + s * e[1]];
-            best = best.min(sqrt64(dot(sub(p, q), sub(p, q))));
+            best = crate::det_math::min64(best, sqrt64(dot(sub(p, q), sub(p, q))));
         }
     }
     best
