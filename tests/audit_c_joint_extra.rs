@@ -12,12 +12,38 @@
     reason = "analytic reference: f64 z-rotation quaternion and angle 2 atan2(z, w) for gear / rack-and-pinion XPBD projections"
 )]
 
+use alice_physics_core::joint::{HingeJoint, Joint};
 use alice_physics_core::joint_extra::{
     solve_extra_joints, ExtraJoint, GearJoint, MouseJoint, PulleyJoint, RackAndPinionJoint,
     WeldJoint,
 };
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
+
+/// the hinges the gears of this file name, both about world `z`: hinge 0 joins
+/// bodies 5 and 0, hinge 1 bodies 6 and 1, so the mixed gear (5, 6) reads them
+/// from the `a` side and the pair (0, 1) from the `b` side
+fn z_hinges() -> Vec<Joint> {
+    let o = Vec3Fix::ZERO;
+    vec![
+        Joint::Hinge(HingeJoint::new(
+            5,
+            0,
+            o,
+            o,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )),
+        Joint::Hinge(HingeJoint::new(
+            6,
+            1,
+            o,
+            o,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )),
+    ]
+}
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -116,12 +142,14 @@ fn mixed_joints() -> Vec<ExtraJoint> {
 fn mixed_dispatch_equals_each_joint_alone_and_meets_the_closed_forms() {
     let joints = mixed_joints();
     let mut mixed = mixed_bodies();
-    solve_extra_joints(&mut mixed, &joints, dt());
+    solve_extra_joints(&mut mixed, &joints, z_hinges(), dt())
+        .expect("the gear names hinges 0 and 1");
 
     let mut alone = mixed_bodies();
     for j in &joints {
         let mut b = mixed_bodies();
-        solve_extra_joints(&mut b, core::slice::from_ref(j), dt());
+        solve_extra_joints(&mut b, core::slice::from_ref(j), z_hinges(), dt())
+            .expect("the gear names hinges 0 and 1");
         let touched: &[usize] = match j {
             ExtraJoint::Weld(_) => &[0, 1],
             ExtraJoint::Mouse(_) => &[2],
@@ -172,7 +200,13 @@ fn rack_and_pinion_splits_the_correction_by_the_xpbd_projection() {
         let pinion = spinner(Vec3Fix::from_int(0, -3, 0), 1.0);
         let mut bodies = vec![rack, pinion];
         let j = RackAndPinionJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::UNIT_Z, fx(ratio));
-        solve_extra_joints(&mut bodies, &[ExtraJoint::RackAndPinion(j)], dt());
+        solve_extra_joints(
+            &mut bodies,
+            &[ExtraJoint::RackAndPinion(j)],
+            z_hinges(),
+            dt(),
+        )
+        .expect("the gear names hinges 0 and 1");
         let x = bodies[0].position.x.to_f64();
         let theta = angle_z(bodies[1].rotation);
         assert!(
@@ -197,7 +231,13 @@ fn rack_and_pinion_static_rack_turns_the_pinion_back() {
     pinion.rotation = rz(0.02);
     let mut bodies = vec![rack, pinion];
     let j = RackAndPinionJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::UNIT_Z, fx(2.0));
-    solve_extra_joints(&mut bodies, &[ExtraJoint::RackAndPinion(j)], dt());
+    solve_extra_joints(
+        &mut bodies,
+        &[ExtraJoint::RackAndPinion(j)],
+        z_hinges(),
+        dt(),
+    )
+    .expect("the gear names hinges 0 and 1");
     let theta = angle_z(bodies[1].rotation);
     assert!(theta.abs() < 1e-5, "pinion angle {theta}");
     assert_eq!(bodies[0].position, Vec3Fix::ZERO);
@@ -213,7 +253,8 @@ fn gear_ratio_two_closes_the_signed_residual() {
     let b = spinner(Vec3Fix::from_int(3, 0, 0), 1.0);
     let mut bodies = vec![a, b];
     let j = GearJoint::new(0, 1, 0, 1, fx(2.0));
-    solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(j)], dt());
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(j)], z_hinges(), dt())
+        .expect("the gear names hinges 0 and 1");
     let ta = angle_z(bodies[0].rotation);
     let tb = angle_z(bodies[1].rotation);
     let c = ta + 2.0 * tb;
@@ -244,7 +285,8 @@ fn pulley_ratio_two_conserves_the_rope_length() {
     assert_eq!(j.total_length(&bodies), Fix128::from_int(15));
     bodies[0].position = Vec3Fix::from_int(-1, 4, 0);
     for _ in 0..50 {
-        solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], dt());
+        solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], z_hinges(), dt())
+            .expect("the gear names hinges 0 and 1");
     }
     let t = j.total_length(&bodies).to_f64();
     assert!((t - 15.0).abs() < 1e-6, "total length {t}, want 15");
@@ -270,7 +312,8 @@ fn pulley_ratio_two_splits_one_projection_by_the_ratio() {
         fx(2.0),
     );
     bodies[0].position = Vec3Fix::from_int(-1, 4, 0);
-    solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], dt());
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], z_hinges(), dt())
+        .expect("the gear names hinges 0 and 1");
     assert!(
         (bodies[0].position.y.to_f64() - 4.2).abs() < 1e-12,
         "{}",

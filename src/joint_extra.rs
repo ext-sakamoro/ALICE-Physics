@@ -14,84 +14,94 @@
 //!
 //! - **方程式 (equations)**: one XPBD position projection per joint and call,
 //!   `λ = C / (w + compliance / dt²)` from `λ = 0` (solve_extra_joints,
-//!   l. 480-488). Pulley: `C = len_a + ratio·len_b − total`, `w = w_a + ratio²
+//!   l. 496-504). Pulley: `C = len_a + ratio·len_b − total`, `w = w_a + ratio²
 //!   w_b`, bodies moved back along their ropes by `λ w_a` and `λ ratio w_b`,
-//!   `total` the length at the previous pose (solve_pulley, l. 552-576) or an
-//!   explicit rest length, excess only (solve_pulley_to_length, l. 616-635).
+//!   `total` the length at the previous pose (solve_pulley, l. 619-643) or an
+//!   explicit rest length, excess only (solve_pulley_to_length, l. 683-702).
 //!   Gear: `C = θ_a + ratio·θ_b`, `θ` each body's twist since its previous pose
-//!   read as `2 (xyz · z)` of `rotation · prev_rotation⁻¹`, `w = w_a + ratio²
-//!   w_b` about world `z`, bodies turned about world `z` by `−λ w_a` and
-//!   `−λ ratio w_b` (solve_gear, l. 645-683). Weld: the anchor gap `d` closed
+//!   read as `2 (xyz · n)` of `rotation · prev_rotation⁻¹` about `n`, the current
+//!   world axis of the hinge the gear names for that body (`joint_a` for `body_a`,
+//!   `joint_b` for `body_b`; the hinge's local axis on the body's side in the
+//!   body's rotation, hinge_axis_on, l. 707-731), `w = w_a + ratio² w_b` about
+//!   those axes, each body turned about its own hinge axis by `−λ w_a` and
+//!   `−λ ratio w_b` (solve_gear, l. 747-782). Weld: the anchor gap `d` closed
 //!   along its direction, `λ = d / (w_a + w_b + α̃)`, A moved `+λ w_a`, B
-//!   `−λ w_b` (solve_weld, l. 697-718); the error `θ = 2 xyz` of the shortest arc
+//!   `−λ w_b` (solve_weld, l. 797-818); the error `θ = 2 xyz` of the shortest arc
 //!   of `R_b (R_a · local_rotation)⁻¹` closed with `K = W_a + W_b + α̃ 1`,
-//!   `K λ = θ`, turns `+W_a λ` and `−W_b λ` (solve_weld, l. 723-752; weld_turns,
-//!   l. 820-827). Rack and pinion: `C = s − ratio·φ`, `s` the rack's travel along
+//!   `K λ = θ`, turns `+W_a λ` and `−W_b λ` (solve_weld, l. 823-852; weld_turns,
+//!   l. 920-927). Rack and pinion: `C = s − ratio·φ`, `s` the rack's travel along
 //!   its axis and `φ` the pinion's twist about its axis since the previous pose,
 //!   `w = w_lin + ratio² w_ang`, rack moved `−λ w_lin`, pinion turned
-//!   `λ ratio w_ang` (solve_rack_and_pinion, l. 850-898). Mouse:
+//!   `λ ratio w_ang` (solve_rack_and_pinion, l. 950-998). Mouse:
 //!   `F = clamp(k d − c (v·n), ±max_force)` toward the target as the position
-//!   step `F dt² w` (solve_mouse, l. 917-937).
+//!   step `F dt² w` (solve_mouse, l. 1017-1037).
 //! - **単位 (units)**: all `Fix128`; m, s, 1/kg, 1/(kg m²), rad; compliance m/N
 //!   on the position rows, rad/(N m) on the gear and the weld's rotation; `ratio`
 //!   dimensionless for pulley and gear, m/rad for the rack (solve_pulley,
-//!   l. 536-539; solve_gear, l. 633-636; solve_weld, l. 677, 710; solve_rack_and_pinion,
-//!   l. 838-847); `stiffness` N/m, `damping` N s/m, `max_force` N (solve_mouse,
-//!   l. 891-906). `break_force` is compared with the anchor separation in m, not
-//!   N (compute_force, l. 328-333; is_broken, l. 350); `break_torque` with `|xyz|`
+//!   l. 603-606; solve_gear, l. 733-736; solve_weld, l. 777, 810; solve_rack_and_pinion,
+//!   l. 938-947); `stiffness` N/m, `damping` N s/m, `max_force` N (solve_mouse,
+//!   l. 991-1006). `break_force` is compared with the anchor separation in m, not
+//!   N (compute_force, l. 329-334; is_broken, l. 351); `break_torque` with `|xyz|`
 //!   of the error quaternion, `sin(φ/2)` of the angular error, dimensionless in
-//!   `[0, 1]`, not N m (compute_torque, l. 338-344; is_broken, l. 355).
+//!   `[0, 1]`, not N m (compute_torque, l. 339-345; is_broken, l. 356).
 //! - **保存則 (conservation)**: the weld's position corrections, split by inverse
-//!   mass along one direction, carry no net momentum (solve_weld, l. 709-718),
+//!   mass along one direction, carry no net momentum (solve_weld, l. 809-818),
 //!   and its turns `+W_a λ`, `−W_b λ` give `I_a Δθ_a + I_b Δθ_b = 0` for any
-//!   inertia, `μ` scaling `λ` and not the split (weld_turns, l. 820-827). The
+//!   inertia, `μ` scaling `λ` and not the split (weld_turns, l. 920-927). The
 //!   pulley moves the bodies along two different ropes, so momentum goes to the
-//!   ground anchors, not between the bodies (solve_pulley, l. 570-576). The gear
-//!   turns both bodies about world `z` in the same sense, `−λ w_a` and
-//!   `−λ ratio w_b`, so no angular momentum is exchanged between them: for
-//!   inertias aligned to `z` the correction carries `−λ` on A and `−λ ratio` on
-//!   B, absorbed by the unmodelled axles (solve_gear, l. 673-683). Rack and
-//!   pinion have no reaction on each other (solve_rack_and_pinion, l. 883-898);
-//!   the mouse joint is an external force (solve_mouse, l. 937). Energy is not
+//!   ground anchors, not between the bodies (solve_pulley, l. 637-643). The gear
+//!   turns A about its hinge axis by `−λ w_a` and B about its own by
+//!   `−λ ratio w_b`, both in the sense that lowers `C`, so no angular momentum is
+//!   exchanged between them: for inertias aligned to the axes the correction
+//!   carries `−λ` on A and `−λ ratio` on B, absorbed by the unmodelled axles
+//!   (solve_gear, l. 772-782). Rack and
+//!   pinion have no reaction on each other (solve_rack_and_pinion, l. 983-998);
+//!   the mouse joint is an external force (solve_mouse, l. 1037). Energy is not
 //!   conserved: each row removes its gap with no velocity update
-//!   (solve_extra_joints, l. 506-514), the damper subtracts `c (v·n)`
-//!   (solve_mouse, l. 920-923), and the gap a compliant pulley leaves is the next
-//!   call's rest total, so it stretches for good (solve_pulley, l. 552-556).
+//!   (solve_extra_joints, l. 522-530), the damper subtracts `c (v·n)`
+//!   (solve_mouse, l. 1020-1023), and the gap a compliant pulley leaves is the next
+//!   call's rest total, so it stretches for good (solve_pulley, l. 619-623).
 //! - **適用範囲 (range)**: two rigid bodies per joint, one for the mouse, one
 //!   pass per call, 3D, no `λ` carried between calls (solve_extra_joints,
-//!   l. 480-488). The gear and rack read a twist as `2 (xyz · axis)` of the
+//!   l. 496-504). The gear and rack read a twist as `2 (xyz · axis)` of the
 //!   `w ≥ 0` quaternion, `2 sin(θ/2)` for a turn `θ`, so they hold for small
 //!   per-step turns, and read exactly zero while `(xyz · axis)² < 2⁻⁴⁸`, a dead
 //!   zone of about `2⁻²³` rad per step in which nothing is corrected
-//!   (extract_angle_around_axis, l. 969-975; ANGLE_EPSILON_SQ, l. 946-949). The
-//!   gear reads and corrects about world `z` only (solve_gear, l. 649-681). The
+//!   (extract_angle_around_axis, l. 1060-1066; ANGLE_EPSILON_SQ, l. 1046-1049). The
+//!   gear reads and corrects about the current world axes of the two hinges it
+//!   names, taken from the joint list the caller passes (solve_gear, l. 747-748);
+//!   a gear whose `joint_a` / `joint_b` is past that list, names a joint that is
+//!   not a hinge, or whose body is on neither side of the hinge stops the call
+//!   with `ExtraJointError` before that gear touches a body, the joints before it
+//!   already solved (solve_extra_joints, l. 527-536; hinge_axis_on, l. 713-729). The
 //!   weld's break thresholds are re-evaluated from the current pose at every
 //!   call and never latched: a weld whose separation or `sin(φ/2)` is strictly
 //!   above its threshold is skipped that call and solved again once at or below
-//!   (solve_weld, l. 689-691; is_broken, l. 348-360). A direction whose
+//!   (solve_weld, l. 789-791; is_broken, l. 349-361). A direction whose
 //!   eigenvalue of `K` is at most `max(2⁻⁵⁰ largest, 2⁻⁵⁶)` gets no correction,
 //!   and a correction that would turn a body by more than `max(4 |θ|, 1/8 rad)`
-//!   is damped in up to 64 doublings of `μ` or dropped (weld_turns, l. 800-841).
+//!   is damped in up to 64 doublings of `μ` or dropped (weld_turns, l. 900-941).
 //!   A pulley with both ropes of zero length, zero error or zero `w`, and a mouse
 //!   joint on a static body or at its target, do nothing (solve_pulley,
-//!   l. 518-542; solve_mouse, l. 879-888); static bodies are never moved
-//!   (rotate_by, l. 1004-1006); nothing else is clamped, and no substep sweep: the
-//!   caller supplies the substep `dt` (solve_extra_joints, l. 505).
+//!   l. 585-609; solve_mouse, l. 979-988); static bodies are never moved
+//!   (rotate_by, l. 1095-1097); nothing else is clamped, and no substep sweep: the
+//!   caller supplies the substep `dt` (solve_extra_joints, l. 521).
 //! - **近似 (approximations)**: the rack projects the rack's travel on its own
 //!   axis and the pinion's twist on the pinion axis, ignoring travel across and
-//!   rotation about other axes (solve_rack_and_pinion, l. 850-861). The pulley
+//!   rotation about other axes (solve_rack_and_pinion, l. 950-961). The pulley
 //!   and rack rows are positional only, no rotation from the anchors
-//!   (solve_pulley, l. 570-576; solve_rack_and_pinion, l. 883-886); the weld's
+//!   (solve_pulley, l. 637-643; solve_rack_and_pinion, l. 983-986); the weld's
 //!   position row has no lever arm either, the gap is closed by translating the
-//!   bodies with `w = w_a + w_b`, never by turning them (solve_weld, l. 704-718).
+//!   bodies with `w = w_a + w_b`, never by turning them (solve_weld, l. 804-818).
 //!   Every turn is the small-rotation quaternion `(w/2, 1)` normalised,
-//!   `2 atan(|w|/2)` of rotation (solve_gear, l. 674-682; rotate_by, l. 1007-1008).
-//!   The gear never reads the hinges `joint_a` / `joint_b` it names (solve_gear,
-//!   l. 613-657). The pulley row is two-sided, no slack (solve_pulley, l. 556),
+//!   `2 atan(|w|/2)` of rotation (solve_gear, l. 777-782; rotate_by, l. 1098-1099).
+//!   The gear holds the per-step twists in the ratio, not the hinge angles: a
+//!   difference `θ_a + ratio θ_b` present before the first call is kept, never
+//!   closed (solve_gear, l. 751-757). The pulley row is two-sided, no slack (solve_pulley, l. 623),
 //!   and `w` holds inverse masses and compliance only, no friction or inertia of
-//!   wheel or gears (solve_pulley, l. 562-565; solve_gear, l. 659-662). The mouse
+//!   wheel or gears (solve_pulley, l. 629-632; solve_gear, l. 763-766). The mouse
 //!   damps the velocity along the pull only, read from `velocity` (solve_mouse,
-//!   l. 894-895); no persistent pulley rest length (solve_pulley, l. 552-556).
+//!   l. 994-995); no persistent pulley rest length (solve_pulley, l. 619-623).
 //! - **検証 (validation)**: `tests/audit_joint_extra.rs` (every test: pulley
 //!   total restored, `::pulley_to_length_uses_the_ratio_in_the_gradient_and_effective_mass`
 //!   moves of 0.2 and 0.4 exactly, `::weld_position_correction_is_split_by_inverse_mass`
@@ -101,20 +111,18 @@
 //!   `tests/analytic_joint_extra_wiring.rs` (every test: exact Pythagorean
 //!   total, exact spring impulse, the max-force clamp, break thresholds at
 //!   `sin(π/6)` and at the anchor);
-//!   `tests/analytic_joint_extra_gear.rs::a_twist_about_world_z_is_coupled_in_the_ratio`
-//!   (one projection against the closed form `θ³/24 + (a³ + r b³)/12`).
+//!   `tests/analytic_joint_extra_gear.rs` (every test: one projection about world
+//!   `z`, world `x` and a tilted hinge axis against the closed form
+//!   `θ³/24 + (a³ + r b³)/12`, the 120-step rate ratio `−1/r` of a driven pair
+//!   within the summed bound, and the refusal of a gear whose hinges are absent,
+//!   not hinges, or not on its bodies, with no body moved).
 //!   validation missing: a pulley with two hanging masses against the Atwood
 //!   closed form `a = (m₁ − m₂) g / (m₁ + m₂)` over many steps.
-//!   validation missing: a gear pair's angular-rate ratio over many steps, and
-//!   the mouse spring's oscillation period (the oracles above pin single
-//!   projections only; no time integration against a closed form).
+//!   validation missing: the mouse spring's oscillation period (its oracle pins a
+//!   single step only; no time integration against a closed form).
 //! - **段 (tiers)**: L0 only.
-//! - **既知の欠陥 (known defects)**:
-//!   `tests/analytic_joint_extra_gear.rs::a_twist_about_the_hinge_axis_x_is_coupled_in_the_ratio`
-//!   — the gear reads each body's twist about world `z` and never the hinge
-//!   joints it names, so hinges about any other axis are not coupled (the
-//!   `z` case is pinned green in the same file).
 
+use crate::joint::{HingeJoint, Joint};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::motor::shortest_arc;
 use crate::solver::RigidBody;
@@ -502,17 +510,83 @@ pub enum ExtraJoint {
 ///   solve: no `λ` is carried between calls, so each call removes the fraction
 ///   `w / (w + α̃)` of the gap again and leaves `d · (α̃ / (w + α̃))^k` after `k`
 ///   calls. The effective stiffness therefore grows with the number of calls.
-pub fn solve_extra_joints(bodies: &mut [RigidBody], joints: &[ExtraJoint], dt: Fix128) {
+///
+/// # Hinges
+///
+/// `hinges` is the world's joint list the gears index into with `joint_a` /
+/// `joint_b` (the same list [`crate::joint::solve_joints`] takes): a gear reads
+/// the axes of the two hinges it names from it. The other kinds never read it,
+/// so a list without gears may pass `&[]`.
+///
+/// # Errors
+///
+/// A gear whose `joint_a` / `joint_b` is out of range of `hinges`, names a joint
+/// that is not a [`Joint::Hinge`], or whose `body_a` / `body_b` is on neither
+/// side of the hinge it names, stops the call with [`ExtraJointError`] before
+/// any body is touched by that gear (the joints before it in the slice have been
+/// solved). Nothing is skipped silently.
+pub fn solve_extra_joints(
+    bodies: &mut [RigidBody],
+    joints: &[ExtraJoint],
+    hinges: &[Joint],
+    dt: Fix128,
+) -> Result<(), ExtraJointError> {
     for joint in joints {
         match joint {
             ExtraJoint::Pulley(j) => solve_pulley(j, bodies, dt),
-            ExtraJoint::Gear(j) => solve_gear(j, bodies, dt),
+            ExtraJoint::Gear(j) => solve_gear(j, bodies, hinges, dt)?,
             ExtraJoint::Weld(j) => solve_weld(j, bodies, dt),
             ExtraJoint::RackAndPinion(j) => solve_rack_and_pinion(j, bodies, dt),
             ExtraJoint::Mouse(j) => solve_mouse(j, bodies, dt),
         }
     }
+    Ok(())
 }
+
+/// Why [`solve_extra_joints`] refused a gear: the hinges it names are not there
+/// to read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtraJointError {
+    /// `joint_a` or `joint_b` of a gear is not an index into the hinge list.
+    HingeIndexOutOfRange {
+        /// the index the gear named
+        index: usize,
+        /// the length of the list it was looked up in
+        count: usize,
+    },
+    /// `joint_a` or `joint_b` of a gear names a joint that is not a hinge.
+    NotAHinge {
+        /// the index the gear named
+        index: usize,
+    },
+    /// a gear's body is on neither side of the hinge it names, so the hinge
+    /// axis has no frame on that body.
+    BodyNotOnHinge {
+        /// the gear's body
+        body: usize,
+        /// the hinge the gear named for it
+        hinge: usize,
+    },
+}
+
+impl core::fmt::Display for ExtraJointError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::HingeIndexOutOfRange { index, count } => {
+                write!(f, "gear names hinge {index}, the joint list has {count}")
+            }
+            Self::NotAHinge { index } => {
+                write!(f, "gear names joint {index}, which is not a hinge")
+            }
+            Self::BodyNotOnHinge { body, hinge } => {
+                write!(f, "gear body {body} is on neither side of hinge {hinge}")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ExtraJointError {}
 
 /// Solve pulley joint inside [`solve_extra_joints`].
 ///
@@ -635,52 +709,85 @@ pub fn solve_pulley_to_length(
     }
 }
 
-/// Solve gear joint: `angle_a + ratio * angle_b = constant`.
-fn solve_gear(joint: &GearJoint, bodies: &mut [RigidBody], dt: Fix128) {
+/// The world axis of the hinge `index` on `body` (unit), read from `hinges`:
+/// the hinge's local axis on that side rotated by the body's current rotation.
+fn hinge_axis_on(
+    hinges: &[Joint],
+    index: usize,
+    body: usize,
+    bodies: &[RigidBody],
+) -> Result<Vec3Fix, ExtraJointError> {
+    let hinge: &HingeJoint = match hinges.get(index) {
+        Some(Joint::Hinge(h)) => h,
+        Some(_) => return Err(ExtraJointError::NotAHinge { index }),
+        None => {
+            return Err(ExtraJointError::HingeIndexOutOfRange {
+                index,
+                count: hinges.len(),
+            })
+        }
+    };
+    let local = if body == hinge.body_a {
+        hinge.local_axis_a
+    } else if body == hinge.body_b {
+        hinge.local_axis_b
+    } else {
+        return Err(ExtraJointError::BodyNotOnHinge { body, hinge: index });
+    };
+    Ok(bodies[body].rotation.rotate_vec(local).normalize())
+}
+
+/// Solve gear joint: `θ_a + ratio · θ_b = constant` on the twists of its two
+/// bodies about the axes of the hinges it names (`joint_a` for `body_a`,
+/// `joint_b` for `body_b`), each twist that of `rotation · prev_rotation⁻¹`
+/// about the hinge's current world axis.
+fn solve_gear(
+    joint: &GearJoint,
+    bodies: &mut [RigidBody],
+    hinges: &[Joint],
+    dt: Fix128,
+) -> Result<(), ExtraJointError> {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
-    // Extract angular displacements around each body's local Z axis
-    // (simplified: use the body's angular velocity integrated over dt as proxy)
+    // The hinge axes in the world, read from the hinges the gear names
+    let axis_a = hinge_axis_on(hinges, joint.joint_a, joint.body_a, bodies)?;
+    let axis_b = hinge_axis_on(hinges, joint.joint_b, joint.body_b, bodies)?;
+
+    // Each body's turn since its previous pose, as a twist about its hinge axis
     let rel_quat_a = body_a.rotation.mul(body_a.prev_rotation.conjugate());
     let rel_quat_b = body_b.rotation.mul(body_b.prev_rotation.conjugate());
-
-    // Signed twists about z, the axis the correction below rotates about
-    let angle_a = extract_angle(rel_quat_a);
-    let angle_b = extract_angle(rel_quat_b);
+    let angle_a = extract_angle_around_axis(rel_quat_a, axis_a);
+    let angle_b = extract_angle_around_axis(rel_quat_b, axis_b);
 
     // Constraint: angle_a + ratio * angle_b should be zero (relative to initial)
     let error = angle_a + joint.ratio * angle_b;
 
     if error.abs().is_zero() {
-        return;
+        return Ok(());
     }
 
     let compliance_term = joint.compliance / (dt * dt);
-    let w_a = inv_inertia_about(&body_a, Vec3Fix::UNIT_Z);
-    let w_b = inv_inertia_about(&body_b, Vec3Fix::UNIT_Z);
+    let w_a = inv_inertia_about(&body_a, axis_a);
+    let w_b = inv_inertia_about(&body_b, axis_b);
     let w_sum = w_a + joint.ratio * joint.ratio * w_b + compliance_term;
 
     if w_sum.is_zero() {
-        return;
+        return Ok(());
     }
 
     let inv_w = Fix128::ONE / w_sum;
     let lambda = error * inv_w;
 
-    // Apply angular corrections around the Z axis (simplified).
-    // grad C = (1, ratio), so d_angle_a = -lambda w_a and d_angle_b = -lambda ratio w_b.
-    if !body_a.inv_mass.is_zero() {
-        let half_lambda = (lambda * w_a).half();
-        let dq = QuatFix::new(Fix128::ZERO, Fix128::ZERO, -half_lambda, Fix128::ONE);
-        bodies[joint.body_a].rotation = dq.mul(bodies[joint.body_a].rotation).normalize();
-    }
-    if !body_b.inv_mass.is_zero() {
-        let scaled = lambda * joint.ratio * w_b;
-        let half_lambda = scaled.half();
-        let dq = QuatFix::new(Fix128::ZERO, Fix128::ZERO, -half_lambda, Fix128::ONE);
-        bodies[joint.body_b].rotation = dq.mul(bodies[joint.body_b].rotation).normalize();
-    }
+    // grad C = (1, ratio), so d_angle_a = -lambda w_a and d_angle_b = -lambda ratio w_b,
+    // each about its own hinge axis
+    rotate_by(bodies, joint.body_a, axis_a * (-(lambda * w_a)));
+    rotate_by(
+        bodies,
+        joint.body_b,
+        axis_b * (-(lambda * joint.ratio * w_b)),
+    );
+    Ok(())
 }
 
 /// Solve weld joint: lock position and rotation, skip if broken.
@@ -948,15 +1055,6 @@ const ANGLE_EPSILON_SQ: Fix128 = Fix128 {
     lo: 0x0000_0000_0001_0000,
 };
 
-/// Extract the signed rotation angle about the z axis from a quaternion.
-///
-/// This is the axis [`solve_gear`] applies its correction about, so reading and
-/// writing use the same sign convention. See [`extract_angle_around_axis`].
-#[must_use]
-fn extract_angle(q: QuatFix) -> Fix128 {
-    extract_angle_around_axis(q, Vec3Fix::UNIT_Z)
-}
-
 /// Extract the signed rotation angle around a specific axis from a quaternion.
 ///
 /// Projects the quaternion's imaginary part onto the given (unit) axis to isolate
@@ -1015,6 +1113,20 @@ fn rotate_by(bodies: &mut [RigidBody], idx: usize, w: Vec3Fix) {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    /// the hinges the gears of these tests name: two hinges about world `z`
+    /// between bodies 0 and 1 (index 0 for body 0, index 1 for body 1)
+    fn z_hinges() -> Vec<Joint> {
+        let h = HingeJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        );
+        vec![Joint::Hinge(h), Joint::Hinge(h)]
+    }
 
     fn dt() -> Fix128 {
         Fix128::from_ratio(1, 60)
@@ -1089,7 +1201,8 @@ mod tests {
             Vec3Fix::from_int(0, 10, 0),
             Fix128::from_int(2),
         ))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
     }
 
     #[test]
@@ -1108,7 +1221,8 @@ mod tests {
             Fix128::ONE,
         ))];
         let pos_before = (bodies[0].position, bodies[1].position);
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // Static bodies should not move
         assert_eq!(bodies[0].position.y.hi, pos_before.0.y.hi);
         assert_eq!(bodies[1].position.y.hi, pos_before.1.y.hi);
@@ -1139,7 +1253,8 @@ mod tests {
             RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE),
         ];
         let joints = vec![ExtraJoint::Gear(GearJoint::new(0, 1, 0, 1, Fix128::ONE))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // No rotation change (both identity) means no gear error.
         // Rotations should remain near identity (w close to 1).
         let w_a = bodies[0].rotation.w;
@@ -1165,7 +1280,8 @@ mod tests {
         bodies[0].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 4));
         // prev_rotation stays IDENTITY, so there's angular displacement on A
         let joints = vec![ExtraJoint::Gear(GearJoint::new(0, 1, 0, 1, Fix128::ONE))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // Body B should have received some angular correction
         // (the gear couples them, so B's rotation should change)
         let b_rot = bodies[1].rotation;
@@ -1204,7 +1320,8 @@ mod tests {
             Vec3Fix::ZERO,
             QuatFix::IDENTITY,
         ))];
-        solve_extra_joints(bodies, &joints, dt());
+        solve_extra_joints(bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
     }
 
     /// A compliant weld removes the fraction `w / (w + alpha)` of the error about
@@ -1226,7 +1343,8 @@ mod tests {
                 WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
                     .with_compliance(compliance),
             )];
-            solve_extra_joints(&mut bodies, &joints, d);
+            solve_extra_joints(&mut bodies, &joints, z_hinges(), d)
+                .expect("the hinges the gears name are listed");
             let ratio = turn_angle(bodies[0].rotation, bodies[1].rotation) / before;
             assert!(
                 (ratio - 1.0 / 3.0).abs() < 1e-5,
@@ -1282,7 +1400,8 @@ mod tests {
             rot_a.conjugate().mul(rot_b),
         ))];
         for _ in 0..solves {
-            solve_extra_joints(&mut bodies, &joints, dt());
+            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+                .expect("the hinges the gears name are listed");
         }
         let target = bodies[0].rotation.mul(rot_a.conjugate().mul(rot_b));
         turn_angle(target, bodies[1].rotation)
@@ -1486,7 +1605,8 @@ mod tests {
             QuatFix::IDENTITY,
         ))];
         for _ in 0..100 {
-            solve_extra_joints(&mut bodies, &joints, dt());
+            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+                .expect("the hinges the gears name are listed");
         }
         let dist = (bodies[1].position - bodies[0].position).length();
         assert!(
@@ -1560,7 +1680,8 @@ mod tests {
             .with_break_force(Fix128::from_int(5));
         let joints = vec![ExtraJoint::Weld(wj)];
         let pos_before = bodies[1].position;
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // Should be broken, so body should not move
         assert_eq!(
             bodies[1].position.x.hi, pos_before.x.hi,
@@ -1601,7 +1722,8 @@ mod tests {
         ))];
         // No displacement from prev_position => no error => no significant correction
         let pos_before = bodies[0].position;
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         let moved = (bodies[0].position.x - pos_before.x).abs();
         assert!(
             moved < Fix128::from_ratio(1, 10),
@@ -1625,7 +1747,8 @@ mod tests {
             Vec3Fix::UNIT_Z,
             Fix128::ONE,
         ))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // There should be some correction applied (rack moved without pinion rotating)
         // The pinion should receive angular correction or the rack should be pulled back
         // Just verify no panic and some change occurred
@@ -1681,7 +1804,8 @@ mod tests {
             Fix128::from_int(1),
         ))];
         for _ in 0..50 {
-            solve_extra_joints(&mut bodies, &joints, dt());
+            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+                .expect("the hinges the gears name are listed");
         }
         // Body should have moved toward target (10, 0, 0)
         assert!(
@@ -1700,7 +1824,8 @@ mod tests {
             Fix128::from_int(1000),
             Fix128::ZERO,
         ))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         // With tiny max_force and large distance, movement should be small
         let moved = bodies[0].position.x;
         assert!(
@@ -1719,7 +1844,8 @@ mod tests {
             Fix128::from_int(50),
             Fix128::from_int(5),
         ))];
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         assert!(
             bodies[0].position.x.is_zero(),
             "Static body should not be moved by mouse joint"
@@ -1737,7 +1863,8 @@ mod tests {
             Fix128::from_int(5),
         ))];
         let pos_before = bodies[0].position;
-        solve_extra_joints(&mut bodies, &joints, dt());
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            .expect("the hinges the gears name are listed");
         assert_eq!(
             bodies[0].position.x.hi, pos_before.x.hi,
             "Body at target should not move"
@@ -1771,7 +1898,8 @@ mod tests {
         ];
         // Should not panic and should process both joints
         for _ in 0..10 {
-            solve_extra_joints(&mut bodies, &joints, dt());
+            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+                .expect("the hinges the gears name are listed");
         }
         // Weld should pull body 1 closer
         let dist = (bodies[1].position - bodies[0].position).length();
@@ -1787,7 +1915,7 @@ mod tests {
 
     #[test]
     fn test_extract_angle_identity() {
-        let angle = extract_angle(QuatFix::IDENTITY);
+        let angle = extract_angle_around_axis(QuatFix::IDENTITY, Vec3Fix::UNIT_Z);
         assert!(
             angle.is_zero(),
             "Identity quaternion should have zero angle"
@@ -1797,7 +1925,7 @@ mod tests {
     #[test]
     fn test_extract_angle_nonzero() {
         let q = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_int(1));
-        let angle = extract_angle(q);
+        let angle = extract_angle_around_axis(q, Vec3Fix::UNIT_Z);
         // Should be a positive, non-zero angle
         assert!(
             angle > Fix128::ZERO,
