@@ -94,4 +94,29 @@ fn main() {
         "the code {code} replays to the same cloth and hand: {}",
         replay[0].state_digest() == bodies[0].state_digest() && hand_again == hand
     );
+    // a finite grip: the hand pulls the point with a spring of 4 N/m and lets go past 0.05 N, so a long drag slips
+    let mut cloth = vec![sheet()];
+    let mut hand = Hand::with_grip(
+        Fix128::from_ratio(1, 5),
+        Fix128::from_int(4),
+        Fix128::from_ratio(1, 20),
+    );
+    hand.apply(&mut cloth, &Touch::grab(0, p(0.5, 0.0)));
+    let mut slipped = None;
+    for s in 1..=300u32 {
+        hand.apply(&mut cloth, &Touch::drag(p(0.5, f64::from(s) * 0.001)));
+        if !hand.pull(&mut cloth, dt) {
+            slipped = Some(s);
+            break;
+        }
+        cloth[0].step(dt);
+    }
+    match slipped {
+        Some(s) => println!(
+            "a grip of 0.05 N slipped with the hand {:.3} away, the point at y = {:.4}",
+            f64::from(s) * 0.001,
+            cloth[0].positions[2].y.to_f64()
+        ),
+        None => println!("the grip held the whole drag"),
+    }
 }
