@@ -27,12 +27,12 @@
 8	replace \| with \^ in (expand_bits|morton_code|BvhNode::leaf)$
 1	bvh\.rs:539:.*replace \| with \^ in LinearBvh::build_recursive
 4	replace < with <= in Fix128::(from_f64|from_ratio)$
-2	math\.rs:1143:.*replace (> with >=|< with <=) in cordic_sin_cos
-2	math\.rs:1150:.*replace > with (==|>=) in cordic_sin_cos
-2	math\.rs:1151:.*replace - with (\+|/) in cordic_sin_cos
-2	math\.rs:1152:.*replace < with (==|<=) in cordic_sin_cos
-1	math\.rs:1184:.*replace > with >= in cordic_sin_cos
-1	math\.rs:1219:.*replace > with >= in cordic_atan
+2	math\.rs:1136:.*replace (> with >=|< with <=) in cordic_sin_cos
+2	math\.rs:1143:.*replace > with (==|>=) in cordic_sin_cos
+2	math\.rs:1144:.*replace - with (\+|/) in cordic_sin_cos
+2	math\.rs:1145:.*replace < with (==|<=) in cordic_sin_cos
+1	math\.rs:1177:.*replace > with >= in cordic_sin_cos
+1	math\.rs:1212:.*replace > with >= in cordic_atan
 2	bvh\.rs:(63|66):.*replace > with >= in point_to_morton
 1	bvh\.rs:500:.*replace \+ with \* in LinearBvh::build_recursive
 1	bvh\.rs:561:.*replace - with / in LinearBvh::find_split

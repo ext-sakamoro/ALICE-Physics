@@ -358,7 +358,7 @@ impl Fix128 {
     }
 
     // ========================================================================
-    // SIMD-Accelerated Operations (x86_64 only)
+    // `simd` feature API (x86_64 only): scalar, kept for API compatibility
     // ========================================================================
 
     /// Addition through the `simd` feature's API surface — **scalar-equivalent**.
@@ -368,30 +368,23 @@ impl Fix128 {
     /// Fix128 add has no profitable SSE2 form; LLVM already emits `add`/`adc`
     /// for the scalar path. Before 1.2.0 this function loaded both operands
     /// into `__m128i` registers and then discarded them (`let _ = (a, b)`),
-    /// i.e. it was scalar with dead intrinsics.
-    ///
-    /// # Safety
-    ///
-    /// No preconditions; kept `unsafe` + `#[target_feature(enable = "sse2")]`
-    /// for signature compatibility with existing callers.
+    /// i.e. it was scalar with dead intrinsics. It is plain scalar code, kept
+    /// under this name for API compatibility; it uses no SSE2 instruction and
+    /// is not `unsafe` (it used to be, with nothing to guard).
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn add_simd(self, rhs: Self) -> Self {
+    #[must_use]
+    pub fn add_simd(self, rhs: Self) -> Self {
         self + rhs
     }
 
     /// Subtraction through the `simd` feature's API surface — **scalar-equivalent**
-    /// (see [`Self::add_simd`]).
-    ///
-    /// # Safety
-    ///
-    /// No preconditions; kept `unsafe` + `#[target_feature(enable = "sse2")]`
-    /// for signature compatibility with existing callers.
+    /// (see [`Self::add_simd`]): plain scalar code, no SSE2 instruction, not
+    /// `unsafe`.
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
     #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn sub_simd(self, rhs: Self) -> Self {
+    #[must_use]
+    pub fn sub_simd(self, rhs: Self) -> Self {
         self - rhs
     }
 }
@@ -1674,69 +1667,23 @@ impl Vec3Fix {
     // SIMD-Accelerated Operations
     // ========================================================================
 
-    /// SIMD-accelerated dot product — SSE2 inner implementation.
+    /// Dot product under the `simd` feature's name: it is `dot()`, on every
+    /// platform, kept under this name for API compatibility.
     ///
-    /// # Determinism guarantee
-    ///
-    /// Dot product on the `simd` feature's x86_64 path — **scalar-equivalent**.
-    ///
-    /// Fix128 multiplication is 128-bit integer arithmetic (`u128`/`i128`); no
-    /// SSE2/AVX2 instruction performs it, and the two Fix128 additions cannot
-    /// use `_mm_add_epi64` because it does not carry from `lo` into `hi` (see
-    /// the comment in the body). The result is bit-exact to `dot()` because it
-    /// *is* `dot()`. Kept as the dispatch target of `dot_simd` so a future
-    /// AVX-512 / NEON batch path can land without an API change.
-    ///
-    /// # Safety
-    ///
-    /// No preconditions; `#[target_feature(enable = "sse2")]` is always
-    /// satisfied on x86_64.
-    #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-    #[target_feature(enable = "sse2")]
-    unsafe fn dot_simd_sse2(self, rhs: Self) -> Fix128 {
-        // --- Step 1: scalar Fix128 multiplications (128-bit, bit-exact) ------
-        // SSE2 has no 128-bit multiply, so the multiply stays scalar.
-        let px = self.x * rhs.x;
-        let py = self.y * rhs.y;
-        let pz = self.z * rhs.z;
-
-        // --- Step 2: Scalar Fix128 addition chain (px + py + pz) -------------
-        //
-        // SSE2's _mm_add_epi64 performs lane-independent 64-bit adds but cannot
-        // propagate the carry from lo to hi that Fix128 addition requires.
-        // A correct SIMD path would need to detect per-lane overflow, extract it,
-        // and feed it into the hi lane — more instructions than the scalar path.
-        //
-        // Therefore we use the direct scalar carry chain which is already well
-        // optimized by LLVM into ADC (add-with-carry) on x86_64.
-        let ab = px + py;
-        ab + pz
-    }
-
-    /// SIMD-accelerated dot product — safe public entry point.
-    ///
-    /// On `x86_64` with the `simd` feature enabled this dispatches to the SSE2
-    /// path (`dot_simd_sse2`). On every other platform it falls back to the
-    /// scalar `dot()`. The result is **bit-exact identical** to `dot()` on every
-    /// platform.
+    /// Fix128 multiplication is 128-bit integer arithmetic that no SSE2 / AVX2
+    /// instruction performs, and `_mm_add_epi64` cannot carry from `lo` into
+    /// `hi`, so there is no SIMD form of a Fix128 dot product to call. The x86_64
+    /// build used to go through an `unsafe` SSE2-tagged function that was this
+    /// same scalar code.
     #[inline]
     #[must_use]
     pub fn dot_simd(self, rhs: Self) -> Fix128 {
-        #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-        {
-            // SAFETY: SSE2 is part of the x86_64 baseline ABI; all x86_64 CPUs
-            // support it unconditionally.
-            unsafe { self.dot_simd_sse2(rhs) }
-        }
-        #[cfg(not(all(feature = "simd", target_arch = "x86_64")))]
-        {
-            self.dot(rhs)
-        }
+        self.dot(rhs)
     }
 
-    /// Squared length using SIMD-accelerated dot product.
+    /// Squared length under the `simd` feature's name: it is `length_squared()`.
     ///
-    /// Equivalent to `length_squared()` but dispatches through `dot_simd`.
+    /// Goes through `dot_simd`, which is `dot()`.
     /// Result is **bit-exact identical** to `length_squared()`.
     #[inline]
     #[must_use]
@@ -4306,10 +4253,7 @@ mod tests {
         ];
         for (a, b) in cases {
             let scalar = a - b;
-            // SAFETY: `sub_simd` has no preconditions; SSE2 is part of the
-            // x86_64 baseline so the `target_feature(enable = "sse2")`
-            // requirement is always satisfied on this target.
-            let simd = unsafe { a.sub_simd(b) };
+            let simd = a.sub_simd(b);
             assert_eq!(
                 simd.hi, scalar.hi,
                 "sub_simd hi mismatch for {a:?} - {b:?}: {:#018x} vs {:#018x}",
@@ -4324,8 +4268,7 @@ mod tests {
             assert_eq!(simd + b, a);
         }
         // Explicit borrow check: (1.0) - (2^-64) == 0.FFFF…F (hi 0, lo MAX)
-        // SAFETY: as above.
-        let borrowed = unsafe { Fix128::from_raw(1, 0).sub_simd(Fix128::from_raw(0, 1)) };
+        let borrowed = Fix128::from_raw(1, 0).sub_simd(Fix128::from_raw(0, 1));
         assert_eq!(borrowed, Fix128::from_raw(0, u64::MAX));
     }
 

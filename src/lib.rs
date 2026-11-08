@@ -25,7 +25,7 @@
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `std` (default) | Standard library support. Disable for `no_std` (requires `alloc`). |
-//! | `simd` | SSE2 acceleration for `Vec3Fix` math ops (`dot`, `add`, `sub`). Results remain bit-exact. Solver hot paths use scalar arithmetic to guarantee cross-platform determinism. |
+//! | `simd` | The `*_simd` / `dot_batch_4` names and `SIMD_WIDTH`. They are scalar and bit-identical to the plain operations (no SSE2 instruction is used: a Fix128 product or carry has no SIMD form); the names are kept for API compatibility. Solver hot paths use scalar arithmetic to guarantee cross-platform determinism. |
 //! | `parallel` | Parallel constraint solving via Rayon with graph-colored batches. |
 //! | `neural` | Deterministic neural controller integration (ALICE-ML). |
 //! | `python` | `PyO3` + `NumPy` zero-copy Python bindings. |

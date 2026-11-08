@@ -270,7 +270,7 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | Feature | 既定 | 内容 |
 |---------|:----:|------|
 | `std` | ○ | 標準ライブラリ 外すと `no_std` (`alloc` が必要) |
-| `simd` | | `x86_64` 上で `Vec3Fix` 演算に SSE2 を使う 結果はスカラー版とビット一致 |
+| `simd` | | `x86_64` 上の `Vec3Fix` / `Fix128` の `*_simd` の名前 中身はスカラーで通常の演算とビット一致 (SSE2 の命令は使わない) API 互換のために残す |
 | `parallel` | | グラフ彩色したバッチを Rayon で並列に解く |
 | `ffi` | | Unity、Unreal Engine などから使う C ABI `wasm` とは併用不可 |
 | `wasm` | | `wasm-bindgen` による WebAssembly バインディング `std` が必要、`ffi` とは併用不可 |

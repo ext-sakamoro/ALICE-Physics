@@ -4,8 +4,7 @@ name: Miri and loom (changed unsafe or parallel code)
 # slice wrappers of the parallel step (src/solver.rs, with loom exploring the
 # thread interleavings of one colour batch), the C ABI (src/ffi.rs, raw pointers
 # from the caller, reached through src/binding_api.rs) and the byte views of the
-# GPU buffers (src/gpu_sdf.rs). The crate has unsafe code elsewhere that this
-# workflow does not run: the SSE2 paths of src/math.rs. quality-deep.yml runs
+# GPU buffers (src/gpu_sdf.rs). These are all of the crate's unsafe code. quality-deep.yml runs
 # both weekly; this workflow runs them when a push changes the unsafe or parallel
 # code they cover (.github/paths/unsafe-and-parallel.txt), on main and on the ci/**
 # branches. On a ci/** branch the run is started on the SHA that main is then
