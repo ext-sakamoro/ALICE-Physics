@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5939 |
+| 🟢 Not ignored (run by CI) | 5965 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6036** |
+| **Total** | **6062** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5939)
+## 🟢 Not ignored (5965)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -333,6 +333,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_pressure.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
 | `sleep_skip.rs` | 14 |
+| `soft_letters_oracle.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
 | `analytic_beam_stress_wiring.rs` | 13 |
@@ -517,6 +518,8 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint_extra.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |
+| `cloth_sleep_oracle.rs` | 6 |
+| `cloth_state_digest.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |

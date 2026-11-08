@@ -235,8 +235,11 @@ fn hex(b: &[u8]) -> String {
 /// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
+// re-pinned for world snapshot version 8: the scene has no cloth, so its snapshot is the
+// version 7 one with the version, the length, an empty cloth section (12 bytes) and the
+// checksum changed, and the law_id below did not move
 const GOLDEN_STATE_DIGEST: &str =
-    "d44cdf153d4bddb4dea7da506bb6a1f51d47a5a1dfe30b38458e0728346992c9";
+    "0b2f4ad8c3b5825e175b4d1234c784712ee308c22d148bc4a2c08417f74f1bd2";
 const GOLDEN_LAW_ID: &str = "8c021167207e25a8c289bf5ef19c1df4ec735f81bbb3bf5269517e6e8a4df6dd";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
@@ -244,7 +247,7 @@ const GOLDEN_LAW_ID: &str = "8c021167207e25a8c289bf5ef19c1df4ec735f81bbb3bf52695
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "ba49534c15e76e23bb1ad822da11f239557c62e48de7e0e8c91979b3beabcedc";
+    "d040355879318ff80a72d252c1f1aab01dad36d22ea1bdc12c0997c8e70914a0";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

@@ -949,7 +949,10 @@ fn crowd_hash(parallel: bool) -> String {
 /// 0.99 per step). Re-recorded (from `20919b00…`) when the sleep rule became time
 /// (state version 4: each body's sleep record is a state byte and a `Fix128` idle time,
 /// 17 bytes a body where version 3 held a state byte and a `u32` step count).
-const GOLDEN_CROWD: &str = "a5f488635db8559668fd32a5c9c87fe76d38636de4695eeebee1be1b0ebfbca6";
+/// Re-recorded (from `a5f48863…`) for state version 5: a u32 count of cloths (0 here)
+/// after the bodies and a u32 next grab id at the end, 8 bytes more; the crowd has no
+/// cloth, so its step is unchanged (`step_cloths` runs over an empty list).
+const GOLDEN_CROWD: &str = "6185c1814c339570c41038615b41e82a98b169c5ce4b4abb09321f3b987a88f2";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -1058,7 +1061,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 7 blob carries the setting (its section was added in version
+/// A version 8 blob carries the setting (its section was added in version
 /// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
@@ -1068,10 +1071,10 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    // version 7 (damping as rates per second from version 6, the sleep rule and
-    // the idle counts as time from version 7)
-    assert_eq!(&blob[4..6], &7u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v7 blob");
+    // version 8 (damping as rates per second from version 6, the sleep rule and
+    // the idle counts as time from version 7, the cloth section from version 8)
+    assert_eq!(&blob[4..6], &8u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v8 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

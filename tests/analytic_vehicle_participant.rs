@@ -654,8 +654,12 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "bbce201d49dd1e63cda450654c8959131fed46efecfd5f3102b823e15f083a6c";
-const DRIVE_TGS: &str = "df11b5729277a93df663e4c6fbfc0e722791b3586e79cc65c39851ec4327e5c2";
+// re-pinned for world snapshot version 8 (the cloth section: an empty one here, a u64 count of
+// 0 and a u32 next grab id of 0, 12 bytes before the checksum): the version, the length, the
+// tail and the checksum moved; the world has no cloth, so its step is the version 7 step
+// (`step_cloths` runs over an empty list)
+const DRIVE_XPBD: &str = "f1aadb275b61db1a7aba569f22402be53334b4e8b6a24295bbe936d8d91e2c00";
+const DRIVE_TGS: &str = "9ee7229bab562ad899e4c9b4292886637d478d66ce7f69940b43add35deb7689";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
