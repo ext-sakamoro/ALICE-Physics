@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `scripts/land.py`: 取り込みの lock を各試行の要所 (fetch、main が得たものの確認、文書だけの移動の rebase と確認、main への push) だけで持つ 新しい証拠の回 (rebase、ci/<id> への push、CI の待ち) は lock の外で走るので、CI が重なる取り込みどうしが互いの CI を待たない lock の中で main の移動を見た取り込みは証拠を取り直す 試験 3 件 (CI の待ちの間に lock を取れる、待ちの間に main が code を得ると取り直して新しい main に載る、lock の外の回の CI が red なら main は動かず lock は空く)
 - `scripts/land.py`: 積む tree が push の検査の通す receipt (この機械の run、または opt-in の repository の離れた run) を既に持っていれば preflight を走らせ直さない 判定は push と同じ検査で、receipt が無い・tree が違う・書き換えた receipt なら今までどおり走らせる
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
