@@ -3427,24 +3427,16 @@ pub use alice_physics_core::det_math::sin_cos
 pub use alice_physics_core::det_math::sqrt
 pub use alice_physics_core::det_math::sqrt64
 pub fn alice_physics_core::det_math::acos(f32) -> f32
-pub fn alice_physics_core::det_math::asin(f32) -> f32
-pub fn alice_physics_core::det_math::atan(f32) -> f32
-pub fn alice_physics_core::det_math::atan2(f32, f32) -> f32
-pub fn alice_physics_core::det_math::atan2_64(f64, f64) -> f64
-pub fn alice_physics_core::det_math::atan64(f64) -> f64
 pub fn alice_physics_core::det_math::cbrt(f32) -> f32
 pub fn alice_physics_core::det_math::cos(f32) -> f32
 pub fn alice_physics_core::det_math::exp(f32) -> f32
 pub fn alice_physics_core::det_math::exp64(f64) -> f64
 pub fn alice_physics_core::det_math::hypot(f32, f32) -> f32
-pub fn alice_physics_core::det_math::ln(f32) -> f32
 pub fn alice_physics_core::det_math::ln64(f64) -> f64
 pub fn alice_physics_core::det_math::powf(f32, f32) -> f32
 pub fn alice_physics_core::det_math::powf64(f64, f64) -> f64
 pub fn alice_physics_core::det_math::powi(f32, i32) -> f32
 pub fn alice_physics_core::det_math::sin(f32) -> f32
-pub fn alice_physics_core::det_math::tan(f32) -> f32
-pub fn alice_physics_core::det_math::tanh(f32) -> f32
 pub mod alice_physics_core::dynamic_bvh
 pub struct alice_physics_core::dynamic_bvh::DynamicAabbTree
 pub alice_physics_core::dynamic_bvh::DynamicAabbTree::margin: alice_physics_core::math::Fix128
@@ -17390,6 +17382,8 @@ impl core::marker::Unpin for alice_physics_core::semantics::PeerMismatch
 impl core::marker::UnsafeUnpin for alice_physics_core::semantics::PeerMismatch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::semantics::PeerMismatch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::semantics::PeerMismatch
+pub const alice_physics_core::semantics::DET_MATH_FUNCTIONS: &[&str]
+pub const alice_physics_core::semantics::DET_MATH_PINS: &[(&str, [u8; 32])]
 pub const alice_physics_core::semantics::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
 pub const alice_physics_core::semantics::PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])]
 pub const alice_physics_core::semantics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
@@ -17398,7 +17392,6 @@ pub const alice_physics_core::semantics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 3
 pub const alice_physics_core::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
 pub fn alice_physics_core::semantics::check_peer(&'static str, &'static str, &[u8; 32]) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
 pub fn alice_physics_core::semantics::expected_peer_id(&str) -> core::option::Option<[u8; 32]>
-pub const fn alice_physics_core::semantics::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub mod alice_physics_core::sensors
 #[non_exhaustive] pub struct alice_physics_core::sensors::ContactReading
 pub alice_physics_core::sensors::ContactReading::contact_count: usize
@@ -27019,6 +27012,8 @@ impl core::marker::Unpin for alice_physics_core::anomaly::ZScoreDetector
 impl core::marker::UnsafeUnpin for alice_physics_core::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::anomaly::ZScoreDetector
+pub const alice_physics_core::DET_MATH_FUNCTIONS: &[&str]
+pub const alice_physics_core::DET_MATH_PINS: &[(&str, [u8; 32])]
 pub const alice_physics_core::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
 pub const alice_physics_core::PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])]
 pub const alice_physics_core::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
@@ -27183,7 +27178,6 @@ pub fn alice_physics_core::raycast_any_aabbs(&alice_physics_core::raycast::Ray, 
 pub fn alice_physics_core::raycast_any_spheres(&alice_physics_core::raycast::Ray, &[(alice_physics_core::collider::Sphere, usize)], alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::save_scene(&alice_physics_core::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
 pub fn alice_physics_core::save_scene_json(&alice_physics_core::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
-pub const fn alice_physics_core::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub const fn alice_physics_core::simd_width() -> usize
 pub fn alice_physics_core::simplify_collision_mesh(&alice_physics_core::collision_mesh_gen::CollisionMesh, usize) -> alice_physics_core::collision_mesh_gen::CollisionMesh
 pub fn alice_physics_core::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], alice_physics_core::math::Fix128)
