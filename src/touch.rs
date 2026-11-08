@@ -1,9 +1,14 @@
 //! A visitor's touch on a body: take hold of it at a point, carry that point, let go. The touches are inputs a log
 //! carries ([`crate::input_log::InputLog`]), so a world touched, logged and replayed comes to the same state.
 //!
-//! MODEL: a grab takes the body's point nearest the touch within the hand's reach and holds it where the hand is
-//! (the point is pinned: it moves with the hand and nothing else moves it); a drag carries it; letting go returns it
-//! to the body as it was (its mass, or pinned if it was pinned before). What the body does then is its own law: a
+//! MODEL: a grab takes the body's point nearest the touch within the hand's reach. A rigid hand ([`Hand::new`]) holds
+//! it where the hand is (the point is pinned: it moves with the hand and nothing else moves it); a drag carries it;
+//! letting go returns it to the body as it was (its mass, or pinned if it was pinned before). A hand with a finite
+//! grip ([`Hand::with_grip`]) leaves the point the body's and pulls it toward the hand with a spring, `F = k_g (h − x)`
+//! (N, with `h` the hand and `x` the point, m), applied as the impulse `F dt` before each step ([`Hand::pull`]); when
+//! `|F|` would exceed the grip's strength `F_max` (N) the grip slips and the hand lets go. At rest against a body that
+//! holds the point by `k_t`, the point sits at `x = k_g d / (k_g + k_t)` for a hand `d` away, and a slow drag lets go at
+//! `d = F_max (k_g + k_t) / (k_g k_t)` (`tests/analytic_touch.rs`). What the body does then is its own law: a
 //! cloth held to its rest shape by its tether ([`Cloth::set_rest_tether`]) springs back as a damped oscillator. The
 //! body says what a point is ([`Grabbable`]): for a cloth, one of its particles; for a soft body, a surface vertex.
 //!
@@ -164,20 +169,29 @@ pub struct Grip {
     pub point: usize,
     inv_mass: Fix128,
     was_pinned: bool,
+    /// Held where the hand is (a rigid hand), or only pulled toward it (a finite grip)
+    pinned: bool,
 }
 
 /// A body a hand can take hold of
 pub trait Grabbable {
     /// Take hold of the point nearest `at` within `reach`, and hold it at `at`; `None` when none is that near
     fn grab(&mut self, at: Vec3Fix, reach: Fix128) -> Option<Grip>;
-    /// Carry the point held to `to`
+    /// Take hold of the point nearest `at` within `reach` without holding it in place (a finite grip pulls it)
+    fn take(&mut self, at: Vec3Fix, reach: Fix128) -> Option<Grip>;
+    /// Carry the point held to `to` (a rigid hand)
     fn drag(&mut self, grip: &Grip, to: Vec3Fix);
+    /// Where the point is
+    fn point_at(&self, grip: &Grip) -> Vec3Fix;
+    /// Give the point the impulse `j` (N·s)
+    fn push(&mut self, grip: &Grip, j: Vec3Fix);
     /// Let go of it: it is the body's again, as it was
     fn release(&mut self, grip: Grip);
 }
 
-impl Grabbable for Cloth {
-    fn grab(&mut self, at: Vec3Fix, reach: Fix128) -> Option<Grip> {
+impl Cloth {
+    /// The particle nearest `at` within `reach` (the lowest index of equals)
+    fn nearest_within(&self, at: Vec3Fix, reach: Fix128) -> Option<usize> {
         if reach <= Fix128::ZERO {
             return None;
         }
@@ -186,20 +200,36 @@ impl Grabbable for Cloth {
         for (i, p) in self.positions.iter().enumerate() {
             let d = *p - at;
             let d2 = d.dot(d);
-            // the first of equals: the lowest index, the same everywhere
             if d2 <= r2 && best.is_none_or(|(_, b)| d2 < b) {
                 best = Some((i, d2));
             }
         }
-        let (point, _) = best?;
+        best.map(|(i, _)| i)
+    }
+}
+
+impl Grabbable for Cloth {
+    fn grab(&mut self, at: Vec3Fix, reach: Fix128) -> Option<Grip> {
+        let point = self.nearest_within(at, reach)?;
         let grip = Grip {
             point,
             inv_mass: self.inv_masses[point],
             was_pinned: self.pinned.contains(&point),
+            pinned: true,
         };
         self.pin(point);
         self.drag(&grip, at);
         Some(grip)
+    }
+
+    fn take(&mut self, at: Vec3Fix, reach: Fix128) -> Option<Grip> {
+        let point = self.nearest_within(at, reach)?;
+        Some(Grip {
+            point,
+            inv_mass: self.inv_masses[point],
+            was_pinned: self.pinned.contains(&point),
+            pinned: false,
+        })
     }
 
     fn drag(&mut self, grip: &Grip, to: Vec3Fix) {
@@ -209,8 +239,17 @@ impl Grabbable for Cloth {
         self.velocities[i] = Vec3Fix::ZERO;
     }
 
+    fn point_at(&self, grip: &Grip) -> Vec3Fix {
+        self.positions[grip.point]
+    }
+
+    fn push(&mut self, grip: &Grip, j: Vec3Fix) {
+        let i = grip.point;
+        self.velocities[i] = self.velocities[i] + j * self.inv_masses[i];
+    }
+
     fn release(&mut self, grip: Grip) {
-        if grip.was_pinned {
+        if !grip.pinned || grip.was_pinned {
             return;
         }
         self.inv_masses[grip.point] = grip.inv_mass;
@@ -218,18 +257,39 @@ impl Grabbable for Cloth {
     }
 }
 
-/// A hand among bodies: what it holds, and how far it reaches
+/// A hand among bodies: what it holds, how far it reaches, and how it holds
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hand {
     reach: Fix128,
+    /// A finite grip: its stiffness (N/m) and its strength (N); none for a rigid hand
+    grip: Option<(Fix128, Fix128)>,
     held: Option<(u32, Grip)>,
+    /// Where the hand is, while it holds with a finite grip
+    at: Option<Vec3Fix>,
 }
 
 impl Hand {
-    /// A hand that takes a point at most `reach` from where it touches
+    /// A rigid hand that takes a point at most `reach` from where it touches and holds it where the hand is
     #[must_use]
     pub fn new(reach: Fix128) -> Self {
-        Self { reach, held: None }
+        Self {
+            reach,
+            grip: None,
+            held: None,
+            at: None,
+        }
+    }
+
+    /// A hand with a finite grip: it pulls the point it takes toward itself with a spring of `stiffness` (N/m), and
+    /// slips when the pull would exceed `strength` (N). A grip of no stiffness or no strength takes nothing
+    #[must_use]
+    pub fn with_grip(reach: Fix128, stiffness: Fix128, strength: Fix128) -> Self {
+        Self {
+            reach,
+            grip: Some((stiffness, strength)),
+            held: None,
+            at: None,
+        }
     }
 
     /// Do `touch` to `bodies`. Whether it did anything: a grab out of reach or of no such body, or a drag or a release
@@ -238,12 +298,24 @@ impl Hand {
         match *touch {
             Touch::Grab { body, at } => {
                 self.let_go(bodies);
+                if self
+                    .grip
+                    .is_some_and(|(k, f)| k <= Fix128::ZERO || f <= Fix128::ZERO)
+                {
+                    return false;
+                }
                 let Some(b) = usize::try_from(body).ok().and_then(|i| bodies.get_mut(i)) else {
                     return false;
                 };
-                match b.grab(at, self.reach) {
+                let taken = if self.grip.is_some() {
+                    b.take(at, self.reach)
+                } else {
+                    b.grab(at, self.reach)
+                };
+                match taken {
                     Some(grip) => {
                         self.held = Some((body, grip));
+                        self.at = Some(at);
                         true
                     }
                     None => false,
@@ -251,7 +323,10 @@ impl Hand {
             }
             Touch::Drag { to } => match self.held {
                 Some((body, grip)) => {
-                    bodies[body as usize].drag(&grip, to);
+                    self.at = Some(to);
+                    if self.grip.is_none() {
+                        bodies[body as usize].drag(&grip, to);
+                    }
                     true
                 }
                 None => false,
@@ -260,7 +335,27 @@ impl Hand {
         }
     }
 
+    /// A finite grip's pull for a step of `dt` (s), before the bodies step: the impulse `k_g (h − x) dt` on the point
+    /// held, or, when that pull would exceed the grip's strength, the grip slips and lets go. Whether it still holds
+    pub fn pull<B: Grabbable>(&mut self, bodies: &mut [B], dt: Fix128) -> bool {
+        let (Some((k, fmax)), Some((body, grip)), Some(at)) = (self.grip, self.held, self.at)
+        else {
+            return self.held.is_some();
+        };
+        let Some(b) = bodies.get_mut(body as usize) else {
+            return false;
+        };
+        let f = (at - b.point_at(&grip)) * k;
+        if f.dot(f) > fmax * fmax {
+            self.let_go(bodies);
+            return false;
+        }
+        b.push(&grip, f * dt);
+        true
+    }
+
     fn let_go<B: Grabbable>(&mut self, bodies: &mut [B]) -> bool {
+        self.at = None;
         match self.held.take() {
             Some((body, grip)) => {
                 if let Some(b) = bodies.get_mut(body as usize) {
@@ -284,6 +379,22 @@ impl Hand {
         let mut out = Vec::new();
         out.extend_from_slice(&self.reach.hi.to_le_bytes());
         out.extend_from_slice(&self.reach.lo.to_le_bytes());
+        match self.grip {
+            None => out.push(0),
+            Some((k, f)) => {
+                out.push(1);
+                for x in [k, f] {
+                    out.extend_from_slice(&x.hi.to_le_bytes());
+                    out.extend_from_slice(&x.lo.to_le_bytes());
+                }
+            }
+        }
+        if let Some(h) = self.at {
+            for x in [h.x, h.y, h.z] {
+                out.extend_from_slice(&x.hi.to_le_bytes());
+                out.extend_from_slice(&x.lo.to_le_bytes());
+            }
+        }
         match self.held {
             None => out.push(0),
             Some((body, g)) => {
@@ -293,6 +404,7 @@ impl Hand {
                 out.extend_from_slice(&g.inv_mass.hi.to_le_bytes());
                 out.extend_from_slice(&g.inv_mass.lo.to_le_bytes());
                 out.push(u8::from(g.was_pinned));
+                out.push(u8::from(g.pinned));
             }
         }
         out
