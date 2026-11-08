@@ -101,5 +101,4 @@ src/vehicle_dynamics/surface.rs
 src/vehicle_dynamics/tire.rs
 src/vibration_wall.rs
 src/wave_ship.rs
-src/wind_zone.rs
 src/world_character.rs
