@@ -423,3 +423,78 @@ fn the_same_hands_give_the_same_bits() {
     assert_eq!(run(), run());
     assert_eq!(BodyType::Dynamic, BodyType::Dynamic);
 }
+
+// ── at rest, for long ────────────────────────────────────────────────────
+
+/// The held body's distance from its place after `n` substeps, bounded: the world's spring is the backward Euler
+/// step of the critically damped oscillator (`solve_spring_joint`), `x' = (x (1 + 2a) + h v) / (1 + a)²`, `a = ω h`,
+/// whose step matrix has the double eigenvalue `λ = 1 / (1 + a)`; from rest at `x0` the distance is
+/// `|x0| (1 + n a / (1 + a)) λⁿ`. Checked against that map iterated here, then used as the bound
+fn settled_bound(x0: f64, omega: f64, h: f64, n: u64) -> f64 {
+    let a = omega * h;
+    x0.abs() * (1.0 + n as f64 * a / (1.0 + a)) * (1.0 + a).powi(-(n as i32))
+}
+
+fn held_for_long(sleep: bool) -> (f64, f64, u64) {
+    use alice_physics_core::sleeping::SleepConfig;
+    let (omega, dt, substeps) = (6.0, DT, 8usize);
+    let h = dt / substeps as f64;
+    // the bound is the scheme's: its 2×2 map, iterated, never exceeds it
+    let (mut x, mut vel) = (2.0f64, 0.0f64);
+    let a = omega * h;
+    for n in 1..=9600u64 {
+        let x1 = (x * (1.0 + 2.0 * a) + h * vel) / ((1.0 + a) * (1.0 + a));
+        vel = (x1 - x) / h;
+        x = x1;
+        assert!(
+            x.abs() <= settled_bound(2.0, omega, h, n) * (1.0 + 1e-9) + 1e-300,
+            "{n}: {x}"
+        );
+    }
+    let mut w = world(9.81, substeps);
+    if !sleep {
+        w.set_sleep_config(SleepConfig {
+            frames_to_sleep: u32::MAX,
+            ..SleepConfig::default()
+        });
+    }
+    let b = body(&mut w, v(0.0, 3.0, 5.0), 1.0);
+    let holds = Holds::new(&mut w);
+    holds
+        .hold(&mut w, b, v(0.0, 1.0, 5.0), fx(omega))
+        .expect("held");
+    let (mut worst, mut allowed, mut compared) = (0.0f64, 0.0f64, 0u64);
+    for step in 1..=1200u64 {
+        w.step(fx(dt));
+        if step >= 180 {
+            let p = pos(&w, b);
+            let off = (p[0].powi(2) + (p[1] - 1.0).powi(2) + (p[2] - 5.0).powi(2)).sqrt();
+            // the scheme's transient, and the rounding of Q64.64 positions (far below 1e-12 m)
+            let bound = settled_bound(2.0, omega, h, step * substeps as u64) + 1e-12;
+            if off - bound > worst - allowed {
+                (worst, allowed) = (off, bound);
+            }
+            compared += 1;
+        }
+    }
+    (worst, allowed, compared)
+}
+
+/// Held with sleeping off, from 3 s to 20 s the body is never further from its place than the scheme's transient
+/// allows: the bound above is the right one
+#[test]
+fn held_for_long_with_sleep_off_it_stays_at_its_place() {
+    let (worst, allowed, compared) = held_for_long(false);
+    assert_eq!(compared, 1021);
+    assert!(worst <= allowed, "{worst} m, allowed {allowed} m");
+}
+
+/// The same with the world's sleeping on (the default): a sleeping body is not moved, and a body whose spring is not
+/// at rest does not go to sleep, so it stays as close. Today it creeps up by over a millimetre
+#[test]
+#[ignore = "known defect: physics-hold-sleep-creep: the island sleeps while the spring is not at rest, and the sleeping body still moves"]
+fn held_for_long_with_sleep_on_it_stays_at_its_place() {
+    let (worst, allowed, compared) = held_for_long(true);
+    assert_eq!(compared, 1021);
+    assert!(worst <= allowed, "{worst} m, allowed {allowed} m");
+}
