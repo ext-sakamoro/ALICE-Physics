@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5945 |
+| 🟢 Not ignored (run by CI) | 5949 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6040** |
+| **Total** | **6044** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5945)
+## 🟢 Not ignored (5949)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -571,6 +571,7 @@ Per-file counts (the test names are in `tests/`):
 | `locking_p1.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |
 | `p2_quadrature_fix128.rs` | 4 |
+| `quat_normalize_range.rs` | 4 |
 | `refinement_conformity.rs` | 4 |
 | `spatial_hash_range.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |

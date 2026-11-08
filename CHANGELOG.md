@@ -135,6 +135,7 @@ were introduced during that release window.
 - `scripts/entropy_guard.py` と `scripts/allow_reason_guard.py` の `src/privacy.rs` の許可を外した (本番の code で時計と OS の乱数を読む箇所は 0 件、許可の表は空)
 
 ### Fixed
+- `QuatFix::normalize` と `QuatFix::unit_rotation` (`RigidBody::set_rotation` が使う): 最大の成分が 2^-16 から 2^30 の外にある四元数で、長さの 2 乗が `Fix128` で wrap するか 0 に丸まり、違う回転や単位でない四元数を返していた (例: (2^32, 0, 0, 1) は長さの 2 乗が 1 に wrap して正規化されずに残った) 回転は大きさに依らないので、範囲の外では先に 2 の冪で最大の成分を [1, 2) に寄せてから正規化する 範囲の内の bit は変えない (以前の式と 2 万件で bit 一致を試験) 試験 `tests/quat_normalize_range.rs` (範囲内の bit 不変、範囲外の閉じた式、2 の冪をいくつ掛けても同じ bit と単位長、wrap して 1 に見える入力)
 - `Fix128::from_f64` / `from_f32`: -2^63 未満は debug で panic、release で符号が反転して +9.2e18 になっていた 範囲外は両側とも飽和し、全 profile で同じ結果にした 2^63 以上は `(i64::MAX, 0)` と `(i64::MAX, u64::MAX)` に分かれていたのを最大値に揃えた 範囲内の bits は変えていない NaN が 0 になることは doc に書いた契約とし、`tests/determinism_from_f64.rs` で固定する
 - C / wasm / Python の `set_rotation` と fixed joint の回転: 成分が約 3e9 を超えると長さの二乗が `Fix128` で wrap し、成功を返して違う回転や単位でない四元数になっていた (0 でない入力を断ることもあった) 回転は大きさに依らないので、最大の成分が 2^-16 から 2^30 の外なら先に割ってから正規化する その範囲の内の bit は変えない 範囲の外は、以前は wrap しなかった入力 (最大の成分が 2^30 から約 3e9、および 2^-16 未満) も bit が変わる 断るのは 0 と有限でない成分だけ
 - C / wasm / Python の `set_angular_velocity`、`set_rotation`: 眠っている物体に掛けると成功を返すのに動かなかった 動的な物体の island を起こす 角速度 0 は起こさない

@@ -1998,6 +1998,10 @@ impl QuatFix {
     /// what it rotates (AUD-A-S4W1-004, AUD-A-S5W3-004, AUD-A-S5W3-014).
     #[must_use]
     pub fn unit_rotation(self) -> Self {
+        // outside the sizes `normalize` takes as they are, the squared length can wrap to near 1
+        if !self.largest_in_plain_range() {
+            return self.normalize();
+        }
         let tol = Fix128::from_raw(0, 1 << 32);
         if (self.length_squared() - Fix128::ONE).abs() <= tol {
             self
@@ -2006,10 +2010,63 @@ impl QuatFix {
         }
     }
 
+    /// The largest raw magnitude `|component| · 2⁶⁴` of the four components, chosen by comparison
+    fn largest_raw(self) -> u128 {
+        let raw = |f: Fix128| ((i128::from(f.hi) << 64) | i128::from(f.lo)).unsigned_abs();
+        let mut m = raw(self.x);
+        for c in [raw(self.y), raw(self.z), raw(self.w)] {
+            if c > m {
+                m = c;
+            }
+        }
+        m
+    }
+
+    /// Whether the largest component lies in `[2⁻¹⁶, 2³⁰]`, where the squared length of four
+    /// components is a `Fix128` with digits to spare (no wrap, no rounding to zero)
+    fn largest_in_plain_range(self) -> bool {
+        let m = self.largest_raw();
+        (1u128 << 48..=1u128 << 94).contains(&m)
+    }
+
     /// Normalize to unit quaternion (reciprocal: 1 division + 4 multiplications)
+    ///
+    /// A rotation does not depend on the scale. When the largest component lies in
+    /// `[2⁻¹⁶, 2³⁰]` the quaternion is normalized as it is (these bits have not changed). Outside
+    /// it, the squared length would wrap (large) or round to zero (small), so the quaternion is
+    /// first scaled by a power of two that brings its largest component into `[1, 2)`: exact when
+    /// it grows, the low bits of each component dropped when it shrinks (a relative change below
+    /// `2⁻⁶⁴` of the largest component). The zero quaternion gives the identity.
     #[inline(always)]
     #[must_use]
     pub fn normalize(self) -> Self {
+        if !self.largest_in_plain_range() {
+            return self.scaled_to_unit_size().normalize_plain();
+        }
+        self.normalize_plain()
+    }
+
+    /// The same direction with the largest component in `[1, 2)` (the zero quaternion unchanged)
+    fn scaled_to_unit_size(self) -> Self {
+        let m = self.largest_raw();
+        if m == 0 {
+            return self;
+        }
+        // bit 64 is 1.0
+        let k = (127 - m.leading_zeros() as i32) - 64;
+        let scale = |f: Fix128| -> Fix128 {
+            let r = (i128::from(f.hi) << 64) | i128::from(f.lo);
+            let a = r.unsigned_abs();
+            let s = if k >= 0 { a >> k } else { a << (-k) };
+            // s < 2^65, so it fits an i128 with its sign
+            let v = if r < 0 { -(s as i128) } else { s as i128 };
+            Fix128::from_raw((v >> 64) as i64, v as u64)
+        };
+        Self::new(scale(self.x), scale(self.y), scale(self.z), scale(self.w))
+    }
+
+    #[inline(always)]
+    fn normalize_plain(self) -> Self {
         let len = self.length();
         if len.is_zero() {
             Self::IDENTITY
