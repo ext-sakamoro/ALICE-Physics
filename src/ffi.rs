@@ -2837,7 +2837,6 @@ mod tests {
     fn binding_calls_match_the_rust_api_bit_for_bit() {
         unsafe {
             let (world, mut rust) = twin_worlds();
-            let w = &mut *world;
 
             assert_eq!(alice_physics_body_set_collision_radius(world, 1, 0.5), 1);
             rust.set_body_collision_radius(1, fx(0.5));
@@ -2917,7 +2916,9 @@ mod tests {
                 assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
                 rust.step(dt);
             }
-            same_state(w, &rust);
+            // a reference to the world is taken only after the last call through the raw pointer:
+            // one held across those calls is invalidated by the `&mut` each call makes from it
+            same_state(&*world, &rust);
             alice_physics_world_destroy(world);
         }
     }
