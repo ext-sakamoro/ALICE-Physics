@@ -36,7 +36,8 @@
 //! first-order-consistent but different scheme (explicit damping, a
 //! non-accumulated second pass) could pass the `O(a)` bound with.
 
-use alice_physics_core::det_math::{atan2_64, exp64, sqrt64};
+use alice_det_math::atan2_64;
+use alice_physics_core::det_math::{exp64, sqrt64};
 #[allow(
     deprecated,
     reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"

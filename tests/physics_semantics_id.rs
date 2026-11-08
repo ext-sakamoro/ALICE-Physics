@@ -44,15 +44,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use alice_physics_core::{
-    check_peer, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS, PHYSICS_PINS_BY_DET_MATH,
-    PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
-    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    check_peer, PeerMismatch, DET_MATH_FUNCTIONS, DET_MATH_PINS, PHYSICS_PEER_IDS,
+    PHYSICS_PINS_BY_DET_MATH, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID,
+    PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
-/// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
+/// semantics (a golden moved, a gap was filled, a peer moved, or an
+/// alice-det-math function this crate calls changed).
+const PINNED_ID_HEX: &str = "c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -106,6 +107,25 @@ fn fold(entries: &[(&str, [u8; 32])]) -> Result<[u8; 32], String> {
         h.update(digest);
     }
     Ok(h.finalize().into())
+}
+
+/// Every entry the identifier folds: [`PHYSICS_SEMANTICS_PINS`] and, under
+/// `det-math <function>`, [`DET_MATH_PINS`]
+fn all_entries() -> Vec<(String, [u8; 32])> {
+    PHYSICS_SEMANTICS_PINS
+        .iter()
+        .map(|(n, d)| ((*n).to_string(), *d))
+        .chain(
+            DET_MATH_PINS
+                .iter()
+                .map(|(n, d)| (format!("det-math {n}"), *d)),
+        )
+        .collect()
+}
+
+fn fold_all(entries: &[(String, [u8; 32])]) -> Result<[u8; 32], String> {
+    let borrowed: Vec<(&str, [u8; 32])> = entries.iter().map(|(n, d)| (n.as_str(), *d)).collect();
+    fold(&borrowed)
 }
 
 // ── Source scanning (the method of tests/determinism_golden_coverage.rs) ────
@@ -544,16 +564,16 @@ fn every_entry_is_the_golden_its_pin_names() {
     assert!(errors.is_empty(), "{}", errors.join("\n"));
     assert_eq!(
         compared,
-        table.len() - 1 - PHYSICS_PEER_IDS.len(),
-        "every entry other than det-math and the peers compared"
+        table.len() - PHYSICS_PEER_IDS.len(),
+        "every entry other than the peers compared"
     );
     println!("{compared} entries equal their golden");
 }
 
-// ── (b) the names are the pins plus det-math ────────────────────────────────
+// ── (b) the names are the pins and the peers ────────────────────────────────
 
 #[test]
-fn entry_names_are_the_pinned_combinations_and_det_math() {
+fn entry_names_are_the_pinned_combinations_and_the_peers() {
     let rows = pins_rows();
     let mut expected: BTreeSet<String> = rows.iter().map(|r| r.0.clone()).collect();
     assert_eq!(
@@ -562,7 +582,6 @@ fn entry_names_are_the_pinned_combinations_and_det_math() {
         "a PINS combination is listed twice"
     );
     assert!(!expected.contains(DET_MATH));
-    expected.insert(DET_MATH.to_string());
     for (peer, _) in PHYSICS_PEER_IDS {
         assert!(
             expected.insert((*peer).to_string()),
@@ -573,7 +592,7 @@ fn entry_names_are_the_pinned_combinations_and_det_math() {
     assert_eq!(names, expected);
     assert_eq!(
         PHYSICS_SEMANTICS_PINS.len(),
-        rows.len() + 1 + PHYSICS_PEER_IDS.len()
+        rows.len() + PHYSICS_PEER_IDS.len()
     );
     // KNOWN_GAPS is empty once every combination is pinned
     // (`golden_coverage_has_no_gaps` keeps it so); a row added later must not
@@ -581,30 +600,35 @@ fn entry_names_are_the_pinned_combinations_and_det_math() {
     let gaps = known_gaps();
     let both: Vec<_> = gaps.intersection(&names).collect();
     assert!(both.is_empty(), "known gaps must not be entries: {both:?}");
+    // alice-det-math is folded per function, never as a whole
+    assert!(!names.contains(DET_MATH));
+    assert!(!names.iter().any(|n| n.starts_with("det-math ")));
 }
 
 // ── (c) the identifier is the fold of the table ─────────────────────────────
 
 #[test]
 fn the_identifier_is_the_fold_of_the_table() {
-    let id = fold(PHYSICS_SEMANTICS_PINS).expect("the table folds");
+    let id = fold_all(&all_entries()).expect("the table folds");
     assert_eq!(
         hex(&id),
         hex(&PHYSICS_SEMANTICS_ID),
-        "PHYSICS_SEMANTICS_ID is not the fold of PHYSICS_SEMANTICS_PINS"
+        "PHYSICS_SEMANTICS_ID is not the fold of PHYSICS_SEMANTICS_PINS and DET_MATH_PINS"
     );
 }
 
-// ── (d) the det-math entry ──────────────────────────────────────────────────
+// ── (d) the alice-det-math function pins ────────────────────────────────────
 
+/// One pin per alice-det-math function this crate calls, in the list's order, each the resolved
+/// alice-det-math's own identifier of that function
 #[test]
-fn the_det_math_entry_is_the_det_math_identifier() {
-    assert_eq!(
-        table().get(DET_MATH).map(|d| hex(d)),
-        Some(hex(&alice_det_math::SEMANTICS_ID)),
-        "the alice-det-math entry is not alice_det_math::SEMANTICS_ID \
-         (the resolved det-math changed its semantics)"
-    );
+fn the_det_math_pins_are_the_resolved_function_identifiers() {
+    let names: Vec<&str> = DET_MATH_PINS.iter().map(|(n, _)| *n).collect();
+    assert_eq!(names, DET_MATH_FUNCTIONS);
+    assert!(!DET_MATH_PINS.is_empty(), "compared nothing");
+    for (name, pin) in DET_MATH_PINS {
+        assert_eq!(*pin, alice_det_math::function_pin(name), "{name}");
+    }
 }
 
 // ── (d') the peer entries ───────────────────────────────────────────────────
@@ -627,7 +651,11 @@ fn the_peer_entries_are_the_peer_table() {
 #[test]
 fn the_alice_analytics_entry_is_its_exported_identifier() {
     assert_eq!(
-        check_peer("test", "alice-analytics", &alice_analytics::SEMANTICS_ID),
+        check_peer(
+            "test",
+            "alice-analytics",
+            &alice_analytics::semantics::ANALYTICS_SEMANTICS_ID
+        ),
         Ok(())
     );
 }
@@ -676,7 +704,7 @@ fn another_peer_identifier_is_a_mismatch_naming_both() {
 
 #[test]
 fn the_identifier_is_pinned_and_independent_of_features() {
-    let recomputed = fold(PHYSICS_SEMANTICS_PINS).expect("the table folds");
+    let recomputed = fold_all(&all_entries()).expect("the table folds");
     assert_eq!(hex(&recomputed), PINNED_ID_HEX);
     assert_eq!(hex(&PHYSICS_SEMANTICS_ID), PINNED_ID_HEX);
     // the doc states the hex form too
@@ -835,11 +863,14 @@ fn ignored() { assert_eq!("", A); }
 
 // ── (f) one identifier per alice-det-math generation ───────────────────────
 
-/// The pins with the det-math entry replaced by `det_math`.
+/// The pins of an earlier generation: its whole det-math identifier as the `alice-det-math`
+/// entry (those generations folded alice-det-math as a whole), and the values recorded under it.
 fn pins_under(det_math: [u8; 32]) -> Vec<(&'static str, [u8; 32])> {
     PHYSICS_SEMANTICS_PINS
         .iter()
-        .map(|&(n, d)| {
+        .copied()
+        .chain([(DET_MATH, det_math)])
+        .map(|(n, d)| {
             if n == DET_MATH {
                 return (n, det_math);
             }
@@ -911,14 +942,17 @@ fn every_row_is_the_fold_under_its_det_math_generation() {
     }
 }
 
-/// The identifier is the row of the resolved det-math, each generation has
-/// one row, and the rows of earlier generations stay (0.5.0 and 0.5.1).
+/// The rows are earlier generations only (this build folds the functions it calls, so the
+/// resolved det-math has no row and the identifier is no row), each generation has one row, and
+/// the rows of earlier generations stay (0.5.0 and 0.5.1).
 #[test]
-fn the_identifier_is_the_row_of_the_resolved_det_math() {
-    assert_eq!(
-        PHYSICS_SEMANTICS_ID,
-        semantics_id_for(&alice_det_math::SEMANTICS_ID)
-    );
+fn the_rows_are_earlier_generations_and_stay() {
+    assert!(!PHYSICS_SEMANTICS_BY_DET_MATH
+        .iter()
+        .any(|(det, _)| *det == alice_det_math::SEMANTICS_ID));
+    assert!(!PHYSICS_SEMANTICS_BY_DET_MATH
+        .iter()
+        .any(|(_, id)| *id == PHYSICS_SEMANTICS_ID));
     let keys: BTreeSet<[u8; 32]> = PHYSICS_SEMANTICS_BY_DET_MATH.iter().map(|r| r.0).collect();
     assert_eq!(
         keys.len(),
@@ -934,12 +968,16 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
 }
 
 /// The earlier identifiers a cross-version oracle covers: `(identifier, the test that restores a
-/// snapshot written by that release and steps it to the release's own bits). None now:
-/// `88cf6f85…` (the identifier before the secondary chain was pinned) was covered by
+/// snapshot written by that release and steps it to the release's own bits). `e90000da…`
+/// (alice-det-math 0.5.2 at 2d01c63f folded as a whole) is covered by
+/// `tests/world_snapshot_xv_e90000da.rs`. `88cf6f85…` (the identifier before the secondary chain was pinned) was covered by
 /// `tests/world_snapshot_xv_88cf6f85.rs` until the stepping changed (shaped bodies against static
 /// colliders, static overlap pushed out without velocity, damping as a rate per second); that file
 /// now checks its snapshots are refused
-const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[];
+const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[(
+    "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6",
+    "tests/world_snapshot_xv_e90000da.rs::a_restored_and_stepped_here_is_b_to_the_bit",
+)];
 
 /// Stepping paths pinned after the 3.x releases (their folds did not hold them), left out of the
 /// fold that reproduces the identifiers 3.x stamped, as the peer and Law output entries are
@@ -1000,31 +1038,4 @@ fn an_earlier_generation_id_is_previous_only_with_a_cross_version_oracle() {
             hex(id)
         );
     }
-}
-
-#[test]
-#[should_panic(expected = "has no row in PHYSICS_SEMANTICS_BY_DET_MATH")]
-fn an_unknown_det_math_generation_has_no_identifier() {
-    let _ = semantics_id_for(&[0x42; 32]);
-}
-
-/// The lookup compares the whole identifier: every row key with any single
-/// byte changed (each of the 32 positions) has no identifier.
-#[test]
-fn a_key_differing_in_any_one_byte_has_no_identifier() {
-    let mut refused = 0;
-    for (det_math, _) in PHYSICS_SEMANTICS_BY_DET_MATH {
-        for i in 0..32 {
-            let mut near = *det_math;
-            near[i] ^= 0x01;
-            let got = std::panic::catch_unwind(|| semantics_id_for(&near));
-            assert!(
-                got.is_err(),
-                "det-math {} with byte {i} changed got an identifier",
-                hex(det_math)
-            );
-            refused += 1;
-        }
-    }
-    assert_eq!(refused, 32 * PHYSICS_SEMANTICS_BY_DET_MATH.len());
 }

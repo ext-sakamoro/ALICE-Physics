@@ -35,7 +35,7 @@ fn cosh(x: f32) -> f32 {
 }
 
 fn asinh(z: f32) -> f32 {
-    det_math::ln(z + (z * z + 1.0).sqrt())
+    alice_det_math::ln(z + (z * z + 1.0).sqrt())
 }
 
 /// Solves `a * sinh(half_span / a) = half_length` for `a > 0` by bisection;
