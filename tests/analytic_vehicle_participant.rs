@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"
+        "c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f"
     );
 }
 
@@ -654,8 +654,10 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "3b0a4232d223b6a393c5561b4518265c597f2b9d2e45d247d48c9ccea12fd005";
-const DRIVE_TGS: &str = "489d4bb5288ef5a151c31a9250d7541f0260d64c66889ec3e31e60668cc01431";
+// re-pinned for the semantics identifier c82742de… (each alice-det-math function pinned by its own
+// id): the digest moved with the identifier
+const DRIVE_XPBD: &str = "f0b8a6b4991a395683b7ca1ea5bb792d6d4bf744286fa9fff25ffee3ee1920e9";
+const DRIVE_TGS: &str = "d16770cb8872b6b53e9e1c7b9d9a85f2ff86f1bb2d970143b68c97c2678ec9c0";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

@@ -558,8 +558,10 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // the semantics identifier e90000da…: the header, the version, the damping fields and the checksum
 // moved; the bodies and the participant payload did not (no damping, no static collider here; the
 // body state and payload after 256 frames hash the same as the build before that change)
-const THREE_BODY_XPBD: &str = "86851a66c8670a77b7c3d8862bbfb11a2130b794a7987a2c195ac5c003832dc0";
-const THREE_BODY_TGS: &str = "43c48a9f25149e94911785cfe967fe362e44af5d96add71c5a1227f1d7ed737c";
+// re-pinned for the semantics identifier c82742de… (each alice-det-math function pinned by its own
+// id): the digest moved with the identifier
+const THREE_BODY_XPBD: &str = "2269abd587750d934e0fa989df809f1ef36f151010fd84bb00e38ddb79a77d90";
+const THREE_BODY_TGS: &str = "a0b9560a3e016f4b47c306c38e31f3ea82a570ab935da36ad5dd2f497f084dc3";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
