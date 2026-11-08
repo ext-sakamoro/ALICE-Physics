@@ -5,7 +5,6 @@ src/acoustic_wave.rs
 src/aeroelasticity.rs
 src/anisotropic.rs
 src/anisotropic_friction.rs
-src/articulation.rs
 src/atmosphere.rs
 src/audio_physics.rs
 src/beam_stress.rs
@@ -13,9 +12,7 @@ src/bimaterial.rs
 src/bridging.rs
 src/buckling.rs
 src/buoyancy_zone.rs
-src/ccd.rs
 src/cfd_solver.rs
-src/character.rs
 src/cloth.rs
 src/cloth_fluid.rs
 src/compressible.rs
@@ -40,8 +37,6 @@ src/fsi_advanced.rs
 src/gyroscopic.rs
 src/hyperelastic.rs
 src/interface_capture.rs
-src/joint.rs
-src/joint_extra.rs
 src/kepler.rs
 src/kinematic_loop.rs
 src/laminate.rs
@@ -56,10 +51,8 @@ src/modal.rs
 src/molecular_dynamics.rs
 src/motor.rs
 src/multiphase.rs
-src/nbody.rs
 src/non_newtonian.rs
 src/pair_potential.rs
-src/particle.rs
 src/phase_change.rs
 src/physics2d.rs
 src/piezoelectric.rs
@@ -71,8 +64,6 @@ src/rolling_contact.rs
 src/rope.rs
 src/rope_attach.rs
 src/rotor.rs
-src/sdf_ccd.rs
-src/sdf_character.rs
 src/sdf_force.rs
 src/sdf_sph.rs
 src/sdf_wind_field.rs
@@ -81,10 +72,6 @@ src/sleeping.rs
 src/smoke_fire.rs
 src/soft_body_cut.rs
 src/solver.rs
-src/solver/world_ccd.rs
-src/solver_tgs.rs
-src/solver_tgs_hooks_6dof_oriented.rs
-src/solver_tgs_hooks_6dof_oriented_scoped.rs
 src/spherical_terrain.rs
 src/structural_solver.rs
 src/surface_tension_csf.rs
@@ -93,13 +80,6 @@ src/thermal_stress.rs
 src/thin_wall.rs
 src/transient_thermal.rs
 src/turbulence.rs
-src/vehicle.rs
-src/vehicle_dynamics/mod.rs
-src/vehicle_dynamics/powertrain.rs
-src/vehicle_dynamics/scenario.rs
-src/vehicle_dynamics/surface.rs
-src/vehicle_dynamics/tire.rs
 src/vibration_wall.rs
 src/wave_ship.rs
 src/wind_zone.rs
-src/world_character.rs

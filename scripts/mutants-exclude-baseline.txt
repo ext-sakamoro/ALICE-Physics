@@ -2,24 +2,24 @@
 # written by scripts/mutants_exclude_check.py --write
 648	tests::
 1	replace > with >= in scaled_exp_neg
-1	ccd\.rs:151:.*replace \* with / in sphere_plane_toi
-1	ccd\.rs:167:.*replace \* with / in sphere_plane_toi
-1	ccd\.rs:235:.*replace > with >= in swept_aabb
-1	ccd\.rs:252:.*replace > with >= in swept_aabb
-1	ccd\.rs:269:.*replace > with >= in swept_aabb
-1	ccd\.rs:236:.*replace < with <= in swept_aabb
-1	ccd\.rs:253:.*replace < with <= in swept_aabb
-1	ccd\.rs:270:.*replace < with <= in swept_aabb
-1	ccd\.rs:280:.*replace < with <= in swept_aabb
-1	ccd\.rs:307:.*replace > with >= in slab_test
+1	ccd\.rs:247:.*replace \* with / in sphere_plane_toi
+1	ccd\.rs:263:.*replace \* with / in sphere_plane_toi
+1	ccd\.rs:331:.*replace > with >= in swept_aabb
+1	ccd\.rs:348:.*replace > with >= in swept_aabb
+1	ccd\.rs:365:.*replace > with >= in swept_aabb
+1	ccd\.rs:332:.*replace < with <= in swept_aabb
+1	ccd\.rs:349:.*replace < with <= in swept_aabb
+1	ccd\.rs:366:.*replace < with <= in swept_aabb
+1	ccd\.rs:376:.*replace < with <= in swept_aabb
+1	ccd\.rs:403:.*replace > with >= in slab_test
 3	replace < with <= in AABB::union
 3	replace > with >= in AABB::union
 1	replace > with >= in solve_hinge_joint
 1	replace > with >= in solve_slider_joint
 2	replace > with >= in solve_d6_joint
-1	joint\.rs:1507:.*replace < with <= in solve_cone_twist_joint
-1	joint\.rs:1513:.*replace > with >= in solve_cone_twist_joint
-1	joint\.rs:1540:.*replace > with >= in solve_cone_twist_joint
+1	joint\.rs:1635:.*replace < with <= in solve_cone_twist_joint
+1	joint\.rs:1641:.*replace > with >= in solve_cone_twist_joint
+1	joint\.rs:1668:.*replace > with >= in solve_cone_twist_joint
 4	replace \| with \^ in Fix128::(sqrt|half|shr_bits|double)$
 2	replace \| with \^ in <impl Div for Fix128>::div$
 16	replace \| with \^ in (widening_mul_by_words|limbs_to_u128|divide_limbs|sqrt_step|isqrt_shifted)$
