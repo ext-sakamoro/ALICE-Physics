@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: 同値変異の表 `scripts/mutants-equivalent.txt` の key を `file:line:col` から **`file:fn+offset:col`** (関数名 + 関数の先頭からの行の距離 + 列) に変えた 関数より上の行の増減で行番号が動いても表は有効なまま (行番号 key だと着地の CI 待ちの間に main が動くたびに衝突していた、11-08 に 2 件) 関数は名前と関数 hash で引く (同名が複数なら hash で区別、hash の合わない関数は従来どおり stale で fail)、missed.txt の `file:line:col` は行を含む関数を探して key に写す 古い行番号の形は fail して移行を促す `--hash file:line:fn` が key を出力する 試験 39 (関数の移動で有効なまま / 本体の変更で stale / 同名 2 つの区別 / 古い形の拒否 / 関数と変異の名前の不一致 を追加)、手の変異 3 件 (hash を見ない / offset を丸める / offset を 0 にする) は red `mutants_ratchet.py` は source root を渡す
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
 - `scripts/land.py`: ALICE-Law の状態を確かめる時の時間切れで、子の process も止める Law の main の fetch の git と `land_law_state.py` を自分の process group (POSIX は `start_new_session` = setsid、Windows は `CREATE_NEW_PROCESS_GROUP`) で起こし、時間切れでその group 全体を止める (POSIX は `killpg`、Windows は `taskkill /T`) これまでは script だけが止まり、script が起こした git / gh が残った 試験 `scripts/test_land.py` の `LawState` (script が起こした子が時間切れの後に動いていないこと、拒否が上限の時刻に来ること) 止めた後の読み取りにも上限 (5 秒) を置き、process group を離れた子孫が pipe を開いたままでも着地は上限の時刻に止まる (試験: group を離れた子が pipe を持ったままでも拒否が遅れないこと)

@@ -33,7 +33,7 @@ fn panics() {}
 """
 
 
-def entry(pos: str = "src/a.rs:3:11", digest: str | None = None, mutation: str = MUT,
+def entry(pos: str = "src/a.rs:f+2:11", digest: str | None = None, mutation: str = MUT,
           reason: str = REASON, tests: str | None = PIN, fn_digest: str | None = None) -> str:
     fn_digest = fn_digest or me.fn_digest_at(SRC, 3, "f")
     line = f"{pos}\t{digest or me.line_digest(LINE)}\t{fn_digest}\t{mutation}\t{reason}"
@@ -63,7 +63,7 @@ class Case(unittest.TestCase):
         return me.check(self.list, self.root)
 
     def filtered(self, *missed: str) -> tuple[list[str], list[str]]:
-        return me.split_missed(list(missed), me.valid_keys(self.list, self.root))
+        return me.split_missed(list(missed), me.valid_keys(self.list, self.root), self.root)
 
 
 class CheckTest(Case):
@@ -83,7 +83,7 @@ class CheckTest(Case):
         self.assertTrue(any("empty reason" in e for e in self.check()))
 
     def test_a_wrong_field_count_fails(self) -> None:
-        self.write_list(f"src/a.rs:3:11\t{me.line_digest(LINE)}\t{MUT}\n")
+        self.write_list(f"src/a.rs:f+2:11\t{me.line_digest(LINE)}\t{MUT}\n")
         self.assertTrue(any("expected 6 tab-separated" in e for e in self.check()))
 
     def test_a_duplicate_entry_fails(self) -> None:
@@ -96,12 +96,50 @@ class CheckTest(Case):
         self.assertTrue(any("changed" in e for e in self.check()))
 
     def test_a_column_that_is_not_the_operator_fails(self) -> None:
-        self.write_list(entry(pos="src/a.rs:3:9"))
+        self.write_list(entry(pos="src/a.rs:f+2:9"))
         self.assertTrue(any("does not start with '+'" in e for e in self.check()))
 
-    def test_a_line_past_the_end_fails(self) -> None:
-        self.write_list(entry(pos="src/a.rs:30:11"))
-        self.assertTrue(any("has 5 lines" in e for e in self.check()))
+    def test_an_offset_past_the_function_fails(self) -> None:
+        self.write_list(entry(pos="src/a.rs:f+30:11"))
+        self.assertTrue(any("points past the end of fn f" in e for e in self.check()))
+
+    def test_the_old_line_keyed_position_is_refused(self) -> None:
+        self.write_list(entry(pos="src/a.rs:3:11"))
+        self.assertTrue(any("keyed by line number (the old form)" in e for e in self.check()))
+
+    def test_a_position_naming_another_function_than_the_mutation_fails(self) -> None:
+        self.write_list(entry(pos="src/a.rs:g+2:11"))
+        self.assertTrue(any("position names fn 'g' but the mutation names 'f'" in e for e in self.check()))
+
+    def test_a_missing_function_fails(self) -> None:
+        self.write_list(entry())
+        self.write_src(SRC.replace("fn f()", "fn h()"))
+        self.assertTrue(any("has no fn f" in e for e in self.check()))
+
+    def test_a_moved_function_keeps_the_entry_valid(self) -> None:
+        # lines added above the function move every line number: the key (function and
+        # offset) and both hashes are unchanged, so --check passes and the moved mutant is
+        # still filtered
+        self.write_list(entry())
+        self.write_src("// a\n// b\n// c\n\n" + SRC)
+        self.assertEqual(self.check(), [])
+        moved = f"src/a.rs:7:11: {MUT}"
+        self.assertEqual(self.filtered(moved), ([], [moved]))
+
+    def test_a_changed_function_body_is_stale_even_at_the_same_offset(self) -> None:
+        self.write_list(entry())
+        self.write_src(SRC.replace("    s\n}", "    s = s + 1;\n    s\n}"))
+        self.assertTrue(any("fn f in src/a.rs changed" in e for e in self.check()))
+
+    def test_two_functions_of_the_same_name_are_told_apart_by_their_hash(self) -> None:
+        other = "mod m {\nfn f() {\n    let mut s = 1;\n    s = s - x;\n    s\n}\n}\n"
+        self.write_list(entry())
+        self.write_src(other + SRC)
+        self.assertEqual(self.check(), [])
+        missed_in_second = f"src/a.rs:10:11: {MUT}"
+        self.assertEqual(self.filtered(missed_in_second), ([], [missed_in_second]))
+        missed_in_first = "src/a.rs:4:11: replace - with + in f"
+        self.assertEqual(self.filtered(missed_in_first), ([missed_in_first], []))
 
 
 class PinningTestsTest(Case):
@@ -148,16 +186,16 @@ class FunctionHashTest(Case):
         self.write_src(SRC + "\nfn other() -> u8 {\n    1\n}\n")
         self.assertEqual(self.check(), [])
 
-    def test_a_line_outside_the_named_function_fails(self) -> None:
+    def test_a_position_whose_function_is_not_the_mutations_fails(self) -> None:
         self.write_list(entry(mutation="replace + with - in g"))
-        self.assertTrue(any("is not inside fn g" in e for e in self.check()))
+        self.assertTrue(any("position names fn 'f' but the mutation names 'g'" in e for e in self.check()))
 
-    def test_a_line_after_the_named_function_closes_fails(self) -> None:
-        src = "fn g() -> u8 {\n    1\n}\n" + SRC  # g closes before the entry's line
+    def test_an_offset_after_the_named_function_closes_fails(self) -> None:
+        src = "fn g() -> u8 {\n    1\n}\n" + SRC  # g closes three lines in; offset 5 is in f
         self.write_src(src)
-        self.write_list(entry(pos="src/a.rs:6:11", mutation="replace + with - in g",
+        self.write_list(entry(pos="src/a.rs:g+5:11", mutation="replace + with - in g",
                               fn_digest=me.line_digest("fn g() -> u8 {\n1\n}")))
-        self.assertTrue(any("is not inside fn g" in e for e in self.check()))
+        self.assertTrue(any("points past the end of fn g" in e for e in self.check()))
 
     def test_a_method_name_is_read_after_the_type(self) -> None:
         self.assertEqual(me.fn_name("replace < with <= in PhysicsWorld::break_overloaded_joints"),
@@ -201,13 +239,14 @@ class FilterTest(Case):
         other = "src/a.rs:3:11: replace + with * in f"
         self.assertEqual(self.filtered(other), ([other], []))
 
-    def test_a_moved_mutant_is_missed(self) -> None:
-        # a line inserted above moves the mutant to line 4: the entry keyed by
-        # line 3 neither matches it nor stays valid
+    def test_a_moved_mutant_is_still_equivalent_and_the_old_line_is_not(self) -> None:
+        # a line inserted above moves the mutant to line 4: the entry, keyed by the function
+        # and the offset, matches the moved line; the old line 3 is now the `let` and names no
+        # mutant of this entry
         self.write_list(entry())
         self.write_src("// moved\n" + SRC)
         moved = f"src/a.rs:4:11: {MUT}"
-        self.assertEqual(self.filtered(moved, MISSED), ([moved, MISSED], []))
+        self.assertEqual(self.filtered(moved, MISSED), ([MISSED], [moved]))
 
     def test_a_stale_entry_does_not_filter(self) -> None:
         self.write_list(entry())
