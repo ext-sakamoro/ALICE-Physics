@@ -1201,7 +1201,7 @@ mod tests {
             Vec3Fix::from_int(0, 10, 0),
             Fix128::from_int(2),
         ))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
     }
 
@@ -1221,7 +1221,7 @@ mod tests {
             Fix128::ONE,
         ))];
         let pos_before = (bodies[0].position, bodies[1].position);
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // Static bodies should not move
         assert_eq!(bodies[0].position.y.hi, pos_before.0.y.hi);
@@ -1253,7 +1253,7 @@ mod tests {
             RigidBody::new(Vec3Fix::from_int(5, 0, 0), Fix128::ONE),
         ];
         let joints = vec![ExtraJoint::Gear(GearJoint::new(0, 1, 0, 1, Fix128::ONE))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // No rotation change (both identity) means no gear error.
         // Rotations should remain near identity (w close to 1).
@@ -1280,7 +1280,7 @@ mod tests {
         bodies[0].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 4));
         // prev_rotation stays IDENTITY, so there's angular displacement on A
         let joints = vec![ExtraJoint::Gear(GearJoint::new(0, 1, 0, 1, Fix128::ONE))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // Body B should have received some angular correction
         // (the gear couples them, so B's rotation should change)
@@ -1320,7 +1320,7 @@ mod tests {
             Vec3Fix::ZERO,
             QuatFix::IDENTITY,
         ))];
-        solve_extra_joints(bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
     }
 
@@ -1343,7 +1343,7 @@ mod tests {
                 WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
                     .with_compliance(compliance),
             )];
-            solve_extra_joints(&mut bodies, &joints, z_hinges(), d)
+            solve_extra_joints(&mut bodies, &joints, &z_hinges(), d)
                 .expect("the hinges the gears name are listed");
             let ratio = turn_angle(bodies[0].rotation, bodies[1].rotation) / before;
             assert!(
@@ -1400,7 +1400,7 @@ mod tests {
             rot_a.conjugate().mul(rot_b),
         ))];
         for _ in 0..solves {
-            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
                 .expect("the hinges the gears name are listed");
         }
         let target = bodies[0].rotation.mul(rot_a.conjugate().mul(rot_b));
@@ -1605,7 +1605,7 @@ mod tests {
             QuatFix::IDENTITY,
         ))];
         for _ in 0..100 {
-            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
                 .expect("the hinges the gears name are listed");
         }
         let dist = (bodies[1].position - bodies[0].position).length();
@@ -1680,7 +1680,7 @@ mod tests {
             .with_break_force(Fix128::from_int(5));
         let joints = vec![ExtraJoint::Weld(wj)];
         let pos_before = bodies[1].position;
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // Should be broken, so body should not move
         assert_eq!(
@@ -1722,7 +1722,7 @@ mod tests {
         ))];
         // No displacement from prev_position => no error => no significant correction
         let pos_before = bodies[0].position;
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         let moved = (bodies[0].position.x - pos_before.x).abs();
         assert!(
@@ -1747,7 +1747,7 @@ mod tests {
             Vec3Fix::UNIT_Z,
             Fix128::ONE,
         ))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // There should be some correction applied (rack moved without pinion rotating)
         // The pinion should receive angular correction or the rack should be pulled back
@@ -1804,7 +1804,7 @@ mod tests {
             Fix128::from_int(1),
         ))];
         for _ in 0..50 {
-            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
                 .expect("the hinges the gears name are listed");
         }
         // Body should have moved toward target (10, 0, 0)
@@ -1824,7 +1824,7 @@ mod tests {
             Fix128::from_int(1000),
             Fix128::ZERO,
         ))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         // With tiny max_force and large distance, movement should be small
         let moved = bodies[0].position.x;
@@ -1844,7 +1844,7 @@ mod tests {
             Fix128::from_int(50),
             Fix128::from_int(5),
         ))];
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         assert!(
             bodies[0].position.x.is_zero(),
@@ -1863,7 +1863,7 @@ mod tests {
             Fix128::from_int(5),
         ))];
         let pos_before = bodies[0].position;
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
             .expect("the hinges the gears name are listed");
         assert_eq!(
             bodies[0].position.x.hi, pos_before.x.hi,
@@ -1898,7 +1898,7 @@ mod tests {
         ];
         // Should not panic and should process both joints
         for _ in 0..10 {
-            solve_extra_joints(&mut bodies, &joints, z_hinges(), dt())
+            solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt())
                 .expect("the hinges the gears name are listed");
         }
         // Weld should pull body 1 closer
