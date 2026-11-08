@@ -41,12 +41,12 @@
 //!   (no adhesion); there are no side walls. No plasticity, no viscosity (the generalised
 //!   Maxwell model of the mochi is a later step). Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area).
 //! - **Tiers.** L0 only.
 //!
 

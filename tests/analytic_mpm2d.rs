@@ -431,3 +431,39 @@ fn a_refused_step_changes_nothing() {
     );
     assert_eq!(w.particles(), &start[..]);
 }
+
+/// Seeding a disk of radius `r` from its signed distance puts particles only inside it, at
+/// rest, and their rest areas sum to `π r²` within the lattice's boundary error (half the
+/// perimeter times a sample spacing).
+#[test]
+fn a_seeded_disk_has_the_disk_area() {
+    let mut w = world(0.0, None, [32, 32]);
+    let (cx, cy, r) = (0.16, 0.15, 0.093);
+    let n = w.seed(
+        |p| {
+            let dx = p[0].to_f64() - cx;
+            let dy = p[1].to_f64() - cy;
+            fx((dx * dx + dy * dy).sqrt() - r)
+        },
+        2,
+    );
+    assert_eq!(n, w.particles().len());
+    let area: f64 = w.particles().iter().map(|p| p.area0.to_f64()).sum();
+    let want = std::f64::consts::PI * r * r;
+    let spacing = CELL / 2.0;
+    assert!(
+        (area - want).abs() < 2.0 * std::f64::consts::PI * r * spacing / 2.0,
+        "seeded area {area:.6e} vs π r² {want:.6e}"
+    );
+    for p in w.particles() {
+        let d = ((p.x[0].to_f64() - cx).powi(2) + (p.x[1].to_f64() - cy).powi(2)).sqrt();
+        assert!(d < r, "a particle outside the disk at {d}");
+        assert_eq!(p.v, [Fix128::ZERO; 2]);
+        assert!((p.mass.to_f64() - RHO * p.area0.to_f64()).abs() < 1e-12);
+    }
+    assert_eq!(
+        w.seed(|_| fx(-1.0), 0),
+        0,
+        "no samples per axis seeds nothing"
+    );
+}
