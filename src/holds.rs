@@ -5,6 +5,39 @@
 //! is in `snapshot_world` and `state_digest`, and is undone by removing it. A body held to `x_t` moves as
 //! `x(t) = x_t + (x0 + (v0 + ω x0) t) e^(−ωt)` with `x0` measured from `x_t`, whatever its mass, and comes to rest at
 //! the place under gravity: the spring's other end is lifted by the sag `m g / k`.
+//!
+//! # MODEL — a blow from a point, and holds by critically damped springs
+//!
+//! **Equations.** A blow: each dynamic body at distance `d` from `center`, `0 < d < R`, gets the impulse
+//! `J = s (1 − d/R) (x − c)/d` ([`PhysicsWorld::apply_radial_impulse`](crate::solver::PhysicsWorld::apply_radial_impulse)), so `Δv = J / m`. A hold: a spring joint
+//! (`rest_length` 0) between the body and a static anchor at the place, `k = m ω²`, `c = 2 m ω` (critical damping,
+//! `ζ = 1`) ([`Holds::hold`](crate::holds::Holds::hold), [`Holds::form`](crate::holds::Holds::form)); the anchor is lifted by the sag `g / ω²` so the body rests at the place
+//! under gravity (`Holds::lifted`). The world's spring solve makes each substep the backward Euler step of
+//! `m x'' = −k (x − x_a) − c x'`, so a held body follows `x(t) = x_t + (x0 + (v0 + ω x0) t) e^(−ωt)` within the
+//! scheme's first-order error in `h` ([`Holds::move_to`](crate::holds::Holds::move_to) moves the place, keeping `k`).
+//!
+//! **Units.** SI: positions m, `R` m, `s` N·s, `ω` rad/s, `k` N/m, `c` N·s/m, `m` kg, `g` m/s². Every quantity is
+//! `Fix128` (Q64.64), so a run replays bit for bit.
+//!
+//! **Conservation.** A blow adds momentum `Σ J` (zero for bodies placed symmetrically about the centre) and kinetic
+//! energy; nothing else changes. A hold is an external force: the held body's momentum and energy are not conserved
+//! while held, and the damper takes energy out at the rate `c |v|²` (critical: no overshoot of the place). Let go, the
+//! body keeps its velocity (nothing is added or taken at release).
+//!
+//! **Range.** Any time step: the backward Euler spring is unconditionally stable and free of overshoot for `ζ ≥ 1`
+//! (`solve_spring_joint`). A radius not above zero reaches nothing (returns 0); a body at the centre has no direction
+//! and is left alone; static and kinematic bodies are refused (`HoldError::NotDynamic`), as are `ω ≤ 0`
+//! (`HoldError::BadOmega`), an unknown body, a second hold on a held body, and a `form` with any such body (refused
+//! whole, nothing changes). Values must keep `m ω²` inside `Fix128`; beyond that the arithmetic wraps (not detected).
+//!
+//! **Approximations.** The blow is instantaneous (no duration, no shape: it acts at the centre of mass, so it gives no
+//! spin) and falls off linearly with distance; the hold acts at the centre of mass (no torque) and ignores what the
+//! place is (no contact with the hand); the trajectory is the scheme's, first order in `h` against the continuous
+//! closed form.
+//!
+//! **Validation.** `tests/analytic_holds.rs::a_blow_gives_each_body_the_impulse_it_states::a_blow_goes_along_the_way_from_the_centre_in_any_direction::a_negative_blow_pulls_in_and_equal_bodies_either_side_cancel::a_blow_leaves_what_cannot_move_and_what_has_no_way_alone::a_hold_follows_the_closed_form_at_any_mass::a_hold_follows_the_closed_form_at_more_substeps_and_closer::under_gravity_it_comes_to_the_place_not_below_it::a_hold_does_not_overshoot::let_go_it_keeps_its_velocity_and_falls_as_free_fall::what_cannot_be_held_is_refused_and_nothing_changes::a_hold_is_in_the_digest_and_survives_a_snapshot_bit_for_bit`
+//!
+//! **Tiers.** L0 only.
 
 use crate::filter::CollisionFilter;
 use crate::joint::{Joint, SpringJoint};
