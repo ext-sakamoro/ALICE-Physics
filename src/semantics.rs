@@ -2,15 +2,15 @@
 //!
 //! The determinism goldens under `tests/determinism_*.rs` pin the bits a world
 //! has after it is stepped, one digest per stepping path. This module folds
-//! those digests, plus the semantics identifier of `alice-det-math` (the
-//! transcendental functions the solvers evaluate), into one 32-byte value.
+//! those digests, plus the identifier of each `alice-det-math` function the
+//! crate calls ([`DET_MATH_PINS`]), into one 32-byte value.
 //! Two builds with the same identifier step every pinned path to the same
 //! bits; a build that steps any of them differently has a different value.
 //!
-//! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6
+//! c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f
 //! ```
 //!
 //! # Entries
@@ -22,9 +22,13 @@
 //! `tests/determinism_law_outputs.rs` for each src file that calls the Law
 //! max / min / clamp (named `"law output: <file>"`, listed in its
 //! `LAW_OUTPUT_PINS` table; a file with such a call and no row fails there),
-//! plus one entry `"alice-det-math"` holding `alice_det_math::SEMANTICS_ID`,
 //! plus one entry per optional Law-bearing peer this crate exchanges values
-//! with ([`PHYSICS_PEER_IDS`]: `"alice-analytics"`, `"alice-ml"`).
+//! with ([`PHYSICS_PEER_IDS`]: `"alice-analytics"`, `"alice-ml"`). The fold
+//! also takes one entry per `alice-det-math` function the crate calls
+//! ([`DET_MATH_FUNCTIONS`]), named `det-math <function>`, holding that
+//! function's identifier ([`DET_MATH_PINS`], compared with
+//! `alice_det_math::function_pin` at compile time): a function of
+//! `alice-det-math` the crate does not call moves nothing.
 //! **A peer's identifier moving moves this identifier, by design**: a world
 //! stepped by this build and handed to a peer of another arithmetic is a
 //! different exchange.
@@ -64,8 +68,8 @@
 //!
 //! `tests/physics_semantics_id.rs` reads every digest from the golden test
 //! the coverage table names (the source, not a copy), checks that the entry
-//! names are exactly the pinned combinations plus `"alice-det-math"`, that
-//! the det-math entry equals `alice_det_math::SEMANTICS_ID`, and recomputes
+//! names are exactly the pinned combinations and the peers, that each
+//! [`DET_MATH_PINS`] entry is the resolved `alice-det-math`'s, and recomputes
 //! the fold. Re-recording order after an intended change of a stepping
 //! path: update the golden first, then the entry here, then the identifier.
 
@@ -90,9 +94,9 @@ pub(crate) const fn hex32(s: &str) -> [u8; 32] {
     out
 }
 
-/// The `(name, digest)` entries [`PHYSICS_SEMANTICS_ID`] folds: one per
-/// pinned stepping combination, plus `"alice-det-math"`. See the module
-/// documentation for where each digest comes from.
+/// The `(name, digest)` entries [`PHYSICS_SEMANTICS_ID`] folds besides
+/// [`DET_MATH_PINS`]: one per pinned stepping combination, Law output and
+/// peer. See the module documentation for where each digest comes from.
 pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "Xpbd step",
@@ -282,10 +286,120 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     ("alice-analytics", PHYSICS_PEER_IDS[0].1),
     ("alice-ml", PHYSICS_PEER_IDS[1].1),
-    // the resolved alice-det-math's own identifier, not a copy of it: the
-    // identifier below is looked up by it
-    ("alice-det-math", alice_det_math::SEMANTICS_ID),
 ];
+
+/// The `alice-det-math` functions this crate calls.
+///
+/// `ALICE-Law`'s `scripts/fold_set_check.py` compares the list with the calls
+/// in `src/` (the `det_math` module delegates each one by name).
+pub const DET_MATH_FUNCTIONS: &[&str] = &[
+    "acos", "acos64", "asin64", "cbrt", "clamp", "cos", "exp", "exp64", "hypot", "ln64", "max",
+    "max64", "min", "min64", "powf", "powf64", "powi", "round", "round64", "sin", "sin_cos",
+    "sqrt", "sqrt64",
+];
+
+/// The identifier of each function of [`DET_MATH_FUNCTIONS`], in that order.
+///
+/// As recorded when [`PHYSICS_SEMANTICS_ID`] was folded. The `const _` below
+/// compares each with `alice_det_math::function_pin` at compile time, so a
+/// resolved `alice-det-math` whose function computes other bits stops the
+/// compile instead of reporting this identifier.
+pub const DET_MATH_PINS: &[(&str, [u8; 32])] = &[
+    (
+        "acos",
+        hex32("98f2aab18db196ed4a9de02005318ccf98f929c52895ada6218e99219114ccbf"),
+    ),
+    (
+        "acos64",
+        hex32("e5cb87d86fd810b6e92b6898e7a70ae9c76e53273ff042ea4e4ca039306d8d60"),
+    ),
+    (
+        "asin64",
+        hex32("079f00255f7b55d9566c409b6c7d03a9145e1927a2ae8b221e3124e411c98ef6"),
+    ),
+    (
+        "cbrt",
+        hex32("511090d6109210070d5d4d7bdd4628c90c6aec61d30c6df616ccafcc244df6ae"),
+    ),
+    (
+        "clamp",
+        hex32("8a35afd329a733bcd0c771a8921fbf21a82491954fc8293881220944dc820455"),
+    ),
+    (
+        "cos",
+        hex32("f7627941400acabe93c8dca4090eee12f8910fe4c14a8735ad456cef3c48ed7b"),
+    ),
+    (
+        "exp",
+        hex32("606918f2d637f46f9a792a29b3ee31a991ef3196064456caa7b3a7ca81700a63"),
+    ),
+    (
+        "exp64",
+        hex32("f87502b37c757ae5ea59a3cc991d02c3fe19ff3c75c9edd294216055372bf2a8"),
+    ),
+    (
+        "hypot",
+        hex32("c97aba4deb475308ea0c63c46ad778172c0cbd8fe0844fb23546d5df854f99b6"),
+    ),
+    (
+        "ln64",
+        hex32("51c11488d360bb972761d2cecf192c173249f846f8127ef950e580b99a590cdc"),
+    ),
+    (
+        "max",
+        hex32("8bd32fcb313f7fb3d7a699fc3075273de7e5a4e083912d8dc7f4cc4016fc2286"),
+    ),
+    (
+        "max64",
+        hex32("aac586eacc9acd69cf5988ffe736283c71fad8146027e86034d3e9b881db28b6"),
+    ),
+    (
+        "min",
+        hex32("2939e83813b26c868ec3113fb1c25102f16f28d8f24c343a727d4b1bec5904fe"),
+    ),
+    (
+        "min64",
+        hex32("1bef418073152f5e1e76f41718aa29b2517de8966a8c8ea8c1c2b5ba92fab3cb"),
+    ),
+    (
+        "powf",
+        hex32("0f1f85adcfa801b4afbbf858cf4c30f4ed0abdd3b7163d71aa9aa2b6031d9117"),
+    ),
+    (
+        "powf64",
+        hex32("b3b442523e6ddfcc344c5923864caa7d342d0fe0757f0ab1371149cd41a6ad2e"),
+    ),
+    (
+        "powi",
+        hex32("d3d76ba59208f7b0151ccde9b63043f538bc6b7737d1f16ff02d918f5806be45"),
+    ),
+    (
+        "round",
+        hex32("664695a5ceabc94e9fd1f6fb956055e1e3c1e2eab35c6af53ab97881e495bb0a"),
+    ),
+    (
+        "round64",
+        hex32("404a18a94c2afdb620c4d08b2431bbf7dfe4e8d40e9e161bbdda47ed895ab309"),
+    ),
+    (
+        "sin",
+        hex32("ee1b80d12df18ec0de5bce5a6bf05432484dabfc1cee1bb9b3f3291dd862cfec"),
+    ),
+    (
+        "sin_cos",
+        hex32("025acd2cdc900eff683e39ef1e71de115dafe8da8a1a4b02847b41d75cbd130f"),
+    ),
+    (
+        "sqrt",
+        hex32("7312a1b9e6b3af0b13b84a71c447c05e013d3012db4aefd859808ef0453ec96d"),
+    ),
+    (
+        "sqrt64",
+        hex32("051b24b99798891af42895e889ecb5add515496fc771ba5637a830f8f645988d"),
+    ),
+];
+
+const _: () = alice_det_math::assert_function_pins(DET_MATH_PINS);
 
 /// The identifier each optional Law-bearing peer exports, as this build
 /// expects it: `alice-analytics` (feature `analytics`, read by
@@ -299,17 +413,17 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// bridges compare the linked peer's identifier with its entry
 /// ([`check_peer`]) and refuse a peer whose identifier moved.
 pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
-    // alice-analytics 0.7 at c70ff043: `SEMANTICS_ID`, the alice-det-math 0.5.2 (2d01c63f)
-    // identifier it re-exports
+    // alice-analytics on main: `ANALYTICS_SEMANTICS_ID` (`alice_analytics::semantics`), which
+    // folds the alice-det-math functions it calls
     (
         "alice-analytics",
-        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        hex32("54cbe6e9c9a3aa1170f2b9cdb22c2a9503fa78be5e079aad5b42795fee6cbf53"),
     ),
-    // alice-ml 0.4 at 6e0dd060: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights
-    // `crate::neural` takes
+    // alice-ml on main: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights `crate::neural`
+    // takes, which folds the alice-det-math functions it calls
     (
         "alice-ml",
-        hex32("14e0f0435562e1fa77ab0ce071c85c422fd3f64122aaaf2e73d110264b5356b6"),
+        hex32("2c7e07c50c30b70d48c2540189e2431c7754c13c01b92056b7ca18075644dc27"),
     ),
 ];
 
@@ -387,16 +501,14 @@ pub fn check_peer(
 /// knows: `(alice_det_math::SEMANTICS_ID, fold of PHYSICS_SEMANTICS_PINS with
 /// that det-math entry)`.
 ///
-/// The det-math entry of [`PHYSICS_SEMANTICS_PINS`] is the identifier of the
-/// `alice-det-math` the build resolved, so the identifier is looked up here
-/// by it ([`semantics_id_for`]); a build against a generation with no row
-/// does not compile, rather than reporting an identifier of another
-/// generation. `alice-det-math` moves `SEMANTICS_ID` with a new generation:
+/// The record of the builds that folded the whole `alice-det-math` identifier
+/// (until 4.0.0): such a build looked its identifier up here by the
+/// generation it resolved, and a generation with no row stopped its compile.
 /// 0.5.1 added `max` / `min` and left the existing functions bit-identical,
 /// 0.5.2 at 39507d1b changed the clamp (the pins it moved are in
-/// [`PHYSICS_PINS_BY_DET_MATH`]); this table maps each generation to this
-/// crate's identifier. Another generation stops the compile here until this
-/// crate adds its row.
+/// [`PHYSICS_PINS_BY_DET_MATH`]). This build folds the functions it calls
+/// instead ([`DET_MATH_PINS`]), so it has no row here; a recorded identifier
+/// found here names the generation it was computed with.
 /// `tests/physics_semantics_id.rs` recomputes every row from the pins in one
 /// build.
 pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
@@ -560,37 +672,28 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "law output: tgs oriented 6dof hooks",
         hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
     ),
+    // alice-det-math 0.5.2 at 2d01c63f: the peer identifiers the peers exported over that
+    // generation (alice-analytics re-exported det-math's, alice-ml 0.4 at 6e0dd060)
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "alice-analytics",
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "alice-ml",
+        hex32("14e0f0435562e1fa77ab0ce071c85c422fd3f64122aaaf2e73d110264b5356b6"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
-/// [`PHYSICS_SEMANTICS_PINS`] described in the [module documentation](self),
-/// taken from [`PHYSICS_SEMANTICS_BY_DET_MATH`] by the resolved
-/// `alice-det-math`.
+/// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
+/// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
-/// `e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6`.
+/// Hex: `c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f`.
 /// The same value in every build, whatever cargo features are enabled.
-pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
-
-/// The [`PHYSICS_SEMANTICS_ID`] of a build that resolved the `alice-det-math`
-/// with identifier `det_math`.
-///
-/// # Panics
-///
-/// When [`PHYSICS_SEMANTICS_BY_DET_MATH`] has no row for `det_math` (in a
-/// const context this stops the compile). A new `alice-det-math` generation
-/// needs its row, recomputed from the pins.
-#[must_use]
-pub const fn semantics_id_for(det_math: &[u8; 32]) -> [u8; 32] {
-    let mut i = 0;
-    while i < PHYSICS_SEMANTICS_BY_DET_MATH.len() {
-        if same32(&PHYSICS_SEMANTICS_BY_DET_MATH[i].0, det_math) {
-            return PHYSICS_SEMANTICS_BY_DET_MATH[i].1;
-        }
-        i += 1;
-    }
-    panic!("alice-det-math SEMANTICS_ID has no row in PHYSICS_SEMANTICS_BY_DET_MATH: add its fold");
-}
+pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
+    hex32("c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f");
 
 const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
     let mut i = 0;
@@ -613,8 +716,13 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 ///
 /// An earlier identifier is listed only when a cross-version oracle covers it
 /// (a snapshot written by that release, restored and stepped here, bit-equal
-/// to that release's own steps). The list is empty:
+/// to that release's own steps). It lists one identifier, and says why the
+/// others are not listed:
 ///
+/// * `e90000da…`, the identifier with `alice-det-math` 0.5.2 at 2d01c63f
+///   folded as a whole, is listed: folding the functions one by one moved no
+///   pin, and `tests/world_snapshot_xv_e90000da.rs` restores a snapshot that
+///   build wrote and steps it here to that build's own bits.
 /// * `88cf6f85…` (main `b672ff2e`, before the secondary chain was pinned) was
 ///   listed while pinning the chain had moved no other pin and
 ///   `tests/world_snapshot_xv_88cf6f85.rs` stepped a snapshot of that build
@@ -629,4 +737,6 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// * every identifier of an `alice-det-math` generation whose clamp differs
 ///   from this build's (0.5.2 at 39507d1b), since the clamp moved Law output
 ///   bits; so the 3.x snapshots (`79ca5297…`, `cd9aa3b8…`) are refused.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
+    "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6",
+)];

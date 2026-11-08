@@ -62,7 +62,7 @@ fn half_life_matches_ln2_over_k() {
     let c0 = 10.0_f32;
     let k = 0.25_f32;
     let dt = 0.0005_f32;
-    let half_life = det_math::ln(2.0) / k;
+    let half_life = alice_det_math::ln(2.0) / k;
 
     let mut field = make_field(c0);
     let mut t = 0.0_f32;

@@ -237,9 +237,10 @@ jobs:
           python3 scripts/test_package_contents_check.py
           python3 scripts/package_contents_check.py
 
-      # crates.io にまだ無い sibling は Cargo.toml が git + 40 桁 rev + version で引く
-      # cargo package は git と rev を落とすので、その rev への [patch.crates-io] を
-      # この job の中だけで --config で渡し、利用される形 (pin した rev) で .crate を build する
+      # crates.io にまだ無い sibling は Cargo.toml が git + version (rev か branch か tag) で引く
+      # cargo package は git の指定を落とすので、Cargo.toml と同じ指定 (rev / branch / tag) の
+      # [patch.crates-io] をこの job の中だけで --config で渡し、利用される形で .crate を build する
+      # (branch を rev で patch すると、同じ package を branch で引く git 依存と source が 2 つになる)
       # 公開の前に sibling を publish して version だけに戻す (patch は 0 件になる)
       - name: pin した git 依存の patch
         run: |
