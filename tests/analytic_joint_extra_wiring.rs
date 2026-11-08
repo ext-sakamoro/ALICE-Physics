@@ -267,7 +267,7 @@ fn set_target_then_solve_moves_body_by_exact_spring_impulse() {
 
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
-    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+    solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
         .expect("the gears name hinges 0 and 1");
     // distance=8, direction=(1,0,0), spring_force=stiffness*distance=8,
     // damping_force=0 (v=0), clamped_force=8 (< max_force=100),
@@ -304,7 +304,7 @@ fn set_target_to_current_position_zero_distance_no_correction() {
     mj.set_target(Vec3Fix::ZERO); // == the body's own position below
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = vec![RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
-    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+    solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
         .expect("the gears name hinges 0 and 1");
     assert_eq!(
         bodies[0].position,
@@ -339,7 +339,7 @@ fn solve_extra_joints_clamps_to_max_force() {
     mj.set_target(Vec3Fix::from_int(512, 0, 0));
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
-    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+    solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
         .expect("the gears name hinges 0 and 1");
     // clamped_force = max_force = 1/128, impulse = (1/128 * 1/4, 0, 0) = (1/512, 0, 0),
     // position += impulse * dt * inv_mass = (1/2048, 0, 0)
@@ -415,7 +415,7 @@ fn with_break_force_broken_weld_skipped_by_solve_but_not_removed() {
 
     let joints = [ExtraJoint::Weld(wj)];
     let before = bodies[1].position;
-    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+    solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
         .expect("the gears name hinges 0 and 1");
     assert_eq!(
         bodies[1].position, before,
@@ -445,7 +445,7 @@ fn with_break_force_holding_weld_lands_exactly_on_anchor() {
     assert!(!wj.is_broken(&bodies));
 
     let joints = [ExtraJoint::Weld(wj)];
-    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+    solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
         .expect("the gears name hinges 0 and 1");
     // A static (inv_mass=0): w_sum = inv_mass_b = 1, inv_w_sum = 1,
     // lambda = distance*1 = 4, correction = (4,0,0), B moves by
@@ -608,7 +608,7 @@ fn solve_extra_joints_dispatches_every_variant_without_panicking() {
         )),
     ];
     for _ in 0..5 {
-        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        solve_extra_joints(&mut bodies, &joints, &z_hinges(), dt)
             .expect("the gears name hinges 0 and 1");
     }
     // No closed-form assertion here -- this test's job is dispatch coverage

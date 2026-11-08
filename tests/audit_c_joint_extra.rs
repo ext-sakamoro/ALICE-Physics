@@ -142,13 +142,13 @@ fn mixed_joints() -> Vec<ExtraJoint> {
 fn mixed_dispatch_equals_each_joint_alone_and_meets_the_closed_forms() {
     let joints = mixed_joints();
     let mut mixed = mixed_bodies();
-    solve_extra_joints(&mut mixed, &joints, z_hinges(), dt())
+    solve_extra_joints(&mut mixed, &joints, &z_hinges(), dt())
         .expect("the gear names hinges 0 and 1");
 
     let mut alone = mixed_bodies();
     for j in &joints {
         let mut b = mixed_bodies();
-        solve_extra_joints(&mut b, core::slice::from_ref(j), z_hinges(), dt())
+        solve_extra_joints(&mut b, core::slice::from_ref(j), &z_hinges(), dt())
             .expect("the gear names hinges 0 and 1");
         let touched: &[usize] = match j {
             ExtraJoint::Weld(_) => &[0, 1],
@@ -253,7 +253,7 @@ fn gear_ratio_two_closes_the_signed_residual() {
     let b = spinner(Vec3Fix::from_int(3, 0, 0), 1.0);
     let mut bodies = vec![a, b];
     let j = GearJoint::new(0, 1, 0, 1, fx(2.0));
-    solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(j)], z_hinges(), dt())
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Gear(j)], &z_hinges(), dt())
         .expect("the gear names hinges 0 and 1");
     let ta = angle_z(bodies[0].rotation);
     let tb = angle_z(bodies[1].rotation);
@@ -285,7 +285,7 @@ fn pulley_ratio_two_conserves_the_rope_length() {
     assert_eq!(j.total_length(&bodies), Fix128::from_int(15));
     bodies[0].position = Vec3Fix::from_int(-1, 4, 0);
     for _ in 0..50 {
-        solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], z_hinges(), dt())
+        solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], &z_hinges(), dt())
             .expect("the gear names hinges 0 and 1");
     }
     let t = j.total_length(&bodies).to_f64();
@@ -312,7 +312,7 @@ fn pulley_ratio_two_splits_one_projection_by_the_ratio() {
         fx(2.0),
     );
     bodies[0].position = Vec3Fix::from_int(-1, 4, 0);
-    solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], z_hinges(), dt())
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], &z_hinges(), dt())
         .expect("the gear names hinges 0 and 1");
     assert!(
         (bodies[0].position.y.to_f64() - 4.2).abs() < 1e-12,
