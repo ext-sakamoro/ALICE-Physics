@@ -24,7 +24,7 @@ dependencies = [
 [[package]]
 name = "alice-analytics"
 version = "0.7.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?rev=c70ff0439d3630e9b81dcf4404726f57d11b3686#c70ff0439d3630e9b81dcf4404726f57d11b3686"
+source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?branch=main#e94152522ad190c47fad3e4255caf25d0ec4f924"
 dependencies = [
  "alice-det-math",
  "libm",
@@ -45,13 +45,13 @@ dependencies = [
 
 [[package]]
 name = "alice-det-math"
-version = "0.5.2"
-source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=2d01c63ff0849cf0ab82eafb89f87f1b729bd2a8#2d01c63ff0849cf0ab82eafb89f87f1b729bd2a8"
+version = "0.6.1"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?branch=main#8cb532f332be03db8ccc6a98612ae206ca23275d"
 
 [[package]]
 name = "alice-ml"
 version = "0.4.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-ML?rev=6e0dd06086b29987237f69e6e049a75ce231e7fb#6e0dd06086b29987237f69e6e049a75ce231e7fb"
+source = "git+https://github.com/ext-sakamoro/ALICE-ML?branch=main#c2e6ddfac47e5cb43841611523c3ffa4809f9044"
 dependencies = [
  "alice-det-math",
  "libm",

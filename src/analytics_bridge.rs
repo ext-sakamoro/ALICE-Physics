@@ -46,7 +46,7 @@ impl PhysicsTelemetry {
         check_peer(
             "analytics_bridge",
             "alice-analytics",
-            &alice_analytics::SEMANTICS_ID,
+            &alice_analytics::semantics::ANALYTICS_SEMANTICS_ID,
         )?;
         Ok(Self {
             step_time: DDSketch256::new(Self::ALPHA),

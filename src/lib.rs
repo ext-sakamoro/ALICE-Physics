@@ -302,13 +302,6 @@ pub mod det_math {
         alice_det_math::exp(x)
     }
 
-    /// Delegates to [`alice_det_math::ln`].
-    #[inline]
-    #[must_use]
-    pub fn ln(x: f32) -> f32 {
-        alice_det_math::ln(x)
-    }
-
     /// Delegates to [`alice_det_math::powf`].
     #[inline]
     #[must_use]
@@ -337,13 +330,6 @@ pub mod det_math {
         alice_det_math::hypot(x, y)
     }
 
-    /// Delegates to [`alice_det_math::atan`].
-    #[inline]
-    #[must_use]
-    pub fn atan(x: f32) -> f32 {
-        alice_det_math::atan(x)
-    }
-
     /// Delegates to [`alice_det_math::atan2`].
     #[inline]
     #[must_use]
@@ -351,46 +337,11 @@ pub mod det_math {
         alice_det_math::atan2(y, x)
     }
 
-    /// Delegates to [`alice_det_math::asin`].
-    #[inline]
-    #[must_use]
-    pub fn asin(x: f32) -> f32 {
-        alice_det_math::asin(x)
-    }
-
     /// Delegates to [`alice_det_math::acos`].
     #[inline]
     #[must_use]
     pub fn acos(x: f32) -> f32 {
         alice_det_math::acos(x)
-    }
-
-    /// Delegates to [`alice_det_math::tan`].
-    #[inline]
-    #[must_use]
-    pub fn tan(x: f32) -> f32 {
-        alice_det_math::tan(x)
-    }
-
-    /// Delegates to [`alice_det_math::tanh`].
-    #[inline]
-    #[must_use]
-    pub fn tanh(x: f32) -> f32 {
-        alice_det_math::tanh(x)
-    }
-
-    /// Delegates to [`alice_det_math::atan64`].
-    #[inline]
-    #[must_use]
-    pub fn atan64(x: f64) -> f64 {
-        alice_det_math::atan64(x)
-    }
-
-    /// Delegates to [`alice_det_math::atan2_64`].
-    #[inline]
-    #[must_use]
-    pub fn atan2_64(y: f64, x: f64) -> f64 {
-        alice_det_math::atan2_64(y, x)
     }
 
     /// Delegates to [`alice_det_math::exp64`].
@@ -1054,9 +1005,9 @@ pub use sdf_manifold::ManifoldConfig;
 #[cfg(feature = "std")]
 pub use sdf_manifold::SdfManifold;
 pub use semantics::{
-    check_peer, expected_peer_id, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS,
-    PHYSICS_PINS_BY_DET_MATH, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID,
-    PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    check_peer, expected_peer_id, semantics_id_for, PeerMismatch, DET_MATH_FUNCTIONS,
+    DET_MATH_PINS, PHYSICS_PEER_IDS, PHYSICS_PINS_BY_DET_MATH, PHYSICS_SEMANTICS_BY_DET_MATH,
+    PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 pub use shape::{Shape, ShapeError};
 #[cfg(feature = "std")]
