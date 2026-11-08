@@ -212,7 +212,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_world_sweeps.rs` | 22 |
 | `audit_thin_wall.rs` | 22 |
 | `determinism_semantic.rs` | 22 |
-| `physics_semantics_id.rs` | 22 |
 | `analytic_adaptive_refinement.rs` | 21 |
 | `analytic_corotational.rs` | 21 |
 | `analytic_multiphase_wiring.rs` | 21 |
@@ -234,6 +233,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_print_pipeline_solver.rs` | 20 |
 | `audit_sdf_destruction.rs` | 20 |
 | `audit_wave_ship.rs` | 20 |
+| `physics_semantics_id.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
 | `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
@@ -611,6 +611,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `world_snapshot_xv_e90000da.rs` | 3 |
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
