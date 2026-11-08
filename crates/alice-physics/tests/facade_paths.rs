@@ -1488,6 +1488,11 @@ use alice_physics::thin_wall::ThinWallConfig as _;
 use alice_physics::thin_wall::ThinWallReport as _;
 use alice_physics::torus as _;
 use alice_physics::torus::Torus as _;
+use alice_physics::touch as _;
+use alice_physics::touch::Grabbable as _;
+use alice_physics::touch::Grip as _;
+use alice_physics::touch::Hand as _;
+use alice_physics::touch::Touch as _;
 use alice_physics::transient_thermal as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d_nonlinear as _;
@@ -1877,7 +1882,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1859 paths, checked at compile time
+    // 1864 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
