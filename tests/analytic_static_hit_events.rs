@@ -26,30 +26,38 @@ fn world(height: f64) -> PhysicsWorld {
     w
 }
 
+/// The contact is found at the end of the step that crosses the plane, so the body has
+/// fallen up to one step past the height: its speed then exceeds `sqrt(2 g h)` by at most
+/// `g dt` from that last step, and the stepping of the fall (velocity first, then position)
+/// moves the moment the height is crossed by at most one more step, another `g dt`. The
+/// bound is `2 g dt`, checked at three steps so that it shrinks with the step.
 #[test]
 fn the_first_hit_carries_the_speed_of_the_fall() {
-    for height in [0.5, 2.0, 8.0] {
-        let mut w = world(height);
-        let want = (2.0 * G * height).sqrt();
-        let dt = Fix128::from_ratio(1, 240);
-        let mut first = None;
-        for _ in 0..2400 {
-            w.step(dt);
-            if let Some(hit) = w.static_hits().first() {
-                first = Some(*hit);
-                break;
+    for steps_per_second in [60_i64, 120, 240] {
+        let dt = Fix128::from_ratio(1, steps_per_second);
+        let bound = 2.0 * G / steps_per_second as f64;
+        for height in [0.5, 2.0, 8.0] {
+            let mut w = world(height);
+            let want = (2.0 * G * height).sqrt();
+            let mut first = None;
+            for _ in 0..(10 * steps_per_second) {
+                w.step(dt);
+                if let Some(hit) = w.static_hits().first() {
+                    first = Some(*hit);
+                    break;
+                }
             }
+            let hit = first.expect("the fall reached the plane");
+            assert_eq!(hit.body, 0);
+            assert_eq!(hit.collider, 0);
+            let speed = hit.speed.to_f64();
+            assert!(
+                (speed - want).abs() <= bound,
+                "dt 1/{steps_per_second}, h {height}: {speed} against {want}, bound {bound}"
+            );
+            assert!((hit.normal.y.to_f64() - 1.0).abs() < 1e-9);
+            assert!(hit.point.y.to_f64().abs() < 0.2, "{}", hit.point.y.to_f64());
         }
-        let hit = first.expect("the fall reached the plane");
-        assert_eq!(hit.body, 0);
-        assert_eq!(hit.collider, 0);
-        let speed = hit.speed.to_f64();
-        assert!(
-            (speed - want).abs() < 0.05 * want,
-            "h {height}: {speed} against {want}"
-        );
-        assert!((hit.normal.y.to_f64() - 1.0).abs() < 1e-9);
-        assert!(hit.point.y.to_f64().abs() < 0.2, "{}", hit.point.y.to_f64());
     }
 }
 
