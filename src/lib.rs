@@ -655,6 +655,126 @@ pub mod det_math {
             assert!(zero_pairs > 100, "zero pairs {zero_pairs}");
         }
     }
+
+    #[cfg(test)]
+    mod delegation_tests {
+        // each delegation returns the bits of the alice-det-math function it names, on
+        // inputs that cover the reduction branches (signs, zero, below and above one,
+        // large, the non-finite values)
+        const F32: [f32; 12] = [
+            0.0,
+            -0.0,
+            0.3,
+            -0.7,
+            1.0,
+            2.5,
+            -3.75,
+            100.0,
+            1.0e-6,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        const F64: [f64; 12] = [
+            0.0,
+            -0.0,
+            0.3,
+            -0.7,
+            1.0,
+            2.5,
+            -3.75,
+            100.0,
+            1.0e-12,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ];
+
+        fn check32(name: &str, ours: impl Fn(f32) -> f32, theirs: impl Fn(f32) -> f32) -> usize {
+            for &x in &F32 {
+                let x = core::hint::black_box(x);
+                assert_eq!(ours(x).to_bits(), theirs(x).to_bits(), "{name}({x:?})");
+            }
+            F32.len()
+        }
+
+        fn check64(name: &str, ours: impl Fn(f64) -> f64, theirs: impl Fn(f64) -> f64) -> usize {
+            for &x in &F64 {
+                let x = core::hint::black_box(x);
+                assert_eq!(ours(x).to_bits(), theirs(x).to_bits(), "{name}({x:?})");
+            }
+            F64.len()
+        }
+
+        #[test]
+        fn every_delegation_returns_the_bits_of_the_function_it_names() {
+            let mut compared = 0;
+            compared += check32("sin", super::sin, alice_det_math::sin);
+            compared += check32("cos", super::cos, alice_det_math::cos);
+            compared += check32("exp", super::exp, alice_det_math::exp);
+            compared += check32("cbrt", super::cbrt, alice_det_math::cbrt);
+            compared += check32("acos", super::acos, alice_det_math::acos);
+            compared += check64("exp64", super::exp64, alice_det_math::exp64);
+            compared += check64("ln64", super::ln64, alice_det_math::ln64);
+            for &y in &F32 {
+                compared += check32(
+                    "powf",
+                    |x| super::powf(x, y),
+                    |x| alice_det_math::powf(x, y),
+                );
+                compared += check32(
+                    "hypot",
+                    |x| super::hypot(x, y),
+                    |x| alice_det_math::hypot(x, y),
+                );
+            }
+            for &y in &F64 {
+                compared += check64(
+                    "powf64",
+                    |x| super::powf64(x, y),
+                    |x| alice_det_math::powf64(x, y),
+                );
+            }
+            for n in [-3, -1, 0, 1, 2, 7] {
+                compared += check32(
+                    "powi",
+                    |x| super::powi(x, n),
+                    |x| alice_det_math::powi(x, n),
+                );
+            }
+            assert_eq!(compared, 7 * 12 + 3 * 12 * 12 + 6 * 12);
+        }
+
+        #[test]
+        fn raw_clamp64_does_what_f64_clamp_does() {
+            let mut compared = 0;
+            for &x in &F64 {
+                for (lo, hi) in [(-1.0, 1.0), (0.0, 0.0), (-0.0, 0.0), (2.0, 200.0)] {
+                    let got = super::raw_clamp64(core::hint::black_box(x), lo, hi);
+                    #[allow(clippy::disallowed_methods)]
+                    let want = x.clamp(lo, hi);
+                    assert!(
+                        got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()),
+                        "raw_clamp64({x:?}, {lo:?}, {hi:?}) = {got:?}, f64::clamp {want:?}"
+                    );
+                    compared += 1;
+                }
+            }
+            assert_eq!(compared, 48);
+        }
+
+        #[test]
+        #[should_panic(expected = "lo > hi")]
+        fn raw_clamp64_refuses_inverted_bounds() {
+            let _ = super::raw_clamp64(0.5, 1.0, -1.0);
+        }
+
+        #[test]
+        #[should_panic(expected = "a bound is NaN")]
+        fn raw_clamp64_refuses_a_nan_bound() {
+            let _ = super::raw_clamp64(0.5, f64::NAN, 1.0);
+        }
+    }
 }
 #[cfg(any(feature = "ffi", feature = "wasm", feature = "python"))]
 mod binding_api;
