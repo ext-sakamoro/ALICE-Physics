@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 
 const pkgDir = process.env.ALICE_JS_PKG;
 if (!pkgDir) throw new Error("set ALICE_JS_PKG to the wasm-pack output directory");
@@ -166,13 +167,27 @@ test("one impulse changes the digest, the same calls do not", () => {
   assert.notDeepEqual(Array.from(a.stateDigest()), Array.from(b.stateDigest()));
 });
 
-// golden (regenerated on purpose only, with the Rust test that pins the same two values,
-// tests/state_digest.rs GOLDEN_STATE_DIGEST / GOLDEN_LAW_ID): the jointed scene after 120 steps
-// must give these exact bytes in WebAssembly as on every native platform
+// golden (regenerated on purpose only): tests/golden/binding_scene_120_steps.txt, the one copy the
+// Rust test tests/state_digest.rs reads too; the jointed scene after 120 steps must give these exact
+// bytes in WebAssembly as on every native platform
+function golden(key) {
+  const text = readFileSync(new URL("../golden/binding_scene_120_steps.txt", import.meta.url), "utf8");
+  const values = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#"))
+    .map((l) => l.split(" "))
+    .filter(([k]) => k === key)
+    .map(([, v]) => v);
+  if (values.length !== 1) throw new Error(`golden file: ${key} recorded ${values.length} times`);
+  if (!/^[0-9a-f]{64}$/.test(values[0])) throw new Error(`golden file: ${key} is not 64 hex digits`);
+  return values[0];
+}
+
 test("the jointed scene's digest and law id are the golden the native platforms compute", () => {
   const w = jointedScene();
   for (let i = 0; i < 120; i++) w.step(DT);
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  assert.equal(hex(w.stateDigest()), "b9277e53485352521d59d8e518f3bda3c2b2dca872f32d2f67f95852f729c1cf");
-  assert.equal(hex(w.lawId()), "b8f508637ad5596137b8ff200ac233f3f3221f5264e765b85e2dfad60a973eab");
+  assert.equal(hex(w.stateDigest()), golden("state_digest"));
+  assert.equal(hex(w.lawId()), golden("law_id"));
 });

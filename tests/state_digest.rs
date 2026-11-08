@@ -230,24 +230,55 @@ fn hex(b: &[u8]) -> String {
 }
 
 /// golden (regenerated on purpose only): the digest and the law identifier of `binding_scene` after
-/// 120 steps. Every platform must compute these exact bytes — the 5 native OS of the CI matrix here,
-/// and WebAssembly in tests/js/bindings.test.mjs, which asserts the same two constants for the same
-/// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
-/// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
-/// named in the CHANGELOG with both values.
-/// Re-recorded when the contact friction began acting at the contact point
-/// of plain spheres and `PHYSICS_SEMANTICS_ID` moved (e90000da… → 2680b331…):
-/// the snapshot header carries the identifier and its law_id, the scene's
-/// bodies hash the same as before (checked by stepping the scene with the
-/// previous solver under the new identifier).
-const GOLDEN_STATE_DIGEST: &str =
-    "b9277e53485352521d59d8e518f3bda3c2b2dca872f32d2f67f95852f729c1cf";
-const GOLDEN_LAW_ID: &str = "b8f508637ad5596137b8ff200ac233f3f3221f5264e765b85e2dfad60a973eab";
+/// 120 steps, read from `tests/golden/binding_scene_120_steps.txt`, the one copy that
+/// tests/js/bindings.test.mjs also reads for the same scene built through the WebAssembly binding.
+/// Every platform must compute these exact bytes: the 5 native OS of the CI matrix here, WebAssembly
+/// there. They move when PHYSICS_SEMANTICS_ID moves (the step or the arithmetic changes) or when
+/// the snapshot format changes; that is a deliberate golden change, named in the CHANGELOG with
+/// both values.
+/// Last re-recorded when the contact friction began acting at the contact point of plain spheres
+/// and `PHYSICS_SEMANTICS_ID` moved (e90000da… → 2680b331…): the snapshot header carries the
+/// identifier and its law_id, the scene's bodies hash the same as before (checked by stepping the
+/// scene with the previous solver under the new identifier).
+const GOLDEN_FILE: &str = include_str!("golden/binding_scene_120_steps.txt");
+
+/// the 64 hex digits recorded under `key` in `GOLDEN_FILE` (`key value` lines, `#` comments);
+/// a missing key or a value that is not 64 hex digits is a broken golden file, not a passing test
+fn golden(key: &str) -> &'static str {
+    let mut found = None;
+    for line in GOLDEN_FILE.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (k, v) = line
+            .split_once(' ')
+            .unwrap_or_else(|| panic!("golden file: line without a value: {line:?}"));
+        if k == key {
+            assert!(found.is_none(), "golden file: {key} is recorded twice");
+            found = Some(v.trim());
+        }
+    }
+    let v = found.unwrap_or_else(|| panic!("golden file: no `{key}` line"));
+    assert!(
+        v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()),
+        "golden file: {key} is not 64 hex digits: {v:?}"
+    );
+    v
+}
+
+fn golden_state_digest() -> &'static str {
+    golden("state_digest")
+}
+
+fn golden_law_id() -> &'static str {
+    golden("law_id")
+}
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
-/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
+/// this value to the recorded `state_digest` with the snapshot unchanged.
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
     "a94c3dd3b761dcc027b6343dd1f771c239d3c202f3c71b5e1ee4373c3639da5d";
 
@@ -264,8 +295,8 @@ fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
     let mut new = Sha256::new();
     new.update(PhysicsWorld::STATE_DIGEST_DOMAIN);
     new.update(&snap);
-    assert_eq!(hex(&new.finalize()), GOLDEN_STATE_DIGEST);
-    assert_eq!(hex(&w.state_digest()), GOLDEN_STATE_DIGEST);
+    assert_eq!(hex(&new.finalize()), golden_state_digest());
+    assert_eq!(hex(&w.state_digest()), golden_state_digest());
     assert_eq!(
         hex(&PhysicsWorld::STATE_DIGEST_DOMAIN),
         "326aa2e0cf7aeb008a8c0b14b7262a6191fb4d1e1fdbe4562736b9f30f83850e"
@@ -275,6 +306,6 @@ fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
 #[test]
 fn the_digest_of_the_binding_scene_is_the_golden_on_every_platform() {
     let w = binding_scene();
-    assert_eq!(hex(&w.state_digest()), GOLDEN_STATE_DIGEST);
-    assert_eq!(hex(&w.law_id(&PHYSICS_SEMANTICS_ID)), GOLDEN_LAW_ID);
+    assert_eq!(hex(&w.state_digest()), golden_state_digest());
+    assert_eq!(hex(&w.law_id(&PHYSICS_SEMANTICS_ID)), golden_law_id());
 }

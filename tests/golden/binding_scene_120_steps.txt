@@ -1,0 +1,8 @@
+# The golden of the binding scene after 120 steps of 1/60 s: the state digest and the law
+# identifier as hex. One copy, read by tests/state_digest.rs (native, every OS of the CI matrix)
+# and by tests/js/bindings.test.mjs (WebAssembly through the binding): both must compute these
+# exact bytes from the same scene.
+# Regenerated on purpose only (the step, the arithmetic or the snapshot format changed, so
+# PHYSICS_SEMANTICS_ID moved); the change is named in the CHANGELOG with both values.
+state_digest b9277e53485352521d59d8e518f3bda3c2b2dca872f32d2f67f95852f729c1cf
+law_id b8f508637ad5596137b8ff200ac233f3f3221f5264e765b85e2dfad60a973eab
