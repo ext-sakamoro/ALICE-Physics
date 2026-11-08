@@ -1768,6 +1768,10 @@ impl CorotationalTransientSolver {
                 break (next_u, is_free, prescribed, predictor, rhs, iterations);
             }
         };
+        // the new state must have a frame for every element: an element the step turned inside
+        // out (`det F ≤ 0`) or flattened below the floor is reported by this step, with the
+        // state as it was, not by the next one
+        self.ops.rotations(&next_u)?;
         // commit: the corrector on the free degrees of freedom from the state as it was, the
         // held ones at the plane with zero velocity and acceleration
         for d in 0..ndof {
