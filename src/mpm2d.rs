@@ -41,12 +41,12 @@
 //!   (no adhesion); there are no side walls. No plasticity, no viscosity (the generalised
 //!   Maxwell model of the mochi is a later step). Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit).
 //! - **Tiers.** L0 only.
 //!
 
@@ -518,34 +518,38 @@ impl Mpm2d {
         })
     }
 
-    /// SHA-256 of the configuration, the material and every particle's state, in order
+    /// The first bytes of [`Mpm2d::snapshot`]. The layout, little endian: magic `b"AMP2"`,
+    /// version `u16`; ten `Fix128` (`hi: i64`, `lo: u64`): origin x and y, cell, gravity x
+    /// and y, dt, ground (0 when none), Young's modulus, Poisson's ratio, density; per
+    /// particle fourteen `Fix128`: x, v, mass, area0, C row major, F row major; then the
+    /// nodes along x and y (`u64` each), the ground flag (`u8`), the model tag (`u8`, 0 fixed
+    /// co-rotated, 1 neo-Hookean) and the particle count (`u64`).
+    pub const SNAPSHOT_MAGIC: [u8; 4] = *b"AMP2";
+    /// The snapshot format version
+    pub const SNAPSHOT_VERSION: u16 = 1;
+
+    /// The whole world as bytes: [`Self::restore`] makes a world that steps on bit for bit
+    /// as this one.
     #[must_use]
-    pub fn state_digest(&self) -> [u8; 32] {
-        use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
+    pub fn snapshot(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&Self::SNAPSHOT_MAGIC);
+        out.extend_from_slice(&Self::SNAPSHOT_VERSION.to_le_bytes());
         let mut put = |x: Fix128| {
-            h.update(x.hi.to_le_bytes());
-            h.update(x.lo.to_le_bytes());
+            out.extend_from_slice(&x.hi.to_le_bytes());
+            out.extend_from_slice(&x.lo.to_le_bytes());
         };
         let c = &self.config;
         put(c.origin[0]);
         put(c.origin[1]);
         put(c.cell);
-        put(Fix128::from_int(c.nodes[0] as i64));
-        put(Fix128::from_int(c.nodes[1] as i64));
         put(c.gravity[0]);
         put(c.gravity[1]);
         put(c.dt);
         put(c.ground.unwrap_or(Fix128::ZERO));
-        put(Fix128::from_int(i64::from(c.ground.is_some())));
         put(self.material.youngs);
         put(self.material.poisson);
         put(self.material.density);
-        put(Fix128::from_int(match self.material.model {
-            Mpm2dModel::FixedCorotated => 0,
-            Mpm2dModel::NeoHookean => 1,
-        }));
-        put(Fix128::from_int(self.particles.len() as i64));
         for p in &self.particles {
             for x in [p.x[0], p.x[1], p.v[0], p.v[1], p.mass, p.area0] {
                 put(x);
@@ -558,6 +562,104 @@ impl Mpm2d {
                 }
             }
         }
-        h.finalize().into()
+        // the fixed-size tail holds the integers and the count that sizes the particle block
+        let mut tail = Vec::new();
+        tail.extend_from_slice(&(c.nodes[0] as u64).to_le_bytes());
+        tail.extend_from_slice(&(c.nodes[1] as u64).to_le_bytes());
+        tail.push(u8::from(c.ground.is_some()));
+        tail.push(match self.material.model {
+            Mpm2dModel::FixedCorotated => 0,
+            Mpm2dModel::NeoHookean => 1,
+        });
+        tail.extend_from_slice(&(self.particles.len() as u64).to_le_bytes());
+        out.extend_from_slice(&tail);
+        out
+    }
+
+    /// The world [`Self::snapshot`] wrote. `None` for a wrong magic or version, a length that
+    /// does not match the particle count, a ground flag or model tag out of range, or a
+    /// configuration or material [`Self::new`] refuses.
+    #[must_use]
+    pub fn restore(data: &[u8]) -> Option<Self> {
+        const HEAD: usize = 6;
+        const NUMS: usize = 10;
+        const PER: usize = 14;
+        const TAIL: usize = 8 + 8 + 1 + 1 + 8;
+        if data.len() < HEAD + NUMS * 16 + TAIL || data[0..4] != Self::SNAPSHOT_MAGIC {
+            return None;
+        }
+        if u16::from_le_bytes([data[4], data[5]]) != Self::SNAPSHOT_VERSION {
+            return None;
+        }
+        let tail = &data[data.len() - TAIL..];
+        let u = |b: &[u8]| u64::from_le_bytes(b.try_into().expect("8 bytes"));
+        let nodes = [
+            usize::try_from(u(&tail[0..8])).ok()?,
+            usize::try_from(u(&tail[8..16])).ok()?,
+        ];
+        let has_ground = match tail[16] {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let model = match tail[17] {
+            0 => Mpm2dModel::FixedCorotated,
+            1 => Mpm2dModel::NeoHookean,
+            _ => return None,
+        };
+        let count = usize::try_from(u(&tail[18..26])).ok()?;
+        let want = count
+            .checked_mul(PER * 16)?
+            .checked_add(HEAD + NUMS * 16 + TAIL)?;
+        if data.len() != want {
+            return None;
+        }
+        let body = &data[HEAD..data.len() - TAIL];
+        let fix = |k: usize| {
+            let b = &body[16 * k..16 * k + 16];
+            Fix128 {
+                hi: i64::from_le_bytes(b[0..8].try_into().expect("8 bytes")),
+                lo: u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")),
+            }
+        };
+        let ground = fix(6);
+        if !has_ground && ground != Fix128::ZERO {
+            return None;
+        }
+        let config = Mpm2dConfig {
+            origin: [fix(0), fix(1)],
+            cell: fix(2),
+            nodes,
+            gravity: [fix(3), fix(4)],
+            dt: fix(5),
+            ground: has_ground.then_some(ground),
+        };
+        let material = Mpm2dMaterial {
+            youngs: fix(7),
+            poisson: fix(8),
+            density: fix(9),
+            model,
+        };
+        let mut world = Self::new(config, material).ok()?;
+        for i in 0..count {
+            let k = NUMS + PER * i;
+            world.particles.push(MpmParticle2 {
+                x: [fix(k), fix(k + 1)],
+                v: [fix(k + 2), fix(k + 3)],
+                mass: fix(k + 4),
+                area0: fix(k + 5),
+                c: [[fix(k + 6), fix(k + 7)], [fix(k + 8), fix(k + 9)]],
+                f: [[fix(k + 10), fix(k + 11)], [fix(k + 12), fix(k + 13)]],
+            });
+        }
+        Some(world)
+    }
+
+    /// SHA-256 of [`Self::snapshot`]: equal for two worlds exactly when their configuration,
+    /// material and particles are bit for bit equal
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(self.snapshot()).into()
     }
 }
