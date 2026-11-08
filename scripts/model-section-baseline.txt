@@ -21,8 +21,6 @@ src/coupling_medium.rs
 src/creep_longterm.rs
 src/crowd_force.rs
 src/cubic_elastic_fem.rs
-src/deformable.rs
-src/dynamic_fem.rs
 src/electromagnetic.rs
 src/erosion.rs
 src/euler_fv.rs
