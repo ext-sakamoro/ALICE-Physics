@@ -566,3 +566,90 @@ fn a_zero_fraction_branch_is_the_elastic_material() {
         assert_eq!((p.x, p.v, p.c, p.f), (q.x, q.v, q.c, q.f));
     }
 }
+
+/// oracle: momentum balance with an external force. A constant total force `F` on some particles of a free blob (no
+/// gravity, no ground) changes the momentum by `h F` each step (the loads enter the grid's momentum and the internal
+/// stress sums to zero), so the momentum after `n` steps is `n h F` and the centre of mass follows the discrete
+/// parabola `c0 + h² (F / M) n (n + 1) / 2`, whichever particles carry the force
+#[test]
+fn a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law() {
+    let mut w = world(0.0, None, [64, 64]);
+    block(&mut w, 0.2, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let n_particles = w.particles().len();
+    // the force on the particles of the left fifth: 2 N per metre of depth in total, along (1, 0.5)
+    let left: Vec<usize> = (0..n_particles)
+        .filter(|&i| w.particles()[i].x[0].to_f64() < 0.2 + W / 5.0)
+        .collect();
+    assert!(
+        !left.is_empty() && left.len() < n_particles,
+        "a part of the blob is loaded"
+    );
+    let total = [2.0, 1.0];
+    let each = [total[0] / left.len() as f64, total[1] / left.len() as f64];
+    // each particle's force as two halves: loads on one particle add
+    let loads: Vec<(usize, [Fix128; 2])> = left
+        .iter()
+        .flat_map(|&i| [(i, [fx(each[0] / 2.0), fx(each[1] / 2.0)]); 2])
+        .collect();
+    let applied = [
+        loads.iter().map(|l| l.1[0].to_f64()).sum::<f64>(),
+        loads.iter().map(|l| l.1[1].to_f64()).sum::<f64>(),
+    ];
+    let m = w.mass().to_f64();
+    let c0 = centre_of_mass(&w);
+    let h = dt();
+    for n in 1..=120u32 {
+        w.step_with_loads(&loads).expect("the step succeeds");
+        let n = f64::from(n);
+        let p = w.momentum();
+        for k in 0..2 {
+            let want_p = n * h * applied[k];
+            assert!(
+                (p[k].to_f64() - want_p).abs() < 1e-12,
+                "step {n}: momentum {k} {} vs {want_p}",
+                p[k].to_f64()
+            );
+            let want_c = c0[k] + h * h * applied[k] / m * n * (n + 1.0) / 2.0;
+            let got = centre_of_mass(&w)[k];
+            assert!(
+                (got - want_c).abs() < 1e-12,
+                "step {n}: centre {k} {got} vs {want_c}"
+            );
+        }
+    }
+    // the load deformed the body: it is not a rigid translation
+    let stretched = w
+        .particles()
+        .iter()
+        .any(|p| (p.f[0][0].to_f64() - 1.0).abs() > 1e-6);
+    assert!(stretched, "a force on one side strains the blob");
+}
+
+/// no loads is the plain step, bit for bit
+#[test]
+fn no_loads_is_the_plain_step() {
+    let mut a = world(G, Some(0.1), [64, 64]);
+    block(&mut a, 0.2, 0.4, W, W, |x, _| [x, 0.2]);
+    let mut b = a.clone();
+    for _ in 0..30 {
+        a.step().expect("the step succeeds");
+        b.step_with_loads(&[]).expect("the step succeeds");
+    }
+    assert_eq!(a.state_digest(), b.state_digest());
+}
+
+/// a load on a particle that is not there is refused, and the world is left as it was
+#[test]
+fn a_load_on_no_particle_is_refused() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.2, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let before = w.state_digest();
+    let n = w.particles().len();
+    assert_eq!(
+        w.step_with_loads(&[(n, [Fix128::ONE, Fix128::ZERO])]),
+        Err(alice_physics_core::mpm2d::Mpm2dError::Invalid(
+            "loads: no such particle"
+        ))
+    );
+    assert_eq!(w.state_digest(), before);
+}
