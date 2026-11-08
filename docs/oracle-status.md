@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5945 |
+| 🟢 Not ignored (run by CI) | 5946 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6040** |
+| **Total** | **6041** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5945)
+## 🟢 Not ignored (5946)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -446,6 +446,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_prestressed.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `law_g2_tie_classes.rs` | 9 |
+| `mat3_inverse_range.rs` | 9 |
 | `state_digest.rs` | 9 |
 | `vehicle_dynamics_degenerate.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
@@ -476,7 +477,6 @@ Per-file counts (the test names are in `tests/`):
 | `indep_euler_fv_riemann.rs` | 8 |
 | `indep_molecular_dynamics.rs` | 8 |
 | `indep_orbit_nbody.rs` | 8 |
-| `mat3_inverse_range.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
