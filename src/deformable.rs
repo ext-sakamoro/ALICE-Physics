@@ -383,19 +383,18 @@ impl DeformableBody {
             }
 
             let lambda = error / denom;
-            let six = Fix128::from_int(6);
 
             if !w0.is_zero() {
-                self.positions[i0] = self.positions[i0] - g0 * (lambda * w0 / six);
+                self.positions[i0] = self.positions[i0] - g0 * (lambda * w0).div_int(6);
             }
             if !w1.is_zero() {
-                self.positions[i1] = self.positions[i1] - g1 * (lambda * w1 / six);
+                self.positions[i1] = self.positions[i1] - g1 * (lambda * w1).div_int(6);
             }
             if !w2.is_zero() {
-                self.positions[i2] = self.positions[i2] - g2 * (lambda * w2 / six);
+                self.positions[i2] = self.positions[i2] - g2 * (lambda * w2).div_int(6);
             }
             if !w3.is_zero() {
-                self.positions[i3] = self.positions[i3] - g3 * (lambda * w3 / six);
+                self.positions[i3] = self.positions[i3] - g3 * (lambda * w3).div_int(6);
             }
         }
     }
@@ -567,7 +566,7 @@ fn compute_tet_volume(p0: Vec3Fix, p1: Vec3Fix, p2: Vec3Fix, p3: Vec3Fix) -> Fix
     let a = p1 - p0;
     let b = p2 - p0;
     let c = p3 - p0;
-    a.dot(b.cross(c)) / Fix128::from_int(6)
+    a.dot(b.cross(c)).div_int(6)
 }
 
 impl core::fmt::Debug for DeformableBody {

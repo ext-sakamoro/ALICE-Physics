@@ -7651,6 +7651,7 @@ pub fn alice_physics_core::math::Fix128::atan(self) -> Self
 pub fn alice_physics_core::math::Fix128::atan2(Self, Self) -> Self
 pub const fn alice_physics_core::math::Fix128::ceil(self) -> Self
 pub fn alice_physics_core::math::Fix128::cos(self) -> Self
+pub fn alice_physics_core::math::Fix128::div_int(self, i64) -> Self
 pub const fn alice_physics_core::math::Fix128::double(self) -> Self
 pub const fn alice_physics_core::math::Fix128::floor(self) -> Self
 pub fn alice_physics_core::math::Fix128::from_f32(f32) -> Self
@@ -12144,6 +12145,7 @@ pub fn alice_physics_core::math::Fix128::atan(self) -> Self
 pub fn alice_physics_core::math::Fix128::atan2(Self, Self) -> Self
 pub const fn alice_physics_core::math::Fix128::ceil(self) -> Self
 pub fn alice_physics_core::math::Fix128::cos(self) -> Self
+pub fn alice_physics_core::math::Fix128::div_int(self, i64) -> Self
 pub const fn alice_physics_core::math::Fix128::double(self) -> Self
 pub const fn alice_physics_core::math::Fix128::floor(self) -> Self
 pub fn alice_physics_core::math::Fix128::from_f32(f32) -> Self
@@ -23775,6 +23777,7 @@ pub fn alice_physics_core::math::Fix128::atan(self) -> Self
 pub fn alice_physics_core::math::Fix128::atan2(Self, Self) -> Self
 pub const fn alice_physics_core::math::Fix128::ceil(self) -> Self
 pub fn alice_physics_core::math::Fix128::cos(self) -> Self
+pub fn alice_physics_core::math::Fix128::div_int(self, i64) -> Self
 pub const fn alice_physics_core::math::Fix128::double(self) -> Self
 pub const fn alice_physics_core::math::Fix128::floor(self) -> Self
 pub fn alice_physics_core::math::Fix128::from_f32(f32) -> Self

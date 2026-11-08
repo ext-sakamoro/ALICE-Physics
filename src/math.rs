@@ -213,6 +213,42 @@ impl Fix128 {
         self.hi == 0 && self.lo == 0
     }
 
+    /// Division by an integer, bit for bit equal to `self / Fix128::from_int(n)`, without the
+    /// long division.
+    ///
+    /// `/` takes the magnitudes `a = |self|` and `b = |n| · 2⁶⁴` as raw integers, returns the
+    /// low 128 bits of `floor(a · 2⁶⁴ / b)` and gives it the sign `sign(self) ≠ sign(n)`. Here
+    /// `b` is a multiple of `2⁶⁴`, so
+    ///
+    /// `floor(a · 2⁶⁴ / (|n| · 2⁶⁴)) = floor(a / |n|)`,
+    ///
+    /// which is below `2¹²⁸` for every `|n| ≥ 1` and so needs no truncation: one 128-by-64-bit
+    /// integer division gives the same quotient. The sign step is the one `/` takes, so the
+    /// result rounds the magnitude down (toward zero, `-7 ulp / 6 = -1 ulp`) and `MIN` keeps the
+    /// wrap of `/` (`MIN.div_int(1) == MIN`, `MIN.div_int(-1) == MIN`). `n = 0` returns `ZERO`, as
+    /// `/` does for a zero divisor. `tests/fix128_div_int.rs` checks the identity on boundary
+    /// values and 20 000 samples.
+    #[inline]
+    #[must_use]
+    pub fn div_int(self, n: i64) -> Self {
+        if n == 0 {
+            return Self::ZERO;
+        }
+        let neg = self.is_negative() != (n < 0);
+        let a = if self.is_negative() { -self } else { self };
+        let magnitude = ((a.hi as u128) << 64) | u128::from(a.lo);
+        let quotient = magnitude / u128::from(n.unsigned_abs());
+        let result = Self {
+            hi: (quotient >> 64) as i64,
+            lo: quotient as u64,
+        };
+        if neg {
+            -result
+        } else {
+            result
+        }
+    }
+
     /// Floor (round toward negative infinity)
     #[inline]
     #[must_use]
