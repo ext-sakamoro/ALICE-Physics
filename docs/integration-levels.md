@@ -21,7 +21,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
 | `bvh` | step | 23 / 1 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `collider` | step | 23 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
+| `collider` | step | 24 / 1 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `convex_mesh_builder` | step | 3 / 0 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
@@ -31,7 +31,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `event` | step | 13 / 5 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 1 / 1 / 1 / 0 | C ABI, Python, WebAssembly |
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `heightfield` | step | 7 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
+| `heightfield` | step | 8 / 0 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 69 / 13 / 0 / 16 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
@@ -39,11 +39,11 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
 | `semantics` | step | 5 / 1 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
-| `shape_raycast` | step | 28 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `shape_raycast` | step | 36 / 5 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 3 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `trimesh` | step | 13 / 0 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
+| `trimesh` | step | 14 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
