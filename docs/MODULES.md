@@ -145,6 +145,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag |  | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) | standalone |
 | `holds` | a blow from a point, and holding bodies at places by critically damped springs |  | [`analytic_holds`](../tests/analytic_holds.rs) | binding (world API 1 of 10 items) |
 | `input_log` | the inputs of a run by step, replayed to the same state digest and carried as a short code |  | [`input_log`](../tests/input_log.rs) | binding |
+| `touch` | a visitor's touch on a body (grab a point, drag it, let go) as log inputs on a 2⁻¹⁶ grid; a cloth's point is a particle, held pinned, returned with its mass; `Cloth::state_digest` |  | [`analytic_touch`](../tests/analytic_touch.rs) | [`touch_cloth`](../examples/touch_cloth.rs) |
 | `wind_zone` | bounded wind volume applying drag and lift |  | [`wind_zone_forces`](../examples/wind_zone_forces.rs) | standalone |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |
