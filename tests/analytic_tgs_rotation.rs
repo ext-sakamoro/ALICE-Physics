@@ -18,7 +18,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics_core::det_math::atan2_64;
+use alice_det_math::atan2_64;
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics_core::SolverBackend;

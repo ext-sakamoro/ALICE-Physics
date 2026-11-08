@@ -1040,7 +1040,7 @@ mod tests {
         body.advance_split(h, free);
         let want = 0.125_f64; // half-angle h a / 2 = 1/8
         let got =
-            crate::det_math::atan2_64(body.orientation.z.to_f64(), body.orientation.w.to_f64());
+            alice_det_math::atan2_64(body.orientation.z.to_f64(), body.orientation.w.to_f64());
         assert!((got - want).abs() < 1e-14, "{got} vs {want}");
         assert!(body.orientation.x.is_zero() && body.orientation.y.is_zero());
     }

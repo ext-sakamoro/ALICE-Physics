@@ -72,7 +72,7 @@ fn expected_rocker_angle(
     );
     let o4 = (ground_length, 0.0);
     let b = circle_intersection_open_branch(a, coupler_length, o4, rocker_length);
-    det_math::atan2(b.1 - o4.1, b.0 - o4.0)
+    alice_det_math::atan2(b.1 - o4.1, b.0 - o4.0)
 }
 
 /// Shortest signed angular difference `a - b`, wrapped to (-pi, pi].
@@ -116,7 +116,8 @@ fn rocker_angle_matches_freudenstein_relation_across_a_crank_revolution() {
     // above agrees with the crate's own construction before driving anything.
     let o4 = (l_ground, 0.0_f32);
     let b0 = world.bodies[linkage.coupler].position;
-    let theta4_at_build = det_math::atan2(b0.y.to_f64() as f32 - o4.1, b0.x.to_f64() as f32 - o4.0);
+    let theta4_at_build =
+        alice_det_math::atan2(b0.y.to_f64() as f32 - o4.1, b0.x.to_f64() as f32 - o4.0);
     let theta4_expected_at_0 = expected_rocker_angle(l_ground, l_crank, l_coupler, l_rocker, 0.0);
     assert!(
         angle_diff(theta4_at_build, theta4_expected_at_0).abs() < 1e-5,
@@ -143,7 +144,8 @@ fn rocker_angle_matches_freudenstein_relation_across_a_crank_revolution() {
         }
 
         let b = world.bodies[linkage.coupler].position;
-        let theta4_sim = det_math::atan2(b.y.to_f64() as f32 - o4.1, b.x.to_f64() as f32 - o4.0);
+        let theta4_sim =
+            alice_det_math::atan2(b.y.to_f64() as f32 - o4.1, b.x.to_f64() as f32 - o4.0);
         let theta4_expected = expected_rocker_angle(l_ground, l_crank, l_coupler, l_rocker, theta2);
 
         let err = angle_diff(theta4_sim, theta4_expected).abs();

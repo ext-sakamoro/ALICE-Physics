@@ -26,7 +26,7 @@ use alice_physics_core::electromagnetic::{
 use alice_physics_core::force::apply_force_fields;
 use alice_physics_core::{
     material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
-    PhysicsWorld, RigidBody, Vec3Fix,
+    PhysicsWorld, RigidBody, Vec3Fix, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 
 fn fx(n: i64, d: i64) -> Fix128 {
@@ -537,22 +537,79 @@ const OLDER_KINDS_A: &[u8] =
 const OLDER_KINDS_B: &[u8] =
     include_bytes!("fixtures/world_snapshot_xv_e90000da_force_fields_b.bin");
 
+/// Where the header holds the stepping semantics identifier the writer recorded, and the
+/// world's law identifier, which folds that semantics identifier.
+const SEMANTICS_AT: usize = 16;
+const LAW_AT: usize = 48;
+
+/// The identifier `blob`'s writer recorded.
+fn writer_semantics(blob: &[u8]) -> [u8; 32] {
+    blob[SEMANTICS_AT..SEMANTICS_AT + 32]
+        .try_into()
+        .expect("32 bytes")
+}
+
+/// The checksum the writer appends over everything before it: FNV-1a's offset basis and fold,
+/// with the multiplier the format has always used (`0x1_0000_01b3`, not FNV's 64-bit prime
+/// `0x100_0000_01b3`). Written here apart from the crate; the fixture's own trailer checks it.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0001_0000_01b3)
+    })
+}
+
+/// The bytes this build writes for the world the earlier release wrote as `blob`: the same bytes
+/// with the two identifiers in the header replaced by this build's (its semantics identifier and
+/// `world`'s law identifier under it) and the trailing checksum taken again over them. Nothing
+/// else of the format may differ.
+fn in_this_build(blob: &[u8], world: &PhysicsWorld) -> Vec<u8> {
+    assert_eq!(
+        world.law_id(&writer_semantics(blob))[..],
+        blob[LAW_AT..LAW_AT + 32],
+        "the recorded law identifier is this world's under the recorded semantics"
+    );
+    let mut out = blob.to_vec();
+    out[SEMANTICS_AT..SEMANTICS_AT + 32].copy_from_slice(&PHYSICS_SEMANTICS_ID);
+    out[LAW_AT..LAW_AT + 32].copy_from_slice(&world.law_id(&PHYSICS_SEMANTICS_ID));
+    let body = out.len() - 8;
+    let recorded = u64::from_le_bytes(blob[body..].try_into().expect("8 bytes"));
+    assert_eq!(
+        fnv1a(&blob[..body]),
+        recorded,
+        "the fixture's checksum is the FNV-1a of its bytes"
+    );
+    let sum = fnv1a(&out[..body]);
+    out[body..].copy_from_slice(&sum.to_le_bytes());
+    out
+}
+
 /// Adding magnets did not change the format or the stepping of worlds without one: such a world
-/// is written to the bytes the earlier release wrote; those bytes are read back and written again
-/// unchanged, with every field, its filter and its switch in place; and restored and stepped 30
-/// times here they give the bytes the earlier release's own 30 steps gave.
+/// is written to the bytes the earlier release wrote, but for the two identifiers in the header
+/// (this build's semantics identifier, `e90000da…` being a previous one, and the law identifier
+/// under it); those bytes are read back and written again unchanged, with every field, its filter
+/// and its switch in place; and restored and stepped 30 times here they give the bytes the earlier
+/// release's own 30 steps gave, with the same two identifiers.
 #[test]
 fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
+    for blob in [OLDER_KINDS_A, OLDER_KINDS_B] {
+        assert!(
+            PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&writer_semantics(blob)),
+            "the fixtures were written under a previous identifier"
+        );
+        assert_ne!(writer_semantics(blob), PHYSICS_SEMANTICS_ID);
+    }
+    let fresh = older_kinds_world();
+    let a = in_this_build(OLDER_KINDS_A, &fresh);
     assert_eq!(
-        older_kinds_world().snapshot_world(),
-        OLDER_KINDS_A,
+        fresh.snapshot_world(),
+        a,
         "a world without magnets is written as before"
     );
 
     let mut w = PhysicsWorld::new(PhysicsConfig::default());
     w.restore_world(OLDER_KINDS_A)
         .expect("the earlier snapshot restores");
-    assert_eq!(w.snapshot_world(), OLDER_KINDS_A, "written back unchanged");
+    assert_eq!(w.snapshot_world(), a, "written back unchanged");
     assert_eq!(w.force_fields.len(), 7);
     let expected = older_kinds_world();
     for (k, (got, want)) in w
@@ -576,9 +633,16 @@ fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
         w.step(fx(1, 60));
     }
     assert_ne!(OLDER_KINDS_B, OLDER_KINDS_A, "the bodies moved");
+    let b = in_this_build(OLDER_KINDS_B, &w);
     assert_eq!(
         w.snapshot_world(),
-        OLDER_KINDS_B,
+        b,
         "30 steps here are the earlier release's 30 steps, to the bit"
+    );
+    w.step(fx(1, 60));
+    assert_ne!(
+        w.snapshot_world(),
+        b,
+        "the comparison sees the stepping: one step more is another world"
     );
 }

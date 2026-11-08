@@ -149,7 +149,7 @@ mod tests {
         let h = r(1, 64);
         let got = split_free_rotation(w, QuatFix::IDENTITY, inv, h).unwrap();
         let half: f64 = 3.0 / 128.0;
-        let turned = crate::det_math::atan2_64(got.rotation.y.to_f64(), got.rotation.w.to_f64());
+        let turned = alice_det_math::atan2_64(got.rotation.y.to_f64(), got.rotation.w.to_f64());
         assert!((turned - half).abs() < 1e-13, "{turned} vs {half}");
         assert!(got.rotation.x.is_zero() && got.rotation.z.is_zero());
         assert!(got.omega.x.to_f64().abs() < 1e-15 && got.omega.z.to_f64().abs() < 1e-15);
