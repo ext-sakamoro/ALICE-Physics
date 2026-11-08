@@ -115,11 +115,12 @@ fn a_participant_semantics_id_changes_the_law_id() {
 /// identifier with the secondary chain pinned (31eb4ab8…), and again (fcb7321e… before) when
 /// damping became a rate per second: the world's damping field holds rate 0 by default where it
 /// held the retention 0.99, and the identifier moved to e90000da…
+/// The identifier moved again to c82742de… when each alice-det-math function it folds got its own id.
 #[test]
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
-        "aa6c7d779c815649afe60e754a14694428814d61fd4c888ef1018036c9ddaed7",
+        "a3790b280477fb3e032327e2c1cb0cd990d3137a5a1f98607ca04b118d63d5d3",
         "pinned from main 88f76d3b, then under the identifier with the alice-ml peer"
     );
 }
