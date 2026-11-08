@@ -25,7 +25,7 @@
 )]
 
 use alice_physics_core::math::Fix128;
-use alice_physics_core::mpm2d::{Mpm2d, Mpm2dConfig, Mpm2dMaterial, Mpm2dModel};
+use alice_physics_core::mpm2d::{Maxwell, Mpm2d, Mpm2dConfig, Mpm2dMaterial, Mpm2dModel};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -50,6 +50,7 @@ fn material_of(model: Mpm2dModel) -> Mpm2dMaterial {
         poisson: fx(NU),
         density: fx(RHO),
         model,
+        maxwell: None,
     }
 }
 
@@ -497,8 +498,71 @@ fn a_restored_snapshot_replays_bit_for_bit() {
         long.push(0);
         assert!(Mpm2d::restore(&long).is_none(), "long");
         let mut bad = blob.clone();
-        let at = blob.len() - 9;
+        let at = blob.len() - 10;
         bad[at] = 7;
         assert!(Mpm2d::restore(&bad).is_none(), "model tag");
+    }
+}
+
+/// The viscoelastic column (one Maxwell branch, relaxation time `T`, fraction `g`) under its
+/// own weight creeps like the standard linear solid under a held load: the settlement is
+/// `δ∞ (1 − g e^(−t/τc))`, `τc = T / (1 − g)`, `δ∞ = ρ g H² (1 − ν²) / (2 E (1 − g))`
+/// (the relaxed modulus `E (1 − g)`); measured as the average over one period of the first
+/// mode around `t`, within 5 % of `δ∞` at `t = τc / 2, τc, 2 τc, 3 τc`.
+#[test]
+fn a_viscoelastic_column_creeps_like_the_standard_linear_solid() {
+    let (g, relax) = (0.5, 0.1);
+    let (mut w, top) = column(Mpm2dModel::FixedCorotated);
+    let mut m = *w.material();
+    m.maxwell = Some(Maxwell {
+        fraction: fx(g),
+        relaxation_time: fx(relax),
+    });
+    let mut v = Mpm2d::new(*w.config(), m).expect("valid");
+    for p in w.particles() {
+        v.add_particle(p.x, p.v, p.area0);
+    }
+    w = v;
+    let rest = top_height(&w, &top);
+    let tc = relax / (1.0 - g);
+    let inf = RHO * G * H * H * (1.0 - NU * NU) / (2.0 * E * (1.0 - g));
+    let per = (4.0 * H / bar_speed() / dt()).round() as usize;
+    let mut hist = Vec::new();
+    let last = (3.0 * tc / dt()).round() as usize + per;
+    for _ in 0..last {
+        w.step().expect("the step succeeds");
+        hist.push(rest - top_height(&w, &top));
+    }
+    for k in [0.5f64, 1.0, 2.0, 3.0] {
+        let at = (k * tc / dt()).round() as usize;
+        let window = &hist[at - per / 2..at + per / 2];
+        let got = window.iter().sum::<f64>() / window.len() as f64;
+        let want = inf * (1.0 - g * (-k).exp());
+        assert!(
+            (got - want).abs() < 0.05 * inf,
+            "t = {k} τc: settlement {got:.4e} m vs {want:.4e} m (δ∞ {inf:.4e})"
+        );
+    }
+}
+
+/// A Maxwell branch of fraction 0 changes nothing: the run is bit for bit the elastic one.
+#[test]
+fn a_zero_fraction_branch_is_the_elastic_material() {
+    let (mut a, _) = column(Mpm2dModel::NeoHookean);
+    let mut m = *a.material();
+    m.maxwell = Some(Maxwell {
+        fraction: Fix128::ZERO,
+        relaxation_time: fx(0.3),
+    });
+    let mut b = Mpm2d::new(*a.config(), m).expect("valid");
+    for p in a.particles() {
+        b.add_particle(p.x, p.v, p.area0);
+    }
+    for _ in 0..300 {
+        a.step().expect("step");
+        b.step().expect("step");
+    }
+    for (p, q) in a.particles().iter().zip(b.particles()) {
+        assert_eq!((p.x, p.v, p.c, p.f), (q.x, q.v, q.c, q.f));
     }
 }

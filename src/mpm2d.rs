@@ -20,7 +20,12 @@
 //!   `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ`, energy density `μ |F − R|² + λ (J − 1)² / 2`, `R` the
 //!   rotation of the polar decomposition; or compressible neo-Hookean, `P = μ (F − F⁻ᵀ) + λ
 //!   ln J F⁻ᵀ`, energy density `μ (tr FᵀF − 2) / 2 − μ ln J + λ (ln J)² / 2` ([`Mpm2dModel`]);
-//!   `μ = E / (2 (1 + ν))`, `λ = E ν / ((1 + ν)(1 − 2ν))`.
+//!   `μ = E / (2 (1 + ν))`, `λ = E ν / ((1 + ν)(1 − 2ν))`. Viscoelastic (one Maxwell branch,
+//!   [`Maxwell`]): `τ = R ((1 − g) τ̂ + g ĥ) Rᵀ` with `τ̂ = Rᵀ τ_e R` the elastic Kirchhoff
+//!   stress in the unrotated frame and `ĥ + T dĥ/dt = T dτ̂/dt`, integrated by
+//!   `ĥ ← e^(−Δt/T) ĥ + (1 − e^(−Δt/T)) (T / Δt) (τ̂ − τ̂_last)` (exact for `τ̂` linear over
+//!   the step); under a held load the material creeps like the standard linear solid,
+//!   relaxed modulus `E (1 − g)`, creep time `T / (1 − g)`.
 //! - **Units.** SI: m, s, kg, Pa; plane strain, so masses, momenta and energies are per metre
 //!   of depth (kg/m, kg/s, J/m).
 //! - **Conservation.** Mass is carried by the particles and conserved exactly. Linear momentum
@@ -38,15 +43,17 @@
 //! - **Approximations.** Plane strain (no out-of-plane strain). The fixed co-rotated model
 //!   is linear elasticity under rotation at small strain and its own large-strain law beyond
 //!   it. One material per world. The ground is frictionless and only stops downward motion
-//!   (no adhesion); there are no side walls. No plasticity, no viscosity (the generalised
-//!   Maxwell model of the mochi is a later step). Contact between two bodies of particles is
+//!   (no adhesion); there are no side walls. No plasticity. The viscosity is one Maxwell
+//!   branch that relaxes shear and volume alike (Poisson's ratio stays fixed); several
+//!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
+//!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material).
 //! - **Tiers.** L0 only.
 //!
 
@@ -91,6 +98,19 @@ pub enum Mpm2dModel {
     NeoHookean,
 }
 
+/// One Maxwell branch of a viscoelastic material: the stress is
+/// `(1 − fraction) τ_e + fraction h`, where `τ_e` is the elastic Kirchhoff stress of the
+/// current deformation and `h` relaxes towards it, `ḣ + h / relaxation_time = τ̇_e`. Under a
+/// held deformation the stress relaxes from `τ_e` to `(1 − fraction) τ_e` with the time
+/// constant `relaxation_time`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Maxwell {
+    /// The part of the instantaneous stiffness that relaxes, in `[0, 1)`
+    pub fraction: Fix128,
+    /// The relaxation time, s, `> 0`
+    pub relaxation_time: Fix128,
+}
+
 /// An isotropic elastic material.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mpm2dMaterial {
@@ -102,6 +122,8 @@ pub struct Mpm2dMaterial {
     pub density: Fix128,
     /// The hyperelastic law
     pub model: Mpm2dModel,
+    /// A Maxwell branch (viscoelastic), or none (elastic)
+    pub maxwell: Option<Maxwell>,
 }
 
 /// One material point.
@@ -119,6 +141,10 @@ pub struct MpmParticle2 {
     pub mass: Fix128,
     /// Area at rest, m²
     pub area0: Fix128,
+    /// The Maxwell branch's stress in the particle's unrotated frame (`Rᵀ h R`), Pa
+    pub branch: M2,
+    /// The elastic Kirchhoff stress of the last step in the unrotated frame, Pa
+    pub branch_ref: M2,
 }
 
 /// Why a world cannot be made or stepped.
@@ -267,6 +293,14 @@ impl Mpm2d {
         if material.density <= Fix128::ZERO {
             return Err(Mpm2dError::Invalid("density"));
         }
+        if let Some(m) = material.maxwell {
+            if m.fraction < Fix128::ZERO || m.fraction >= Fix128::ONE {
+                return Err(Mpm2dError::Invalid("maxwell.fraction"));
+            }
+            if m.relaxation_time <= Fix128::ZERO {
+                return Err(Mpm2dError::Invalid("maxwell.relaxation_time"));
+            }
+        }
         Ok(Self {
             config,
             material,
@@ -302,6 +336,8 @@ impl Mpm2d {
             f: identity(),
             mass: self.material.density * area0,
             area0,
+            branch: [[Fix128::ZERO; 2]; 2],
+            branch_ref: [[Fix128::ZERO; 2]; 2],
         });
         self.particles.len() - 1
     }
@@ -360,8 +396,34 @@ impl Mpm2d {
         // particle to grid: mass, APIC momentum and the MLS stress force
         let mut gm = vec![Fix128::ZERO; nx * ny];
         let mut gv = vec![[Fix128::ZERO; 2]; nx * ny];
+        // the Maxwell branch: h ← e^(−Δt/T) h + γ (τ̂ − τ̂_last), γ = (1 − e^(−Δt/T)) T / Δt
+        // (exact for τ̂ linear in time over the step), in the unrotated frame
+        let decay = self
+            .material
+            .maxwell
+            .filter(|m| m.fraction > Fix128::ZERO)
+            .map(|m| ((-(dt / m.relaxation_time)).exp(), m));
+        let mut branches = Vec::with_capacity(self.particles.len());
         for (p, st) in self.particles.iter().zip(&stencils) {
-            let tau = kirchhoff(self.material.model, p.f, mu, lambda);
+            let mut tau = kirchhoff(self.material.model, p.f, mu, lambda);
+            if let Some((e, m)) = decay {
+                let r = rotation(p.f);
+                let rt = [[r[0][0], r[1][0]], [r[0][1], r[1][1]]];
+                let hat = mul(mul(rt, tau), r);
+                let gamma = (Fix128::ONE - e) * m.relaxation_time / dt;
+                let mut h = [[Fix128::ZERO; 2]; 2];
+                let mut mix = [[Fix128::ZERO; 2]; 2];
+                for i in 0..2 {
+                    for k in 0..2 {
+                        h[i][k] = e * p.branch[i][k] + gamma * (hat[i][k] - p.branch_ref[i][k]);
+                        mix[i][k] = (Fix128::ONE - m.fraction) * hat[i][k] + m.fraction * h[i][k];
+                    }
+                }
+                tau = mul(mul(r, mix), rt);
+                branches.push((h, hat));
+            } else {
+                branches.push((p.branch, p.branch_ref));
+            }
             // affine = −dt · area0 · 4/Δx² · τ + m C
             let s = -(dt * p.area0 * four_inv_dx2);
             let aff = [
@@ -407,7 +469,13 @@ impl Mpm2d {
         }
         // grid to particle: velocity, affine velocity, position, deformation gradient
         let mut next = Vec::with_capacity(self.particles.len());
-        for (k, (p, st)) in self.particles.iter().zip(&stencils).enumerate() {
+        for (k, ((p, st), &(branch, branch_ref))) in self
+            .particles
+            .iter()
+            .zip(&stencils)
+            .zip(&branches)
+            .enumerate()
+        {
             let mut v = [Fix128::ZERO; 2];
             let mut b = [[Fix128::ZERO; 2]; 2];
             for a in 0..3 {
@@ -442,6 +510,8 @@ impl Mpm2d {
                 v,
                 c,
                 f,
+                branch,
+                branch_ref,
                 ..*p
             });
         }
@@ -490,9 +560,19 @@ impl Mpm2d {
         })
     }
 
-    /// Stored elastic energy, J per metre of depth
+    /// Stored elastic energy, J per metre of depth. With a Maxwell branch of fraction `g`,
+    /// the long-term part `(1 − g) ψ(F)` only: the branch's own stored energy is not counted.
     #[must_use]
     pub fn elastic_energy(&self) -> Fix128 {
+        let full = self.instantaneous_energy();
+        match self.material.maxwell {
+            Some(m) if m.fraction > Fix128::ZERO => (Fix128::ONE - m.fraction) * full,
+            _ => full,
+        }
+    }
+
+    /// `Σ area0 ψ(F)` with the instantaneous moduli
+    fn instantaneous_energy(&self) -> Fix128 {
         let (mu, lambda) = self.lame();
         let model = self.material.model;
         self.particles.iter().fold(Fix128::ZERO, |acc, p| {
@@ -519,11 +599,12 @@ impl Mpm2d {
     }
 
     /// The first bytes of [`Mpm2d::snapshot`]. The layout, little endian: magic `b"AMP2"`,
-    /// version `u16`; ten `Fix128` (`hi: i64`, `lo: u64`): origin x and y, cell, gravity x
-    /// and y, dt, ground (0 when none), Young's modulus, Poisson's ratio, density; per
-    /// particle fourteen `Fix128`: x, v, mass, area0, C row major, F row major; then the
+    /// version `u16`; twelve `Fix128` (`hi: i64`, `lo: u64`): origin x and y, cell, gravity x
+    /// and y, dt, ground (0 when none), Young's modulus, Poisson's ratio, density, the Maxwell
+    /// fraction and relaxation time (0 when none); per particle twenty-two `Fix128`: x, v,
+    /// mass, area0, C, F, the branch stress and its reference (each row major); then the
     /// nodes along x and y (`u64` each), the ground flag (`u8`), the model tag (`u8`, 0 fixed
-    /// co-rotated, 1 neo-Hookean) and the particle count (`u64`).
+    /// co-rotated, 1 neo-Hookean), the Maxwell flag (`u8`) and the particle count (`u64`).
     pub const SNAPSHOT_MAGIC: [u8; 4] = *b"AMP2";
     /// The snapshot format version
     pub const SNAPSHOT_VERSION: u16 = 1;
@@ -550,11 +631,14 @@ impl Mpm2d {
         put(self.material.youngs);
         put(self.material.poisson);
         put(self.material.density);
+        let mx = self.material.maxwell;
+        put(mx.map_or(Fix128::ZERO, |m| m.fraction));
+        put(mx.map_or(Fix128::ZERO, |m| m.relaxation_time));
         for p in &self.particles {
             for x in [p.x[0], p.x[1], p.v[0], p.v[1], p.mass, p.area0] {
                 put(x);
             }
-            for m in [p.c, p.f] {
+            for m in [p.c, p.f, p.branch, p.branch_ref] {
                 for row in m {
                     for x in row {
                         put(x);
@@ -571,6 +655,7 @@ impl Mpm2d {
             Mpm2dModel::FixedCorotated => 0,
             Mpm2dModel::NeoHookean => 1,
         });
+        tail.push(u8::from(mx.is_some()));
         tail.extend_from_slice(&(self.particles.len() as u64).to_le_bytes());
         out.extend_from_slice(&tail);
         out
@@ -582,9 +667,9 @@ impl Mpm2d {
     #[must_use]
     pub fn restore(data: &[u8]) -> Option<Self> {
         const HEAD: usize = 6;
-        const NUMS: usize = 10;
-        const PER: usize = 14;
-        const TAIL: usize = 8 + 8 + 1 + 1 + 8;
+        const NUMS: usize = 12;
+        const PER: usize = 22;
+        const TAIL: usize = 8 + 8 + 1 + 1 + 1 + 8;
         if data.len() < HEAD + NUMS * 16 + TAIL || data[0..4] != Self::SNAPSHOT_MAGIC {
             return None;
         }
@@ -607,7 +692,12 @@ impl Mpm2d {
             1 => Mpm2dModel::NeoHookean,
             _ => return None,
         };
-        let count = usize::try_from(u(&tail[18..26])).ok()?;
+        let has_maxwell = match tail[18] {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let count = usize::try_from(u(&tail[19..27])).ok()?;
         let want = count
             .checked_mul(PER * 16)?
             .checked_add(HEAD + NUMS * 16 + TAIL)?;
@@ -639,6 +729,17 @@ impl Mpm2d {
             poisson: fix(8),
             density: fix(9),
             model,
+            maxwell: if has_maxwell {
+                Some(Maxwell {
+                    fraction: fix(10),
+                    relaxation_time: fix(11),
+                })
+            } else {
+                if fix(10) != Fix128::ZERO || fix(11) != Fix128::ZERO {
+                    return None;
+                }
+                None
+            },
         };
         let mut world = Self::new(config, material).ok()?;
         for i in 0..count {
@@ -650,6 +751,8 @@ impl Mpm2d {
                 area0: fix(k + 5),
                 c: [[fix(k + 6), fix(k + 7)], [fix(k + 8), fix(k + 9)]],
                 f: [[fix(k + 10), fix(k + 11)], [fix(k + 12), fix(k + 13)]],
+                branch: [[fix(k + 14), fix(k + 15)], [fix(k + 16), fix(k + 17)]],
+                branch_ref: [[fix(k + 18), fix(k + 19)], [fix(k + 20), fix(k + 21)]],
             });
         }
         Some(world)
