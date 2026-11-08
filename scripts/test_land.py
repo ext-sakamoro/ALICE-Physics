@@ -671,6 +671,62 @@ class Landing(Isolated):
         lander.land()
         self.assertIn("wait_evidence ci/T-1", lander.calls)
 
+    def test_the_ci_wait_runs_outside_the_landing_lock(self):
+        # another landing can take the lock while this one waits on its CI, so landings
+        # whose CI overlaps do not queue behind each other's CI
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        taken = []
+        lander = self.r.lander()
+        plain_wait = lander.wait_evidence
+
+        def wait(ref, sha):
+            with self.r.lander(lock_wait=0.2).lock():
+                taken.append(ref)
+            plain_wait(ref, sha)
+        lander.wait_evidence = wait
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertEqual(taken, ["ci/T-1"])
+
+    def test_a_landing_during_the_ci_wait_is_seen_inside_the_lock(self):
+        # main gains code while this landing waits outside the lock: the critical section
+        # sees the stale base, gathers the evidence again and lands on the new main
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        plain_wait = lander.wait_evidence
+
+        def wait(ref, sha):
+            if not getattr(lander, "evidenced", None):
+                self.r.push_upstream({"src/other.rs": "fn other() {}\n"}, "feat: other")
+            plain_wait(ref, sha)
+        lander.wait_evidence = wait
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+        self.assertEqual(lander.evidenced[-1], sha)
+        subjects = git(self.r.upstream, "log", "--format=%s", "origin/main").splitlines()
+        self.assertIn("feat: other", subjects)
+
+    def test_a_red_ci_in_a_round_outside_the_lock_stops_before_main(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        plain_wait = lander.wait_evidence
+
+        def wait(ref, sha):
+            if not getattr(lander, "evidenced", None):
+                self.r.push_upstream({"src/other.rs": "fn other() {}\n"}, "feat: other")
+                plain_wait(ref, sha)
+                lander.ci_result = "failure"
+                return
+            plain_wait(ref, sha)
+        lander.wait_evidence = wait
+        with self.assertRaisesRegex(land.LandError, "ended `failure`"):
+            lander.land()
+        subjects = git(self.r.upstream, "log", "--format=%s", "origin/main").splitlines()
+        self.assertNotIn("feat: b", subjects)
+        with self.r.lander(lock_wait=0.2).lock():
+            pass   # the failed round left the lock free
+
     def test_red_branch_ci_stops_before_main(self):
         before = self.r.origin_head()
         commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: add x")

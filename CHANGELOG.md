@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `scripts/land.py`: 取り込みの lock を各試行の要所 (fetch、main が得たものの確認、文書だけの移動の rebase と確認、main への push) だけで持つ 新しい証拠の回 (rebase、ci/<id> への push、CI の待ち) は lock の外で走るので、CI が重なる取り込みどうしが互いの CI を待たない lock の中で main の移動を見た取り込みは証拠を取り直す 試験 3 件 (CI の待ちの間に lock を取れる、待ちの間に main が code を得ると取り直して新しい main に載る、lock の外の回の CI が red なら main は動かず lock は空く)
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
