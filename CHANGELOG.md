@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: `unsafe-and-parallel.yml` の Miri に C ABI の step (`ffi::tests` を `--features ffi` で Stacked Borrows) を足し、`src/ffi.rs` と `src/binding_api.rs` を path 一覧 `.github/paths/unsafe-and-parallel.txt` に足した それまで C ABI の unsafe (raw pointer) を変える commit では Miri が走らなかった `src/gpu_sdf.rs` の GPU buffer の byte 列の view (`from_raw_parts` の 2 block) も `gpu_sdf::tests` の Miri step と path 一覧に足した workflow の説明の「solver の slice が crate の唯一の unsafe」を直し、この workflow が走らせない unsafe (`src/math.rs` の SSE2) を書いた
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
 - `scripts/land.py`: ALICE-Law の状態を確かめる時の時間切れで、子の process も止める Law の main の fetch の git と `land_law_state.py` を自分の process group (POSIX は `start_new_session` = setsid、Windows は `CREATE_NEW_PROCESS_GROUP`) で起こし、時間切れでその group 全体を止める (POSIX は `killpg`、Windows は `taskkill /T`) これまでは script だけが止まり、script が起こした git / gh が残った 試験 `scripts/test_land.py` の `LawState` (script が起こした子が時間切れの後に動いていないこと、拒否が上限の時刻に来ること) 止めた後の読み取りにも上限 (5 秒) を置き、process group を離れた子孫が pipe を開いたままでも着地は上限の時刻に止まる (試験: group を離れた子が pipe を持ったままでも拒否が遅れないこと)

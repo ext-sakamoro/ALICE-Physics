@@ -16,6 +16,11 @@ src/bvh.rs
 src/contact_cache.rs
 src/query.rs
 src/laminate.rs
+# the C ABI and the binding layer it calls (Miri step "C ABI")
+src/ffi.rs
+src/binding_api.rs
+# the byte views of the GPU buffers (Miri step "GPU buffer byte views")
+src/gpu_sdf.rs
 # compiled into the bvh module of the lib tests (#[path])
 tests/lib/bvh_oracles.rs
 # rayon / crossbeam / loom versions (Stacked Borrows reports depend on them) and the toolchain
