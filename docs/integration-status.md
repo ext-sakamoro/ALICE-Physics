@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2567 |
-| live | reached without examples (crate-internal roots or a binding) | 696 |
-| | **total** | **3294** |
+| L0 | not reached by any non-test code, examples included | 34 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2579 |
+| live | reached without examples (crate-internal roots or a binding) | 695 |
+| | **total** | **3308** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,13 +19,14 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (32)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/lib.rs::atan2`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -52,6 +53,8 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/semantics.rs::DET_MATH_FUNCTIONS`
+- `src/semantics.rs::semantics_id_for`
 
 ### In the baseline but reached here (0)
 
@@ -59,11 +62,12 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (34)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/lib.rs::atan2`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -90,6 +94,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/semantics.rs::DET_MATH_FUNCTIONS`
+- `src/semantics.rs::semantics_id_for`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
 
@@ -108,7 +114,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2567)
+## L1 — example-only (2579)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -187,7 +193,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/laminate.rs`: `AbdMatrix`, `AbdMatrix::is_symmetric`, `Ply`, `Ply::q_bar`, `Ply::q_matrix`, `Sym3`, `Sym3::add`, `Sym3::scale`, `compute_abd`, `is_symmetric_stack`
 - `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `InvalidStrengthError`, `LaminateStrengths`, `LaminateStrengths::cfrp_ud`, `LaminateStrengths::gfrp_ud`, `LaminateStrengths::try_new`, `StressState`, `StressState::zero`, `failure_index`, `hashin_failure_mode`, `puck_failure_mode`, `tsai_hill_failure_index`, `tsai_wu_failure_index`
 - `src/layer_adhesion.rs`: `EffectiveStrength`, `EffectiveStrength::for_material`, `EffectiveStrength::fos_normal_x`, `EffectiveStrength::fos_normal_z`, `EffectiveStrength::fos_shear_xy`, `EffectiveStrength::fos_shear_xz`, `EffectiveStrength::min_fos`, `PrintOrientation`
-- `src/lib.rs`: `raw_clamp64`
+- `src/lib.rs`: `acos`, `cbrt`, `cos`, `exp`, `exp64`, `hypot`, `ln64`, `powf`, `powf64`, `powi`, `raw_clamp64`, `sin`
 - `src/lift_drag.rs`: `AeroCoefficients`, `AeroLoad`, `LiftDragError`, `LiftDragParams`, `LiftDragSurface`, `LiftDragSurface::apply`, `LiftDragSurface::coefficients`, `LiftDragSurface::lift_slope_per_rad`, `LiftDragSurface::load`, `LiftDragSurface::new`, `LiftDragSurface::params`, `THIN_AIRFOIL_LIFT_SLOPE`
 - `src/linear_elastic_fem.rs`: `AdaptiveConfig`, `AdaptiveConfig::bulk_fraction`, `AdaptiveConfig::linear`, `AdaptiveConfig::max_refine_passes`, `AdaptiveConfig::max_rounds`, `AdaptiveConfig::try_new`, `AdaptiveSolution`, `Axis`, `Axis::ALL`, `Axis::index`, `BoundaryConditions`, `BoundaryConditions::add_load`, `BoundaryConditions::fix`, `BoundaryConditions::load_count`, `BoundaryConditions::loads`, `BoundaryConditions::new`, `BoundaryConditions::prescribe`, `BoundaryConditions::prescribe_all`, `BoundaryConditions::prescribed`, `BoundaryConditions::prescribed_count`, `CorotationalConfig`, `CorotationalConfig::consistent_tangent`, `CorotationalConfig::hyperelastic`, `CorotationalConfig::increments`, `CorotationalConfig::linear`, `CorotationalConfig::newton_iterations`, `CorotationalConfig::newton_tolerance`, `CorotationalConfig::polar_iterations`, `CorotationalConfig::try_new`, `CorotationalConfig::with_consistent_tangent`, `CorotationalConfig::with_hyperelastic`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElasticMaterial::default_poissons_ratio`, `ElasticMaterial::from_filament`, `ElasticMaterial::lame`, `ElasticMaterial::new`, `ElasticMaterial::poissons_ratio`, `ElasticMaterial::with_poisson`, `ElasticMaterial::youngs_modulus_mpa`, `ElastoplasticConfig`, `ElastoplasticConfig::try_new`, `ElastoplasticIncrement`, `ElastoplasticIncrement::commit`, `ElastoplasticIncrement::newton_iterations`, `ElastoplasticIncrementRequest`, `ElastoplasticIncrementRequest::factor`, `ElastoplasticIncrementRequest::new`, `ElastoplasticIncrementRequest::softening`, `ElastoplasticIncrementRequest::thermal`, `ElastoplasticIncrementRequest::with_thermal`, `ElastoplasticProblem`, `ElastoplasticProblem::step`, `ElastoplasticProblem::try_new`, `ElastoplasticProblem::virgin_state`, `ElastoplasticSolution`, `ElastoplasticState`, `ElastoplasticState::displacements`, `ElastoplasticState::dissipation`, `ElastoplasticState::equivalent_plastic_strain`, `ElastoplasticState::newton_iterations`, `FemError`, `FemSolution`, `FemSolution::max_von_mises_mpa`, `PlasticHeating`, `PlasticHeating::taylor_quinney`, `PlasticHeating::temperature_rise`, `PlasticHeating::try_new`, `PlasticHeating::volumetric_heat_capacity_mpa_per_k`, `RESIDUAL_NORM_FLOOR`, `SolverConfig::max_iterations`, `SolverConfig::preconditioner`, `SolverConfig::relative_tolerance`, `SolverConfig::stagnation_min_improvement`, `SolverConfig::stagnation_min_window`, `SolverConfig::stagnation_window_fraction`, `SolverConfig::try_new`, `SolverConfig::with_preconditioner`, `SolverConfig::with_stagnation`, `SolverConfig::with_stagnation_fraction`, `StressTensor`, `StressTensor::complementary_energy_density`, `StressTensor::hydrostatic`, `StressTensor::von_mises`, `ThermalExpansion`, `ThermalExpansion::alpha_per_k`, `ThermalExpansion::field`, `ThermalExpansion::from_rise`, `ThermalSoftening`, `ThermalSoftening::hardening_per_k`, `ThermalSoftening::none`, `ThermalSoftening::try_new`, `ThermalSoftening::yield_per_k`, `ThermoplasticCoupling`, `ThermoplasticCoupling::relaxation`, `ThermoplasticCoupling::residual_floor_fraction`, `ThermoplasticCoupling::try_new`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `corner_indicators_squared`, `corotational_reactions`, `deposit_increment_heat`, `deposit_plastic_heat`, `error_indicators_squared`, `hyperelastic_volumetric_modulus`, `mark_bulk`, `plastic_temperature_rise`, `reactions`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `step_thermoplastic`, `stiffness_diagonal_stats`
 - `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `TangentField::apply`, `TangentField::at`, `backtrack`, `newton_krylov_step`, `newton_step`
@@ -246,7 +252,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sdf_sph.rs`: `SphConfig`, `SphConfig::water_like`, `SphParticle`, `SphParticle::at_rest`, `SphSolver`, `SphSolver::new`, `SphSolver::step`, `SphSolver::step_hashed`, `SphSpatialHash`, `SphSpatialHash::build`, `SphSpatialHash::cell_size`, `SphSpatialHash::for_each_neighbour`, `SphSpatialHash::populated_cell_count`, `poly6`, `spiky_grad`, `viscosity_lap`
 - `src/sdf_wind_field.rs`: `SdfWindField`, `SdfWindField::new`, `SdfWindField::sample`
 - `src/secondary_chain.rs`: `ChainConfig`, `ChainError`, `ChainInput`, `ChainLimit`, `ChainParams`, `ChainParticle`, `CurveKey`, `SecondaryChain`, `SecondaryChain::attached_inside`, `SecondaryChain::fit_to_rest`, `SecondaryChain::new`, `SecondaryChain::particles`, `SecondaryChain::step`, `curve_value`
-- `src/semantics.rs`: `PHYSICS_PEER_IDS`, `PHYSICS_PINS_BY_DET_MATH`, `PHYSICS_SEMANTICS_PINS`, `PeerMismatch`, `check_peer`, `expected_peer_id`
+- `src/semantics.rs`: `PHYSICS_PEER_IDS`, `PHYSICS_PINS_BY_DET_MATH`, `PHYSICS_SEMANTICS_BY_DET_MATH`, `PHYSICS_SEMANTICS_PINS`, `PeerMismatch`, `check_peer`, `expected_peer_id`
 - `src/sensors.rs`: `ContactReading`, `ContactSensor`, `ContactSensor::new`, `ContactSensor::read`, `ContactSensor::with_noise`, `GaussianNoise`, `GaussianNoise::apply`, `GaussianNoise::apply_vec`, `GaussianNoise::new`, `GaussianNoise::sample`, `Imu`, `Imu::new`, `Imu::sample`, `Imu::with_accel_noise`, `Imu::with_gyro_noise`, `ImuReading`, `Lidar`, `Lidar::directions`, `Lidar::new`, `Lidar::scan`, `Lidar::scan_from_body`, `Lidar::with_filter`, `Lidar::with_noise`, `Lidar::with_pose`, `LidarScan`, `LidarScan::range`, `PhysicsWorld::lidar_scan`, `PhysicsWorld::lidar_scan_from_body`, `PhysicsWorld::read_contact_sensor`, `PhysicsWorld::sample_imu`
 - `src/shape_raycast.rs`: `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `WorldRayCaster::all`, `WorldRayCaster::any`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::clear`, `ScalarField3D::contains`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::max_value`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`, `VectorField3D`, `VectorField3D::clear`, `VectorField3D::decay`, `VectorField3D::new`, `VectorField3D::sample`, `VectorField3D::splat`

@@ -12,10 +12,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 27 |
+| step | runs when `PhysicsWorld` steps | 26 |
 | world API | used through another `PhysicsWorld` method | 13 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 122 |
+| standalone | a Rust API that only examples call | 123 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -38,7 +38,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
-| `semantics` | step | 5 / 1 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | step | 28 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 3 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -163,6 +162,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `secondary_chain` | standalone | 0 / 0 / 0 / 14 / 0 | — |
+| `semantics` | standalone (step 4, world API 1 of 13 items) | 4 / 1 / 0 / 6 / 2 | C ABI, Python, WebAssembly |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone | 0 / 0 / 0 / 70 / 0 | — |
