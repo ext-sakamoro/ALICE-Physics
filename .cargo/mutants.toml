@@ -113,17 +113,17 @@
 #   `num == 0`, where the quotient is 0 and its negation is 0; `denom <= 0`
 #   differs only at `denom == 0`, which returned before.
 #
-# src/math.rs:967, 969, 974-976 (`cordic_sin_cos` range reduction): the
+# src/math.rs:960, 962, 967-969 (`cordic_sin_cos` range reduction): the
 #   reduction and its clamp leave an angle in [-π, π] congruent to the input
 #   modulo `TWO_PI`, and `TWO_PI == PI + PI` bit for bit. The quadrant step
 #   maps -π and π to the same value (0, cosine negated), and `PI - (x + TWO_PI)
 #   == -PI - x` exactly, so every one of these mutants (entering the reduction
 #   at exactly ±π, the clamp's `> π` side that a reduced angle below π never
 #   reaches, its `< -π` side at exactly -π) yields the same quadrant input.
-#   (src/math.rs:969, `theta + PI` → `theta - PI`, is not listed: Fix128
+#   (src/math.rs:962, `theta + PI` → `theta - PI`, is not listed: Fix128
 #   addition wraps, and near `hi = i64::MAX` only one of the two wraps.)
 #
-# src/math.rs:1008 (`cordic_sin_cos`) and :1043 (`cordic_atan`): `d > 0` where
+# src/math.rs:1001 (`cordic_sin_cos`) and :1036 (`cordic_atan`): `d > 0` where
 #   `d` is only ever 1 or -1, so `d >= 0` takes the same branch.
 #
 # src/bvh.rs:63, 66 (`point_to_morton`): at `size.y == scale` (or `.z`) both
@@ -194,12 +194,12 @@ exclude_re = [
     "replace \\| with \\^ in (expand_bits|morton_code|BvhNode::leaf)$",
     "bvh\\.rs:539:.*replace \\| with \\^ in LinearBvh::build_recursive",
     "replace < with <= in Fix128::(from_f64|from_ratio)$",
-    "math\\.rs:967:.*replace (> with >=|< with <=) in cordic_sin_cos",
-    "math\\.rs:974:.*replace > with (==|>=) in cordic_sin_cos",
-    "math\\.rs:975:.*replace - with (\\+|/) in cordic_sin_cos",
-    "math\\.rs:976:.*replace < with (==|<=) in cordic_sin_cos",
-    "math\\.rs:1008:.*replace > with >= in cordic_sin_cos",
-    "math\\.rs:1043:.*replace > with >= in cordic_atan",
+    "math\\.rs:960:.*replace (> with >=|< with <=) in cordic_sin_cos",
+    "math\\.rs:967:.*replace > with (==|>=) in cordic_sin_cos",
+    "math\\.rs:968:.*replace - with (\\+|/) in cordic_sin_cos",
+    "math\\.rs:969:.*replace < with (==|<=) in cordic_sin_cos",
+    "math\\.rs:1001:.*replace > with >= in cordic_sin_cos",
+    "math\\.rs:1036:.*replace > with >= in cordic_atan",
     "bvh\\.rs:(63|66):.*replace > with >= in point_to_morton",
     "bvh\\.rs:500:.*replace \\+ with \\* in LinearBvh::build_recursive",
     "bvh\\.rs:561:.*replace - with / in LinearBvh::find_split",

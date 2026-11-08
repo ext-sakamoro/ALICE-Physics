@@ -353,7 +353,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | Feature | Default | Description |
 |---------|:-------:|-------------|
 | `std` | yes | Standard library. Disable for `no_std` (needs `alloc`). |
-| `simd` | | SSE2 paths for `Vec3Fix` operations on `x86_64`. Results are bit-identical to the scalar paths. |
+| `simd` | | The `*_simd` names for `Vec3Fix` / `Fix128` operations on `x86_64`. They are scalar and bit-identical to the plain operations (no SSE2 instruction is used); kept for API compatibility. |
 | `parallel` | | Parallel constraint solving with Rayon over graph-coloured batches. |
 | `ffi` | | C ABI for Unity, Unreal Engine and other hosts. Cannot be combined with `wasm`. |
 | `wasm` | | WebAssembly bindings through `wasm-bindgen`. Requires `std`; cannot be combined with `ffi`. |

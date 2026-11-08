@@ -254,10 +254,7 @@ fn run_x86_64_simd_gated_items() {
     let b = Fix128::from_raw(-1, 0x1111_2222_3333_4444);
 
     let scalar_add = a + b;
-    // SAFETY: add_simd has no preconditions; SSE2 is part of the x86_64
-    // baseline ABI, so `#[target_feature(enable = "sse2")]` is always
-    // satisfied here.
-    let simd_add = unsafe { a.add_simd(b) };
+    let simd_add = a.add_simd(b);
     println!(
         "[math] add_simd({a:?}, {b:?}) hi={:#x} lo={:#x} (operator + hi={:#x} lo={:#x})",
         simd_add.hi, simd_add.lo, scalar_add.hi, scalar_add.lo
@@ -269,8 +266,7 @@ fn run_x86_64_simd_gated_items() {
     );
 
     let scalar_sub = a - b;
-    // SAFETY: as above.
-    let simd_sub = unsafe { a.sub_simd(b) };
+    let simd_sub = a.sub_simd(b);
     println!(
         "[math] sub_simd({a:?}, {b:?}) hi={:#x} lo={:#x} (operator - hi={:#x} lo={:#x})",
         simd_sub.hi, simd_sub.lo, scalar_sub.hi, scalar_sub.lo
@@ -282,8 +278,7 @@ fn run_x86_64_simd_gated_items() {
     );
 
     // Degenerate / extreme magnitude: i64 wraparound at the hi boundary.
-    // SAFETY: as above.
-    let wrapped_add = unsafe { Fix128::from_raw(i64::MAX, 0).add_simd(Fix128::from_raw(1, 0)) };
+    let wrapped_add = Fix128::from_raw(i64::MAX, 0).add_simd(Fix128::from_raw(1, 0));
     let wrapped_add_scalar = Fix128::from_raw(i64::MAX, 0) + Fix128::from_raw(1, 0);
     println!(
         "[math] add_simd(i64::MAX, 1) wraps to hi={:#x} (operator + hi={:#x})",
@@ -294,8 +289,7 @@ fn run_x86_64_simd_gated_items() {
         (wrapped_add_scalar.hi, wrapped_add_scalar.lo),
         "add_simd must wrap at the i64 boundary exactly like the `+` operator (no panic, no saturation)"
     );
-    // SAFETY: as above.
-    let wrapped_sub = unsafe { Fix128::from_raw(i64::MIN, 0).sub_simd(Fix128::from_raw(1, 0)) };
+    let wrapped_sub = Fix128::from_raw(i64::MIN, 0).sub_simd(Fix128::from_raw(1, 0));
     let wrapped_sub_scalar = Fix128::from_raw(i64::MIN, 0) - Fix128::from_raw(1, 0);
     println!(
         "[math] sub_simd(i64::MIN, 1) wraps to hi={:#x} (operator - hi={:#x})",

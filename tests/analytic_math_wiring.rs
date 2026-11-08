@@ -295,10 +295,7 @@ mod x86_64_simd_gated {
         ];
         for (a, b) in cases {
             let scalar = a + b;
-            // SAFETY: add_simd has no preconditions; SSE2 is part of the
-            // x86_64 baseline ABI, so `#[target_feature(enable = "sse2")]`
-            // is always satisfied here.
-            let simd = unsafe { a.add_simd(b) };
+            let simd = a.add_simd(b);
             assert_eq!(
                 (simd.hi, simd.lo),
                 (scalar.hi, scalar.lo),
@@ -326,8 +323,7 @@ mod x86_64_simd_gated {
         ];
         for (a, b) in cases {
             let scalar = a - b;
-            // SAFETY: as above.
-            let simd = unsafe { a.sub_simd(b) };
+            let simd = a.sub_simd(b);
             assert_eq!(
                 (simd.hi, simd.lo),
                 (scalar.hi, scalar.lo),
@@ -337,8 +333,7 @@ mod x86_64_simd_gated {
             assert_eq!(scalar + b, a);
         }
         // Explicit borrow check: 1.0 - 2^-64 == 0.FFFF...F (hi 0, lo MAX).
-        // SAFETY: as above.
-        let borrowed = unsafe { Fix128::from_raw(1, 0).sub_simd(Fix128::from_raw(0, 1)) };
+        let borrowed = Fix128::from_raw(1, 0).sub_simd(Fix128::from_raw(0, 1));
         assert_eq!(borrowed, Fix128::from_raw(0, u64::MAX));
     }
 
