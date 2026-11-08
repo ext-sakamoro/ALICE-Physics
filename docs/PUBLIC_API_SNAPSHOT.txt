@@ -5896,6 +5896,34 @@ impl core::marker::Unpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::marker::UnsafeUnpin for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint_extra::ExtraJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint_extra::ExtraJoint
+pub enum alice_physics_core::joint_extra::ExtraJointError
+pub alice_physics_core::joint_extra::ExtraJointError::BodyNotOnHinge
+pub alice_physics_core::joint_extra::ExtraJointError::BodyNotOnHinge::body: usize
+pub alice_physics_core::joint_extra::ExtraJointError::BodyNotOnHinge::hinge: usize
+pub alice_physics_core::joint_extra::ExtraJointError::HingeIndexOutOfRange
+pub alice_physics_core::joint_extra::ExtraJointError::HingeIndexOutOfRange::count: usize
+pub alice_physics_core::joint_extra::ExtraJointError::HingeIndexOutOfRange::index: usize
+pub alice_physics_core::joint_extra::ExtraJointError::NotAHinge
+pub alice_physics_core::joint_extra::ExtraJointError::NotAHinge::index: usize
+impl core::clone::Clone for alice_physics_core::joint_extra::ExtraJointError
+pub fn alice_physics_core::joint_extra::ExtraJointError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::joint_extra::ExtraJointError
+impl core::cmp::PartialEq for alice_physics_core::joint_extra::ExtraJointError
+pub fn alice_physics_core::joint_extra::ExtraJointError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics_core::joint_extra::ExtraJointError
+impl core::fmt::Debug for alice_physics_core::joint_extra::ExtraJointError
+pub fn alice_physics_core::joint_extra::ExtraJointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::joint_extra::ExtraJointError
+pub fn alice_physics_core::joint_extra::ExtraJointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::StructuralPartialEq for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::Freeze for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::Send for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::Sync for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::Unpin for alice_physics_core::joint_extra::ExtraJointError
+impl core::marker::UnsafeUnpin for alice_physics_core::joint_extra::ExtraJointError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint_extra::ExtraJointError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint_extra::ExtraJointError
 pub struct alice_physics_core::joint_extra::GearJoint
 pub alice_physics_core::joint_extra::GearJoint::body_a: usize
 pub alice_physics_core::joint_extra::GearJoint::body_b: usize
@@ -6035,7 +6063,7 @@ impl core::marker::Unpin for alice_physics_core::joint_extra::WeldJoint
 impl core::marker::UnsafeUnpin for alice_physics_core::joint_extra::WeldJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint_extra::WeldJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint_extra::WeldJoint
-pub fn alice_physics_core::joint_extra::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::joint_extra::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], &[alice_physics_core::joint::Joint], alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::joint_extra::ExtraJointError>
 pub fn alice_physics_core::joint_extra::solve_pulley_to_length(&alice_physics_core::joint_extra::PulleyJoint, &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub mod alice_physics_core::kepler
 #[non_exhaustive] pub enum alice_physics_core::kepler::KeplerError
@@ -15391,7 +15419,7 @@ pub fn alice_physics_core::prelude::save_scene(&alice_physics_core::scene_io::Ph
 pub fn alice_physics_core::prelude::save_scene_json(&alice_physics_core::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
 pub const fn alice_physics_core::prelude::simd_width() -> usize
 pub fn alice_physics_core::prelude::simplify_collision_mesh(&alice_physics_core::collision_mesh_gen::CollisionMesh, usize) -> alice_physics_core::collision_mesh_gen::CollisionMesh
-pub fn alice_physics_core::prelude::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::prelude::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], &[alice_physics_core::joint::Joint], alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::joint_extra::ExtraJointError>
 pub fn alice_physics_core::prelude::solve_joints(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::prelude::solve_joints_breakable(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
 pub fn alice_physics_core::prelude::solve_joints_breaking_on_force(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
@@ -27183,7 +27211,7 @@ pub fn alice_physics_core::save_scene_json(&alice_physics_core::scene_io::Physic
 pub const fn alice_physics_core::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub const fn alice_physics_core::simd_width() -> usize
 pub fn alice_physics_core::simplify_collision_mesh(&alice_physics_core::collision_mesh_gen::CollisionMesh, usize) -> alice_physics_core::collision_mesh_gen::CollisionMesh
-pub fn alice_physics_core::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], alice_physics_core::math::Fix128)
+pub fn alice_physics_core::solve_extra_joints(&mut [alice_physics_core::solver::RigidBody], &[alice_physics_core::joint_extra::ExtraJoint], &[alice_physics_core::joint::Joint], alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::joint_extra::ExtraJointError>
 pub fn alice_physics_core::solve_joints(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solve_joints_breakable(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
 pub fn alice_physics_core::solve_joints_breaking_on_force(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
