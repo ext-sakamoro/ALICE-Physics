@@ -4,6 +4,7 @@
 //! Author: Moroya Sakamoto
 
 use alice_physics_core::cloth::Cloth;
+use alice_physics_core::det_math::exp64;
 use alice_physics_core::input_log::{InputLog, LogInput};
 use alice_physics_core::touch::{Hand, Touch};
 use alice_physics_core::{Fix128, Vec3Fix};
@@ -28,6 +29,31 @@ fn sheet() -> Cloth {
 
 const DT: f64 = 1.0 / 60.0;
 
+/// `(sin x, cos x)` by Taylor series after reduction to `[−π, π]` (the platform `f64::sin` is not used in this crate's
+/// tests; error ≲ 1e-15 here), as in `tests/analytic_cloth_rest_tether.rs`
+fn sin_cos64(x: f64) -> (f64, f64) {
+    let tau = 2.0 * core::f64::consts::PI;
+    let mut r = x.rem_euclid(tau);
+    if r > core::f64::consts::PI {
+        r -= tau;
+    }
+    let (mut s, mut c) = (0.0_f64, 0.0_f64);
+    let mut term = 1.0_f64;
+    for n in 0..40_u32 {
+        match n % 4 {
+            0 => c += term,
+            1 => s += term,
+            2 => c -= term,
+            _ => s -= term,
+        }
+        term *= r / f64::from(n + 1);
+    }
+    (s, c)
+}
+
+/// A change to one part of a cloth's state, by a small amount
+type Change = (&'static str, fn(&mut Cloth, Fix128));
+
 fn v(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(
         Fix128::from_f64(x),
@@ -40,7 +66,8 @@ fn v(x: f64, y: f64, z: f64) -> Vec3Fix {
 fn let_go(x0: f64, t: f64) -> f64 {
     let (w, z) = (std::f64::consts::TAU, 0.4);
     let wd = w * (1.0f64 - z * z).sqrt();
-    x0 * (-z * w * t).exp() * ((wd * t).cos() + z * w / wd * (wd * t).sin())
+    let (sn, cs) = sin_cos64(wd * t);
+    x0 * exp64(-z * w * t) * (cs + z * w / wd * sn)
 }
 
 #[test]
@@ -196,7 +223,7 @@ fn touches_are_written_on_their_grid_and_read_back_exactly() {
 fn every_part_of_the_cloth_is_in_its_digest() {
     let base = sheet().state_digest();
     let tiny = Fix128::from_ratio(1, 1 << 20);
-    let changed: [(&str, fn(&mut Cloth, Fix128)); 6] = [
+    let changed: [Change; 6] = [
         ("position", |c, t| c.positions[1].x = c.positions[1].x + t),
         ("previous position", |c, t| {
             c.prev_positions[1].y = c.prev_positions[1].y + t
@@ -243,8 +270,8 @@ fn steps(bodies: &mut [Cloth], hand: &mut Hand, n: usize) {
 fn scheme_rest(kg: f64, d: f64) -> f64 {
     let (w, z, m) = (std::f64::consts::TAU, 0.4, 1.0);
     let wd = w * (1.0f64 - z * z).sqrt();
-    let e = (-z * w * DT).exp();
-    let (cs, sn) = ((wd * DT).cos(), (wd * DT).sin());
+    let e = exp64(-z * w * DT);
+    let (sn, cs) = sin_cos64(wd * DT);
     let (a11, a12) = (e * (cs + z * w / wd * sn), e * sn / wd);
     let (a21, a22) = (-e * w * w / wd * sn, e * (cs - z * w / wd * sn));
     let c = kg * DT / m;
@@ -259,7 +286,7 @@ fn scheme_rest(kg: f64, d: f64) -> f64 {
 // and the scheme's rest above (discrete), to which the cloth comes
 #[test]
 fn a_finite_grip_holds_the_point_where_the_springs_balance() {
-    let kt = std::f64::consts::TAU.powi(2);
+    let kt = std::f64::consts::TAU * std::f64::consts::TAU;
     for (kg, d) in [(40.0, 0.05), (100.0, 0.03), (20.0, 0.08)] {
         let (mut bodies, mut hand) = gripped(kg, 1000.0);
         assert!(hand.apply(&mut bodies, &Touch::grab(0, v(0.0, 0.0, 0.0))));
@@ -289,7 +316,7 @@ fn a_finite_grip_holds_the_point_where_the_springs_balance() {
 // oracle: a slow drag lets go where the grip's pull at balance reaches fmax: kg kt d / (kg + kt) = fmax
 #[test]
 fn a_finite_grip_slips_where_its_pull_reaches_its_strength() {
-    let kt = std::f64::consts::TAU.powi(2);
+    let kt = std::f64::consts::TAU * std::f64::consts::TAU;
     let (kg, fmax) = (60.0, 2.0);
     let d_slip = fmax * (kg + kt) / (kg * kt);
     let (mut bodies, mut hand) = gripped(kg, fmax);
