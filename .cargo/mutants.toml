@@ -15,18 +15,18 @@
 #   Any loop boundary of this function has the same property: the result is
 #   continuous at the boundary, which is what makes the mutant equivalent.
 #
-# `replace * with / in sphere_plane_toi` (src/ccd.rs:151,167): both are
+# `replace * with / in sphere_plane_toi` (src/ccd.rs:247,263): both are
 #   `plane_normal * side`, and `side` is assigned only once, as
 #   `if dist.is_negative() { -Fix128::ONE } else { Fix128::ONE }` — no other
 #   code path sets it, so it is always exactly ±1. `x * 1 == x / 1` and
 #   `x * -1 == x / -1` for every Fix128 `x`, so this is bit-identical for
-#   every possible call, not just a tested subset. (src/ccd.rs:147,160,163
+#   every possible call, not just a tested subset. (src/ccd.rs:243,256,259
 #   are other `*` sites in the same function that are NOT equivalent — they
 #   multiply by `dist` / `radius` / `t`, which are not restricted to ±1 —
 #   excluded here by line number so those stay covered.)
 #
-# `replace > with >= in swept_aabb` (src/ccd.rs:235,252,269) and
-# `replace < with <= in swept_aabb` (src/ccd.rs:236,253,270,280): the first
+# `replace > with >= in swept_aabb` (src/ccd.rs:331,348,365) and
+# `replace < with <= in swept_aabb` (src/ccd.rs:332,349,366,376): the first
 #   three are `te > t_enter` / the next four are `tx < t_exit`, the running
 #   max/min across the X/Y/Z slab tests. At a tie the two operands are equal,
 #   so either branch returns the same Fix128 value — Fix128 is a plain
@@ -37,15 +37,15 @@
 #   (`t_enter >= ZERO && t_enter <= ONE`) always claims t_enter == 0 first,
 #   so line 280 only ever runs for t_enter strictly outside [0, 1], where the
 #   one value that would distinguish `<` from `<=` cannot occur. (Excluded by
-#   line number: src/ccd.rs:237,254,271 are a different comparison in the
+#   line number: src/ccd.rs:333,350,367 are a different comparison in the
 #   same function — `t_enter > t_exit`, the touch/no-touch early return — and
 #   are NOT equivalent; `swept_aabb_corner_touch_counts_as_hit` already kills
 #   them.)
 #
-# `replace > with >= in slab_test` (src/ccd.rs:307): `t0 > t1`, the swap
+# `replace > with >= in slab_test` (src/ccd.rs:403): `t0 > t1`, the swap
 #   condition; at a tie the pair is already (t0, t1) == (t1, t0), so swapping
 #   or not gives the same pair either way (same Fix128-representation
-#   argument as above). (Excluded by line number: src/ccd.rs:297, `a_min >
+#   argument as above). (Excluded by line number: src/ccd.rs:393, `a_min >
 #   b_max` in the static-axis overlap check, is a different, NOT-equivalent
 #   comparison in the same function, already killed by
 #   `slab_test_orders_times_and_handles_static_axis`'s exact-touch cases.)
@@ -56,15 +56,15 @@
 #   only `<`/`>` sites in this function, so no line-number restriction is
 #   needed here).
 #
-# `replace > with >= in solve_hinge_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_slider_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_d6_joint` (src/joint.rs:1514,1541): each is a
+# `replace > with >= in solve_hinge_joint` (src/joint.rs:1636) and
+# `replace > with >= in solve_slider_joint` (src/joint.rs:1636) and
+# `replace > with >= in solve_d6_joint` (src/joint.rs:1642,1669): each is a
 #   joint's upper limit check (`angle > *m` / `along_axis > *m` / `proj >
 #   limit_max` / `angle > limit_max`). At the exact limit the resulting
 #   `error` (`angle - max` etc.) is exactly zero regardless of which branch
 #   computed it, and every one of these is gated behind `if !error.is_zero()`
 #   (or the angular equivalent) before any correction is applied — confirmed
-#   by reading src/joint.rs:1070-1103 (slider) and 1234-1268 (d6) directly: a
+#   by reading src/joint.rs:1198-1231 (slider) and 1234-1268 (d6) directly: a
 #   zero-error correction is skipped entirely, not just zero-scaled. (d6 has
 #   two sites, linear and angular; both equivalent for the same reason, so no
 #   line-number restriction is needed for it. hinge and slider have exactly
@@ -73,8 +73,8 @@
 #   by scripts/mutants_exclude_check.py, which fails if any of these regexes
 #   stop matching a real mutant.
 #
-# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1508) and
-# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1514,1541):
+# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1636) and
+# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1642,1669):
 #   1376 is `cone_angle < Fix128::ZERO`, a sign-fix for a value derived from
 #   `Fix128::atan2(cross_len, dot)` where `cross_len` is itself a vector
 #   length (`normalize_with_length`), hence never negative; atan2 with a
@@ -83,11 +83,11 @@
 #   indistinguishable (same branch — or lack of one — either way). 1382/1409
 #   are the cone and twist upper-limit checks, equivalent for the same
 #   `if !error.is_zero()`-gated reason as the other joints' upper bounds
-#   above (src/joint.rs:1385-1400, 1416-1429), with the zero-lambda no-op
+#   above (src/joint.rs:1513-1528, 1544-1557), with the zero-lambda no-op
 #   confirmed one level deeper too: `apply_angular_correction` →
 #   `rotate_by_angle` has an explicit `if theta.is_zero() { return q; }`
-#   (src/joint.rs:1494) before it does anything else. (Excluded by line
-#   number: src/joint.rs:1410, a different `>` in the same function
+#   (src/joint.rs:1622) before it does anything else. (Excluded by line
+#   number: src/joint.rs:1538, a different `>` in the same function
 #   — `twist_angle > Fix128::ZERO`, a sign-handling branch where the operand
 #   is NOT restricted to be non-negative like cone_angle is — is NOT
 #   included here; no unreachability proof for it yet.)
@@ -145,8 +145,8 @@
 #   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
 #
 # NOT excluded despite looking like the upper-bound case below: `replace <
-# with <= in solve_hinge_joint` (src/joint.rs:933), `...in solve_slider_joint`
-# (src/joint.rs:1072), `...in solve_d6_joint` (src/joint.rs:1239,1309), the
+# with <= in solve_hinge_joint` (src/joint.rs:1061), `...in solve_slider_joint`
+# (src/joint.rs:1200), `...in solve_d6_joint` (src/joint.rs:1367,1437), the
 # four lower limit checks (`angle < *m` / `along_axis < *m` / `proj <
 # limit_min` / `angle < limit_min`), each paired with an `else if value >
 # max`. These were investigated and found NOT equivalent, and deliberately
@@ -170,24 +170,24 @@
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
-    "ccd\\.rs:151:.*replace \\* with / in sphere_plane_toi",
-    "ccd\\.rs:167:.*replace \\* with / in sphere_plane_toi",
-    "ccd\\.rs:235:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:252:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:269:.*replace > with >= in swept_aabb",
-    "ccd\\.rs:236:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:253:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:270:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:280:.*replace < with <= in swept_aabb",
-    "ccd\\.rs:307:.*replace > with >= in slab_test",
+    "ccd\\.rs:247:.*replace \\* with / in sphere_plane_toi",
+    "ccd\\.rs:263:.*replace \\* with / in sphere_plane_toi",
+    "ccd\\.rs:331:.*replace > with >= in swept_aabb",
+    "ccd\\.rs:348:.*replace > with >= in swept_aabb",
+    "ccd\\.rs:365:.*replace > with >= in swept_aabb",
+    "ccd\\.rs:332:.*replace < with <= in swept_aabb",
+    "ccd\\.rs:349:.*replace < with <= in swept_aabb",
+    "ccd\\.rs:366:.*replace < with <= in swept_aabb",
+    "ccd\\.rs:376:.*replace < with <= in swept_aabb",
+    "ccd\\.rs:403:.*replace > with >= in slab_test",
     "replace < with <= in AABB::union",
     "replace > with >= in AABB::union",
     "replace > with >= in solve_hinge_joint",
     "replace > with >= in solve_slider_joint",
     "replace > with >= in solve_d6_joint",
-    "joint\\.rs:1507:.*replace < with <= in solve_cone_twist_joint",
-    "joint\\.rs:1513:.*replace > with >= in solve_cone_twist_joint",
-    "joint\\.rs:1540:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1635:.*replace < with <= in solve_cone_twist_joint",
+    "joint\\.rs:1641:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1668:.*replace > with >= in solve_cone_twist_joint",
     "replace \\| with \\^ in Fix128::(sqrt|half|shr_bits|double)$",
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
     "replace \\| with \\^ in (widening_mul_by_words|limbs_to_u128|divide_limbs|sqrt_step|isqrt_shifted)$",
