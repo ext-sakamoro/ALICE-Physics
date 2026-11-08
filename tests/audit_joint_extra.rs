@@ -62,7 +62,7 @@ fn angle_z(q: QuatFix) -> f64 {
 }
 
 fn solve(bodies: &mut [RigidBody], j: ExtraJoint, dt: f64) {
-    solve_extra_joints(bodies, &[j], z_hinges(), fx(dt)).expect("the gear names hinges 0 and 1");
+    solve_extra_joints(bodies, &[j], &z_hinges(), fx(dt)).expect("the gear names hinges 0 and 1");
 }
 
 // ---------------------------------------------------------------------------
