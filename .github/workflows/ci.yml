@@ -946,6 +946,10 @@ jobs:
         run: python3 scripts/test_entropy_guard.py
       - name: Entropy guard (no OS entropy or wall clock in production code)
         run: python3 scripts/entropy_guard.py
+      # the preflight's --fast lane picks the tests a change affects (scripts/affected_tests.py); its own test runs
+      # here too, so no gate of the preflight runs only on a developer's machine
+      - name: Affected-test selector (test of the preflight --fast lane)
+        run: python3 scripts/test_affected_tests.py
       # float max / min come from alice-det-math, never a crate-local copy
       - name: Private max / min guard (test first)
         run: python3 scripts/test_no_private_minmax.py
