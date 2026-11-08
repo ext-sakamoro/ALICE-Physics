@@ -26,7 +26,8 @@ pub struct StaticHit {
     pub collider: usize,
     /// Surface normal at the contact, pointing to the body
     pub normal: Vec3Fix,
-    /// Where the body touches the surface
+    /// The body's point deepest in the collider, on the body's surface (the contact's
+    /// `point_a`), not the point on the collider's surface
     pub point: Vec3Fix,
     /// Speed into the surface when it was met; 0 when moving away or at rest
     pub speed: Fix128,
