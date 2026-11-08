@@ -9,8 +9,13 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      GitHub, case-insensitive); no internal vocabulary
      in the messages (the docs_lint word list and private-name hashes), a
      CHANGELOG line when src/ changes (--no-changelog for a pure refactor);
-  2. takes the per-repository landing lock of this machine (LandLock, held until
-     the push to main; a second landing waits up to --lock-wait-minutes);
+  2. takes the per-repository landing lock of this machine (LandLock) only for the
+     critical section of each attempt: fetch, the check of what main gained, the
+     rebase and checks a documents-only move needs, and the push to main. A new
+     evidence round (rebase, ci/<id> push, CI wait) runs outside it, so landings
+     whose CI overlaps do not wait on each other; a landing that finds main moved
+     inside the lock gathers the evidence again. A second landing waits for the
+     lock up to --lock-wait-minutes;
   3. rebases on origin/main when needed (with a fixed committer; a conflict in a
      generated ledger takes main's copy, any other conflict stops), rebuilds and
      commits the ledgers, runs the checks and `scripts/preflight.sh --fast`;
@@ -1906,20 +1911,19 @@ class Lander:
         self.wait_evidence(ref, sha)
 
     def land(self) -> str:
-        with self.lock():
-            with self.own_copy():
-                sha = self._land()
-            if not self.dry_run:
-                # the checkout follows the landing, as when land.py rebased it in place; `--keep`
-                # refuses (and changes nothing) when the checkout has changes in files the move
-                # would touch: the landing stands, the checkout is reported as behind
-                try:
-                    self.checkout_git("reset", "-q", "--keep", sha)
-                except LandError as e:
-                    self.checkout_lagging = True
-                    self.log(f"landed {sha[:7]}, but the checkout stays at {self.source_sha[:7]}: {e}; "
-                             f"put its changes away and run `git reset --keep {sha[:7]}` there")
-            return sha
+        with self.own_copy():
+            sha = self._land()
+        if not self.dry_run:
+            # the checkout follows the landing, as when land.py rebased it in place; `--keep`
+            # refuses (and changes nothing) when the checkout has changes in files the move
+            # would touch: the landing stands, the checkout is reported as behind
+            try:
+                self.checkout_git("reset", "-q", "--keep", sha)
+            except LandError as e:
+                self.checkout_lagging = True
+                self.log(f"landed {sha[:7]}, but the checkout stays at {self.source_sha[:7]}: {e}; "
+                         f"put its changes away and run `git reset --keep {sha[:7]}` there")
+        return sha
 
     def patch_ids(self, rev_range: str, skip: set[str]) -> list[str]:
         """`git patch-id --stable` of each commit in rev_range that is not the ledger commit,
@@ -2103,73 +2107,82 @@ class Lander:
                 self.push_evidence(sha, first=True)
                 evidence_sha, evidence_base, rounds = sha, base, 1
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            self.fetch()
-            new = self.git("rev-parse", self.upstream())
-            moved = self.git("rev-list", f"{base}..{new}").split()
-            if moved:
-                theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
-                ours = self.paths(f"{self.upstream()}...HEAD")
-                try:
-                    code_moved = not docs_only(theirs, workflow_input_rules(self.root))
-                except LandError as e:
-                    self.log(f"the workflow inputs cannot be read ({e}): treating the move as code")
-                    code_moved = True
-                verify = "none" if not code_moved else ("preflight" if overlaps(ours, theirs) else "compile")
-                if code_moved and lane == "ci" and not self.dry_run:
-                    if rounds >= MAX_EVIDENCE:
-                        raise LandError(f"{MOVING_MESSAGE} (main gained code after {rounds} evidence rounds "
-                                        f"on ci/{self.id}; last evidence {evidence_sha[:7]})")
-                    self.log(f"main gained code commits ({len(moved)}): rebasing and gathering the "
-                             f"evidence again (round {rounds + 1} of {MAX_EVIDENCE})")
-                    sha = self.prepare(verify)
-                    base = new
-                    self.push_evidence(sha, first=False)
-                    evidence_sha, evidence_base, rounds = sha, new, rounds + 1
-                    continue
-                self.log("main gained " + ("documents only" if not code_moved else "code (direct lane)")
-                         + f" ({len(moved)} commits): rebasing, local checks")
+            # the landing lock covers only the critical section (fetch, rebase onto main,
+            # the checks of the candidate, the push to main): the CI wait of a new evidence
+            # round runs outside it, so landings whose CI overlaps do not wait on each other
+            reevidence: tuple[str, str, int] | None = None
+            with self.lock():
+                self.fetch()
+                new = self.git("rev-parse", self.upstream())
+                moved = self.git("rev-list", f"{base}..{new}").split()
+                if moved:
+                    theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
+                    ours = self.paths(f"{self.upstream()}...HEAD")
+                    try:
+                        code_moved = not docs_only(theirs, workflow_input_rules(self.root))
+                    except LandError as e:
+                        self.log(f"the workflow inputs cannot be read ({e}): treating the move as code")
+                        code_moved = True
+                    verify = "none" if not code_moved else ("preflight" if overlaps(ours, theirs) else "compile")
+                    if code_moved and lane == "ci" and not self.dry_run:
+                        if rounds >= MAX_EVIDENCE:
+                            raise LandError(f"{MOVING_MESSAGE} (main gained code after {rounds} evidence rounds "
+                                            f"on ci/{self.id}; last evidence {evidence_sha[:7]})")
+                        reevidence = (verify, new, len(moved))
+                    else:
+                        self.log("main gained " + ("documents only" if not code_moved else "code (direct lane)")
+                                 + f" ({len(moved)} commits): rebasing, local checks")
+                        sha = self.prepare(verify)
+                        base = new
+                if reevidence is None:
+                    sha = self.git("rev-parse", "HEAD")
+                    # every attempt: Law's main or the candidate may have moved since the last one
+                    self.check_law_state(sha)
+                    if self.dry_run:
+                        self.log(f"dry run: would push {sha[:7]} to {self.branch}")
+                        return sha
+                    before_push = self.git("rev-parse", self.upstream())
+                    self.check_push_identity(before_push)
+                    self.check_messages()
+                    self.check_remote()
+                    self.check_checkout_unmoved()
+                    if self.git("rev-parse", "HEAD") != sha:
+                        raise LandError(f"land.py's working copy moved from the prepared {sha[:7]}: nothing pushed to main")
+                    rule = self.evidence_rule(lane, evidence_sha, evidence_base, rounds, sha)
+                    self.run_gate([f"{sha} {sha} refs/heads/{self.branch} {self.hook_remote_sha(f'refs/heads/{self.branch}')}"])
+                    r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"{sha}:refs/heads/{self.branch}"],
+                                       cwd=self.root, capture_output=True, text=True, env=self.git_env)
+                    self.fetch()
+                    if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
+                        self.verify_landed_identity(before_push, sha)
+                        why = {"direct": "direct (no evidence)",
+                               "re-evidenced": f"re-evidenced (evidence rounds {rounds})"}.get(rule, rule)
+                        self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
+                        self.record += [f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
+                                        f"landed SHA: {sha} on {self.branch} (attempt {attempt})",
+                                        f"reason: {why}"]
+                        self.log("landing record:")
+                        for line in self.record:
+                            self.log(f"  {line}")
+                        if lane == "ci":
+                            ci_ref = f"refs/heads/ci/{self.id}"
+                            try:
+                                self.run_gate([f"(delete) {'0' * 40} {ci_ref} {self.hook_remote_sha(ci_ref)}"])
+                                self.git("push", "-q", self.remote, f":{ci_ref}", check=False)
+                            except LandError as e:
+                                self.log(f"ci/{self.id} left in place: {e}")  # (the landing is done; the branch is only a leftover)
+                        self.evidence_line = f"EVIDENCE {evidence_sha or '-'} LANDED {sha} RULE {rule}"
+                        self.log(self.evidence_line)
+                        return sha
+                    self.log(f"{self.branch} moved during attempt {attempt}; checking what it gained")
+            if reevidence is not None:
+                verify, new, count = reevidence
+                self.log(f"main gained code commits ({count}): rebasing and gathering the "
+                         f"evidence again (round {rounds + 1} of {MAX_EVIDENCE}), outside the landing lock")
                 sha = self.prepare(verify)
                 base = new
-            sha = self.git("rev-parse", "HEAD")
-            # every attempt: Law's main or the candidate may have moved since the last one
-            self.check_law_state(sha)
-            if self.dry_run:
-                self.log(f"dry run: would push {sha[:7]} to {self.branch}")
-                return sha
-            before_push = self.git("rev-parse", self.upstream())
-            self.check_push_identity(before_push)
-            self.check_messages()
-            self.check_remote()
-            self.check_checkout_unmoved()
-            if self.git("rev-parse", "HEAD") != sha:
-                raise LandError(f"land.py's working copy moved from the prepared {sha[:7]}: nothing pushed to main")
-            rule = self.evidence_rule(lane, evidence_sha, evidence_base, rounds, sha)
-            self.run_gate([f"{sha} {sha} refs/heads/{self.branch} {self.hook_remote_sha(f'refs/heads/{self.branch}')}"])
-            r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"{sha}:refs/heads/{self.branch}"],
-                               cwd=self.root, capture_output=True, text=True, env=self.git_env)
-            self.fetch()
-            if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
-                self.verify_landed_identity(before_push, sha)
-                why = {"direct": "direct (no evidence)",
-                       "re-evidenced": f"re-evidenced (evidence rounds {rounds})"}.get(rule, rule)
-                self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
-                self.record += [f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
-                                f"landed SHA: {sha} on {self.branch} (attempt {attempt})",
-                                f"reason: {why}"]
-                self.log("landing record:")
-                for line in self.record:
-                    self.log(f"  {line}")
-                if lane == "ci":
-                    ci_ref = f"refs/heads/ci/{self.id}"
-                    try:
-                        self.run_gate([f"(delete) {'0' * 40} {ci_ref} {self.hook_remote_sha(ci_ref)}"])
-                        self.git("push", "-q", self.remote, f":{ci_ref}", check=False)
-                    except LandError as e:
-                        self.log(f"ci/{self.id} left in place: {e}")  # (the landing is done; the branch is only a leftover)
-                self.evidence_line = f"EVIDENCE {evidence_sha or '-'} LANDED {sha} RULE {rule}"
-                self.log(self.evidence_line)
-                return sha
-            self.log(f"{self.branch} moved during attempt {attempt}; checking what it gained")
+                self.push_evidence(sha, first=False)
+                evidence_sha, evidence_base, rounds = sha, new, rounds + 1
         raise LandError(f"could not land in {MAX_ATTEMPTS} attempts ({MOVING_MESSAGE})")
 
 # --env-smoke: the tools the landing's children need, started the way the landing starts them
