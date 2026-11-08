@@ -532,6 +532,7 @@ use alice_physics::joint_extra as _;
 use alice_physics::joint_extra::solve_extra_joints as _;
 use alice_physics::joint_extra::solve_pulley_to_length as _;
 use alice_physics::joint_extra::ExtraJoint as _;
+use alice_physics::joint_extra::ExtraJointError as _;
 use alice_physics::joint_extra::GearJoint as _;
 use alice_physics::joint_extra::MouseJoint as _;
 use alice_physics::joint_extra::PulleyJoint as _;
@@ -1869,7 +1870,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1851 paths, checked at compile time
+    // 1852 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
