@@ -36,7 +36,7 @@ fn scene() -> PhysicsWorld {
 }
 
 /// The hands, as bytes a host writes: 0 a blow from the origin of radius 4 and strength 6, 1 hold body 1 at (0, 1, 5)
-fn hand(w: &mut PhysicsWorld, holds: &Holds, input: &Vec<u8>) {
+fn hand(w: &mut PhysicsWorld, holds: &Holds, input: &[u8]) {
     match input.first() {
         Some(0) => {
             w.apply_radial_impulse(
