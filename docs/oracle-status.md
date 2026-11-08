@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5946 |
+| 🟢 Not ignored (run by CI) | 5949 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6041** |
+| **Total** | **6044** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5946)
+## 🟢 Not ignored (5949)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -602,6 +602,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_nonunit_quaternion_compound.rs` | 3 |
 | `audit_privacy_noise_secrecy.rs` | 3 |
 | `fix128_bit_identity.rs` | 3 |
+| `fix128_div_int.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
 | `panic_paths_fault_the_world.rs` | 3 |
