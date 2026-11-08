@@ -1836,8 +1836,17 @@ pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physic
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+impl alice_physics_core::touch::Grabbable for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::drag(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::point_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
+pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -5592,6 +5601,9 @@ impl<I> core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::
 pub trait alice_physics_core::input_log::LogInput: core::marker::Sized
 pub fn alice_physics_core::input_log::LogInput::read(&mut &[u8]) -> core::option::Option<Self>
 pub fn alice_physics_core::input_log::LogInput::write(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::input_log::LogInput for alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::read(&mut &[u8]) -> core::option::Option<Self>
+pub fn alice_physics_core::touch::Touch::write(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::input_log::LogInput for alloc::vec::Vec<u8>
 pub fn alloc::vec::Vec<u8>::read(&mut &[u8]) -> core::option::Option<Self>
 pub fn alloc::vec::Vec<u8>::write(&self, &mut alloc::vec::Vec<u8>)
@@ -11196,8 +11208,17 @@ pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physic
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+impl alice_physics_core::touch::Grabbable for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::drag(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::point_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
+pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -19409,6 +19430,93 @@ impl core::marker::Unpin for alice_physics_core::torus::Torus
 impl core::marker::UnsafeUnpin for alice_physics_core::torus::Torus
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::torus::Torus
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::torus::Torus
+pub mod alice_physics_core::touch
+pub enum alice_physics_core::touch::Touch
+pub alice_physics_core::touch::Touch::Drag
+pub alice_physics_core::touch::Touch::Drag::to: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::touch::Touch::Grab
+pub alice_physics_core::touch::Touch::Grab::at: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::touch::Touch::Grab::body: u32
+pub alice_physics_core::touch::Touch::Release
+impl alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::drag(alice_physics_core::math::Vec3Fix) -> Self
+pub fn alice_physics_core::touch::Touch::grab(u32, alice_physics_core::math::Vec3Fix) -> Self
+impl alice_physics_core::input_log::LogInput for alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::read(&mut &[u8]) -> core::option::Option<Self>
+pub fn alice_physics_core::touch::Touch::write(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch::Touch
+impl core::cmp::PartialEq for alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch::Touch
+pub fn alice_physics_core::touch::Touch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch::Touch
+impl core::marker::StructuralPartialEq for alice_physics_core::touch::Touch
+impl core::marker::Freeze for alice_physics_core::touch::Touch
+impl core::marker::Send for alice_physics_core::touch::Touch
+impl core::marker::Sync for alice_physics_core::touch::Touch
+impl core::marker::Unpin for alice_physics_core::touch::Touch
+impl core::marker::UnsafeUnpin for alice_physics_core::touch::Touch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch::Touch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch::Touch
+pub struct alice_physics_core::touch::Grip
+pub alice_physics_core::touch::Grip::point: usize
+impl core::clone::Clone for alice_physics_core::touch::Grip
+pub fn alice_physics_core::touch::Grip::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch::Grip
+impl core::cmp::PartialEq for alice_physics_core::touch::Grip
+pub fn alice_physics_core::touch::Grip::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch::Grip
+pub fn alice_physics_core::touch::Grip::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch::Grip
+impl core::marker::StructuralPartialEq for alice_physics_core::touch::Grip
+impl core::marker::Freeze for alice_physics_core::touch::Grip
+impl core::marker::Send for alice_physics_core::touch::Grip
+impl core::marker::Sync for alice_physics_core::touch::Grip
+impl core::marker::Unpin for alice_physics_core::touch::Grip
+impl core::marker::UnsafeUnpin for alice_physics_core::touch::Grip
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch::Grip
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch::Grip
+pub struct alice_physics_core::touch::Hand
+impl alice_physics_core::touch::Hand
+pub fn alice_physics_core::touch::Hand::apply<B: alice_physics_core::touch::Grabbable>(&mut self, &mut [B], &alice_physics_core::touch::Touch) -> bool
+pub fn alice_physics_core::touch::Hand::held(&self) -> core::option::Option<(u32, usize)>
+pub fn alice_physics_core::touch::Hand::new(alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::touch::Hand::pull<B: alice_physics_core::touch::Grabbable>(&mut self, &mut [B], alice_physics_core::math::Fix128) -> bool
+pub fn alice_physics_core::touch::Hand::state_bytes(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::touch::Hand::with_grip(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics_core::touch::Hand
+pub fn alice_physics_core::touch::Hand::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch::Hand
+impl core::cmp::PartialEq for alice_physics_core::touch::Hand
+pub fn alice_physics_core::touch::Hand::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch::Hand
+pub fn alice_physics_core::touch::Hand::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::touch::Hand
+impl core::marker::Freeze for alice_physics_core::touch::Hand
+impl core::marker::Send for alice_physics_core::touch::Hand
+impl core::marker::Sync for alice_physics_core::touch::Hand
+impl core::marker::Unpin for alice_physics_core::touch::Hand
+impl core::marker::UnsafeUnpin for alice_physics_core::touch::Hand
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch::Hand
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch::Hand
+pub trait alice_physics_core::touch::Grabbable
+pub fn alice_physics_core::touch::Grabbable::drag(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::touch::Grabbable::grab(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::touch::Grabbable::point_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::touch::Grabbable::push(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::touch::Grabbable::release(&mut self, alice_physics_core::touch::Grip)
+pub fn alice_physics_core::touch::Grabbable::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::touch::Grabbable::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+impl alice_physics_core::touch::Grabbable for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::drag(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::point_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
+pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
 pub mod alice_physics_core::transient_thermal
 pub enum alice_physics_core::transient_thermal::TemperatureDependence
 pub alice_physics_core::transient_thermal::TemperatureDependence::Constant(f32)
@@ -22811,8 +22919,17 @@ pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physic
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+impl alice_physics_core::touch::Grabbable for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::drag(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::grab(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::point_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::touch::Grip, alice_physics_core::math::Vec3Fix)
+pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
+pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
+pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
