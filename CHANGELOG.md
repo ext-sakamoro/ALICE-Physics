@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: 同値変異の表 `scripts/mutants-equivalent.txt` の key を `file:line:col` から **`file:fn+offset:col`** (関数名 + 関数の先頭からの行の距離 + 列) に変えた 関数より上の行の増減で行番号が動いても表は有効なまま (行番号 key だと着地の CI 待ちの間に main が動くたびに衝突していた、11-08 に 2 件) 関数は名前と関数 hash で引く (同名が複数なら hash で区別、hash の合わない関数は従来どおり stale で fail)、missed.txt の `file:line:col` は行を含む関数を探して key に写す 古い行番号の形は fail して移行を促す `--hash file:line:fn` が key を出力する 試験 39 (関数の移動で有効なまま / 本体の変更で stale / 同名 2 つの区別 / 古い形の拒否 / 関数と変異の名前の不一致 を追加)、手の変異 3 件 (hash を見ない / offset を丸める / offset を 0 にする) は red `mutants_ratchet.py` は source root を渡す
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める

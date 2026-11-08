@@ -60,9 +60,11 @@ def normalise(line: str) -> str:
     return POS_RE.sub(r"\1: ", line.strip())
 
 
-def read_run(dirs: list[Path], equivalent: set | None = None) -> dict[str, Counter]:
+def read_run(dirs: list[Path], equivalent: set | None = None,
+             source_root: Path = mutants_equivalent.ROOT) -> dict[str, Counter]:
     """`{outcome: Counter("[axis] mutant")}` over every output directory; a missed
-    mutant whose key is in `equivalent` goes to the `equivalent` outcome."""
+    mutant whose key (read against the source under `source_root`) is in `equivalent`
+    goes to the `equivalent` outcome."""
     equivalent = equivalent or set()
     out = {k: Counter() for k in (*OUTCOMES, "equivalent")}
     for d in dirs:
@@ -73,7 +75,7 @@ def read_run(dirs: list[Path], equivalent: set | None = None) -> dict[str, Count
                 for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
                     if line.strip():
                         bucket = k
-                        if k == "missed" and mutants_equivalent.missed_key(line) in equivalent:
+                        if k == "missed" and mutants_equivalent.missed_key(line, source_root) in equivalent:
                             bucket = "equivalent"
                         out[bucket][f"[{axis_of(d)}] {normalise(line)}"] += 1
     return out
@@ -154,7 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.complete_only:
         print(f"complete: {len(dirs)} output director{'y' if len(dirs) == 1 else 'ies'}")
         return 0
-    run = read_run(dirs, mutants_equivalent.valid_keys(Path(args.equivalent), Path(args.source_root)))
+    run = read_run(dirs, mutants_equivalent.valid_keys(Path(args.equivalent), Path(args.source_root)),
+                   Path(args.source_root))
     if args.write:
         lines = sorted(run["missed"].elements())
         Path(args.baseline).write_text(
