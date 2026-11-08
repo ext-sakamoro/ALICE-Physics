@@ -2184,3 +2184,327 @@ mod tests {
         );
     }
 }
+
+/// Small, fast oracles of the co-rotational solver on a two-cube column (12 Kuhn
+/// tetrahedra, 10 mm cubes): the rigid rotation, the impulse and its momentum, the ground
+/// hold and its release, Rayleigh damping, the state digest and the refusals. The full
+/// sweeps with derived tolerances are in `tests/analytic_dynamic_fem_corotational.rs`;
+/// these run in the `--lib` suite in a fraction of a second.
+#[cfg(test)]
+mod corotational_tests {
+    use super::*;
+    use crate::damping_rayleigh::RayleighCoefficients;
+    use crate::linear_elastic_fem::{Axis, BoundaryConditions, ElasticMaterial, SolverConfig};
+    use crate::sdf_fem_mesh::Tetrahedron;
+
+    /// `1 × 1 × 2` cubes of 10 mm (x, y up, z), each split into the six Kuhn tetrahedra
+    fn column() -> SdfTetMesh {
+        let (nx, ny) = (1usize, 2usize);
+        let at = |i: usize, j: usize, k: usize| ((i * (ny + 1) + j) * (nx + 1) + k) as u32;
+        let mut mesh = SdfTetMesh::default();
+        for i in 0..=nx {
+            for j in 0..=ny {
+                for k in 0..=nx {
+                    mesh.vertices
+                        .push([10.0 * i as f32, 10.0 * j as f32, 10.0 * k as f32]);
+                }
+            }
+        }
+        let paths = [
+            [(1, 0, 0), (1, 1, 0)],
+            [(1, 0, 0), (1, 0, 1)],
+            [(0, 1, 0), (1, 1, 0)],
+            [(0, 1, 0), (0, 1, 1)],
+            [(0, 0, 1), (1, 0, 1)],
+            [(0, 0, 1), (0, 1, 1)],
+        ];
+        for j in 0..ny {
+            for [(a0, a1, a2), (b0, b1, b2)] in paths {
+                mesh.tets.push(Tetrahedron {
+                    vertices: [
+                        at(0, j, 0),
+                        at(a0, j + a1, a2),
+                        at(b0, j + b1, b2),
+                        at(1, j + 1, 1),
+                    ],
+                });
+            }
+        }
+        mesh
+    }
+
+    fn material() -> ElasticMaterial {
+        ElasticMaterial::new(Fix128::from_int(1), Fix128::from_ratio(3, 10))
+            .expect("E > 0, ν in range")
+    }
+
+    fn dynamics(lumping: MassLumping) -> DynamicsConfig {
+        DynamicsConfig::try_new(
+            Fix128::from_ratio(1, 1_000_000_000),
+            Fix128::from_ratio(1, 1024),
+            lumping,
+        )
+        .expect("density and dt positive")
+    }
+
+    fn config() -> SolverConfig {
+        SolverConfig::try_new(20_000, Fix128::from_ratio(1, 1 << 30)).expect("budget and tolerance")
+    }
+
+    fn solver(bc: &BoundaryConditions, lumping: MassLumping) -> CorotationalTransientSolver {
+        CorotationalTransientSolver::new(&column(), &material(), bc, &dynamics(lumping), &config())
+            .expect("the column solves")
+    }
+
+    fn largest(xs: &[Fix128]) -> Fix128 {
+        xs.iter()
+            .map(|x| x.abs())
+            .fold(Fix128::ZERO, |a, b| if b > a { b } else { a })
+    }
+
+    /// The 3-4-5 rotation about z (sine 3/5, cosine 4/5, exact), as displacements.
+    fn rotated(mesh: &SdfTetMesh) -> Vec<Fix128> {
+        let (s, c) = (Fix128::from_ratio(3, 5), Fix128::from_ratio(4, 5));
+        let mut u = Vec::with_capacity(3 * mesh.vertices.len());
+        for v in &mesh.vertices {
+            let (x, y) = (Fix128::from_f32(v[0]), Fix128::from_f32(v[1]));
+            u.push(c * x - s * y - x);
+            u.push(s * x + c * y - y);
+            u.push(Fix128::ZERO);
+        }
+        u
+    }
+
+    /// A free body turned as a whole and released at rest does not move: the co-rotated
+    /// element sees no strain, so there is no elastic force (the only change is the solve's
+    /// residual, below 1e-6 mm here).
+    #[test]
+    fn a_rigidly_rotated_free_body_stays_put() {
+        let mesh = column();
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let u0 = rotated(&mesh);
+        s.set_displacements(&u0)
+            .expect("the rotation has a polar factor");
+        for _ in 0..8 {
+            s.step().expect("the step converges");
+        }
+        let drift: Vec<Fix128> = s
+            .displacements()
+            .iter()
+            .zip(&u0)
+            .map(|(a, b)| *a - *b)
+            .collect();
+        assert!(
+            largest(&drift) < Fix128::from_ratio(1, 1_000_000),
+            "moved {:?}",
+            largest(&drift)
+        );
+    }
+
+    /// An impulse on a free lumped body is its momentum (one division per degree of
+    /// freedom), and the free steps keep it (no load, no fix).
+    #[test]
+    fn an_impulse_is_the_momentum_of_a_free_body_and_is_kept() {
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let j = Fix128::from_ratio(1, 1_000_000);
+        s.apply_impulses(&[(5, [Fix128::ZERO, j, Fix128::ZERO])])
+            .expect("the mass solve converges");
+        let total = |s: &CorotationalTransientSolver| {
+            let p = s.momentum();
+            let mut sum = [Fix128::ZERO; 3];
+            for (d, x) in p.iter().enumerate() {
+                sum[d % 3] = sum[d % 3] + *x;
+            }
+            sum
+        };
+        let p0 = total(&s);
+        assert!(
+            (p0[1] - j).abs() < Fix128::from_ratio(1, 1_000_000_000_000),
+            "{:?}",
+            p0[1]
+        );
+        for _ in 0..16 {
+            s.step().expect("the step converges");
+        }
+        let p1 = total(&s);
+        assert!(
+            (p1[1] - j).abs() < j / Fix128::from_int(1000),
+            "{:?} vs {:?}",
+            p1[1],
+            j
+        );
+        assert!(
+            p1[0].abs() < j / Fix128::from_int(1000) && p1[2].abs() < j / Fix128::from_int(1000)
+        );
+    }
+
+    /// An impulse on a vertex past the mesh is refused, and the state is unchanged.
+    #[test]
+    fn an_impulse_on_a_missing_vertex_is_refused() {
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Consistent);
+        let before = s.state_digest();
+        assert!(matches!(
+            s.apply_impulses(&[(99, [Fix128::ONE, Fix128::ZERO, Fix128::ZERO])]),
+            Err(FemError::VertexOutOfRange { vertex: 99, .. })
+        ));
+        assert_eq!(s.state_digest(), before);
+    }
+
+    /// Displacements of the wrong length, or that turn an element inside out, are refused
+    /// and leave the state as it was.
+    #[test]
+    fn bad_displacements_are_refused_without_change() {
+        let mesh = column();
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let before = s.state_digest();
+        assert!(s.set_displacements(&[Fix128::ZERO; 3]).is_err());
+        assert_eq!(s.state_digest(), before);
+        // mirror the top vertices through the base: every element of the top cube inverts
+        let mut u = vec![Fix128::ZERO; 3 * mesh.vertices.len()];
+        for (i, v) in mesh.vertices.iter().enumerate() {
+            if v[1] > 15.0 {
+                u[3 * i + 1] = Fix128::from_int(-50);
+            }
+        }
+        assert!(matches!(
+            s.set_displacements(&u),
+            Err(FemError::RotationFailed { .. })
+        ));
+        assert_eq!(s.state_digest(), before);
+    }
+
+    /// A column under its weight standing on the plane is held on it (no vertex ends a step
+    /// below it), and a kick upward on the top releases every bottom vertex.
+    #[test]
+    fn the_ground_holds_a_falling_column_and_lets_a_kicked_one_go() {
+        let mesh = column();
+        let mut bc = BoundaryConditions::new();
+        // 1e-6 N a vertex, downward: 1000 mm/s² on 1e-9 t (a fall of 1 mm in about 45 ms)
+        for i in 0..mesh.vertices.len() {
+            bc.add_load(i as u32, Axis::Y, Fix128::from_ratio(-1, 1_000_000));
+        }
+        let mut s = solver(&bc, MassLumping::Lumped);
+        s.set_damping(Some(RayleighCoefficients {
+            alpha: Fix128::ZERO,
+            beta: Fix128::from_ratio(1, 1000),
+        }));
+        // the plane at the column's bottom: it stands on it from the first step
+        let ground = Fix128::ZERO;
+        s.set_ground(Some(ground));
+        let bottom: Vec<usize> = (0..mesh.vertices.len())
+            .filter(|&i| mesh.vertices[i][1] == 0.0)
+            .collect();
+        let top: Vec<usize> = (0..mesh.vertices.len())
+            .filter(|&i| mesh.vertices[i][1] == 20.0)
+            .collect();
+        for _ in 0..200 {
+            s.step().expect("the step converges");
+            for &i in &bottom {
+                assert!(
+                    s.displacements()[3 * i + 1] >= ground,
+                    "a bottom vertex went below the plane"
+                );
+            }
+        }
+        assert!(
+            bottom.iter().all(|&i| s.on_ground()[i]),
+            "the bottom is held"
+        );
+        let kick = Fix128::from_ratio(1, 10_000_000);
+        let impulses: Vec<(u32, [Fix128; 3])> = top
+            .iter()
+            .map(|&i| (i as u32, [Fix128::ZERO, kick, Fix128::ZERO]))
+            .collect();
+        s.apply_impulses(&impulses)
+            .expect("the mass solve converges");
+        let mut released = false;
+        for _ in 0..200 {
+            s.step().expect("the step converges");
+            if bottom.iter().all(|&i| !s.on_ground()[i]) {
+                released = true;
+                break;
+            }
+        }
+        assert!(released, "a kicked column stayed held");
+    }
+
+    /// Rayleigh damping takes energy out: the same stretched start rings on undamped and
+    /// decays damped (the largest displacement after 400 steps is smaller with damping). The
+    /// decay rate itself is not checked here: at this step the column's modes have
+    /// `ω dt > 1`, where the trapezoidal rule damps them less than the continuous `α/2`
+    /// (its root `|z|` against the closed form is checked at resolved steps in
+    /// `tests/analytic_dynamic_fem_corotational.rs`).
+    #[test]
+    fn rayleigh_damping_takes_the_ringing_out() {
+        let mesh = column();
+        let mut bc = BoundaryConditions::new();
+        for i in 0..mesh.vertices.len() {
+            if mesh.vertices[i][1] == 0.0 {
+                bc.fix(i as u32);
+            }
+        }
+        let run = |damping: Option<RayleighCoefficients>| {
+            let mut s = solver(&bc, MassLumping::Lumped);
+            s.set_damping(damping);
+            let mut u = vec![Fix128::ZERO; 3 * mesh.vertices.len()];
+            for (i, v) in mesh.vertices.iter().enumerate() {
+                if v[1] > 15.0 {
+                    u[3 * i + 1] = Fix128::from_ratio(1, 10);
+                }
+            }
+            s.set_displacements(&u).expect("a small stretch");
+            for _ in 0..400 {
+                s.step().expect("the step converges");
+            }
+            largest(s.displacements())
+        };
+        let undamped = run(None);
+        let damped = run(Some(RayleighCoefficients {
+            alpha: Fix128::from_int(200),
+            beta: Fix128::ZERO,
+        }));
+        assert!(
+            damped < undamped,
+            "damped {damped:?} vs undamped {undamped:?}"
+        );
+    }
+
+    /// The digest names the state: two runs of the same inputs agree, another input moves it,
+    /// and the linear solver's digest is defined the same way.
+    #[test]
+    fn the_state_digest_replays_and_moves_with_the_state() {
+        let run = |kick: Fix128| {
+            let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+            s.apply_impulses(&[(3, [kick, Fix128::ZERO, Fix128::ZERO])])
+                .expect("the mass solve converges");
+            for _ in 0..4 {
+                s.step().expect("the step converges");
+            }
+            s.state_digest()
+        };
+        let small = Fix128::from_ratio(1, 1000);
+        assert_eq!(run(small), run(small));
+        assert_ne!(run(small), run(small + small));
+        let mut bc = BoundaryConditions::new();
+        bc.fix(0).fix(1).fix(2).fix(3);
+        let mut linear = TransientSolver::new(
+            &column(),
+            &material(),
+            &bc,
+            &dynamics(MassLumping::Lumped),
+            &config(),
+        )
+        .expect("the column solves");
+        let d0 = linear.state_digest();
+        linear.step().expect("the step converges");
+        assert_eq!(
+            d0,
+            linear.state_digest(),
+            "a fixed column at rest under no load stays at rest"
+        );
+        assert_eq!(
+            TransientSolver::STATE_DIGEST_DOMAIN,
+            CorotationalTransientSolver::STATE_DIGEST_DOMAIN
+        );
+    }
+}
