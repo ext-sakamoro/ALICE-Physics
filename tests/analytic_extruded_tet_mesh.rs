@@ -246,6 +246,23 @@ fn check(name: &str, c: &[Vec<[f64; 2]>]) -> SdfTetMesh {
     let d = min_dihedral_deg(&m);
     eprintln!("{name}: {} tets, volume {vol:.6e} law {truth:.6e}, bottom {bottom:.6e} eroded {eroded:.6e}, min dihedral {d:.2}", m.tets.len());
     assert!(d >= 8.0, "{name}: min dihedral {d:.2}");
+    // ratchet: the worst angle measured when this mesher landed, so a
+    // regression shows before it reaches the floor
+    let measured = match name {
+        "square" => 19.11,
+        "L" | "E" => 14.64,
+        "x" => 10.32,
+        "t" => 12.88,
+        "o" => 20.65,
+        "r" => 8.88,
+        "i" => 18.45,
+        "a" => 10.86,
+        _ => 8.0,
+    };
+    assert!(
+        d >= measured - 0.01,
+        "{name}: min dihedral {d:.2} under its landed value {measured}"
+    );
     m
 }
 
