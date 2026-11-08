@@ -14,8 +14,9 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      rebase and checks a documents-only move needs, and the push to main. A new
      evidence round (rebase, ci/<id> push, CI wait) runs outside it, so landings
      whose CI overlaps do not wait on each other; a landing that finds main moved
-     inside the lock gathers the evidence again. A second landing waits for the
-     lock up to --lock-wait-minutes;
+     inside the lock gathers the evidence again. The last evidence round
+     (MAX_EVIDENCE) holds the lock across its CI wait, so a landing always
+     finishes. A second landing waits for the lock up to --lock-wait-minutes;
   3. rebases on origin/main when needed (with a fixed committer; a conflict in a
      generated ledger takes main's copy, any other conflict stops), rebuilds and
      commits the ledgers, runs the checks and `scripts/preflight.sh --fast`;
@@ -591,6 +592,11 @@ EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 6        # pushes to main (a push that loses a race to another landing retries)
 REGEN_MESSAGE = "docs: regenerate the generated ledgers"   # the only commit message land.py writes
 MAX_EVIDENCE = 3        # evidence rounds on ci/<id>: the first and two after main gained code
+# The CI wait of every evidence round but the last runs outside the landing lock; the last
+# (round MAX_EVIDENCE) holds the lock across its CI wait so a landing that main keeps moving
+# under still finishes. With a 60-90 min CI and several code landings a day, a second round
+# outside the lock is the one most likely to be overtaken again, so one re-evidence round runs
+# outside the lock before the locked one. The record line "evidence rounds" shows the real count.
 MOVING_MESSAGE = "main is moving: wait for a quiet main or coordinate a landing slot"
 LOCK_DIR_ENV = "LAND_LOCK_DIR"  # where the per-repository landing lock lives (tests point it elsewhere)
 LOCK_WAIT_MINUTES = 30
@@ -2100,6 +2106,7 @@ class Lander:
         sha = self.prepare("preflight")
         base = self.git("rev-parse", self.upstream())
         evidence_sha, evidence_base, rounds = None, None, 0
+        locked_rounds = 0   # evidence rounds whose CI wait held the landing lock
         if lane == "ci":
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to ci/{self.id} and wait for its CI")
@@ -2128,7 +2135,19 @@ class Lander:
                         if rounds >= MAX_EVIDENCE:
                             raise LandError(f"{MOVING_MESSAGE} (main gained code after {rounds} evidence rounds "
                                             f"on ci/{self.id}; last evidence {evidence_sha[:7]})")
-                        reevidence = (verify, new, len(moved))
+                        if rounds + 1 >= MAX_EVIDENCE:
+                            # progress guarantee: the last round keeps the lock across its CI
+                            # wait (the scope before the lock was narrowed), so no other landing
+                            # can move main under it and this landing finishes
+                            self.log(f"main gained code commits ({len(moved)}): last evidence round "
+                                     f"({rounds + 1} of {MAX_EVIDENCE}) held inside the landing lock")
+                            sha = self.prepare(verify)
+                            base = new
+                            self.push_evidence(sha, first=False)
+                            evidence_sha, evidence_base, rounds = sha, new, rounds + 1
+                            locked_rounds += 1
+                        else:
+                            reevidence = (verify, new, len(moved))
                     else:
                         self.log("main gained " + ("documents only" if not code_moved else "code (direct lane)")
                                  + f" ({len(moved)} commits): rebasing, local checks")
@@ -2158,7 +2177,9 @@ class Lander:
                         why = {"direct": "direct (no evidence)",
                                "re-evidenced": f"re-evidenced (evidence rounds {rounds})"}.get(rule, rule)
                         self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
-                        self.record += [f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
+                        self.record += [f"evidence rounds: {rounds} ({rounds - locked_rounds} with the CI wait outside "
+                                f"the landing lock, {locked_rounds} inside)",
+                                f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
                                         f"landed SHA: {sha} on {self.branch} (attempt {attempt})",
                                         f"reason: {why}"]
                         self.log("landing record:")
