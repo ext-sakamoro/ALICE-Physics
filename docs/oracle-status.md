@@ -7,20 +7,22 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 | Category | Count |
 |----------|-------|
 | 🟢 Not ignored (run by CI) | 5958 |
-| 🔴 Red by design | 72 |
+| 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 29 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6059** |
+| **Total** | **6061** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (72)
+## 🔴 Red by design (74)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
@@ -111,11 +113,13 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (6)
+## ⚠️ Known defects without an id (8)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
