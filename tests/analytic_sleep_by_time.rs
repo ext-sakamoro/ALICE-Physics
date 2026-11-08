@@ -3,10 +3,10 @@
 //!
 //! # What is measured
 //!
-//! `SleepConfig::frames_to_sleep` (default 60, "1 second at 60fps") is compared
-//! with a count of idle steps, whatever `dt` is. A simulation stepped at
-//! `dt = 1/3000 s` therefore puts an idle body to sleep after 0.02 s, fifty
-//! times too early, and one stepped at `dt = 1/6 s` after 10 s. The closed form
+//! Before this rule, `SleepConfig::frames_to_sleep` (default 60, "1 second at
+//! 60fps") was compared with a count of idle steps, whatever `dt` was. A
+//! simulation stepped at `dt = 1/3000 s` therefore put an idle body to sleep after
+//! 0.02 s, fifty times too early, and one stepped at `dt = 1/6 s` after 10 s. The closed form
 //! of the intended behaviour is that a body idle from `t = 0` sleeps at the
 //! first step whose elapsed time `Σ dt` reaches 1 s, and no earlier.
 //!
