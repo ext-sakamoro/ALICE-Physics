@@ -1,18 +1,41 @@
 //! A visitor's touch on a body: take hold of it at a point, carry that point, let go. The touches are inputs a log
 //! carries ([`crate::input_log::InputLog`]), so a world touched, logged and replayed comes to the same state.
 //!
-//! MODEL: a grab takes the body's point nearest the touch within the hand's reach. A rigid hand ([`Hand::new`](crate::touch::Hand::new)) holds
-//! it where the hand is (the point is pinned: it moves with the hand and nothing else moves it); a drag carries it;
-//! letting go returns it to the body as it was (its mass, or pinned if it was pinned before). A hand with a finite
-//! grip ([`Hand::with_grip`](crate::touch::Hand::with_grip)) leaves the point the body's and pulls it toward the hand with a spring, `F = k_g (h − x)`
-//! (N, with `h` the hand and `x` the point, m), applied as the impulse `F dt` before each step ([`Hand::pull`](crate::touch::Hand::pull)); when
-//! `|F|` would exceed the grip's strength `F_max` (N) the grip slips and the hand lets go. At rest against a body that
-//! holds the point by `k_t`, the point sits at `x = k_g d / (k_g + k_t)` for a hand `d` away, and a slow drag lets go at
-//! `d = F_max (k_g + k_t) / (k_g k_t)` (`tests/analytic_touch.rs`). What the body does then is its own law: a
-//! cloth held to its rest shape by its tether ([`Cloth::set_rest_tether`](crate::cloth::Cloth::set_rest_tether)) springs back as a damped oscillator. The
-//! body says what a point is ([`Grabbable`](crate::touch::Grabbable)): for a cloth, one of its particles; for a soft body, a surface vertex.
+//! # MODEL — taking hold of a body's point, by a rigid hand or a finite grip
 //!
-//! Positions travel on a grid of 2⁻¹⁶ m (15 µm), so a log is short and what is read back is what was played.
+//! **Equations.** A grab takes the body's point nearest the touch within the hand's reach. A rigid hand
+//! ([`Hand::new`](crate::touch::Hand::new)) pins it where the hand is: it moves with the hand and nothing else moves it;
+//! a drag carries it; letting go returns it to the body as it was (its mass, or pinned if it was pinned before). A
+//! finite grip ([`Hand::with_grip`](crate::touch::Hand::with_grip)) leaves the point the body's and pulls it toward the
+//! hand by a spring `F = k_g (h − x)`, taken each step as the backward Euler impulse
+//! `J = k_g dt (h − x − dt v) / (1 + k_g w dt²)` (`w` the point's inverse mass) before the body's own step
+//! ([`Hand::pull`](crate::touch::Hand::pull)); when `|k_g (h − x)|` exceeds the grip's strength `F_max` it slips and the
+//! hand lets go. Against a body that holds the point by `k_t`, the point rests at `x = k_g d / (k_g + k_t)` for a hand
+//! `d` away (two springs in series), and a slow drag lets go at `d = F_max (k_g + k_t) / (k_g k_t)`. What the body does
+//! is its own law: a cloth held to its rest shape by its tether
+//! ([`Cloth::set_rest_tether`](crate::cloth::Cloth::set_rest_tether)) springs back as a damped oscillator. The body says
+//! what a point is ([`Grabbable`](crate::touch::Grabbable)): for a cloth, one of its particles.
+//!
+//! **Units.** SI: positions and reach m, `k_g` N/m, `F_max` N, `J` N·s, `w` 1/kg, `dt` s. Every quantity is `Fix128`
+//! (Q64.64); touches travel on a grid of 2⁻¹⁶ m (15 µm), so a log is short and what is read back is what was played.
+//!
+//! **Conservation.** A hand is an external force: while it holds, the body's momentum changes by the grip's impulses
+//! (`Σ J`) and its energy by their work; a rigid hand moves a pinned point without regard to energy. Letting go adds
+//! or takes nothing. The grip has no damping of its own; the backward Euler step damps it numerically (it never adds
+//! energy), the body's own law does the rest.
+//!
+//! **Range.** Any stiffness, mass and step: the backward Euler impulse is unconditionally stable (an explicit
+//! `F dt` kick is stable only while `√(k_g w) dt < 2`, which a 0.1 kg cloth point under the law's grip already
+//! exceeds at 1/60 s). A grip of no stiffness or no strength, or one not finite, takes nothing; a touch out of reach
+//! takes nothing; a drag or a let go with nothing held does nothing.
+//!
+//! **Approximations.** The grip is a point spring (no contact patch, no torque, no friction across the hand); it
+//! acts once per step before the body's step (a splitting whose rest is within O(dt²) of the continuous balance);
+//! positions are quantised to 2⁻¹⁶ m; the slip is all at once (no partial slip).
+//!
+//! **Validation.** `tests/analytic_touch.rs::a_finite_grip_holds_the_point_where_the_springs_balance::a_finite_grip_slips_where_its_pull_reaches_its_strength::the_grip_comes_to_the_continuous_balance_as_the_step_shrinks::a_light_point_under_a_stiff_grip_stays_where_the_springs_balance::a_letter_let_go_springs_back_by_its_tether::a_touch_out_of_reach_takes_nothing::letting_go_of_a_pinned_point_leaves_it_pinned::a_grip_of_no_strength_takes_nothing::touches_are_written_on_their_grid_and_read_back_exactly::the_digest_covers_what_the_hand_did`
+//!
+//! **Tiers.** L0 only.
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -183,6 +206,8 @@ pub trait Grabbable {
     fn drag(&mut self, grip: &Grip, to: Vec3Fix);
     /// Where the point is
     fn point_at(&self, grip: &Grip) -> Vec3Fix;
+    /// How fast the point moves (m/s)
+    fn velocity_at(&self, grip: &Grip) -> Vec3Fix;
     /// Give the point the impulse `j` (N·s)
     fn push(&mut self, grip: &Grip, j: Vec3Fix);
     /// Let go of it: it is the body's again, as it was
@@ -241,6 +266,10 @@ impl Grabbable for Cloth {
 
     fn point_at(&self, grip: &Grip) -> Vec3Fix {
         self.positions[grip.point]
+    }
+
+    fn velocity_at(&self, grip: &Grip) -> Vec3Fix {
+        self.velocities[grip.point]
     }
 
     fn push(&mut self, grip: &Grip, j: Vec3Fix) {
@@ -345,12 +374,18 @@ impl Hand {
         let Some(b) = bodies.get_mut(body as usize) else {
             return false;
         };
-        let f = (at - b.point_at(&grip)) * k;
+        let x = b.point_at(&grip);
+        // the grip's pull where the point is: past its strength the grip slips
+        let f = (at - x) * k;
         if f.dot(f) > fmax * fmax {
             self.let_go(bodies);
             return false;
         }
-        b.push(&grip, f * dt);
+        // the spring's backward Euler impulse: J = k dt (h − x − dt v) / (1 + k w dt²), the pull at where the point
+        // will be after the step, so any stiffness, mass and step are stable
+        let w = grip.inv_mass;
+        let j = (at - x - b.velocity_at(&grip) * dt) * (k * dt) / (Fix128::ONE + k * w * dt * dt);
+        b.push(&grip, j);
         true
     }
 
