@@ -1,16 +1,16 @@
 //! A visitor's touch on a body: take hold of it at a point, carry that point, let go. The touches are inputs a log
 //! carries ([`crate::input_log::InputLog`]), so a world touched, logged and replayed comes to the same state.
 //!
-//! MODEL: a grab takes the body's point nearest the touch within the hand's reach. A rigid hand ([`Hand::new`]) holds
+//! MODEL: a grab takes the body's point nearest the touch within the hand's reach. A rigid hand ([`Hand::new`](crate::touch::Hand::new)) holds
 //! it where the hand is (the point is pinned: it moves with the hand and nothing else moves it); a drag carries it;
 //! letting go returns it to the body as it was (its mass, or pinned if it was pinned before). A hand with a finite
-//! grip ([`Hand::with_grip`]) leaves the point the body's and pulls it toward the hand with a spring, `F = k_g (h − x)`
-//! (N, with `h` the hand and `x` the point, m), applied as the impulse `F dt` before each step ([`Hand::pull`]); when
+//! grip ([`Hand::with_grip`](crate::touch::Hand::with_grip)) leaves the point the body's and pulls it toward the hand with a spring, `F = k_g (h − x)`
+//! (N, with `h` the hand and `x` the point, m), applied as the impulse `F dt` before each step ([`Hand::pull`](crate::touch::Hand::pull)); when
 //! `|F|` would exceed the grip's strength `F_max` (N) the grip slips and the hand lets go. At rest against a body that
 //! holds the point by `k_t`, the point sits at `x = k_g d / (k_g + k_t)` for a hand `d` away, and a slow drag lets go at
 //! `d = F_max (k_g + k_t) / (k_g k_t)` (`tests/analytic_touch.rs`). What the body does then is its own law: a
-//! cloth held to its rest shape by its tether ([`Cloth::set_rest_tether`]) springs back as a damped oscillator. The
-//! body says what a point is ([`Grabbable`]): for a cloth, one of its particles; for a soft body, a surface vertex.
+//! cloth held to its rest shape by its tether ([`Cloth::set_rest_tether`](crate::cloth::Cloth::set_rest_tether)) springs back as a damped oscillator. The
+//! body says what a point is ([`Grabbable`](crate::touch::Grabbable)): for a cloth, one of its particles; for a soft body, a surface vertex.
 //!
 //! Positions travel on a grid of 2⁻¹⁶ m (15 µm), so a log is short and what is read back is what was played.
 

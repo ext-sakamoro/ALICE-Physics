@@ -75,6 +75,7 @@ D	src/dynamic_fem.rs
 D	src/fatigue.rs
 D	src/fillet_stress.rs
 D	src/fracture.rs
+D	src/holds.rs
 D	src/hyperelastic.rs
 D	src/laminate.rs
 D	src/laminate_failure.rs
@@ -88,6 +89,7 @@ D	src/quadratic_elastic_fem.rs
 D	src/soft_body_cut.rs
 D	src/structural_solver.rs
 D	src/thin_wall.rs
+D	src/touch.rs
 D	src/vibration_wall.rs
 E	src/acoustic_wave.rs
 E	src/audio_physics.rs
