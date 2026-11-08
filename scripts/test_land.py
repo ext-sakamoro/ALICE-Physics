@@ -734,6 +734,32 @@ class Landing(Isolated):
         with self.r.lander(lock_wait=0.2).lock():
             pass   # the failed round left the lock free
 
+    def test_the_last_evidence_round_holds_the_lock_so_the_landing_finishes(self):
+        # main gains code during the first two CI waits: the second round runs outside the
+        # lock, the last one holds it across its CI wait, and the landing lands
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        plain_wait = lander.wait_evidence
+        free_during_wait = []
+
+        def wait(ref, sha):
+            n = len(getattr(lander, "evidenced", []))
+            try:
+                with self.r.lander(lock_wait=0.2).lock():
+                    free_during_wait.append(True)
+            except land.LandError:
+                free_during_wait.append(False)
+            if n < land.MAX_EVIDENCE - 1:
+                self.r.push_upstream({f"src/o{n}.rs": f"fn o{n}() {{}}\n"}, f"feat: o{n}")
+            plain_wait(ref, sha)
+        lander.wait_evidence = wait
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), land.MAX_EVIDENCE)
+        self.assertEqual(free_during_wait, [True] * (land.MAX_EVIDENCE - 1) + [False])
+        self.assertIn(f"evidence rounds: {land.MAX_EVIDENCE} ({land.MAX_EVIDENCE - 1} with the CI wait outside "
+                      "the landing lock, 1 inside)", lander.record)
+
     def test_red_branch_ci_stops_before_main(self):
         before = self.r.origin_head()
         commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: add x")
@@ -1368,11 +1394,17 @@ class Landing(Isolated):
         self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
 
     def test_main_moving_by_code_three_times_stops(self):
+        # the last round holds the landing lock, so only a push that does not take it (a
+        # push outside land.py) can still move main under it: then the landing stops
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        plain_wait = lander.wait_evidence
 
-        def move(n):
-            return lambda: self.r.push_upstream({f"src/m{n}.rs": f"fn m{n}() {{}}\n"}, f"feat: m{n}")
-        lander = self.r.lander(before_push=[move(1), move(2), move(3)])
+        def wait(ref, sha):
+            n = len(getattr(lander, "evidenced", []))
+            self.r.push_upstream({f"src/m{n + 1}.rs": f"fn m{n + 1}() {{}}\n"}, f"feat: m{n + 1}")
+            plain_wait(ref, sha)
+        lander.wait_evidence = wait
         with self.assertRaisesRegex(land.LandError, "main is moving: wait for a quiet main or coordinate a landing slot"):
             lander.land()
         self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), land.MAX_EVIDENCE)
