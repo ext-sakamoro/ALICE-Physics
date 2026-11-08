@@ -53,8 +53,21 @@ jobs:
 GATE = "src/solver.rs\nCargo.toml\n.github/paths/unsafe-and-parallel.txt\n"
 
 
+PER_REF_CONC = (
+    "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+    "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}\n"
+)
+TWO_CONC = (
+    "  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}\n"
+    "  cancel-in-progress: false\n"
+)
+
+
 def wf(name: str) -> str:
-    return TWO.replace("NAME", name)
+    body = TWO.replace("NAME", name)
+    if f"{name}.yml" in cl.PER_REF:
+        body = body.replace(TWO_CONC, PER_REF_CONC)
+    return body
 
 
 def tree(paths: str | None = GATE, **over: str | None) -> Path:
@@ -141,6 +154,38 @@ class Load(unittest.TestCase):
     def test_cancel_in_progress_on_branches_only_fails(self):
         body = wf("bench-gate").replace("cancel-in-progress: false", "cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}")
         self.has(self.errors(**{"bench-gate.yml": body}), "cancel-in-progress is")
+
+    # --- the per-ref concurrency of unsafe-and-parallel -----------------------------------
+
+    def test_the_fixture_uses_the_per_ref_shape(self):
+        # the shape the checks below mutate (a vacuous fixture would pass them all)
+        body = wf("unsafe-and-parallel")
+        self.assertIn(PER_REF_CONC, body)
+        self.assertNotIn(TWO_CONC, body)
+
+    def test_the_two_class_group_on_miri_fails(self):
+        # one ci/** slot for every branch: a newer branch's run replaced another branch's waiting run
+        body = wf("unsafe-and-parallel").replace(PER_REF_CONC, TWO_CONC)
+        self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "not the per-ref group")
+
+    def test_a_single_group_on_miri_fails(self):
+        body = wf("unsafe-and-parallel").replace("${{ github.workflow }}-${{ github.ref }}", "${{ github.workflow }}")
+        self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "not the per-ref group")
+
+    def test_miri_cancel_false_fails(self):
+        # an older run of the same branch would keep a runner after a newer push superseded it
+        body = wf("unsafe-and-parallel").replace("${{ github.ref != 'refs/heads/main' }}", "false")
+        self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "cancel-in-progress is 'false'")
+
+    def test_miri_cancel_true_fails(self):
+        # a newer main push would cut off the main run that a landing reads
+        body = wf("unsafe-and-parallel").replace("${{ github.ref != 'refs/heads/main' }}", "true")
+        self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "cancel-in-progress is 'true'")
+
+    def test_miri_per_ref_without_the_path_gate_fails(self):
+        # a group per ref is bounded only by the path gate: without it every ci/** push starts a copy
+        body = wf("unsafe-and-parallel").replace(" --patterns-file .github/paths/unsafe-and-parallel.txt", "")
+        self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "without its path gate")
 
     # --- the path gate of unsafe-and-parallel ---------------------------------------------
 

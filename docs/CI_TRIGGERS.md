@@ -295,11 +295,17 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
   concurrency group includes the ref, or `cancel-in-progress` is false
   (`scripts/ci_triggers_check.py`). The light workflows use a group per ref and cancel
   an older run of the same branch only off `main`.
-- `bench-gate.yml`, `unsafe-and-parallel.yml` and `integration-status.yml` use two
-  groups per workflow, `main` and `ci`, with `cancel-in-progress: false`: at most one
-  `main` run and one `ci/**` run at a time, and a new run waits instead of cancelling
-  the running one (GitHub keeps one waiting run per group, so a newer push replaces an
-  older waiting run). `scripts/ci_load_check.py` requires exactly this shape.
+- `bench-gate.yml` and `integration-status.yml` use two groups per workflow, `main` and
+  `ci`, with `cancel-in-progress: false`: at most one `main` run and one `ci/**` run at a
+  time, and a new run waits instead of cancelling the running one (GitHub keeps one
+  waiting run per group, so a newer push replaces an older waiting run).
+  `scripts/ci_load_check.py` requires exactly this shape.
+- `unsafe-and-parallel.yml` (Miri and loom, 45-95 min) uses a group per ref with
+  `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`: a branch's run never
+  replaces or cancels another branch's run, a newer push on the same `ci/**` branch
+  cancels that branch's older run, and a `main` run waits instead of being cut off. The
+  number of runs at once is bounded by its path gate (`.github/paths/unsafe-and-parallel.txt`),
+  which `scripts/ci_load_check.py` requires on `ci/**` together with this shape.
 - `g2-comparisons.yml` (four `cargo check` runs) uses a group per SHA on `main` and a
   group per ref elsewhere: a `main` run is never cancelled, and is never dropped by the
   one-pending-run-per-group rule; a newer push to a `ci/**` branch cancels the older run
@@ -317,3 +323,14 @@ gate (Miri and loom behind a gate narrowed to the unsafe and parallel code, chec
 `scripts/ci_load_check.py`), and concurrency limits the parallel heavy runs to one
 `main` run and one `ci/**` run per workflow instead of keeping them off `ci/**`.
 The weekly mutation testing stays off push.
+
+## Amendment, 2026-11-09
+
+The rule amended: `unsafe-and-parallel.yml` used the two-class group (one `main` run and
+one `ci/**` run at a time). Reason: with one `ci/**` slot for every branch, each new
+`ci/**` push or re-created run replaced the waiting run of another branch; in one hour
+six waiting runs of five branches were cancelled this way, and a landing held the landing
+lock about 9 hours while re-creating its run. The rule now reads: one group per ref, a
+newer push cancels only its own branch's older run, `main` runs are not cut off, and the
+path gate (only a change of the unsafe / parallel code or its tests starts a run) bounds
+how many run at once.

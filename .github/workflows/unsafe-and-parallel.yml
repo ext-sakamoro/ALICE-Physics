@@ -15,20 +15,20 @@ on:
     # with merge-base(origin/main) instead (patterns: .github/paths/unsafe-and-parallel.txt)
     # ci/**: started on the ci/<id> branch when the paths match, read after the landing
     branches: [main, 'ci/**']
-  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
-  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  # a run cancelled by a newer push of the same branch, or lost otherwise, is re-created on the
+  # ci/<id> SHA with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  # two groups: at most one main run and one ci/** run at a time; a new run waits instead
-  # of cancelling the running one, so a ci/** push never cancels the main run (GitHub keeps
-  # one waiting run per group: a newer push replaces the older waiting one)
+  # one group per ref: a branch's run never replaces or cancels another branch's run; a newer
+  # push on the same ci/** branch cancels that branch's older run (its SHA is superseded), and
+  # a main run waits instead of being cut off. The path gate below bounds how many run at once.
   # (scripts/ci_load_check.py requires this shape)
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),

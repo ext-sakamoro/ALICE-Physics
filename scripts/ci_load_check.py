@@ -8,12 +8,16 @@ scripts/land.py waits on stayed queued. The rules:
   * quality-deep.yml (weekly mutants) never triggers on push (so never on ci/**),
     has one concurrency group per workflow, and caps its mutation matrix with
     `max-parallel` of at most MAX_PARALLEL;
-  * bench-gate.yml, unsafe-and-parallel.yml and integration-status.yml use exactly
+  * bench-gate.yml and integration-status.yml use exactly
     the two-class concurrency of TWO_CLASS_GROUP with `cancel-in-progress: false`:
     at most one main run and one ci/** run at a time, a new run waits instead of
     cancelling, so a ci/** push never cancels the main run (a group per ref would
     let every branch start its own copy; a missing group or `cancel-in-progress:
     true` lets a run be cut off or doubled);
+  * unsafe-and-parallel.yml uses one group per ref (PER_REF_GROUP) with
+    `cancel-in-progress` PER_REF_CANCEL: a newer push on the same ci/** branch
+    cancels that branch's older run, another branch's run is never cancelled or
+    replaced, and a main run is never cut off (see the amendment of 2026-11-09);
   * unsafe-and-parallel.yml (Miri and loom, 45-95 min) may run on ci/** only behind
     its path gate: the workflow passes `--patterns-file
     .github/paths/unsafe-and-parallel.txt` to scripts/changed_paths.py, every job
@@ -29,6 +33,17 @@ changes job of scripts/changed_paths.py; for unsafe-and-parallel.yml the gate is
 narrowed to the unsafe / parallel code and checked here), and concurrency limits
 the parallel heavy runs (one main run and one ci/** run per workflow) instead of
 keeping them off ci/**. quality-deep.yml stays off push entirely.
+
+Amendment, 2026-11-09. Amended rule: unsafe-and-parallel.yml has one concurrency
+group per ref instead of the two-class group. Reason: with one ci/** slot (one
+running and one waiting run for every branch together) each new ci/** push or
+re-created run replaced the waiting run of another branch; in one hour six waiting
+Miri runs of five branches were cancelled this way, and a landing held the landing
+lock about 9 h re-creating its run. The rule now reads: each branch has its own
+group, a newer push on that branch cancels its own older run (the older SHA is
+superseded), main runs wait instead of being cut off, and the number of parallel
+runs is bounded by the path gate (only a change of the unsafe / parallel code or
+its tests starts one), which stays required on ci/**.
 
 The workflows are read as text (no YAML library on the runners): the `on:`
 block, the top-level `concurrency:` block and the job headers are inspected.
@@ -49,11 +64,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import changed_paths as cp  # noqa: E402
 
 QUALITY_DEEP = "quality-deep.yml"
-TWO_CLASS = ("bench-gate.yml", "unsafe-and-parallel.yml", "integration-status.yml")
+TWO_CLASS = ("bench-gate.yml", "integration-status.yml")
+PER_REF = ("unsafe-and-parallel.yml",)
 PATH_GATED = ("unsafe-and-parallel.yml",)
-HEAVY = (QUALITY_DEEP,) + TWO_CLASS
+HEAVY = (QUALITY_DEEP,) + TWO_CLASS + PER_REF
 MAX_PARALLEL = 4
 TWO_CLASS_GROUP = "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}"
+PER_REF_GROUP = "${{ github.workflow }}-${{ github.ref }}"
+PER_REF_CANCEL = "${{ github.ref != 'refs/heads/main' }}"
 RUN_IF = "needs.changes.outputs.run == 'true'"
 # a src file that is not unsafe or parallel code: the path gate must not select it
 UNRELATED_SRC = "src/zz_unrelated_module.rs"
@@ -152,6 +170,17 @@ def check(root: Path) -> tuple[list[str], int]:
                 errors.append(f"{name}: the mutation matrix has no max-parallel")
             elif max(mp) > MAX_PARALLEL:
                 errors.append(f"{name}: max-parallel {max(mp)} exceeds {MAX_PARALLEL}")
+            continue
+        if name in PER_REF:
+            if group is not None and group != PER_REF_GROUP:
+                errors.append(f"{name}: concurrency group {group} is not the per-ref group "
+                              f"{PER_REF_GROUP} (another branch's waiting run would be replaced)")
+            if cancel != PER_REF_CANCEL:
+                errors.append(f"{name}: cancel-in-progress is {cancel!r}; it must be {PER_REF_CANCEL} "
+                              "(a newer push cancels its own branch's older run, a main run is not cut off)")
+            if on_ci:
+                # a group per ref is bounded only by the path gate
+                errors.extend(path_gate_errors(root, name, text))
             continue
         if group is not None and group != TWO_CLASS_GROUP:
             errors.append(f"{name}: concurrency group {group} is not the two-class group "
