@@ -751,7 +751,10 @@ pub mod det_math {
             for &x in &F64 {
                 for (lo, hi) in [(-1.0, 1.0), (0.0, 0.0), (-0.0, 0.0), (2.0, 200.0)] {
                     let got = super::raw_clamp64(core::hint::black_box(x), lo, hi);
-                    #[allow(clippy::disallowed_methods)]
+                    #[allow(
+                        clippy::disallowed_methods,
+                        reason = "independent reference: the standard library's f64::clamp, which raw_clamp64 must match bit for bit"
+                    )]
                     let want = x.clamp(lo, hi);
                     assert!(
                         got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()),
