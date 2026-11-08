@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2568 |
+| L0 | not reached by any non-test code, examples included | 38 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2585 |
 | live | reached without examples (crate-internal roots or a binding) | 693 |
-| | **total** | **3292** |
+| | **total** | **3316** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,13 +19,20 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (36)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/deformable.rs::MaterialError`
+- `src/deformable.rs::NeoHookeanLaw::MAX_YOUNG_MODULUS`
+- `src/deformable.rs::NeoHookeanLaw::POISSON_MARGIN`
+- `src/deformable.rs::NeoHookeanLaw::new`
+- `src/dynamic_fem.rs::CorotationalTransientSolver::accelerations`
+- `src/dynamic_fem.rs::CorotationalTransientSolver::velocities`
+- `src/dynamic_fem.rs::TransientSolver::state_digest`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -59,11 +66,18 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (38)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
+- `src/deformable.rs::MaterialError`
+- `src/deformable.rs::NeoHookeanLaw::MAX_YOUNG_MODULUS`
+- `src/deformable.rs::NeoHookeanLaw::POISSON_MARGIN`
+- `src/deformable.rs::NeoHookeanLaw::new`
+- `src/dynamic_fem.rs::CorotationalTransientSolver::accelerations`
+- `src/dynamic_fem.rs::CorotationalTransientSolver::velocities`
+- `src/dynamic_fem.rs::TransientSolver::state_digest`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -108,7 +122,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2568)
+## L1 — example-only (2585)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -152,9 +166,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cylinder.rs`: `Cylinder::surface_area`
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
 - `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::aabb`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `PhysicsWorld::debug_draw`, `debug_draw_world`
-- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`
+- `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`, `Material`, `NeoHookeanLaw`, `NeoHookeanLaw::lambda_energy`, `NeoHookeanLaw::lame`
 - `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::node_count`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::query`, `DynamicAabbTree::user_data`
-- `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
+- `src/dynamic_fem.rs`: `CorotationalTransientSolver`, `CorotationalTransientSolver::STATE_DIGEST_DOMAIN`, `CorotationalTransientSolver::apply_impulses`, `CorotationalTransientSolver::displacements`, `CorotationalTransientSolver::momentum`, `CorotationalTransientSolver::new`, `CorotationalTransientSolver::on_ground`, `CorotationalTransientSolver::set_damping`, `CorotationalTransientSolver::set_displacements`, `CorotationalTransientSolver::set_ground`, `CorotationalTransientSolver::state_digest`, `CorotationalTransientSolver::step`, `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::STATE_DIGEST_DOMAIN`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
 - `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `induced_dipole_energy`, `lorentz_force`, `lorentz_force_sum`
 - `src/erosion.rs`: `EXPOSURE_DECAY_PER_S`, `ErosionConfig`, `ErosionModifier`, `ErosionModifier::PARTICIPANT_KIND`, `ErosionModifier::compute_exposure_from_normals`, `ErosionModifier::erosion_at`, `ErosionModifier::new`, `ErosionModifier::set_exposure_at`, `ErosionType`, `WATER_PREFACTOR`
 - `src/euler_fv.rs`: `Boundary`, `Conserved`, `Conserved::from_primitive`, `Conserved::to_primitive`, `EulerConfig`, `EulerConfig::godunov`, `EulerConfig::muscl`, `EulerError`, `EulerFv1d`, `EulerFv1d::advance_to`, `EulerFv1d::cells`, `EulerFv1d::cfl_time_step`, `EulerFv1d::config`, `EulerFv1d::dx`, `EulerFv1d::max_wave_speed`, `EulerFv1d::new`, `EulerFv1d::primitives`, `EulerFv1d::step`, `EulerFv1d::step_with_dt`, `EulerFv1d::time`, `EulerFv1d::totals`, `Limiter`, `MAX_NEWTON_ITERATIONS`, `Primitive`, `Reconstruction`, `RiemannSolver`, `StarState`, `StarState::sample`, `TimeIntegrator`, `exact_riemann`, `numerical_flux`, `physical_flux`
