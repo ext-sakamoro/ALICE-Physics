@@ -1830,3 +1830,13 @@ impl WorldRayCaster<'_> {
         found
     }
 }
+
+// The range oracles and the previous-bits golden of the ray queries compile as lib tests
+// too, so their lines count in the `--lib` coverage (the far / scaled paths below are
+// reached only by them).
+#[cfg(test)]
+#[path = "../tests/analytic_query_box_range.rs"]
+mod query_box_range_oracle;
+#[cfg(test)]
+#[path = "../tests/ray_query_previous_bits.rs"]
+mod ray_query_previous_bits_oracle;
