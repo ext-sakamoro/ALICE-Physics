@@ -1,8 +1,11 @@
 name: Miri and loom (changed unsafe or parallel code)
 
-# The raw-pointer slice wrappers of the parallel step (src/solver.rs) are the
-# crate's only unsafe code; Miri checks them for undefined behaviour and loom
-# explores the thread interleavings of one colour batch. quality-deep.yml runs
+# Miri checks three kinds of unsafe code for undefined behaviour: the raw-pointer
+# slice wrappers of the parallel step (src/solver.rs, with loom exploring the
+# thread interleavings of one colour batch), the C ABI (src/ffi.rs, raw pointers
+# from the caller, reached through src/binding_api.rs) and the byte views of the
+# GPU buffers (src/gpu_sdf.rs). The crate has unsafe code elsewhere that this
+# workflow does not run: the SSE2 paths of src/math.rs. quality-deep.yml runs
 # both weekly; this workflow runs them when a push changes the unsafe or parallel
 # code they cover (.github/paths/unsafe-and-parallel.txt), on main and on the ci/**
 # branches. On a ci/** branch the run is started on the SHA that main is then
@@ -108,6 +111,18 @@ jobs:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-ignore-leaks
       - name: Miri (bvh / contact_cache, Stacked Borrows)
         run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+      # the C ABI: every test of the ffi module (raw pointers in and out of the world,
+      # the faulted-world paths); binding_api.rs has no unsafe of its own and is
+      # reached through these tests
+      - name: Miri (C ABI, Stacked Borrows)
+        run: cargo +nightly miri test --lib --features ffi -- ffi::tests
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+      # the byte views of the GPU query / result buffers (from_raw_parts over repr(C) f32 structs)
+      - name: Miri (GPU buffer byte views, Stacked Borrows)
+        run: cargo +nightly miri test --lib -- gpu_sdf::tests
         env:
           MIRIFLAGS: -Zmiri-disable-isolation
 

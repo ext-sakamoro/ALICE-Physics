@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: `unsafe-and-parallel.yml` の Miri に C ABI の step (`ffi::tests` を `--features ffi` で Stacked Borrows) を足し、`src/ffi.rs` と `src/binding_api.rs` を path 一覧 `.github/paths/unsafe-and-parallel.txt` に足した それまで C ABI の unsafe (raw pointer) を変える commit では Miri が走らなかった `src/gpu_sdf.rs` の GPU buffer の byte 列の view (`from_raw_parts` の 2 block) も `gpu_sdf::tests` の Miri step と path 一覧に足した workflow の説明の「solver の slice が crate の唯一の unsafe」を直し、この workflow が走らせない unsafe (`src/math.rs` の SSE2) を書いた
 - `tests/indep_free_rotation_closed_forms.rs::tgs_isotropic_spin_turns_by_omega_t` の `#[ignore = "src gap: …"]` を外した (TGS の姿勢積分は 8f765c2c で厳密な指数写像になっており、等方 body の回転は substep 数によらず `|ω| t` で通る) `docs/oracle-status.md` を再生成
 - `Fix128` の `sqrt` / `/` / `*` を速くした 結果の bits は変えていない (`tests/fix128_bit_identity.rs` が置き換え前の実装と語単位で比べる、wasm32-wasip1 でも実行) `sqrt` は 96 段の桁の漸化式を Zimmermann の Karatsuba 平方根 (12 bit を漸化式、残りを 3 回の除算) に、`/` は 64 段の bit 長除算を 32 bit limb の Knuth Algorithm D に、`*` は `u128` の 4 回の積を 64x64 の積に替えた 32 bit target の 64x64 の積は 32 bit の語 4 回で計算する
 - `scripts/land.py`: ALICE-Law の `land_law_state.py` の exit 1 (Law が状態を記録していた時の「動く」) を扱う分岐と `--write` の手順の文を消した Law の main が状態を記録しなくなったので、exit 0 以外は「計算できなかった」として着地を止める
