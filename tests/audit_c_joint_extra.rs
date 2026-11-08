@@ -203,7 +203,7 @@ fn rack_and_pinion_splits_the_correction_by_the_xpbd_projection() {
         solve_extra_joints(
             &mut bodies,
             &[ExtraJoint::RackAndPinion(j)],
-            z_hinges(),
+            &z_hinges(),
             dt(),
         )
         .expect("the gear names hinges 0 and 1");
@@ -234,7 +234,7 @@ fn rack_and_pinion_static_rack_turns_the_pinion_back() {
     solve_extra_joints(
         &mut bodies,
         &[ExtraJoint::RackAndPinion(j)],
-        z_hinges(),
+        &z_hinges(),
         dt(),
     )
     .expect("the gear names hinges 0 and 1");

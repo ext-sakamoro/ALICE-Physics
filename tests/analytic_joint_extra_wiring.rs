@@ -531,7 +531,7 @@ fn solve_extra_joints_skips_angular_correction_when_broken_applies_when_holding(
     solve_extra_joints(
         &mut broken_bodies,
         &[ExtraJoint::Weld(breaking_wj)],
-        z_hinges(),
+        &z_hinges(),
         dt,
     )
     .expect("the gears name hinges 0 and 1");
@@ -549,7 +549,7 @@ fn solve_extra_joints_skips_angular_correction_when_broken_applies_when_holding(
     solve_extra_joints(
         &mut holding_bodies,
         &[ExtraJoint::Weld(holding_wj)],
-        z_hinges(),
+        &z_hinges(),
         dt,
     )
     .expect("the gears name hinges 0 and 1");
