@@ -766,6 +766,9 @@ pub mod world_shape_query;
 
 pub mod physics2d;
 
+/// 2D material point method for soft solids (MLS-MPM, APIC, plane strain, `Q64.64`)
+pub mod mpm2d;
+
 #[cfg(feature = "gpu-solver-bridge")]
 pub mod gpu_bridge;
 #[cfg(feature = "std")]
