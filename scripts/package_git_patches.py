@@ -16,8 +16,11 @@ so the .crate is checked against what it is consumed with.
                     same repository at the pinned rev is pinned by it (a facade
                     and the crates it reaches by path in that repository)
 
-Cargo.toml fails both modes when a dependency names `git` and `version` without
-a 40-hex `rev` (not pinned).
+A dependency that names `git` and `version` without a `rev` (`branch`, `tag` or
+the default branch) is patched at the commit Cargo.lock resolved it to, read by
+`locked_git_commit` of scripts/id_move_check.py (the one place that rule lives):
+no Cargo.lock, the package not in it from that url, a source without a 40-hex
+commit, or two commits fail both modes, as does a `rev` that is not 40 hex.
 
 Before alice-physics is published, the pinned sibling is published and the
 dependency goes back to `version` only; then there is nothing to patch.
@@ -31,8 +34,11 @@ import os
 import re
 import sys
 import tomllib
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from id_move_check import CheckError, locked_git_commit  # noqa: E402
 REV = re.compile(r"[0-9a-f]{40}")
 DEP_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 
@@ -45,8 +51,9 @@ def _dep_tables(manifest: dict):
             yield f"target.{target}.{t}", body.get(t, {})
 
 
-def pins(manifest_text: str) -> tuple[list[tuple[str, str, str]], list[str]]:
-    """(name, git, rev) of each dependency taken from git with a version; problems."""
+def pins(manifest_text: str, root: str = ROOT) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """(name, git, rev) of each dependency taken from git with a version (without a `rev`, the
+    commit `root`'s Cargo.lock resolved it to); problems."""
     manifest = tomllib.loads(manifest_text)
     found: dict[str, tuple[str, str, str]] = {}
     problems: list[str] = []
@@ -55,8 +62,14 @@ def pins(manifest_text: str) -> tuple[list[tuple[str, str, str]], list[str]]:
             if not isinstance(spec, dict) or "git" not in spec or "version" not in spec:
                 continue
             name = spec.get("package", key)
-            rev = spec.get("rev", "")
-            if not REV.fullmatch(rev):
+            rev = spec.get("rev")
+            if rev is None:
+                try:
+                    rev = locked_git_commit(Path(root), Path(root), name, spec["git"])
+                except CheckError as e:
+                    problems.append(f"{table}.{key}: {e}")
+                    continue
+            elif not REV.fullmatch(rev):
                 problems.append(f"{table}.{key}: git with a version but rev is not 40 hex ({rev!r})")
                 continue
             pin = (name, spec["git"], rev)

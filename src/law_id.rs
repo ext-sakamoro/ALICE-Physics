@@ -474,10 +474,11 @@ mod semantics_decoder {
     /// The published identifier decodes to the hex its documentation shows.
     #[test]
     fn the_identifier_matches_its_documented_hex() {
-        let doc = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
+        let doc = "75f5f5e8264506cffbf4f93351d96dbbb41fa0c905da802c610d99e151a391ad";
         assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
         assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
-        assert!(PHYSICS_SEMANTICS_PINS
+        // alice-det-math is folded per function (DET_MATH_PINS), not as a whole entry
+        assert!(!PHYSICS_SEMANTICS_PINS
             .iter()
             .any(|(n, _)| *n == "alice-det-math"));
     }
