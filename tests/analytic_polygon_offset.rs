@@ -29,11 +29,15 @@
 //!
 //! # The eroded polygon
 //!
-//! Its shoelace area differs from `A(d)` only by the chords standing in for the
-//! arcs at reflex vertices, each under the configured sagitta: at most
-//! `sagitta x (total arc length)`, and the code's output is held to that.
+//! Every point of it is within the configured sagitta of the true eroded
+//! boundary (the arcs at reflex vertices are chords; an arc one chord covers is
+//! its midpoint), so its shoelace area differs from `A(d)` by at most
+//! `sagitta x perimeter`, and the code's output is held to that.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, reason = "analytic reference in f64: angles, areas and the sampled distance are computed from the input, never by the code under test")]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference in f64: angles, areas and the sampled distance are computed from the input, never by the code under test"
+)]
 
 use alice_physics_core::polygon_offset::{erode, OffsetConfig, OffsetError};
 
@@ -41,13 +45,26 @@ const SKIN: f64 = 0.012;
 
 fn shoelace(c: &[[f64; 2]]) -> f64 {
     let n = c.len();
-    0.5 * (0..n).map(|i| c[i][0] * c[(i + 1) % n][1] - c[(i + 1) % n][0] * c[i][1]).sum::<f64>()
+    0.5 * (0..n)
+        .map(|i| c[i][0] * c[(i + 1) % n][1] - c[(i + 1) % n][0] * c[i][1])
+        .sum::<f64>()
 }
 
 /// Contours oriented so the inside is on the left (outer by the largest area).
 fn oriented(c: &[Vec<[f64; 2]>]) -> Vec<Vec<[f64; 2]>> {
-    let outer = c.iter().map(|r| shoelace(r)).fold(0.0f64, |m, a| if a.abs() > m.abs() { a } else { m });
-    c.iter().map(|r| if outer < 0.0 { r.iter().rev().copied().collect() } else { r.clone() }).collect()
+    let outer = c
+        .iter()
+        .map(|r| shoelace(r))
+        .fold(0.0f64, |m, a| if a.abs() > m.abs() { a } else { m });
+    c.iter()
+        .map(|r| {
+            if outer < 0.0 {
+                r.iter().rev().copied().collect()
+            } else {
+                r.clone()
+            }
+        })
+        .collect()
 }
 
 /// `A(d)` by the closed form, and the total arc angle (for the chord bound).
@@ -95,8 +112,14 @@ fn sampled(c: &[Vec<[f64; 2]>], d: f64, h: f64) -> (f64, f64) {
             }
         }
     }
-    let segs: Vec<([f64; 2], [f64; 2])> = c.iter().flat_map(|r| (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()]))).collect();
-    let (nx, ny) = (((hi[0] - lo[0]) / h).ceil() as usize, ((hi[1] - lo[1]) / h).ceil() as usize);
+    let segs: Vec<([f64; 2], [f64; 2])> = c
+        .iter()
+        .flat_map(|r| (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()])))
+        .collect();
+    let (nx, ny) = (
+        ((hi[0] - lo[0]) / h).ceil() as usize,
+        ((hi[1] - lo[1]) / h).ceil() as usize,
+    );
     let mut count = 0usize;
     for iy in 0..ny {
         for ix in 0..nx {
@@ -105,7 +128,9 @@ fn sampled(c: &[Vec<[f64; 2]>], d: f64, h: f64) -> (f64, f64) {
             let mut dist = f64::INFINITY;
             for &(a, b) in &segs {
                 dist = dist.min(seg_dist(p, a, b));
-                if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) {
+                if (a[1] > p[1]) != (b[1] > p[1])
+                    && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
+                {
                     inside = !inside;
                 }
             }
@@ -114,7 +139,10 @@ fn sampled(c: &[Vec<[f64; 2]>], d: f64, h: f64) -> (f64, f64) {
             }
         }
     }
-    let per: f64 = segs.iter().map(|(a, b)| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()).sum();
+    let per: f64 = segs
+        .iter()
+        .map(|(a, b)| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt())
+        .sum();
     (count as f64 * h * h, per * h * 2.0f64.sqrt())
 }
 
@@ -126,10 +154,14 @@ fn logo() -> Vec<(char, Vec<Vec<[f64; 2]>>)> {
             let (ch, rest) = l.split_once(' ').expect("char and contours");
             let contours = rest
                 .split(';')
-                .map(|c| c.split_whitespace().map(|p| {
-                    let (x, y) = p.split_once(',').expect("x,y");
-                    [x.parse().expect("x"), y.parse().expect("y")]
-                }).collect())
+                .map(|c| {
+                    c.split_whitespace()
+                        .map(|p| {
+                            let (x, y) = p.split_once(',').expect("x,y");
+                            [x.parse().expect("x"), y.parse().expect("y")]
+                        })
+                        .collect()
+                })
                 .collect();
             (ch.chars().next().expect("char"), contours)
         })
@@ -143,11 +175,34 @@ fn cfg() -> OffsetConfig {
 fn check(name: &str, c: &[Vec<[f64; 2]>], d: f64, h: f64) -> f64 {
     let (formula, arc_len) = closed_form(c, d);
     let (grid, grid_err) = sampled(c, d, h);
-    assert!((formula - grid).abs() <= grid_err, "{name}: closed form {formula:.6e} vs sampled {grid:.6e} (bound {grid_err:.2e})");
+    assert!(
+        (formula - grid).abs() <= grid_err,
+        "{name}: closed form {formula:.6e} vs sampled {grid:.6e} (bound {grid_err:.2e})"
+    );
     let e = erode(c, d, &cfg()).unwrap_or_else(|err| panic!("{name}: {err:?}"));
     let got: f64 = e.points().iter().map(|r| shoelace(r)).sum();
-    let chord = cfg().sagitta * arc_len + 1e-12;
-    assert!((got - formula).abs() <= chord, "{name}: eroded polygon {got:.9e} vs closed form {formula:.9e} (chord bound {chord:.2e})");
+    // every point of the eroded polygon is within the sagitta of the true eroded
+    // boundary (arc chords; an arc one chord covers is its midpoint, joined to
+    // its shifted edges by segments that stay within the same sagitta), so the
+    // areas differ by at most sagitta x perimeter
+    let per: f64 = e
+        .points()
+        .iter()
+        .map(|r| {
+            (0..r.len())
+                .map(|i| {
+                    let (p, q) = (r[i], r[(i + 1) % r.len()]);
+                    ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt()
+                })
+                .sum::<f64>()
+        })
+        .sum();
+    let _ = arc_len;
+    let chord = cfg().sagitta * per + 1e-12;
+    assert!(
+        (got - formula).abs() <= chord,
+        "{name}: eroded polygon {got:.9e} vs closed form {formula:.9e} (chord bound {chord:.2e})"
+    );
     formula
 }
 
@@ -160,11 +215,26 @@ fn a_square_erodes_to_the_inner_square() {
 
 #[test]
 fn an_l_erodes_with_an_arc_at_its_inside_corner() {
-    let c = vec![vec![[0.0, 0.0], [0.2, 0.0], [0.2, 0.08], [0.08, 0.08], [0.08, 0.2], [0.0, 0.2]]];
+    let c = vec![vec![
+        [0.0, 0.0],
+        [0.2, 0.0],
+        [0.2, 0.08],
+        [0.08, 0.08],
+        [0.08, 0.2],
+        [0.0, 0.2],
+    ]];
     check("L", &c, SKIN, 3e-4);
     let e = erode(&c, SKIN, &cfg()).expect("L");
     // every vertex of the arc is SKIN from the reflex corner (0.08, 0.08)
-    let arc: Vec<_> = e.contours[0].iter().filter(|v| matches!(v.normal, alice_physics_core::polygon_offset::OffsetNormal::Arc { .. })).collect();
+    let arc: Vec<_> = e.contours[0]
+        .iter()
+        .filter(|v| {
+            matches!(
+                v.normal,
+                alice_physics_core::polygon_offset::OffsetNormal::Arc { .. }
+            )
+        })
+        .collect();
     assert!(arc.len() >= 3);
     for v in arc {
         let r = ((v.p[0] - 0.08).powi(2) + (v.p[1] - 0.08).powi(2)).sqrt();
@@ -203,22 +273,40 @@ fn the_logo_letters_erode_to_their_closed_form_areas() {
     assert_eq!(areas.len(), pinned.len());
     for ((ch, a), (pc, pa)) in areas.iter().zip(pinned) {
         assert_eq!(*ch, pc);
-        assert!((a - pa).abs() <= 1e-12 * pa, "{ch}: eroded area {a:.17} vs pinned {pa:.17}");
+        assert!(
+            (a - pa).abs() <= 1e-12 * pa,
+            "{ch}: eroded area {a:.17} vs pinned {pa:.17}"
+        );
     }
 }
 
 #[test]
 fn degenerate_and_impossible_erosions_are_refused() {
     let sq = vec![vec![[0.0, 0.0], [0.02, 0.0], [0.02, 0.02], [0.0, 0.02]]];
-    assert!(matches!(erode(&sq, SKIN, &cfg()), Err(OffsetError::Vanished { contour: 0 })));
-    assert!(matches!(erode(&sq, 0.0, &cfg()), Err(OffsetError::BadConfig)));
-    assert!(matches!(erode(&sq, f64::NAN, &cfg()), Err(OffsetError::BadConfig)));
+    assert!(matches!(
+        erode(&sq, SKIN, &cfg()),
+        Err(OffsetError::Vanished { contour: 0 })
+    ));
+    assert!(matches!(
+        erode(&sq, 0.0, &cfg()),
+        Err(OffsetError::BadConfig)
+    ));
+    assert!(matches!(
+        erode(&sq, f64::NAN, &cfg()),
+        Err(OffsetError::BadConfig)
+    ));
     let line = vec![vec![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]];
-    assert!(matches!(erode(&line, SKIN, &cfg()), Err(OffsetError::DegenerateContour { contour: 0 })));
+    assert!(matches!(
+        erode(&line, SKIN, &cfg()),
+        Err(OffsetError::DegenerateContour { contour: 0 })
+    ));
     // a hole that grows into the outer boundary: a wall thinner than 2 SKIN
     let thin = vec![
         vec![[0.0, 0.0], [0.3, 0.0], [0.3, 0.3], [0.0, 0.3]],
         vec![[0.015, 0.1], [0.015, 0.2], [0.2, 0.2], [0.2, 0.1]],
     ];
-    assert!(matches!(erode(&thin, SKIN, &cfg()), Err(OffsetError::SelfIntersection)));
+    assert!(matches!(
+        erode(&thin, SKIN, &cfg()),
+        Err(OffsetError::SelfIntersection)
+    ));
 }

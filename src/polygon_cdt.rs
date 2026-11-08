@@ -110,7 +110,13 @@ impl Cdt {
     pub fn area2_grid(&self) -> i128 {
         self.triangles
             .iter()
-            .map(|t| orient(self.points[t[0] as usize], self.points[t[1] as usize], self.points[t[2] as usize]))
+            .map(|t| {
+                orient(
+                    self.points[t[0] as usize],
+                    self.points[t[1] as usize],
+                    self.points[t[2] as usize],
+                )
+            })
             .sum()
     }
 }
@@ -158,7 +164,7 @@ fn contour_area2(c: &[[i64; 2]]) -> i128 {
 pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, CdtError> {
     if !(cfg.grid > 0.0 && cfg.grid.is_finite())
         || !(cfg.min_angle_deg > 0.0 && cfg.min_angle_deg <= 20.7)
-        || !(cfg.max_edge > 0.0)
+        || cfg.max_edge.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
     {
         return Err(CdtError::BadConfig);
     }
@@ -171,7 +177,10 @@ pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, C
             if !(q[0].abs() < MAX_COORD as f64 && q[1].abs() < MAX_COORD as f64) {
                 return Err(CdtError::OutOfRange);
             }
-            #[allow(clippy::cast_possible_truncation, reason = "bounded by MAX_COORD just above")]
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "bounded by MAX_COORD just above"
+            )]
             let g = [q[0].round() as i64, q[1].round() as i64];
             if ring.last() != Some(&g) {
                 ring.push(g);
@@ -200,6 +209,7 @@ pub fn triangulate(contours: &[Vec<[f64; 2]>], cfg: &CdtConfig) -> Result<Cdt, C
         }
     }
     m.segs = segs;
+    m.rings = rings.clone();
     m.recover_segments()?;
     m.refine()?;
     let triangles = m.domain_triangles(&rings);
@@ -222,6 +232,8 @@ struct Mesh {
     pts: Vec<[i64; 2]>,
     tris: Vec<Option<[u32; 3]>>,
     segs: BTreeSet<(u32, u32)>,
+    /// The input contours, for telling the domain's triangles from the rest.
+    rings: Vec<Vec<[i64; 2]>>,
 }
 
 impl Mesh {
@@ -233,6 +245,7 @@ impl Mesh {
             pts,
             tris: vec![Some([0, 1, 2])],
             segs: BTreeSet::new(),
+            rings: Vec::new(),
         }
     }
 
@@ -251,7 +264,11 @@ impl Mesh {
         let mut cavity: Vec<usize> = Vec::new();
         for (i, t) in self.tris.iter().enumerate() {
             if let Some(t) = t {
-                let (a, b, c) = (self.pts[t[0] as usize], self.pts[t[1] as usize], self.pts[t[2] as usize]);
+                let (a, b, c) = (
+                    self.pts[t[0] as usize],
+                    self.pts[t[1] as usize],
+                    self.pts[t[2] as usize],
+                );
                 if incircle(a, b, c, p) > 0 {
                     cavity.push(i);
                 }
@@ -262,7 +279,11 @@ impl Mesh {
             // cocircular; take the triangles whose closure holds it
             for (i, t) in self.tris.iter().enumerate() {
                 if let Some(t) = t {
-                    let (a, b, c) = (self.pts[t[0] as usize], self.pts[t[1] as usize], self.pts[t[2] as usize]);
+                    let (a, b, c) = (
+                        self.pts[t[0] as usize],
+                        self.pts[t[1] as usize],
+                        self.pts[t[2] as usize],
+                    );
                     if orient(a, b, p) >= 0 && orient(b, c, p) >= 0 && orient(c, a, p) >= 0 {
                         cavity.push(i);
                     }
@@ -305,7 +326,9 @@ impl Mesh {
 
     fn budget(&self) -> Result<(), CdtError> {
         if self.pts.len() - 3 > self.cfg.max_points {
-            Err(CdtError::Budget { points: self.pts.len() - 3 })
+            Err(CdtError::Budget {
+                points: self.pts.len() - 3,
+            })
         } else {
             Ok(())
         }
@@ -331,7 +354,12 @@ impl Mesh {
     fn recover_segments(&mut self) -> Result<(), CdtError> {
         loop {
             let edges = self.edges();
-            let missing: Vec<(u32, u32)> = self.segs.iter().copied().filter(|s| !edges.contains(s)).collect();
+            let missing: Vec<(u32, u32)> = self
+                .segs
+                .iter()
+                .copied()
+                .filter(|s| !edges.contains(s))
+                .collect();
             if missing.is_empty() {
                 return Ok(());
             }
@@ -342,7 +370,9 @@ impl Mesh {
                 }
             }
             if !progress {
-                return Err(CdtError::Budget { points: self.pts.len() - 3 });
+                return Err(CdtError::Budget {
+                    points: self.pts.len() - 3,
+                });
             }
         }
     }
@@ -360,7 +390,15 @@ impl Mesh {
     fn seg_neighbours(&self, v: u32) -> Vec<u32> {
         self.segs
             .iter()
-            .filter_map(|&(a, b)| if a == v { Some(b) } else if b == v { Some(a) } else { None })
+            .filter_map(|&(a, b)| {
+                if a == v {
+                    Some(b)
+                } else if b == v {
+                    Some(a)
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
@@ -379,7 +417,11 @@ impl Mesh {
                 }
                 let encroached = self.tris.iter().flatten().any(|t| {
                     t.contains(&a) && t.contains(&b) && {
-                        let o = t.iter().copied().find(|&v| v != a && v != b).expect("third");
+                        let o = t
+                            .iter()
+                            .copied()
+                            .find(|&v| v != a && v != b)
+                            .expect("third");
                         o >= 3 && self.encroaches(a, b, self.pts[o as usize])
                     }
                 });
@@ -397,6 +439,12 @@ impl Mesh {
                     continue;
                 }
                 let p = t.map(|v| self.pts[v as usize]);
+                // only the domain is refined: a triangle in a hole or a notch
+                // of the outline can be as skinny as it likes
+                let c3 = [p[0][0] + p[1][0] + p[2][0], p[0][1] + p[1][1] + p[2][1]];
+                if self.rings.iter().filter(|r| point_in_ring3(c3, r)).count() % 2 == 0 {
+                    continue;
+                }
                 let l = [dist2(p[0], p[1]), dist2(p[1], p[2]), dist2(p[2], p[0])];
                 let lmin = l[0].min(l[1]).min(l[2]);
                 let lmax = l[0].max(l[1]).max(l[2]);
@@ -410,7 +458,10 @@ impl Mesh {
                 let too_long = lmax.sqrt() > max_edge_g;
                 if (ratio > ratio_max && !self.small_input_angle(t, &l)) || too_long {
                     let score = if too_long { f64::INFINITY } else { ratio };
-                    if worst.as_ref().is_none_or(|(s, w)| score > *s || (score == *s && t < w)) {
+                    if worst
+                        .as_ref()
+                        .is_none_or(|(s, w)| score > *s || (score == *s && t < w))
+                    {
                         worst = Some((score, *t));
                     }
                 }
@@ -420,10 +471,15 @@ impl Mesh {
             };
             let c = circumcentre(t.map(|v| self.pts[v as usize]));
             let segs: Vec<(u32, u32)> = self.segs.iter().copied().collect();
-            let hit: Vec<(u32, u32)> = segs.into_iter().filter(|&(a, b)| self.encroaches(a, b, c)).collect();
+            let hit: Vec<(u32, u32)> = segs
+                .into_iter()
+                .filter(|&(a, b)| self.encroaches(a, b, c))
+                .collect();
             if hit.is_empty() {
                 if self.pts.contains(&c) {
-                    return Err(CdtError::Budget { points: self.pts.len() - 3 });
+                    return Err(CdtError::Budget {
+                        points: self.pts.len() - 3,
+                    });
                 }
                 self.insert(c);
                 self.budget()?;
@@ -433,7 +489,9 @@ impl Mesh {
                     any |= self.split(a, b)?;
                 }
                 if !any {
-                    return Err(CdtError::Budget { points: self.pts.len() - 3 });
+                    return Err(CdtError::Budget {
+                        points: self.pts.len() - 3,
+                    });
                 }
             }
             self.recover_segments()?;
@@ -443,7 +501,13 @@ impl Mesh {
     /// The triangle's shortest edge joins two input segments meeting at less
     /// than 60° at a shared vertex: such a corner cannot be refined away.
     fn small_input_angle(&self, t: &[u32; 3], l: &[f64; 3]) -> bool {
-        let k = if l[0] <= l[1] && l[0] <= l[2] { 0 } else if l[1] <= l[2] { 1 } else { 2 };
+        let k = if l[0] <= l[1] && l[0] <= l[2] {
+            0
+        } else if l[1] <= l[2] {
+            1
+        } else {
+            2
+        };
         let (a, b) = (t[k], t[(k + 1) % 3]);
         let apex = t[(k + 2) % 3];
         // the corner is at the apex when both its edges to a and b lie on segments
@@ -454,7 +518,8 @@ impl Mesh {
             let pc = self.pts[apex as usize];
             let u = [(pa[0] - pc[0]) as f64, (pa[1] - pc[1]) as f64];
             let w = [(pb[0] - pc[0]) as f64, (pb[1] - pc[1]) as f64];
-            let cos = (u[0] * w[0] + u[1] * w[1]) / ((u[0] * u[0] + u[1] * u[1]).sqrt() * (w[0] * w[0] + w[1] * w[1]).sqrt());
+            let cos = (u[0] * w[0] + u[1] * w[1])
+                / ((u[0] * u[0] + u[1] * u[1]).sqrt() * (w[0] * w[0] + w[1] * w[1]).sqrt());
             // cos 60° = 0.5
             return cos > 0.5;
         }
@@ -496,7 +561,10 @@ fn circumcentre(p: [[i64; 2]; 3]) -> [i64; 2] {
     let c2 = cx * cx + cy * cy;
     let ux = (cy * b2 - by * c2) / d;
     let uy = (bx * c2 - cx * b2) / d;
-    #[allow(clippy::cast_possible_truncation, reason = "inside the super-triangle, far below i64 range")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "inside the super-triangle, far below i64 range"
+    )]
     let r = [(ax + ux).round() as i64, (ay + uy).round() as i64];
     r
 }

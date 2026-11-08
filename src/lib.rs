@@ -733,6 +733,8 @@ pub mod sdf_collider;
 #[cfg(feature = "std")]
 pub mod sdf_destruction;
 #[cfg(feature = "std")]
+pub mod extruded_tet_mesh;
+#[cfg(feature = "std")]
 pub mod polygon_cdt;
 #[cfg(feature = "std")]
 pub mod polygon_offset;

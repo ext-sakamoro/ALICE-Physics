@@ -95,7 +95,10 @@ impl Eroded {
     /// The contours as plain points.
     #[must_use]
     pub fn points(&self) -> Vec<Vec<[f64; 2]>> {
-        self.contours.iter().map(|c| c.iter().map(|v| v.p).collect()).collect()
+        self.contours
+            .iter()
+            .map(|c| c.iter().map(|v| v.p).collect())
+            .collect()
     }
 }
 
@@ -113,7 +116,9 @@ fn unit(a: [f64; 2]) -> [f64; 2] {
     [a[0] / l, a[1] / l]
 }
 fn area2(c: &[[f64; 2]]) -> f64 {
-    (0..c.len()).map(|i| cross(c[i], c[(i + 1) % c.len()])).sum()
+    (0..c.len())
+        .map(|i| cross(c[i], c[(i + 1) % c.len()]))
+        .sum()
 }
 
 /// A shifted edge: a point on it and its direction.
@@ -141,7 +146,11 @@ fn intersect(a: &Line, b: &Line) -> Option<[f64; 2]> {
 /// # Errors
 ///
 /// See [`OffsetError`].
-pub fn erode(contours: &[Vec<[f64; 2]>], delta: f64, cfg: &OffsetConfig) -> Result<Eroded, OffsetError> {
+pub fn erode(
+    contours: &[Vec<[f64; 2]>],
+    delta: f64,
+    cfg: &OffsetConfig,
+) -> Result<Eroded, OffsetError> {
     if !(delta > 0.0 && delta.is_finite() && cfg.sagitta > 0.0 && cfg.sagitta.is_finite()) {
         return Err(OffsetError::BadConfig);
     }
@@ -163,9 +172,14 @@ pub fn erode(contours: &[Vec<[f64; 2]>], delta: f64, cfg: &OffsetConfig) -> Resu
         rings.push(r);
     }
     let Some(outer) = (0..rings.len()).max_by(|&a, &b| {
-        area2(&rings[a]).abs().total_cmp(&area2(&rings[b]).abs()).then(b.cmp(&a))
+        area2(&rings[a])
+            .abs()
+            .total_cmp(&area2(&rings[b]).abs())
+            .then(b.cmp(&a))
     }) else {
-        return Ok(Eroded { contours: Vec::new() });
+        return Ok(Eroded {
+            contours: Vec::new(),
+        });
     };
     if area2(&rings[outer]) < 0.0 {
         for r in &mut rings {
@@ -198,14 +212,24 @@ pub fn erode(contours: &[Vec<[f64; 2]>], delta: f64, cfg: &OffsetConfig) -> Resu
     Ok(eroded)
 }
 
-fn erode_ring(r: &[[f64; 2]], ci: usize, delta: f64, cfg: &OffsetConfig) -> Result<Vec<OffsetVertex>, OffsetError> {
+fn erode_ring(
+    r: &[[f64; 2]],
+    ci: usize,
+    delta: f64,
+    cfg: &OffsetConfig,
+) -> Result<Vec<OffsetVertex>, OffsetError> {
     let n = r.len();
     let lines: Vec<Line> = (0..n)
         .map(|i| {
             let d = sub(r[(i + 1) % n], r[i]);
             let u = unit(d);
             let nrm = [-u[1], u[0]];
-            Line { p: [r[i][0] + delta * nrm[0], r[i][1] + delta * nrm[1]], d, n: nrm, edge: i }
+            Line {
+                p: [r[i][0] + delta * nrm[0], r[i][1] + delta * nrm[1]],
+                d,
+                n: nrm,
+                edge: i,
+            }
         })
         .collect();
     // active edges, in order; drop reversed ones until none is
@@ -220,8 +244,10 @@ fn erode_ring(r: &[[f64; 2]], ci: usize, delta: f64, cfg: &OffsetConfig) -> Resu
             let (prev, cur, next) = (&active[(k + m - 1) % m], &active[k], &active[(k + 1) % m]);
             // two neighbours left parallel by drops: the strip between them
             // has eroded away
-            let s = start_of(prev, cur, r, delta, ci).map_err(|_| OffsetError::Vanished { contour: ci })?;
-            let e = start_of(cur, next, r, delta, ci).map_err(|_| OffsetError::Vanished { contour: ci })?;
+            let s = start_of(prev, cur, r, delta, ci)
+                .map_err(|_| OffsetError::Vanished { contour: ci })?;
+            let e = start_of(cur, next, r, delta, ci)
+                .map_err(|_| OffsetError::Vanished { contour: ci })?;
             let (s, e) = (s.1, e.0);
             if dot(sub(e, s), cur.d) < 0.0 {
                 reversed = Some(k);
@@ -248,12 +274,21 @@ fn erode_ring(r: &[[f64; 2]], ci: usize, delta: f64, cfg: &OffsetConfig) -> Resu
             let arc = arc_normals(prev.n, cur.n, delta, cfg.sagitta);
             for nrm in arc {
                 let p = [v[0] + delta * nrm[0], v[1] + delta * nrm[1]];
-                verts.push(OffsetVertex { p, normal: OffsetNormal::Arc { centre: v, normal: [-nrm[0], -nrm[1]] } });
+                verts.push(OffsetVertex {
+                    p,
+                    normal: OffsetNormal::Arc {
+                        centre: v,
+                        normal: [-nrm[0], -nrm[1]],
+                    },
+                });
             }
         } else if adjacent && turn == 0.0 {
             let v = r[cur.edge];
             let p = [v[0] + delta * cur.n[0], v[1] + delta * cur.n[1]];
-            verts.push(OffsetVertex { p, normal: OffsetNormal::Edge([-cur.n[0], -cur.n[1]]) });
+            verts.push(OffsetVertex {
+                p,
+                normal: OffsetNormal::Edge([-cur.n[0], -cur.n[1]]),
+            });
         } else {
             let p = intersect(prev, cur).ok_or(OffsetError::Parallel { contour: ci })?;
             verts.push(OffsetVertex {
@@ -267,7 +302,13 @@ fn erode_ring(r: &[[f64; 2]], ci: usize, delta: f64, cfg: &OffsetConfig) -> Resu
 
 /// The end of the shifted `prev` and the start of the shifted `cur` at the
 /// corner between them.
-fn start_of(prev: &Line, cur: &Line, r: &[[f64; 2]], delta: f64, ci: usize) -> Result<([f64; 2], [f64; 2]), OffsetError> {
+fn start_of(
+    prev: &Line,
+    cur: &Line,
+    r: &[[f64; 2]],
+    delta: f64,
+    ci: usize,
+) -> Result<([f64; 2], [f64; 2]), OffsetError> {
     let adjacent = (prev.edge + 1) % r.len() == cur.edge;
     if adjacent && cross(prev.d, cur.d) <= 0.0 {
         let v = r[cur.edge];
@@ -283,11 +324,22 @@ fn start_of(prev: &Line, cur: &Line, r: &[[f64; 2]], delta: f64, ci: usize) -> R
 
 /// Unit normals from `a` to `b` (turning clockwise through less than half a
 /// turn) at equal angles, fine enough that the chords of radius `delta` stay
-/// within `sagitta`; both ends included.
+/// within `sagitta`; both ends included, except that an arc one chord covers
+/// is given by its middle normal alone.
 fn arc_normals(a: [f64; 2], b: [f64; 2], delta: f64, sagitta: f64) -> Vec<[f64; 2]> {
     let phi = acos64(crate::det_math::raw_clamp64(dot(a, b), -1.0, 1.0));
     // a chord over angle t has sagitta delta (1 - cos(t / 2))
-    let max_t = if sagitta >= delta { std::f64::consts::PI } else { 2.0 * acos64(1.0 - sagitta / delta) };
+    let max_t = if sagitta >= delta {
+        std::f64::consts::PI
+    } else {
+        2.0 * acos64(1.0 - sagitta / delta)
+    };
+    // an arc one chord covers is its midpoint alone: its two ends would sit a
+    // fraction of a chord apart (a slight reflex bend of a flattened curve),
+    // and the midpoint is on the arc within the same sagitta
+    if phi <= max_t {
+        return vec![unit([a[0] + b[0], a[1] + b[1]])];
+    }
     let mut out = vec![a, b];
     let mut t = phi;
     while t > max_t {
@@ -320,7 +372,9 @@ fn boundary_distance(rings: &[Vec<[f64; 2]>], p: [f64; 2]) -> f64 {
 
 /// Whether any two non-adjacent segments of the contours cross or touch.
 fn crosses(contours: &[Vec<[f64; 2]>]) -> bool {
-    let mut segs: Vec<([f64; 2], [f64; 2], usize, usize, usize)> = Vec::new();
+    // (start, end, contour, index in contour, contour length)
+    type Seg = ([f64; 2], [f64; 2], usize, usize, usize);
+    let mut segs: Vec<Seg> = Vec::new();
     for (ci, c) in contours.iter().enumerate() {
         for i in 0..c.len() {
             segs.push((c[i], c[(i + 1) % c.len()], ci, i, c.len()));

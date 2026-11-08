@@ -1154,7 +1154,7 @@ fn crossing_vertex(
 /// meeting at that corner then both take their diagonal through it, so the three
 /// diagonals cannot all circulate the same way (Dompierre et al., *How to
 /// Subdivide Pyramids, Prisms and Hexahedra into Tetrahedra*).
-fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
+pub(crate) fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
     let mut b = bottom;
     let mut t = top;
     let all = [b[0], b[1], b[2], t[0], t[1], t[2]];
@@ -1217,7 +1217,7 @@ fn prism_to_tets(bottom: [u32; 3], top: [u32; 3]) -> [[u32; 4]; 3] {
 /// `tests/mesh_conformity.rs` re-measures that by face census.
 ///
 /// [`FemError::DegenerateElement`]: crate::linear_elastic_fem::FemError::DegenerateElement
-fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
+pub(crate) fn push_tet(mesh: &mut SdfTetMesh, vertices: [u32; 4]) {
     for i in 0..4 {
         for j in (i + 1)..4 {
             if vertices[i] == vertices[j] {
