@@ -122,53 +122,60 @@ fn a_spring_held_body_stays_at_its_place_with_sleep_off() {
 /// The same with the world's sleeping on (the default): a body whose spring still pulls it
 /// does not go to sleep, and a sleeping body is not moved, so it stays as close.
 #[test]
-#[ignore = "known defect: physics-hold-sleep-creep: the body goes to sleep while its spring still pulls it, and the sleeping body still moves (1.5 mm at 9 s)"]
 fn a_spring_held_body_stays_at_its_place_with_sleep_on() {
     let (worst, allowed, compared) = held_for_long(true);
     assert_eq!(compared, FRAMES - FROM + 1);
     assert!(worst <= allowed, "{worst:.3e} m, allowed {allowed:.3e} m");
 }
 
-/// A measurement, not a check: when the held body falls asleep with sleeping on, how far
-/// it is from its place then, and how it moves while asleep.
+/// A measurement, not a check: for a softer, the same and a stiffer spring (ω 0.6, 6, 60),
+/// the frame the held body first falls asleep (its island reaches the `Q64.64` fixed point
+/// of the backward Euler spring and has been idle `time_to_sleep`), its offset from the
+/// place then, and whether it stays asleep and in place for the rest of the run.
 #[test]
 #[ignore = "a measurement, not a check"]
-fn measure_when_the_held_body_sleeps_and_how_it_moves() {
-    let mut w = PhysicsWorld::new(SolverConfig {
-        substeps: SUBSTEPS,
-        gravity: v3(0.0, -G, 0.0),
-        ..SolverConfig::default()
-    });
-    let anchor = w.add_body(RigidBody::new_static(v3(
-        0.0,
-        1.0 + G / (OMEGA * OMEGA),
-        5.0,
-    )));
-    let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 3.0, 5.0), fx(1.0)));
-    w.add_joint(Joint::Spring(SpringJoint::new(
-        anchor,
-        body,
-        Vec3Fix::ZERO,
-        Vec3Fix::ZERO,
-        Fix128::ZERO,
-        fx(OMEGA * OMEGA),
-        fx(2.0 * OMEGA),
-    )));
-    let mut was = false;
-    for frame in 1..=FRAMES {
-        let before = w.bodies[body].position.y.to_f64();
-        w.step(fx(DT));
-        let p = w.bodies[body].position.y.to_f64();
-        let s = w.is_sleeping(body);
-        if s != was || (s && frame % 60 == 0) {
-            println!(
-                "frame {frame}: sleeping {s}, offset {:+.3e} m, moved {:+.3e} m, v {:+.3e} m/s",
-                p - 1.0,
-                p - before,
-                w.bodies[body].velocity.y.to_f64()
-            );
+fn measure_when_the_held_body_reaches_its_fixed_point_and_sleeps() {
+    for omega in [0.6f64, 6.0, 60.0] {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            substeps: SUBSTEPS,
+            gravity: v3(0.0, -G, 0.0),
+            ..SolverConfig::default()
+        });
+        let anchor = w.add_body(RigidBody::new_static(v3(
+            0.0,
+            1.0 + G / (omega * omega),
+            5.0,
+        )));
+        let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 3.0, 5.0), fx(1.0)));
+        w.add_joint(Joint::Spring(SpringJoint::new(
+            anchor,
+            body,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::ZERO,
+            fx(omega * omega),
+            fx(2.0 * omega),
+        )));
+        let mut first = None;
+        let mut woke_after = false;
+        let mut settled_at = w.bodies[body].position;
+        for frame in 1..=60 * 600u64 {
+            w.step(fx(DT));
+            let s = w.is_sleeping(body);
+            if s && first.is_none() {
+                first = Some(frame);
+                settled_at = w.bodies[body].position;
+            }
+            if first.is_some() && (!s || w.bodies[body].position != settled_at) {
+                woke_after = true;
+            }
         }
-        was = s;
+        let offset = (settled_at.y.to_f64() - 1.0).abs();
+        println!(
+            "ω {omega}: first asleep at frame {:?} ({:.1} s), offset {offset:.3e} m, woke or moved afterwards: {woke_after}",
+            first,
+            first.map_or(f64::NAN, |f| f as f64 * DT)
+        );
     }
 }
 
@@ -180,7 +187,6 @@ fn measure_when_the_held_body_sleeps_and_how_it_moves() {
 /// the two worlds are the same, and once the neighbour moves the island must be awake),
 /// and it must not be flagged asleep in any step its neighbour moved.
 #[test]
-#[ignore = "known defect: physics-hold-sleep-creep: a sleeper jointed to a moving body is moved by the joint while still flagged asleep (the island is not woken)"]
 fn a_sleeper_jointed_to_a_moving_body_wakes_with_it() {
     let scene = |sleep: bool| {
         let mut w = PhysicsWorld::new(SolverConfig {
@@ -241,4 +247,68 @@ fn a_sleeper_jointed_to_a_moving_body_wakes_with_it() {
         asleep_while_pulled, 0,
         "steps the hung body stayed asleep while pulled"
     );
+}
+
+/// A measurement, not a check: with sleeping off, the held body's state after the
+/// transient (a minute, then up to ten): the first frame its whole state (position and
+/// velocity, every bit) recurs, the period of that recurrence, and the largest offset from
+/// the place and speed over one period, for a softer, the same and a stiffer spring.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn measure_the_late_orbit_of_the_held_body() {
+    for omega in [0.6f64, 6.0, 60.0] {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            substeps: SUBSTEPS,
+            gravity: v3(0.0, -G, 0.0),
+            ..SolverConfig::default()
+        });
+        w.set_sleep_config(SleepConfig {
+            time_to_sleep: Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
+            ..SleepConfig::default()
+        });
+        let anchor = w.add_body(RigidBody::new_static(v3(
+            0.0,
+            1.0 + G / (omega * omega),
+            5.0,
+        )));
+        let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 3.0, 5.0), fx(1.0)));
+        w.add_joint(Joint::Spring(SpringJoint::new(
+            anchor,
+            body,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::ZERO,
+            fx(omega * omega),
+            fx(2.0 * omega),
+        )));
+        let mut seen: Vec<(Vec3Fix, Vec3Fix)> = Vec::new();
+        let mut found = None;
+        for frame in 1..=60 * 600u64 {
+            w.step(fx(DT));
+            let b = &w.bodies[body];
+            let state = (b.position, b.velocity);
+            if let Some(k) = seen.iter().rposition(|s| *s == state) {
+                let period = seen.len() - k;
+                let orbit = &seen[k..];
+                let off = orbit
+                    .iter()
+                    .map(|(p, _)| (p.y.to_f64() - 1.0).abs())
+                    .fold(0.0, f64::max);
+                let speed = orbit
+                    .iter()
+                    .map(|(_, v)| v.length().to_f64())
+                    .fold(0.0, f64::max);
+                found = Some((frame, period, off, speed));
+                break;
+            }
+            seen.push(state);
+            if seen.len() > 4096 {
+                seen.remove(0);
+            }
+        }
+        println!("ω {omega}: recurrence (frame, period, max offset m, max speed m/s) = {found:?}");
+    }
 }
