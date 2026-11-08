@@ -58,11 +58,37 @@
 
 #![cfg(feature = "std")]
 
+use alice_physics_core::joint::{HingeJoint, Joint};
 use alice_physics_core::joint_extra::{
     solve_extra_joints, ExtraJoint, MouseJoint, PulleyJoint, WeldJoint,
 };
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
+
+/// the hinges the gears of this file name, both about world `z`: hinge 0 joins
+/// bodies 0 and 1, hinge 1 bodies 1 and 2, so the gear (0, 1) reads them from
+/// the `a` side and the gear (1, 2) from the `b` side
+fn z_hinges() -> Vec<Joint> {
+    let o = Vec3Fix::ZERO;
+    vec![
+        Joint::Hinge(HingeJoint::new(
+            0,
+            1,
+            o,
+            o,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )),
+        Joint::Hinge(HingeJoint::new(
+            1,
+            2,
+            o,
+            o,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Z,
+        )),
+    ]
+}
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -241,7 +267,8 @@ fn set_target_then_solve_moves_body_by_exact_spring_impulse() {
 
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
-    solve_extra_joints(&mut bodies, &joints, dt);
+    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        .expect("the gears name hinges 0 and 1");
     // distance=8, direction=(1,0,0), spring_force=stiffness*distance=8,
     // damping_force=0 (v=0), clamped_force=8 (< max_force=100),
     // impulse=(8*dt,0,0)=(2,0,0), position += impulse*dt*inv_mass(1) = (0.5,0,0).
@@ -277,7 +304,8 @@ fn set_target_to_current_position_zero_distance_no_correction() {
     mj.set_target(Vec3Fix::ZERO); // == the body's own position below
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = vec![RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
-    solve_extra_joints(&mut bodies, &joints, dt);
+    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        .expect("the gears name hinges 0 and 1");
     assert_eq!(
         bodies[0].position,
         Vec3Fix::ZERO,
@@ -311,7 +339,8 @@ fn solve_extra_joints_clamps_to_max_force() {
     mj.set_target(Vec3Fix::from_int(512, 0, 0));
     let joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
-    solve_extra_joints(&mut bodies, &joints, dt);
+    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        .expect("the gears name hinges 0 and 1");
     // clamped_force = max_force = 1/128, impulse = (1/128 * 1/4, 0, 0) = (1/512, 0, 0),
     // position += impulse * dt * inv_mass = (1/2048, 0, 0)
     assert_eq!(
@@ -386,7 +415,8 @@ fn with_break_force_broken_weld_skipped_by_solve_but_not_removed() {
 
     let joints = [ExtraJoint::Weld(wj)];
     let before = bodies[1].position;
-    solve_extra_joints(&mut bodies, &joints, dt);
+    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        .expect("the gears name hinges 0 and 1");
     assert_eq!(
         bodies[1].position, before,
         "a broken weld must not move body B"
@@ -415,7 +445,8 @@ fn with_break_force_holding_weld_lands_exactly_on_anchor() {
     assert!(!wj.is_broken(&bodies));
 
     let joints = [ExtraJoint::Weld(wj)];
-    solve_extra_joints(&mut bodies, &joints, dt);
+    solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+        .expect("the gears name hinges 0 and 1");
     // A static (inv_mass=0): w_sum = inv_mass_b = 1, inv_w_sum = 1,
     // lambda = distance*1 = 4, correction = (4,0,0), B moves by
     // -correction*inv_mass_b = -(4,0,0) -> lands exactly on (0,0,0).
@@ -497,7 +528,13 @@ fn solve_extra_joints_skips_angular_correction_when_broken_applies_when_holding(
     let breaking_wj = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
         .with_break_torque(q(1, 4));
     let before = broken_bodies[1].rotation;
-    solve_extra_joints(&mut broken_bodies, &[ExtraJoint::Weld(breaking_wj)], dt);
+    solve_extra_joints(
+        &mut broken_bodies,
+        &[ExtraJoint::Weld(breaking_wj)],
+        z_hinges(),
+        dt,
+    )
+    .expect("the gears name hinges 0 and 1");
     assert_eq!(
         broken_bodies[1].rotation, before,
         "broken weld must not apply angular correction"
@@ -509,7 +546,13 @@ fn solve_extra_joints_skips_angular_correction_when_broken_applies_when_holding(
     let holding_wj = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
         .with_break_torque(q(3, 4));
     let before = holding_bodies[1].rotation;
-    solve_extra_joints(&mut holding_bodies, &[ExtraJoint::Weld(holding_wj)], dt);
+    solve_extra_joints(
+        &mut holding_bodies,
+        &[ExtraJoint::Weld(holding_wj)],
+        z_hinges(),
+        dt,
+    )
+    .expect("the gears name hinges 0 and 1");
     assert_ne!(
         holding_bodies[1].rotation, before,
         "a holding weld must apply the angular correction toward local_rotation"
@@ -565,7 +608,8 @@ fn solve_extra_joints_dispatches_every_variant_without_panicking() {
         )),
     ];
     for _ in 0..5 {
-        solve_extra_joints(&mut bodies, &joints, dt);
+        solve_extra_joints(&mut bodies, &joints, z_hinges(), dt)
+            .expect("the gears name hinges 0 and 1");
     }
     // No closed-form assertion here -- this test's job is dispatch coverage
     // (every ExtraJoint variant goes through one solve_extra_joints call

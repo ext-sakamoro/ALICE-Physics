@@ -209,7 +209,7 @@ fn main() {
 
     let mouse_joints = [ExtraJoint::Mouse(mj)];
     let mut bodies = pair();
-    solve_extra_joints(&mut bodies, &mouse_joints, dt);
+    solve_extra_joints(&mut bodies, &mouse_joints, &[], dt).expect("no gear in the list");
     // distance=8, direction=(1,0,0), spring_force = stiffness*distance = 8,
     // damping_force = 0 (velocity is 0), clamped_force = 8 (< max_force=100),
     // impulse = direction*(8*dt) = (2,0,0), position += impulse*dt*inv_mass(1)
@@ -235,7 +235,8 @@ fn main() {
     mj_zero.set_target(Vec3Fix::ZERO); // same as the body's own position below
     let zero_target_joints = [ExtraJoint::Mouse(mj_zero)];
     let mut zero_bodies = vec![RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
-    solve_extra_joints(&mut zero_bodies, &zero_target_joints, dt);
+    solve_extra_joints(&mut zero_bodies, &zero_target_joints, &[], dt)
+        .expect("no gear in the list");
     println!(
         "[joint_extra] MouseJoint::set_target(0,0,0) at body position (0,0,0) -> x={} (expect 0, no correction)",
         zero_bodies[0].position.x.to_f64()
@@ -257,7 +258,7 @@ fn main() {
             .with_break_force(Fix128::from_int(threshold));
         let before = bodies[1].position;
         let joints = [ExtraJoint::Weld(wj)];
-        solve_extra_joints(&mut bodies, &joints, dt);
+        solve_extra_joints(&mut bodies, &joints, &[], dt).expect("no gear in the list");
         let moved = bodies[1].position != before;
         println!(
             "[joint_extra] WeldJoint::with_break_force {label}: broken={} moved={moved} (expect broken={should_break}, moved={})",
@@ -286,7 +287,7 @@ fn main() {
         .with_break_force(Fix128::ZERO);
     assert!(!wj_zero_touching.is_broken(&touching));
     let joints = [ExtraJoint::Weld(wj_zero_touching)];
-    solve_extra_joints(&mut touching, &joints, dt);
+    solve_extra_joints(&mut touching, &joints, &[], dt).expect("no gear in the list");
     println!(
         "[joint_extra] WeldJoint::with_break_force(0), separation=0 -> broken={} (expect false)",
         wj_zero_touching.is_broken(&touching)
@@ -330,7 +331,7 @@ fn main() {
 
         let before_rot = bodies[1].rotation;
         let joints = [ExtraJoint::Weld(wj)];
-        solve_extra_joints(&mut bodies, &joints, dt);
+        solve_extra_joints(&mut bodies, &joints, &[], dt).expect("no gear in the list");
         let rotation_changed = bodies[1].rotation != before_rot;
         println!(
             "[joint_extra]   solve_extra_joints: rotation_changed={rotation_changed} (expect {})",
