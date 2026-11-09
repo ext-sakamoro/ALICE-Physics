@@ -17,6 +17,8 @@ unreal alice_physics_world_cast_capsule the component exposes no query Blueprint
 unreal alice_physics_world_overlap_sphere a caller-sized AliceQueryTarget buffer is not a Blueprint type; C++ code calls the C ABI directly
 unreal alice_physics_body_observe AliceBodyObservation has no Blueprint struct; C++ code calls the C ABI directly
 unreal alice_physics_body_set_material the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly
+unreal alice_physics_body_set_axis_lock the component exposes no axis-lock Blueprint functions yet; C++ code calls the C ABI directly
+unreal alice_physics_body_axis_lock the component exposes no axis-lock Blueprint functions yet; C++ code calls the C ABI directly
 unreal alice_physics_world_add_magnet the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly
 unreal alice_physics_world_register_material the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly
 unreal alice_physics_world_snapshot not wrapped yet: the component rewinds with alice_physics_state_serialize; a Blueprint wrapper waits for an Unreal build in CI to check it
