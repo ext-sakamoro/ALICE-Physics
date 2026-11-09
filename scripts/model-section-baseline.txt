@@ -16,7 +16,6 @@ src/buoyancy_zone.rs
 src/ccd.rs
 src/cfd_solver.rs
 src/character.rs
-src/cloth.rs
 src/cloth_fluid.rs
 src/compressible.rs
 src/coupling_medium.rs
