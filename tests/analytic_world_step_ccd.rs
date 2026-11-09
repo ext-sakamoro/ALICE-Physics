@@ -946,8 +946,10 @@ fn crowd_hash(parallel: bool) -> String {
 /// with and without `--features parallel`, with `step` and `step_parallel`.
 /// Re-recorded (from `89174ad1…`) when damping became a rate per second with
 /// default 0 (the scene's default config had damped every body by a retention
-/// 0.99 per step).
-const GOLDEN_CROWD: &str = "20919b007c36afc242d04aac6b6c92a18eff0828d8c26518c97ef231633fc5cc";
+/// 0.99 per step). Re-recorded (from `20919b00…`) when the sleep rule became time
+/// (state version 4: each body's sleep record is a state byte and a `Fix128` idle time,
+/// 17 bytes a body where version 3 held a state byte and a `u32` step count).
+const GOLDEN_CROWD: &str = "a5f488635db8559668fd32a5c9c87fe76d38636de4695eeebee1be1b0ebfbca6";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -1028,6 +1030,12 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
         );
         let mut original = stacked();
         original.config.damping_rate = writer_rate();
+        // the writer's rule was 60 idle steps: version 7 holds it as time, 60 × the
+        // writer's step (not exactly 1 s, 1/60 is not a dyadic number)
+        original.set_sleep_config(alice_physics_core::SleepConfig {
+            time_to_sleep: Fix128::from_int(60) * writer_step(),
+            ..alice_physics_core::SleepConfig::default()
+        });
         assert_eq!(
             restored.snapshot_world(),
             original.snapshot_world(),
@@ -1050,7 +1058,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 6 blob carries the setting (its section was added in version
+/// A version 7 blob carries the setting (its section was added in version
 /// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
@@ -1060,9 +1068,10 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    // version 6 (damping as rates per second); the layout is version 4's
-    assert_eq!(&blob[4..6], &6u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v6 blob");
+    // version 7 (damping as rates per second from version 6, the sleep rule and
+    // the idle counts as time from version 7)
+    assert_eq!(&blob[4..6], &7u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v7 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));
