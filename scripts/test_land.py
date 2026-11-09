@@ -428,6 +428,7 @@ class FakeLander(land.Lander):
         self.expected_remote_urls = (self.git("config", "--get", "remote.origin.url"),)
         # the Law state gate reads a local fake (the GitHub URL would trip the network tripwire)
         self.law_url = law_ok()
+        self.public = False   # (a private repository unless a test says otherwise: PublicLander)
 
     def run_preflight(self):
         self.preflight_runs += 1
@@ -513,6 +514,138 @@ class Repo:
 
     def close(self):
         shutil.rmtree(self.dir, ignore_errors=True)
+
+
+class PublicLander(FakeLander):
+    """a public repository: the prepass runs locally and the landing waits for the CI receipt of the exact SHA"""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.public = True
+
+    def run_cheap(self):
+        self.preflight_runs += 1
+        self.calls.append("cheap")
+
+    def ci_receipt(self, ref, sha):
+        self.calls.append(f"ci_receipt {ref}")
+        self.receipted = getattr(self, "receipted", []) + [sha]
+
+
+class PublicLanding(Isolated):
+    CL = "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"
+
+    def lander(self, **k) -> PublicLander:
+        return PublicLander(self.r.work, "T-1", **k)
+
+    def test_a_public_repository_lands_on_the_ci_receipt_without_the_local_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        lander = self.lander()
+        sha = lander.land()
+        self.assertNotIn("preflight", lander.calls)
+        self.assertIn("cheap", lander.calls)
+        self.assertLess(lander.calls.index("wait_evidence ci/T-1"), lander.calls.index("ci_receipt ci/T-1"))
+        self.assertEqual(lander.receipted, [sha], "the receipt is for the landed SHA itself")
+        self.assertEqual(self.r.origin_head(), sha)
+
+    def test_a_documents_only_move_gathers_the_evidence_again(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        lander = self.lander(before_push=lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"},
+                                                                      "docs: oracle-status"))
+        sha = lander.land()
+        self.assertEqual(lander.calls.count("ci_receipt ci/T-1"), 2, lander.calls)
+        self.assertEqual(lander.receipted[-1], sha)
+        self.assertNotIn("reason: docs-only-moved", lander.record)
+        self.assertNotIn("preflight", lander.calls)
+
+    def test_a_refused_receipt_lands_nothing(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        before = self.r.origin_head()
+
+        class Refused(PublicLander):
+            def ci_receipt(self, ref, sha):
+                raise land.LandError("no CI receipt")
+        with self.assertRaisesRegex(land.LandError, "no CI receipt"):
+            Refused(self.r.work, "T-1").land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_private_repository_keeps_the_local_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        lander = self.r.lander()
+        lander.land()
+        self.assertIn("preflight", lander.calls)
+        self.assertNotIn("cheap", lander.calls)
+        self.assertFalse(any(c.startswith("ci_receipt") for c in lander.calls))
+
+
+class AllRunsVerdict(unittest.TestCase):
+    def run_(self, i, name, status, conclusion=None):
+        return {"databaseId": i, "workflowName": name, "status": status, "conclusion": conclusion}
+
+    def test_verdicts(self):
+        v = land.all_runs_verdict
+        self.assertEqual(v([])[0], "wait")
+        self.assertEqual(v([self.run_(1, "CI", "in_progress")])[0], "wait")
+        self.assertEqual(v([self.run_(1, "CI", "completed", "success"), self.run_(2, "Fuzz", "queued")])[0], "wait")
+        for bad in ("failure", "cancelled", "skipped", "timed_out", None):
+            with self.subTest(bad=bad):
+                self.assertEqual(v([self.run_(1, "CI", "completed", bad)])[0], "red")
+        self.assertEqual(v([self.run_(1, "CI", "completed", "success"), self.run_(2, "Fuzz", "completed", "success")]),
+                         ("ok", "2 workflows"))
+        # the newest run of a workflow decides (a re-run after a failure)
+        self.assertEqual(v([self.run_(1, "CI", "completed", "failure"), self.run_(5, "CI", "completed", "success")])[0],
+                         "ok")
+        self.assertEqual(v([self.run_(5, "CI", "completed", "failure"), self.run_(1, "CI", "completed", "success")])[0],
+                         "red")
+
+
+class CiReceipt(unittest.TestCase):
+    """Lander.ci_receipt over a stand-in for the runs list"""
+
+    def lander(self, pages):
+        class L(land.Lander):
+            def __init__(self):  # (no repository: only the polling)
+                self.pages = list(pages)
+                self.poll_seconds = 0
+                self.after_max_polls = 5
+                self.written = []
+                self.record = []
+                self.log = lambda *_: None
+
+            def slug(self):
+                return "o/r"
+
+            def list_branch_runs(self, slug, ref):
+                return self.pages.pop(0) if len(self.pages) > 1 else self.pages[0]
+
+            def write_ci_receipt(self, sha):
+                self.written.append(sha)
+        return L()
+
+    def r(self, status, conclusion=None, sha="s1", i=1, name="CI"):
+        return {"databaseId": i, "workflowName": name, "status": status, "conclusion": conclusion, "headSha": sha}
+
+    def test_waits_for_every_run_then_writes(self):
+        lr = self.lander([[self.r("in_progress")], [self.r("completed", "success")]])
+        lr.ci_receipt("ci/x", "s1")
+        self.assertEqual(lr.written, ["s1"])
+
+    def test_red_stops(self):
+        lr = self.lander([[self.r("completed", "failure")]])
+        with self.assertRaisesRegex(land.LandError, "red"):
+            lr.ci_receipt("ci/x", "s1")
+        self.assertEqual(lr.written, [])
+
+    def test_runs_of_another_sha_do_not_count(self):
+        lr = self.lander([[self.r("completed", "success", sha="other")]])
+        with self.assertRaisesRegex(land.LandError, "in time"):
+            lr.ci_receipt("ci/x", "s1")
+
+    def test_running_past_the_polls_stops(self):
+        lr = self.lander([[self.r("in_progress")]])
+        with self.assertRaisesRegex(land.LandError, "in time"):
+            lr.ci_receipt("ci/x", "s1")
+        self.assertEqual(lr.written, [])
 
 
 class Pure(Isolated):
