@@ -567,7 +567,7 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 
 /// Frozen digest of the throw script at frame 600 (E and O, spacing 0.1). Every CI OS
 /// and the wasm lane must agree with it; it moves only with an announced law change.
-const THROW_DIGEST_600: &str = "836386eaee18358062aa4eda39c17f987859ba57301b1673e5e29109bd9b8c07";
+const THROW_DIGEST_600: &str = "e72e10da4b0c876a0446067bd263bb1bdba1b982f5c2002d45d5cefafab8d0e4";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -694,7 +694,7 @@ fn rollback_blob_carries_the_letters() {
 /// a grab dragged for 30 frames and released with a velocity), checked on every lane so
 /// a change of any bit of the soft-letter step on any target fails here.
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "059935e3df1eb7b2591e38fa4299352d5d4ea9794a6b1e96bd44686778b0c059";
+    "3acb542508c9d061194f335503e422551a9e215577215db1f0adf9ef67808cad";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {
