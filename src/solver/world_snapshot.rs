@@ -1967,7 +1967,7 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
-    /// The soft bodies and the next grab id (version 7; none before)
+    /// The soft bodies and the next grab id (version 8; none before)
     soft_bodies: Vec<crate::soft_body::SoftBody>,
     next_grab_id: u32,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
