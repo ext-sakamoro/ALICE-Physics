@@ -332,3 +332,23 @@ fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t
         );
     }
 }
+
+#[test]
+#[ignore = "diagnostic sweep"]
+fn diag_sweep() {
+    for n in [4usize, 8, 16, 32] {
+        let (_, v) = level_run(0.05, 2.0, n, 120);
+        let want = 2.0 - 5.0 / 7.0 * 0.05 * g() * 2.0;
+        let wy = spin_run(0.01, 6.0, n, 120);
+        let (mut w, ball) = spinning(0.01, 6.0, n);
+        let start = w.bodies[ball].position;
+        for _ in 0..120 { w.step(fx(DT)); }
+        let d = w.bodies[ball].position - start;
+        let held = incline_run(0.15, 0.1, n, 120);
+        let (mut w2, b2) = level(0.05, 2.0, n);
+        w2.step(fx(DT));
+        let first = w2.bodies[b2].velocity.x.to_f64();
+        println!("n={n}: v_err {:.3e} spin_err {:.3e} drift ({:.3e},{:.3e},{:.3e}) held {:.3e} first_frame_dv {:.3e} (want {:.3e})",
+            v - want, wy - 4.0, d.x.to_f64(), d.y.to_f64(), d.z.to_f64(), held, first - 2.0, -5.0/7.0*0.05*g()*DT);
+    }
+}
