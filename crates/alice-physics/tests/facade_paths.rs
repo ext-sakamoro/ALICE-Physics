@@ -1396,9 +1396,11 @@ use alice_physics::sketch::Mergeable as _;
 use alice_physics::sleeping as _;
 use alice_physics::sleeping::Island as _;
 use alice_physics::sleeping::IslandManager as _;
+use alice_physics::sleeping::IslandOrbit as _;
 use alice_physics::sleeping::SleepConfig as _;
 use alice_physics::sleeping::SleepData as _;
 use alice_physics::sleeping::SleepState as _;
+use alice_physics::sleeping::ORBIT_WINDOW as _;
 use alice_physics::smoke_fire as _;
 use alice_physics::smoke_fire::boussinesq_buoyancy_n_per_m3 as _;
 use alice_physics::smoke_fire::heat_release_j_per_m3_s as _;
@@ -1889,7 +1891,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1863 paths, checked at compile time
+    // 1873 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
