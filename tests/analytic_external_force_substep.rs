@@ -82,7 +82,7 @@ fn world(substeps: usize, mass: Fix128, y0: Fix128) -> (PhysicsWorld, usize) {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
     });
     let id = w.add_body(RigidBody::new_dynamic(
         Vec3Fix::new(Fix128::ZERO, y0, Fix128::ZERO),

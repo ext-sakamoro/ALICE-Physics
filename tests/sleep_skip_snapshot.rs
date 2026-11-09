@@ -29,7 +29,7 @@ fn grid_world(n: usize, awake: usize) -> PhysicsWorld {
     }
     for i in awake..n {
         w.islands.sleep_data[i].state = SleepState::Sleeping;
-        w.islands.sleep_data[i].idle_frames = 100;
+        w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
     }
     w
 }

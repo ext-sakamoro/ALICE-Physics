@@ -291,7 +291,7 @@ fn observe_body_mirrors_the_body_and_none_out_of_range() {
 fn observe_body_reports_sleeping() {
     let mut w = PhysicsWorld::new(weightless());
     w.set_sleep_config(SleepConfig {
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
         ..SleepConfig::default()
     });
     let a = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));

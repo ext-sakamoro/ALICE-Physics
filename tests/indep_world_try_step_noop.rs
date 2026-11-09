@@ -102,7 +102,7 @@ fn scene(backend: SolverBackend) -> PhysicsWorld {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 4),
         angular_threshold: Fix128::from_ratio(1, 4),
-        frames_to_sleep: 20,
+        time_to_sleep: Fix128::from_ratio(20, 60),
     });
     w.add_body_with_radius(RigidBody::new_static(v3(0.0, -500.0, 0.0)), fx(500.0));
     let masses = [1.0, 7.0, 0.3];

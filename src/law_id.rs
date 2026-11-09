@@ -276,7 +276,7 @@ impl PhysicsWorld {
     /// | 8 | contact cache `warm_start_factor`, `max_stale_frames` | `Fix128`, `u32` |
     /// | 9 | `sdf_collision_radius` | `Fix128` |
     /// | 10 | continuous collision: enabled, motion threshold | `bool`, `Fix128` |
-    /// | 11 | sleep `linear_threshold`, `angular_threshold`, `frames_to_sleep` | `Fix128`, `Fix128`, `u32` |
+    /// | 11 | sleep `linear_threshold`, `angular_threshold`, `time_to_sleep` | `Fix128`, `Fix128`, `Fix128` |
     /// | 12 | default friction and restitution combine rules | tag `average`, `min`, `max` or `multiply`, twice |
     /// | 13 | materials, in id order | list of: id (`MaterialId`), `static_friction`, `dynamic_friction`, `restitution` (`Fix128` each), friction combine, restitution combine (tags) |
     /// | 14 | pair overrides, sorted by `(mat_a, mat_b)` with `mat_a <= mat_b` | list of: `mat_a`, `mat_b` (`MaterialId`), `friction`, `restitution` (`Fix128`) |
@@ -339,7 +339,7 @@ impl PhysicsWorld {
         let sleep = self.islands.config;
         e.fix(sleep.linear_threshold);
         e.fix(sleep.angular_threshold);
-        e.u32(sleep.frames_to_sleep);
+        e.fix(sleep.time_to_sleep);
 
         let m = &self.material_table;
         e.combine(m.default_friction_combine);

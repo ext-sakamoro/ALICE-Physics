@@ -147,11 +147,9 @@ fn solver_config_default_projectile_matches_discrete_closed_form_and_is_substep_
 #[test]
 fn sleep_config_default_body_at_rest_sleeps_after_frames_to_sleep_not_before() {
     let sleep = SleepConfig::default();
-    let frames_to_sleep = sleep.frames_to_sleep as usize;
-    assert!(
-        frames_to_sleep > 1,
-        "default frames_to_sleep = {frames_to_sleep}"
-    );
+    // the default `time_to_sleep` (1 s) at the step below (1/60 s): 60 idle steps
+    assert_eq!(sleep.time_to_sleep, Fix128::ONE);
+    let frames_to_sleep = 60usize;
 
     // No gravity so "at rest" is exact and the idle counter is the only clock.
     // Run at the default damping rate 0 and at the old 0.99-per-frame loss as

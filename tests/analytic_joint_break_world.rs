@@ -267,7 +267,7 @@ fn chain(
     });
     if !sleep {
         w.set_sleep_config(alice_physics_core::sleeping::SleepConfig {
-            frames_to_sleep: u32::MAX,
+            time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
             ..alice_physics_core::sleeping::SleepConfig::default()
         });
     }
