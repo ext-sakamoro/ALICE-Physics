@@ -352,14 +352,14 @@ def test_a_rope_rewinds_and_is_part_of_the_snapshot():
     w, _, _ = _hanging_ball(4.0)
     for _ in range(32):
         w.step(1.0 / 64.0)
-    blob = w.snapshot_world()
+    blob = bytes(w.snapshot_world())
     for _ in range(32):
         w.step(1.0 / 64.0)
-    end = w.snapshot_world()
+    end = bytes(w.snapshot_world())
     w.restore_world(blob)
     for _ in range(32):
         w.step(1.0 / 64.0)
-    assert w.snapshot_world() == end
+    assert bytes(w.snapshot_world()) == end
     try:
         ap.PhysicsWorld().restore_world(blob)
     except ValueError:
