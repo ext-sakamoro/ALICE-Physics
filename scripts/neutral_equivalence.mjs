@@ -193,6 +193,31 @@ function wide(a) {
   if (out.movedDigest.every((x, i) => x === out.digest[i])) throw new Error("the steps after snapshotWorld did not move the digest");
   if (a.call(w, "restoreWorld", snap) !== undefined) throw new Error("restoreWorld returned a value");
   out.restoredDigest = a.call(w, "stateDigest");
+  // a soft letter: a square outline cut into a cloth, grabbed at its centre, moved, read back,
+  // released, grabbed again and thrown; every cloth export is called and every value compared
+  const cloth = id(
+    a.call(w, "addClothOutline", f([0, 0, 0, 1, 0, 0, 0, 1, 0]), f([0, 0, 0.3, 0, 0.3, 0.3, 0, 0.3]),
+      new Uint32Array([4]), 0.1, 0.01, 0, 0, 4, 2, 0.98, 0, 0),
+    "addClothOutline",
+  );
+  if (cloth < 0) throw new Error("addClothOutline refused the square");
+  out.clothCount = val(a.call(w, "clothCount"), "clothCount");
+  out.clothParticles = val(a.call(w, "clothParticleCount", cloth), "clothParticleCount");
+  out.clothRest = a.call(w, "clothRestPositions", cloth);
+  out.clothTriangles = a.call(w, "clothTriangles", cloth);
+  const grab = id(a.call(w, "clothGrab", cloth, 0.15, 0.15, 0, 0.2), "clothGrab");
+  if (grab < 0) throw new Error("clothGrab reached no particle");
+  out.clothMoved = val(a.call(w, "clothMoveGrab", grab, 0.15, 0.25, 0.1), "clothMoveGrab");
+  for (let i = 0; i < 10; i++) a.call(w, "step", 1 / 60);
+  out.clothPositions = a.call(w, "clothPositions", cloth);
+  out.clothAsleep = val(a.call(w, "clothAsleep", cloth), "clothAsleep");
+  out.clothReleased = val(a.call(w, "clothRelease", grab), "clothRelease");
+  const grab2 = id(a.call(w, "clothGrab", cloth, 0, 0, 0, 0.2), "clothGrab");
+  if (grab2 < 0) throw new Error("the second clothGrab reached no particle");
+  out.clothThrown = val(a.call(w, "clothReleaseWithVelocity", grab2, 0, 0.5, 0), "clothReleaseWithVelocity");
+  for (let i = 0; i < 5; i++) a.call(w, "step", 1 / 60);
+  out.clothBytes = a.call(w, "clothStateBytes", cloth);
+  out.clothDigest = a.call(w, "clothStateDigest", cloth);
   const version = a.free("alicePhysicsVersion");
   if (typeof version !== "string") throw new Error(`alicePhysicsVersion gave ${version}`);
   out.version = new TextEncoder().encode(version);

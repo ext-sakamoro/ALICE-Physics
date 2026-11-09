@@ -415,6 +415,17 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Float64Array([this.ids, 0.5]);"
         if n == "bodyAxisLock":
             return "return 28;"
+        # the cloth exports: a grab gives a handle, the readings arrays, the switches booleans
+        if n == "clothGrab":
+            return "return this.ids++;"
+        if n in ("clothPositions", "clothRestPositions"):
+            return "return new Float64Array([this.ids, 0.25, 0.5]);"
+        if n == "clothTriangles":
+            return "return new Uint32Array([0, 1, 2]);"
+        if n in ("clothStateBytes", "clothStateDigest"):
+            return "return new Uint8Array([5, this.ids]);"
+        if n in ("clothAsleep", "clothMoveGrab", "clothRelease", "clothReleaseWithVelocity"):
+            return "return true;"
         if n.endswith("Count"):
             return "return this.ids;"
         if n.startswith(("remove", "clear", "deserialize")) or n in ("setCollisionRadius", "setBodyShape", "setBodyMaterial", "setRotation", "setAngularVelocity", "setBodyAxisLock"):
