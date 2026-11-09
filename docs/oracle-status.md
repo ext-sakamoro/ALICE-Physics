@@ -338,6 +338,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_pressure.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
 | `sleep_skip.rs` | 14 |
+| `soft_letters_oracle.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
 | `analytic_beam_stress_wiring.rs` | 13 |
@@ -525,6 +526,8 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint_extra.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |
+| `cloth_sleep_oracle.rs` | 6 |
+| `cloth_state_digest.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
