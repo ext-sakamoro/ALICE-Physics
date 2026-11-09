@@ -132,6 +132,30 @@ pub struct Cloth {
     rest_tether: Option<RestTether>,
     /// Rest positions the tether pulls toward (empty until set)
     rest_positions: Vec<Vec3Fix>,
+    /// Inverse masses `pin` replaced, restored by `unpin`
+    pin_released: Vec<(usize, Fix128)>,
+    /// Sleep is enabled (`set_sleep`)
+    sleep_enabled: bool,
+    /// The state and inputs a `step` left unchanged (`Some` = asleep while they still match)
+    sleeping: Option<SleepSnapshot>,
+}
+
+/// A cloth's state and every input of `step`, kept when a `step` changed none of the state:
+/// `step` is a function of exactly these, so while the cloth still matches it (and is
+/// stepped with the same `dt`) every further `step` would be the identity.
+#[derive(Clone, Debug, PartialEq)]
+struct SleepSnapshot {
+    positions: Vec<Vec3Fix>,
+    prev_positions: Vec<Vec3Fix>,
+    velocities: Vec<Vec3Fix>,
+    inv_masses: Vec<Fix128>,
+    triangles: Vec<[usize; 3]>,
+    pinned: Vec<usize>,
+    wind: Vec3Fix,
+    config: ClothConfig,
+    rest_tether: Option<RestTether>,
+    rest_positions: Vec<Vec3Fix>,
+    dt: Fix128,
 }
 
 /// Stiffness / damping of the rest tether (see [`Cloth::set_rest_tether`]).
@@ -380,6 +404,9 @@ impl Cloth {
             config: ClothConfig::default(),
             rest_tether: None,
             rest_positions: Vec::new(),
+            pin_released: Vec::new(),
+            sleep_enabled: false,
+            sleeping: None,
         };
 
         cloth.build_constraints();
@@ -426,11 +453,90 @@ impl Cloth {
         self.positions.len()
     }
 
-    /// Pin a particle in place
+    /// Pin a particle in place (its inverse mass becomes 0; [`unpin`] gives it back)
+    ///
+    /// [`unpin`]: Self::unpin
     pub fn pin(&mut self, idx: usize) {
-        self.inv_masses[idx] = Fix128::ZERO;
         if !self.pinned.contains(&idx) {
+            self.pin_released.push((idx, self.inv_masses[idx]));
             self.pinned.push(idx);
+        }
+        self.inv_masses[idx] = Fix128::ZERO;
+    }
+
+    /// Release a particle [`pin`] held: it leaves `pinned` and gets back the inverse mass it
+    /// had when it was pinned. A particle that is not pinned is left as it is.
+    ///
+    /// [`pin`]: Self::pin
+    pub fn unpin(&mut self, idx: usize) {
+        let Some(k) = self.pinned.iter().position(|&i| i == idx) else {
+            return;
+        };
+        self.pinned.remove(k);
+        if let Some(r) = self.pin_released.iter().position(|&(i, _)| i == idx) {
+            let (_, inv_mass) = self.pin_released.remove(r);
+            self.inv_masses[idx] = inv_mass;
+        }
+    }
+
+    /// Turn exact sleep on or off (off by default; turning it off forgets a sleep).
+    ///
+    /// With sleep on, a [`step`] that leaves the positions, previous positions and
+    /// velocities unchanged bit for bit puts the cloth to sleep, and later `step` calls
+    /// return at once while the cloth and `dt` are still exactly what that step saw. `step`
+    /// depends only on those and on the masses, pins, wind, config, rest tether and rest
+    /// shape, so the skipped steps are the identity: **sleep never changes a trajectory**,
+    /// and a cloth woken by any change (a write to a public field, a config change, another
+    /// `dt`) continues exactly as one that never slept. A tethered sheet reaches such a
+    /// fixed point once its motion has decayed below the `Fix128` resolution (seconds, not
+    /// frames). [`step_with_sdf`] never sleeps (its colliders are an input it cannot see
+    /// change) and wakes the cloth.
+    ///
+    /// [`step`]: Self::step
+    /// [`step_with_sdf`]: Self::step_with_sdf
+    pub fn set_sleep(&mut self, enabled: bool) {
+        self.sleep_enabled = enabled;
+        if !enabled {
+            self.sleeping = None;
+        }
+    }
+
+    /// Whether the cloth is asleep: sleep is on, a `step` left this exact state unchanged,
+    /// and nothing has changed since (the next `step` with the same `dt` is skipped).
+    #[must_use]
+    pub fn is_asleep(&self) -> bool {
+        self.sleeping
+            .as_ref()
+            .is_some_and(|s| self.matches_snapshot(s, s.dt))
+    }
+
+    fn matches_snapshot(&self, s: &SleepSnapshot, dt: Fix128) -> bool {
+        s.dt == dt
+            && s.positions == self.positions
+            && s.prev_positions == self.prev_positions
+            && s.velocities == self.velocities
+            && s.inv_masses == self.inv_masses
+            && s.triangles == self.triangles
+            && s.pinned == self.pinned
+            && s.wind == self.wind
+            && s.config == self.config
+            && s.rest_tether == self.rest_tether
+            && s.rest_positions == self.rest_positions
+    }
+
+    fn take_snapshot(&self, dt: Fix128) -> SleepSnapshot {
+        SleepSnapshot {
+            positions: self.positions.clone(),
+            prev_positions: self.prev_positions.clone(),
+            velocities: self.velocities.clone(),
+            inv_masses: self.inv_masses.clone(),
+            triangles: self.triangles.clone(),
+            pinned: self.pinned.clone(),
+            wind: self.wind,
+            config: self.config,
+            rest_tether: self.rest_tether,
+            rest_positions: self.rest_positions.clone(),
+            dt,
         }
     }
 
@@ -513,6 +619,24 @@ impl Cloth {
     /// Step cloth simulation
     #[inline(always)]
     pub fn step(&mut self, dt: Fix128) {
+        if !self.sleep_enabled {
+            self.step_awake(dt);
+            return;
+        }
+        if let Some(s) = &self.sleeping {
+            if self.matches_snapshot(s, dt) {
+                return;
+            }
+        }
+        let before = self.take_snapshot(dt);
+        self.step_awake(dt);
+        let unchanged = before.positions == self.positions
+            && before.prev_positions == self.prev_positions
+            && before.velocities == self.velocities;
+        self.sleeping = unchanged.then_some(before);
+    }
+
+    fn step_awake(&mut self, dt: Fix128) {
         let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
@@ -528,6 +652,7 @@ impl Cloth {
     #[cfg(feature = "std")]
     #[inline(always)]
     pub fn step_with_sdf(&mut self, dt: Fix128, sdf_colliders: &[SdfCollider]) {
+        self.sleeping = None;
         let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
