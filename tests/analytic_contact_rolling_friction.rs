@@ -410,3 +410,50 @@ fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t
         );
     }
 }
+
+/// `(ω_y, turned angle about y)` after 2 s of the ball at rest under a steady
+/// torque `τ` about the normal (applied each frame as `τ Δt`)
+fn driven(mu_t: f64, tau: f64, substeps: usize, path: Path) -> (f64, f64) {
+    let (mut w, ball) = spinning(mu_t, 0.0, substeps);
+    for _ in 0..120 {
+        w.bodies[ball].add_torque(v3(0.0, tau, 0.0), fx(DT));
+        advance(&mut w, path);
+    }
+    let b = &w.bodies[ball];
+    (
+        b.angular_velocity.y.to_f64(),
+        2.0 * b.rotation.y.to_f64().abs(),
+    )
+}
+
+/// oracle: a steady torque about the normal below `μ_t m g` (`τ = μ_t m g / 2`)
+/// does not turn the ball at all (static torsional friction holds it; the
+/// angle after 2 s is within one rounding `2⁻⁴⁰` per substep); above it
+/// (`τ = 2 μ_t m g`) the ball spins up at `(τ − μ_t m g) / I`, within the
+/// Richardson bound from the default and half the substeps plus one rounding
+/// per substep.
+#[test]
+fn a_torque_below_mu_t_m_g_holds_the_ball_and_above_it_spins_it_up() {
+    let mu_t = 0.01;
+    let cap = mu_t * g();
+    let n = PhysicsConfig::default().substeps;
+    let rounding = 120.0 * n as f64 * FLOOR;
+    let want = (2.0 * cap - cap) * INV_I * 2.0;
+    let (w1, _) = driven(mu_t, 2.0 * cap, n, Path::Serial);
+    let (w2, _) = driven(mu_t, 2.0 * cap, n / 2, Path::Serial);
+    let bound = 2.0 * (w1 - w2).abs() + rounding;
+    for path in paths() {
+        let (wy, angle) = driven(mu_t, 0.5 * cap, n, path);
+        println!("{path:?} held torque: ω {wy:.3e} angle {angle:.3e} (bound {rounding:.2e})");
+        assert!(
+            angle <= rounding && wy.abs() <= rounding,
+            "{path:?}: turned {angle} rad under a torque below the cap"
+        );
+        let (wy, _) = driven(mu_t, 2.0 * cap, n, path);
+        println!("{path:?} driven: ω {wy:.6} ({want:.6}, bound {bound:.2e})");
+        assert!(
+            (wy - want).abs() <= bound,
+            "{path:?}: spun up to {wy}, closed form {want}"
+        );
+    }
+}
