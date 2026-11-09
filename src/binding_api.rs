@@ -7,6 +7,8 @@
 //! is refused (`None` / `false`) instead of reaching a `PhysicsWorld` method
 //! that would panic (`add_joint`) or quietly store an unusable value.
 
+#[cfg(feature = "std")]
+use crate::buoyancy_zone::ZoneShape;
 use crate::electromagnetic::MagneticResponse;
 use crate::force::{ForceField, ForceFieldInstance};
 use crate::heightfield::HeightField;
@@ -19,6 +21,8 @@ use crate::shape_raycast::{RayFilter, RayTarget};
 use crate::solver::PhysicsWorld;
 use crate::static_collider::StaticCollider;
 use crate::trimesh::TriMesh;
+#[cfg(feature = "std")]
+use crate::wind_zone::{WindZone, WindZoneParticipant};
 use crate::world_shape_query::WorldShapeHit;
 
 /// Shape kind codes used by every binding (`AlicePhysicsShape::kind` in C).
@@ -275,6 +279,47 @@ pub(crate) fn add_magnet(
         density,
     };
     w.try_add_force_field(ForceFieldInstance::new(field)).ok()
+}
+
+/// The numbers of a box-shaped wind zone, in the units of [`WindZone`].
+#[cfg(feature = "std")]
+pub(crate) struct WindZoneArgs {
+    pub(crate) min: Vec3Fix,
+    pub(crate) max: Vec3Fix,
+    pub(crate) direction: Vec3Fix,
+    pub(crate) base_speed: f64,
+    pub(crate) gust_amplitude: f64,
+    pub(crate) gust_hz: f64,
+    pub(crate) air_density: f64,
+    pub(crate) drag_coefficient: f64,
+    pub(crate) area: f64,
+}
+
+/// Register a wind zone as a resident of the world and return its participant
+/// index. The box must not be inside out and the direction is normalised and
+/// must not be zero; the speeds and the frequency must not be negative, and
+/// the density, drag coefficient and area must be greater than zero.
+#[cfg(feature = "std")]
+pub(crate) fn add_wind_zone(w: &mut PhysicsWorld, a: &WindZoneArgs) -> Option<usize> {
+    if a.min.x > a.max.x || a.min.y > a.max.y || a.min.z > a.max.z {
+        return None;
+    }
+    let zone = WindZone {
+        shape: ZoneShape::Aabb {
+            min: a.min,
+            max: a.max,
+        },
+        // positive after the conversion too (1e-300 would become a fixed-point zero)
+        air_density_kg_m3: positive(a.air_density).filter(|v| *v > Fix128::ZERO)?,
+        direction: a.direction.try_normalize()?,
+        base_speed_m_s: non_negative(a.base_speed)?,
+        turbulence_amplitude: non_negative(a.gust_amplitude)?,
+        gust_frequency_hz: non_negative(a.gust_hz)?,
+        drag_coefficient: positive(a.drag_coefficient).filter(|v| *v > Fix128::ZERO)?,
+        reference_area_m2: positive(a.area).filter(|v| *v > Fix128::ZERO)?,
+    };
+    w.add_participant(Box::new(WindZoneParticipant::new(zone)))
+        .ok()
 }
 
 /// Add a dynamic body with `shape`, its mass and inertia from `density`.

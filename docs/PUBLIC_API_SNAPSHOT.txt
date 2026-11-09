@@ -4607,6 +4607,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_string_free(*mut std::os::raw::c_char)
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_version() -> *const std::os::raw::c_char
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_magnet(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, f64, f64, f64) -> u32
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_wind_zone(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, f64, f64, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_body_count(*const alice_physics_core::solver::PhysicsWorld) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_cast_capsule(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryHit) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_cast_ray(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryHit) -> u8
@@ -7664,6 +7665,7 @@ impl alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Fix128::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::exp(self) -> Self
 pub fn alice_physics_core::math::Fix128::ln(self) -> Self
 pub fn alice_physics_core::math::Fix128::powf_pos(self, Self) -> Self
@@ -7818,6 +7820,7 @@ pub fn alice_physics_core::math::Vec3Fix::checked_length(self) -> core::option::
 pub fn alice_physics_core::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Vec3Fix::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::dot(self, Self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Vec3Fix::dot_simd(self, Self) -> alice_physics_core::math::Fix128
@@ -12158,6 +12161,7 @@ impl alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Fix128::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::exp(self) -> Self
 pub fn alice_physics_core::math::Fix128::ln(self) -> Self
 pub fn alice_physics_core::math::Fix128::powf_pos(self, Self) -> Self
@@ -14956,6 +14960,7 @@ pub fn alice_physics_core::math::Vec3Fix::checked_length(self) -> core::option::
 pub fn alice_physics_core::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Vec3Fix::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::dot(self, Self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Vec3Fix::dot_simd(self, Self) -> alice_physics_core::math::Fix128
@@ -20547,6 +20552,7 @@ pub fn alice_physics_core::wind_zone::WindZone::force_on_particle(&self, alice_p
 pub fn alice_physics_core::wind_zone::WindZone::instantaneous_wind_vector(&self, alice_physics_core::math::Fix128) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::wind_zone::WindZone::light_breeze(alice_physics_core::buoyancy_zone::ZoneShape) -> Self
 pub fn alice_physics_core::wind_zone::WindZone::storm(alice_physics_core::buoyancy_zone::ZoneShape) -> Self
+pub fn alice_physics_core::wind_zone::WindZone::try_force_on(&self, &alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::math::Vec3Fix>
 impl core::clone::Clone for alice_physics_core::wind_zone::WindZone
 pub fn alice_physics_core::wind_zone::WindZone::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::wind_zone::WindZone
@@ -20559,6 +20565,35 @@ impl core::marker::Unpin for alice_physics_core::wind_zone::WindZone
 impl core::marker::UnsafeUnpin for alice_physics_core::wind_zone::WindZone
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::wind_zone::WindZone
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::wind_zone::WindZone
+pub struct alice_physics_core::wind_zone::WindZoneParticipant
+impl alice_physics_core::wind_zone::WindZoneParticipant
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::new(alice_physics_core::wind_zone::WindZone) -> Self
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::time(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::zone(&self) -> &alice_physics_core::wind_zone::WindZone
+impl alice_physics_core::world_participant::Participant for alice_physics_core::wind_zone::WindZoneParticipant
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics_core::wind_zone::WindZoneParticipant
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics_core::wind_zone::WindZoneParticipant
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::marker::Send for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::marker::Sync for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::marker::Unpin for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::wind_zone::WindZoneParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::wind_zone::WindZoneParticipant
+pub const alice_physics_core::wind_zone::WIND_ZONE_OBS_BODIES: u32
+pub const alice_physics_core::wind_zone::WIND_ZONE_OBS_TIME: u32
+pub const alice_physics_core::wind_zone::WIND_ZONE_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub mod alice_physics_core::world_character
 pub mod alice_physics_core::world_participant
 #[non_exhaustive] pub enum alice_physics_core::world_participant::AccumulateError
@@ -21358,6 +21393,16 @@ pub fn alice_physics_core::vehicle::VehicleParticipant::semantics_id(&self) -> c
 pub fn alice_physics_core::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::wind_zone::WindZoneParticipant
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::wind_zone::WindZoneParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl<P: alice_physics_core::pair_potential::PairPotential + core::marker::Send> alice_physics_core::world_participant::Participant for alice_physics_core::molecular_dynamics::MdParticipant<P>
 pub fn alice_physics_core::molecular_dynamics::MdParticipant<P>::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
@@ -23791,6 +23836,7 @@ impl alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Fix128::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Fix128::exp(self) -> Self
 pub fn alice_physics_core::math::Fix128::ln(self) -> Self
 pub fn alice_physics_core::math::Fix128::powf_pos(self, Self) -> Self
@@ -26739,6 +26785,7 @@ pub fn alice_physics_core::math::Vec3Fix::checked_length(self) -> core::option::
 pub fn alice_physics_core::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics_core::math::Vec3Fix::checked_sub(self, Self) -> core::option::Option<Self>
 pub fn alice_physics_core::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::dot(self, Self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::Vec3Fix::dot_simd(self, Self) -> alice_physics_core::math::Fix128

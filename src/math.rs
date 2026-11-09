@@ -869,6 +869,18 @@ impl Fix128 {
         Some(Self::from_raw((s >> 64) as i64, s as u64))
     }
 
+    /// [`Sub`] と同じ差を計算し、**範囲外なら `None`** を返す
+    ///
+    /// `Sub` は wrap するので、範囲の検査が要る経路だけが本 method を使う
+    #[inline]
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        let a = ((self.hi as i128) << 64) | (self.lo as i128);
+        let b = ((rhs.hi as i128) << 64) | (rhs.lo as i128);
+        let d = a.checked_sub(b)?;
+        Some(Self::from_raw((d >> 64) as i64, d as u64))
+    }
+
     /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent).
     ///
     /// Integer part of the exponent by repeated multiplication, fractional
@@ -1646,6 +1658,17 @@ impl Vec3Fix {
             x: self.x.checked_add(rhs.x)?,
             y: self.y.checked_add(rhs.y)?,
             z: self.z.checked_add(rhs.z)?,
+        })
+    }
+
+    /// `self - rhs` の範囲検査版 `Some` の時は `-` と bit 一致する
+    #[inline]
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        Some(Self {
+            x: self.x.checked_sub(rhs.x)?,
+            y: self.y.checked_sub(rhs.y)?,
+            z: self.z.checked_sub(rhs.z)?,
         })
     }
 
@@ -2875,6 +2898,30 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_sub_equals_sub_in_range_and_is_none_outside() {
+        let a = Fix128::from_ratio(7, 3);
+        let b = Fix128::from_ratio(-5, 8);
+        assert_eq!(a.checked_sub(b), Some(a - b));
+        let top = Fix128::from_raw(i64::MAX, u64::MAX);
+        let bottom = Fix128::from_raw(i64::MIN, 0);
+        assert_eq!(top.checked_sub(-Fix128::ONE), None);
+        assert_eq!(bottom.checked_sub(Fix128::ONE), None);
+        let va = Vec3Fix::new(a, b, a);
+        let vb = Vec3Fix::new(b, a, a);
+        assert_eq!(va.checked_sub(vb), Some(va - vb));
+        for i in 0..3 {
+            let mut c = [Fix128::ZERO; 3];
+            c[i] = bottom;
+            let v = Vec3Fix::new(c[0], c[1], c[2]);
+            assert_eq!(
+                v.checked_sub(Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE)),
+                None,
+                "{i}"
+            );
+        }
+    }
 
     // oracle (by hand): from x to y the shortest turn is a quarter turn about z,
     // (0, 0, sin 45°, cos 45°); opposite directions give a half turn (w = 0) that
