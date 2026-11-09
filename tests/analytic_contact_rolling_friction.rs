@@ -199,14 +199,16 @@ fn level_measure(c: f64, v0: f64, substeps: usize, path: Path) -> (f64, f64, f64
 /// not move (`|v| ≤ 2⁻⁴⁰`, `x` constant); the kinetic energy never grows.
 /// Tolerances: the Richardson bound of each measure from the default and
 /// half the substeps (`2 |m(h) − m(2h)|`, the substep being first order),
-/// plus `2⁻⁴⁰`.
+/// plus `2⁻⁴⁰` (one rounding per substep of the window for the rate).
 #[test]
 fn a_rolling_ball_on_level_ground_slows_at_five_sevenths_of_c_g_and_stops() {
     let (c, v0) = (0.05, 2.0);
     let n = PhysicsConfig::default().substeps;
     let (r1, s1, t1) = level_measure(c, v0, n, Path::Serial);
     let (r2, s2, t2) = level_measure(c, v0, n / 2, Path::Serial);
-    let bound_rate = 2.0 * (r1 - r2).abs() + FLOOR;
+    // plus one fixed-point rounding (2⁻⁴⁰) per substep of the 1 s window: the
+    // angular impulse of each substep is a quotient rounded once
+    let bound_rate = 2.0 * (r1 - r2).abs() + 60.0 * n as f64 * FLOOR;
     let bound_stop = 2.0 * (s1 - s2).abs() + FLOOR;
     let bound_t = 2.0 * (t1 - t2).abs() + DT;
     for path in paths() {
@@ -352,7 +354,8 @@ fn spin_measure(mu_t: f64, w0: f64, substeps: usize, path: Path) -> (f64, f64) {
 /// accuracy bounds by EPA's threshold `2⁻¹⁶` (known defect,
 /// `analytic_contact_detection_small_penetration.rs`), times the angle the
 /// ball turns after `t = 1 s` (`ω(1)² / 2α`). Tolerances otherwise the
-/// Richardson bound from the default and half the substeps plus `2⁻⁴⁰`.
+/// Richardson bound from the default and half the substeps plus `2⁻⁴⁰` (one
+/// rounding per substep of the window for the rate).
 #[test]
 fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t_m_g() {
     let (mu_t, w0) = (0.01, 6.0);
@@ -360,7 +363,9 @@ fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t
     let n = PhysicsConfig::default().substeps;
     let (r1, t1) = spin_measure(mu_t, w0, n, Path::Serial);
     let (r2, t2) = spin_measure(mu_t, w0, n / 2, Path::Serial);
-    let bound_rate = 2.0 * (r1 - r2).abs() + FLOOR;
+    // plus one fixed-point rounding (2⁻⁴⁰) per substep of the 1 s window: the
+    // angular impulse of each substep is a quotient rounded once
+    let bound_rate = 2.0 * (r1 - r2).abs() + 60.0 * n as f64 * FLOOR;
     let bound_t = 2.0 * (t1 - t2).abs() + DT;
     for path in paths() {
         let (rate, t) = spin_measure(mu_t, w0, n, path);

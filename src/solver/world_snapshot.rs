@@ -1507,8 +1507,9 @@ fn r_material_table(r: &mut R<'_>, version: u16) -> Res<MaterialTable> {
         // versions 1 to 6 have no rolling / torsional coefficients: zero,
         // the same physics as before they existed
         if version >= 7 {
-            m.rolling_friction = r.fix()?;
-            m.torsional_friction = r.fix()?;
+            m = m
+                .with_rolling_friction(r.fix()?)
+                .with_torsional_friction(r.fix()?);
         }
         materials.push(m);
     }

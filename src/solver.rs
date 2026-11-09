@@ -76,7 +76,10 @@
 //!   that sticks the static path; bodies that cannot turn use the centre
 //!   form bit for bit. Rolling and torsional friction act only where the
 //!   contact point is exact (plain spheres, `contact_point_is_exact`); a
-//!   shaped body gets no rolling or torsional resistance. With both
+//!   shaped body gets no rolling or torsional resistance. The GPU-bridge
+//!   substep runs the same velocity stage on the CPU, so the bridged and the
+//!   CPU step agree bit for bit (`analytic_bridge_rolling_parity.rs`, under
+//!   the `gpu-solver-bridge` feature). With both
 //!   coefficients zero (the default) the step is bit for bit the step
 //!   without them.
 //! - **近似 (approximations)**: static and kinetic coefficients equal
@@ -128,8 +131,6 @@
 //!   `::a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_minus_c_cos`,
 //!   `::a_ball_on_an_incline_flatter_than_c_stays_at_rest` (tan θ = c),
 //!   `::a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t_m_g`;
-//!   the GPU-bridge path `tests/analytic_bridge_rolling_parity.rs::
-//!   the_bridged_step_applies_rolling_and_torsional_friction_like_the_cpu_step`;
 //!   the contact depth above EPA's threshold
 //!   `tests/analytic_contact_detection_small_penetration.rs::
 //!   a_penetration_above_the_epa_threshold_is_corrected_within_the_threshold`.
