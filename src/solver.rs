@@ -11415,8 +11415,8 @@ mod tests {
         let src = quiet_world();
         let bytes = src.serialize_state();
         // v5: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
-        //     + soft body 数 4 + 次の grab id 4
-        assert_eq!(bytes.len(), 29);
+        //     + cloth 数 4 + 次の grab id 4
+        assert_eq!(bytes.len(), 37);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);

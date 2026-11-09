@@ -474,7 +474,7 @@ mod semantics_decoder {
     /// The published identifier decodes to the hex its documentation shows.
     #[test]
     fn the_identifier_matches_its_documented_hex() {
-        let doc = "2f447a34412c672603df1b8f31b88f0d7f092bfa47b5aeeb5fea15fe45f24286";
+        let doc = "f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b";
         assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
         assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
         // alice-det-math is folded per function (DET_MATH_PINS), not as a whole entry

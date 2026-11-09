@@ -1717,18 +1717,21 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// 弾性の島の再帰の記録を `serialize_state` の末尾に足した時 (島の数 8 byte と各島の記録) に
 /// 取り直した 13 件すべてが動く 記録を書かない形に戻すと 13 件すべてが直前の値と一致する
 /// (body の状態は不変)
+///
+/// 布 (cloth) の節 (`serialize_state` v5、cloth 数 4 + 次の grab id 4) を足した時に取り直した
+/// blob の形式だけが動く
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0x14fd0776cb0b99ef_u64),
-    (1, SolverBackend::Xpbd, 0xd1a7791d40628bf1_u64),
-    (2, SolverBackend::Xpbd, 0x37c417a92248ed01_u64),
-    (3, SolverBackend::Xpbd, 0x4461d4a60447f1fb_u64),
-    (4, SolverBackend::Xpbd, 0xfc81cae38c010a0c_u64),
-    (5, SolverBackend::Xpbd, 0x3eb1f8a48bf7d9ac_u64),
-    (6, SolverBackend::Xpbd, 0x54dbccd2485b8930_u64),
-    (0, SolverBackend::Tgs, 0xca04aeee0f3c23ce_u64),
-    (1, SolverBackend::Tgs, 0xf9545b9562caa101_u64),
-    (2, SolverBackend::Tgs, 0x37c417a92248ed01_u64),
-    (3, SolverBackend::Tgs, 0x71de54887aa8b258_u64),
-    (4, SolverBackend::Tgs, 0x2b9b8190239f2f7f_u64),
-    (5, SolverBackend::Tgs, 0x46c1568f705a7656_u64),
+    (0, SolverBackend::Xpbd, 0xece5dc91d7938bc4_u64),
+    (1, SolverBackend::Xpbd, 0x48a3a0d45ab05f8a_u64),
+    (2, SolverBackend::Xpbd, 0x3caa3c40ef65ed14_u64),
+    (3, SolverBackend::Xpbd, 0xd4018a9c3ae54f38_u64),
+    (4, SolverBackend::Xpbd, 0x7156fadefb809e59_u64),
+    (5, SolverBackend::Xpbd, 0xb19a8fedeecf7003_u64),
+    (6, SolverBackend::Xpbd, 0x8e9f84b2b203f601_u64),
+    (0, SolverBackend::Tgs, 0x7bab0aae0bc19529_u64),
+    (1, SolverBackend::Tgs, 0x100929effb13dbae_u64),
+    (2, SolverBackend::Tgs, 0x3caa3c40ef65ed14_u64),
+    (3, SolverBackend::Tgs, 0x0729011bacfd3bcf_u64),
+    (4, SolverBackend::Tgs, 0xea7bb21943c0dcd2_u64),
+    (5, SolverBackend::Tgs, 0xe52969a2b6f91091_u64),
 ];
