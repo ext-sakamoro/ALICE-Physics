@@ -12942,6 +12942,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::I
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::Island
 pub struct alice_physics_core::prelude::IslandManager
 pub alice_physics_core::prelude::IslandManager::config: alice_physics_core::sleeping::SleepConfig
+pub alice_physics_core::prelude::IslandManager::orbits: alloc::vec::Vec<alice_physics_core::sleeping::IslandOrbit>
 pub alice_physics_core::prelude::IslandManager::sleep_data: alloc::vec::Vec<alice_physics_core::sleeping::SleepData>
 impl alice_physics_core::sleeping::IslandManager
 pub fn alice_physics_core::sleeping::IslandManager::build_islands(&mut self) -> alloc::vec::Vec<alice_physics_core::sleeping::Island>
@@ -18198,6 +18199,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::I
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::Island
 pub struct alice_physics_core::sleeping::IslandManager
 pub alice_physics_core::sleeping::IslandManager::config: alice_physics_core::sleeping::SleepConfig
+pub alice_physics_core::sleeping::IslandManager::orbits: alloc::vec::Vec<alice_physics_core::sleeping::IslandOrbit>
 pub alice_physics_core::sleeping::IslandManager::sleep_data: alloc::vec::Vec<alice_physics_core::sleeping::SleepData>
 impl alice_physics_core::sleeping::IslandManager
 pub fn alice_physics_core::sleeping::IslandManager::build_islands(&mut self) -> alloc::vec::Vec<alice_physics_core::sleeping::Island>
@@ -18219,6 +18221,31 @@ impl core::marker::Unpin for alice_physics_core::sleeping::IslandManager
 impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::IslandManager
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::IslandManager
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::IslandManager
+pub struct alice_physics_core::sleeping::IslandOrbit
+pub alice_physics_core::sleeping::IslandOrbit::asleep: bool
+pub alice_physics_core::sleeping::IslandOrbit::inputs: alloc::vec::Vec<u8>
+pub alice_physics_core::sleeping::IslandOrbit::members: alloc::vec::Vec<usize>
+pub alice_physics_core::sleeping::IslandOrbit::states: alloc::vec::Vec<alloc::vec::Vec<u8>>
+impl alice_physics_core::sleeping::IslandOrbit
+pub fn alice_physics_core::sleeping::IslandOrbit::push(&mut self, alloc::vec::Vec<u8>)
+pub fn alice_physics_core::sleeping::IslandOrbit::recurs(&self, &[u8]) -> bool
+impl core::clone::Clone for alice_physics_core::sleeping::IslandOrbit
+pub fn alice_physics_core::sleeping::IslandOrbit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::sleeping::IslandOrbit
+impl core::cmp::PartialEq for alice_physics_core::sleeping::IslandOrbit
+pub fn alice_physics_core::sleeping::IslandOrbit::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::sleeping::IslandOrbit
+pub fn alice_physics_core::sleeping::IslandOrbit::default() -> Self
+impl core::fmt::Debug for alice_physics_core::sleeping::IslandOrbit
+pub fn alice_physics_core::sleeping::IslandOrbit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::sleeping::IslandOrbit
+impl core::marker::Freeze for alice_physics_core::sleeping::IslandOrbit
+impl core::marker::Send for alice_physics_core::sleeping::IslandOrbit
+impl core::marker::Sync for alice_physics_core::sleeping::IslandOrbit
+impl core::marker::Unpin for alice_physics_core::sleeping::IslandOrbit
+impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::IslandOrbit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::IslandOrbit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::IslandOrbit
 pub struct alice_physics_core::sleeping::SleepConfig
 pub alice_physics_core::sleeping::SleepConfig::angular_threshold: alice_physics_core::math::Fix128
 pub alice_physics_core::sleeping::SleepConfig::linear_threshold: alice_physics_core::math::Fix128
@@ -18266,6 +18293,7 @@ impl core::marker::Unpin for alice_physics_core::sleeping::SleepData
 impl core::marker::UnsafeUnpin for alice_physics_core::sleeping::SleepData
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::SleepData
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::SleepData
+pub const alice_physics_core::sleeping::ORBIT_WINDOW: usize
 pub mod alice_physics_core::smoke_fire
 pub struct alice_physics_core::smoke_fire::ArrheniusReaction
 pub alice_physics_core::smoke_fire::ArrheniusReaction::activation_energy_j_per_mol: alice_physics_core::math::Fix128
@@ -24682,6 +24710,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sleeping::I
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sleeping::Island
 pub struct alice_physics_core::IslandManager
 pub alice_physics_core::IslandManager::config: alice_physics_core::sleeping::SleepConfig
+pub alice_physics_core::IslandManager::orbits: alloc::vec::Vec<alice_physics_core::sleeping::IslandOrbit>
 pub alice_physics_core::IslandManager::sleep_data: alloc::vec::Vec<alice_physics_core::sleeping::SleepData>
 impl alice_physics_core::sleeping::IslandManager
 pub fn alice_physics_core::sleeping::IslandManager::build_islands(&mut self) -> alloc::vec::Vec<alice_physics_core::sleeping::Island>

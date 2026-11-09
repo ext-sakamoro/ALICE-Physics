@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5950 |
-| 🔴 Red by design | 69 |
+| 🟢 Not ignored (run by CI) | 6003 |
+| 🔴 Red by design | 68 |
 | ⏱ Gated (runtime / diagnostic / manual) | 28 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6045** |
+| **Total** | **6099** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (69)
+## 🔴 Red by design (68)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -80,7 +80,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
-- `tgs_isotropic_spin_turns_by_omega_t` (indep_free_rotation_closed_forms.rs) — src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
 - `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
@@ -152,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5950)
+## 🟢 Not ignored (6003)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -417,6 +416,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_contact_normals.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
+| `analytic_sleep_spring_creep.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
 | `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
@@ -466,7 +466,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_print_orientation_wiring.rs` | 8 |
 | `analytic_rotor.rs` | 8 |
 | `analytic_sdf_generation_wake.rs` | 8 |
-| `analytic_sleep_spring_creep.rs` | 8 |
 | `analytic_step_multigrid.rs` | 8 |
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
@@ -524,6 +523,7 @@ Per-file counts (the test names are in `tests/`):
 | `cloth_state_digest.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
+| `indep_free_rotation_closed_forms.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
 | `p3_quadrature_fix128.rs` | 6 |
 | `wm01_overflow_is_not_silent.rs` | 6 |
@@ -549,7 +549,6 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
-| `indep_free_rotation_closed_forms.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
@@ -587,6 +586,7 @@ Per-file counts (the test names are in `tests/`):
 | `world_participant_errors.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
 | `world_snapshot_xv_88cf6f85.rs` | 4 |
+| `world_snapshot_xv_e90000da.rs` | 4 |
 | `analytic_axial_support.rs` | 3 |
 | `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
@@ -620,7 +620,6 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
-| `world_snapshot_xv_e90000da.rs` | 3 |
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
