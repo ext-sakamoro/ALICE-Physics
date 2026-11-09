@@ -27,6 +27,19 @@
 //!   `ĥ ← e^(−Δt/T) ĥ + (1 − e^(−Δt/T)) (T / Δt) (τ̂ − τ̂_last)` (exact for `τ̂` linear over
 //!   the step); under a held load the material creeps like the standard linear solid,
 //!   relaxed modulus `E (1 − g)`, creep time `T / (1 − g)`.
+//!   Implicit ([`Mpm2d::step_implicit`], backward Euler): the grid velocities `v` minimise the
+//!   incremental potential `Σ_i ½ m_i |v_i − v*_i|² + Σ_p (A⁰_p k ψ(F_p(v)) + Δt K_p : C_p(v))`,
+//!   `v*` the grid velocity without the stress (momentum, gravity, loads), `F_p(v) = (I + Δt
+//!   C_p(v)) F_p`, `C_p(v)` the APIC matrix the grid to particle transfer builds from `v`; with
+//!   a Maxwell branch `k = 1 − g + g γ` and `K_p` the branch's held stress (rotated with the
+//!   start rotation, the one approximation). Solved by Newton iterations: the direction by the
+//!   conjugate gradient with the exact Hessian (each particle's `∂P/∂F` along the direction by
+//!   a central difference) and the Jacobi preconditioner, falling back to the isotropic
+//!   linear stiffness where the curvature is not positive; a backtracking line search on the
+//!   potential (near convergence, a full step that lowers the residual); the ground's nodes as
+//!   a contact set (held at `v_y = 0` while pressed, released when the potential pulls them
+//!   up). It stops when the residual's mass-weighted RMS velocity is at most the tolerance
+//!   ([`ImplicitSolve`]); then the explicit step's grid to particle transfer.
 //! - **Units.** SI: m, s, kg, Pa; plane strain, so masses, momenta and energies are per metre
 //!   of depth (kg/m, kg/s, J/m).
 //! - **Conservation.** Mass is carried by the particles and conserved exactly. Linear momentum
@@ -41,6 +54,13 @@
 //!   (`Δt < Δx / c`, the oracles use a third of it). Every particle's 3×3 stencil must lie in
 //!   the grid ([`Mpm2dError::OutOfGrid`], the step does nothing); a step that would make
 //!   `det F ≤ 0` is refused ([`Mpm2dError::Inverted`]); a refused step changes nothing. 2D plane strain only; `0 ≤ ν < 0.5`.
+//!   Implicit: stable for any step; it damps the modes the step does not resolve (backward
+//!   Euler's amplitude factor `1 / √(1 + (ωΔt)²)` per step), so a step of a frame settles a
+//!   soft body quasi-statically; it converges at first order to the explicit run as the step
+//!   shrinks. A solve that does not reach the tolerance is refused
+//!   ([`Mpm2dError::NotConverged`]). Cost (measured, a 0.91 m square block, E 2e6 Pa,
+//!   Jacobi preconditioner): about 10 times the explicit step's per frame at cells 0.02 and
+//!   0.04 m (`tests/analytic_mpm2d_implicit.rs::measure_the_cost_per_frame_of_a_letter_sized_block`).
 //! - **Approximations.** Plane strain (no out-of-plane strain). The fixed co-rotated model
 //!   is linear elasticity under rotation at small strain and its own large-strain law beyond
 //!   it. One material per world. The ground is frictionless and only stops downward motion
@@ -49,7 +69,7 @@
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused`, `tests/analytic_mpm2d_implicit.rs::a_free_blob_falls_on_the_discrete_parabola::a_column_at_frame_steps_settles_by_the_plane_strain_bar_value::backward_euler_does_not_create_energy::the_implicit_run_approaches_the_explicit_one_as_the_step_shrinks::a_viscoelastic_column_at_frame_steps_creeps_like_the_standard_linear_solid::a_spinning_free_blob_keeps_its_momentum_within_the_tolerance::implicit_runs_are_deterministic_and_replay_from_a_snapshot::a_solve_that_cannot_converge_is_refused_and_changes_nothing`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
@@ -59,6 +79,9 @@
 //!
 
 use crate::math::Fix128;
+
+mod implicit;
+pub use implicit::{ImplicitReport, ImplicitSolve};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -162,6 +185,11 @@ pub enum Mpm2dError {
     Inverted {
         /// The particle index
         particle: usize,
+    },
+    /// The implicit step's solve did not reach its tolerance ([`ImplicitSolve`])
+    NotConverged {
+        /// The Newton iterations it ran
+        newton: u32,
     },
 }
 
