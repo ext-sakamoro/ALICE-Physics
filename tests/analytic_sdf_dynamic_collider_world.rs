@@ -293,7 +293,7 @@ fn a_sleeping_sphere_is_lifted_in_the_first_step_of_the_lift() {
         let mut w = world(Runner::Step);
         w.set_sleep_skip(sleep_skip);
         w.set_sleep_config(alice_physics_core::SleepConfig {
-            frames_to_sleep: 2,
+            time_to_sleep: Fix128::from_ratio(2, 60),
             ..alice_physics_core::SleepConfig::default()
         });
         let p = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));

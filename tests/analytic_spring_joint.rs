@@ -81,7 +81,7 @@ fn world(cfg: SolverConfig) -> PhysicsWorld {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
     });
     w
 }
