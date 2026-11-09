@@ -1174,4 +1174,148 @@ mod tests {
         // Total particle count should not exceed max
         assert!(ps.alive_count() <= 2);
     }
+
+    #[cfg(feature = "std")]
+    mod run_off {
+        use super::*;
+        use crate::sdf_collider::ClosureSdf;
+
+        const G: f64 = 9.81;
+
+        fn drop_at(y: f64) -> ParticleSystem {
+            let mut s = ParticleSystem::new(4, Vec3Fix::from_f32(0.0, -G as f32, 0.0));
+            s.damping = Fix128::ONE;
+            s.particles.push(Particle::new(
+                Vec3Fix::from_f32(0.0, y as f32, 0.0),
+                Vec3Fix::ZERO,
+                Fix128::from_int(1000),
+                Fix128::ONE,
+            ));
+            s
+        }
+
+        fn ro(drag: f64, drip_cos: f64) -> RunOff {
+            RunOff {
+                drag: Fix128::from_f64(drag),
+                drip_cos: Fix128::from_f64(drip_cos),
+            }
+        }
+
+        fn dt() -> Fix128 {
+            Fix128::from_ratio(1, 120)
+        }
+
+        fn travel() -> Fix128 {
+            Fix128::from_ratio(1, 4)
+        }
+
+        /// oracle: on a 30° incline the speed down it settles at `g sin 30° / c`
+        #[test]
+        fn incline_terminal_speed_is_the_closed_form() {
+            let (nx, ny) = (0.5f32, 0.75f32.sqrt());
+            let plane =
+                ClosureSdf::new(move |x, y, _| nx * x + ny * y, move |_, _, _| (nx, ny, 0.0));
+            let targets = [LandingTarget::Field(&plane)];
+            let mut s = drop_at(0.5);
+            let mut rng = DeterministicRng::new(1);
+            let mut landed = 0;
+            for _ in 0..1200 {
+                landed += s
+                    .step_with_run_off(dt(), &mut rng, &targets, travel(), ro(2.0, 0.9))
+                    .landed
+                    .len();
+            }
+            assert_eq!(landed, 1);
+            assert_eq!(s.particle_on_surface(0), Some(0));
+            let want = G * 0.5 / 2.0;
+            let got = s.particles[0].velocity.length().to_f64();
+            assert!((got - want).abs() < want * 1e-3, "{got} vs {want}");
+        }
+
+        /// under an overhang (the normal points down) the drop leaves at once
+        #[test]
+        fn a_drop_under_an_overhang_drips() {
+            // a ceiling at y = 1 seen from below: its outward normal points down
+            let ceiling = ClosureSdf::new(|_, y, _| 1.0 - y, |_, _, _| (0.0, -1.0, 0.0));
+            let floor = ClosureSdf::new(|_, y, _| y + 5.0, |_, _, _| (0.0, 1.0, 0.0));
+            let targets = [LandingTarget::Field(&ceiling), LandingTarget::Field(&floor)];
+            let mut s = drop_at(0.99);
+            s.particles[0].velocity = Vec3Fix::from_f32(0.0, 1.0, 0.0);
+            let mut rng = DeterministicRng::new(2);
+            let mut dripped = 0;
+            let mut landed_on_ceiling = false;
+            for _ in 0..4 {
+                let e = s.step_with_run_off(dt(), &mut rng, &targets, travel(), ro(2.0, 0.5));
+                landed_on_ceiling |= e.landed.iter().any(|l| l.target == 0);
+                dripped += e.dripped.len();
+            }
+            assert!(landed_on_ceiling, "it rose into the ceiling");
+            assert_eq!(dripped, 1, "and dripped off it");
+            assert_eq!(s.particle_on_surface(0), None);
+        }
+
+        /// a drop revived through `particles` after it died on a surface is free: no drip, it falls
+        #[test]
+        fn a_revived_slot_is_free() {
+            let floor = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+            let targets = [LandingTarget::Field(&floor)];
+            let mut s = drop_at(0.02);
+            s.particles[0].lifetime = Fix128::from_ratio(1, 2);
+            let mut rng = DeterministicRng::new(4);
+            for _ in 0..30 {
+                s.step_with_run_off(dt(), &mut rng, &targets, travel(), ro(2.0, 0.9));
+            }
+            assert_eq!(s.particle_on_surface(0), Some(0));
+            while s.particles[0].alive {
+                s.step(dt(), &mut rng);
+            }
+            let p = &mut s.particles[0];
+            p.alive = true;
+            p.age = Fix128::ZERO;
+            p.position = Vec3Fix::from_f32(0.0, 2.0, 0.0);
+            p.velocity = Vec3Fix::ZERO;
+            assert_eq!(s.particle_on_surface(0), None);
+            let e = s.step_with_run_off(dt(), &mut rng, &targets, travel(), ro(2.0, 0.9));
+            assert!(e.dripped.is_empty());
+            assert!(s.particles[0].position.y.to_f64() < 2.0);
+        }
+
+        /// the digest moves with the surface a drop is on, and with the generator
+        #[test]
+        fn the_digest_covers_the_surface_and_the_generator() {
+            let floor = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+            let targets = [LandingTarget::Field(&floor)];
+            let mut s = drop_at(0.01);
+            s.particles[0].velocity = Vec3Fix::from_f32(0.0, -2.0, 0.0);
+            let mut rng = DeterministicRng::new(5);
+            let free = s.state_digest(&rng);
+            s.step_with_run_off(dt(), &mut rng, &targets, travel(), ro(2.0, 0.9));
+            assert_eq!(s.particle_on_surface(0), Some(0));
+            let on = s.state_digest(&rng);
+            assert_ne!(free, on);
+            let mut moved = rng.clone();
+            moved.next_u32();
+            assert_ne!(s.state_digest(&rng), s.state_digest(&moved));
+            assert_eq!(s.state_digest(&rng), on, "the same state, the same digest");
+        }
+
+        /// a zero step does nothing; a travel that is not positive is refused
+        #[test]
+        fn a_zero_step_does_nothing() {
+            let mut s = drop_at(1.0);
+            let mut rng = DeterministicRng::new(6);
+            let before = s.state_digest(&rng);
+            let e = s.step_with_run_off(Fix128::ZERO, &mut rng, &[], travel(), ro(2.0, 0.9));
+            assert!(e.landed.is_empty() && e.dripped.is_empty());
+            assert_eq!(s.state_digest(&rng), before);
+        }
+
+        #[test]
+        #[should_panic(expected = "max_travel must be positive")]
+        fn a_travel_that_is_not_positive_is_refused() {
+            let mut s = drop_at(1.0);
+            let mut rng = DeterministicRng::new(7);
+            s.step_with_run_off(dt(), &mut rng, &[], Fix128::ZERO, ro(2.0, 0.9));
+        }
+    }
 }
