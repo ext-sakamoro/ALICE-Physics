@@ -116,8 +116,45 @@ fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
         assert_eq!(payload[at..at + 16], fix(Fix128::ZERO)[..], "rate 0");
         payload[at..at + 16].copy_from_slice(&one);
     }
+    // version 8 holds the sleep rule and each body's idle time as `Fix128` seconds
+    // where versions 1 to 6 held step counts (`u32`): find those slots the same way
+    // and shrink each to the count of 1/60 s steps
+    let mut sleepy = make();
+    let t_sentinel = Fix128::from_ratio(123_456_789, 1_000_003);
+    let i_sentinel = Fix128::from_ratio(987_654_323, 1_000_003);
+    sleepy.islands.config.time_to_sleep = t_sentinel;
+    let bodies = sleepy.islands.sleep_data.len();
+    for sd in &mut sleepy.islands.sleep_data {
+        sd.idle_time = i_sentinel;
+    }
+    let sleepy = sleepy.snapshot_world();
+    assert_eq!(sleepy.len(), v6.len());
+    let (tn, inn) = (fix(t_sentinel), fix(i_sentinel));
+    let mut sleep_hits: Vec<usize> = sleepy[PAYLOAD_AT..sleepy.len() - CHECKSUM]
+        .windows(16)
+        .enumerate()
+        .filter(|(_, w)| *w == tn.as_slice() || *w == inn.as_slice())
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        sleep_hits.len(),
+        1 + bodies,
+        "sleep slots found: {sleep_hits:?}"
+    );
+    sleep_hits.sort_unstable_by(|a, b| b.cmp(a));
+    for at in sleep_hits {
+        let mut hi = [0u8; 8];
+        let mut lo = [0u8; 8];
+        hi.copy_from_slice(&payload[at..at + 8]);
+        lo.copy_from_slice(&payload[at + 8..at + 16]);
+        let seconds = Fix128::from_raw(i64::from_le_bytes(hi), u64::from_le_bytes(lo));
+        let frames = seconds * Fix128::from_int(60) + Fix128::from_ratio(1, 2);
+        let frames = u32::try_from(frames.hi).expect("fits u32");
+        payload.splice(at..at + 16, frames.to_le_bytes());
+    }
     let mut out = v6[..SEMANTICS_AT].to_vec();
     out[VERSION_AT..VERSION_AT + 2].copy_from_slice(&3u16.to_le_bytes());
+    out[LEN_AT..LEN_AT + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
     out.extend_from_slice(&payload);
     out.extend_from_slice(&[0; CHECKSUM]);
     reseal(out)
@@ -149,16 +186,16 @@ fn checked(
     r
 }
 
-/// Version 6 keeps the layout of version 4 (version 5 added the panic fault
-/// codes, version 6 stores damping as rates per second). Version 7 adds the
-/// body axis locks and is written only by a world that has one, so this scene,
-/// which has none, is still written as version 6.
+/// Version 8 keeps the layout of version 4 (version 5 added the panic fault
+/// codes, version 6 stores damping as rates per second, version 7 the body axis
+/// locks when a body had one, version 8 the sleep rule and idle times as seconds
+/// and always the axis-lock section).
 #[test]
-fn the_writer_emits_version_6() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
+fn the_writer_emits_version_8() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 8);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &6u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &8u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
@@ -340,10 +377,15 @@ fn older_versions_are_accepted_as_unpinned() {
     let damped = WorldSnapshotError::LegacyDampingNeedsStep {
         retention: Fix128::from_ratio(99, 100),
     };
+    // version 8 holds the sleep rule as seconds: an older blob without the writer's
+    // step is refused naming its step count (the damping of the fixtures first)
+    let sleepy = WorldSnapshotError::LegacySleepFramesNeedsStep {
+        frames_to_sleep: 60,
+    };
     for (version, blob, read) in [
         (1u16, v1, Err(damped)),
         (2, v2, Err(damped)),
-        (3, &v3[..], Ok(LawCheck::Unpinned)),
+        (3, &v3[..], Err(sleepy)),
     ] {
         assert_eq!(&blob[VERSION_AT..VERSION_AT + 2], &version.to_le_bytes());
         for expected in [None, Some(&some), Some(&[0xAB; 32])] {
@@ -358,7 +400,9 @@ fn older_versions_are_accepted_as_unpinned() {
         let before = t.snapshot_world();
         assert_eq!(
             t.restore_world(blob),
-            Err(read.err().unwrap_or(WorldSnapshotError::Unpinned)),
+            Err(read
+                .err()
+                .expect("every older blob is refused without a step")),
             "version {version}"
         );
         assert_eq!(
@@ -373,9 +417,19 @@ fn older_versions_are_accepted_as_unpinned() {
             "version {version}"
         );
     }
-    // the version 3 form holds the same world as the version 6 blob
+    // the version 3 form holds the same world as the version 8 blob once its
+    // step count is read with the writer's step
     let mut b = PhysicsWorld::new(PhysicsConfig::default());
-    assert_eq!(checked(&mut b, &v3, None), Ok(LawCheck::Unpinned));
+    assert_eq!(
+        b.restore_world_legacy_damping(&v3, dt()),
+        Ok(LawCheck::Unpinned)
+    );
+    // the rule comes back as 60 steps × dt (not the written second); the idle
+    // times are k × dt and come back exactly
+    let converted = Fix128::from_int(60) * dt();
+    assert_eq!(b.islands.config.time_to_sleep, converted);
+    let mut a = a;
+    a.islands.config.time_to_sleep = converted;
     assert_eq!(b.snapshot_world(), a.snapshot_world());
 }
 

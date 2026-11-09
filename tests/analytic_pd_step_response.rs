@@ -55,7 +55,10 @@ fn pd_controlled_mass_overshoot_matches_second_order_closed_form() {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
+        time_to_sleep: Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        },
     });
     let body_idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, ffx(mass)));
 
