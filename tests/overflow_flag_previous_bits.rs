@@ -25,6 +25,7 @@ use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::shape::Shape;
 use alice_physics_core::sleeping::SleepState;
 use alice_physics_core::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
+use sha2::{Digest as _, Sha256};
 
 const KINDS: [Broadphase; 3] = [Broadphase::Bvh, Broadphase::DynamicTree, Broadphase::Hybrid];
 
@@ -53,8 +54,8 @@ fn step(w: &mut PhysicsWorld, n: usize) {
     }
 }
 
-/// FNV-1a over the scene tag, the flag and the state.
-struct Digest(u64);
+/// FNV-1a and SHA-256 over the scene tag, the flag and the state.
+struct Digest(u64, Sha256);
 
 impl Digest {
     fn bytes(&mut self, b: &[u8]) {
@@ -62,6 +63,7 @@ impl Digest {
             self.0 ^= u64::from(x);
             self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
         }
+        self.1.update(b);
     }
 
     fn world(&mut self, tag: &str, w: &PhysicsWorld) {
@@ -81,9 +83,9 @@ fn radii() -> [Fix128; 3] {
 }
 
 /// Every scene, stepped under every kind with the skip on and off; returns
-/// `(scenes, flags raised, digest)`.
-fn run() -> (usize, usize, u64) {
-    let mut dg = Digest(0xcbf2_9ce4_8422_2325);
+/// `(scenes, flags raised, digest, sha256 hex)`.
+fn run() -> (usize, usize, u64, String) {
+    let mut dg = Digest(0xcbf2_9ce4_8422_2325, Sha256::new());
     let (mut scenes, mut raised) = (0, 0);
     let mut record = |tag: String, w: &PhysicsWorld| {
         dg.world(&tag, w);
@@ -171,22 +173,41 @@ fn run() -> (usize, usize, u64) {
             }
         }
     }
-    (scenes, raised, dg.0)
+    let sha = dg.1.finalize();
+    let hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
+    (scenes, raised, dg.0, hex)
 }
 
-/// Recorded on main `06b1e84b` (2026-11-07), before the one-predicate rule.
-const EXPECTED: (usize, usize, u64) = (216, 189, 0xb923ddd589b2f53d);
+/// Recorded with the one-predicate rule (`pair_radius_sum_overflows`). Before it,
+/// on main `06b1e84b` (2026-11-07), the same scenes gave 189 flags raised and
+/// the digest `0xb923ddd589b2f53d`: 33 scenes changed their flag (static pairs
+/// and pairs whose layers do not collide no longer raise it under Bvh /
+/// DynamicTree, parked pairs raise it with the skip on as without).
+const EXPECTED_SCENES: usize = 216;
+const EXPECTED_RAISED: usize = 156;
+const EXPECTED_DIGEST: u64 = 0xe7709d30a6cb254f;
+/// SHA-256 over the same bytes, the entry `"overflow flag"` of
+/// `PHYSICS_SEMANTICS_PINS` folds (see `tests/physics_semantics_id.rs`).
+const EXPECTED_SHA256: &str = "b26ddb11d0a9ae0d8f2d11de595e71bbefc9294673ab6f46fe6a7544554913cc";
 
 #[test]
 fn the_overflow_flag_keeps_its_previous_bits_on_the_path_dependent_scenes() {
-    let got = run();
+    let (scenes, raised, digest, sha) = run();
     assert!(
-        got.0 > 0 && got.1 > 0,
-        "nothing compared or no flag raised: {got:?}"
+        scenes > 0 && raised > 0,
+        "nothing compared or no flag raised"
     );
     assert_eq!(
-        got, EXPECTED,
-        "(scenes, raised, digest) moved; recorded ({}, {}, 0x{:016x})",
-        got.0, got.1, got.2
+        (scenes, raised, digest),
+        (EXPECTED_SCENES, EXPECTED_RAISED, EXPECTED_DIGEST),
+        "(scenes, raised, digest) moved; recorded ({scenes}, {raised}, 0x{digest:016x}, {sha})"
     );
+}
+
+/// The SHA-256 of the same bytes, for the semantics identifier's entry.
+#[test]
+fn the_overflow_flag_scenes_have_their_pinned_sha256() {
+    let (_, _, digest, sha) = run();
+    assert_eq!(digest, EXPECTED_DIGEST);
+    assert_eq!(sha, EXPECTED_SHA256, "recorded sha256 {sha}");
 }
