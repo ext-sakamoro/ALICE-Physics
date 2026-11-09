@@ -987,6 +987,10 @@ jobs:
       # wiring_guard の出力の形を食わせる (違反を 1 件も拾えない空振りを止める)
       - name: status generators oracle (台帳の生成器自身の試験)
         run: python3 scripts/test_gen_status.py
+      # the selector `preflight.sh --fast` uses to pick the tests a change affects: ran only in the
+      # local preflight, so a landing on CI evidence alone (public repository) never ran it
+      - name: affected-test selector oracle
+        run: python3 scripts/test_affected_tests.py
 
   doc:
     if: github.event_name != 'schedule'

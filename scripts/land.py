@@ -19,7 +19,12 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      finishes. A second landing waits for the lock up to --lock-wait-minutes;
   3. rebases on origin/main when needed (with a fixed committer; a conflict in a
      generated ledger takes main's copy, any other conflict stops), rebuilds and
-     commits the ledgers, runs the checks and `scripts/preflight.sh --fast`;
+     commits the ledgers, runs the checks and `scripts/preflight.sh --fast`
+     (a public repository, as GitHub says: `run-preflight.sh --cheap` only; its
+     build and tests are the CI's, and the landing waits for every run on the
+     evidence SHA, after-landing legs included, then writes the CI receipt with
+     the hooks checkout's ci_evidence_receipt.py; any move of main, documents
+     too, gathers the evidence again so the landed SHA has its own receipt);
   4. pushes HEAD to `ci/<id>` and waits for the evidence of every workflow that
      runs on ci/** (wait_evidence: the classes of .github/ci-evidence.toml; a
      missing or dropped run is re-created with `gh workflow run`); every landing
@@ -172,6 +177,9 @@ GIT_CANDIDATES = ("/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git",
                   r"C:\Program Files\Git\cmd\git.exe")
 GH_CANDIDATES = ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh",
                  r"C:\Program Files\GitHub CLI\gh.exe")
+# uv runs the hooks checkout's ci_evidence_receipt.py with pyyaml (a public repository lands on that receipt)
+UV_CANDIDATES = ("/opt/homebrew/bin/uv", "/usr/local/bin/uv", os.path.expanduser("~/.local/bin/uv"),
+                 os.path.expanduser("~/.cargo/bin/uv"))
 SYSTEM_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin", "/usr/local/bin")
 # forced on every git call (command-line config wins over the global and system files, which
 # are kept: credential helpers live there): no hooks, no fsmonitor program, ssh by absolute
@@ -414,6 +422,25 @@ def missing_tool_reason(tool: str) -> str:
     return (f"not found on the child PATH (the cargo directory {cargo_bin()}, then the system "
             f"directories); install the Rust toolchain there, set CARGO_HOME, or name the directory "
             f"that holds cargo in LAND_CARGO_DIR")
+
+
+def all_runs_verdict(runs: list[dict]) -> tuple[str, str]:
+    """("ok" | "red" | "wait", why) for every run on one SHA (the newest of each workflow): ok when there is at
+    least one run and each completed with success, red when one completed otherwise (cancelled, skipped and failure
+    included: not verified), wait while one is going or there is none yet"""
+    newest: dict[str, dict] = {}
+    for r in sorted(runs, key=lambda r: int(r.get("databaseId") or 0)):
+        newest[str(r.get("workflowName"))] = r
+    if not newest:
+        return "wait", "no run yet"
+    bad = [f"{n}: {r.get('conclusion')}" for n, r in sorted(newest.items())
+           if r.get("status") == "completed" and r.get("conclusion") != "success"]
+    if bad:
+        return "red", "; ".join(bad)
+    going = [f"{n}: {r.get('status')}" for n, r in sorted(newest.items()) if r.get("status") != "completed"]
+    if going:
+        return "wait", "; ".join(going)
+    return "ok", f"{len(newest)} workflows"
 
 
 def safe_path(cargo: bool = False, with_git: bool = True) -> str:
@@ -1170,6 +1197,7 @@ class Lander:
         self.law_state_timeout = 900.0
         self.preflight_runs = 0
         self.preflighted_tree = ""
+        self.public: bool | None = None   # GitHub's visibility of the repository, read on first use (is_public)
         self.poll_seconds = 30
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
         # the delays before asking a read again after a transient GitHub failure (GH_TRANSIENT)
@@ -1270,6 +1298,59 @@ class Lander:
         # (POSIX-form paths: bash on Windows reads `C:\\…` as an escape, and run-preflight.sh finds its siblings by
         # dirname "$0"; git and Git Bash both take `C:/…`)
         self.sh(bash_program(), runner.as_posix(), Path(self.root).as_posix(), "--fast", "--class", "land")
+
+    def is_public(self) -> bool:
+        """whether GitHub says the repository is public (read once; a failure stops the landing): a public
+        repository lands on the CI receipt of the exact SHA (2026-11-08 user decision A: its CI runs the build and the
+        tests, and main takes a commit only when every run the change fired there is green), a private one on the
+        local preflight"""
+        if self.public is None:
+            v = self.gh_json("api", f"repos/{self.slug()}", "--jq", "{v: .visibility}")
+            if not isinstance(v, dict) or v.get("v") not in ("public", "private", "internal"):
+                raise LandError(f"GitHub's visibility of {self.slug()} cannot be read ({v!r})")
+            self.public = v["v"] == "public"
+            self.log(f"repository is {v['v']}: landing on "
+                     + ("the CI receipt of the evidence SHA (every run on it green)" if self.public
+                        else "the local preflight"))
+        return self.public
+
+    def run_cheap(self) -> None:
+        """a public repository: run-preflight.sh --cheap (the prepass's gates, no build of its own crates), whose
+        receipt the pre-push gate asks for on a ci/** push; the build and the tests are its CI's"""
+        self.preflight_runs += 1
+        runner = hooks_tool("scripts/run-preflight.sh")
+        self.sh(bash_program(), runner.as_posix(), Path(self.root).as_posix(), "--cheap")
+
+    def ci_receipt(self, ref: str, sha: str) -> None:
+        """a public repository: wait until every run on `sha` on `ref` has completed (the after-landing legs too:
+        the receipt is for every run the change fired), then the hooks checkout's ci_evidence_receipt.py writes the
+        "ci" receipt of the tree, which the pre-push gate asks for on main; a run that is not green, a run still
+        going when the polls run out, and a refused receipt stop the landing"""
+        slug = self.slug()
+        for _ in range(self.after_max_polls):
+            runs = [r for r in self.list_branch_runs(slug, ref) if r.get("headSha") == sha]
+            verdict, why = all_runs_verdict(runs)
+            if verdict == "red":
+                raise LandError(f"CI on {ref} is red for {sha[:7]} (every run counts for a public repository):\n  {why}")
+            if verdict == "ok":
+                self.log(f"CI on {ref}: every run on {sha[:7]} green ({why})")
+                break
+            time.sleep(self.poll_seconds)
+        else:
+            raise LandError(f"CI on {ref} did not complete every run on {sha[:7]} in time: {why}")
+        self.write_ci_receipt(sha)
+
+    def write_ci_receipt(self, sha: str) -> None:
+        tool = hooks_tool("scripts/ci_evidence_receipt.py")
+        uv = pinned_tool(UV_CANDIDATES)
+        r = subprocess.run([uv, "run", "-q", "--no-project", "--with", "pyyaml", "python3", str(tool), str(self.root),
+                            "--sha", sha], cwd=self.root, capture_output=True, text=True, env=gh_env(), timeout=7800)
+        for line in (r.stdout + r.stderr).splitlines():
+            self.log(f"ci-evidence: {line}")
+        if r.returncode != 0:
+            raise LandError(f"no CI receipt for {sha[:7]} (exit {r.returncode}): nothing pushed to main\n  "
+                            + "\n  ".join((r.stderr or r.stdout).strip().splitlines()[-6:]))
+        self.record.append(f"ci receipt: {sha}")
 
     def run_gate(self, lines: list[str]) -> None:
         """the hooks checkout's git pre-push gate (hooks/git_pre_push.py, not the git-hooks/ wrapper: that also runs the
@@ -1840,7 +1921,12 @@ class Lander:
         # it): a rebase makes a new tree, so after one the preflight runs whatever `verify` chose (2026-10-29: a
         # documents-only or compile-only rebase used to push a tree no preflight had run on)
         tree = self.git("rev-parse", "HEAD^{tree}")
-        if tree != self.preflighted_tree:
+        if self.direct_reason is None and self.is_public():
+            # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local
+            if tree != self.preflighted_tree:
+                self.run_cheap()
+                self.preflighted_tree = tree
+        elif tree != self.preflighted_tree:
             self.run_preflight()
             self.preflighted_tree = tree
         elif verify == "compile":
@@ -1899,6 +1985,8 @@ class Lander:
                 # waiting: wait for (or take the result of) that run instead of pushing again
                 self.log(f"{ref} already holds {sha[:7]}: reusing its CI runs")
                 self.wait_evidence(ref, sha)
+                if self.is_public():
+                    self.ci_receipt(ref, sha)
                 return
             if existing:
                 self.git("fetch", "-q", self.remote, existing[0], check=False)
@@ -1915,6 +2003,8 @@ class Lander:
         self.run_gate([f"{sha} {sha} refs/heads/{ref} {self.hook_remote_sha(f'refs/heads/{ref}')}"])
         self.git("push", "-q", "--force", self.remote, f"{sha}:refs/heads/{ref}")
         self.wait_evidence(ref, sha)
+        if self.is_public():
+            self.ci_receipt(ref, sha)
 
     def land(self) -> str:
         with self.own_copy():
@@ -2129,6 +2219,11 @@ class Lander:
                         code_moved = not docs_only(theirs, workflow_input_rules(self.root))
                     except LandError as e:
                         self.log(f"the workflow inputs cannot be read ({e}): treating the move as code")
+                        code_moved = True
+                    if not code_moved and lane == "ci" and self.is_public():
+                        # the landed SHA needs its own CI receipt: a rebase onto documents gathers it again
+                        self.log("main gained documents only, but a public repository lands on the CI receipt "
+                                 "of the exact SHA: gathering the evidence again")
                         code_moved = True
                     verify = "none" if not code_moved else ("preflight" if overlaps(ours, theirs) else "compile")
                     if code_moved and lane == "ci" and not self.dry_run:
