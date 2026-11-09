@@ -39,7 +39,7 @@ pub(crate) const SHAPE_TORUS: u32 = 5;
 /// instead of working with another one.
 pub(crate) fn finite(x: f64) -> Option<Fix128> {
     const LIMIT: f64 = 9_223_372_036_854_775_808.0;
-    (-LIMIT <= x && x < LIMIT).then(|| Fix128::from_f64(x))
+    (-LIMIT..LIMIT).contains(&x).then(|| Fix128::from_f64(x))
 }
 
 /// [`finite`], and greater than zero.
