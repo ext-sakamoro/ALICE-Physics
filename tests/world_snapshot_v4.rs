@@ -671,7 +671,6 @@ fn version_6_form(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
         CombineRule::Min => 1,
         CombineRule::Max => 2,
         CombineRule::Multiply => 3,
-        other => panic!("no documented tag for {other:?}"),
     };
     for id in 0..world.material_table.len() {
         let m = world.material_table.get(id as u16);
