@@ -394,3 +394,30 @@ fn diag_sweep() {
             (w2 - w1) + rate, sstop, 60.0 + w1 / rate * 60.0, d.x.to_f64(), d.y.to_f64(), d.z.to_f64(), total, after);
     }
 }
+
+#[test]
+#[ignore = "diagnostic tail"]
+fn diag_tail() {
+    for n in [8usize, 16] {
+        let (mut s, sb) = spinning(0.01, 6.0, n);
+        let (mut w, b) = level(0.05, 2.0, n);
+        for f in 1..=480 {
+            s.step(fx(DT));
+            w.step(fx(DT));
+            if (330..=345).contains(&f)
+                || (355..=366).contains(&f)
+                || f == 380
+                || f == 396
+                || f == 420
+                || f == 480
+            {
+                println!(
+                    "n={n} f={f} ω_y {:.3e} v {:.3e} ω_z r {:.3e}",
+                    s.bodies[sb].angular_velocity.y.to_f64(),
+                    w.bodies[b].velocity.x.to_f64(),
+                    w.bodies[b].angular_velocity.z.to_f64() * R
+                );
+            }
+        }
+    }
+}
