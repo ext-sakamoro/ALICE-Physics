@@ -28,7 +28,11 @@
 //! further than `max_travel` from the surface (it ran past an edge).
 //!
 //! **Units.** SI: positions m, velocities m/s, `g` m/s², `c` 1/s, `dt` s, `drip_cos`
-//! dimensionless. All quantities are `Fix128` (Q64.64), so a run replays bit for bit.
+//! dimensionless. The particle's state and the integration are `Fix128` (Q64.64). The surface
+//! is read from the target as `f32` (an SDF's distance and normal, converted once with
+//! `Fix128::from_f32`), so a run replays bit for bit when the field's own `f32` evaluation is
+//! deterministic (the same code and the same `f32` operations on every machine; a field that
+//! uses fused multiply-add on one machine and not on another can differ in its last bit).
 //! [`ParticleSystem::state_digest`] fixes everything the next step depends on.
 //!
 //! **Conservation.** Mass per particle is constant: particles are neither split nor merged.
@@ -47,7 +51,9 @@
 //! is linear (a viscous film), not inertial.
 //!
 //! **Validation.** `tests/analytic_particle_run_off.rs`:
-//! - `on_an_incline_the_speed_reaches_the_closed_form` (`|g| sin α / c`)
+//! - `on_an_incline_the_speed_reaches_the_closed_form` (`|g| sin α / c` at steps of
+//!   1/60, 1/240 and 1/960 s)
+//! - `a_drop_that_died_and_came_back_is_free` (a surface is not carried into a new life)
 //! - `on_a_sphere_the_drop_drips_at_the_cosine_it_was_told`
 //! - `past_an_edge_the_drop_falls_free`
 //! - `a_query_surface_holds_the_drop_where_it_is_occupied`
@@ -269,6 +275,14 @@ pub struct RunOffEvents {
     pub dripped: Vec<usize>,
 }
 
+/// Which target a particle ran down, and where and at what age the run-off step left it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SurfaceRecord {
+    target: usize,
+    age: Fix128,
+    position: Vec3Fix,
+}
+
 /// A particle system managing particles and emitters.
 pub struct ParticleSystem {
     /// All particles (alive and dead)
@@ -282,8 +296,12 @@ pub struct ParticleSystem {
     /// Maximum number of particles allowed
     pub max_particles: usize,
     /// The target each particle is running down in [`Self::step_with_run_off`], by
-    /// particle index; shorter than `particles` when the later ones are not on anything.
-    on_surface: Vec<Option<usize>>,
+    /// particle index, with the particle's age and position as that step left them; shorter
+    /// than `particles` when the later ones are not on anything. A record counts only while
+    /// the particle is alive and still at that age and position ([`Self::particle_on_surface`]):
+    /// any other step, a death, a new life in the slot or a change through `particles` moves
+    /// one of them, so a drop that left the surface any other way is free.
+    on_surface: Vec<Option<SurfaceRecord>>,
 }
 
 impl ParticleSystem {
@@ -546,7 +564,11 @@ impl ParticleSystem {
                 self.on_surface[index] = None;
                 continue;
             }
-            let on = self.on_surface[index].filter(|t| *t < targets.len());
+            let on = self.on_surface[index]
+                .filter(|r| r.age == particle.age && r.position == particle.position)
+                .map(|r| r.target)
+                .filter(|t| *t < targets.len());
+            let mut still_on = None;
             if let Some(t) = on {
                 let surface = targets[t].surface(particle.position, max_travel);
                 let normal = surface.map_or(down, |(_, n)| n);
@@ -557,10 +579,10 @@ impl ParticleSystem {
                 match targets[t].surface(moved, max_travel) {
                     Some((position, n)) if n.dot(down) < run_off.drip_cos => {
                         particle.position = position;
+                        still_on = Some(t);
                     }
                     _ => {
                         particle.position = moved;
-                        self.on_surface[index] = None;
                         events.dripped.push(index);
                     }
                 }
@@ -583,7 +605,7 @@ impl ParticleSystem {
                     });
                     particle.position = position;
                     particle.velocity = particle.velocity - normal * particle.velocity.dot(normal);
-                    self.on_surface[index] = Some(target);
+                    still_on = Some(target);
                 } else {
                     particle.position = start + displacement;
                 }
@@ -591,8 +613,13 @@ impl ParticleSystem {
             particle.age = particle.age + dt;
             if particle.age >= particle.lifetime {
                 particle.alive = false;
-                self.on_surface[index] = None;
+                still_on = None;
             }
+            self.on_surface[index] = still_on.map(|target| SurfaceRecord {
+                target,
+                age: particle.age,
+                position: particle.position,
+            });
         }
         events
     }
@@ -600,7 +627,9 @@ impl ParticleSystem {
     /// The target particle `index` is running down, `None` when it is free.
     #[must_use]
     pub fn particle_on_surface(&self, index: usize) -> Option<usize> {
-        self.on_surface.get(index).copied().flatten()
+        let record = self.on_surface.get(index).copied().flatten()?;
+        let p = self.particles.get(index)?;
+        (p.alive && p.age == record.age && p.position == record.position).then_some(record.target)
     }
 
     /// SHA-256 of everything that decides the next step: gravity, damping, the cap, every
@@ -700,8 +729,11 @@ impl ParticleSystem {
         lifetime: Fix128,
         mass: Fix128,
     ) -> bool {
-        for p in &mut self.particles {
+        for (i, p) in self.particles.iter_mut().enumerate() {
             if !p.alive {
+                if let Some(record) = self.on_surface.get_mut(i) {
+                    *record = None;
+                }
                 p.position = position;
                 p.velocity = velocity;
                 p.age = Fix128::ZERO;
