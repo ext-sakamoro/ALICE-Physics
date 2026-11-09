@@ -101,7 +101,7 @@ fn scene() -> PhysicsWorld {
 ///
 /// Up to the identifier `e90000da…` this build recomputed the writer's `law_id` directly
 /// (`writer_scene().law_id(&writer_id)`), the damping field set to the writer's value. Sleep by
-/// elapsed time (identifier `e703ee83…`) changed row 11's encoding from a `u32` idle-step count
+/// elapsed time (identifier `2f447a34…`) changed row 11's encoding from a `u32` idle-step count
 /// to a `Fix128` time, so no world of this build folds to the writer's value any more; the
 /// fixture's header is instead checked against the documented rows folded with the writer's
 /// encoding (`tests/support/law_rows.rs`, row 11 as the step count 60), and this build's own
@@ -166,7 +166,7 @@ fn the_fixture_header_is_what_the_writer_printed() {
     // and the header law_id is the scene's rule under the writer's semantics, folded as
     // the writer encoded it (damping as the retention 0.99 per step, the sleep rule as 60
     // idle steps); this build's own `law_id` folds the sleep rule as a time (row 11 changed
-    // at e703ee83…), so even with the writer's damping value it gives another id
+    // at 2f447a34…), so even with the writer's damping value it gives another id
     assert_eq!(
         hex(&spec(&writer_laws(), &unhex(WRITER_SEMANTICS))),
         WRITER_LAW_ID
