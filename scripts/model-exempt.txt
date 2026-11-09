@@ -48,6 +48,7 @@ src/material.rs	material parameter table and pair combine rules (data), the laws
 src/math.rs	fixed point arithmetic and vectors
 src/math_util.rs	fixed point numerics (transcendentals, root finding)
 src/metric.rs	the distance metric (Euclidean by default), a definition not a model
+src/mpm2d/implicit.rs	the implicit step of src/mpm2d.rs, its model is in that module's MODEL section
 src/netcode.rs	network state replication
 src/netcode_prediction.rs	network prediction and reconciliation
 src/neural.rs	fixed point neural inference for controllers, no physics
