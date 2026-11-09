@@ -157,6 +157,11 @@ fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
         let frames = u32::try_from(frames.hi).expect("fits u32");
         payload.splice(at..at + 16, frames.to_le_bytes());
     }
+    // version 8 always carries the axis-lock section (count u64) and version 9
+    // appends the soft-body section (count u64 + next grab id u32): a scene
+    // without locks or soft bodies ends in 20 zero bytes that version 3 does not have
+    assert_eq!(&payload[payload.len() - 20..], &[0u8; 20]);
+    payload.truncate(payload.len() - 20);
     let mut out = v6[..SEMANTICS_AT].to_vec();
     out[VERSION_AT..VERSION_AT + 2].copy_from_slice(&3u16.to_le_bytes());
     out[LEN_AT..LEN_AT + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
@@ -191,16 +196,16 @@ fn checked(
     r
 }
 
-/// Version 8 keeps the layout of version 4 (version 5 added the panic fault
+/// Version 9 keeps the layout of version 4 (version 5 added the panic fault
 /// codes, version 6 stores damping as rates per second, version 7 the body axis
 /// locks when a body had one, version 8 the sleep rule and idle times as seconds
-/// and always the axis-lock section).
+/// and always the axis-lock section, version 9 appends the soft-body section).
 #[test]
-fn the_writer_emits_version_8() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 8);
+fn the_writer_emits_version_9() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 9);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &8u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &9u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
@@ -420,7 +425,7 @@ fn older_versions_are_accepted_as_unpinned() {
             "version {version}"
         );
     }
-    // the version 3 form holds the same world as the version 8 blob once its
+    // the version 3 form holds the same world as the version 9 blob once its
     // step count is read with the writer's step
     let mut b = PhysicsWorld::new(PhysicsConfig::default());
     assert_eq!(
