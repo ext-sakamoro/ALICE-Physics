@@ -286,9 +286,11 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
 /// became a rate per second: the scene's retentions 0.999 (world) and 0.01
-/// (pivot) per step of 1/60 s are now the rates `-ln(r)·60`.
+/// (pivot) per step of 1/60 s are now the rates `-ln(r)·60`. Re-recorded (from `8fe963f2…`)
+/// when a sleeping body that a step moves (a constraint pulled it) began to wake its island
+/// and keep the move, where it had stayed asleep holding the moved pose.
 const GOLDEN_JOINT_PENDULUM: &str =
-    "8fe963f2a89fbd96956eaee1c3651e94401f0511e8629b722070be6e3f12d793";
+    "6dcae0f3989e3ba3afd8e4056a98e774e093175ff2307d7fca8a7e8b3c204c37";
 
 #[test]
 fn determinism_joint_pendulum() {
