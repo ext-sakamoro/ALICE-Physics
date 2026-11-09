@@ -148,7 +148,8 @@ fn section_motors() {
         Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
         Vec3Fix::from_int(3, 0, 0),
     );
-    let mut motor = PdController::new(Fix128::from_int(4), Fix128::ZERO, Fix128::from_int(1000));
+    let mut motor = PdController::new(Fix128::from_int(4), Fix128::ZERO, Fix128::from_int(1000))
+        .expect("a non-negative force limit");
     motor.set_position_target(Fix128::from_int(7));
     artic.set_motor(link1, motor);
     // Out-of-range link index must be a silent no-op (documented behavior,
