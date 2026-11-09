@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5953 |
+| 🟢 Not ignored (run by CI) | 5959 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6048** |
+| **Total** | **6054** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5953)
+## 🟢 Not ignored (5959)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -500,6 +500,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm07_reset_and_rollback_contract.rs` | 7 |
 | `world_snapshot_previous_semantics.rs` | 7 |
 | `analytic_analytics_bridge_wiring.rs` | 6 |
+| `analytic_axis_lock.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |
 | `analytic_isotropic_inertia.rs` | 6 |
