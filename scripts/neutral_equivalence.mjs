@@ -169,6 +169,8 @@ function wide(a) {
   out.castCapsule = a.call(w, "castCapsule", f([0, 10, 1]), f([0, 10.5, 1]), 0.2, f([0, -1, 0]), 50, undefined);
   out.overlap = a.call(w, "overlapSphere", f([0, 1, 0]), 3, undefined);
   out.observe = a.call(w, "observeBody", b[0]);
+  // the rope's particles after the steps (the rope is the third resident)
+  out.ropePositions = a.call(w, "ropePositions", out.rope[0]);
   out.states = a.call(w, "getStates");
   out.velocities = a.call(w, "getVelocities");
   const saved = a.call(w, "serializeState");

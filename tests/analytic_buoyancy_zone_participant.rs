@@ -620,8 +620,11 @@ fn splash_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const SPLASH_XPBD: &str = "6b6b4911a922cdf8b5fddf3c103d480fb7e250a1c14cd8b0bffe286328e861bb";
-const SPLASH_TGS: &str = "d0159a1280aa49ad381e7555f7cd8ee336718f608f521ca9a35bed65bfa49732";
+// The snapshot's header holds `PHYSICS_SEMANTICS_ID` and the law id, so these move with the
+// identifier: when it moved to `c82742de…` the bodies and the payload after 256 frames stayed
+// bit for bit the same (both backends), and only the header changed the digests.
+const SPLASH_XPBD: &str = "b4a4b2235ea5e8b0910cd165c3c3647cbc925a70d317be06757e51fbcf6199ff";
+const SPLASH_TGS: &str = "fa207bee00a662deeb3baa005e9f2dce933d7d14ba347089cd465f2b5391a86a";
 
 /// golden (determinism): the world snapshot and the payload of the splash scene
 /// after 256 frames, for each backend. CI runs this on every operating system

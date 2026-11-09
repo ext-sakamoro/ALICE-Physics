@@ -252,7 +252,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 |----------------------|--------:|
 | step: runs when `PhysicsWorld` steps | 26 |
 | world API: used through another `PhysicsWorld` method | 13 |
-| binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
+| binding: reached from the C ABI, Python or WebAssembly bindings | 3 |
 | standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 123 |
 | unused: no caller outside tests | 1 |
 
@@ -374,7 +374,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer (built with the commands below) |
 
 The bindings cover what you need to build and step a scene (bodies, their orientation and angular
-velocity, collision radius and shapes, static colliders, joints, impulses, wind and buoyancy zones, state serialization), not every module: the standalone modules
+velocity, collision radius and shapes, static colliders, joints, impulses, wind and buoyancy zones, ropes tied to bodies, state serialization), not every module: the standalone modules
 in the table above are Rust only. Two state forms are bound: body motion only
 (`serializeState` / `serialize_state` / `alice_physics_state_serialize`, for rollback) and the
 whole world (`snapshotWorld` / `restoreWorld`, `snapshot_world` / `restore_world`,

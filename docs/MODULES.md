@@ -118,8 +118,8 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `rope` | XPBD rope and cable |  | [`rope_pin_constraints`](../examples/rope_pin_constraints.rs) | standalone |
-| `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | standalone |
+| `rope` | XPBD rope and cable |  | [`rope_pin_constraints`](../examples/rope_pin_constraints.rs) | standalone (binding 6 of 13 items) |
+| `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | binding |
 | `rope_attach` | ropes attached to rigid bodies, with compliance and break force |  | [`rope_body_attachment`](../examples/rope_body_attachment.rs) | standalone |
 | `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | standalone |
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |
@@ -143,7 +143,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `vehicle_dynamics` | per-wheel contact forces, wheel spin, brakes and ABS, brush and Magic Formula tyres, road surfaces and weather, powertrain |  | [`vehicle_dynamics`](../examples/vehicle_dynamics.rs) | standalone |
 | `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | world API |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) |  | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) | standalone |
-| `buoyancy_zone` | bounded fluid volume applying buoyancy and drag, also as a world participant |  | [`participant_buoyancy_zone`](../examples/participant_buoyancy_zone.rs) | standalone (binding 4 of 10 items) |
+| `buoyancy_zone` | bounded fluid volume applying buoyancy and drag, also as a world participant |  | [`participant_buoyancy_zone`](../examples/participant_buoyancy_zone.rs) | standalone (binding 8 of 17 items) |
 | `wind_zone` | bounded wind volume applying drag, also as a world participant |  | [`participant_wind_zone`](../examples/participant_wind_zone.rs) | standalone (binding 5 of 14 items) |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |

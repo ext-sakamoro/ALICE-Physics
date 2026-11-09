@@ -14,7 +14,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 26 |
 | world API | used through another `PhysicsWorld` method | 13 |
-| binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
+| binding | reached only from the C ABI, Python or WebAssembly bindings | 3 |
 | standalone | a Rust API that only examples call | 123 |
 | unused | no caller outside tests | 1 |
 
@@ -33,7 +33,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 7 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 69 / 13 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 69 / 13 / 2 / 17 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
@@ -44,7 +44,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 13 / 0 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 43 / 23 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
@@ -61,6 +61,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
+| `rope_participant` | binding | 0 / 0 / 6 / 1 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `aeroelasticity` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `analytics_bridge` | standalone | 0 / 0 / 0 / 14 / 0 | — |
@@ -75,7 +76,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 11 / 0 | — |
-| `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
+| `buoyancy_zone` | standalone (binding 8 of 17 items) | 0 / 0 / 8 / 9 / 0 | C ABI, Python, WebAssembly |
 | `ccd` | standalone (step 2, world API 1 of 13 items) | 2 / 1 / 0 / 10 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
@@ -149,7 +150,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `raycast` | standalone (step 4, binding 2 of 16 items) | 4 / 0 / 2 / 10 / 0 | C ABI, Python, WebAssembly |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
-| `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `rope` | standalone (binding 6 of 13 items) | 0 / 0 / 6 / 7 / 0 | C ABI, Python, WebAssembly |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `rotor` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `scene_io` | standalone (binding 1 of 11 items) | 0 / 0 / 1 / 10 / 0 | Python, WebAssembly |
@@ -183,19 +184,19 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `wind_zone` | standalone (binding 5 of 14 items) | 0 / 0 / 5 / 9 / 0 | C ABI, Python, WebAssembly |
 | `privacy` | unused (standalone 21 of 45 items) | 0 / 0 / 0 / 21 / 24 | — |
 
 ### C ABI (`--features ffi`)
 
-`src/ffi.rs` exports 65 `extern "C"` functions. Which consumers declare or call each one:
+`src/ffi.rs` exports 69 `extern "C"` functions. Which consumers declare or call each one:
 
 | Consumer | Functions used | Missing |
 |----------|---------------:|---------|
-| C header | 65 / 65 | — |
-| bindings header | 65 / 65 | — |
-| Unity C# | 65 / 65 | — |
-| Unreal Engine plugin | 44 / 65 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_body_set_angular_velocity`, `alice_physics_body_set_material`, `alice_physics_body_set_rotation`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_add_magnet`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_register_material`, `alice_physics_world_restore`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
+| C header | 69 / 69 | — |
+| bindings header | 69 / 69 | — |
+| Unity C# | 69 / 69 | — |
+| Unreal Engine plugin | 44 / 69 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_body_set_angular_velocity`, `alice_physics_body_set_material`, `alice_physics_body_set_rotation`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_add_buoyancy_zone`, `alice_physics_world_add_magnet`, `alice_physics_world_add_rope`, `alice_physics_world_add_wind_zone`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_register_material`, `alice_physics_world_restore`, `alice_physics_world_rope_positions`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
@@ -210,7 +211,10 @@ Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 | Unreal Engine plugin | `alice_physics_body_set_rotation` | not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_law_id` | a 32-byte identifier has no Blueprint type yet; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_state_digest` | a 32-byte digest has no Blueprint type yet; C++ code in a project calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_add_buoyancy_zone` | the component exposes no buoyancy zone Blueprint function yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_add_magnet` | the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_add_rope` | the component exposes no rope Blueprint function yet; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_add_wind_zone` | the component exposes no wind zone Blueprint function yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_cast_capsule` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_cast_ray` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_cast_sphere` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
@@ -220,5 +224,6 @@ Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 | Unreal Engine plugin | `alice_physics_world_overlap_sphere` | a caller-sized AliceQueryTarget buffer is not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_register_material` | the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_restore` | not wrapped yet: the component rewinds with alice_physics_state_deserialize; a Blueprint wrapper waits for an Unreal build in CI to check it |
+| Unreal Engine plugin | `alice_physics_world_rope_positions` | the component exposes no rope Blueprint function yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_set_velocities_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_snapshot` | not wrapped yet: the component rewinds with alice_physics_state_serialize; a Blueprint wrapper waits for an Unreal build in CI to check it |

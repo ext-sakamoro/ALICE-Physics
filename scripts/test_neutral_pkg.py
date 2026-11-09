@@ -411,7 +411,7 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Uint8Array(32).fill(3);"
         if n == "restoreWorld":
             return "this.steps = a[0][1];"
-        if n.startswith(("get", "cast", "observe", "raycast", "overlap")):
+        if n.startswith(("get", "cast", "observe", "raycast", "overlap")) or n == "ropePositions":
             return "return new Float64Array([this.ids, 0.5]);"
         if n.endswith("Count"):
             return "return this.ids;"
