@@ -666,11 +666,38 @@ jobs:
         with:
           shared-key: wasm-wasip1
 
-      # 2026-09-15: `curl … | bash` は curl が network error (35 Connection reset) でも
-      # pipeline exit が bash 側 = 0 になり step green のまま次 step で `wasmtime: command not found`
-      # (exit 127) になる (run 34863693753) 公式 setup action に置換 (retry 内蔵、pipefail 問題が消える)
+      # wasmtime at a pinned version and checksum: the setup action takes "latest" (once without
+      # assets yet) and its download host once answered 504; the binary is cached by version and
+      # the download retried, a mismatching checksum fails
+      - name: Cache wasmtime
+        id: wasmtime-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.wasmtime-v49.0.2
+          key: wasmtime-v49.0.2-x86_64-linux
       - name: Install wasmtime
-        uses: bytecodealliance/actions/wasmtime/setup@v1
+        if: steps.wasmtime-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.2/wasmtime-v49.0.2-x86_64-linux.tar.xz
+          mkdir -p ~/.wasmtime-v49.0.2
+          # first source: the release tarball, checked against its recorded SHA-256
+          if curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$RUNNER_TEMP/wasmtime.tar.xz" "$url"; then
+            echo "a4d6e9e3a5a60f527cf7793d674c48930c80c2e8977995b8a275cad3254b9322  $RUNNER_TEMP/wasmtime.tar.xz" | sha256sum -c -
+            tar -xJf "$RUNNER_TEMP/wasmtime.tar.xz" -C ~/.wasmtime-v49.0.2 --strip-components=1
+          else
+            # second source when the release host keeps failing: the same version from crates.io,
+            # with the crate's own lock file (cargo checks every downloaded crate's checksum)
+            echo "release download failed; building wasmtime-cli 49.0.2 from crates.io"
+            cargo install wasmtime-cli --version 49.0.2 --locked --root "$RUNNER_TEMP/wasmtime-cli"
+            cp "$RUNNER_TEMP/wasmtime-cli/bin/wasmtime" ~/.wasmtime-v49.0.2/wasmtime
+          fi
+      - name: Check wasmtime runs
+        shell: bash
+        run: |
+          echo "$HOME/.wasmtime-v49.0.2" >> "$GITHUB_PATH"
+          "$HOME/.wasmtime-v49.0.2/wasmtime" --version
 
       - name: Build determinism_golden test (wasm32-wasip1)
         run: cargo test --test determinism_golden --target wasm32-wasip1 --no-run
