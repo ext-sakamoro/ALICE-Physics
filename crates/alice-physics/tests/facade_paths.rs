@@ -108,7 +108,10 @@ use alice_physics::buckling::SnapThroughError as _;
 use alice_physics::build_convex_hull as _;
 use alice_physics::buoyancy_zone as _;
 use alice_physics::buoyancy_zone::BuoyancyZone as _;
+use alice_physics::buoyancy_zone::BuoyancyZoneParticipant as _;
 use alice_physics::buoyancy_zone::ZoneShape as _;
+use alice_physics::buoyancy_zone::BUOYANCY_ZONE_OBS_BODIES as _;
+use alice_physics::buoyancy_zone::BUOYANCY_ZONE_PARTICIPANT_KIND as _;
 use alice_physics::bvh as _;
 use alice_physics::bvh::point_to_morton as _;
 use alice_physics::bvh::BvhNode as _;
@@ -1214,6 +1217,12 @@ use alice_physics::rope_attach as _;
 use alice_physics::rope_attach::solve_rope_attachments as _;
 use alice_physics::rope_attach::solve_rope_attachments_two_way as _;
 use alice_physics::rope_attach::RopeAttachment as _;
+use alice_physics::rope_participant as _;
+use alice_physics::rope_participant::RopeAnchor as _;
+use alice_physics::rope_participant::RopeAnchorError as _;
+use alice_physics::rope_participant::RopeParticipant as _;
+use alice_physics::rope_participant::ROPE_OBS_TENSION as _;
+use alice_physics::rope_participant::ROPE_PARTICIPANT_KIND as _;
 use alice_physics::rotor as _;
 use alice_physics::rotor::hover_induced_velocity_m_s as _;
 use alice_physics::rotor::ideal_hover_power_w as _;
@@ -1578,6 +1587,10 @@ use alice_physics::wedge as _;
 use alice_physics::wedge::Wedge as _;
 use alice_physics::wind_zone as _;
 use alice_physics::wind_zone::WindZone as _;
+use alice_physics::wind_zone::WindZoneParticipant as _;
+use alice_physics::wind_zone::WIND_ZONE_OBS_BODIES as _;
+use alice_physics::wind_zone::WIND_ZONE_OBS_TIME as _;
+use alice_physics::wind_zone::WIND_ZONE_PARTICIPANT_KIND as _;
 use alice_physics::world_character as _;
 use alice_physics::world_participant as _;
 use alice_physics::world_participant::check_field_ports as _;
@@ -1864,7 +1877,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1846 paths, checked at compile time
+    // 1859 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
