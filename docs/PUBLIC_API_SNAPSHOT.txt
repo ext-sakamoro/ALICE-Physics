@@ -8303,6 +8303,27 @@ pub const alice_physics_core::molecular_dynamics::MD_PARTICIPANT_KIND: alice_phy
 pub fn alice_physics_core::molecular_dynamics::pair_forces_all_pairs<P: alice_physics_core::pair_potential::PairPotential>(&alice_physics_core::pair_potential::Truncated<P>, &alice_physics_core::molecular_dynamics::PeriodicBox, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<alice_physics_core::molecular_dynamics::PairForces, alice_physics_core::molecular_dynamics::MdError>
 pub fn alice_physics_core::molecular_dynamics::pair_forces_cell_list<P: alice_physics_core::pair_potential::PairPotential>(&alice_physics_core::pair_potential::Truncated<P>, &alice_physics_core::molecular_dynamics::PeriodicBox, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<alice_physics_core::molecular_dynamics::PairForces, alice_physics_core::molecular_dynamics::MdError>
 pub mod alice_physics_core::motor
+pub enum alice_physics_core::motor::MotorError
+pub alice_physics_core::motor::MotorError::NegativeLimit
+pub alice_physics_core::motor::MotorError::ZeroRotation
+impl core::clone::Clone for alice_physics_core::motor::MotorError
+pub fn alice_physics_core::motor::MotorError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::motor::MotorError
+impl core::cmp::PartialEq for alice_physics_core::motor::MotorError
+pub fn alice_physics_core::motor::MotorError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::motor::MotorError
+pub fn alice_physics_core::motor::MotorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::motor::MotorError
+pub fn alice_physics_core::motor::MotorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::motor::MotorError
+impl core::marker::StructuralPartialEq for alice_physics_core::motor::MotorError
+impl core::marker::Freeze for alice_physics_core::motor::MotorError
+impl core::marker::Send for alice_physics_core::motor::MotorError
+impl core::marker::Sync for alice_physics_core::motor::MotorError
+impl core::marker::Unpin for alice_physics_core::motor::MotorError
+impl core::marker::UnsafeUnpin for alice_physics_core::motor::MotorError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::motor::MotorError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::motor::MotorError
 pub enum alice_physics_core::motor::MotorMode
 pub alice_physics_core::motor::MotorMode::Off
 pub alice_physics_core::motor::MotorMode::Position
@@ -8347,14 +8368,15 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::motor::JointMo
 pub struct alice_physics_core::motor::PdController
 pub alice_physics_core::motor::PdController::kd: alice_physics_core::math::Fix128
 pub alice_physics_core::motor::PdController::kp: alice_physics_core::math::Fix128
-pub alice_physics_core::motor::PdController::max_force: alice_physics_core::math::Fix128
 pub alice_physics_core::motor::PdController::mode: alice_physics_core::motor::MotorMode
 pub alice_physics_core::motor::PdController::target_position: alice_physics_core::math::Fix128
 pub alice_physics_core::motor::PdController::target_velocity: alice_physics_core::math::Fix128
 impl alice_physics_core::motor::PdController
 pub fn alice_physics_core::motor::PdController::compute(&self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::motor::PdController::disable(&mut self)
-pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::motor::PdController::max_force(&self) -> alice_physics_core::math::Fix128
+pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::motor::MotorError>
+pub fn alice_physics_core::motor::PdController::set_max_force(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::motor::PdController::set_position_target(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::motor::PdController::set_velocity_target(&mut self, alice_physics_core::math::Fix128)
 impl core::clone::Clone for alice_physics_core::motor::PdController
@@ -8378,14 +8400,15 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::motor::PdContr
 pub struct alice_physics_core::motor::PdController3D
 pub alice_physics_core::motor::PdController3D::kd: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::motor::PdController3D::kp: alice_physics_core::math::Vec3Fix
-pub alice_physics_core::motor::PdController3D::max_torque: alice_physics_core::math::Fix128
 pub alice_physics_core::motor::PdController3D::mode: alice_physics_core::motor::MotorMode
 pub alice_physics_core::motor::PdController3D::target_angular_velocity: alice_physics_core::math::Vec3Fix
-pub alice_physics_core::motor::PdController3D::target_rotation: alice_physics_core::math::QuatFix
 impl alice_physics_core::motor::PdController3D
 pub fn alice_physics_core::motor::PdController3D::compute_torque(&self, alice_physics_core::math::QuatFix, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
-pub const fn alice_physics_core::motor::PdController3D::new(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> Self
-pub fn alice_physics_core::motor::PdController3D::set_rotation_target(&mut self, alice_physics_core::math::QuatFix)
+pub const fn alice_physics_core::motor::PdController3D::max_torque(&self) -> alice_physics_core::math::Fix128
+pub const fn alice_physics_core::motor::PdController3D::new(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::motor::MotorError>
+pub fn alice_physics_core::motor::PdController3D::set_max_torque(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::motor::MotorError>
+pub fn alice_physics_core::motor::PdController3D::set_rotation_target(&mut self, alice_physics_core::math::QuatFix) -> core::result::Result<(), alice_physics_core::motor::MotorError>
+pub const fn alice_physics_core::motor::PdController3D::target_rotation(&self) -> alice_physics_core::math::QuatFix
 impl core::clone::Clone for alice_physics_core::motor::PdController3D
 pub fn alice_physics_core::motor::PdController3D::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::motor::PdController3D
@@ -13350,14 +13373,15 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::Part
 pub struct alice_physics_core::prelude::PdController
 pub alice_physics_core::prelude::PdController::kd: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::PdController::kp: alice_physics_core::math::Fix128
-pub alice_physics_core::prelude::PdController::max_force: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::PdController::mode: alice_physics_core::motor::MotorMode
 pub alice_physics_core::prelude::PdController::target_position: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::PdController::target_velocity: alice_physics_core::math::Fix128
 impl alice_physics_core::motor::PdController
 pub fn alice_physics_core::motor::PdController::compute(&self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::motor::PdController::disable(&mut self)
-pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::motor::PdController::max_force(&self) -> alice_physics_core::math::Fix128
+pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::motor::MotorError>
+pub fn alice_physics_core::motor::PdController::set_max_force(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::motor::PdController::set_position_target(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::motor::PdController::set_velocity_target(&mut self, alice_physics_core::math::Fix128)
 impl core::clone::Clone for alice_physics_core::motor::PdController
@@ -13562,7 +13586,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_distance_constraint(&mut se
 pub fn alice_physics_core::solver::PhysicsWorld::add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint(&mut self, alice_physics_core::joint::Joint) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics_core::motor::PdController) -> usize
-pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::result::Result<usize, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics_core::solver::PreSolveHook)
 pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics_core::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
@@ -13621,7 +13645,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, us
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics_core::shape::Shape) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics_core::solver::Broadphase)
 pub fn alice_physics_core::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
-pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> core::result::Result<bool, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)
@@ -18539,7 +18563,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_distance_constraint(&mut se
 pub fn alice_physics_core::solver::PhysicsWorld::add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint(&mut self, alice_physics_core::joint::Joint) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics_core::motor::PdController) -> usize
-pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::result::Result<usize, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics_core::solver::PreSolveHook)
 pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics_core::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
@@ -18598,7 +18622,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, us
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics_core::shape::Shape) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics_core::solver::Broadphase)
 pub fn alice_physics_core::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
-pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> core::result::Result<bool, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)
@@ -24983,14 +25007,15 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::Part
 pub struct alice_physics_core::PdController
 pub alice_physics_core::PdController::kd: alice_physics_core::math::Fix128
 pub alice_physics_core::PdController::kp: alice_physics_core::math::Fix128
-pub alice_physics_core::PdController::max_force: alice_physics_core::math::Fix128
 pub alice_physics_core::PdController::mode: alice_physics_core::motor::MotorMode
 pub alice_physics_core::PdController::target_position: alice_physics_core::math::Fix128
 pub alice_physics_core::PdController::target_velocity: alice_physics_core::math::Fix128
 impl alice_physics_core::motor::PdController
 pub fn alice_physics_core::motor::PdController::compute(&self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::motor::PdController::disable(&mut self)
-pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
+pub const fn alice_physics_core::motor::PdController::max_force(&self) -> alice_physics_core::math::Fix128
+pub const fn alice_physics_core::motor::PdController::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::motor::MotorError>
+pub fn alice_physics_core::motor::PdController::set_max_force(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::motor::PdController::set_position_target(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::motor::PdController::set_velocity_target(&mut self, alice_physics_core::math::Fix128)
 impl core::clone::Clone for alice_physics_core::motor::PdController
@@ -25237,7 +25262,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_distance_constraint(&mut se
 pub fn alice_physics_core::solver::PhysicsWorld::add_force_field(&mut self, alice_physics_core::force::ForceFieldInstance) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint(&mut self, alice_physics_core::joint::Joint) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics_core::motor::PdController) -> usize
-pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::result::Result<usize, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics_core::solver::PreSolveHook)
 pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics_core::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
@@ -25296,7 +25321,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, us
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics_core::shape::Shape) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics_core::solver::Broadphase)
 pub fn alice_physics_core::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics_core::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics_core::semantics::PeerMismatch>
-pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> bool
+pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics_core::math::QuatFix) -> core::result::Result<bool, alice_physics_core::motor::MotorError>
 pub fn alice_physics_core::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics_core::sleeping::SleepConfig)

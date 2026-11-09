@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2581 |
-| live | reached without examples (crate-internal roots or a binding) | 695 |
-| | **total** | **3307** |
+| L0 | not reached by any non-test code, examples included | 36 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2583 |
+| live | reached without examples (crate-internal roots or a binding) | 694 |
+| | **total** | **3313** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (34)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -27,6 +27,11 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
+- `src/motor.rs::PdController3D::max_torque`
+- `src/motor.rs::PdController3D::set_max_torque`
+- `src/motor.rs::PdController3D::target_rotation`
+- `src/motor.rs::PdController::max_force`
+- `src/motor.rs::PdController::set_max_force`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
 - `src/privacy.rs::LaplaceNoise::privatize`
@@ -59,12 +64,17 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (36)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
+- `src/motor.rs::PdController3D::max_torque`
+- `src/motor.rs::PdController3D::set_max_torque`
+- `src/motor.rs::PdController3D::target_rotation`
+- `src/motor.rs::PdController::max_force`
+- `src/motor.rs::PdController::set_max_force`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
 - `src/privacy.rs::LaplaceNoise::privatize`
@@ -108,7 +118,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2581)
+## L1 — example-only (2583)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -204,7 +214,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/metric.rs`: `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::norm`
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
 - `src/molecular_dynamics.rs`: `MD_OBS_KINETIC`, `MD_OBS_POTENTIAL`, `MD_OBS_TEMPERATURE`, `MD_OBS_TOTAL`, `MD_PARTICIPANT_KIND`, `MdError`, `MdParticipant`, `MdParticipant::boltzmann_constant`, `MdParticipant::new`, `MdParticipant::system`, `MdStepError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::try_step`, `VelocityVerlet::velocities`, `checked_quotient`, `checked_sub`, `pair_forces_all_pairs`, `pair_forces_cell_list`
-- `src/motor.rs`: `JointMotor::new`, `PdController3D::new`, `PdController3D::set_rotation_target`, `PdController::disable`, `PdController::set_position_target`, `PdController::set_velocity_target`
+- `src/motor.rs`: `JointMotor::new`, `MotorError`, `PdController3D::new`, `PdController3D::set_rotation_target`, `PdController::disable`, `PdController::new`, `PdController::set_position_target`, `PdController::set_velocity_target`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
 - `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBODY_OBS_BODIES`, `NBODY_OBS_POTENTIAL`, `NBODY_PARTICIPANT_KIND`, `NBodyError`, `NBodyParticipant`, `NBodyParticipant::law`, `NBodyParticipant::new`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
 - `src/netcode.rs`: `DeterministicSimulation::advance_frame`, `DeterministicSimulation::dt`, `DeterministicSimulation::get_snapshot`, `DeterministicSimulation::snapshot_count`

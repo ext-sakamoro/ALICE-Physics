@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5950 |
-| 🔴 Red by design | 69 |
+| 🟢 Not ignored (run by CI) | 5954 |
+| 🔴 Red by design | 66 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6045** |
+| **Total** | **6046** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (69)
+## 🔴 Red by design (66)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -50,9 +50,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
 - `max_queries_bounds_what_one_dispatch_covers` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-009: GpuDispatchConfig::max_queries is documented as \"Maximum queries per dispatch\"…
-- `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
-- `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
-- `non_unit_target_quaternion_must_not_scale_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-005: a non-unit target or current quaternion is not normalised; scaling the target qu…
 - `optimize_does_not_restore_material_carved_by_disjoint_craters` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-009: optimize() is documented as removing shapes fully contained by newer ones, but d…
 - `origin_y_offsets_the_surface` (audit_heightfield.rs) — known defect: AUD-A-S4W3-006: origin.y is never read (sample_height / signed_distance / aabb use the stored he…
 - `out_of_range_quotient_keeps_its_sign_and_magnitude` (audit_math.rs) — known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 …
@@ -150,7 +147,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5950)
+## 🟢 Not ignored (5954)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -176,6 +173,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_math.rs` | 32 |
 | `audit_raycast.rs` | 32 |
 | `analytic_world_character.rs` | 31 |
+| `audit_motor.rs` | 31 |
 | `audit_joint_extra.rs` | 30 |
 | `analytic_world_shape_query.rs` | 29 |
 | `audit_cfd_solver_rans.rs` | 29 |
@@ -185,7 +183,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_static_collider.rs` | 27 |
 | `analytic_world_step_ccd.rs` | 27 |
 | `audit_force.rs` | 27 |
-| `audit_motor.rs` | 27 |
 | `engineering_oracles_misc.rs` | 27 |
 | `analytic_euler_fv.rs` | 26 |
 | `analytic_maxwell_wiring.rs` | 26 |

@@ -2651,18 +2651,20 @@ impl PhysicsWorld {
     /// drives the joint's relative rotation `rotation_b * rotation_a⁻¹` to a
     /// target (see [`crate::motor::PdController3D::compute_torque`]). It
     /// follows its joint through removals like [`Self::add_joint_motor`].
+    ///
+    /// # Errors
+    ///
+    /// [`crate::motor::MotorError::NegativeLimit`] for `max_torque < 0`; nothing is added.
     pub fn add_joint_motor_3d(
         &mut self,
         joint_index: usize,
         kp: Vec3Fix,
         kd: Vec3Fix,
         max_torque: Fix128,
-    ) -> usize {
-        self.joint_motors_3d.push((
-            joint_index,
-            crate::motor::PdController3D::new(kp, kd, max_torque),
-        ));
-        self.joint_motors_3d.len() - 1
+    ) -> Result<usize, crate::motor::MotorError> {
+        let controller = crate::motor::PdController3D::new(kp, kd, max_torque)?;
+        self.joint_motors_3d.push((joint_index, controller));
+        Ok(self.joint_motors_3d.len() - 1)
     }
 
     /// The controller of rotation motor `motor` ([`Self::add_joint_motor_3d`]).
@@ -2674,15 +2676,24 @@ impl PhysicsWorld {
         self.joint_motors_3d.get_mut(motor).map(|(_, c)| c)
     }
 
-    /// Drive rotation motor `motor` to the relative rotation `target`
-    /// (position mode). Returns `false` if there is no such motor.
-    pub fn set_joint_motor_3d_rotation_target(&mut self, motor: usize, target: QuatFix) -> bool {
+    /// Drive rotation motor `motor` to the relative rotation `target` (position mode),
+    /// stored as a unit quaternion ([`crate::motor::PdController3D::set_rotation_target`]).
+    /// Returns `Ok(false)` if there is no such motor.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::motor::MotorError::ZeroRotation`] for a zero `target`; the motor is unchanged.
+    pub fn set_joint_motor_3d_rotation_target(
+        &mut self,
+        motor: usize,
+        target: QuatFix,
+    ) -> Result<bool, crate::motor::MotorError> {
         match self.joint_motors_3d.get_mut(motor) {
             Some((_, c)) => {
-                c.set_rotation_target(target);
-                true
+                c.set_rotation_target(target)?;
+                Ok(true)
             }
-            None => false,
+            None => Ok(false),
         }
     }
 
@@ -11274,7 +11285,8 @@ mod tests {
         };
         let j0 = world.add_joint(ball(0, 1));
         let j1 = world.add_joint(ball(1, 2));
-        let pd = crate::motor::PdController::new(Fix128::ONE, Fix128::ONE, Fix128::from_int(10));
+        let pd = crate::motor::PdController::new(Fix128::ONE, Fix128::ONE, Fix128::from_int(10))
+            .expect("a non-negative force limit");
         let m0 = world.add_joint_motor(j0, pd);
         let m1 = world.add_joint_motor(j1, pd);
         assert!(world.set_joint_motor_velocity_target(m1, Fix128::from_int(2)));
@@ -11291,23 +11303,31 @@ mod tests {
         );
         assert!(world.joint_motor_mut(9).is_none());
 
-        let r0 = world.add_joint_motor_3d(
-            j0,
-            Vec3Fix::from_int(1, 1, 1),
-            Vec3Fix::from_int(1, 1, 1),
-            Fix128::from_int(5),
-        );
-        let r1 = world.add_joint_motor_3d(
-            j1,
-            Vec3Fix::from_int(1, 1, 1),
-            Vec3Fix::from_int(1, 1, 1),
-            Fix128::from_int(5),
-        );
+        let r0 = world
+            .add_joint_motor_3d(
+                j0,
+                Vec3Fix::from_int(1, 1, 1),
+                Vec3Fix::from_int(1, 1, 1),
+                Fix128::from_int(5),
+            )
+            .expect("a non-negative torque limit");
+        let r1 = world
+            .add_joint_motor_3d(
+                j1,
+                Vec3Fix::from_int(1, 1, 1),
+                Vec3Fix::from_int(1, 1, 1),
+                Fix128::from_int(5),
+            )
+            .expect("a non-negative torque limit");
         let target = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 1, 0), Fix128::from_ratio(1, 4));
-        assert!(world.set_joint_motor_3d_rotation_target(r1, target));
-        assert!(!world.set_joint_motor_3d_rotation_target(9, target));
+        assert!(world
+            .set_joint_motor_3d_rotation_target(r1, target)
+            .expect("a non-zero rotation target"));
+        assert!(!world
+            .set_joint_motor_3d_rotation_target(9, target)
+            .expect("a non-zero rotation target"));
         assert_eq!(
-            world.joint_motor_3d_mut(r1).unwrap().target_rotation,
+            world.joint_motor_3d_mut(r1).unwrap().target_rotation(),
             target
         );
         assert!(world.joint_motor_3d_mut(9).is_none());
@@ -11320,7 +11340,7 @@ mod tests {
         assert_eq!(world.joint_motors[0].joint_index, 0);
         assert_eq!(world.joint_motors_3d.len(), 1);
         assert_eq!(world.joint_motors_3d[0].0, 0);
-        assert_eq!(world.joint_motors_3d[0].1.target_rotation, target);
+        assert_eq!(world.joint_motors_3d[0].1.target_rotation(), target);
     }
 
     /// oracle: a contact carrying `λ` between a body of mass 1 (`w = 1`) and a

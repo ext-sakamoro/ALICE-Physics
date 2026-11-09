@@ -161,7 +161,8 @@ fn every_overloaded_joint_breaks_in_the_same_substep_and_the_motor_goes_with_it(
     w.add_joint(weak(3, 2)); // 16 N > 1 N
     let motor = w.add_joint_motor(
         2,
-        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE)
+            .expect("a non-negative force limit"),
     );
     w.step(h());
     // both weak joints go, from the highest index down; the unbreakable one stays
@@ -234,7 +235,8 @@ fn a_joint_breaking_in_the_middle_swaps_the_last_joint_into_its_index() {
     w.add_joint(joint(4, strong));
     let motor_on_last = w.add_joint_motor(
         3,
-        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE)
+            .expect("a non-negative force limit"),
     );
     w.step(h());
     let events = w.events.joint_break_events();
