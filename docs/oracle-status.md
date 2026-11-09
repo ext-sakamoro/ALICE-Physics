@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5949 |
+| 🟢 Not ignored (run by CI) | 5963 |
 | 🔴 Red by design | 69 |
-| ⏱ Gated (runtime / diagnostic / manual) | 26 |
+| ⏱ Gated (runtime / diagnostic / manual) | 28 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6044** |
+| **Total** | **6060** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -118,7 +118,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (26)
+## ⏱ Gated (28)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -140,6 +140,8 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `gs_satisfies_exact_solution_oracle` (analytic_multigrid.rs) — diagnostic: oracle validity against the existing GS
 - `iterations_to_same_precision` (analytic_multigrid.rs) — diagnostic: cycles vs GS iterations to the same precision (use --release)
 - `maccormack_converges_and_the_schemes_bracket_the_limit_at_ny_8_16_32` (armaly_backward_step.rs) — manual: about 4 h in release (ny = 8 / 16 / 32, both schemes, each to t_settle), longer than the 180-min ignor…
+- `measure_the_late_orbit_of_the_held_body` (analytic_sleep_spring_creep.rs) — a measurement, not a check
+- `measure_when_the_held_body_reaches_its_fixed_point_and_sleeps` (analytic_sleep_spring_creep.rs) — a measurement, not a check
 - `mg_rate_report` (analytic_multigrid.rs) — diagnostic: multigrid rates used to fix the thresholds
 - `p2_error_decreases_with_refinement_at_better_than_second_order` (analytic_hyperelastic_mms_order.rs) — runtime: about 5 s in release, about 60 s in debug (P2 n = 2, 3, 4 with a Fix128 Newton solve each); run by ru…
 - `p3_separates_from_p2_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step, plus P2 n = 3); run by run_i…
@@ -150,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5949)
+## 🟢 Not ignored (5963)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -463,6 +465,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_print_orientation_wiring.rs` | 8 |
 | `analytic_rotor.rs` | 8 |
 | `analytic_sdf_generation_wake.rs` | 8 |
+| `analytic_sleep_spring_creep.rs` | 8 |
 | `analytic_step_multigrid.rs` | 8 |
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
@@ -506,6 +509,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_mass_properties_exactness.rs` | 6 |
 | `analytic_metric_wiring.rs` | 6 |
 | `analytic_sdf_distance_query.rs` | 6 |
+| `analytic_sleep_by_time.rs` | 6 |
 | `analytic_support_volume_wiring.rs` | 6 |
 | `analytic_thermoelastic.rs` | 6 |
 | `analytic_thermoelastic_channel.rs` | 6 |
