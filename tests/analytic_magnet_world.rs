@@ -24,10 +24,12 @@ use alice_physics_core::electromagnetic::{
     dipole_sample, induced_dipole_energy, induced_dipole_force, MagneticResponse,
 };
 use alice_physics_core::force::apply_force_fields;
+use alice_physics_core::solver::WorldSnapshotError;
 use alice_physics_core::{
     material::DEFAULT_MATERIAL, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
     PhysicsWorld, RigidBody, Vec3Fix, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
+use alice_physics_core::{LegacyPolicy, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS};
 
 fn fx(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -612,7 +614,7 @@ fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
     assert_eq!(w.snapshot_world(), a, "written back unchanged");
     assert_eq!(w.force_fields.len(), 7);
     let expected = older_kinds_world();
-    for (k, (got, want)) in w
+    for (k, (got, want)) in t
         .force_fields
         .iter()
         .zip(&expected.force_fields)
@@ -626,8 +628,8 @@ fn a_snapshot_from_before_magnets_reads_steps_and_writes_back_the_same() {
         assert_eq!(got.affected_bodies, want.affected_bodies, "filter {k}");
         assert_eq!(got.enabled, want.enabled, "switch {k}");
     }
-    assert_eq!(w.force_fields[1].affected_bodies, Some(vec![0, 2]));
-    assert!(!w.force_fields[5].enabled);
+    assert_eq!(t.force_fields[1].affected_bodies, Some(vec![0, 2]));
+    assert!(!t.force_fields[5].enabled);
 
     for _ in 0..30 {
         w.step(fx(1, 60));
