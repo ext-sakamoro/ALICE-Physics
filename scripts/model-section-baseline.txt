@@ -12,7 +12,6 @@ src/beam_stress.rs
 src/bimaterial.rs
 src/bridging.rs
 src/buckling.rs
-src/buoyancy_zone.rs
 src/ccd.rs
 src/cfd_solver.rs
 src/character.rs
