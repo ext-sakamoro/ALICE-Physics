@@ -1719,6 +1719,8 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
+    /// The body axis locks (version 7; none before)
+    axis_locks: Vec<crate::axis_lock::AxisLock>,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -1750,7 +1752,15 @@ impl PhysicsWorld {
     /// ([`SolverConfig::damping_rate`], [`RigidBody::linear_damping_rate`],
     /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
     /// retentions per step; see [`Self::restore_world_legacy_damping`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 6;
+    /// Version 7 has the layout of version 6 followed by the body axis locks
+    /// ([`Self::set_body_axis_lock`]): the writer uses it only when a body has a
+    /// lock, so a world without locks writes the version 6 blob it wrote before
+    /// locks existed, and a version 1 to 6 blob reads as a world without locks.
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
+
+    /// The version [`Self::snapshot_world`] writes for a world without axis
+    /// locks.
+    const WORLD_SNAPSHOT_VERSION_WITHOUT_LOCKS: u16 = 6;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1818,6 +1828,8 @@ impl PhysicsWorld {
     /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
     /// | `fields` | saved | the committed values once ([`crate::world_participant::FieldBoard::write_values`]); the target world must declare the same fields ([`WorldSnapshotError::FieldState`]) |
     /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
+    /// | `body_axis_locks` | saved | only when a body has a lock (version 7); none for a version 1 to 6 blob |
+    /// | `axis_lock_starts` | not covered | scratch of one substep, empty between steps |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -1879,9 +1891,14 @@ impl PhysicsWorld {
     /// from a corrupt one.
     #[must_use]
     pub fn snapshot_world(&self) -> Vec<u8> {
+        let locks = self.axis_locks_in_use();
         let mut w = W(Vec::new());
         w.0.extend_from_slice(&Self::WORLD_SNAPSHOT_MAGIC);
-        w.u16(Self::WORLD_SNAPSHOT_VERSION);
+        w.u16(if locks.is_some() {
+            Self::WORLD_SNAPSHOT_VERSION
+        } else {
+            Self::WORLD_SNAPSHOT_VERSION_WITHOUT_LOCKS
+        });
         w.u16(0);
         w.u64(0); // payload length, patched below
         w.0.extend_from_slice(&PHYSICS_SEMANTICS_ID);
@@ -2077,6 +2094,12 @@ impl PhysicsWorld {
         self.fields().write_values(&mut w.0);
         w.bool(self.ccd.is_enabled());
         w.fix(self.ccd.motion_threshold());
+        if let Some(locks) = &locks {
+            w.usize(locks.len());
+            for l in locks {
+                w.u8(l.bits());
+            }
+        }
 
         let mut data = w.0;
         let payload_len = (data.len() - HEADER_LEN_V4) as u64;
@@ -2439,6 +2462,7 @@ impl PhysicsWorld {
         self.set_fault(d.fault);
         self.fields_mut().read_values(&d.fields);
         self.ccd = d.ccd;
+        self.set_axis_locks(d.axis_locks);
     }
 }
 
@@ -2790,6 +2814,21 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     } else {
         super::WorldCcdConfig::new()
     };
+    let axis_locks = if version >= 7 {
+        let n = r.len("axis_locks", 1)?;
+        let mut locks = Vec::with_capacity(n);
+        for _ in 0..n {
+            let bits = r.u8()?;
+            locks.push(crate::axis_lock::AxisLock::from_bits(bits).ok_or(
+                WorldSnapshotError::InvalidValue {
+                    section: "axis_locks",
+                },
+            )?);
+        }
+        locks
+    } else {
+        Vec::new()
+    };
 
     Ok(Decoded {
         config,
@@ -2825,6 +2864,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         fault,
         fields,
         ccd,
+        axis_locks,
         ids: None,
     })
 }
@@ -2950,6 +2990,14 @@ fn validate(d: &Decoded) -> Res<()> {
         if p.3 != crate::sdf_collider::SDF_STATIC {
             check("sdf_colliders", p.3, n)?;
         }
+    }
+    // the writer stores one lock per body, and only when one is set
+    if !d.axis_locks.is_empty()
+        && (d.axis_locks.len() != n || d.axis_locks.iter().all(|l| l.is_none()))
+    {
+        return Err(WorldSnapshotError::InvalidValue {
+            section: "axis_locks",
+        });
     }
     for b in &d.constraint_batches {
         for &i in &b.distance_indices {
@@ -4004,7 +4052,8 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        // 7 is read since the axis locks; a world without locks still writes 6
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4155,7 +4204,8 @@ mod tests {
         let w = variant_world();
         let b = w.snapshot_world();
         assert_eq!(&b[4..6], &6u16.to_le_bytes());
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(super::header_len(7), 80);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;

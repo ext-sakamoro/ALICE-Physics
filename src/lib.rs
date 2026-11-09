@@ -229,6 +229,7 @@ pub mod anomaly;
 pub mod articulation;
 pub mod atmosphere;
 pub mod audio_physics;
+pub mod axis_lock;
 pub mod beam_stress;
 pub mod bimaterial;
 pub mod box_collider;
@@ -986,6 +987,7 @@ pub use anomaly::{
 };
 pub use articulation::{ArticulatedBody, FeatherstoneSolver};
 pub use audio_physics::{AudioConfig, AudioEvent, AudioGenerator, AudioMaterial};
+pub use axis_lock::AxisLock;
 pub use box_collider::OrientedBox;
 pub use bvh::{BvhNode, BvhPrimitive, LinearBvh};
 pub use ccd::{
