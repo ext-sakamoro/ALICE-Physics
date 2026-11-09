@@ -398,3 +398,74 @@ fn measure_the_cost_per_frame_of_a_letter_sized_block() {
         }
     }
 }
+
+/// Measurement (not an oracle): one letter "E" of the logo alone (strokes 0.085 m, 0.5 m
+/// tall, arms 0.3 m long, area ≈ 0.097 m²), E 2e6 Pa, ρ 1000, ν 0.3, neo-Hookean, on the
+/// ground, cell 0.04 m: the explicit step's cost per 1/60 s frame. Run with
+/// `cargo test --release --test analytic_mpm2d_implicit -- --ignored --nocapture`.
+#[test]
+#[ignore = "measurement: prints the cost per frame of one letter"]
+fn measure_the_cost_per_frame_of_one_letter() {
+    use std::time::Instant;
+    let (e, rho, cell): (f64, f64, f64) = (2.0e6, 1000.0, 0.04);
+    let (stroke, tall, arm) = (0.085, 0.5, 0.3);
+    let c = (e / ((1.0 - NU * NU) * rho)).sqrt();
+    let per_frame = (FRAME / (cell / c / 3.0)).ceil() as usize;
+    let nodes = ((tall + 0.4) / cell).ceil() as usize;
+    let mut w = Mpm2d::new(
+        Mpm2dConfig {
+            origin: [Fix128::ZERO, Fix128::ZERO],
+            cell: fx(cell),
+            nodes: [nodes, nodes],
+            gravity: [Fix128::ZERO, fx(-G)],
+            dt: fx(FRAME / per_frame as f64),
+            ground: Some(fx(0.1)),
+        },
+        Mpm2dMaterial {
+            youngs: fx(e),
+            poisson: fx(NU),
+            density: fx(rho),
+            model: Mpm2dModel::NeoHookean,
+            maxwell: None,
+        },
+    )
+    .expect("valid");
+    let (x0, y0) = (0.2, 0.1);
+    let inside = |x: f64, y: f64| {
+        let (x, y) = (x - x0, y - y0);
+        let bar = (0.0..stroke).contains(&x) && (0.0..tall).contains(&y);
+        let arms = (0.0..arm).contains(&x)
+            && [0.0, (tall - stroke) / 2.0, tall - stroke]
+                .iter()
+                .any(|&a| (a..a + stroke).contains(&y));
+        bar || arms
+    };
+    let n = (((tall + 0.1) / cell).ceil() as usize) * 2;
+    let h = cell / 2.0;
+    for i in 0..n {
+        for j in 0..n {
+            let x = x0 + (i as f64 + 0.5) * h;
+            let y = y0 + (j as f64 + 0.5) * h;
+            if inside(x, y) {
+                w.add_particle([fx(x), fx(y)], [Fix128::ZERO; 2], fx(h * h));
+            }
+        }
+    }
+    let area: f64 = w.particles().iter().map(|p| p.area0.to_f64()).sum();
+    let mut times = Vec::new();
+    for _ in 0..10 {
+        let t = Instant::now();
+        for _ in 0..per_frame {
+            w.step().expect("explicit");
+        }
+        times.push(t.elapsed().as_secs_f64());
+    }
+    times.sort_by(f64::total_cmp);
+    println!(
+        "letter E: {} particles, {area:.4} m², explicit {per_frame} steps/frame, median {:.4} s/frame (min {:.4}, max {:.4})",
+        w.particles().len(),
+        times[5],
+        times[0],
+        times[9]
+    );
+}
