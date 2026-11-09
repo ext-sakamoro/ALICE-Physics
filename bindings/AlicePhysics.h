@@ -135,6 +135,8 @@ struct AlicePhysicsShape {
 uint8_t  alice_physics_body_set_collision_radius(AlicePhysicsWorldHandle world, uint32_t body_id, double radius);
 uint32_t alice_physics_world_register_material(AlicePhysicsWorldHandle world, double friction, double restitution);
 uint8_t  alice_physics_body_set_material(AlicePhysicsWorldHandle world, uint32_t body_id, uint32_t material);
+uint8_t  alice_physics_body_set_axis_lock(AlicePhysicsWorldHandle world, uint32_t body_id, uint32_t bits);
+uint32_t alice_physics_body_axis_lock(AlicePhysicsWorldHandle world, uint32_t body_id);
 uint32_t alice_physics_world_add_magnet(AlicePhysicsWorldHandle world, AliceVec3 position, AliceVec3 moment, double radius, uint32_t material, double chi_eff, double saturation, double density);
 uint32_t alice_physics_world_add_wind_zone(AlicePhysicsWorldHandle world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double base_speed, double gust_amplitude, double gust_hz, double air_density, double drag_coefficient, double area);
 uint32_t alice_physics_world_add_buoyancy_zone(AlicePhysicsWorldHandle world, AliceVec3 min, AliceVec3 max, double density, double gravity, double drag_linear, double drag_quadratic);

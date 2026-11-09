@@ -1308,6 +1308,40 @@ pub unsafe extern "C" fn alice_physics_world_register_material(
     })
 }
 
+/// Lock world axes of a body: `bits` 1, 2, 4 lock the x, y, z position and 8, 16, 32 the x, y, z
+/// rotation (0 unlocks). Returns 1 on success, 0 for a null world, an unknown body or a bit above
+/// 32.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_axis_lock(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    bits: u32,
+) -> u8 {
+    ffi_guard_world(world, 0, || match writable(world) {
+        Some(w) => u8::from(binding_api::set_body_axis_lock(w, body_id as usize, bits)),
+        None => 0,
+    })
+}
+
+/// The axis-lock bits of a body (see [`alice_physics_body_set_axis_lock`]), `u32::MAX` for a null
+/// world or an unknown body.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_axis_lock(
+    world: *const PhysicsWorld,
+    body_id: u32,
+) -> u32 {
+    ffi_guard(u32::MAX, || match world.as_ref() {
+        Some(w) => binding_api::body_axis_lock(w, body_id as usize).unwrap_or(u32::MAX),
+        None => u32::MAX,
+    })
+}
+
 /// Set a body's material id (0 to 65535). Returns 1 on success, 0 for a null world, an unknown
 /// body or an id above 65535. Magnets pull only the bodies of the material they name.
 ///
@@ -2733,6 +2767,41 @@ mod tests {
             assert_eq!(cw.bodies[hit as usize].velocity, r.bodies[rhit].velocity);
             // the hit happened: the resting ball was pushed along +x
             assert!(cw.bodies[hit as usize].velocity.x > Fix128::ZERO);
+            alice_physics_world_destroy(c);
+        }
+    }
+
+    /// The C axis-lock entries set the lock the Rust API sets (bits as in
+    /// [`crate::axis_lock::AxisLock`]) and read it back; a null world, an
+    /// unknown body and a seventh bit give the failure value.
+    #[test]
+    fn axis_lock_through_c_equals_the_rust_api() {
+        let v = |x: f64, y: f64, z: f64| AliceVec3 { x, y, z };
+        // SAFETY: the world pointer comes from alice_physics_world_create and is destroyed at
+        // the end; the null pointer is only passed to entries that check it.
+        unsafe {
+            let c = alice_physics_world_create();
+            let b = alice_physics_body_add_dynamic(c, v(0.0, 10.0, 0.0), 1.0);
+            assert_eq!(alice_physics_body_axis_lock(c, b), 0);
+            assert_eq!(alice_physics_body_set_axis_lock(c, b, 28), 1);
+            assert_eq!(alice_physics_body_axis_lock(c, b), 28);
+            assert_eq!(
+                (*c).body_axis_lock(b as usize),
+                Some(
+                    crate::axis_lock::AxisLock::LINEAR_Z
+                        | crate::axis_lock::AxisLock::ANGULAR_X
+                        | crate::axis_lock::AxisLock::ANGULAR_Y
+                )
+            );
+            assert_eq!(alice_physics_body_set_axis_lock(c, b, 64), 0);
+            assert_eq!(alice_physics_body_set_axis_lock(c, 99, 4), 0);
+            assert_eq!(alice_physics_body_axis_lock(c, 99), u32::MAX);
+            assert_eq!(
+                alice_physics_body_set_axis_lock(core::ptr::null_mut(), b, 4),
+                0
+            );
+            assert_eq!(alice_physics_body_axis_lock(core::ptr::null(), b), u32::MAX);
+            assert_eq!(alice_physics_body_axis_lock(c, b), 28);
             alice_physics_world_destroy(c);
         }
     }

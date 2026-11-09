@@ -228,6 +228,8 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern uint alice_physics_world_register_material(IntPtr world, double friction, double restitution);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_material(IntPtr world, uint bodyId, uint material);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_wind_zone(IntPtr world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area);
+        [DllImport(DLL)] public static extern byte alice_physics_body_set_axis_lock(IntPtr world, uint bodyId, uint bits);
+        [DllImport(DLL)] public static extern uint alice_physics_body_axis_lock(IntPtr world, uint bodyId);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_magnet(IntPtr world, AliceVec3 position, AliceVec3 moment, double radius, uint material, double chiEff, double saturation, double density);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_buoyancy_zone(IntPtr world, AliceVec3 min, AliceVec3 max, double density, double gravity, double dragLinear, double dragQuadratic);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_rope(IntPtr world, AliceVec3 start, AliceVec3 end, uint segments, double mass, double damping, uint startBody, AliceVec3 startLocal, uint endBody, AliceVec3 endLocal);

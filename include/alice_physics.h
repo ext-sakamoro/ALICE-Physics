@@ -234,6 +234,10 @@ typedef struct {
 uint8_t alice_physics_body_set_collision_radius(AlicePhysicsWorld* world, uint32_t body_id, double radius);
 /** Register a contact material (friction, restitution finite and >= 0). Returns its id or UINT32_MAX. */
 uint32_t alice_physics_world_register_material(AlicePhysicsWorld* world, double friction, double restitution);
+/** Lock world axes of a body (bits 1,2,4 position x,y,z; 8,16,32 rotation x,y,z; 0 none). Returns 1 on success. */
+uint8_t alice_physics_body_set_axis_lock(AlicePhysicsWorld* world, uint32_t body_id, uint32_t bits);
+/** The axis-lock bits of a body, or UINT32_MAX for an unknown body. */
+uint32_t alice_physics_body_axis_lock(const AlicePhysicsWorld* world, uint32_t body_id);
 /** Set a body's material id (0..65535). Returns 1 on success. */
 uint8_t alice_physics_body_set_material(AlicePhysicsWorld* world, uint32_t body_id, uint32_t material);
 /** Add a permanent magnet (ideal dipole) pulling the bodies of `material`. Returns the force field index or UINT32_MAX. */
