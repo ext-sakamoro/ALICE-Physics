@@ -9173,8 +9173,11 @@ pub fn alice_physics_core::particle::ParticleSystem::add_emitter(&mut self, alic
 pub fn alice_physics_core::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics_core::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics_core::force::ForceField)
 pub fn alice_physics_core::particle::ParticleSystem::new(usize, alice_physics_core::math::Vec3Fix) -> Self
+pub fn alice_physics_core::particle::ParticleSystem::particle_on_surface(&self, usize) -> core::option::Option<usize>
+pub fn alice_physics_core::particle::ParticleSystem::state_digest(&self, &alice_physics_core::rng::DeterministicRng) -> [u8; 32]
 pub fn alice_physics_core::particle::ParticleSystem::step(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng)
 pub fn alice_physics_core::particle::ParticleSystem::step_with_landing(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub fn alice_physics_core::particle::ParticleSystem::step_with_run_off(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, alice_physics_core::particle::RunOff) -> alice_physics_core::particle::RunOffEvents
 impl core::fmt::Debug for alice_physics_core::particle::ParticleSystem
 pub fn alice_physics_core::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::particle::ParticleSystem
@@ -9184,6 +9187,41 @@ impl core::marker::Unpin for alice_physics_core::particle::ParticleSystem
 impl core::marker::UnsafeUnpin for alice_physics_core::particle::ParticleSystem
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::ParticleSystem
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::ParticleSystem
+pub struct alice_physics_core::particle::RunOff
+pub alice_physics_core::particle::RunOff::drag: alice_physics_core::math::Fix128
+pub alice_physics_core::particle::RunOff::drip_cos: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::particle::RunOff
+impl core::cmp::PartialEq for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::particle::RunOff
+impl core::marker::StructuralPartialEq for alice_physics_core::particle::RunOff
+impl core::marker::Freeze for alice_physics_core::particle::RunOff
+impl core::marker::Send for alice_physics_core::particle::RunOff
+impl core::marker::Sync for alice_physics_core::particle::RunOff
+impl core::marker::Unpin for alice_physics_core::particle::RunOff
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOff
+pub struct alice_physics_core::particle::RunOffEvents
+pub alice_physics_core::particle::RunOffEvents::dripped: alloc::vec::Vec<usize>
+pub alice_physics_core::particle::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
+impl core::default::Default for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::default() -> Self
+impl core::fmt::Debug for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::particle::RunOffEvents
+impl core::marker::Send for alice_physics_core::particle::RunOffEvents
+impl core::marker::Sync for alice_physics_core::particle::RunOffEvents
+impl core::marker::Unpin for alice_physics_core::particle::RunOffEvents
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOffEvents
 pub mod alice_physics_core::phase_change
 #[repr(u8)] pub enum alice_physics_core::phase_change::Phase
 pub alice_physics_core::phase_change::Phase::Gas = 2
@@ -11892,6 +11930,7 @@ pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_pair(&mut self) 
 pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics_core::rng::DeterministicRng::next_u64(&mut self) -> u64
+pub const fn alice_physics_core::rng::DeterministicRng::raw_state(&self) -> (u64, u64)
 impl core::clone::Clone for alice_physics_core::rng::DeterministicRng
 pub fn alice_physics_core::rng::DeterministicRng::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::rng::DeterministicRng
@@ -13344,8 +13383,11 @@ pub fn alice_physics_core::particle::ParticleSystem::add_emitter(&mut self, alic
 pub fn alice_physics_core::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics_core::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics_core::force::ForceField)
 pub fn alice_physics_core::particle::ParticleSystem::new(usize, alice_physics_core::math::Vec3Fix) -> Self
+pub fn alice_physics_core::particle::ParticleSystem::particle_on_surface(&self, usize) -> core::option::Option<usize>
+pub fn alice_physics_core::particle::ParticleSystem::state_digest(&self, &alice_physics_core::rng::DeterministicRng) -> [u8; 32]
 pub fn alice_physics_core::particle::ParticleSystem::step(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng)
 pub fn alice_physics_core::particle::ParticleSystem::step_with_landing(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub fn alice_physics_core::particle::ParticleSystem::step_with_run_off(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, alice_physics_core::particle::RunOff) -> alice_physics_core::particle::RunOffEvents
 impl core::fmt::Debug for alice_physics_core::particle::ParticleSystem
 pub fn alice_physics_core::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::particle::ParticleSystem
@@ -14214,6 +14256,41 @@ impl core::marker::Unpin for alice_physics_core::rope::RopeConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::rope::RopeConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope::RopeConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope::RopeConfig
+pub struct alice_physics_core::prelude::RunOff
+pub alice_physics_core::prelude::RunOff::drag: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::RunOff::drip_cos: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::particle::RunOff
+impl core::cmp::PartialEq for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::particle::RunOff
+impl core::marker::StructuralPartialEq for alice_physics_core::particle::RunOff
+impl core::marker::Freeze for alice_physics_core::particle::RunOff
+impl core::marker::Send for alice_physics_core::particle::RunOff
+impl core::marker::Sync for alice_physics_core::particle::RunOff
+impl core::marker::Unpin for alice_physics_core::particle::RunOff
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOff
+pub struct alice_physics_core::prelude::RunOffEvents
+pub alice_physics_core::prelude::RunOffEvents::dripped: alloc::vec::Vec<usize>
+pub alice_physics_core::prelude::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
+impl core::default::Default for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::default() -> Self
+impl core::fmt::Debug for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::particle::RunOffEvents
+impl core::marker::Send for alice_physics_core::particle::RunOffEvents
+impl core::marker::Sync for alice_physics_core::particle::RunOffEvents
+impl core::marker::Unpin for alice_physics_core::particle::RunOffEvents
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOffEvents
 pub struct alice_physics_core::prelude::ScalarField3D
 pub alice_physics_core::prelude::ScalarField3D::data: alloc::vec::Vec<f32>
 pub alice_physics_core::prelude::ScalarField3D::max: (f32, f32, f32)
@@ -16082,6 +16159,7 @@ pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_pair(&mut self) 
 pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics_core::rng::DeterministicRng::next_u64(&mut self) -> u64
+pub const fn alice_physics_core::rng::DeterministicRng::raw_state(&self) -> (u64, u64)
 impl core::clone::Clone for alice_physics_core::rng::DeterministicRng
 pub fn alice_physics_core::rng::DeterministicRng::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::rng::DeterministicRng
@@ -23524,6 +23602,7 @@ pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_pair(&mut self) 
 pub fn alice_physics_core::rng::DeterministicRng::next_gaussian_with(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::rng::DeterministicRng::next_u32(&mut self) -> u32
 pub fn alice_physics_core::rng::DeterministicRng::next_u64(&mut self) -> u64
+pub const fn alice_physics_core::rng::DeterministicRng::raw_state(&self) -> (u64, u64)
 impl core::clone::Clone for alice_physics_core::rng::DeterministicRng
 pub fn alice_physics_core::rng::DeterministicRng::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::rng::DeterministicRng
@@ -24976,8 +25055,11 @@ pub fn alice_physics_core::particle::ParticleSystem::add_emitter(&mut self, alic
 pub fn alice_physics_core::particle::ParticleSystem::alive_count(&self) -> usize
 pub fn alice_physics_core::particle::ParticleSystem::apply_force_field(&mut self, &alice_physics_core::force::ForceField)
 pub fn alice_physics_core::particle::ParticleSystem::new(usize, alice_physics_core::math::Vec3Fix) -> Self
+pub fn alice_physics_core::particle::ParticleSystem::particle_on_surface(&self, usize) -> core::option::Option<usize>
+pub fn alice_physics_core::particle::ParticleSystem::state_digest(&self, &alice_physics_core::rng::DeterministicRng) -> [u8; 32]
 pub fn alice_physics_core::particle::ParticleSystem::step(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng)
 pub fn alice_physics_core::particle::ParticleSystem::step_with_landing(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub fn alice_physics_core::particle::ParticleSystem::step_with_run_off(&mut self, alice_physics_core::math::Fix128, &mut alice_physics_core::rng::DeterministicRng, &[alice_physics_core::particle::LandingTarget<'_>], alice_physics_core::math::Fix128, alice_physics_core::particle::RunOff) -> alice_physics_core::particle::RunOffEvents
 impl core::fmt::Debug for alice_physics_core::particle::ParticleSystem
 pub fn alice_physics_core::particle::ParticleSystem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::particle::ParticleSystem
@@ -25943,6 +26025,41 @@ impl core::marker::Unpin for alice_physics_core::rope::RopeConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::rope::RopeConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope::RopeConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope::RopeConfig
+pub struct alice_physics_core::RunOff
+pub alice_physics_core::RunOff::drag: alice_physics_core::math::Fix128
+pub alice_physics_core::RunOff::drip_cos: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::particle::RunOff
+impl core::cmp::PartialEq for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::particle::RunOff
+pub fn alice_physics_core::particle::RunOff::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::particle::RunOff
+impl core::marker::StructuralPartialEq for alice_physics_core::particle::RunOff
+impl core::marker::Freeze for alice_physics_core::particle::RunOff
+impl core::marker::Send for alice_physics_core::particle::RunOff
+impl core::marker::Sync for alice_physics_core::particle::RunOff
+impl core::marker::Unpin for alice_physics_core::particle::RunOff
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOff
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOff
+pub struct alice_physics_core::RunOffEvents
+pub alice_physics_core::RunOffEvents::dripped: alloc::vec::Vec<usize>
+pub alice_physics_core::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
+impl core::default::Default for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::default() -> Self
+impl core::fmt::Debug for alice_physics_core::particle::RunOffEvents
+pub fn alice_physics_core::particle::RunOffEvents::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::particle::RunOffEvents
+impl core::marker::Send for alice_physics_core::particle::RunOffEvents
+impl core::marker::Sync for alice_physics_core::particle::RunOffEvents
+impl core::marker::Unpin for alice_physics_core::particle::RunOffEvents
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::RunOffEvents
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOffEvents
 pub struct alice_physics_core::ScalarField3D
 pub alice_physics_core::ScalarField3D::data: alloc::vec::Vec<f32>
 pub alice_physics_core::ScalarField3D::max: (f32, f32, f32)
