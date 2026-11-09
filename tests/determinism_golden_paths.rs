@@ -108,7 +108,7 @@ fn path_scene(backend: SolverBackend) -> PhysicsWorld {
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
         ..SleepConfig::default()
     });
     let r = Fix128::from_int(GROUND_R);
@@ -482,7 +482,7 @@ fn golden_sleeping() {
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {
-        frames_to_sleep: 30,
+        time_to_sleep: Fix128::from_ratio(30, 60),
         ..SleepConfig::default()
     });
     let r = Fix128::from_int(GROUND_R);

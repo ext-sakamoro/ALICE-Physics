@@ -43,7 +43,7 @@ fn sleepy_world() -> PhysicsWorld {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 2),
         angular_threshold: Fix128::from_ratio(1, 2),
-        frames_to_sleep: 3,
+        time_to_sleep: Fix128::from_ratio(3, 60),
     });
     let body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
     world.add_body(body);

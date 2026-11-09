@@ -95,7 +95,7 @@ fn world(substeps: usize, inv_inertia: Vec3Fix) -> (PhysicsWorld, usize) {
     w.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
     });
     let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
     body.inv_inertia = inv_inertia;

@@ -199,6 +199,16 @@ pub enum WorldSnapshotError {
         /// The retention per step stored in the blob (the first one found).
         retention: Fix128,
     },
+    /// A version 1 to 7 blob holds the sleep rule and each body's idle count
+    /// as **steps** (`frames_to_sleep`, `idle_frames`). Version 8 holds them
+    /// as time, and a count becomes a time only with the step it was counted
+    /// per, which the blob does not record: read it with
+    /// [`PhysicsWorld::restore_world_legacy_damping`] and that step (the
+    /// count times the step), or it is refused.
+    LegacySleepFramesNeedsStep {
+        /// The step count before sleep stored in the blob.
+        frames_to_sleep: u32,
+    },
 }
 
 /// Whether [`PhysicsWorld::restore_world_checked`] reads a version 1 to 3
@@ -284,6 +294,7 @@ impl WorldSnapshotError {
             Self::SemanticsMismatch { .. } => "SemanticsMismatch",
             Self::LawIdMismatch { .. } => "LawIdMismatch",
             Self::LegacyDampingNeedsStep { .. } => "LegacyDampingNeedsStep",
+            Self::LegacySleepFramesNeedsStep { .. } => "LegacySleepFramesNeedsStep",
         }
     }
 
@@ -309,6 +320,7 @@ impl WorldSnapshotError {
             Self::SemanticsMismatch { .. } => 15,
             Self::LawIdMismatch { .. } => 16,
             Self::LegacyDampingNeedsStep { .. } => 17,
+            Self::LegacySleepFramesNeedsStep { .. } => 18,
         }
     }
 }
@@ -321,6 +333,10 @@ impl core::fmt::Display for WorldSnapshotError {
                 f,
                 "world snapshot of version 1 to 5 holds a damping retention per step of {}: read it with restore_world_legacy_damping and the step it was applied per",
                 retention.to_f64()
+            ),
+            Self::LegacySleepFramesNeedsStep { frames_to_sleep } => write!(
+                f,
+                "world snapshot of version 1 to 7 holds the sleep rule as a step count ({frames_to_sleep} idle steps): read it with restore_world_legacy_damping and the step it was counted per"
             ),
             Self::Unpinned => write!(
                 f,
@@ -1719,7 +1735,7 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
-    /// The body axis locks (version 7; none before)
+    /// The body axis locks (version 7 when a body had a lock, always from version 8; none before)
     axis_locks: Vec<crate::axis_lock::AxisLock>,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
@@ -1753,14 +1769,14 @@ impl PhysicsWorld {
     /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
     /// retentions per step; see [`Self::restore_world_legacy_damping`].
     /// Version 7 has the layout of version 6 followed by the body axis locks
-    /// ([`Self::set_body_axis_lock`]): the writer uses it only when a body has a
-    /// lock, so a world without locks writes the version 6 blob it wrote before
-    /// locks existed, and a version 1 to 6 blob reads as a world without locks.
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
-
-    /// The version [`Self::snapshot_world`] writes for a world without axis
-    /// locks.
-    const WORLD_SNAPSHOT_VERSION_WITHOUT_LOCKS: u16 = 6;
+    /// ([`Self::set_body_axis_lock`]), written by a writer of before version 8
+    /// only when a body had a lock; a version 1 to 6 blob reads as a world
+    /// without locks.
+    /// Version 8 holds the sleep rule and each body's idle count as time
+    /// ([`crate::sleeping::SleepConfig::time_to_sleep`]) where versions 1 to 7
+    /// held step counts, and always carries the axis-lock section (a count of
+    /// 0 for a world without locks).
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 8;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1828,7 +1844,7 @@ impl PhysicsWorld {
     /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
     /// | `fields` | saved | the committed values once ([`crate::world_participant::FieldBoard::write_values`]); the target world must declare the same fields ([`WorldSnapshotError::FieldState`]) |
     /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
-    /// | `body_axis_locks` | saved | only when a body has a lock (version 7); none for a version 1 to 6 blob |
+    /// | `body_axis_locks` | saved | from version 8 always (a count of 0 without locks); a version 7 blob has them only when a body had a lock, a version 1 to 6 blob none |
     /// | `axis_lock_starts` | not covered | scratch of one substep, empty between steps |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
@@ -1894,11 +1910,7 @@ impl PhysicsWorld {
         let locks = self.axis_locks_in_use();
         let mut w = W(Vec::new());
         w.0.extend_from_slice(&Self::WORLD_SNAPSHOT_MAGIC);
-        w.u16(if locks.is_some() {
-            Self::WORLD_SNAPSHOT_VERSION
-        } else {
-            Self::WORLD_SNAPSHOT_VERSION_WITHOUT_LOCKS
-        });
+        w.u16(Self::WORLD_SNAPSHOT_VERSION);
         w.u16(0);
         w.u64(0); // payload length, patched below
         w.0.extend_from_slice(&PHYSICS_SEMANTICS_ID);
@@ -2008,14 +2020,14 @@ impl PhysicsWorld {
 
         w.fix(self.islands.config.linear_threshold);
         w.fix(self.islands.config.angular_threshold);
-        w.u32(self.islands.config.frames_to_sleep);
+        w.fix(self.islands.config.time_to_sleep);
         w.usize(self.islands.sleep_data.len());
         for sd in &self.islands.sleep_data {
             w.u8(match sd.state {
                 SleepState::Awake => 0,
                 SleepState::Sleeping => 1,
             });
-            w.u32(sd.idle_frames);
+            w.fix(sd.idle_time);
         }
 
         w.usize(self.body_collision_radii.len());
@@ -2094,11 +2106,11 @@ impl PhysicsWorld {
         self.fields().write_values(&mut w.0);
         w.bool(self.ccd.is_enabled());
         w.fix(self.ccd.motion_threshold());
-        if let Some(locks) = &locks {
-            w.usize(locks.len());
-            for l in locks {
-                w.u8(l.bits());
-            }
+        // version 8 always carries the section: a count of 0 is a world without locks
+        let locks = locks.unwrap_or_default();
+        w.usize(locks.len());
+        for l in &locks {
+            w.u8(l.bits());
         }
 
         let mut data = w.0;
@@ -2726,12 +2738,25 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
 
     let events = r_events(r)?;
 
-    let sleep_config = SleepConfig {
-        linear_threshold: r.fix()?,
-        angular_threshold: r.fix()?,
-        frames_to_sleep: r.u32()?,
+    let (linear_threshold, angular_threshold) = (r.fix()?, r.fix()?);
+    // version 8 holds the sleep rule and the idle counts as time; before it they
+    // were step counts, which become time only with the step they were counted per
+    let time_to_sleep = if version >= 8 {
+        r.fix()?
+    } else {
+        let frames_to_sleep = r.u32()?;
+        match legacy_step {
+            Some(step) if step > Fix128::ZERO => Fix128::from_int(i64::from(frames_to_sleep)) * step,
+            Some(_) => return Err(invalid("islands")),
+            None => return Err(WorldSnapshotError::LegacySleepFramesNeedsStep { frames_to_sleep }),
+        }
     };
-    let n = r.len("islands", 5)?;
+    let sleep_config = SleepConfig {
+        linear_threshold,
+        angular_threshold,
+        time_to_sleep,
+    };
+    let n = r.len("islands", if version >= 8 { 17 } else { 5 })?;
     let mut sleep_data = Vec::with_capacity(n);
     for _ in 0..n {
         let state = match r.u8()? {
@@ -2739,10 +2764,14 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             1 => SleepState::Sleeping,
             _ => return Err(invalid("islands")),
         };
-        sleep_data.push(SleepData {
-            state,
-            idle_frames: r.u32()?,
-        });
+        let idle_time = if version >= 8 {
+            r.fix()?
+        } else {
+            // the step is known here (the rule above returned otherwise)
+            let step = legacy_step.unwrap_or(Fix128::ZERO);
+            Fix128::from_int(i64::from(r.u32()?)) * step
+        };
+        sleep_data.push(SleepData { state, idle_time });
     }
 
     let n = r.len("body_collision_radii", 1)?;
@@ -3092,6 +3121,9 @@ mod tests {
             WorldSnapshotError::LegacyDampingNeedsStep {
                 retention: Fix128::from_ratio(99, 100),
             },
+            WorldSnapshotError::LegacySleepFramesNeedsStep {
+                time_to_sleep: Fix128::from_ratio(60, 60),
+            },
         ];
         assert_eq!(
             declared.len(),
@@ -3385,7 +3417,7 @@ mod tests {
         w.set_sleep_config(SleepConfig {
             linear_threshold: fx(1, 2),
             angular_threshold: fx(1, 2),
-            frames_to_sleep: 3,
+            time_to_sleep: Fix128::from_ratio(3, 60),
         });
 
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
@@ -4052,8 +4084,8 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        // 7 is read since the axis locks; a world without locks still writes 6
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
+        // 7 came with the axis locks and 8 with the sleep rule as time; neither for a magnet
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 8);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4203,9 +4235,10 @@ mod tests {
         assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &6u16.to_le_bytes());
+        assert_eq!(&b[4..6], &8u16.to_le_bytes());
         assert_eq!(super::header_len(7), 80);
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
+        assert_eq!(super::header_len(8), 80);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 8);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;

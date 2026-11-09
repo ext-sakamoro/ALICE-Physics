@@ -247,7 +247,7 @@ fn parked_pair(kind: Broadphase, skip: bool, xb: Fix128, r: Fix128, steps: usize
     w.add_body_with_radius(RigidBody::new_dynamic(x_at(xb), Fix128::ONE), r);
     for i in 0..2 {
         w.islands.sleep_data[i].state = SleepState::Sleeping;
-        w.islands.sleep_data[i].idle_frames = 100;
+        w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
     }
     for _ in 0..steps {
         w.step(Fix128::from_ratio(1, 60));

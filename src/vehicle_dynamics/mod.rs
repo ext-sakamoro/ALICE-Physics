@@ -2232,7 +2232,10 @@ mod tests {
             ..SolverConfig::default()
         });
         world.set_sleep_config(SleepConfig {
-            frames_to_sleep: u32::MAX,
+            time_to_sleep: crate::math::Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
             ..SleepConfig::default()
         });
         let mut body = chassis();
@@ -2276,7 +2279,10 @@ mod tests {
         use crate::solver::{PhysicsWorld, SolverConfig};
         let mut world = PhysicsWorld::new(SolverConfig::default());
         world.set_sleep_config(SleepConfig {
-            frames_to_sleep: u32::MAX,
+            time_to_sleep: crate::math::Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
             ..SleepConfig::default()
         });
         let mut body = chassis();
