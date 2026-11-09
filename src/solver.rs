@@ -1739,6 +1739,12 @@ pub struct PhysicsWorld {
     body_colliders: Vec<Option<crate::body_collider::BodyCollider>>,
     /// Per-body collision filter (layer/mask/group)
     body_filters: Vec<CollisionFilter>,
+    /// Per-body axis locks ([`crate::axis_lock`]); shorter than `bodies` for
+    /// bodies pushed onto the public field, which have none.
+    body_axis_locks: Vec<crate::axis_lock::AxisLock>,
+    /// The start-of-substep poses of the locked bodies (scratch of one
+    /// substep, not state).
+    axis_lock_starts: Vec<crate::axis_lock::LockedStart>,
     /// 範囲外の積を踏んだか (sticky、[`PhysicsWorld::overflow_detected`])
     ///
     /// ⚠️ **`Fix128` の `Mul` 自体からは world に到達できない** (純粋な trait
@@ -1923,6 +1929,8 @@ impl PhysicsWorld {
             broadphase_hybrid: BroadphaseHybrid::new(),
             body_colliders: Vec::new(),
             body_filters: Vec::new(),
+            body_axis_locks: Vec::new(),
+            axis_lock_starts: Vec::new(),
             overflow_detected: false,
             kinematic_substeps_left: 0,
             #[cfg(feature = "std")]
@@ -2065,6 +2073,7 @@ impl PhysicsWorld {
         self.body_collision_radii.push(None);
         self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
+        self.pad_axis_locks();
         self.islands.resize(idx + 1);
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
@@ -2086,6 +2095,7 @@ impl PhysicsWorld {
         self.body_collision_radii.push(Some(radius));
         self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
+        self.pad_axis_locks();
         self.islands.resize(idx + 1);
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
@@ -2275,6 +2285,17 @@ impl PhysicsWorld {
         if self.body_filters.len() < n {
             self.body_filters.resize(n, CollisionFilter::DEFAULT);
         }
+        self.pad_axis_locks();
+    }
+
+    /// Extend the lock table with `NONE` up to the number of bodies (a body
+    /// pushed onto the public field has no lock).
+    fn pad_axis_locks(&mut self) {
+        let n = self.bodies.len();
+        if self.body_axis_locks.len() < n {
+            self.body_axis_locks
+                .resize(n, crate::axis_lock::AxisLock::NONE);
+        }
     }
 
     /// [`Self::remove_body`] that also returns the body's per-body settings
@@ -2379,6 +2400,7 @@ impl PhysicsWorld {
         self.body_collision_radii.swap_remove(idx);
         self.body_colliders.swap_remove(idx);
         self.body_filters.swap_remove(idx);
+        self.body_axis_locks.swap_remove(idx);
         #[cfg(feature = "std")]
         self.body_stable_ids.swap_remove(idx);
 
@@ -2825,6 +2847,98 @@ impl PhysicsWorld {
             .get(body_idx)
             .copied()
             .unwrap_or(CollisionFilter::DEFAULT)
+    }
+
+    /// Lock the world axes `lock` of body `body_idx` (see [`crate::axis_lock`]):
+    /// from the next substep it keeps the locked coordinates of its pose and has
+    /// no velocity along them. [`crate::axis_lock::AxisLock::NONE`] removes the
+    /// lock. Static and kinematic bodies are not affected. The lock is part of
+    /// the snapshot, the state digest and [`Self::law_id`]. `false` (and
+    /// nothing changes) when there is no such body.
+    pub fn set_body_axis_lock(
+        &mut self,
+        body_idx: usize,
+        lock: crate::axis_lock::AxisLock,
+    ) -> bool {
+        if body_idx >= self.bodies.len() {
+            return false;
+        }
+        self.pad_axis_locks();
+        self.body_axis_locks[body_idx] = lock;
+        true
+    }
+
+    /// The axis lock of body `body_idx` (`NONE` when it has none), `None` when
+    /// there is no such body.
+    #[must_use]
+    pub fn body_axis_lock(&self, body_idx: usize) -> Option<crate::axis_lock::AxisLock> {
+        (body_idx < self.bodies.len()).then(|| {
+            self.body_axis_locks
+                .get(body_idx)
+                .copied()
+                .unwrap_or_default()
+        })
+    }
+
+    /// The lock of every body (`NONE` for a body without an entry) when at
+    /// least one body has a lock, `None` otherwise: the snapshot and the law
+    /// identifier carry locks only then.
+    pub(crate) fn axis_locks_in_use(&self) -> Option<Vec<crate::axis_lock::AxisLock>> {
+        let n = self.bodies.len();
+        if self.body_axis_locks.iter().take(n).all(|l| l.is_none()) {
+            return None;
+        }
+        let mut locks: Vec<_> = self.body_axis_locks.iter().take(n).copied().collect();
+        locks.resize(n, crate::axis_lock::AxisLock::NONE);
+        Some(locks)
+    }
+
+    /// Replace the lock table (a snapshot being restored).
+    pub(crate) fn set_axis_locks(&mut self, locks: Vec<crate::axis_lock::AxisLock>) {
+        self.body_axis_locks = locks;
+        self.pad_axis_locks();
+    }
+
+    /// Start of a substep: zero the locked velocity components of the locked
+    /// dynamic bodies and keep their poses for [`Self::axis_lock_end_pose`].
+    pub(crate) fn axis_lock_begin(&mut self) {
+        self.axis_lock_starts.clear();
+        for (i, &lock) in self.body_axis_locks.iter().enumerate() {
+            let Some(body) = self.bodies.get_mut(i) else {
+                break;
+            };
+            if lock.is_none() || body.body_type != BodyType::Dynamic {
+                continue;
+            }
+            crate::axis_lock::project_velocity(lock, body);
+            self.axis_lock_starts.push(crate::axis_lock::LockedStart {
+                body: i,
+                lock,
+                position: body.position,
+                rotation: body.rotation,
+            });
+        }
+    }
+
+    /// End of a substep, before the velocities are derived: put the locked pose
+    /// components back to their start-of-substep values.
+    pub(crate) fn axis_lock_end_pose(&mut self) {
+        for start in &self.axis_lock_starts {
+            if let Some(body) = self.bodies.get_mut(start.body) {
+                crate::axis_lock::project_pose(start, body);
+            }
+        }
+    }
+
+    /// End of a substep, after the velocities are derived: zero the locked
+    /// velocity components and forget the start poses.
+    pub(crate) fn axis_lock_end_velocity(&mut self) {
+        for start in &self.axis_lock_starts {
+            if let Some(body) = self.bodies.get_mut(start.body) {
+                crate::axis_lock::project_velocity(start.lock, body);
+            }
+        }
+        self.axis_lock_starts.clear();
     }
 
     // ── Sleeping ──────────────────────────────────────────────────────
@@ -3911,6 +4025,39 @@ impl PhysicsWorld {
         out
     }
 
+    /// One TGS substep's axis-lock projection: the locked bodies' TGS state is
+    /// copied to the world bodies, their pose and velocity projected
+    /// ([`Self::axis_lock_end_pose`], [`Self::axis_lock_end_velocity`]) and
+    /// written back. The start poses were kept by [`Self::axis_lock_begin`] at
+    /// the start of the substep.
+    #[cfg(feature = "std")]
+    fn tgs_project_axis_locks(
+        &mut self,
+        tgs_bodies: &mut [crate::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState],
+    ) {
+        use crate::solver_tgs_backend::tgs_to_body;
+        let locked: Vec<usize> = self.axis_lock_starts.iter().map(|s| s.body).collect();
+        for &i in &locked {
+            if let (Some(state), Some(body)) = (tgs_bodies.get(i), self.bodies.get_mut(i)) {
+                tgs_to_body(state, body);
+            }
+        }
+        self.axis_lock_end_pose();
+        self.axis_lock_end_velocity();
+        for &i in &locked {
+            if let (Some(state), Some(body)) = (tgs_bodies.get_mut(i), self.bodies.get(i)) {
+                state.position = [body.position.x, body.position.y, body.position.z];
+                state.orientation = body.rotation;
+                state.linear_velocity = [body.velocity.x, body.velocity.y, body.velocity.z];
+                state.angular_velocity = [
+                    body.angular_velocity.x,
+                    body.angular_velocity.y,
+                    body.angular_velocity.z,
+                ];
+            }
+        }
+    }
+
     /// One TGS substep's joint solve: copies the jointed bodies' TGS state to
     /// the world bodies, applies the joint projection
     /// ([`Self::solve_joints_dispatch`], the call the XPBD substep makes) and
@@ -4164,7 +4311,9 @@ impl PhysicsWorld {
         // loop splits `dt` exactly as that call does, so a world whose
         // participants stage nothing gives the same bits either way.
         let with_participants = !frozen.is_empty();
-        if self.joints.is_empty() && !with_participants {
+        // Axis locks project every substep, so they need the loop too.
+        let with_locks = self.axis_locks_in_use().is_some();
+        if self.joints.is_empty() && !with_participants && !with_locks {
             solve_oriented_islands_serial(
                 &mut tgs_bodies,
                 &mut tgs_contacts,
@@ -4197,15 +4346,17 @@ impl PhysicsWorld {
             let sub_dt = dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32);
             let jointed = self.jointed_bodies();
             for s in 0..tgs_cfg.substeps {
-                let overflow_at_start = if with_participants {
+                let overflow_at_start = if with_participants || with_locks {
                     // Participants read the bodies as they are at the start of
                     // this substep, and their forces change the velocities
-                    // the TGS solve starts from.
+                    // the TGS solve starts from; then the locked velocity
+                    // components are removed.
                     for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
                         tgs_to_body(state, body);
                     }
-                    let flag =
-                        self.participants_begin_substep(s as usize, substeps, sub_dt, frozen);
+                    let flag = with_participants
+                        && self.participants_begin_substep(s as usize, substeps, sub_dt, frozen);
+                    self.axis_lock_begin();
                     for (state, body) in tgs_bodies.iter_mut().zip(self.bodies.iter()) {
                         state.linear_velocity = [body.velocity.x, body.velocity.y, body.velocity.z];
                         state.angular_velocity = [
@@ -4230,6 +4381,9 @@ impl PhysicsWorld {
                 );
                 if !self.joints.is_empty() {
                     self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
+                }
+                if with_locks {
+                    self.tgs_project_axis_locks(&mut tgs_bodies);
                 }
                 if with_participants {
                     // Keep `self.bodies` in step with the TGS state after every
@@ -4274,7 +4428,16 @@ impl PhysicsWorld {
         // Without that a body resting on a plane keeps the velocity gravity
         // gave it and sinks again next tick. (The joints were solved inside
         // the substep loop above.)
+        // A locked body keeps its locked coordinates through the static
+        // corrections as through the substeps.
+        if with_locks {
+            self.axis_lock_begin();
+        }
         self.tgs_static_corrections();
+        if with_locks {
+            self.axis_lock_end_pose();
+            self.axis_lock_end_velocity();
+        }
 
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
@@ -4528,6 +4691,9 @@ impl PhysicsWorld {
     /// are saved so that `update_velocities` derives zero velocity.
     #[inline]
     fn integrate_positions(&mut self, dt: Fix128) {
+        // Locked bodies: no velocity along a locked axis from here on, and the
+        // pose the end of the substep projects back to.
+        self.axis_lock_begin();
         // ⚠️ 範囲外の積を集める受け皿 — parallel branch の closure から
         // `self` に書けないので Atomic で受けて関数末尾で flag に畳み込む
         // (bool の OR は結合的・可換なので rayon の実行順に依存しない)
@@ -4777,6 +4943,13 @@ impl PhysicsWorld {
     /// for active contact constraints.
     #[inline]
     fn update_velocities(&mut self, dt: Fix128) {
+        self.axis_lock_end_pose();
+        self.update_velocities_unlocked(dt);
+        self.axis_lock_end_velocity();
+    }
+
+    /// [`Self::update_velocities`] without the axis-lock projections.
+    fn update_velocities_unlocked(&mut self, dt: Fix128) {
         let inv_dt = Fix128::ONE / dt;
         // ⚠️ 範囲外の積を集める受け皿 — parallel branch の closure から
         // `self` に書けないので Atomic で受けて関数末尾で flag に畳み込む
@@ -7317,6 +7490,8 @@ impl PhysicsWorld {
             self.body_filters.push(CollisionFilter::DEFAULT);
         }
         self.body_filters.truncate(n);
+        self.body_axis_locks
+            .resize(n, crate::axis_lock::AxisLock::NONE);
         while self.body_materials.len() < n {
             self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         }

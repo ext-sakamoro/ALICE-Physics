@@ -24,6 +24,10 @@ pub const WORLD_LAW_KIND: &[u8] = b"physics-world/v1";
 /// identifiers participants declare).
 pub const PARTICIPANT_SEMANTICS_ROW: &[u8] = b"participant-semantics";
 
+/// The tag that opens row 18 of [`PhysicsWorld::law_id`] (the body axis
+/// locks).
+pub const BODY_AXIS_LOCK_ROW: &[u8] = b"body-axis-locks";
+
 use crate::force::ForceField;
 use crate::material::CombineRule;
 use crate::math::{Fix128, Vec3Fix};
@@ -279,6 +283,7 @@ impl PhysicsWorld {
     /// | 15 | force fields, in the order they were added | list of: `enabled` (`bool`), the bodies it is limited to (`Option` of a list of `u64`, sorted ascending without duplicates), then the field |
     /// | 16 | participants, in registration order | list of: kind (`u32`), step rule, ports |
     /// | 17 | only when at least one participant declares a semantics identifier: [`PARTICIPANT_SEMANTICS_ROW`], then the declaring participants in registration order | byte string, then list of: registration index (`u64`), the 32 bytes (no length) |
+    /// | 18 | only when at least one body has an axis lock ([`PhysicsWorld::set_body_axis_lock`]): [`BODY_AXIS_LOCK_ROW`], then the locked bodies in index order | byte string, then list of: body index (`u64`), the lock's bits (`u32`) |
     ///
     /// A field is its tag followed by its parameters in declaration order:
     /// `directional` (direction `Vec3Fix`, strength), `point` (center
@@ -297,7 +302,9 @@ impl PhysicsWorld {
     /// Rows 1 to 16 end where their own lengths and counts say, so row 17 is
     /// either absent (the encoding ends there) or follows; a world whose
     /// participants declare no identifier has the encoding it had before row 17
-    /// existed.
+    /// existed. Row 18 follows in the same way, after row 17 when that is
+    /// present: rows 17 and 18 open with different tags, and a world without
+    /// axis locks has the encoding it had before row 18 existed.
     ///
     /// Sorting the pair overrides and the body lists keeps the identifier
     /// independent of the order they were registered in, which the step does
@@ -377,6 +384,7 @@ impl PhysicsWorld {
 
         self.encode_participants(&mut e);
         self.encode_participant_semantics(&mut e);
+        self.encode_axis_locks(&mut e);
         e.0.finalize().into()
     }
 
@@ -399,6 +407,26 @@ impl PhysicsWorld {
         for (index, id) in declared {
             e.u64(index as u64);
             e.0.update(id);
+        }
+    }
+
+    /// Row 18: written only when a body has an axis lock, so a world without
+    /// locks keeps the identifier it had before the row existed.
+    fn encode_axis_locks(&self, e: &mut Encoder) {
+        let Some(locks) = self.axis_locks_in_use() else {
+            return;
+        };
+        let locked: Vec<(usize, u8)> = locks
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| !l.is_none())
+            .map(|(i, l)| (i, l.bits()))
+            .collect();
+        e.bytes(BODY_AXIS_LOCK_ROW);
+        e.len(locked.len());
+        for (index, bits) in locked {
+            e.u64(index as u64);
+            e.u32(u32::from(bits));
         }
     }
 

@@ -150,10 +150,12 @@ fn checked(
 }
 
 /// Version 6 keeps the layout of version 4 (version 5 added the panic fault
-/// codes, version 6 stores damping as rates per second).
+/// codes, version 6 stores damping as rates per second). Version 7 adds the
+/// body axis locks and is written only by a world that has one, so this scene,
+/// which has none, is still written as version 6.
 #[test]
 fn the_writer_emits_version_6() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
     assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &6u16.to_le_bytes());
