@@ -1194,6 +1194,26 @@ impl WasmPhysicsWorld {
         })
     }
 
+    /// State digest of cloth `body` ([`crate::cloth::Cloth::state_digest`]: SHA-256 over every
+    /// bit a step reads or writes), 32 bytes; empty when there is no such cloth.
+    #[wasm_bindgen(js_name = "clothStateDigest")]
+    pub fn cloth_state_digest(&self, body: usize) -> Vec<u8> {
+        self.inner
+            .cloths
+            .get(body)
+            .map_or_else(Vec::new, |c| c.state_digest().to_vec())
+    }
+
+    /// The bytes [`crate::cloth::Cloth::state_bytes`] hashes for cloth `body` (its section of
+    /// the world snapshot); empty when there is no such cloth.
+    #[wasm_bindgen(js_name = "clothStateBytes")]
+    pub fn cloth_state_bytes(&self, body: usize) -> Vec<u8> {
+        self.inner
+            .cloths
+            .get(body)
+            .map_or_else(Vec::new, crate::cloth::Cloth::state_bytes)
+    }
+
     /// Whether cloth `body` is asleep at its exact fixed point.
     #[wasm_bindgen(js_name = "clothAsleep")]
     pub fn cloth_asleep(&self, body: usize) -> bool {
