@@ -727,6 +727,7 @@ use alice_physics::molecular_dynamics::MD_PARTICIPANT_KIND as _;
 use alice_physics::motor as _;
 use alice_physics::motor::apply_motors as _;
 use alice_physics::motor::JointMotor as _;
+use alice_physics::motor::MotorError as _;
 use alice_physics::motor::MotorMode as _;
 use alice_physics::motor::PdController as _;
 use alice_physics::motor::PdController3D as _;
@@ -1864,7 +1865,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1846 paths, checked at compile time
+    // 1847 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
