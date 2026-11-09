@@ -688,3 +688,23 @@ fn rollback_blob_carries_the_letters() {
         "a refused blob changed the letters"
     );
 }
+
+/// The world's state digest after the throw script and 120 more frames, recorded once:
+/// the golden of the soft-letter stepping path (two letters stepped by `PhysicsWorld::step`,
+/// a grab dragged for 30 frames and released with a velocity), checked on every lane so
+/// a change of any bit of the soft-letter step on any target fails here.
+const SOFT_LETTERS_WORLD_DIGEST_150: &str =
+    "059935e3df1eb7b2591e38fa4299352d5d4ea9794a6b1e96bd44686778b0c059";
+
+#[test]
+fn the_world_digest_of_the_throw_script_is_the_golden() {
+    let mut w = two_letters();
+    throw_script(&mut w);
+    step(&mut w, 120);
+    let got: String = w
+        .state_digest()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(got, SOFT_LETTERS_WORLD_DIGEST_150);
+}
