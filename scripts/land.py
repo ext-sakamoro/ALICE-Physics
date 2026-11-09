@@ -1584,6 +1584,12 @@ class Lander:
             if problem:
                 raise LandError(f"refusing remote {self.remote!r}: its effective {label} {problem}")
 
+    def evidence_polls(self) -> int:
+        """how many polls wait_evidence makes: a public repository waits for the macOS legs before main (its CI
+        receipt needs every run), so it takes the after-landing bound (2026-11-10: the 2 h bound ran out on
+        Test (macos-15-intel) and the landing stopped)"""
+        return self.after_max_polls if self.public else self.max_polls
+
     def wait_evidence(self, ref: str, sha: str) -> None:
         """Wait until every workflow expected on a ci/** push has its evidence for `sha` on
         `ref` (see run_verdict); re-create a missing or dropped run with `gh workflow run`
@@ -1598,7 +1604,7 @@ class Lander:
         last_seen = {w["file"]: started for w in expected}
         dispatched = {w["file"]: 0 for w in expected}
         states: dict[str, tuple[str, str]] = {}
-        for _ in range(self.max_polls):
+        for _ in range(self.evidence_polls()):
             runs = self.list_branch_runs(slug, ref)
             states = {}
             chosen: dict[str, dict | None] = {}
@@ -1739,7 +1745,10 @@ class Lander:
         return r.returncode == 0 and all(line.startswith("-") for line in r.stdout.splitlines())
 
     def rebase(self) -> None:
-        """Rebase on the upstream with a fixed committer; settle ledger conflicts."""
+        """Rebase on the upstream with a fixed committer and each commit's author date as its committer date (so a
+        landing run again from the same commits onto the same main makes the same SHA, and reuses the CI runs on
+        ci/<id>: 2026-11-10, a re-run after a timeout would otherwise gather the evidence again); settle ledger
+        conflicts."""
         # --force-rebase replays every commit, so each one gets the fixed committer
         # attributes are read from the empty tree: a base that still carries
         # `CHANGELOG.md merge=union` must not merge it behind merge_append()'s back
@@ -1747,7 +1756,7 @@ class Lander:
         subprocess.run([*self.git_argv, "mktree"], cwd=self.root, input="", capture_output=True, text=True,
                        env=self.git_env)
         r = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "rebase", "--force-rebase",
-                            self.upstream()],
+                            "--committer-date-is-author-date", self.upstream()],
                            cwd=self.root, capture_output=True, text=True, env=self.git_env)
         while r.returncode != 0:
             conflicted = [p.decode("utf-8", "surrogateescape")
@@ -1771,9 +1780,11 @@ class Lander:
             # would commit it with the default cleanup, which drops body lines that start with
             # `#` (e.g. `#[path = ...]`). -C REBASE_HEAD keeps the author, the date and the message;
             # the committer is the fixed identity
+            when = self.git("log", "-1", "--format=%aI", "REBASE_HEAD")
             c = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "commit", "-q",
                                 "--no-verify", "--cleanup=verbatim", "-C", "REBASE_HEAD"],
-                               cwd=self.root, capture_output=True, text=True, env=self.git_env)
+                               cwd=self.root, capture_output=True, text=True,
+                               env={**self.git_env, "GIT_COMMITTER_DATE": when})
             if c.returncode != 0:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"committing the resolved pick failed: {(c.stderr or c.stdout).strip()[:300]}")
@@ -1829,7 +1840,13 @@ class Lander:
         if stray:
             raise LandError(f"regeneration touched files that are not ledgers: {stray}")
         self.git("add", "--", *names)
-        self.git(*self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m", REGEN_MESSAGE)
+        # (dated as its parent: the same commits regenerated again make the same SHA)
+        when = self.git("log", "-1", "--format=%cI", "HEAD")
+        r = subprocess.run([*self.git_argv, *self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m", REGEN_MESSAGE],
+                           cwd=self.root, capture_output=True, text=True,
+                           env={**self.git_env, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when})
+        if r.returncode != 0:
+            raise LandError(f"git commit (ledgers) failed: {(r.stderr or r.stdout).strip()}")
 
     def api_commit_identity(self, sha: str) -> tuple[str, str, str, str]:
         """(author name, author email, committer name, committer email) of `sha` from the

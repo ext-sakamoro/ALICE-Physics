@@ -657,6 +657,20 @@ class PublicLanding(Isolated):
         self.assertFalse(any(c.startswith("ci_receipt") for c in lander.calls))
 
 
+class EvidencePolls(unittest.TestCase):
+    def test_a_public_repository_waits_the_after_landing_bound(self):
+        class L(land.Lander):
+            def __init__(self, public):  # (no repository: only the bound)
+                self.public, self.max_polls, self.after_max_polls = public, 240, 360
+        self.assertEqual(L(True).evidence_polls(), 360)
+        self.assertEqual(L(False).evidence_polls(), 240)
+        self.assertEqual(L(None).evidence_polls(), 240)
+
+    def test_wait_evidence_uses_the_bound(self):
+        import inspect
+        self.assertIn("range(self.evidence_polls())", inspect.getsource(land.Lander.wait_evidence))
+
+
 class AllRunsVerdict(unittest.TestCase):
     def run_(self, i, name, status, conclusion=None):
         return {"databaseId": i, "workflowName": name, "status": status, "conclusion": conclusion}
@@ -1169,6 +1183,18 @@ class Landing(Isolated):
         self.assertLess(lander.calls.index("regenerate"), lander.calls.index("preflight"), lander.calls)
         landed = git(self.r.work, "show", "HEAD:docs/integration-status.md")
         self.assertIn("b.rs", landed)
+
+    def test_a_landing_run_again_onto_the_same_main_makes_the_same_sha(self):
+        # (2026-11-10: a re-run after a timeout rebased again with a new committer date, so its SHA was new and its CI
+        # had to run again; the committer date is the author date and the ledger commit is dated as its parent)
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        self.r.push_upstream({"src/c.rs": "c\n"}, "feat: c upstream")
+        first = self.r.lander(dry_run=True).land()
+        time.sleep(1.1)
+        second = self.r.lander(dry_run=True).land()
+        self.assertEqual(first, second, "the same commits onto the same main made another SHA")
+        self.assertNotEqual(git(self.r.work, "log", "-1", "--format=%cI", first),
+                            "", "no committer date read")
 
     def test_docs_only_upstream_reruns_preflight_on_the_rebased_tree(self):
         # (2026-10-29: was "does not rerun". Every tree land.py pushes needs the receipt of a preflight run on it,
