@@ -728,6 +728,17 @@ jobs:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
         run: scripts/run_tests.sh analytic_wind_zone_participant=13,analytic_buoyancy_zone_participant=20 -- cargo test --test analytic_wind_zone_participant --test analytic_buoyancy_zone_participant --target wasm32-wasip1 -- --nocapture
 
+      # the overflow flag's recorded bits on the scenes where the flag once depended on
+      # the broad-phase kind and the sleep skip: wasm must agree with every native leg
+      - name: Build overflow_flag_previous_bits test (wasm32-wasip1)
+        run: cargo test --test overflow_flag_previous_bits --target wasm32-wasip1 --no-run
+
+      - name: Run overflow_flag_previous_bits test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'overflow_flag_previous_bits-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
   # The published C ABI libraries are built from the facade (alice-physics) so that their
   # names stay alice_physics; the #[no_mangle] functions live in the engine. Release
   # profile, as release.yml builds them: the exported symbols of the cdylib and the
