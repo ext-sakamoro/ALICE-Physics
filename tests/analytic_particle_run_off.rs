@@ -11,7 +11,7 @@
 
 #![allow(
     clippy::disallowed_methods,
-    reason = "the closed forms are evaluated in f64 by the test, not by the engine"
+    reason = "analytic reference: the closed forms are evaluated in f64 by the test, not by the engine"
 )]
 
 use alice_physics_core::math::{Fix128, Vec3Fix};
