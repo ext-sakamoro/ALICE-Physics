@@ -77,7 +77,6 @@ src/sdf_force.rs
 src/sdf_sph.rs
 src/sdf_wind_field.rs
 src/secondary_chain.rs
-src/sleeping.rs
 src/smoke_fire.rs
 src/soft_body_cut.rs
 src/solver.rs
