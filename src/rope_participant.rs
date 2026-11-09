@@ -1,3 +1,29 @@
+//! # MODEL
+//!
+//! - **Equations**: position-based distance constraints between neighbouring particles
+//!   of a lumped-mass chain, solved by a Gauss-Seidel sweep in each world substep, under
+//!   the world's gravity. A particle tied to a body stands for the anchor with the
+//!   weight `1/m + (r × n) · I⁻¹ (r × n)`; the correction `dx` it receives is staged on
+//!   the body as the force `F = dx / h²` (the rope side's mass) with the torque `r × F`.
+//! - **Units**: SI. Mass kg, length m, time s, force N, torque N·m.
+//! - **Conservation**: with no external force the total momentum of rope and bodies
+//!   stays (a staged force is the reaction of the constraint's own correction); the
+//!   projection dissipates energy and never adds it over long undamped runs.
+//! - **Range**: rope:body mass ratios from 0.01:1 to 1000:1 hold the rope's length
+//!   within 5 % and the energy within 1 %; at 0.001:1 the sweep does not converge (see
+//!   the known defect). Every product and sum is checked: a value out of range is
+//!   [`ParticipantFault::OutOfRange`] and changes nothing.
+//! - **Approximations**: inextensible distance constraints only (no stretch modulus,
+//!   no bending or torsion stiffness), no collision of the rope with itself or the
+//!   world, no air drag on the rope, a fixed sweep per substep (the stiffness follows
+//!   the world's substeps).
+//! - **Tiers**: L0 only.
+//! - **Validation**: `tests/analytic_rope_participant.rs::a_body_on_a_rope_swings_as_a_pendulum::a_hanging_rope_pulls_with_the_weight_it_carries::the_centre_of_mass_falls_freely::total_momentum_stays_with_no_external_force::energy_does_not_grow_over_a_long_undamped_run::the_mass_ratio_stays_bounded::the_staged_torque_is_the_offset_cross_the_force::an_offset_anchor_turns_the_body_under_the_rope::rewind_and_fork_are_bit_identical::swing_scene_digest_is_pinned`
+//!   (the pendulum period, the tension of a hanging load, free fall of the centre of
+//!   mass, momentum, energy, the mass-ratio range, the torque `r × F`, replay bits).
+//! - **Known defects**: `tests/analytic_rope_participant.rs::a_heavy_load_on_a_light_rope_holds_its_length` (at
+//!   rope:body 0.001:1 the length is 5 % off at frame 9).
+//!
 //! A [`Rope`] as a resident of the world: its particles step inside the world's
 //! substeps, and it pulls the bodies it is tied to through the participant
 //! contract.
