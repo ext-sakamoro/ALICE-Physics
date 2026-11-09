@@ -1969,8 +1969,8 @@ struct Decoded {
     ccd: super::WorldCcdConfig,
     /// The body axis locks (version 7 when a body had a lock, always from version 8; none before)
     axis_locks: Vec<crate::axis_lock::AxisLock>,
-    /// The soft bodies and the next grab id (version 9; none before)
-    soft_bodies: Vec<crate::soft_body::SoftBody>,
+    /// The cloths and the next grab id (version 9; none before)
+    cloths: Vec<crate::cloth::Cloth>,
     next_grab_id: u32,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
@@ -2011,7 +2011,7 @@ impl PhysicsWorld {
     /// ([`crate::sleeping::SleepConfig::time_to_sleep`]) where versions 1 to 7
     /// held step counts, and always carries the axis-lock section (a count of
     /// 0 for a world without locks).
-    /// Version 9 appends the soft bodies ([`crate::soft_body::SoftBody`]).
+    /// Version 9 appends the cloths ([`crate::cloth::Cloth`]).
     pub const WORLD_SNAPSHOT_VERSION: u16 = 9;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
@@ -2082,7 +2082,7 @@ impl PhysicsWorld {
     /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
     /// | `body_axis_locks` | saved | from version 8 always (a count of 0 without locks); a version 7 blob has them only when a body had a lock, a version 1 to 6 blob none |
     /// | `axis_lock_starts` | not covered | scratch of one substep, empty between steps |
-    /// | `soft_bodies` / next grab id | saved | every [`crate::soft_body::SoftBody`]: particles (position, previous, velocity, inverse mass), triangles, pins and the inverse masses they replaced, wind, [`crate::cloth::ClothConfig`], rest tether, rest positions, grabs, `last_dt` (version 9; an older blob restores no soft body). The sleep flag and the sleep snapshot are rebuilt (sleep on, awake): they change no bit, and if the body was at its fixed point the next step is the identity and puts it back to sleep with the same bits |
+    /// | `cloths` / next grab id | saved | every [`crate::cloth::Cloth`]: particles (position, previous, velocity, inverse mass), triangles, pins and the inverse masses they replaced, wind, [`crate::cloth::ClothConfig`], rest tether, rest positions, grabs, `last_dt` (version 9; an older blob restores no cloth). The sleep flag and the sleep snapshot are rebuilt (sleep on, awake): they change no bit, and if the body was at its fixed point the next step is the identity and puts it back to sleep with the same bits |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -2138,7 +2138,7 @@ impl PhysicsWorld {
     /// | section | content |
     /// |---|---|
     /// | `continuous_collision` | `enabled: u8` (`0` / `1`), `motion_threshold` ([`PhysicsWorld::continuous_collision`]) |
-    /// | `soft_bodies` (version 9) | `count: u64`, per body: `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each) and inverse masses (`Fix128`), `triangles: u64` then `u64 × 3` each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`) each, `wind`, config (`iterations: u64`, `substeps: u64`, `gravity`, `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`, `self_collision: u8`, `self_collision_distance`), tether (`u8`, then `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then per grab `id: u32`, `particle: u64`, `target`, `applied` × 2, then `last_dt`; after every body `next_grab_id: u32` |
+    /// | `cloths` (version 9) | `count: u64`, per body: `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each) and inverse masses (`Fix128`), `triangles: u64` then `u64 × 3` each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`) each, `wind`, config (`iterations: u64`, `substeps: u64`, `gravity`, `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`, `self_collision: u8`, `self_collision_distance`), tether (`u8`, then `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then per grab `id: u32`, `particle: u64`, `target`, `applied` × 2, then `last_dt`; after every cloth `next_grab_id: u32` |
     ///
     /// The version is raised for it because the reader rejects trailing
     /// bytes: a section appended to a version 2 blob could not be told apart
@@ -2351,9 +2351,9 @@ impl PhysicsWorld {
         for l in &locks {
             w.u8(l.bits());
         }
-        w.usize(self.soft_bodies.len());
-        for b in &self.soft_bodies {
-            w_soft_body(&mut w, b);
+        w.usize(self.cloths.len());
+        for c in &self.cloths {
+            w_cloth(&mut w, c);
         }
         w.u32(self.next_grab_id);
 
@@ -2723,13 +2723,12 @@ impl PhysicsWorld {
         self.fields_mut().read_values(&d.fields);
         self.ccd = d.ccd;
         self.set_axis_locks(d.axis_locks);
-        self.soft_bodies = d.soft_bodies;
+        self.cloths = d.cloths;
         self.next_grab_id = d.next_grab_id;
     }
 }
 
-fn w_soft_body(w: &mut W, b: &crate::soft_body::SoftBody) {
-    let c = b.cloth();
+fn w_cloth(w: &mut W, c: &crate::cloth::Cloth) {
     w.usize(c.positions.len());
     for p in &c.positions {
         w.vec3(*p);
@@ -2781,21 +2780,20 @@ fn w_soft_body(w: &mut W, b: &crate::soft_body::SoftBody) {
     for p in c.rest_positions() {
         w.vec3(*p);
     }
-    w.usize(b.grabs().len());
-    for g in b.grabs() {
+    w.usize(c.grabs().len());
+    for g in c.grabs() {
         w.u32(g.id.0);
         w.usize(g.particle);
         w.vec3(g.target);
         w.vec3(g.applied[0]);
         w.vec3(g.applied[1]);
     }
-    w.fix(b.last_dt());
+    w.fix(c.last_dt());
 }
 
-fn r_soft_body(r: &mut R<'_>) -> Res<crate::soft_body::SoftBody> {
-    use crate::cloth::{Cloth, ClothConfig};
-    use crate::soft_body::{Grab, GrabId, SoftBody};
-    const S: &str = "soft_bodies";
+fn r_cloth(r: &mut R<'_>) -> Res<crate::cloth::Cloth> {
+    use crate::cloth::{Cloth, ClothConfig, Grab, GrabId};
+    const S: &str = "cloths";
     let bad = || WorldSnapshotError::InvalidValue { section: S };
     let n = r.len(S, 48 * 3 + 16)?;
     let mut positions = Vec::with_capacity(n);
@@ -2902,7 +2900,8 @@ fn r_soft_body(r: &mut R<'_>) -> Res<crate::soft_body::SoftBody> {
     }
     // the exact sleep is on, as for a body just added (it changes no bit)
     cloth.set_sleep(true);
-    Ok(SoftBody::from_parts(cloth, grabs, last_dt))
+    cloth.set_grab_state(grabs, last_dt);
+    Ok(cloth)
 }
 
 /// What a decoded blob's header identifiers verify against `expected`.
@@ -3291,11 +3290,12 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         locks
     } else {
         Vec::new()
-    let (soft_bodies, next_grab_id) = if version >= 9 {
-        let n = r.len("soft_bodies", 8)?;
+    };
+    let (cloths, next_grab_id) = if version >= 9 {
+        let n = r.len("cloths", 8)?;
         let mut v = Vec::with_capacity(n);
         for _ in 0..n {
-            v.push(r_soft_body(r)?);
+            v.push(r_cloth(r)?);
         }
         (v, r.u32()?)
     } else {
@@ -3338,7 +3338,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         fields,
         ccd,
         axis_locks,
-        soft_bodies,
+        cloths,
         next_grab_id,
         ids: None,
     })
@@ -4884,8 +4884,8 @@ mod tests {
             );
             payload[at..at + 16].copy_from_slice(&with);
         }
-        // version 9 appended the soft-body section (count u64 + next grab id u32)
-        // before the checksum: a world without soft bodies ends in 12 zero bytes
+        // version 9 appended the cloth section (count u64 + next grab id u32)
+        // before the checksum: a world without cloths ends in 12 zero bytes
         // that the older versions do not have
         let n = payload.len();
         assert!(
