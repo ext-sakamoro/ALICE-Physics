@@ -2726,7 +2726,9 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     } else {
         let frames_to_sleep = r.u32()?;
         match legacy_step {
-            Some(step) if step > Fix128::ZERO => Fix128::from_int(i64::from(frames_to_sleep)) * step,
+            Some(step) if step > Fix128::ZERO => {
+                Fix128::from_int(i64::from(frames_to_sleep)) * step
+            }
             Some(_) => return Err(invalid("islands")),
             None => return Err(WorldSnapshotError::LegacySleepFramesNeedsStep { frames_to_sleep }),
         }
@@ -3078,7 +3080,7 @@ mod tests {
                 retention: Fix128::from_ratio(99, 100),
             },
             WorldSnapshotError::LegacySleepFramesNeedsStep {
-                time_to_sleep: Fix128::from_ratio(60, 60),
+                frames_to_sleep: 60,
             },
         ];
         assert_eq!(
@@ -4040,7 +4042,7 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4190,8 +4192,8 @@ mod tests {
         assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &6u16.to_le_bytes());
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(&b[4..6], &7u16.to_le_bytes());
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -4356,6 +4358,7 @@ mod tests {
     /// the result is a faithful older blob of exactly that world.
     fn legacy_form(version: u16, retention: Fix128) -> Vec<u8> {
         assert!((1..=5).contains(&version));
+        let sleepy_bodies = variant_world().bodies.len();
         let plain = variant_world().snapshot_world();
         let mut marked = variant_world();
         let sentinel = fx(987_654_321, 1_000_003);
@@ -4388,30 +4391,91 @@ mod tests {
             );
             payload[at..at + 16].copy_from_slice(&with);
         }
+        // Version 7 holds the sleep rule and each body's idle time as `Fix128`
+        // seconds where versions 1 to 6 held step counts (`u32`): find those
+        // slots the same way and shrink each to the count at a 1/60 s step.
+        let mut sleepy = variant_world();
+        let t_sentinel = fx(123_456_789, 1_000_003);
+        let i_sentinel = fx(987_654_323, 1_000_003);
+        sleepy.islands.config.time_to_sleep = t_sentinel;
+        for sd in &mut sleepy.islands.sleep_data {
+            sd.idle_time = i_sentinel;
+        }
+        let sleepy = sleepy.snapshot_world();
+        assert_eq!(sleepy.len(), plain.len());
+        let mut sleep_hits: Vec<usize> = sleepy[80..]
+            .windows(16)
+            .enumerate()
+            .filter(|(_, w)| {
+                *w == bytes(t_sentinel).as_slice() || *w == bytes(i_sentinel).as_slice()
+            })
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            sleep_hits.len(),
+            1 + sleepy_bodies,
+            "sleep slots found: {sleep_hits:?}"
+        );
+        sleep_hits.sort_unstable_by(|a, b| b.cmp(a));
+        for at in sleep_hits {
+            let mut hi = [0u8; 8];
+            let mut lo = [0u8; 8];
+            hi.copy_from_slice(&payload[at..at + 8]);
+            lo.copy_from_slice(&payload[at + 8..at + 16]);
+            let seconds = Fix128::from_raw(i64::from_le_bytes(hi), u64::from_le_bytes(lo));
+            // the nearest count of 1/60 s steps (the value is k·(1/60) up to rounding)
+            let frames = seconds * Fix128::from_int(60) + fx(1, 2);
+            let frames = u32::try_from(frames.hi).expect("fits u32");
+            payload.splice(at..at + 16, frames.to_le_bytes());
+        }
         let mut b = plain[..super::header_len(version)].to_vec();
         b[4..6].copy_from_slice(&version.to_le_bytes());
+        b[8..16].copy_from_slice(&((payload.len() - 8) as u64).to_le_bytes());
         b.extend_from_slice(&payload);
         reseal(b)
     }
 
     /// The version 3 form of the blob (16-byte header, damping as retention
     /// 1 = none, which is what a version 3 writer stored for an undamped
-    /// world) restores to the same world and reports `Unpinned`.
+    /// world) holds the sleep rule as a step count: without the writer's step
+    /// every reader refuses it naming the count; with the step
+    /// (`restore_world_legacy_damping`) it restores to the same world and
+    /// reports `Unpinned`.
     #[test]
     fn version_3_form_is_unpinned() {
         use super::LawCheck;
         let blob = variant_world().snapshot_world();
         let v3 = legacy_form(3, Fix128::ONE);
         let mut t = PhysicsWorld::new(SolverConfig::default());
+        let needs_step = WorldSnapshotError::LegacySleepFramesNeedsStep {
+            frames_to_sleep: 60,
+        };
         assert_eq!(
             t.restore_world_checked(
                 &v3,
                 Some(&[9; 32]),
                 crate::solver::LegacyPolicy::AcceptUnpinned
             ),
+            Err(needs_step)
+        );
+        assert!(needs_step
+            .to_string()
+            .contains("restore_world_legacy_damping"));
+        assert_eq!(
+            t.restore_world_legacy_damping(&v3, fx(1, 60)),
             Ok(LawCheck::Unpinned)
         );
-        assert_eq!(t.snapshot_world(), blob);
+        // the rule is read back as 60 steps × the given step, not the written second
+        let converted = Fix128::from_int(60) * fx(1, 60);
+        assert_eq!(t.islands.config.time_to_sleep, converted);
+        let mut expect = variant_world();
+        expect.islands.config.time_to_sleep = converted;
+        assert_ne!(
+            expect.snapshot_world(),
+            blob,
+            "60 × (1/60) is not the written 1 s"
+        );
+        assert_eq!(t.snapshot_world(), expect.snapshot_world());
     }
 
     /// The version 3 form carries no identifiers: `restore_world` and
@@ -4424,7 +4488,12 @@ mod tests {
         let v3 = legacy_form(3, Fix128::ONE);
         let mut t = PhysicsWorld::new(SolverConfig::default());
         let before = t.snapshot_world();
-        assert_eq!(t.restore_world(&v3), Err(WorldSnapshotError::Unpinned));
+        // the payload is decoded before the identifier policy, so a step-count
+        // sleep rule is reported first; neither reader takes the blob
+        let needs_step = WorldSnapshotError::LegacySleepFramesNeedsStep {
+            frames_to_sleep: 60,
+        };
+        assert_eq!(t.restore_world(&v3), Err(needs_step));
         assert_eq!(
             t.snapshot_world(),
             before,
@@ -4432,7 +4501,7 @@ mod tests {
         );
         assert_eq!(
             t.restore_world_checked(&v3, None, LegacyPolicy::RequirePinned),
-            Err(WorldSnapshotError::Unpinned)
+            Err(needs_step)
         );
         assert_eq!(t.snapshot_world(), before);
         // the version 4 blob it was cut from is read by both
@@ -4459,9 +4528,9 @@ mod tests {
             b.angular_damping_rate = fx(2 * i + 2, 11);
         }
         let blob = src.snapshot_world();
-        assert_eq!(&blob[4..6], &6u16.to_le_bytes());
+        assert_eq!(&blob[4..6], &7u16.to_le_bytes());
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        t.restore_world(&blob).expect("version 6 restores");
+        t.restore_world(&blob).expect("version 7 restores");
         assert_eq!(t.config.damping_rate, fx(3, 10));
         for (i, b) in t.bodies.iter().enumerate() {
             let i = i as i64;
@@ -4480,18 +4549,26 @@ mod tests {
         let blob = variant_world().snapshot_world();
         let v5 = legacy_form(5, Fix128::ONE);
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        assert_eq!(t.restore_world(&v5), Ok(()));
-        assert_eq!(t.config.damping_rate, Fix128::ZERO);
-        assert!(t.bodies.iter().all(
-            |b| b.linear_damping_rate == Fix128::ZERO && b.angular_damping_rate == Fix128::ZERO
-        ));
-        assert_eq!(t.snapshot_world(), blob);
-        let mut t = PhysicsWorld::new(SolverConfig::default());
+        // without a step the sleep rule (a step count in version 5) is refused
+        assert_eq!(
+            t.restore_world(&v5),
+            Err(WorldSnapshotError::LegacySleepFramesNeedsStep {
+                frames_to_sleep: 60
+            })
+        );
         assert_eq!(
             t.restore_world_legacy_damping(&v5, fx(1, 60)),
             Ok(LawCheck::SemanticsVerified)
         );
-        assert_eq!(t.snapshot_world(), blob);
+        assert_eq!(t.config.damping_rate, Fix128::ZERO);
+        assert!(t.bodies.iter().all(
+            |b| b.linear_damping_rate == Fix128::ZERO && b.angular_damping_rate == Fix128::ZERO
+        ));
+        // the sleep rule comes back as 60 steps × the step given
+        let mut expect = variant_world();
+        expect.islands.config.time_to_sleep = Fix128::from_int(60) * fx(1, 60);
+        let _ = blob;
+        assert_eq!(t.snapshot_world(), expect.snapshot_world());
     }
 
     /// A version 5 blob with a retention other than 1 is refused by every
@@ -4545,8 +4622,9 @@ mod tests {
             .bodies
             .iter()
             .all(|b| b.linear_damping_rate == c && b.angular_damping_rate == c));
-        // every other field is the written world's
+        // every other field is the written world's (the sleep rule as 60 steps × dt)
         let mut expect = variant_world();
+        expect.islands.config.time_to_sleep = Fix128::from_int(60) * dt;
         expect.config.damping_rate = c;
         for b in &mut expect.bodies {
             b.linear_damping_rate = c;

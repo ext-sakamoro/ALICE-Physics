@@ -1014,7 +1014,9 @@ fn exercises(req: &Required, t: &TestFacts, combo: &str) -> Result<(), String> {
             return Err(format!("does not use `{missing}`"));
         }
         if combo == "sleeping"
-            && (t.text.contains("time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX }")
+            && (t
+                .text
+                .contains("time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX }")
                 || t.text.contains("set_sleep_skip(false)"))
         {
             return Err("disables sleeping".into());

@@ -505,7 +505,10 @@ fn remove_body_swap_removes_and_active_count_drops_by_one() {
 #[test]
 fn wake_body_after_sleep_restores_active_body_count() {
     // the default `time_to_sleep` (1 s) at a step of 1/60 s: 60 idle steps
-    assert_eq!(PhysicsWorld::new(weightless()).islands.config.time_to_sleep, Fix128::ONE);
+    assert_eq!(
+        PhysicsWorld::new(weightless()).islands.config.time_to_sleep,
+        Fix128::ONE
+    );
     let frames = 60u32;
 
     let mut world = PhysicsWorld::new(weightless());

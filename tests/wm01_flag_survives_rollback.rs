@@ -40,7 +40,7 @@ fn the_blob_length_includes_the_flag_byte() {
     let len = washing_world().serialize_state().len();
     assert_eq!(
         len,
-        12 + n * 208 + n * 5 + 1 + 8,
+        12 + n * 208 + n * 17 + 1 + 8,
         "blob の長さに flag の 1 byte が含まれていない (実測 {len})"
     );
 }

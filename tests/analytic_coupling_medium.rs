@@ -86,7 +86,10 @@ fn world(backend: SolverBackend, substeps: usize) -> PhysicsWorld {
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {
-        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
+        time_to_sleep: Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        },
         ..SleepConfig::default()
     });
     w
@@ -437,7 +440,10 @@ fn a_ball_on_a_frictionless_floor_reaches_the_common_velocity() {
             ..PhysicsConfig::default()
         });
         w.set_sleep_config(SleepConfig {
-            time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
+            time_to_sleep: Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
             ..SleepConfig::default()
         });
         let r = 1.0e6;
