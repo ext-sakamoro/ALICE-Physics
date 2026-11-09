@@ -937,6 +937,69 @@ fn add_face(
 
 #[cfg(test)]
 mod tests {
+
+    /// `hypot3` of three non-zero components, the largest in each position and of
+    /// either sign: √(2²+3²+6²) = 7, √(1²+4²+8²) = 9, √(2²+6²+9²) = 11 to within
+    /// 2^-52 (the scaled components are rounded to 2^-64, the result is near a
+    /// small integer). Every arithmetic change of the scaling or of the sum of
+    /// squares moves the result by a fraction of a unit, not by an ulp.
+    #[test]
+    fn hypot3_is_the_length_of_three_nonzero_components_wherever_the_largest_sits() {
+        use crate::math::Fix128;
+        let tol = Fix128::from_raw(0, 1 << 12);
+        for &((a, b, c), r) in &[((2, 3, 6), 7), ((1, 4, 8), 9), ((2, 6, 9), 11)] {
+            for (x, y, z) in [
+                (a, b, c),
+                (a, c, b),
+                (b, a, c),
+                (b, c, a),
+                (c, a, b),
+                (c, b, a),
+            ] {
+                for (sx, sy, sz) in [(1, 1, 1), (-1, 1, -1), (1, -1, 1), (-1, -1, -1)] {
+                    let got = super::hypot3(
+                        Fix128::from_int(sx * x),
+                        Fix128::from_int(sy * y),
+                        Fix128::from_int(sz * z),
+                    );
+                    let err = (got - Fix128::from_int(r)).abs();
+                    assert!(
+                        err <= tol,
+                        "hypot3({}, {}, {}) = {} is not {r}",
+                        sx * x,
+                        sy * y,
+                        sz * z,
+                        got.to_f64()
+                    );
+                }
+            }
+        }
+    }
+
+    /// The scale is the largest magnitude, wherever it sits: a component of 2^40
+    /// beside two of 2^-40 gives 2^40 exactly (scaled by any smaller component the
+    /// large one would be 2^80, past the Fix128 range), and three components of
+    /// 2^-40, whose squares (2^-80) Fix128 cannot hold, give √3 · 2^-40.
+    #[test]
+    fn hypot3_scales_by_the_largest_magnitude_so_neither_range_end_is_lost() {
+        use crate::math::Fix128;
+        let big = Fix128::from_int(1 << 40);
+        let tiny = Fix128::from_raw(0, 1 << 24);
+        for pos in 0..3 {
+            for sign in [Fix128::ONE, -Fix128::ONE] {
+                let mut v = [tiny, -tiny, tiny];
+                v[pos] = big * sign;
+                assert_eq!(
+                    super::hypot3(v[0], v[1], v[2]),
+                    big,
+                    "the large component in position {pos} is the length"
+                );
+            }
+        }
+        let got = super::hypot3(tiny, -tiny, tiny);
+        assert_eq!(got, Fix128::from_int(3).sqrt() * tiny);
+        assert!(!got.is_zero(), "the squares of 2^-40 were not lost");
+    }
     fn p(x: i64, y: i64, z: i64) -> Vec3Fix {
         Vec3Fix::new(
             Fix128::from_int(x),
