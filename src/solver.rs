@@ -3587,7 +3587,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        let sleep_frame = self.begin_sleep_frame();
+        let sleep_frame = self.begin_sleep_frame(dt);
 
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
 
@@ -3653,7 +3653,7 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
         self.update_sleep_states(dt);
-        self.settle_islands(&sleep_frame);
+        self.settle_islands(dt);
         self.park.active = false;
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
@@ -3701,9 +3701,11 @@ impl PhysicsWorld {
     /// The sleep rules ([`crate::sleeping`]'s MODEL): an island sleeps or wakes as a whole,
     /// so a joint never connects a sleeping body to an awake one; a sleeping body is not
     /// moved by the step ([`Self::restore_sleepers`]); an island that holds an elastic joint
-    /// (a [`crate::joint::Joint::Spring`]) falls asleep only at a step that left every one of
-    /// its bodies bit for bit as it was ([`Self::settle_islands`]).
-    fn begin_sleep_frame(&mut self) -> SleepFrame {
+    /// (a [`crate::joint::Joint::Spring`]) falls asleep only at a step that ends in a state it
+    /// already ended in within the last [`crate::sleeping::ORBIT_WINDOW`] steps
+    /// ([`Self::settle_islands`]), and wakes here as a whole when its inputs or its held
+    /// state changed since.
+    fn begin_sleep_frame(&mut self, dt: Fix128) -> SleepFrame {
         let n = self.bodies.len();
         self.islands.resize(n);
         self.islands.reset_unions();
@@ -3713,6 +3715,7 @@ impl PhysicsWorld {
                 self.islands.union(a, b);
             }
         }
+        self.wake_changed_orbits(dt);
         let moving: Vec<usize> = (0..n)
             .filter(|&i| {
                 let b = &self.bodies[i];
@@ -3763,15 +3766,57 @@ impl PhysicsWorld {
         }
     }
 
-    /// After the sleep update: an island sleeps only as a whole. It sleeps when every one of
-    /// its bodies that is not static met the velocity rule (`time_to_sleep` of idle time)
-    /// and, when the island holds an elastic joint, the step left each of them bit for bit
-    /// as it was (an elastic joint's backward Euler solve contracts to a `Q64.64` fixed
-    /// point; a body frozen anywhere else would be held off its rest by the frozen spring);
-    /// otherwise every body of the island is awake (their idle times are kept).
-    fn settle_islands(&mut self, frame: &SleepFrame) {
+    /// At the step head: an island that fell asleep on a recurrence wakes as a whole when
+    /// what its step reads changed since it fell asleep: its inputs
+    /// ([`PhysicsWorld::orbit_inputs`]: the step width, the configuration, the members' data,
+    /// the island's joints, force fields, colliders, participants, field values) or its held
+    /// state (an impulse, a moved body). Its record is dropped and rebuilt from the next
+    /// idle steps.
+    fn wake_changed_orbits(&mut self, dt: Fix128) {
+        let n = self.bodies.len();
+        let mut orbits = core::mem::take(&mut self.islands.orbits);
+        orbits.retain(|o| {
+            if !o.asleep {
+                return true;
+            }
+            let fits = o.members.iter().all(|&m| m < n);
+            let held = fits
+                && self.orbit_inputs(&o.members, dt) == o.inputs
+                && o.states
+                    .last()
+                    .is_some_and(|last| *last == self.orbit_state(&o.members));
+            if !held {
+                for &m in &o.members {
+                    if m < n && m < self.islands.sleep_data.len() {
+                        self.islands.sleep_data[m].wake();
+                    }
+                }
+            }
+            held
+        });
+        self.islands.orbits = orbits;
+    }
+
+    /// After the sleep update: an island sleeps only as a whole, and every one of its bodies
+    /// that is not static must meet the velocity rule (`time_to_sleep` of idle time).
+    ///
+    /// An island that holds an elastic joint (a [`crate::joint::Joint::Spring`]) must in
+    /// addition end the step in a state it already ended a step in, bit for bit, within the
+    /// last [`crate::sleeping::ORBIT_WINDOW`] steps (its [`crate::sleeping::IslandOrbit`]).
+    /// The backward Euler solve of a spring in `Q64.64` never reaches a fixed point: it
+    /// settles into an orbit (period 60 steps at `dt = 1/60 s`, 8 substeps, amplitude below
+    /// `2e-13 m` for `ω ≥ 0.6 rad/s`, the MODEL section of [`crate::sleeping`]); a body
+    /// frozen elsewhere than on that orbit would be held off its rest by the frozen spring.
+    /// The recorded states are those of the steps at which every member met the velocity
+    /// rule; a step at which one did not, or whose inputs differ from the recorded ones,
+    /// starts the record again. The hash of a state only finds a candidate: the island
+    /// sleeps on a bit for bit equal state.
+    ///
+    /// Otherwise every body of the island is awake (their idle times are kept).
+    fn settle_islands(&mut self, dt: Fix128) {
         let n = self.bodies.len().min(self.islands.sleep_data.len());
         if n == 0 {
+            self.islands.orbits.clear();
             return;
         }
         let mut elastic = vec![false; n];
@@ -3783,21 +3828,57 @@ impl PhysicsWorld {
                 }
             }
         }
-        let mut qualifies = vec![true; n];
+        // the velocity rule, per island
+        let mut idle = vec![true; n];
         for i in 0..n {
-            let b = &self.bodies[i];
-            if b.is_static() {
-                continue;
-            }
-            let root = self.islands.find(i);
-            let unchanged = frame.start.get(i).is_some_and(|&(p, r, v, w)| {
-                p == b.position && r == b.rotation && v == b.velocity && w == b.angular_velocity
-            });
-            let ok = self.islands.is_sleeping(i) && (!elastic[root] || unchanged);
-            if !ok {
-                qualifies[root] = false;
+            if !self.bodies[i].is_static() && !self.islands.is_sleeping(i) {
+                let root = self.islands.find(i);
+                idle[root] = false;
             }
         }
+        // the members of each elastic island, ascending
+        let mut groups: Vec<(usize, Vec<usize>)> = Vec::new();
+        let mut slot = vec![usize::MAX; n];
+        for i in 0..n {
+            let root = self.islands.find(i);
+            if !elastic[root] {
+                continue;
+            }
+            if slot[root] == usize::MAX {
+                slot[root] = groups.len();
+                groups.push((root, Vec::new()));
+            }
+            groups[slot[root]].1.push(i);
+        }
+        let mut old = core::mem::take(&mut self.islands.orbits);
+        let mut orbits = Vec::with_capacity(groups.len());
+        let mut qualifies = idle;
+        for (root, members) in groups {
+            if !qualifies[root] {
+                continue; // the record restarts at the next idle step
+            }
+            let inputs = self.orbit_inputs(&members, dt);
+            let state = self.orbit_state(&members);
+            let mut orbit = match old.iter().position(|o| o.members == members) {
+                Some(k) if old[k].inputs == inputs => old.swap_remove(k),
+                _ => crate::sleeping::IslandOrbit {
+                    members,
+                    inputs,
+                    ..crate::sleeping::IslandOrbit::default()
+                },
+            };
+            let held = orbit.asleep && orbit.states.last() == Some(&state);
+            if !held {
+                orbit.asleep = orbit.recurs(&state);
+                orbit.push(state);
+            }
+            if !orbit.asleep {
+                qualifies[root] = false;
+            }
+            orbits.push(orbit);
+        }
+        orbits.sort_unstable_by_key(|o| o.members[0]);
+        self.islands.orbits = orbits;
         for i in 0..n {
             if self.bodies[i].is_static() {
                 continue;
@@ -4256,7 +4337,7 @@ impl PhysicsWorld {
         // `IslandManager` bookkeeping `step` performs; the TGS islands used
         // for solving below are a separate, local structure built from the
         // same joint list via `build_islands`).
-        let sleep_frame = self.begin_sleep_frame();
+        let sleep_frame = self.begin_sleep_frame(dt);
 
         // Phase 1: Apply force fields (identical call to `step`), then
         // advance kinematic targets before contacts are detected below.
@@ -4556,7 +4637,7 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping (identical call to `step`).
         self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
-        self.settle_islands(&sleep_frame);
+        self.settle_islands(dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -4636,7 +4717,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        let sleep_frame = self.begin_sleep_frame();
+        let sleep_frame = self.begin_sleep_frame(dt);
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
@@ -4671,7 +4752,7 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
-        self.settle_islands(&sleep_frame);
+        self.settle_islands(dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -5915,7 +5996,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        let sleep_frame = self.begin_sleep_frame();
+        let sleep_frame = self.begin_sleep_frame(dt);
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
@@ -5949,7 +6030,7 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
-        self.settle_islands(&sleep_frame);
+        self.settle_islands(dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -7298,6 +7379,7 @@ impl PhysicsWorld {
     /// | 続き | body ごとに 17 byte = [`SleepState`] u8 + `idle_time` Fix128 (v4、v3 までは 5 byte = u8 + `idle_frames` u32) |
     /// | 続き | world ごと overflow flag 1 byte (v2) |
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
+    /// | 続き | 弾性 joint の島の再帰の記録 (v4、[`crate::sleeping::IslandOrbit`]、world snapshot の `islands` と同じ符号化: 島の数 u64、島ごとに member 数 u64 + index u64、inputs 長 u64 + byte、asleep u8、状態数 u64 + 状態ごとに長さ u64 + byte) |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -7400,6 +7482,10 @@ impl PhysicsWorld {
         // 参照) — blob 自身が復元する量なので、ここに混ぜると検査が
         // 「基準が内側」になり population 不一致を検出できなくなる
         data.extend_from_slice(&self.population_fingerprint().to_le_bytes());
+
+        // the elastic islands' recurrence records (v4): sleep state, so a rollback falls
+        // asleep at the same step as the original
+        data.extend_from_slice(&world_snapshot::encode_orbits(&self.islands.orbits));
 
         data
     }
@@ -7530,6 +7616,10 @@ impl PhysicsWorld {
         if stored_fingerprint != self.population_fingerprint() {
             return false;
         }
+        // the recurrence records end the blob exactly (v4)
+        let Some(orbits) = world_snapshot::decode_orbits(&data[expected..], count) else {
+            return false;
+        };
 
         // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
         let mut offset = 12;
@@ -7605,6 +7695,7 @@ impl PhysicsWorld {
         // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_time 0) に
         // 戻すので、**この後に blob から復元する** 順序を逆にすると復元が消える
         self.islands = IslandManager::new(n, self.islands.config);
+        self.islands.orbits = orbits;
 
         // Sleep 状態の復元 (WM-08) — body の運動状態を読んだ直後から続く
         for i in 0..n {
