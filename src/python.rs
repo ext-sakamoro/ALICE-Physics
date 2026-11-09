@@ -442,6 +442,23 @@ impl PyPhysicsWorld {
         )
     }
 
+    /// Lock world axes of a body: `bits` 1, 2, 4 lock the x, y, z position and 8, 16, 32 the
+    /// x, y, z rotation (0 unlocks). A bit above 32 raises `ValueError`.
+    fn set_body_axis_lock(&mut self, body_id: usize, bits: u32) -> PyResult<()> {
+        self.check_body(body_id)?;
+        ok_or_value(
+            binding_api::set_body_axis_lock(&mut self.inner, body_id, bits),
+            "bits must be a mask of 1, 2, 4, 8, 16 and 32",
+        )
+    }
+
+    /// The axis-lock bits of a body (see `set_body_axis_lock`).
+    fn body_axis_lock(&self, body_id: usize) -> PyResult<u32> {
+        self.check_body(body_id)?;
+        binding_api::body_axis_lock(&self.inner, body_id)
+            .ok_or_else(|| PyIndexError::new_err("unknown body"))
+    }
+
     /// Register a contact material with `friction` and `restitution` (finite, not negative) and
     /// return its id; a body given the id with `set_body_material` meets others with these values
     /// instead of its own.

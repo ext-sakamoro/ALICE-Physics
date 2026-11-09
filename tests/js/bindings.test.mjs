@@ -230,3 +230,21 @@ test("setAngularVelocity turns a free body about the given axis", () => {
   const later = angleAt();
   assert.ok(early > 0 && later > early, `${early} then ${later}`);
 });
+
+test("an axis-locked body keeps its locked coordinates", () => {
+  // a body thrown out of the x-y plane and locked to it (z position, x and y rotations: 4 + 8
+  // + 16) keeps z = 0 exactly and falls under gravity as before; a seventh bit is refused
+  const w = world();
+  const b = w.addDynamicBody(0, 10, 0, 1);
+  assert.equal(w.setBodyAxisLock(b, 28), true);
+  assert.equal(w.bodyAxisLock(b), 28);
+  assert.equal(w.setBodyAxisLock(b, 64), false);
+  assert.equal(w.setBodyAxisLock(9, 4), false);
+  assert.equal(w.bodyAxisLock(9), undefined);
+  w.setVelocity(b, 1, 0, 3);
+  for (let k = 0; k < 30; k++) w.step(DT);
+  const [x, y, z] = pos(w, b);
+  assert.equal(z, 0);
+  assert.equal(vel(w, b)[2], 0);
+  assert.ok(x > 0.4 && y < 10, `${x} ${y}`);
+});

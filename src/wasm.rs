@@ -654,6 +654,20 @@ impl WasmPhysicsWorld {
         binding_api::set_collision_radius(&mut self.inner, body_id, radius)
     }
 
+    /// Lock world axes of a body: `bits` 1, 2, 4 lock the x, y, z position and 8, 16, 32 the
+    /// x, y, z rotation (0 unlocks). A planar game locks z and the x and y rotations (52).
+    /// `false` for an unknown body or a bit above 32.
+    #[wasm_bindgen(js_name = "setBodyAxisLock")]
+    pub fn set_body_axis_lock(&mut self, body_id: usize, bits: u32) -> bool {
+        binding_api::set_body_axis_lock(&mut self.inner, body_id, bits)
+    }
+
+    /// The axis-lock bits of a body (see `setBodyAxisLock`), `undefined` for an unknown body.
+    #[wasm_bindgen(js_name = "bodyAxisLock")]
+    pub fn body_axis_lock(&self, body_id: usize) -> Option<u32> {
+        binding_api::body_axis_lock(&self.inner, body_id)
+    }
+
     /// Register a contact material with `friction` and `restitution` (finite, not negative) and
     /// return its id (`undefined` for a bad value). A body given the id with `setBodyMaterial`
     /// meets others with these values instead of its own.

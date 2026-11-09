@@ -284,6 +284,32 @@ def test_bad_magnets_and_materials_raise():
         raise AssertionError("an unknown body was accepted")
 
 
+def test_an_axis_locked_body_keeps_its_locked_coordinates():
+    # a body thrown out of the x-y plane and locked to it (z position, x and y rotations: 4 + 8
+    # + 16) keeps z = 0 exactly and falls under gravity; a sixth bit is refused
+    w = ap.PhysicsWorld()
+    b = w.add_dynamic_body(0.0, 10.0, 0.0, 1.0)
+    w.set_body_axis_lock(b, 28)
+    assert w.body_axis_lock(b) == 28
+    try:
+        w.set_body_axis_lock(b, 64)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a seventh bit was accepted")
+    try:
+        w.set_body_axis_lock(9, 4)
+    except IndexError:
+        pass
+    else:
+        raise AssertionError("an unknown body was accepted")
+    w.set_velocity(b, 1.0, 0.0, 3.0)
+    w.step_n(1.0 / 60.0, 30)
+    x, y, z = w.get_position(b)
+    assert z == 0.0
+    assert x > 0.4 and y < 10.0, (x, y)
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0
@@ -304,3 +330,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

@@ -103,3 +103,4 @@ E	src/spherical_terrain.rs
 E	src/thermal.rs
 E	src/thermal_stress.rs
 E	src/transient_thermal.rs
+C	src/axis_lock.rs
