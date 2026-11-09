@@ -212,6 +212,26 @@ pub(crate) fn material_id(material: u32) -> Option<MaterialId> {
 
 /// Set the material of a body. `false` for an unknown body or a material id that does not
 /// fit `MaterialId`.
+/// Lock the world axes of body `body`: `bits` is the mask of
+/// [`crate::axis_lock::AxisLock`] (1, 2, 4 the x, y, z position, 8, 16, 32 the
+/// x, y, z rotation, 0 none). `false` for an unknown body or a bit above the
+/// sixth.
+pub(crate) fn set_body_axis_lock(w: &mut PhysicsWorld, body: usize, bits: u32) -> bool {
+    match u8::try_from(bits)
+        .ok()
+        .and_then(crate::axis_lock::AxisLock::from_bits)
+    {
+        Some(lock) => w.set_body_axis_lock(body, lock),
+        None => false,
+    }
+}
+
+/// The axis-lock mask of body `body` (see [`set_body_axis_lock`]), `None` for an
+/// unknown body.
+pub(crate) fn body_axis_lock(w: &PhysicsWorld, body: usize) -> Option<u32> {
+    w.body_axis_lock(body).map(|l| u32::from(l.bits()))
+}
+
 pub(crate) fn set_body_material(w: &mut PhysicsWorld, body: usize, material: u32) -> bool {
     match material_id(material) {
         Some(m) if body < w.bodies.len() => {

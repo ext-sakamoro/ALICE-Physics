@@ -27,6 +27,9 @@
 //!   axis only after the projection, and the other body receives the share of
 //!   the correction its inverse mass gives it in each iteration. The locked axes
 //!   are world axes.
+//! - **Tiers**: L0 only (the projection is the model; a constraint solved per
+//!   axis inside the solve, scaling the inverse mass and inertia per axis, is
+//!   another model and is not built).
 //! - **Validation** (`tests/analytic_axis_lock.rs`):
 //!   `a_locked_position_axis_stays_exact_and_the_free_axes_follow_the_twin`,
 //!   `locked_rotation_axes_leave_a_turn_about_the_free_axis`,
