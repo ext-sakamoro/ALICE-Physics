@@ -235,21 +235,30 @@ fn hex(b: &[u8]) -> String {
 /// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
-/// Re-recorded when the contact friction began acting at the contact point
+/// Re-recorded when the snapshot became version 7 (each material and each
+/// contact carries its rolling and torsional friction coefficients,
+/// b527f1fc… → fcf10f89…): the version 6 form of the same snapshot still
+/// hashes to the previous value (`the_version_6_form_hashes_to_the_previous_golden`),
+/// so the scene's state did not change, only the format.
+/// Earlier re-recorded when the contact friction began acting at the contact point
 /// of plain spheres and `PHYSICS_SEMANTICS_ID` moved (e90000da… → 2680b331…):
 /// the snapshot header carries the identifier and its law_id, the scene's
 /// bodies hash the same as before (checked by stepping the scene with the
 /// previous solver under the new identifier).
 const GOLDEN_STATE_DIGEST: &str =
+    "fcf10f892c6b02d6eafeed844cfda3e1f901ca68e0f5ed35e9be4dff242729ac";
+/// The golden before version 7.
+const GOLDEN_STATE_DIGEST_V6: &str =
     "b527f1fc19dd621b5f4526ce558455a508fde47376d1d9250226f25d447f923c";
 const GOLDEN_LAW_ID: &str = "44b8d17d80de2ae28117f7906756018820523b838fc99edc14770d2b2638911c";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
-/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
+/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged
+/// (re-recorded with version 7 from `e76b1fbb…`).
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "e76b1fbb03641d0ec198719b6c5d71bfd722415336f9cb601305b1118ede14af";
+    "3d071a74f6f6839503daa1ab1bebf1edb279b86a48262d6c5000b41013bf03e3";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
@@ -277,4 +286,65 @@ fn the_digest_of_the_binding_scene_is_the_golden_on_every_platform() {
     let w = binding_scene();
     assert_eq!(hex(&w.state_digest()), GOLDEN_STATE_DIGEST);
     assert_eq!(hex(&w.law_id(&PHYSICS_SEMANTICS_ID)), GOLDEN_LAW_ID);
+}
+
+/// The snapshot of the world `make` builds, in the version 6 form: the
+/// version 7 slots (each material's and each contact's rolling and torsional
+/// coefficients, all zero here) cut out, the version, payload length and
+/// checksum rewritten. The slots are found by writing the world with a
+/// sentinel in each; their count is checked.
+fn version_6_form(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
+    let fix = |x: Fix128| {
+        let mut b = x.hi.to_le_bytes().to_vec();
+        b.extend_from_slice(&x.lo.to_le_bytes());
+        b
+    };
+    let plain = make().snapshot_world();
+    let mut marked = make();
+    let sentinel = Fix128::from_ratio(123_456_789, 1_000_033);
+    for m in &mut marked.material_table.materials {
+        m.rolling_friction = sentinel;
+        m.torsional_friction = sentinel;
+    }
+    for c in &mut marked.contact_constraints {
+        c.rolling_friction = sentinel;
+        c.torsional_friction = sentinel;
+    }
+    let slots = 2 * (marked.material_table.materials.len() + marked.contact_constraints.len());
+    let marked = marked.snapshot_world();
+    assert_eq!(marked.len(), plain.len());
+    let needle = fix(sentinel);
+    let hits: Vec<usize> = (80..marked.len() - 8 - 15)
+        .filter(|&i| marked[i..i + 16] == needle[..])
+        .collect();
+    assert_eq!(hits.len(), slots, "version 7 slots found: {hits:?}");
+    let mut out = plain;
+    for &at in hits.iter().rev() {
+        assert_eq!(out[at..at + 16], fix(Fix128::ZERO)[..], "slot holds zero");
+        out.drain(at..at + 16);
+    }
+    out[4..6].copy_from_slice(&6u16.to_le_bytes());
+    let payload = (out.len() - 80 - 8) as u64;
+    out[8..16].copy_from_slice(&payload.to_le_bytes());
+    let n = out.len() - 8;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &x in &out[..n] {
+        h ^= u64::from(x);
+        h = h.wrapping_mul(0x0000_0001_0000_01b3);
+    }
+    out[n..].copy_from_slice(&h.to_le_bytes());
+    out
+}
+
+/// golden: the version 6 form of `binding_scene` after 120 steps (the version
+/// 7 snapshot without its rolling and torsional slots, all zero) hashes to
+/// the golden of version 6, so the change to version 7 moved the format and
+/// nothing else.
+#[test]
+fn the_version_6_form_hashes_to_the_previous_golden() {
+    let v6 = version_6_form(binding_scene);
+    let mut d = Sha256::new();
+    d.update(PhysicsWorld::STATE_DIGEST_DOMAIN);
+    d.update(&v6);
+    assert_eq!(hex(&d.finalize()), GOLDEN_STATE_DIGEST_V6);
 }

@@ -92,16 +92,19 @@ fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
         b.extend_from_slice(&x.lo.to_le_bytes());
         b
     };
-    let v6 = make().snapshot_world();
-    let mut marked = make();
+    let v6 = version_6_form(make);
     let sentinel = Fix128::from_ratio(987_654_321, 1_000_003);
-    marked.config.damping_rate = sentinel;
-    for b in &mut marked.bodies {
-        b.linear_damping_rate = sentinel;
-        b.angular_damping_rate = sentinel;
-    }
-    let slots = 1 + 2 * marked.bodies.len();
-    let marked = marked.snapshot_world();
+    let damped = || {
+        let mut m = make();
+        m.config.damping_rate = sentinel;
+        for b in &mut m.bodies {
+            b.linear_damping_rate = sentinel;
+            b.angular_damping_rate = sentinel;
+        }
+        m
+    };
+    let slots = 1 + 2 * make().bodies.len();
+    let marked = version_6_form(damped);
     assert_eq!(marked.len(), v6.len());
     let (needle, one) = (fix(sentinel), fix(Fix128::ONE));
     let mut payload = v6[PAYLOAD_AT..v6.len() - CHECKSUM].to_vec();
@@ -149,14 +152,24 @@ fn checked(
     r
 }
 
-/// Version 6 keeps the layout of version 4 (version 5 added the panic fault
-/// codes, version 6 stores damping as rates per second).
+/// Version 7 keeps the header of version 4 (version 5 added the panic fault
+/// codes, version 6 stores damping as rates per second, version 7 the
+/// rolling and torsional coefficients).
 #[test]
-fn the_writer_emits_version_6() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+fn the_writer_emits_version_7() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &6u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &7u16.to_le_bytes());
+}
+
+/// The version 6 form of the scene restores to the same world.
+#[test]
+fn the_version_6_form_restores_to_the_same_world() {
+    let v6 = version_6_form(scene);
+    let mut t = PhysicsWorld::new(PhysicsConfig::default());
+    t.restore_world(&v6).expect("version 6 restores");
+    assert_eq!(t.snapshot_world(), scene().snapshot_world());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
@@ -619,4 +632,52 @@ fn a_target_differing_only_in_configuration_is_refused() {
     assert_eq!(fresh.restore_world(&blob), Ok(()));
     assert_eq!(fresh.snapshot_world(), blob);
     assert_eq!(fresh.law_id(&PHYSICS_SEMANTICS_ID), header);
+}
+
+/// The snapshot of the world `make` builds, in the version 6 form: the
+/// version 7 slots (each material's and each contact's rolling and torsional
+/// coefficients, all zero here) cut out, the version, payload length and
+/// checksum rewritten. The slots are found by writing the world with a
+/// sentinel in each; their count is checked.
+fn version_6_form(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
+    let fix = |x: Fix128| {
+        let mut b = x.hi.to_le_bytes().to_vec();
+        b.extend_from_slice(&x.lo.to_le_bytes());
+        b
+    };
+    let plain = make().snapshot_world();
+    let mut marked = make();
+    let sentinel = Fix128::from_ratio(123_456_789, 1_000_033);
+    for m in &mut marked.material_table.materials {
+        m.rolling_friction = sentinel;
+        m.torsional_friction = sentinel;
+    }
+    for c in &mut marked.contact_constraints {
+        c.rolling_friction = sentinel;
+        c.torsional_friction = sentinel;
+    }
+    let slots = 2 * (marked.material_table.materials.len() + marked.contact_constraints.len());
+    let marked = marked.snapshot_world();
+    assert_eq!(marked.len(), plain.len());
+    let needle = fix(sentinel);
+    let hits: Vec<usize> = (80..marked.len() - 8 - 15)
+        .filter(|&i| marked[i..i + 16] == needle[..])
+        .collect();
+    assert_eq!(hits.len(), slots, "version 7 slots found: {hits:?}");
+    let mut out = plain;
+    for &at in hits.iter().rev() {
+        assert_eq!(out[at..at + 16], fix(Fix128::ZERO)[..], "slot holds zero");
+        out.drain(at..at + 16);
+    }
+    out[4..6].copy_from_slice(&6u16.to_le_bytes());
+    let payload = (out.len() - 80 - 8) as u64;
+    out[8..16].copy_from_slice(&payload.to_le_bytes());
+    let n = out.len() - 8;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &x in &out[..n] {
+        h ^= u64::from(x);
+        h = h.wrapping_mul(0x0000_0001_0000_01b3);
+    }
+    out[n..].copy_from_slice(&h.to_le_bytes());
+    out
 }
