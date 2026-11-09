@@ -2657,6 +2657,9 @@ impl PhysicsWorld {
         self.body_colliders = d.body_colliders;
         self.body_filters = d.body_filters;
         self.overflow_detected = d.overflow_detected;
+        // the tree of parked bodies is not in the snapshot: re-park on the next
+        // step so the pairs it holds are examined for the flag again
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.kinematic_substeps_left = 0;
 
         #[cfg(feature = "std")]

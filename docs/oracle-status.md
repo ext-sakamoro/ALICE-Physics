@@ -56,7 +56,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `optimize_does_not_restore_material_carved_by_disjoint_craters` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-009: optimize() is documented as removing shapes fully contained by newer ones, but d…
 - `origin_y_offsets_the_surface` (audit_heightfield.rs) — known defect: AUD-A-S4W3-006: origin.y is never read (sample_height / signed_distance / aabb use the stored he…
 - `out_of_range_quotient_keeps_its_sign_and_magnitude` (audit_math.rs) — known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 …
-- `parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_ones` (analytic_broadphase_overflow_kinds.rs) — known defect: AUD-A-S6W1-011: sleep skip radius sum: a pair of two parked bodies never reaches the narrow-phas…
 - `pipeline_colliding_metric_names_do_not_corrupt_each_other` (audit_pipeline.rs) — known defect: AUD-A-S5W3-016: two metrics whose hashes agree modulo SLOTS share one slot: the second metric's …
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
@@ -81,6 +80,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
+- `tgs_isotropic_spin_turns_by_omega_t` (indep_free_rotation_closed_forms.rs) — src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
 - `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
@@ -489,6 +489,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_joint_reaction_per_type.rs` | 7 |
 | `analytic_multigrid.rs` | 7 |
 | `analytic_non_newtonian_wiring.rs` | 7 |
+| `analytic_overflow_flag_predicate.rs` | 7 |
 | `analytic_physics2d_joints.rs` | 7 |
 | `analytic_piezoelectric_wiring.rs` | 7 |
 | `analytic_rng_wiring.rs` | 7 |
@@ -520,7 +521,6 @@ Per-file counts (the test names are in `tests/`):
 | `cloth_fluid_sub_iteration.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
-| `indep_free_rotation_closed_forms.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
 | `p3_quadrature_fix128.rs` | 6 |
 | `wm01_overflow_is_not_silent.rs` | 6 |
@@ -546,12 +546,14 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
+| `indep_free_rotation_closed_forms.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `trimesh_raycast_exact.rs` | 5 |
 | `world_snapshot_broadphase_kind_sensitivity.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
+| `analytic_broadphase_overflow_kinds.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_damping_rate.rs` | 4 |
@@ -585,7 +587,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_axial_support.rs` | 3 |
 | `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
-| `analytic_broadphase_overflow_kinds.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
@@ -635,6 +636,7 @@ Per-file counts (the test names are in `tests/`):
 | `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
+| `overflow_flag_previous_bits.rs` | 2 |
 | `participant_panic_leaves_world_faulted.rs` | 2 |
 | `poisoned_world_fault.rs` | 2 |
 | `vehicle_update_bits.rs` | 2 |
