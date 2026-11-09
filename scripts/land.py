@@ -445,6 +445,79 @@ def all_runs_verdict(runs: list[dict]) -> tuple[str, str]:
     return "ok", f"{len(newest)} workflows"
 
 
+# the landing's working copy: <tmp>/land-wt-XXXX/{wt, scip, owner.json}; the owner file names the landing that made it,
+# so a copy left by a landing that died (SIGKILL, a crash of the machine) can be told from one in use (sweep_copies)
+COPY_PREFIX = "land-wt-"
+OWNER_FILE = "owner.json"
+
+
+def process_start(pid: int) -> str | None:
+    """the start time of process `pid` as ps prints it (with the pid, it tells a reused pid apart), or None when
+    there is no such process or it cannot be read"""
+    if os.name == "nt":
+        return None
+    try:
+        r = subprocess.run(["/bin/ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=20,
+                           env={**clean_env(), "LC_ALL": "C"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and out else None
+
+
+def owner_state(d: Path, start_of=process_start) -> tuple[str, dict]:
+    """("alive" | "gone" | "unowned", the owner record) of a working copy directory"""
+    try:
+        rec = json.loads((d / OWNER_FILE).read_text(encoding="utf-8"))
+        pid, start = int(rec["pid"]), str(rec["start"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "unowned", {}
+    now = start_of(pid)
+    return ("alive" if now is not None and now == start else "gone"), rec
+
+
+def sweep_copies(tmp: str, log=print, start_of=process_start, git=None) -> tuple[list[str], list[str], list[str]]:
+    """remove the working copies under `tmp` whose recorded owner is gone (its pid is not running, or is running
+    with another start time: a reused pid); keep the ones whose owner runs; list, never remove, the ones without an
+    owner file (made before the file existed, or by something else). Returns (removed, kept, unowned)."""
+    removed, kept, unowned = [], [], []
+    for d in sorted(Path(tmp).glob(COPY_PREFIX + "*")):
+        if not d.is_dir() or d.is_symlink():
+            continue
+        state, rec = owner_state(d, start_of)
+        if state == "alive":
+            kept.append(str(d))
+            continue
+        if state == "unowned":
+            unowned.append(str(d))
+            continue
+        checkout = rec.get("checkout")
+        run = None
+        if checkout and os.path.isdir(checkout):
+            run = git or (lambda *a: subprocess.run([*git_argv(), *a], cwd=checkout, capture_output=True,
+                                                    env=clean_env()))
+            run("worktree", "remove", "--force", str(d / "wt"))
+        shutil.rmtree(d, ignore_errors=True)
+        if run is not None:
+            run("worktree", "prune")  # (after the directory is gone: the registration of a copy remove missed)
+        removed.append(str(d))
+        log(f"sweep: removed {d} (owner pid {rec.get('pid')} of {rec.get('id', '?')} is gone)")
+    for d in unowned:
+        log(f"sweep: kept {d} (no owner file: not removed blind)")
+    log(f"sweep: {len(removed)} removed, {len(kept)} in use, {len(unowned)} without an owner file")
+    return removed, kept, unowned
+
+
+class Terminated(BaseException):
+    """SIGTERM / SIGHUP during a landing: raised in the main thread so every `finally` (the working copy's removal,
+    the landing lock) runs; the default action ends the process without them (2026-11-09: a terminated land.py left
+    its land-wt-* copy and its registration in the checkout)"""
+
+
+def on_termination(signum, _frame) -> None:
+    raise Terminated(signum)
+
+
 def safe_path(cargo: bool = False, with_git: bool = True) -> str:
     """the fixed PATH of a child process: the directory of the Python running land.py first
     (python3 for the scripts), the cargo directory for the cargo children, then the system
@@ -1247,7 +1320,10 @@ class Lander:
         if self.checkout_git("status", "--porcelain"):
             raise LandError("the checkout has uncommitted changes")
         self.source_sha = self.checkout_git("rev-parse", "HEAD")
-        d = tempfile.mkdtemp(prefix="land-wt-")
+        d = tempfile.mkdtemp(prefix=COPY_PREFIX)
+        with open(os.path.join(d, OWNER_FILE), "w", encoding="utf-8") as fh:
+            json.dump({"pid": os.getpid(), "start": process_start(os.getpid()) or "?", "id": self.id,
+                       "checkout": str(self.checkout), "at": time.time()}, fh)
         wt = os.path.join(d, "wt")
         self.checkout_git("worktree", "add", "-q", "--detach", wt, self.source_sha)
         self.record.append(f"source SHA: {self.source_sha} (the checkout's HEAD at the start)")
@@ -2552,7 +2628,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="how long a landing waits for another landing on this machine (default 30)")
     ap.add_argument("--wait", action="store_true", help="after landing, read the after-landing set on main")
     ap.add_argument("--wait-only", metavar="SHA", help="only read the after-landing set on main for SHA")
+    ap.add_argument("--sweep", action="store_true",
+                    help="only remove the land-wt-* working copies whose landing is gone (copies without an owner "
+                         "file are listed, not removed)")
     args = ap.parse_args(argv)
+    if args.sweep:
+        sweep_copies(tempfile.gettempdir())
+        return 0
     if sys.version_info < (3, 11):
         print(f"error: land.py needs Python 3.11 or newer (running {sys.version.split()[0]})", file=sys.stderr, flush=True)
         return 2
@@ -2587,9 +2669,17 @@ def main(argv: list[str] | None = None) -> int:
         for line in lines:
             print(line, flush=True)
         return 1 if failed else 0
+    for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+        if sig is not None:
+            signal.signal(sig, on_termination)
     try:
         if args.wait_only:
             return report_after(lander, args.wait_only)
+        try:
+            # (the copies of landings that died: a SIGKILL or a crash leaves one with an owner that is gone)
+            sweep_copies(tempfile.gettempdir(), log=lander.log)
+        except OSError as e:
+            lander.log(f"sweep: skipped ({e})")
         sha = lander.land()
         if args.dry_run:
             return 0
@@ -2608,6 +2698,11 @@ def main(argv: list[str] | None = None) -> int:
                   "workflow's run on the commit before it (by headSha) is shown green; if it was green, "
                   "the red is this land's", file=sys.stderr, flush=True)
         return 1
+    except Terminated as t:
+        sig = t.args[0] if t.args else signal.SIGTERM
+        print(f"error: terminated by signal {sig}: the working copy was removed; nothing more is pushed",
+              file=sys.stderr, flush=True)
+        return 128 + int(sig)
     return 0
 
 

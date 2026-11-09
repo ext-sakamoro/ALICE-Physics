@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- `scripts/land.py`: 作業 copy (`$TMPDIR/land-wt-*`) に持ち主 (`owner.json`: pid、process の開始時刻、id、checkout) を書く SIGTERM / SIGHUP で止められても copy と checkout 側の登録を消す (これまでは既定の動作で後始末が走らず残った) 取り込みの始めと `--sweep` で、持ち主の process が無い (pid が無い、または開始時刻が違う) copy を消す 持ち主の file が無い copy は一覧に出すだけで消さない 試験 `scripts/test_land.py` の `WorkingCopyOwner`
 - `scripts/land.py`: 公開 repository は手元の `scripts/preflight.sh --fast` を走らせず、`ci/<id>` の SHA の CI の run が全部 (取り込みの後に読む脚も含む) success で終わるのを待ち、`ci_evidence_receipt.py` (pyyaml 6.0.3 に固定) で CI の receipt を書いてから main に取り込む 手元では `run-preflight.sh --cheap` だけを走らせる main が文書だけ進んだ時も証拠を取り直す (取り込む SHA 自身に receipt が要る) 公開かどうかは GitHub の答えで決め、読めなければ止める 試験 `scripts/test_land.py` の `PublicLanding` / `AllRunsVerdict` / `CiReceipt` CI: `scripts/test_affected_tests.py` を `ci.yml` で走らせる (手元の preflight だけが走らせていた)
 - **Breaking**: `det_math` から、この crate の production code も ALICE-* の他の crate も呼んでいない 8 関数 `ln` / `atan` / `asin` / `tan` / `tanh` / `atan64` / `atan2_64` / `atan2` の委譲を外した 同じ関数は `alice_det_math` (`alice_det_math::ln` など) にある この crate の試験 (`ln` 2 本、`atan2_64` 5 本、`atan2` 1 本) は `alice_det_math` を直接呼ぶ
 - CI: `scripts/package_git_patches.py` (共有、この repository が owner) は `rev` の無い git 依存 (`branch` 等) を Cargo.lock が解決した commit で patch する commit の読み方は `scripts/id_move_check.py` の `locked_git_commit` を呼ぶ (lock が無い・その url の package が無い・40 桁でない・2 つの commit は失敗) `scripts/id_move_check.py` と試験は ALICE-Analytics の新しい版に、`scripts/test_libm_dependency_guard.py` は ALICE-DetMath の新しい版に

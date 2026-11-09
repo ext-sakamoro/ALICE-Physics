@@ -9,11 +9,14 @@ regeneration, checks, CI wait) are recorded instead of run. One rule per case.
 from __future__ import annotations
 
 import atexit
+import contextlib
+import io
 import json
 import os
 import re
 import hashlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -514,6 +517,82 @@ class Repo:
 
     def close(self):
         shutil.rmtree(self.dir, ignore_errors=True)
+
+
+class WorkingCopyOwner(Isolated):
+    """the working copy names its landing (owner.json); a SIGTERM still removes it; --sweep removes the copies whose
+    landing is gone and only lists the ones without an owner file (2026-11-09: six land-wt-* copies, no owner known)"""
+
+    def test_the_copy_names_its_landing(self):
+        lander = self.r.lander()
+        with land.Lander.own_copy(lander):
+            d = Path(lander.root).parent
+            rec = json.loads((d / land.OWNER_FILE).read_text())
+            self.assertEqual(rec["pid"], os.getpid())
+            self.assertEqual(rec["start"], land.process_start(os.getpid()))
+            self.assertEqual(rec["id"], "T-1")
+            self.assertEqual(rec["checkout"], str(lander.checkout))
+            self.assertEqual(land.owner_state(d)[0], "alive")
+        self.assertFalse(d.exists())
+
+    def test_a_sigterm_during_the_landing_removes_the_copy_and_its_registration(self):
+        lander = self.r.lander()
+        old = signal.signal(signal.SIGTERM, land.on_termination)
+        self.addCleanup(signal.signal, signal.SIGTERM, old)
+        seen = []
+        with self.assertRaises(land.Terminated):
+            with land.Lander.own_copy(lander):
+                seen.append(Path(lander.root))
+                os.kill(os.getpid(), signal.SIGTERM)
+                time.sleep(5)  # (the handler raises before this ends)
+        self.assertFalse(seen[0].parent.exists(), "a terminated landing left its copy")
+        self.assertNotIn(str(seen[0].resolve()), self.registered(), "a terminated landing left its registration")
+
+    def registered(self) -> str:
+        """the working trees git has registered for the test checkout"""
+        return git(self.r.work, "worktree", "list", "--porcelain")
+
+    def copy(self, tmp: Path, name: str, owner: dict | None, checkout: Path | None = None) -> Path:
+        d = tmp / f"{land.COPY_PREFIX}{name}"
+        d.mkdir()
+        if checkout is not None:
+            git(checkout, "worktree", "add", "-q", "--detach", str(d / "wt"))
+        if owner is not None:
+            (d / land.OWNER_FILE).write_text(json.dumps(owner))
+        return d
+
+    def test_the_sweep_removes_only_copies_whose_landing_is_gone(self):
+        tmp = Path(tempfile.mkdtemp(prefix="sweep-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        me = {"pid": os.getpid(), "start": land.process_start(os.getpid()), "checkout": str(self.r.work)}
+        live = self.copy(tmp, "live", me)
+        dead = self.copy(tmp, "dead", {**me, "pid": 999_999_9}, self.r.work)
+        reused = self.copy(tmp, "reused", {**me, "start": "Thu Jan  1 00:00:00 1970"})
+        bare = self.copy(tmp, "bare", None)
+        broken = self.copy(tmp, "broken", None)
+        (broken / land.OWNER_FILE).write_text("{not json")
+        wt = str((dead / "wt").resolve())
+        self.assertIn(wt, self.registered(), "the dead copy is not registered")
+        removed, kept, unowned = land.sweep_copies(str(tmp), log=lambda *_: None)
+        self.assertEqual(sorted(removed), sorted([str(dead), str(reused)]))
+        self.assertEqual(kept, [str(live)])
+        self.assertEqual(sorted(unowned), sorted([str(bare), str(broken)]))
+        self.assertTrue(live.exists() and bare.exists() and broken.exists())
+        self.assertFalse(dead.exists() or reused.exists())
+        self.assertNotIn(wt, self.registered(), "the dead copy's registration is left")
+
+    def test_sweep_flag_runs_only_the_sweep(self):
+        tmp = Path(tempfile.mkdtemp(prefix="sweep-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        dead = self.copy(tmp, "dead", {"pid": 999_999_9, "start": "x"})
+        old = tempfile.tempdir
+        tempfile.tempdir = str(tmp)
+        self.addCleanup(setattr, tempfile, "tempdir", old)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(land.main(["--sweep"]), 0)
+        self.assertFalse(dead.exists())
+        self.assertIn("1 removed", out.getvalue())
 
 
 class PublicLander(FakeLander):
