@@ -14,7 +14,7 @@
 use alice_physics_core::joint::{BallJoint, Joint};
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::motor::{
-    apply_motors, JointMotor, MotorMode, PdController, PdController3D,
+    apply_motors, JointMotor, MotorError, MotorMode, PdController, PdController3D,
 };
 use alice_physics_core::solver::RigidBody;
 
@@ -34,11 +34,11 @@ fn arr(v: Vec3Fix) -> [f64; 3] {
 
 #[test]
 fn new_controller_is_off_with_zero_targets() {
-    let pd = PdController::new(fx(1.0), fx(2.0), fx(3.0));
+    let pd = PdController::new(fx(1.0), fx(2.0), fx(3.0)).expect("a non-negative force limit");
     assert_eq!(pd.mode, MotorMode::Off);
     assert_eq!(pd.target_position, Fix128::ZERO);
     assert_eq!(pd.target_velocity, Fix128::ZERO);
-    assert_eq!((pd.kp, pd.kd, pd.max_force), (fx(1.0), fx(2.0), fx(3.0)));
+    assert_eq!((pd.kp, pd.kd, pd.max_force()), (fx(1.0), fx(2.0), fx(3.0)));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn default_gains_are_100_10_1000() {
     let pd = PdController::default();
     assert_eq!(pd.kp, fx(100.0));
     assert_eq!(pd.kd, fx(10.0));
-    assert_eq!(pd.max_force, fx(1000.0));
+    assert_eq!(pd.max_force(), fx(1000.0));
     assert_eq!(pd.mode, MotorMode::Off);
 }
 
@@ -73,7 +73,8 @@ fn setters_switch_mode_and_record_target() {
 #[test]
 fn position_mode_is_kp_error_plus_kd_velocity_error() {
     // u = kp (x* - x) + kd (v* - v), v* = 0 unless set
-    let mut pd = PdController::new(fx(10.0), fx(3.0), fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), fx(3.0), fx(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(5.0));
     // x = 2, v = 4 : 10*3 + 3*(0-4) = 18
     assert_eq!(pd.compute(fx(2.0), fx(4.0)), fx(18.0));
@@ -87,7 +88,8 @@ fn position_mode_is_kp_error_plus_kd_velocity_error() {
 
 #[test]
 fn velocity_mode_is_kp_velocity_error_and_ignores_kd_and_position() {
-    let mut pd = PdController::new(fx(10.0), fx(99.0), fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), fx(99.0), fx(1000.0)).expect("a non-negative force limit");
     pd.set_velocity_target(fx(5.0));
     pd.target_position = fx(1234.0);
     assert_eq!(pd.compute(fx(-77.0), fx(2.0)), fx(30.0));
@@ -96,7 +98,8 @@ fn velocity_mode_is_kp_velocity_error_and_ignores_kd_and_position() {
 
 #[test]
 fn output_is_clamped_symmetrically_and_exact_at_the_bound() {
-    let mut pd = PdController::new(fx(100.0), Fix128::ZERO, fx(10.0));
+    let mut pd =
+        PdController::new(fx(100.0), Fix128::ZERO, fx(10.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(1.0));
     assert_eq!(pd.compute(fx(0.0), fx(0.0)), fx(10.0)); // 100 -> 10
     assert_eq!(pd.compute(fx(2.0), fx(0.0)), fx(-10.0)); // -100 -> -10
@@ -117,19 +120,32 @@ fn position_mode_damps_toward_the_stored_velocity_target() {
     // `target_velocity` is documented "(for Velocity mode)" but Position mode
     // also consumes it: a stale velocity target left by `set_velocity_target`
     // survives `set_position_target`.
-    let mut pd = PdController::new(fx(10.0), fx(2.0), fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), fx(2.0), fx(1000.0)).expect("a non-negative force limit");
     pd.set_velocity_target(fx(3.0));
     pd.set_position_target(fx(0.0));
     // error 0, damping 2*(3 - 0) = 6 (not 0)
     assert_eq!(pd.compute(fx(0.0), fx(0.0)), fx(6.0));
 }
 
+/// AUD-A-S5W2-001: a negative `max_force` made `clamp(v, -max, +max)` an empty interval, and
+/// `compute` returned `+|max_force|` even at zero error. It is refused where it enters: by
+/// `new` and by `set_max_force`, which leaves the limit as it was; a controller that exists has
+/// a non-negative limit, and at its target and at rest it outputs exactly zero.
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute returns +|max_force| even at zero error (observed +10 for max_force = -10, kp error = 0)"]
 fn negative_max_force_must_not_produce_force_at_zero_error() {
-    let mut pd = PdController::new(fx(5.0), fx(1.0), fx(-10.0));
+    assert_eq!(
+        PdController::new(fx(5.0), fx(1.0), fx(-10.0)),
+        Err(MotorError::NegativeLimit)
+    );
+    let mut pd = PdController::new(fx(5.0), fx(1.0), fx(10.0)).expect("a non-negative limit");
+    assert_eq!(pd.set_max_force(fx(-10.0)), Err(MotorError::NegativeLimit));
+    assert_eq!(
+        pd.max_force(),
+        fx(10.0),
+        "a refused limit leaves the old one"
+    );
     pd.set_position_target(fx(3.0));
-    // at the target and at rest the PD law is exactly zero
     assert_eq!(pd.compute(fx(3.0), fx(0.0)), Fix128::ZERO);
 }
 
@@ -193,11 +209,13 @@ fn rotation_vector(r: M3) -> ([f64; 3], f64) {
 
 fn pd3(kp: [f64; 3], kd: [f64; 3], max: f64) -> PdController3D {
     PdController3D::new(v3(kp[0], kp[1], kp[2]), v3(kd[0], kd[1], kd[2]), fx(max))
+        .expect("a non-negative torque limit")
 }
 
 fn pos_mode(kp: [f64; 3], kd: [f64; 3], max: f64, target: QuatFix) -> PdController3D {
     let mut c = pd3(kp, kd, max);
-    c.set_rotation_target(target);
+    c.set_rotation_target(target)
+        .expect("a non-zero rotation target");
     c
 }
 
@@ -205,9 +223,9 @@ fn pos_mode(kp: [f64; 3], kd: [f64; 3], max: f64, target: QuatFix) -> PdControll
 fn controller3d_new_defaults() {
     let c = pd3([1.0, 2.0, 3.0], [4.0, 5.0, 6.0], 7.0);
     assert_eq!(c.mode, MotorMode::Off);
-    assert_eq!(c.target_rotation, QuatFix::IDENTITY);
+    assert_eq!(c.target_rotation(), QuatFix::IDENTITY);
     assert_eq!(c.target_angular_velocity, Vec3Fix::ZERO);
-    assert_eq!(c.max_torque, fx(7.0));
+    assert_eq!(c.max_torque(), fx(7.0));
     assert_eq!(
         c.compute_torque(quat_axis_angle([1.0, 0.0, 0.0], 1.0), v3(3.0, 4.0, 5.0)),
         Vec3Fix::ZERO
@@ -218,9 +236,16 @@ fn controller3d_new_defaults() {
 fn set_rotation_target_switches_to_position_mode() {
     let mut c = pd3([1.0; 3], [0.0; 3], 100.0);
     let q = quat_axis_angle([0.0, 0.0, 1.0], 0.5);
-    c.set_rotation_target(q);
+    c.set_rotation_target(q)
+        .expect("a non-zero rotation target");
     assert_eq!(c.mode, MotorMode::Position);
-    assert_eq!(c.target_rotation, q);
+    // `from_axis_angle` is unit to rounding, so it is stored as it is, and setting the stored
+    // target again keeps its bits
+    assert_eq!(c.target_rotation(), q);
+    let stored = c.target_rotation();
+    c.set_rotation_target(stored)
+        .expect("a non-zero rotation target");
+    assert_eq!(c.target_rotation(), stored);
 }
 
 #[test]
@@ -347,9 +372,10 @@ fn position_mode_damping_is_kd_times_angular_velocity_error() {
 #[test]
 fn velocity_mode_is_kp_times_velocity_error_and_ignores_kd_and_rotation() {
     let mut c = pd3([2.0, 3.0, 4.0], [50.0, 50.0, 50.0], 1e6);
+    c.set_rotation_target(quat_axis_angle([1.0, 0.0, 0.0], 2.0))
+        .expect("a non-zero rotation target");
     c.mode = MotorMode::Velocity;
     c.target_angular_velocity = v3(1.0, 1.0, 1.0);
-    c.target_rotation = quat_axis_angle([1.0, 0.0, 0.0], 2.0);
     let t = arr(c.compute_torque(quat_axis_angle([0.0, 1.0, 0.0], 1.0), v3(0.0, 2.0, 3.0)));
     assert!((t[0] - 2.0).abs() < 1e-12);
     assert!((t[1] + 3.0).abs() < 1e-12);
@@ -364,7 +390,7 @@ fn magnitude_is_clamped_preserving_direction_and_not_altered_at_the_bound() {
     let t = arr(c.compute_torque(QuatFix::IDENTITY, Vec3Fix::ZERO));
     assert!((t[0] - 2.4).abs() < 1e-9 && (t[1] - 3.2).abs() < 1e-9 && t[2].abs() < 1e-12);
     // exactly at the bound: unchanged
-    c.max_torque = fx(5.0);
+    c.set_max_torque(fx(5.0)).expect("a non-negative limit");
     let t = c.compute_torque(QuatFix::IDENTITY, Vec3Fix::ZERO);
     assert_eq!(t, v3(3.0, 4.0, 0.0));
     // position mode clamps the same way
@@ -385,19 +411,41 @@ fn zero_max_torque_gives_zero_vector_not_nan() {
     }
 }
 
+/// AUD-A-S5W2-004: a negative `max_torque` was not rejected; `mag > max` held always and
+/// `torque * (max / mag)` reversed the vector. It is refused by `new`, by `set_max_torque`
+/// (the limit unchanged) and by the world's `add_joint_motor_3d` (no motor added); a controller
+/// that exists never points its torque against the commanded error.
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (max / mag) reverses the vector (torque (3,4,0) with max_torque = -5 returns (-3,-4,0))"]
 fn negative_max_torque_must_not_reverse_the_torque() {
-    let mut c = pd3([1.0; 3], [0.0; 3], -5.0);
+    assert_eq!(
+        PdController3D::new(v3(1.0, 1.0, 1.0), Vec3Fix::ZERO, fx(-5.0)),
+        Err(MotorError::NegativeLimit)
+    );
+    let mut c = pd3([1.0; 3], [0.0; 3], 5.0);
+    assert_eq!(c.set_max_torque(fx(-5.0)), Err(MotorError::NegativeLimit));
+    assert_eq!(
+        c.max_torque(),
+        fx(5.0),
+        "a refused limit leaves the old one"
+    );
     c.mode = MotorMode::Velocity;
-    c.target_angular_velocity = v3(3.0, 4.0, 0.0);
+    c.target_angular_velocity = v3(30.0, 40.0, 0.0);
     let t = arr(c.compute_torque(QuatFix::IDENTITY, Vec3Fix::ZERO));
-    // a torque must never point against the commanded error
-    assert!(t[0] * 3.0 + t[1] * 4.0 >= 0.0, "{t:?}");
+    assert!(t[0] * 3.0 + t[1] * 4.0 > 0.0, "{t:?}");
+    let mut w = alice_physics_core::solver::PhysicsWorld::new(Default::default());
+    assert_eq!(
+        w.add_joint_motor_3d(0, v3(1.0, 1.0, 1.0), Vec3Fix::ZERO, fx(-5.0)),
+        Err(MotorError::NegativeLimit)
+    );
+    assert!(w.joint_motor_3d_mut(0).is_none(), "nothing was added");
 }
 
+/// AUD-A-S5W2-005: a non-unit target or current quaternion was not normalised, so scaling the
+/// target by 2 doubled the torque. The target is stored as a unit quaternion (kept bit for bit
+/// when unit to rounding, normalised otherwise) and the current rotation is taken the same
+/// way, so a scaled target or a scaled current rotation gives the same torque; a zero target
+/// is refused and leaves the controller as it was.
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-005: a non-unit target or current quaternion is not normalised; scaling the target quaternion by 2 doubles the commanded torque (0.0999 -> 0.1999 at kp 1, angle 0.1 rad)"]
 fn non_unit_target_quaternion_must_not_scale_the_torque() {
     let q = quat_axis_angle([0.0, 0.0, 1.0], 0.1);
     let big = QuatFix::new(q.x * fx(2.0), q.y * fx(2.0), q.z * fx(2.0), q.w * fx(2.0));
@@ -409,6 +457,34 @@ fn non_unit_target_quaternion_must_not_scale_the_torque() {
     for k in 0..3 {
         assert!((a[k] - b[k]).abs() < 1e-9, "axis {k}: {} vs {}", a[k], b[k]);
     }
+    // the current rotation scaled by 3 (the target unit) gives the same torque too
+    let current = quat_axis_angle([0.0, 1.0, 0.0], 0.3);
+    let scaled = QuatFix::new(
+        current.x * fx(3.0),
+        current.y * fx(3.0),
+        current.z * fx(3.0),
+        current.w * fx(3.0),
+    );
+    let c = pos_mode([1.0; 3], [0.0; 3], 1e6, q);
+    let (a, b) = (
+        arr(c.compute_torque(current, Vec3Fix::ZERO)),
+        arr(c.compute_torque(scaled, Vec3Fix::ZERO)),
+    );
+    for k in 0..3 {
+        assert!((a[k] - b[k]).abs() < 1e-9, "axis {k}: {} vs {}", a[k], b[k]);
+    }
+    // an exactly unit target is kept bit for bit; a zero one is refused
+    let mut c = pd3([1.0; 3], [0.0; 3], 1e6);
+    c.set_rotation_target(QuatFix::IDENTITY)
+        .expect("a non-zero rotation target");
+    assert_eq!(c.target_rotation(), QuatFix::IDENTITY);
+    let zero = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+    assert_eq!(c.set_rotation_target(zero), Err(MotorError::ZeroRotation));
+    assert_eq!(
+        c.target_rotation(),
+        QuatFix::IDENTITY,
+        "a refused target leaves the old one"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +517,8 @@ fn position_mode_damping_uses_relative_velocity_along_the_axis() {
     // force = 10*(6-4) + 3*(0-2) = 14 ; dt 1/4 -> impulse 3.5 -> B 2 + 3.5
     let mut bodies = pair([0.0; 3], [4.0, 0.0, 0.0], 0.0, 1.0);
     bodies[1].velocity = v3(2.0, 0.0, 0.0);
-    let mut pd = PdController::new(fx(10.0), fx(3.0), fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), fx(3.0), fx(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(6.0));
     apply_motors(
         &[JointMotor::new(0, pd)],
@@ -458,7 +535,8 @@ fn velocity_mode_sign_follows_b_minus_a_relative_velocity() {
     // kp 10, target 0 -> vel_error +1 -> force 10 -> impulse 2.5, A -= 2.5, B += 2.5
     let mut bodies = pair([0.0; 3], [1.0, 0.0, 0.0], 1.0, 1.0);
     bodies[0].velocity = v3(1.0, 0.0, 0.0);
-    let mut pd = PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     pd.set_velocity_target(fx(0.0));
     apply_motors(
         &[JointMotor::new(0, pd)],
@@ -475,7 +553,8 @@ fn oblique_axis_impulse_follows_the_unit_separation_vector() {
     // B at (3, 4, 0): separation 5, axis (0.6, 0.8, 0). target 7, kp 5 -> force 10,
     // dt 1/2 -> impulse 5 -> B velocity (3, 4, 0)
     let mut bodies = pair([0.0; 3], [3.0, 4.0, 0.0], 0.0, 1.0);
-    let mut pd = PdController::new(fx(5.0), Fix128::ZERO, fx(1000.0));
+    let mut pd =
+        PdController::new(fx(5.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(7.0));
     apply_motors(
         &[JointMotor::new(0, pd)],
@@ -497,7 +576,8 @@ fn equal_and_opposite_impulse_conserves_momentum_for_unequal_masses() {
     a.velocity = v3(0.0, 0.0, 0.0);
     b.velocity = v3(0.0, 0.0, 0.0);
     let mut bodies = vec![a, b];
-    let mut pd = PdController::new(fx(7.0), Fix128::ZERO, fx(1000.0));
+    let mut pd =
+        PdController::new(fx(7.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(9.0));
     apply_motors(
         &[JointMotor::new(0, pd)],
@@ -516,7 +596,8 @@ fn equal_and_opposite_impulse_conserves_momentum_for_unequal_masses() {
 fn velocity_change_is_linear_in_dt() {
     let mk = |dt: f64| {
         let mut bodies = pair([0.0; 3], [4.0, 0.0, 0.0], 0.0, 1.0);
-        let mut pd = PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0));
+        let mut pd = PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0))
+            .expect("a non-negative force limit");
         pd.set_position_target(fx(6.0));
         apply_motors(
             &[JointMotor::new(0, pd)],
@@ -534,7 +615,8 @@ fn velocity_change_is_linear_in_dt() {
 #[test]
 fn two_static_bodies_are_untouched_and_positions_never_change() {
     let mut bodies = pair([0.0; 3], [4.0, 0.0, 0.0], 0.0, 0.0);
-    let mut pd = PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0));
+    let mut pd =
+        PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(fx(6.0));
     apply_motors(
         &[JointMotor::new(0, pd)],
@@ -550,7 +632,8 @@ fn two_static_bodies_are_untouched_and_positions_never_change() {
 #[test]
 fn two_motors_apply_in_order_each_seeing_the_updated_velocity() {
     let mut bodies = pair([0.0; 3], [1.0, 0.0, 0.0], 0.0, 1.0);
-    let mut pd = PdController::new(fx(4.0), Fix128::ZERO, fx(1000.0));
+    let mut pd =
+        PdController::new(fx(4.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     pd.set_velocity_target(fx(2.0));
     let m = JointMotor::new(0, pd);
     // dt 1/4: first: err 2 -> force 8 -> +2 -> v 2 ; second: err 0 -> nothing
@@ -561,7 +644,8 @@ fn two_motors_apply_in_order_each_seeing_the_updated_velocity() {
 #[test]
 fn off_motor_is_skipped_even_if_listed_first() {
     let mut bodies = pair([0.0; 3], [4.0, 0.0, 0.0], 0.0, 1.0);
-    let mut off = PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0));
+    let mut off =
+        PdController::new(fx(10.0), Fix128::ZERO, fx(1000.0)).expect("a non-negative force limit");
     off.set_position_target(fx(6.0));
     off.disable();
     let mut on = off;
@@ -573,4 +657,33 @@ fn off_motor_is_skipped_even_if_listed_first() {
         fx(0.25),
     );
     assert_eq!(bodies[1].velocity, v3(5.0, 0.0, 0.0));
+}
+
+/// The stored target is a fixed point of the rule: for 20 000 quaternions of every direction and
+/// length, setting the stored target again keeps its bits (normalising a quaternion leaves it
+/// within the unit tolerance, which an exact `|q|² = 1` test would not see: 99 % of them moved
+/// on a second set under it).
+#[test]
+fn the_stored_rotation_target_is_a_fixed_point() {
+    let mut s = 0x1234_5678_9abc_def0_u64;
+    let mut next = || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        Fix128::from_ratio((s as i64) >> 20, 1 << 40)
+    };
+    let mut compared = 0;
+    for _ in 0..20_000 {
+        let q = QuatFix::new(next(), next(), next(), next());
+        let mut c = pd3([1.0; 3], [0.0; 3], 1.0);
+        if c.set_rotation_target(q).is_err() {
+            continue;
+        }
+        let stored = c.target_rotation();
+        c.set_rotation_target(stored)
+            .expect("a non-zero rotation target");
+        assert_eq!(c.target_rotation(), stored, "{q:?}");
+        compared += 1;
+    }
+    assert!(compared > 19_000, "compared {compared}");
 }

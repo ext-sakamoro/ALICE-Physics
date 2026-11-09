@@ -257,7 +257,8 @@ fn apply_motors_drives_a_linked_body_toward_its_target() {
         Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)),
         Vec3Fix::from_int(3, 0, 0),
     );
-    let mut motor = PdController::new(Fix128::from_int(4), Fix128::ZERO, Fix128::from_int(1000));
+    let mut motor = PdController::new(Fix128::from_int(4), Fix128::ZERO, Fix128::from_int(1000))
+        .expect("a non-negative force limit");
     motor.set_position_target(Fix128::from_int(7));
     artic.set_motor(link1, motor);
 
@@ -320,7 +321,8 @@ fn apply_motors_with_overflowing_gain_and_target_wraps_force_to_exactly_zero() {
         Fix128::ZERO,
         Fix128::from_int(two_pow_40), // max_force, irrelevant: the product
                                       // wraps to 0 before the clamp ever sees it.
-    );
+    )
+    .expect("a non-negative force limit");
     motor.set_position_target(Fix128::ZERO);
     artic.set_motor(link1, motor);
 
