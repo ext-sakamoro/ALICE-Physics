@@ -480,6 +480,54 @@ mod tests {
         assert!(max >= b);
     }
 
+    /// Rolling and torsional coefficients combine with the pair's friction
+    /// rule (each material's own value, never the other's), a pair override
+    /// keeps the rule's rolling and torsional values, and zero coefficients
+    /// combine to zero.
+    #[test]
+    fn rolling_and_torsional_coefficients_follow_the_friction_rule() {
+        let r = Fix128::from_ratio;
+        let mut table = MaterialTable::new();
+        let mk = |rule: CombineRule, c: Fix128, t: Fix128| {
+            PhysicsMaterial::new(0, r(1, 2), Fix128::ZERO)
+                .with_combine_rules(rule, CombineRule::Average)
+                .with_rolling_friction(c)
+                .with_torsional_friction(t)
+        };
+        let a = table.register(mk(CombineRule::Average, r(1, 8), r(1, 64)));
+        let b = table.register(mk(CombineRule::Average, r(3, 8), r(3, 64)));
+        let c = table.combine(a, b);
+        assert_eq!(
+            (c.rolling_friction, c.torsional_friction),
+            (r(1, 4), r(1, 32))
+        );
+        let lo = table.register(mk(CombineRule::Min, r(1, 2), r(1, 32)));
+        let c = table.combine(a, lo);
+        assert_eq!(
+            (c.rolling_friction, c.torsional_friction),
+            (r(1, 8), r(1, 64))
+        );
+        let hi = table.register(mk(CombineRule::Max, r(1, 2), r(1, 32)));
+        let c = table.combine(b, hi);
+        assert_eq!(
+            (c.rolling_friction, c.torsional_friction),
+            (r(1, 2), r(3, 64))
+        );
+        // symmetric in the pair
+        assert_eq!(table.combine(b, a), table.combine(a, b));
+        // an override sets sliding friction and restitution only
+        table.set_pair_override(a, b, r(9, 10), r(1, 10));
+        let c = table.combine(a, b);
+        assert_eq!(c.friction, r(9, 10));
+        assert_eq!(
+            (c.rolling_friction, c.torsional_friction),
+            (r(1, 4), r(1, 32))
+        );
+        // the default material has none
+        let d = table.combine(DEFAULT_MATERIAL, DEFAULT_MATERIAL);
+        assert!(d.rolling_friction.is_zero() && d.torsional_friction.is_zero());
+    }
+
     #[test]
     fn test_material_table() {
         let mut table = MaterialTable::new();
