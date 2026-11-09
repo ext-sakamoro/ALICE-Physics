@@ -20,7 +20,10 @@
 //!   fell asleep: the step width, the solver or sleep configuration, a member's mass,
 //!   material, collider or filter, the island's joints and distance constraints, force
 //!   fields, static or SDF colliders, participants' state, field values, or its held state
-//!   (an impulse, a moved body).
+//!   (an impulse, a moved body). A sleeper is not integrated, but a step's joint solve and
+//!   contacts can move it: a member of an island frozen on a recurrence is put back where the
+//!   step started it, and any other sleeper the step moved wakes its island and keeps the
+//!   move.
 //! - **Units.** Time and `time_to_sleep` in s, speeds in m/s and rad/s, positions in m.
 //! - **Conservation.** Sleeping conserves nothing by itself: it freezes a state. A body
 //!   that sleeps at rest under the velocity rule keeps the kinetic energy below the
@@ -42,7 +45,7 @@
 //!   held to the recurrence rule). Callbacks (pre-solve hooks, contact modifiers) are code
 //!   and are not part of the inputs an elastic island compares: a callback that changes its
 //!   output does not wake it.
-//! - **Validation.** `tests/analytic_sleep_spring_creep.rs::a_spring_held_body_stays_at_its_place_with_sleep_off::a_spring_held_body_stays_at_its_place_with_sleep_on::a_sleeper_jointed_to_a_moving_body_wakes_with_it::an_orbit_longer_than_the_window_never_sleeps::a_restored_world_snapshot_falls_asleep_with_the_original::a_rolled_back_world_falls_asleep_with_the_original::a_sleeping_orbit_wakes_when_its_inputs_change`
+//! - **Validation.** `tests/analytic_sleep_spring_creep.rs::a_spring_held_body_stays_at_its_place_with_sleep_off::a_spring_held_body_stays_at_its_place_with_sleep_on::a_sleeper_jointed_to_a_moving_body_wakes_with_it::an_orbit_longer_than_the_window_never_sleeps::a_restored_world_snapshot_falls_asleep_with_the_original::a_rolled_back_world_falls_asleep_with_the_original::a_sleeping_orbit_wakes_when_its_inputs_change::a_sleeper_the_step_moves_wakes_and_keeps_the_move`
 //!   (in order: a spring-held body stays within
 //!   the backward Euler bound of its place with sleeping on as off; a sleeper jointed to a
 //!   moving kinematic body moves as with sleeping off; an orbit longer than the window never

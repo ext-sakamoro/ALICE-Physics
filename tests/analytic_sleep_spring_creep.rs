@@ -504,3 +504,65 @@ fn a_sleeping_orbit_wakes_when_its_inputs_change() {
         }
     }
 }
+
+/// A sleeper the step moves wakes and keeps the move: in a pendulum whose heavy, damped pivot
+/// falls asleep while the bob still swings on a distance constraint, every body asleep both
+/// before and after a step ends it exactly where it started it, and the steps in which the constraint
+/// pulled a sleeping pivot leave it awake at the pulled place (not put back, not asleep at the
+/// moved place). The scene is `determinism_golden.rs::determinism_joint_pendulum`'s.
+#[test]
+fn a_sleeper_the_step_moves_wakes_and_keeps_the_move() {
+    use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig};
+    let config = PhysicsConfig {
+        substeps: 2,
+        iterations: 8,
+        gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
+        damping_rate: -Fix128::from_ratio(999, 1000).ln() * Fix128::from_int(60),
+        ..Default::default()
+    };
+    let mut w = PhysicsWorld::new(config);
+    let pivot = w.add_body(
+        RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_int(10), Fix128::ZERO),
+            Fix128::from_int(1_000),
+        )
+        .with_linear_damping_rate(-Fix128::from_ratio(1, 100).ln() * Fix128::from_int(60)),
+    );
+    let bob = w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::from_int(3), Fix128::from_int(10), Fix128::ZERO),
+        Fix128::ONE,
+    ));
+    w.add_distance_constraint(DistanceConstraint::new(
+        pivot,
+        bob,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::from_int(3),
+    ));
+    let dt = Fix128::from_ratio(1, 60);
+    let mut pulled_awake = 0;
+    for n in 1..=240 {
+        let before: Vec<(Vec3Fix, QuatFix, bool)> = (0..2)
+            .map(|i| (w.bodies[i].position, w.bodies[i].rotation, w.is_sleeping(i)))
+            .collect();
+        w.step(dt);
+        for (i, &(p, q, was_asleep)) in before.iter().enumerate() {
+            let b = &w.bodies[i];
+            let moved = b.position != p || b.rotation != q;
+            if was_asleep && w.is_sleeping(i) {
+                assert!(
+                    !moved,
+                    "step {n}: body {i} slept through the step and was moved"
+                );
+            }
+            if was_asleep && moved {
+                assert!(!w.is_sleeping(i), "step {n}: body {i}");
+                pulled_awake += 1;
+            }
+        }
+    }
+    assert!(
+        pulled_awake > 0,
+        "the premise: the constraint pulls the sleeping pivot at least once"
+    );
+}
