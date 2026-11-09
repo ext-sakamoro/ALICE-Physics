@@ -3641,14 +3641,34 @@ impl PhysicsWorld {
     /// started (position, rotation, velocities): the substeps' joint solve and contacts may
     /// have moved it although it was not integrated, and a sleeper does not move.
     fn restore_sleepers(&mut self, frame: &SleepFrame) {
-        for (i, &(p, r, v, w)) in frame.start.iter().enumerate() {
-            if i < self.bodies.len() && !self.bodies[i].is_static() && self.islands.is_sleeping(i) {
-                let b = &mut self.bodies[i];
+        let n = self.bodies.len().min(frame.start.len());
+        let mut held = vec![false; n];
+        for o in &self.islands.orbits {
+            if o.asleep {
+                for &m in &o.members {
+                    if m < n {
+                        held[m] = true;
+                    }
+                }
+            }
+        }
+        let mut moved = Vec::new();
+        for (i, &(p, r, v, w)) in frame.start.iter().enumerate().take(n) {
+            if self.bodies[i].is_static() || !self.islands.is_sleeping(i) {
+                continue;
+            }
+            let b = &mut self.bodies[i];
+            if held[i] {
                 b.position = p;
                 b.rotation = r;
                 b.velocity = v;
                 b.angular_velocity = w;
+            } else if b.position != p || b.rotation != r {
+                moved.push(i);
             }
+        }
+        if !moved.is_empty() {
+            self.islands.wake_islands(&moved);
         }
     }
 
