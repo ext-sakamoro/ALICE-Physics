@@ -4,9 +4,24 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **5 baseline items** — Permitted violations, ratchet in place
+❌ **NEW violations detected** — Must be resolved or added to baseline
 
 ---
+
+## 🔴 NEW: Unwired Items (10)
+
+```
+unwired: src/axis_lock.rs::LINEAR_X: LINEAR_X: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::LINEAR_Y: LINEAR_Y: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::LINEAR_Z: LINEAR_Z: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::ANGULAR_X: ANGULAR_X: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::ANGULAR_Y: ANGULAR_Y: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::ANGULAR_Z: ANGULAR_Z: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::LINEAR: LINEAR: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/axis_lock.rs::ANGULAR: ANGULAR: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/solver.rs::set_body_axis_lock: set_body_axis_lock: production code から 1 度も参照されていない (test / doc / use のみ)
+unwired: src/solver.rs::body_axis_lock: body_axis_lock: production code から 1 度も参照されていない (test / doc / use のみ)
+```
 
 ## 📋 Baseline (5 permitted)
 
