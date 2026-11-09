@@ -840,7 +840,7 @@ pub struct BroadphaseStats {
 /// through a persistent tree instead of rebuilding it. The counters then depend
 /// on the awake bodies only, except those two, which stay one per sleeping body
 /// per step (a check that the parked state was not edited between steps, and
-/// the `idle_frames` count the snapshot carries).
+/// the `idle_time` the snapshot carries).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct StageWork {
@@ -893,7 +893,7 @@ struct ParkCache {
     static_kind: bool,
 }
 
-/// Everything a parked body's "a step changes nothing but `idle_frames`" verdict
+/// Everything a parked body's "a step changes nothing but `idle_time`" verdict
 /// depends on besides its own state. Any change drops every [`ParkCache`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ParkKey {
@@ -3652,7 +3652,7 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
-        self.update_sleep_states();
+        self.update_sleep_states(dt);
         self.park.active = false;
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
@@ -3696,16 +3696,16 @@ impl PhysicsWorld {
     /// Phase 4 of [`Self::step`]: [`IslandManager::update_sleep`] over the bodies
     /// that are not parked, and for a parked body the same outcome without the
     /// evaluation (its velocity is the at-rest one its cache recorded as idle).
-    fn update_sleep_states(&mut self) {
+    fn update_sleep_states(&mut self, dt: Fix128) {
         if !self.park.active {
             self.stage_work.sleep_evaluated += self.bodies.len() as u64;
-            self.islands.update_sleep(&self.bodies);
+            self.islands.update_sleep(&self.bodies, dt);
             return;
         }
         for k in 0..self.park.awake.len() {
             let i = self.park.awake[k];
             self.stage_work.sleep_evaluated += 1;
-            self.islands.update_sleep_body(i, &self.bodies[i]);
+            self.islands.update_sleep_body(i, &self.bodies[i], dt);
         }
         for k in 0..self.park.parked_list.len() {
             let i = self.park.parked_list[k];
@@ -3714,7 +3714,7 @@ impl PhysicsWorld {
             }
             self.stage_work.parked_sleep_updates += 1;
             self.islands
-                .update_sleep_idle(i, self.bodies[i].is_static());
+                .update_sleep_idle(i, self.bodies[i].is_static(), dt);
         }
     }
 
@@ -3722,7 +3722,7 @@ impl PhysicsWorld {
     /// [`StageWork`]) and bring the parked-body tree up to date.
     ///
     /// A body is parked when the step would change nothing about it but its
-    /// `idle_frames`: it is asleep, not kinematic, not referenced by a joint or a
+    /// `idle_time`: it is asleep, not kinematic, not referenced by a joint or a
     /// distance constraint, and — for a dynamic body — `prev == position`,
     /// `prev_rotation == rotation`, a zero velocity, the angular velocity the
     /// derivation gives an unchanged rotation, an idle verdict on that velocity,
@@ -4445,7 +4445,7 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping (identical call to `step`).
-        self.islands.update_sleep(&self.bodies);
+        self.islands.update_sleep(&self.bodies, dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -4565,7 +4565,7 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
-        self.islands.update_sleep(&self.bodies);
+        self.islands.update_sleep(&self.bodies, dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -5848,7 +5848,7 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
-        self.islands.update_sleep(&self.bodies);
+        self.islands.update_sleep(&self.bodies, dt);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -7174,12 +7174,14 @@ impl PhysicsWorld {
     /// v2 = v1 + **world ごと overflow flag 1 byte** (doctrine B-12)
     /// v3 = v2 + **world ごと population fingerprint 8 byte**
     /// ([`Self::population_fingerprint`]、rollback の body 数不一致検査強化)
+    /// v4 = body ごと sleep が 5 byte (state 1 + idle_frames u32 4) から
+    /// **17 byte (state 1 + idle_time Fix128 16)** に (sleep は経過時間基準)
     ///
     /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
     /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否、
     /// v1 / v2 の blob は v3 実装に対して version 不一致で拒否される、
     /// 既存の v1→v2 bump と同じ方針)
-    pub const STATE_VERSION: u16 = 3;
+    pub const STATE_VERSION: u16 = 4;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -7192,7 +7194,7 @@ impl PhysicsWorld {
     /// | `[6..8)` | reserved u16 = 0 (将来の flag 用、8 byte 境界揃え) |
     /// | `[8..12)` | body 数 u32 |
     /// | `[12..)` | body ごとに 208 byte = position 48 + velocity 48 + rotation 64 + angular_velocity 48 |
-    /// | 続き | body ごとに 5 byte = [`SleepState`] u8 + `idle_frames` u32 |
+    /// | 続き | body ごとに 17 byte = [`SleepState`] u8 + `idle_time` Fix128 (v4、v3 までは 5 byte = u8 + `idle_frames` u32) |
     /// | 続き | world ごと overflow flag 1 byte (v2) |
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     ///
@@ -7281,7 +7283,8 @@ impl PhysicsWorld {
                 SleepState::Awake => 0,
                 SleepState::Sleeping => 1,
             });
-            data.extend_from_slice(&sd.idle_frames.to_le_bytes());
+            data.extend_from_slice(&sd.idle_time.hi.to_le_bytes());
+            data.extend_from_slice(&sd.idle_time.lo.to_le_bytes());
         }
 
         // overflow flag (world ごと 1 byte、v2、doctrine B-12)
@@ -7498,7 +7501,7 @@ impl PhysicsWorld {
         self.body_materials.truncate(n);
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
-        // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_frames 0) に
+        // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_time 0) に
         // 戻すので、**この後に blob から復元する** 順序を逆にすると復元が消える
         self.islands = IslandManager::new(n, self.islands.config);
 
@@ -7512,16 +7515,12 @@ impl PhysicsWorld {
                 _ => return false,
             };
             offset += 1;
-            let idle_frames = u32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]);
-            offset += 4;
+            let hi = i64::from_le_bytes(data[offset..offset + 8].try_into().expect("8 bytes"));
+            let lo = u64::from_le_bytes(data[offset + 8..offset + 16].try_into().expect("8 bytes"));
+            offset += 16;
             if let Some(sd) = self.islands.sleep_data.get_mut(i) {
                 sd.state = state;
-                sd.idle_frames = idle_frames;
+                sd.idle_time = Fix128::from_raw(hi, lo);
             }
         }
 
@@ -10823,12 +10822,12 @@ mod tests {
         assert!(!world.is_sleeping(mover));
     }
 
-    /// `set_sleep_config` → `()`: with `frames_to_sleep = 2` an idle body is
-    /// asleep after two frames; under the default 60 frames it is not.
+    /// `set_sleep_config` → `()`: with `time_to_sleep = 1/2 s` an idle body is
+    /// asleep after two steps of 1/4 s; under the default 1 s it is not.
     #[test]
-    fn set_sleep_config_changes_frames_to_sleep() {
+    fn set_sleep_config_changes_time_to_sleep() {
         let cfg = SleepConfig {
-            frames_to_sleep: 2,
+            time_to_sleep: Fix128::from_ratio(1, 2),
             ..SleepConfig::default()
         };
         let mut quick = quiet_world();

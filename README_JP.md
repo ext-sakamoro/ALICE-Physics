@@ -342,7 +342,7 @@ maturin build --release -m crates/alice-physics/Cargo.toml --features python
 | 100 000 | 90 % | 105 ms | 1.31 s |
 | 100 000 | 99 % | 10.8 ms | 1.15 s |
 
-休止中の物体 1 個あたり、step ごとに約 30 ns が残る (step 間に書き換えられていないかの検査 (`bodies` は公開 field) と、状態 snapshot に含まれる `idle_frames` の加算)
+休止中の物体 1 個あたり、step ごとに約 30 ns が残る (step 間に書き換えられていないかの検査 (`bodies` は公開 field) と、状態 snapshot に含まれる `idle_time` の加算)
 
 ## 最小サポート Rust バージョン
 

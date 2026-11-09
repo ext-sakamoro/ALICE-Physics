@@ -420,7 +420,8 @@ fn sleeping_and_removal() {
     let mut world = PhysicsWorld::new(weightless());
     let resting = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     let wall = world.add_body(RigidBody::new_static(Vec3Fix::from_int(5, 0, 0)));
-    let frames = world.islands.config.frames_to_sleep;
+    // the default `time_to_sleep` (1 s) at this step: 60 idle steps
+    let frames = 60u32;
     for _ in 0..frames {
         world.step(dt);
     }

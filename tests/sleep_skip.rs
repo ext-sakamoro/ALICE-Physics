@@ -60,7 +60,7 @@ fn grid_world(n: usize, awake: usize) -> PhysicsWorld {
     }
     for i in awake..n {
         w.islands.sleep_data[i].state = SleepState::Sleeping;
-        w.islands.sleep_data[i].idle_frames = 100;
+        w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
     }
     w
 }
@@ -230,7 +230,7 @@ impl Twins {
 
 fn quick_sleep() -> SleepConfig {
     SleepConfig {
-        frames_to_sleep: 5,
+        time_to_sleep: Fix128::from_ratio(5, 60),
         ..SleepConfig::default()
     }
 }
@@ -432,7 +432,7 @@ fn edits_between_steps_are_seen() {
     t.both(|w| {
         w.set_body_collision_radius(8, Fix128::from_int(2));
         w.set_sleep_config(SleepConfig {
-            frames_to_sleep: 3,
+            time_to_sleep: Fix128::from_ratio(3, 60),
             ..SleepConfig::default()
         });
     });
@@ -494,7 +494,7 @@ fn natural_pile_under_gravity_is_bit_identical() {
     let mut t = Twins::new(|| {
         let mut w = PhysicsWorld::new(PhysicsConfig::default());
         w.set_sleep_config(SleepConfig {
-            frames_to_sleep: 10,
+            time_to_sleep: Fix128::from_ratio(10, 60),
             ..SleepConfig::default()
         });
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
@@ -543,7 +543,7 @@ fn single_sleeping_body_is_parked_and_counts_idle_frames() {
     assert_eq!(s.sleep_scanned, 1);
     assert_eq!(s.parked_sleep_updates, 1);
     assert_eq!(
-        w.islands.sleep_data[0].idle_frames, 103,
+        w.islands.sleep_data[0].idle_time, 103,
         "100 + one per step"
     );
     assert_eq!(w.bodies[0].position, before.position);
@@ -608,7 +608,7 @@ fn bench_world_is_bit_identical() {
         }
         for i in awake..n {
             w.islands.sleep_data[i].state = SleepState::Sleeping;
-            w.islands.sleep_data[i].idle_frames = 100;
+            w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
         }
         w
     };
