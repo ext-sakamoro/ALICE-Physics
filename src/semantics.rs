@@ -201,6 +201,11 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "sleep by time",
         hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+    // the overflow flag on a pair whose radius sum leaves the range: one predicate
+    // on every path (`tests/overflow_flag_previous_bits.rs`)
+    (
+        "overflow flag",
+        hex32("b26ddb11d0a9ae0d8f2d11de595e71bbefc9294673ab6f46fe6a7544554913cc"),
     ),
     // the Law outputs: one golden per src file that calls the Law max / min /
     // clamp (`LAW_OUTPUT_PINS` in tests/determinism_law_outputs.rs)
