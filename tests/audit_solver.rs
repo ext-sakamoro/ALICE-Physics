@@ -738,13 +738,11 @@ mod bridge {
         // Slot 3: (0,2) survives.
         w.add_pre_solve_hook(Box::new(|a, b, _c| !(a == 0 && b == 1)));
         for (a, b) in [(0, 1), (1, 2), (0, sensor), (0, 2)] {
-            w.add_contact(ContactConstraint {
-                body_a: a,
-                body_b: b,
-                contact: contact(0.25),
-                friction: fx(0.5),
-                restitution: fx(0.25),
-                cached_lambda: Fix128::ZERO,
+            w.add_contact({
+                let mut c = ContactConstraint::new(a, b, contact(0.25));
+                c.friction = fx(0.5);
+                c.restitution = fx(0.25);
+                c
             });
         }
         let mut rec = Recorder::default();
@@ -777,13 +775,11 @@ mod bridge {
     fn contact_solve_with_no_survivor_does_not_touch_the_bridge() {
         let mut w = three_body_world();
         w.add_pre_solve_hook(Box::new(|_a, _b, _c| false));
-        w.add_contact(ContactConstraint {
-            body_a: 0,
-            body_b: 1,
-            contact: contact(0.25),
-            friction: fx(0.5),
-            restitution: fx(0.25),
-            cached_lambda: Fix128::ZERO,
+        w.add_contact({
+            let mut c = ContactConstraint::new(0, 1, contact(0.25));
+            c.friction = fx(0.5);
+            c.restitution = fx(0.25);
+            c
         });
         let mut rec = Recorder::default();
         w.solve_contact_constraints_with_bridge(&mut rec, Fix128::from_ratio(1, 60))

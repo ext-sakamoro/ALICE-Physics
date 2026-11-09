@@ -193,12 +193,18 @@ fn a_rolling_ball_on_level_ground_slows_at_five_sevenths_of_c_g_and_stops() {
         for frame in 1..=480 {
             advance(&mut w, path);
             let e = kinetic(&w, ball);
-            assert!(e <= e_prev + FLOOR, "{path:?} frame {frame}: energy grew {e_prev} -> {e}");
+            assert!(
+                e <= e_prev + FLOOR,
+                "{path:?} frame {frame}: energy grew {e_prev} -> {e}"
+            );
             e_prev = e;
             if frame == 120 {
                 let v = w.bodies[ball].velocity.x.to_f64();
                 println!("{path:?} t=2: v {v:.6} ({want_v2:.6}, bound {bound_v:.2e})");
-                assert!((v - want_v2).abs() <= bound_v, "{path:?}: v(2) {v}, closed form {want_v2}");
+                assert!(
+                    (v - want_v2).abs() <= bound_v,
+                    "{path:?}: v(2) {v}, closed form {want_v2}"
+                );
             }
             if frame == 420 {
                 x_at_7 = w.bodies[ball].position.x.to_f64();
@@ -206,8 +212,15 @@ fn a_rolling_ball_on_level_ground_slows_at_five_sevenths_of_c_g_and_stops() {
         }
         let x = w.bodies[ball].position.x.to_f64();
         println!("{path:?} stop: x {x:.6} ({want_stop:.6}, bound {bound_x:.2e})");
-        assert!((x - want_stop).abs() <= bound_x, "{path:?}: stopped at {x}, closed form {want_stop}");
-        assert!((x - x_at_7).abs() <= FLOOR, "{path:?}: moved {} m after stopping", x - x_at_7);
+        assert!(
+            (x - want_stop).abs() <= bound_x,
+            "{path:?}: stopped at {x}, closed form {want_stop}"
+        );
+        assert!(
+            (x - x_at_7).abs() <= FLOOR,
+            "{path:?}: moved {} m after stopping",
+            x - x_at_7
+        );
     }
 }
 
@@ -218,7 +231,8 @@ fn a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_minus_c_cos() {
     let (c, theta) = (0.1, 0.3_f64);
     let want = 5.0 / 14.0 * g() * (theta.sin() - c * theta.cos());
     let n = PhysicsConfig::default().substeps;
-    let bound = 2.0 * (incline_run(c, theta, n, 60) - incline_run(c, theta, n / 2, 60)).abs() + FLOOR;
+    let bound =
+        2.0 * (incline_run(c, theta, n, 60) - incline_run(c, theta, n / 2, 60)).abs() + FLOOR;
     for path in paths() {
         let (mut w, ball) = incline(c, theta, n);
         let start = w.bodies[ball].position;
@@ -227,7 +241,10 @@ fn a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_minus_c_cos() {
         }
         let d = downhill(&w, ball, start, theta);
         println!("{path:?} incline c={c}: {d:.6} ({want:.6}, bound {bound:.2e})");
-        assert!((d - want).abs() <= bound, "{path:?}: rolled {d}, closed form {want}");
+        assert!(
+            (d - want).abs() <= bound,
+            "{path:?}: rolled {d}, closed form {want}"
+        );
     }
 }
 
@@ -245,6 +262,9 @@ fn a_ball_on_an_incline_flatter_than_c_stays_at_rest() {
         }
         let d = downhill(&w, ball, start, theta);
         println!("{path:?} held: {d:.3e}");
-        assert!(d.abs() < 1e-6, "{path:?}: crept {d} m down a slope flatter than c");
+        assert!(
+            d.abs() < 1e-6,
+            "{path:?}: crept {d} m down a slope flatter than c"
+        );
     }
 }

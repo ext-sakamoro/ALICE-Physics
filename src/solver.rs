@@ -819,6 +819,7 @@ impl DistanceConstraint {
 
 /// Contact constraint (from collision detection)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ContactConstraint {
     /// Index of the first body
     pub body_a: usize,
@@ -834,6 +835,10 @@ pub struct ContactConstraint {
     /// (contacts are re-detected every substep since 1.2.0): the separation
     /// along `contact.normal` already applied by earlier solver iterations.
     pub cached_lambda: Fix128,
+    /// Rolling resistance coefficient `c` (dimensionless, torque ≤ `c r λ_n`)
+    pub rolling_friction: Fix128,
+    /// Torsional friction coefficient `μ_t` in metres (torque ≤ `μ_t λ_n`)
+    pub torsional_friction: Fix128,
 }
 
 impl ContactConstraint {
@@ -847,6 +852,8 @@ impl ContactConstraint {
             friction: Fix128::from_ratio(3, 10), // 0.3 friction
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
             cached_lambda: Fix128::ZERO,
+            rolling_friction: Fix128::ZERO,
+            torsional_friction: Fix128::ZERO,
         }
     }
 }
@@ -3510,6 +3517,8 @@ impl PhysicsWorld {
             friction: combined.friction,
             restitution: combined.restitution,
             cached_lambda: Fix128::ZERO,
+            rolling_friction: combined.rolling_friction,
+            torsional_friction: combined.torsional_friction,
         };
         self.add_contact(constraint);
     }
@@ -5282,6 +5291,13 @@ impl PhysicsWorld {
                     self.bodies[constraint.body_b].velocity - impulse_n * (body_b.inv_mass * inv_w);
             }
 
+            // Rolling and torsional friction act before the sliding friction,
+            // so the sliding pass below restores rolling without slip after
+            // the resistance torque has taken its share of the spin.
+            if !constraint.rolling_friction.is_zero() || !constraint.torsional_friction.is_zero() {
+                self.apply_rolling_torsional_friction(&constraint, w_sum, inv_dt);
+            }
+
             // Friction: reduce the tangential velocity at the contact point.
             // The relative velocity is taken at the contact point, so a
             // body's spin enters through `ω × r`, and the impulse acts
@@ -5409,6 +5425,124 @@ impl PhysicsWorld {
         // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
         if overflow.load(core::sync::atomic::Ordering::Relaxed) {
             self.note_rigid_overflow();
+        }
+    }
+
+    /// Rolling resistance and torsional friction of one contact, as angular
+    /// impulses on the pair's relative angular velocity.
+    ///
+    /// With `ω = ω_a − ω_b` (bodies that cannot turn about the contact
+    /// contribute nothing, see `contact_point_is_exact`) split into the spin
+    /// about the normal `ω_n = (ω·n) n` and the rolling part `ω_t = ω − ω_n`:
+    ///
+    /// - rolling: an angular impulse along `−ω_t / |ω_t|` of size
+    ///   `min(|ω_t| / k_t, c r λ / (h w))`, `k_t = u·I_a⁻¹u + u·I_b⁻¹u`, `c`
+    ///   the dimensionless rolling coefficient, `r` the lever arm to the
+    ///   contact point (for two turning bodies the reduced radius
+    ///   `r_a r_b / (r_a + r_b)`), `λ / (h w)` the substep's normal impulse;
+    /// - torsion: the same with `ω_n`, `k_n = n·I_a⁻¹n + n·I_b⁻¹n` and the
+    ///   cap `μ_t λ / (h w)`, `μ_t` in metres.
+    ///
+    /// The cap makes it Coulomb-like: below it the relative rolling (spin) is
+    /// removed exactly, so a ball comes to rest and stays there; at the cap
+    /// the torque is `c r N` (`μ_t N`).
+    fn apply_rolling_torsional_friction(
+        &mut self,
+        constraint: &ContactConstraint,
+        w_sum: Fix128,
+        inv_dt: Fix128,
+    ) {
+        let a = self.bodies[constraint.body_a];
+        let b = self.bodies[constraint.body_b];
+        let turns_a = !a.is_static() && self.contact_point_is_exact(constraint.body_a);
+        let turns_b = !b.is_static() && self.contact_point_is_exact(constraint.body_b);
+        if !turns_a && !turns_b {
+            return;
+        }
+        let n = constraint.contact.normal;
+        let wa = if turns_a {
+            a.angular_velocity
+        } else {
+            Vec3Fix::ZERO
+        };
+        let wb = if turns_b {
+            b.angular_velocity
+        } else {
+            Vec3Fix::ZERO
+        };
+        let rel = wa - wb;
+        let spin = rel.dot(n);
+        let roll = rel - n * spin;
+        // the substep's normal impulse `λ / (h w)`
+        let normal_impulse = constraint.cached_lambda * inv_dt / w_sum;
+        let arm_a = (constraint.contact.point_a - a.position).length();
+        let arm_b = (constraint.contact.point_b - b.position).length();
+        let arm = match (turns_a, turns_b) {
+            (true, true) if !(arm_a + arm_b).is_zero() => arm_a * arm_b / (arm_a + arm_b),
+            (true, _) => arm_a,
+            _ => arm_b,
+        };
+        let mut impulse = Vec3Fix::ZERO;
+        let roll_sq = roll.length_squared();
+        if !constraint.rolling_friction.is_zero() && roll_sq > Fix128::ZERO {
+            let speed = roll_sq.sqrt();
+            let u = roll / speed;
+            let cap = constraint.rolling_friction * arm * normal_impulse;
+            impulse =
+                impulse + u * self.capped_angular_impulse(&a, &b, turns_a, turns_b, u, speed, cap);
+        }
+        if !constraint.torsional_friction.is_zero() && !spin.is_zero() {
+            let u = if spin.is_negative() { -n } else { n };
+            let cap = constraint.torsional_friction * normal_impulse;
+            impulse = impulse
+                + u * self.capped_angular_impulse(&a, &b, turns_a, turns_b, u, spin.abs(), cap);
+        }
+        if turns_a {
+            let ba = &mut self.bodies[constraint.body_a];
+            ba.angular_velocity = ba.angular_velocity - a.world_inv_inertia_apply(impulse);
+        }
+        if turns_b {
+            let bb = &mut self.bodies[constraint.body_b];
+            bb.angular_velocity = bb.angular_velocity + b.world_inv_inertia_apply(impulse);
+        }
+    }
+
+    /// `min(rate / k, cap)` with `k = u·I_a⁻¹u + u·I_b⁻¹u` over the turning
+    /// bodies: the angular impulse along `u` that removes `rate` of relative
+    /// angular velocity, limited to `cap`
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the pair, its turning flags, the axis, the rate and the cap of one contact"
+    )]
+    fn capped_angular_impulse(
+        &self,
+        a: &RigidBody,
+        b: &RigidBody,
+        turns_a: bool,
+        turns_b: bool,
+        u: Vec3Fix,
+        rate: Fix128,
+        cap: Fix128,
+    ) -> Fix128 {
+        let ka = if turns_a {
+            u.dot(a.world_inv_inertia_apply(u))
+        } else {
+            Fix128::ZERO
+        };
+        let kb = if turns_b {
+            u.dot(b.world_inv_inertia_apply(u))
+        } else {
+            Fix128::ZERO
+        };
+        let k = ka + kb;
+        if k.is_zero() {
+            return Fix128::ZERO;
+        }
+        let needed = rate / k;
+        if needed < cap {
+            needed
+        } else {
+            cap
         }
     }
 
@@ -6050,6 +6184,8 @@ impl PhysicsWorld {
                 friction,
                 restitution,
                 cached_lambda: constraint.cached_lambda,
+                rolling_friction: constraint.rolling_friction,
+                torsional_friction: constraint.torsional_friction,
             });
             mapping.push(i);
         }

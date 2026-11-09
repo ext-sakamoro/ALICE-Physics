@@ -67,6 +67,7 @@ impl CombineRule {
 
 /// Physics material definition
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PhysicsMaterial {
     /// Material identifier
     pub id: MaterialId,
@@ -80,6 +81,14 @@ pub struct PhysicsMaterial {
     pub friction_combine: CombineRule,
     /// Restitution combine rule
     pub restitution_combine: CombineRule,
+    /// Rolling resistance coefficient `c` (dimensionless): a contact resists
+    /// the pair's relative rolling with a torque of at most `c r λ_n`, `r` the
+    /// lever arm to the contact point; 0 (the default) turns it off
+    pub rolling_friction: Fix128,
+    /// Torsional (spinning) friction coefficient `μ_t` in metres: a contact
+    /// resists the pair's relative spin about the normal with a torque of at
+    /// most `μ_t λ_n`; 0 (the default) turns it off
+    pub torsional_friction: Fix128,
 }
 
 impl PhysicsMaterial {
@@ -93,6 +102,8 @@ impl PhysicsMaterial {
             restitution,
             friction_combine: CombineRule::Average,
             restitution_combine: CombineRule::Average,
+            rolling_friction: Fix128::ZERO,
+            torsional_friction: Fix128::ZERO,
         }
     }
 
@@ -112,6 +123,20 @@ impl PhysicsMaterial {
     #[must_use]
     pub const fn with_static_friction(mut self, static_friction: Fix128) -> Self {
         self.static_friction = static_friction;
+        self
+    }
+
+    /// Set the rolling resistance coefficient `c` (dimensionless)
+    #[must_use]
+    pub const fn with_rolling_friction(mut self, rolling_friction: Fix128) -> Self {
+        self.rolling_friction = rolling_friction;
+        self
+    }
+
+    /// Set the torsional friction coefficient `μ_t` (metres)
+    #[must_use]
+    pub const fn with_torsional_friction(mut self, torsional_friction: Fix128) -> Self {
+        self.torsional_friction = torsional_friction;
         self
     }
 }
@@ -137,11 +162,30 @@ pub(crate) struct PairOverride {
 
 /// Combined material result for a contact pair
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CombinedMaterial {
     /// Combined friction
     pub friction: Fix128,
     /// Combined restitution
     pub restitution: Fix128,
+    /// Combined rolling resistance coefficient (dimensionless)
+    pub rolling_friction: Fix128,
+    /// Combined torsional friction coefficient (metres)
+    pub torsional_friction: Fix128,
+}
+
+impl CombinedMaterial {
+    /// A combined result with the given friction and restitution and no
+    /// rolling or torsional friction
+    #[must_use]
+    pub const fn new(friction: Fix128, restitution: Fix128) -> Self {
+        Self {
+            friction,
+            restitution,
+            rolling_friction: Fix128::ZERO,
+            torsional_friction: Fix128::ZERO,
+        }
+    }
 }
 
 /// Material pair lookup table
@@ -289,7 +333,23 @@ impl MaterialTable {
             (mat_b, mat_a, surface_b, surface_a)
         };
 
-        // Check pair overrides first
+        // Use combine rules
+        let mat_a = self.get(a);
+        let mat_b = self.get(b);
+
+        // Use the higher-priority combine rule. Rolling and torsional friction
+        // follow the friction rule: they are friction of the same contact
+        // (resistance to relative rolling / spin instead of relative sliding),
+        // so a pair that takes the smaller sliding coefficient takes the
+        // smaller rolling and torsional ones too.
+        let friction_rule = combine_rule_priority(mat_a.friction_combine, mat_b.friction_combine);
+        let rolling_friction = friction_rule.apply(mat_a.rolling_friction, mat_b.rolling_friction);
+        let torsional_friction =
+            friction_rule.apply(mat_a.torsional_friction, mat_b.torsional_friction);
+
+        // A pair override sets the sliding friction and restitution of the
+        // pair; it does not name rolling or torsional coefficients, which keep
+        // the rule's values.
         if let Some(p) = self
             .pair_overrides
             .iter()
@@ -298,15 +358,11 @@ impl MaterialTable {
             return CombinedMaterial {
                 friction: p.friction,
                 restitution: p.restitution,
+                rolling_friction,
+                torsional_friction,
             };
         }
 
-        // Use combine rules
-        let mat_a = self.get(a);
-        let mat_b = self.get(b);
-
-        // Use the higher-priority combine rule
-        let friction_rule = combine_rule_priority(mat_a.friction_combine, mat_b.friction_combine);
         let restitution_rule =
             combine_rule_priority(mat_a.restitution_combine, mat_b.restitution_combine);
 
@@ -315,6 +371,8 @@ impl MaterialTable {
         CombinedMaterial {
             friction: friction_rule.apply(fa, fb),
             restitution: restitution_rule.apply(ra, rb),
+            rolling_friction,
+            torsional_friction,
         }
     }
 

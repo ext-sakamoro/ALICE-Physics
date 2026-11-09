@@ -150,22 +150,12 @@ impl Laws {
             default_friction_combine: CombineRule::Max,
             default_restitution_combine: CombineRule::Multiply,
             materials: vec![
-                PhysicsMaterial {
-                    id: 0,
-                    static_friction: fx(9, 10),
-                    dynamic_friction: fx(4, 10),
-                    restitution: fx(2, 10),
-                    friction_combine: CombineRule::Min,
-                    restitution_combine: CombineRule::Max,
-                },
-                PhysicsMaterial {
-                    id: 0,
-                    static_friction: fx(1, 10),
-                    dynamic_friction: fx(1, 20),
-                    restitution: fx(7, 10),
-                    friction_combine: CombineRule::Multiply,
-                    restitution_combine: CombineRule::Average,
-                },
+                PhysicsMaterial::new(0, fx(4, 10), fx(2, 10))
+                    .with_static_friction(fx(9, 10))
+                    .with_combine_rules(CombineRule::Min, CombineRule::Max),
+                PhysicsMaterial::new(0, fx(1, 20), fx(7, 10))
+                    .with_static_friction(fx(1, 10))
+                    .with_combine_rules(CombineRule::Multiply, CombineRule::Average),
             ],
             // set out of order and with the second pair given as (2, 1)
             pair_overrides: vec![(2, 1, fx(1, 4), fx(3, 4)), (0, 1, fx(2, 3), fx(1, 6))],

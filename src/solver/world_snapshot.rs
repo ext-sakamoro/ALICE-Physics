@@ -1465,6 +1465,8 @@ fn w_material_table(w: &mut W, t: &MaterialTable) {
         w.fix(m.restitution);
         w.u8(combine_tag(m.friction_combine));
         w.u8(combine_tag(m.restitution_combine));
+        w.fix(m.rolling_friction);
+        w.fix(m.torsional_friction);
     }
     w.usize(t.pair_overrides.len());
     for p in &t.pair_overrides {
@@ -1482,7 +1484,7 @@ fn w_material_table(w: &mut W, t: &MaterialTable) {
 /// `try_register` assigns `id = len` up to 65,536 ids, so a valid table holds
 /// `1..=65_536` materials with `materials[i].id == i` (`get` indexes by
 /// position and falls back to entry 0, so an empty table panics there).
-fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
+fn r_material_table(r: &mut R<'_>, version: u16) -> Res<MaterialTable> {
     const S: &str = "material_table";
     let n = r.len(S, 52)?;
     // `n > 65_536` is also caught by the id check below (an id is a `u16`);
@@ -1496,14 +1498,19 @@ fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
         if usize::from(id) != i {
             return Err(invalid(S));
         }
-        materials.push(PhysicsMaterial {
-            id,
-            static_friction: r.fix()?,
-            dynamic_friction: r.fix()?,
-            restitution: r.fix()?,
-            friction_combine: r_combine(r)?,
-            restitution_combine: r_combine(r)?,
-        });
+        let mut m = PhysicsMaterial::new(id, Fix128::ZERO, Fix128::ZERO);
+        m.static_friction = r.fix()?;
+        m.dynamic_friction = r.fix()?;
+        m.restitution = r.fix()?;
+        m.friction_combine = r_combine(r)?;
+        m.restitution_combine = r_combine(r)?;
+        // versions 1 to 6 have no rolling / torsional coefficients: zero,
+        // the same physics as before they existed
+        if version >= 7 {
+            m.rolling_friction = r.fix()?;
+            m.torsional_friction = r.fix()?;
+        }
+        materials.push(m);
     }
     let n = r.len(S, 36)?;
     let mut pair_overrides = Vec::with_capacity(n);
@@ -1752,7 +1759,12 @@ impl PhysicsWorld {
     /// ([`SolverConfig::damping_rate`], [`RigidBody::linear_damping_rate`],
     /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
     /// retentions per step; see [`Self::restore_world_legacy_damping`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 6;
+    /// Version 7 adds each material's and each contact's rolling and
+    /// torsional friction coefficients
+    /// ([`PhysicsMaterial::rolling_friction`],
+    /// [`PhysicsMaterial::torsional_friction`]); versions 1 to 6 read them as
+    /// zero.
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1915,6 +1927,8 @@ impl PhysicsWorld {
             w.fix(c.friction);
             w.fix(c.restitution);
             w.fix(c.cached_lambda);
+            w.fix(c.rolling_friction);
+            w.fix(c.torsional_friction);
         }
 
         w.usize(self.sdf_colliders.len());
@@ -2604,14 +2618,15 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     let mut contact_constraints = Vec::with_capacity(n);
     for _ in 0..n {
         const S: &str = "contact_constraints";
-        contact_constraints.push(ContactConstraint {
-            body_a: r.usize(S)?,
-            body_b: r.usize(S)?,
-            contact: r_contact(r)?,
-            friction: r.fix()?,
-            restitution: r.fix()?,
-            cached_lambda: r.fix()?,
-        });
+        let mut c = ContactConstraint::new(r.usize(S)?, r.usize(S)?, r_contact(r)?);
+        c.friction = r.fix()?;
+        c.restitution = r.fix()?;
+        c.cached_lambda = r.fix()?;
+        if version >= 7 {
+            c.rolling_friction = r.fix()?;
+            c.torsional_friction = r.fix()?;
+        }
+        contact_constraints.push(c);
     }
 
     let n = r.len("sdf_colliders", 193)?;
@@ -2674,7 +2689,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     }
 
     let contact_cache = r_contact_cache(r)?;
-    let material_table = r_material_table(r)?;
+    let material_table = r_material_table(r, version)?;
     let n = r.len("body_materials", 2)?;
     let mut body_materials = Vec::with_capacity(n);
     for _ in 0..n {
