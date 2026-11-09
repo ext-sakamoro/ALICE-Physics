@@ -41,7 +41,7 @@ fn drifting_world() -> PhysicsWorld {
         linear_threshold: Fix128::from_ratio(1, 2),
         angular_threshold: Fix128::from_ratio(1, 2),
         // 既定 60 では 10 step で効かない 4 step で眠る設定にする
-        frames_to_sleep: 4,
+        time_to_sleep: Fix128::from_ratio(4, 60),
     });
     let mut body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
     // 閾値 0.5 未満の微小運動 (0.25 m/s) — idle 帯だが静止していない
@@ -81,12 +81,12 @@ fn idle_frames_is_load_bearing_in_this_scene() {
         "前提: まだ眠っていない状態で比較する (眠ると別の分岐に入る)"
     );
     assert!(
-        a.islands.sleep_data[0].idle_frames > 0,
+        a.islands.sleep_data[0].idle_time > 0,
         "前提: idle_frames が溜まっている scene でないと対照実験にならない"
     );
 
     // b の idle_frames だけを 0 に戻す (sleep state は触らない)
-    b.islands.sleep_data[0].idle_frames = 0;
+    b.islands.sleep_data[0].idle_time = Fix128::from_int(0);
     // ⚠️ **本行は被覆が入っていることの独立検査** — v1 format で
     // `idle_frames` を blob に入れたので、ここは **差が出なければならない**
     // (旧 format ではこの行が `assert_eq!` で、blob が idle_frames を
@@ -119,7 +119,7 @@ fn sleep_state_survives_serialize_roundtrip() {
     let mut world = drifting_world();
     step_n(&mut world, 3);
 
-    let idle_before = world.islands.sleep_data[0].idle_frames;
+    let idle_before = world.islands.sleep_data[0].idle_time;
     let state_before = world.islands.sleep_data[0].state;
     assert!(
         idle_before > 0,
@@ -128,12 +128,12 @@ fn sleep_state_survives_serialize_roundtrip() {
 
     let blob = world.serialize_state();
     // 壊す
-    world.islands.sleep_data[0].idle_frames = 0;
+    world.islands.sleep_data[0].idle_time = Fix128::from_int(0);
     // 復元
     assert!(world.deserialize_state(&blob), "同 body 数なので復元できる");
 
     assert_eq!(
-        world.islands.sleep_data[0].idle_frames, idle_before,
+        world.islands.sleep_data[0].idle_time, idle_before,
         "idle_frames が復元されていない — blob の被覆に入っていない"
     );
     assert_eq!(

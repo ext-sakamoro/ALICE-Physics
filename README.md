@@ -465,7 +465,7 @@ drift above the sleeping ones and never touch them.
 | 100 000 | 99 % | 10.8 ms | 1.15 s |
 
 A sleeping body still costs about 30 ns per step: a check that it was not
-edited between steps (`bodies` is a public field) and its `idle_frames` count,
+edited between steps (`bodies` is a public field) and its `idle_time`,
 which the state snapshot carries.
 
 ## Minimum supported Rust version

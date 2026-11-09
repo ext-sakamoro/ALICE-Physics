@@ -199,6 +199,16 @@ pub enum WorldSnapshotError {
         /// The retention per step stored in the blob (the first one found).
         retention: Fix128,
     },
+    /// A version 1 to 6 blob holds the sleep rule and each body's idle count
+    /// as **steps** (`frames_to_sleep`, `idle_frames`). Version 7 holds them
+    /// as time, and a count becomes a time only with the step it was counted
+    /// per, which the blob does not record: read it with
+    /// [`PhysicsWorld::restore_world_legacy_damping`] and that step (the
+    /// count times the step), or it is refused.
+    LegacySleepFramesNeedsStep {
+        /// The step count before sleep stored in the blob.
+        frames_to_sleep: u32,
+    },
 }
 
 /// Whether [`PhysicsWorld::restore_world_checked`] reads a version 1 to 3
@@ -284,6 +294,7 @@ impl WorldSnapshotError {
             Self::SemanticsMismatch { .. } => "SemanticsMismatch",
             Self::LawIdMismatch { .. } => "LawIdMismatch",
             Self::LegacyDampingNeedsStep { .. } => "LegacyDampingNeedsStep",
+            Self::LegacySleepFramesNeedsStep { .. } => "LegacySleepFramesNeedsStep",
         }
     }
 
@@ -309,6 +320,7 @@ impl WorldSnapshotError {
             Self::SemanticsMismatch { .. } => 15,
             Self::LawIdMismatch { .. } => 16,
             Self::LegacyDampingNeedsStep { .. } => 17,
+            Self::LegacySleepFramesNeedsStep { .. } => 18,
         }
     }
 }
@@ -321,6 +333,10 @@ impl core::fmt::Display for WorldSnapshotError {
                 f,
                 "world snapshot of version 1 to 5 holds a damping retention per step of {}: read it with restore_world_legacy_damping and the step it was applied per",
                 retention.to_f64()
+            ),
+            Self::LegacySleepFramesNeedsStep { frames_to_sleep } => write!(
+                f,
+                "world snapshot of version 1 to 6 holds the sleep rule as a step count ({frames_to_sleep} idle steps): read it with restore_world_legacy_damping and the step it was counted per"
             ),
             Self::Unpinned => write!(
                 f,
@@ -1750,7 +1766,7 @@ impl PhysicsWorld {
     /// ([`SolverConfig::damping_rate`], [`RigidBody::linear_damping_rate`],
     /// [`RigidBody::angular_damping_rate`]) where versions 1 to 5 held
     /// retentions per step; see [`Self::restore_world_legacy_damping`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 6;
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1991,14 +2007,14 @@ impl PhysicsWorld {
 
         w.fix(self.islands.config.linear_threshold);
         w.fix(self.islands.config.angular_threshold);
-        w.u32(self.islands.config.frames_to_sleep);
+        w.fix(self.islands.config.time_to_sleep);
         w.usize(self.islands.sleep_data.len());
         for sd in &self.islands.sleep_data {
             w.u8(match sd.state {
                 SleepState::Awake => 0,
                 SleepState::Sleeping => 1,
             });
-            w.u32(sd.idle_frames);
+            w.fix(sd.idle_time);
         }
 
         w.usize(self.body_collision_radii.len());
@@ -2702,12 +2718,25 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
 
     let events = r_events(r)?;
 
-    let sleep_config = SleepConfig {
-        linear_threshold: r.fix()?,
-        angular_threshold: r.fix()?,
-        frames_to_sleep: r.u32()?,
+    let (linear_threshold, angular_threshold) = (r.fix()?, r.fix()?);
+    // version 7 holds the sleep rule and the idle counts as time; before it they
+    // were step counts, which become time only with the step they were counted per
+    let time_to_sleep = if version >= 7 {
+        r.fix()?
+    } else {
+        let frames_to_sleep = r.u32()?;
+        match legacy_step {
+            Some(step) if step > Fix128::ZERO => Fix128::from_int(i64::from(frames_to_sleep)) * step,
+            Some(_) => return Err(invalid("islands")),
+            None => return Err(WorldSnapshotError::LegacySleepFramesNeedsStep { frames_to_sleep }),
+        }
     };
-    let n = r.len("islands", 5)?;
+    let sleep_config = SleepConfig {
+        linear_threshold,
+        angular_threshold,
+        time_to_sleep,
+    };
+    let n = r.len("islands", if version >= 7 { 17 } else { 5 })?;
     let mut sleep_data = Vec::with_capacity(n);
     for _ in 0..n {
         let state = match r.u8()? {
@@ -2715,10 +2744,14 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             1 => SleepState::Sleeping,
             _ => return Err(invalid("islands")),
         };
-        sleep_data.push(SleepData {
-            state,
-            idle_frames: r.u32()?,
-        });
+        let idle_time = if version >= 7 {
+            r.fix()?
+        } else {
+            // the step is known here (the rule above returned otherwise)
+            let step = legacy_step.unwrap_or(Fix128::ZERO);
+            Fix128::from_int(i64::from(r.u32()?)) * step
+        };
+        sleep_data.push(SleepData { state, idle_time });
     }
 
     let n = r.len("body_collision_radii", 1)?;
@@ -3044,6 +3077,9 @@ mod tests {
             WorldSnapshotError::LegacyDampingNeedsStep {
                 retention: Fix128::from_ratio(99, 100),
             },
+            WorldSnapshotError::LegacySleepFramesNeedsStep {
+                time_to_sleep: Fix128::from_ratio(60, 60),
+            },
         ];
         assert_eq!(
             declared.len(),
@@ -3337,7 +3373,7 @@ mod tests {
         w.set_sleep_config(SleepConfig {
             linear_threshold: fx(1, 2),
             angular_threshold: fx(1, 2),
-            frames_to_sleep: 3,
+            time_to_sleep: Fix128::from_ratio(3, 60),
         });
 
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
