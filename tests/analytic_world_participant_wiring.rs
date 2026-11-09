@@ -107,6 +107,8 @@ fn as_version_7_payload(p1: &[u8], bodies: usize, rate: Fix128, step: Fix128) ->
         p.extend_from_slice(&fix_bytes(Fix128::from_int(i64::from(idle)) * step));
         k += 5;
     }
+    // the elastic islands' recurrence records (version 7): none, the fixture holds no spring
+    p.extend_from_slice(&0u64.to_le_bytes());
     p.extend_from_slice(&p6[k..]);
     p
 }
