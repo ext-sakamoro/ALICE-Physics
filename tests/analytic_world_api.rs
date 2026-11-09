@@ -498,35 +498,39 @@ fn remove_body_swap_removes_and_active_count_drops_by_one() {
     assert_eq!(world.active_body_count(), 0);
 }
 
-/// Oracle: with the default `SleepConfig` a body idle for `frames_to_sleep`
-/// (60) consecutive frames sleeps (`idle_frames >= 60` at the 60th frame,
-/// not the 59th). `wake_body` resets the counter, so one more idle frame
-/// leaves it awake, and `active_body_count` follows.
+/// Oracle: with the default `SleepConfig` a body idle for `time_to_sleep` (1 s) sleeps at
+/// the step where `idle + dt/2 >= time_to_sleep` (the half-step rule), that is after
+/// `ceil((time_to_sleep − dt/2) / dt)` idle steps: 64 at this file's `dt` of 1/64 s (60 at
+/// 1/60 s), and not one step earlier. `wake_body` resets the idle time, so one more idle
+/// step leaves it awake, and `active_body_count` follows.
 #[test]
 fn wake_body_after_sleep_restores_active_body_count() {
-    // the default `time_to_sleep` (1 s) at a step of 1/60 s: 60 idle steps
-    assert_eq!(
-        PhysicsWorld::new(weightless()).islands.config.time_to_sleep,
-        Fix128::ONE
-    );
-    let frames = 60u32;
+    let time_to_sleep = PhysicsWorld::new(weightless()).islands.config.time_to_sleep;
+    assert_eq!(time_to_sleep, Fix128::ONE);
+    // the steps to sleep from the rule, in f64 from the exact dyadic values (1 and 1/64)
+    let step = dt().to_f64();
+    let frames = ((time_to_sleep.to_f64() - step / 2.0) / step).ceil() as u32;
+    assert_eq!(frames, 64, "64 idle steps of 1/64 s reach the 1 s rule");
 
     let mut world = PhysicsWorld::new(weightless());
     let idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     for _ in 0..frames - 1 {
         world.step(dt());
     }
-    assert!(!world.is_sleeping(idx), "awake after 59 idle frames");
+    assert!(
+        !world.is_sleeping(idx),
+        "awake one idle step before the rule"
+    );
     assert_eq!(world.active_body_count(), 1);
     world.step(dt());
-    assert!(world.is_sleeping(idx), "asleep at the 60th idle frame");
+    assert!(world.is_sleeping(idx), "asleep at the step the rule names");
     assert_eq!(world.active_body_count(), 0);
 
     world.wake_body(idx);
     assert!(!world.is_sleeping(idx));
     assert_eq!(world.active_body_count(), 1);
     world.step(dt());
-    assert!(!world.is_sleeping(idx), "wake resets idle_frames to 0");
+    assert!(!world.is_sleeping(idx), "wake resets the idle time to 0");
     assert_eq!(world.active_body_count(), 1);
 }
 
