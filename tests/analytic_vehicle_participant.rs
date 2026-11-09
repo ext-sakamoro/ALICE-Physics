@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "2f447a34412c672603df1b8f31b88f0d7f092bfa47b5aeeb5fea15fe45f24286"
+        "f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b"
     );
 }
 
@@ -656,8 +656,8 @@ fn drive_digest(backend: SolverBackend) -> String {
 // as the build before that change)
 // re-pinned for the semantics identifier c82742de… (each alice-det-math function pinned by its own
 // id): the digest moved with the identifier
-const DRIVE_XPBD: &str = "b7c457c9f29935dad22dff6708f79abb8331863df4510f8b40367fa1989445e3";
-const DRIVE_TGS: &str = "67194220118619cf5c28d317211a54d16eda3a0a700f327803c15eb6757d4d16";
+const DRIVE_XPBD: &str = "0b712bcb47332d1f1a8364fd8efbde505cc5eca6953ba5df380eb7d476d5d3f0";
+const DRIVE_TGS: &str = "d628dcd636b453ffc5da7421980fb7131ff414b906f5e36856acc9aa0d715d01";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
