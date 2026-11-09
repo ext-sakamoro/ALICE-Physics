@@ -81,7 +81,7 @@ fn idle_frames_is_load_bearing_in_this_scene() {
         "前提: まだ眠っていない状態で比較する (眠ると別の分岐に入る)"
     );
     assert!(
-        a.islands.sleep_data[0].idle_time > 0,
+        a.islands.sleep_data[0].idle_time > Fix128::ZERO,
         "前提: idle_frames が溜まっている scene でないと対照実験にならない"
     );
 
@@ -122,7 +122,7 @@ fn sleep_state_survives_serialize_roundtrip() {
     let idle_before = world.islands.sleep_data[0].idle_time;
     let state_before = world.islands.sleep_data[0].state;
     assert!(
-        idle_before > 0,
+        idle_before > Fix128::ZERO,
         "前提: idle_frames が溜まっている状態を往復させる"
     );
 
