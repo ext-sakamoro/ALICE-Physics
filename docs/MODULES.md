@@ -65,6 +65,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `force` | force fields: wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |  | [`particle_emitter_forces`](../examples/particle_emitter_forces.rs) | step |
 | `motor` | 1D / 3D PD controllers for joint motors |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | step |
 | `sleeping` | sleep detection and union-find islands |  |  | step |
+| `axis_lock` | per-body locks of world position and rotation axes (planar bodies, rails, turntables) |  | [`axis_lock_planar`](../examples/axis_lock_planar.rs) | step |
 | `event` | begin / persist / end contact and trigger events |  | [`world_events_and_islands`](../examples/world_events_and_islands.rs) | step |
 | `interpolation` | world snapshots and quaternion blending for rendering between steps |  | [`substep_interpolation`](../examples/substep_interpolation.rs) | standalone (step 1 of 19 items) |
 | `netcode` | lockstep frame inputs, snapshots, checksums and rollback |  | [`rollback_netcode`](../examples/rollback_netcode.rs) | binding |
