@@ -7,8 +7,8 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 32 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2563 |
+| L0 | not reached by any non-test code, examples included | 31 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2564 |
 | live | reached without examples (crate-internal roots or a binding) | 725 |
 | | **total** | **3320** |
 
@@ -19,11 +19,10 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (30)
+### L0 here but not in the baseline (29)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
-- `src/buoyancy_zone.rs::BuoyancyZone::try_force_on`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
@@ -60,9 +59,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (32)
+## L0 — unreached (31)
 
-- `src/buoyancy_zone.rs::BuoyancyZone::try_force_on`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
@@ -110,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2563)
+## L1 — example-only (2564)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -128,7 +126,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/box_collider.rs`: `OrientedBox::axis_aligned`, `OrientedBox::corner`, `OrientedBox::corners`, `OrientedBox::surface_area`
 - `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgeSpan::length_mm`, `BridgeSpan::z_delta_mm`, `BridgingReport`, `BridgingReport::has_unsafe`, `BridgingReport::unsafe_checks`, `analyze_bridges`, `check_span`
 - `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `SnapThroughError`, `analyze_column`, `critical_stress_mpa`, `plate_buckling_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `snap_through_load_n`, `transition_slenderness`, `weak_axis_second_moment_mm4`
-- `src/buoyancy_zone.rs`: `BUOYANCY_ZONE_OBS_BODIES`, `BuoyancyZone::force_on`, `BuoyancyZone::submerged_fraction`, `BuoyancyZone::water_pool`, `BuoyancyZoneParticipant::bodies_in_fluid`, `BuoyancyZoneParticipant::zone`, `ZoneShape::depth_below_surface`, `ZoneShape::signed_depth_below_surface`
+- `src/buoyancy_zone.rs`: `BUOYANCY_ZONE_OBS_BODIES`, `BuoyancyZone::force_on`, `BuoyancyZone::submerged_fraction`, `BuoyancyZone::try_force_on`, `BuoyancyZone::water_pool`, `BuoyancyZoneParticipant::bodies_in_fluid`, `BuoyancyZoneParticipant::zone`, `ZoneShape::depth_below_surface`, `ZoneShape::signed_depth_below_surface`
 - `src/bvh.rs`: `BvhStats`, `LinearBvh::refit_leaves`, `LinearBvh::stats`
 - `src/ccd.rs`: `CcdConfig`, `PhysicsWorld::time_of_impact`, `aabb_plane_toi`, `adaptive_toi_substeps`, `capsule_plane_toi`, `conservative_advancement`, `needs_ccd`, `speculative_contact`, `sphere_capsule_toi`, `sphere_plane_toi`, `swept_aabb`
 - `src/cfd_solver.rs`: `AdvectionScheme`, `CfdSolver`, `CfdSolver::MAX_DT_CAP`, `CfdSolver::compute_max_dt`, `CfdSolver::new`, `CfdSolver::step`, `CfdSolver::step_adaptive`, `CfdSolver::step_flip`, `CfdSolver::step_flip_with`, `CfdSolver::step_multigrid`, `CfdSolver::step_rans`, `CfdSolver::step_with_options`, `CfdSolver::step_with_pressure_solver`, `LevelSetReinit`, `PressureSolver`, `ProjectionReport`, `RansReport`, `RansState`, `RansState::cell_dims`, `RansState::eddy_viscosity`, `RansState::epsilon`, `RansState::k`, `RansState::model`, `RansState::new`, `RansState::prescribed`, `RansState::set`, `RansState::uniform`, `StepError`, `StepOptions`, `StepOptions::new`, `StepOptions::pressure`, `StepOptions::wall_model`, `StepOptions::with_level_set_reinit`, `StepOptions::with_wall_model`, `StepReport`, `TurbulenceModel`, `TurbulenceSummary`, `WallModel`, `WallModel::log_law`, `WallShearSummary`
