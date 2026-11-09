@@ -682,7 +682,7 @@ fn a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness() {
     let mut sum = 0.0;
     for _ in 0..4 * per {
         let loads = w
-            .foundation_loads(&anchors, fx(KAPPA))
+            .foundation_loads(&anchors, fx(KAPPA), Fix128::ZERO)
             .expect("one anchor a particle");
         w.step_with_loads(&loads).expect("the step succeeds");
         sum += centre_of_mass(&w)[1] - c0[1];
@@ -718,7 +718,7 @@ fn anchors_at_the_hanging_equilibrium_hold_the_body_at_rest() {
     let anchors: Vec<[Fix128; 2]> = rest.iter().map(|x| [x[0], x[1] + lift]).collect();
     for _ in 0..400 {
         let loads = w
-            .foundation_loads(&anchors, fx(KAPPA))
+            .foundation_loads(&anchors, fx(KAPPA), Fix128::ZERO)
             .expect("one anchor a particle");
         w.step_with_loads(&loads).expect("the step succeeds");
     }
@@ -739,9 +739,49 @@ fn foundation_anchors_must_match_the_particles() {
     let mut anchors = rest_of(&w);
     anchors.pop();
     assert_eq!(
-        w.foundation_loads(&anchors, fx(KAPPA)),
+        w.foundation_loads(&anchors, fx(KAPPA), Fix128::ZERO),
         Err(alice_physics_core::mpm2d::Mpm2dError::Invalid(
             "foundation: one anchor a particle"
         ))
     );
+}
+
+/// oracle: a damped foundation. With a dashpot `c` per volume beside the spring `κ`, a body
+/// displaced as a whole decays as the damped oscillator `ρ ü + c u̇ + κ u = 0`: successive
+/// peaks fall by the logarithmic decrement `δ = 2π ζ / √(1 − ζ²)`, `ζ = c / (2 √(κ ρ))`
+#[test]
+fn a_damped_foundation_decays_by_the_logarithmic_decrement() {
+    let mut w = world(0.0, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let rest = rest_of(&w);
+    let rho = material().density.to_f64();
+    let zeta = 0.1;
+    let c = 2.0 * zeta * (KAPPA * rho).sqrt();
+    // anchors 1 cm below: the body starts 1 cm above its equilibrium
+    let anchors: Vec<[Fix128; 2]> = rest.iter().map(|x| [x[0], x[1] - fx(0.01)]).collect();
+    let c0 = centre_of_mass(&w)[1] - 0.01;
+    let mut peaks = Vec::new();
+    let (mut prev2, mut prev) = (f64::NAN, f64::NAN);
+    let period = 2.0 * std::f64::consts::PI / (KAPPA / rho).sqrt();
+    for _ in 0..(3.5 * period / dt()) as usize {
+        let loads = w
+            .foundation_loads(&anchors, fx(KAPPA), fx(c))
+            .expect("one anchor a particle");
+        w.step_with_loads(&loads).expect("the step succeeds");
+        let u = centre_of_mass(&w)[1] - c0;
+        if prev > prev2 && prev > u && prev > 0.0 {
+            peaks.push(prev);
+        }
+        prev2 = prev;
+        prev = u;
+    }
+    assert!(peaks.len() >= 2, "peaks {peaks:?}");
+    let want = 2.0 * std::f64::consts::PI * zeta / (1.0 - zeta * zeta).sqrt();
+    for p in peaks.windows(2) {
+        let got = (p[0] / p[1]).ln();
+        assert!(
+            (got - want).abs() < 0.03 * want,
+            "decrement {got} vs {want}, peaks {peaks:?}"
+        );
+    }
 }

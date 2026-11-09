@@ -14,7 +14,8 @@
 //!   MLS-MPM. Particle to grid: `m_i = Σ_p w_ip m_p`, `(m v)_i = Σ_p w_ip (m_p v_p + Δt f_p + A_p
 //!   (x_i − x_p))` (`f_p` the external force on the particle, [`Mpm2d::step_with_loads`], 0 in
 //!   [`Mpm2d::step`]). An elastic foundation (Winkler backing, [`Mpm2d::foundation_loads`]):
-//!   `f_p = κ A⁰_p (a_p − x_p)`, `κ` N/m⁴, anchor `a_p`; under a uniform load `ρ g` the body
+//!   `f_p = A⁰_p (κ (a_p − x_p) − c v_p)`, `κ` N/m⁴, `c` N·s/m⁴, anchor `a_p`, damping ratio of
+//!   the whole body `ζ = c / (2 √(κ ρ))`; under a uniform load `ρ g` the body
 //!   settles by `u = ρ g / κ` as a whole, and anchors `X_p − ρ g / κ` hold it at `X_p` with `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
 //!   area, `τ = P Fᵀ` the Kirchhoff stress). Grid: `v_i = (m v)_i / m_i + Δt g`, then the
 //!   ground. Grid to particle: `v_p = Σ_i w_ip v_i`, `C_p = (4 / Δx²) Σ_i w_ip v_i (x_i −
@@ -51,12 +52,12 @@
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles::a_damped_foundation_decays_by_the_logarithmic_decrement`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused; a body on a foundation under gravity settles by `ρ g / κ` on average over four periods of `√(κ / ρ)` within 2 %, unstrained; anchors at the hanging equilibrium hold it within 1e-9 m; anchors not one a particle are refused).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused; a body on a foundation under gravity settles by `ρ g / κ` on average over four periods of `√(κ / ρ)` within 2 %, unstrained; anchors at the hanging equilibrium hold it within 1e-9 m; anchors not one a particle are refused; with damping, the free decay's logarithmic decrement is `2π ζ / √(1 − ζ²)` within 3 %).
 //! - **Tiers.** L0 only.
 //!
 
@@ -387,19 +388,23 @@ impl Mpm2d {
     }
 
     /// The forces of an elastic foundation (a Winkler backing) on every particle: the backing
-    /// pulls each particle toward its anchor by `κ A⁰ (a − x)` (N per metre of depth), `κ` the
-    /// foundation's stiffness per volume, N/m⁴, `A⁰` the particle's rest area. Pass them to
+    /// pulls each particle toward its anchor and resists its motion, `A⁰ (κ (a − x) − c v)` (N per
+    /// metre of depth), `κ` the foundation's stiffness per volume, N/m⁴, `c` its damping per
+    /// volume, N·s/m⁴ (a viscous layer; 0 for none), `A⁰` the particle's rest area. The damping
+    /// ratio of the body moving as a whole on it is `ζ = c / (2 √(κ ρ))`. Pass them to
     /// [`Self::step_with_loads`] (with any other loads). Under a uniform load `ρ g` the body
     /// settles by `ρ g / κ` as a whole; anchors set `ρ g / κ` against gravity from where the
     /// body rests carry its weight and hold it there.
     ///
     /// # Errors
     ///
-    /// [`Mpm2dError::Invalid`] when there is not one anchor a particle, or `κ` is negative.
+    /// [`Mpm2dError::Invalid`] when there is not one anchor a particle, or `κ` or `c` is
+    /// negative.
     pub fn foundation_loads(
         &self,
         anchors: &[V2],
         stiffness: Fix128,
+        damping: Fix128,
     ) -> Result<Vec<(usize, V2)>, Mpm2dError> {
         if anchors.len() != self.particles.len() {
             return Err(Mpm2dError::Invalid("foundation: one anchor a particle"));
@@ -407,14 +412,23 @@ impl Mpm2d {
         if stiffness < Fix128::ZERO {
             return Err(Mpm2dError::Invalid("foundation: stiffness"));
         }
+        if damping < Fix128::ZERO {
+            return Err(Mpm2dError::Invalid("foundation: damping"));
+        }
         Ok(self
             .particles
             .iter()
             .zip(anchors)
             .enumerate()
             .map(|(k, (p, a))| {
-                let s = stiffness * p.area0;
-                (k, [s * (a[0] - p.x[0]), s * (a[1] - p.x[1])])
+                let (s, d) = (stiffness * p.area0, damping * p.area0);
+                (
+                    k,
+                    [
+                        s * (a[0] - p.x[0]) - d * p.v[0],
+                        s * (a[1] - p.x[1]) - d * p.v[1],
+                    ],
+                )
             })
             .collect())
     }
