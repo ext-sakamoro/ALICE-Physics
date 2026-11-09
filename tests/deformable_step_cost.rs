@@ -7,10 +7,6 @@
 //! the cost per constraint does not depend on the shape, and the letters' shape data is not
 //! in this repository.
 #![cfg(feature = "std")]
-#![allow(
-    clippy::disallowed_methods,
-    reason = "timing harness: std::time::Instant measures the wall-clock cost of the step; nothing it reads enters a result"
-)]
 
 use alice_physics_core::deformable::{DeformableBody, DeformableConfig, Material, NeoHookeanLaw};
 use alice_physics_core::math::{Fix128, Vec3Fix};
@@ -21,6 +17,10 @@ use alice_physics_core::sdf_fem_mesh;
 struct BlockSdf([f32; 3]);
 
 impl SdfField for BlockSdf {
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "test input: the block's signed distance in f32 builds the mesh, the solver under test never reads it"
+    )]
     fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
         let q = [
             x.abs() - self.0[0],
@@ -109,11 +109,19 @@ fn what_a_step_costs_on_a_logo_sized_block() {
     let (n, tets) = (body.particle_count(), body.tetrahedra.len());
     let dt = Fix128::from_ratio(1, 60);
     body.step(dt); // warm up
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock start of the measured run, printed, never asserted"
+    )]
     let t = std::time::Instant::now();
     let steps = 20;
     for _ in 0..steps {
         body.step(dt);
     }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock cost of the measured run, printed, never asserted"
+    )]
     let per_step = t.elapsed() / steps;
     println!(
         "{n} particles, {tets} tets: {per_step:?} a step (iterations {}, substeps {})",
@@ -136,11 +144,19 @@ fn what_a_converged_neo_hookean_step_costs_on_a_logo_sized_block() {
     let (n, tets) = (body.particle_count(), body.tetrahedra.len());
     let dt = Fix128::from_ratio(1, 60);
     body.step(dt); // warm up
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock start of the measured run, printed, never asserted"
+    )]
     let t = std::time::Instant::now();
     let steps = 5;
     for _ in 0..steps {
         body.step(dt);
     }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock cost of the measured run, printed, never asserted"
+    )]
     let per_step = t.elapsed() / steps;
     println!(
         "{n} particles, {tets} tets, Neo-Hookean: {per_step:?} a step (iterations {}, substeps {})",
