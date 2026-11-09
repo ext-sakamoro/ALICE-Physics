@@ -104,6 +104,16 @@ pub fn check_bridge<B: GpuSolverBridge + ?Sized>(
 ///   don't implement contact solve stay compilable but fail
 ///   fast when a caller tries to route contact solve through
 ///   them.
+///
+/// # What stays on the CPU
+///
+/// The velocity pass (restitution, sliding friction, rolling resistance and
+/// torsional friction, read from each contact's `friction`, `restitution`,
+/// `rolling_friction` and `torsional_friction`) runs on the CPU in the
+/// bridged substep as in `step`; the contact solve returns only
+/// `cached_lambda` and positions. A backend that takes over the velocity pass
+/// or friction must carry those coefficients or refuse the world; it must not
+/// simulate without them.
 pub trait GpuSolverBridge {
     /// The [`crate::PHYSICS_SEMANTICS_ID`] this backend computes under: a
     /// backend reproduces the CPU solver's bits for one build of this crate,

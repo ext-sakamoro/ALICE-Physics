@@ -15,7 +15,11 @@
 //! - on an incline with `c > tan θ`, released at rest: it stays at rest;
 //! - `c = 0` is the rolling of `analytic_contact_friction_spin.rs`
 //!   (`a = (5/7) g sin θ`, a level ball keeps its speed);
-//! - the kinetic energy never grows.
+//! - the kinetic energy never grows;
+//! - torsional friction `μ_t` (metres): a ball spinning about the normal at
+//!   `ω₀` with no rolling feels the torque `μ_t m g`, so
+//!   `ω(t) = ω₀ − μ_t m g t / I` and it stops at `t_s = I ω₀ / (μ_t m g)`,
+//!   then stays stopped; its centre does not move.
 //!
 //! The tolerances are the Richardson bound `2 |x(h) − x(2h)|` of each
 //! observable from the default and half the substeps (the substep is first
@@ -265,6 +269,66 @@ fn a_ball_on_an_incline_flatter_than_c_stays_at_rest() {
         assert!(
             d.abs() < 1e-6,
             "{path:?}: crept {d} m down a slope flatter than c"
+        );
+    }
+}
+
+/// a ball at rest on level ground spinning about the normal at `ω₀`
+fn spinning(mu_t: f64, w0: f64, substeps: usize) -> (PhysicsWorld, usize) {
+    let (mut w, ball) = level(0.0, 0.0, substeps);
+    w.bodies[ball].angular_velocity = v3(0.0, w0, 0.0);
+    let id = w
+        .material_table
+        .register(PhysicsMaterial::new(0, fx(MU), Fix128::ZERO).with_torsional_friction(fx(mu_t)));
+    w.set_body_material(0, id);
+    w.set_body_material(ball, id);
+    (w, ball)
+}
+
+fn spin_run(mu_t: f64, w0: f64, substeps: usize, frames: usize) -> f64 {
+    let (mut w, ball) = spinning(mu_t, w0, substeps);
+    for _ in 0..frames {
+        w.step(fx(DT));
+    }
+    w.bodies[ball].angular_velocity.y.to_f64()
+}
+
+/// oracle: `μ_t = 0.01 m`, `ω₀ = 6`, `I = 0.1`, `m g = 10`: at `t = 2 s`,
+/// `ω = ω₀ − μ_t m g t / I = 4`; it stops at `t_s = I ω₀ / (μ_t m g) = 6 s`
+/// and is still stopped at `t = 8 s`; the centre stays where it was.
+#[test]
+fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t_m_g() {
+    let (mu_t, w0) = (0.01, 6.0);
+    let inertia = 1.0 / INV_I;
+    let want_2 = w0 - mu_t * g() * 2.0 / inertia;
+    let n = PhysicsConfig::default().substeps;
+    let bound = 2.0 * (spin_run(mu_t, w0, n, 120) - spin_run(mu_t, w0, n / 2, 120)).abs() + FLOOR;
+    for path in paths() {
+        let (mut w, ball) = spinning(mu_t, w0, n);
+        let start = w.bodies[ball].position;
+        for frame in 1..=480 {
+            advance(&mut w, path);
+            let wy = w.bodies[ball].angular_velocity.y.to_f64();
+            if frame == 120 {
+                println!("{path:?} t=2: ω {wy:.6} ({want_2:.6}, bound {bound:.2e})");
+                assert!(
+                    (wy - want_2).abs() <= bound,
+                    "{path:?}: ω(2) {wy}, closed form {want_2}"
+                );
+            }
+            if frame >= 380 {
+                assert!(
+                    wy.abs() <= FLOOR,
+                    "{path:?} frame {frame}: still spinning at {wy} after t_s"
+                );
+            }
+        }
+        let d = w.bodies[ball].position - start;
+        assert!(
+            d.x.to_f64().abs() <= FLOOR && d.z.to_f64().abs() <= FLOOR,
+            "{path:?}: spin moved the centre by ({}, {})",
+            d.x.to_f64(),
+            d.z.to_f64()
         );
     }
 }
