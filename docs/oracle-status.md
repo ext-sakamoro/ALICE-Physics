@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5953 |
+| 🟢 Not ignored (run by CI) | 6045 |
 | 🔴 Red by design | 69 |
-| ⏱ Gated (runtime / diagnostic / manual) | 28 |
+| ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6048** |
+| **Total** | **6145** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -21,6 +21,10 @@ Oracles kept red on purpose: the implementation is not there yet, and a companio
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
+- `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
+- `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
@@ -50,9 +54,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
 - `max_queries_bounds_what_one_dispatch_covers` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-009: GpuDispatchConfig::max_queries is documented as \"Maximum queries per dispatch\"…
-- `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
-- `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
-- `non_unit_target_quaternion_must_not_scale_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-005: a non-unit target or current quaternion is not normalised; scaling the target qu…
 - `optimize_does_not_restore_material_carved_by_disjoint_craters` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-009: optimize() is documented as removing shapes fully contained by newer ones, but d…
 - `origin_y_offsets_the_surface` (audit_heightfield.rs) — known defect: AUD-A-S4W3-006: origin.y is never read (sample_height / signed_distance / aabb use the stored he…
 - `out_of_range_quotient_keeps_its_sign_and_magnitude` (audit_math.rs) — known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 …
@@ -80,7 +81,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `stress_map_is_covariant_under_uniform_scaling_of_the_scene` (audit_heatmap.rs) — known defect: AUD-A-S5W3-006: the stress kernel radius is a hard-coded 2.0 world units (not in HeatmapConfig),…
 - `sub_unit_objects_keep_the_broad_phase_selective` (audit_bvh.rs) — known defect: AUD-A-S3W2-013: node boxes are quantised to whole world units (floor/ceil to i32), so a scene wh…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
-- `tgs_isotropic_spin_turns_by_omega_t` (indep_free_rotation_closed_forms.rs) — src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
 - `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
@@ -108,17 +108,21 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (4)
+## ⚠️ Known defects without an id (8)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
+- `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
+- `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
+- `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (28)
+## ⏱ Gated (31)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -134,6 +138,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `cavity_size_sweep` (mesh_quality.rs) — diagnostic: the table behind a_cavity_narrower_than_a_cell_leaves_no_trace
 - `cavity_trace_by_size` (mesh_quality.rs) — diagnostic: the evidence table for what each cavity size leaves behind
 - `channel_error_is_second_order_in_the_cell_size` (analytic_cfd_flow_bc.rs) — runtime only: 43k steps across three resolutions, release-only; the accuracy it asks for is reached, see the d…
+- `cost_and_error_of_xpbd_and_newmark_on_the_same_columns` (analytic_deformable_integrators.rs) — a measurement, not a check
 - `duct_profile_develops_toward_the_parabola` (analytic_cfd_flow_bc.rs) — runtime only: 4096 steps on 24x16 cells with 200 GS sweeps, release-only; the accuracy it asks for is reached,…
 - `finest_level_residual_floor_by_preconditioner` (analytic_fem_convergence.rs) — 4 solves at 12,800 tets (about 45 s in release, measured 2026-10-03); the stopping-rule diagnostic
 - `gs_control_rates` (analytic_multigrid.rs) — diagnostic: GS control rates for oracle 2
@@ -150,9 +155,11 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
+- `what_a_converged_neo_hookean_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
+- `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5953)
+## 🟢 Not ignored (6045)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -178,6 +185,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_math.rs` | 32 |
 | `audit_raycast.rs` | 32 |
 | `analytic_world_character.rs` | 31 |
+| `audit_motor.rs` | 31 |
 | `audit_joint_extra.rs` | 30 |
 | `analytic_world_shape_query.rs` | 29 |
 | `audit_cfd_solver_rans.rs` | 29 |
@@ -187,7 +195,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_static_collider.rs` | 27 |
 | `analytic_world_step_ccd.rs` | 27 |
 | `audit_force.rs` | 27 |
-| `audit_motor.rs` | 27 |
 | `engineering_oracles_misc.rs` | 27 |
 | `analytic_euler_fv.rs` | 26 |
 | `analytic_maxwell_wiring.rs` | 26 |
@@ -339,6 +346,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_beam_stress_wiring.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
+| `analytic_dynamic_fem_corotational.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
 | `analytic_filter_wiring.rs` | 13 |
 | `analytic_gyroscopic.rs` | 13 |
@@ -417,6 +425,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_contact_normals.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
+| `analytic_sleep_spring_creep.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
 | `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
@@ -466,7 +475,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_print_orientation_wiring.rs` | 8 |
 | `analytic_rotor.rs` | 8 |
 | `analytic_sdf_generation_wake.rs` | 8 |
-| `analytic_sleep_spring_creep.rs` | 8 |
 | `analytic_step_multigrid.rs` | 8 |
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
@@ -484,6 +492,7 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_conformity.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
+| `analytic_deformable_static_sag.rs` | 7 |
 | `analytic_electromagnetic_wiring.rs` | 7 |
 | `analytic_frame_input_wire.rs` | 7 |
 | `analytic_hyperelastic_degenerate.rs` | 7 |
@@ -510,6 +519,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
 | `analytic_metric_wiring.rs` | 6 |
+| `analytic_query_box_range.rs` | 6 |
 | `analytic_sdf_distance_query.rs` | 6 |
 | `analytic_sleep_by_time.rs` | 6 |
 | `analytic_support_volume_wiring.rs` | 6 |
@@ -524,10 +534,12 @@ Per-file counts (the test names are in `tests/`):
 | `cloth_state_digest.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
+| `indep_free_rotation_closed_forms.rs` | 6 |
 | `indep_medium_conservation.rs` | 6 |
 | `p3_quadrature_fix128.rs` | 6 |
 | `wm01_overflow_is_not_silent.rs` | 6 |
 | `wm08_checksum_coverage.rs` | 6 |
+| `analytic_bounding_radius_range.rs` | 5 |
 | `analytic_cfd_wall_bc.rs` | 5 |
 | `analytic_cloth_crossings_wiring.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
@@ -549,7 +561,6 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
-| `indep_free_rotation_closed_forms.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
@@ -587,6 +598,7 @@ Per-file counts (the test names are in `tests/`):
 | `world_participant_errors.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
 | `world_snapshot_xv_88cf6f85.rs` | 4 |
+| `world_snapshot_xv_e90000da.rs` | 4 |
 | `analytic_axial_support.rs` | 3 |
 | `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
@@ -621,7 +633,6 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
-| `world_snapshot_xv_e90000da.rs` | 3 |
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
@@ -645,17 +656,21 @@ Per-file counts (the test names are in `tests/`):
 | `vehicle_update_bits.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |
+| `analytic_add_force_is_immediate.rs` | 1 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
+| `analytic_hypot3_max_tie.rs` | 1 |
 | `analytic_pd_step_response.rs` | 1 |
 | `analytic_rope_catenary.rs` | 1 |
+| `analytic_sdf_fem_mesh_flat_face.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
 | `c_world_fault_codes.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
 | `law_check_cast.rs` | 1 |
+| `ray_query_previous_bits.rs` | 1 |
 | `tgs_joints_static_colliders.rs` | 1 |
 
 ---

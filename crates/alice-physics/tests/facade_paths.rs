@@ -297,6 +297,8 @@ use alice_physics::deformable as _;
 use alice_physics::deformable::DeformableBody as _;
 use alice_physics::deformable::DeformableConfig as _;
 use alice_physics::deformable::Material as _;
+use alice_physics::deformable::MaterialError as _;
+use alice_physics::deformable::NeoHookeanLaw as _;
 use alice_physics::det_math as _;
 use alice_physics::det_math::acos as _;
 use alice_physics::det_math::acos64 as _;
@@ -319,6 +321,7 @@ use alice_physics::det_math::sqrt64 as _;
 use alice_physics::dynamic_bvh as _;
 use alice_physics::dynamic_bvh::DynamicAabbTree as _;
 use alice_physics::dynamic_fem as _;
+use alice_physics::dynamic_fem::CorotationalTransientSolver as _;
 use alice_physics::dynamic_fem::DynamicsConfig as _;
 use alice_physics::dynamic_fem::MassLumping as _;
 use alice_physics::dynamic_fem::TransientSolver as _;
@@ -732,6 +735,7 @@ use alice_physics::molecular_dynamics::MD_PARTICIPANT_KIND as _;
 use alice_physics::motor as _;
 use alice_physics::motor::apply_motors as _;
 use alice_physics::motor::JointMotor as _;
+use alice_physics::motor::MotorError as _;
 use alice_physics::motor::MotorMode as _;
 use alice_physics::motor::PdController as _;
 use alice_physics::motor::PdController3D as _;
@@ -1875,7 +1879,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1856 paths, checked at compile time
+    // 1861 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

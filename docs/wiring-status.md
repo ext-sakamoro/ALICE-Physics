@@ -4,19 +4,9 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-❌ **NEW violations detected** — Must be resolved or added to baseline
+🟡 **5 baseline items** — Permitted violations, ratchet in place
 
 ---
-
-## 🔴 NEW: Unwired Items (5)
-
-```
-unwired: src/motor.rs::max_force: max_force: production code から 1 度も参照されていない (test / doc / use のみ)
-unwired: src/motor.rs::set_max_force: set_max_force: production code から 1 度も参照されていない (test / doc / use のみ)
-unwired: src/motor.rs::max_torque: max_torque: production code から 1 度も参照されていない (test / doc / use のみ)
-unwired: src/motor.rs::set_max_torque: set_max_torque: production code から 1 度も参照されていない (test / doc / use のみ)
-unwired: src/motor.rs::target_rotation: target_rotation: production code から 1 度も参照されていない (test / doc / use のみ)
-```
 
 ## 📋 Baseline (5 permitted)
 
