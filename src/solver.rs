@@ -3641,7 +3641,10 @@ impl PhysicsWorld {
     /// joint solve and contacts may have moved it although it was not integrated): a member of
     /// an island frozen on a recurrence ends the step where it started (position, rotation,
     /// velocities), since the island's recorded state is what it holds; any other sleeper the
-    /// step moved wakes its island and keeps the move.
+    /// step moved (position or rotation) wakes its island and keeps the move. A sleeper the step did not move ends it at rest: its
+    /// velocities are derived from its unmoved pose ([`Self::update_velocities`]), so the
+    /// first step it sleeps through drops the velocity it fell asleep with (below the
+    /// thresholds), as it drops an impulse given between steps without [`Self::wake_body`].
     fn restore_sleepers(&mut self, frame: &SleepFrame) {
         let n = self.bodies.len().min(frame.start.len());
         let mut held = vec![false; n];
