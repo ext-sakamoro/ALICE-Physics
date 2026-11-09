@@ -101,6 +101,9 @@
 //! and two rules, mixed steps, the pinned four-sphere scene), `tests/sleep_skip.rs`,
 //! `tests/wm08_state_coverage.rs` (idle time in the rollback blob).
 //!
+//! **Tiers.** L0 only: the rule is the same at every precision tier of the bodies it
+//! freezes.
+//!
 //! # Islands
 //!
 //! Connected components of bodies (via joints/contacts) are grouped into islands.
