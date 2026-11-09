@@ -1815,8 +1815,160 @@ mod tests {
         rank: usize,
         secs: f64,
         fold: Fold,
-        /// Peak resident set, bytes, from `/usr/bin/time -l` when asked for.
+        /// Peak resident set, bytes, from `/usr/bin/time` when asked for and
+        /// when this host has one ([`RssProbe`]).
         peak_rss: Option<u64>,
+    }
+
+    /// How a child's peak resident set is read: the system `time` wrapper and its
+    /// report differ by OS (BSD `time -l` prints bytes, GNU `time -v` prints
+    /// kibibytes), and a host without `/usr/bin/time` has none.
+    #[cfg(feature = "std")]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum RssProbe {
+        /// macOS / BSD: `/usr/bin/time -l`, `<bytes>  maximum resident set size`.
+        Bsd,
+        /// Linux / GNU: `/usr/bin/time -v`, `Maximum resident set size (kbytes): <k>`.
+        Gnu,
+    }
+
+    #[cfg(feature = "std")]
+    impl RssProbe {
+        /// The probe of this host; `None` when it has no `/usr/bin/time` or is
+        /// neither a BSD nor a Linux.
+        fn here() -> Option<Self> {
+            if !std::path::Path::new("/usr/bin/time").exists() {
+                return None;
+            }
+            if cfg!(target_os = "linux") {
+                Some(Self::Gnu)
+            } else if cfg!(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            )) {
+                Some(Self::Bsd)
+            } else {
+                None
+            }
+        }
+
+        /// The flag that makes `time` report the resident set.
+        fn flag(self) -> &'static str {
+            match self {
+                Self::Bsd => "-l",
+                Self::Gnu => "-v",
+            }
+        }
+
+        /// The peak resident set in bytes from a child's stderr.
+        fn parse(self, stderr: &str) -> Option<u64> {
+            stderr.lines().find_map(|l| {
+                let l = l.trim();
+                match self {
+                    Self::Bsd => l
+                        .strip_suffix("maximum resident set size")
+                        .and_then(|v| v.trim().parse().ok()),
+                    Self::Gnu => l
+                        .strip_prefix("Maximum resident set size (kbytes):")
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                        .and_then(|k| k.checked_mul(1024)),
+                }
+            })
+        }
+    }
+
+    /// Wait for every child's announcement (`rank u16, port u16`) on `broker`,
+    /// until `deadline`. A child that exits before it announces itself, or a
+    /// deadline that passes first, is an `Err` naming the rank (with the stderr of
+    /// the one that exited) instead of an accept that waits forever; the children
+    /// are then killed and reaped. `Ok` holds each rank's stream and port.
+    #[cfg(feature = "std")]
+    fn broker_announcements(
+        broker: &std::net::TcpListener,
+        kids: &mut [std::process::Child],
+        deadline: std::time::Duration,
+    ) -> Result<(Vec<std::net::TcpStream>, Vec<u16>), String> {
+        use std::io::Read;
+        let ranks = kids.len();
+        let fail = |kids: &mut [std::process::Child], why: String| {
+            for kid in kids.iter_mut() {
+                let _ = kid.kill();
+                let _ = kid.wait();
+            }
+            Err(why)
+        };
+        broker
+            .set_nonblocking(true)
+            .map_err(|e| format!("broker: non-blocking accept: {e}"))?;
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: the deadline of the broker's accept loop, never part of a result"
+        )]
+        let started = std::time::Instant::now();
+        let mut links: Vec<Option<std::net::TcpStream>> = (0..ranks).map(|_| None).collect();
+        let mut ports = vec![0u16; ranks];
+        let mut announced = 0;
+        while announced < ranks {
+            match broker.accept() {
+                Ok((mut link, _)) => {
+                    let read = link
+                        .set_nonblocking(false)
+                        .and_then(|()| link.set_read_timeout(Some(deadline)));
+                    let mut hello = [0u8; 4];
+                    if let Err(e) = read.and_then(|()| link.read_exact(&mut hello)) {
+                        return fail(kids, format!("broker: a rank's announcement: {e}"));
+                    }
+                    let rank = usize::from(u16::from_le_bytes([hello[0], hello[1]]));
+                    if rank >= ranks || links[rank].is_some() {
+                        return fail(
+                            kids,
+                            format!("broker: announcement of rank {rank} of {ranks}"),
+                        );
+                    }
+                    ports[rank] = u16::from_le_bytes([hello[2], hello[3]]);
+                    links[rank] = Some(link);
+                    announced += 1;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    for (rank, kid) in kids.iter_mut().enumerate() {
+                        if links[rank].is_some() {
+                            continue;
+                        }
+                        if let Ok(Some(status)) = kid.try_wait() {
+                            let mut stderr = String::new();
+                            if let Some(mut pipe) = kid.stderr.take() {
+                                let _ = pipe.read_to_string(&mut stderr);
+                            }
+                            return fail(
+                                kids,
+                                format!(
+                                    "rank {rank} exited ({status}) before it reached the broker:\n{stderr}"
+                                ),
+                            );
+                        }
+                    }
+                    #[allow(
+                        clippy::disallowed_methods,
+                        reason = "timing harness: the deadline of the broker's accept loop, never part of a result"
+                    )]
+                    let waited = started.elapsed();
+                    if waited >= deadline {
+                        return fail(
+                            kids,
+                            format!(
+                                "{} of {ranks} ranks reached the broker within {deadline:?}",
+                                announced
+                            ),
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(e) => return fail(kids, format!("broker: accept: {e}")),
+            }
+        }
+        Ok((links.into_iter().flatten().collect(), ports))
     }
 
     /// Solve `n³` across `ranks` re-executed processes of this test binary and
@@ -1831,18 +1983,27 @@ mod tests {
         timeout_secs: u64,
         measure_rss: bool,
     ) -> Vec<RankReport> {
-        use std::io::{Read, Write};
+        use std::io::Write;
         use std::net::TcpListener;
         use std::process::{Command, Stdio};
 
         let broker = TcpListener::bind(("127.0.0.1", 0)).expect("bind the broker");
         let broker_port = broker.local_addr().expect("address").port();
         let exe = std::env::current_exe().expect("path of this test binary");
-        let kids: Vec<_> = (0..ranks)
+        let probe = if measure_rss {
+            let probe = RssProbe::here();
+            if probe.is_none() {
+                eprintln!("peak RSS: not measured (this host has no /usr/bin/time)");
+            }
+            probe
+        } else {
+            None
+        };
+        let mut kids: Vec<_> = (0..ranks)
             .map(|rank| {
-                let mut cmd = if measure_rss {
+                let mut cmd = if let Some(probe) = probe {
                     let mut c = Command::new("/usr/bin/time");
-                    c.arg("-l").arg(&exe);
+                    c.arg(probe.flag()).arg(&exe);
                     c
                 } else {
                     Command::new(&exe)
@@ -1863,18 +2024,14 @@ mod tests {
             })
             .collect();
 
-        let mut brokered: Vec<Option<std::net::TcpStream>> = (0..ranks).map(|_| None).collect();
-        let mut ports = vec![0u16; ranks];
-        for _ in 0..ranks {
-            let (mut link, _) = broker.accept().expect("a rank's announcement");
-            let mut hello = [0u8; 4];
-            link.read_exact(&mut hello).expect("announcement");
-            let rank = usize::from(u16::from_le_bytes([hello[0], hello[1]]));
-            ports[rank] = u16::from_le_bytes([hello[2], hello[3]]);
-            brokered[rank] = Some(link);
-        }
+        let (mut brokered, ports) = broker_announcements(
+            &broker,
+            &mut kids,
+            std::time::Duration::from_secs(timeout_secs),
+        )
+        .unwrap_or_else(|why| panic!("{why}"));
         let table: Vec<u8> = ports.iter().flat_map(|p| p.to_le_bytes()).collect();
-        for link in brokered.iter_mut().flatten() {
+        for link in &mut brokered {
             link.write_all(&table).expect("hand a rank the port table");
         }
 
@@ -1903,11 +2060,7 @@ mod tests {
             for (slot, word) in fold.0.iter_mut().zip(field("fold=").split(',')) {
                 *slot = u64::from_str_radix(word, 16).expect("a hex word");
             }
-            let peak_rss = stderr.lines().find_map(|l| {
-                l.trim()
-                    .strip_suffix("maximum resident set size")
-                    .and_then(|v| v.trim().parse().ok())
-            });
+            let peak_rss = probe.and_then(|p| p.parse(&stderr));
             reports.push(RankReport {
                 rank,
                 secs: field("secs=").parse().expect("seconds"),
@@ -1955,6 +2108,93 @@ mod tests {
         assert_ne!(three, two);
     }
 
+    /// A rank that exits before it reaches the broker is an error within the
+    /// deadline, not an accept that waits forever: each child here is this test
+    /// binary asked for a test that does not exist, so it exits at once without
+    /// dialling. The broker runs on its own thread so a broker that blocks shows
+    /// as this test failing, not as a run that never ends.
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_rank_that_exits_before_reaching_the_broker_is_an_error_within_the_deadline() {
+        use std::process::{Command, Stdio};
+        let deadline = std::time::Duration::from_secs(10);
+        let exe = std::env::current_exe().expect("path of this test binary");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let broker = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind the broker");
+            let mut kids: Vec<_> = (0..2)
+                .map(|_| {
+                    Command::new(&exe)
+                        .args(["--exact", "no_test_has_this_name", "--test-threads=1"])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .expect("re-execute this test binary")
+                })
+                .collect();
+            let got = broker_announcements(&broker, &mut kids, deadline);
+            let _ = tx.send(got.map(|(links, _)| links.len()));
+        });
+        let got = rx
+            .recv_timeout(deadline + std::time::Duration::from_secs(20))
+            .expect("the broker returned within its deadline");
+        let why = got.expect_err("no rank announced itself, so the broker must fail");
+        assert!(
+            why.contains("exited") && why.contains("before it reached the broker"),
+            "the error names the rank that exited: {why}"
+        );
+    }
+
+    /// The deadline holds even when no child exits: a child that never dials (it
+    /// sleeps past the deadline) makes the broker give up at the deadline.
+    #[cfg(all(feature = "std", unix))]
+    #[test]
+    fn a_rank_that_never_dials_ends_the_broker_at_its_deadline() {
+        use std::process::{Command, Stdio};
+        let deadline = std::time::Duration::from_millis(500);
+        let broker = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind the broker");
+        let mut kids = vec![Command::new("/bin/sh")
+            .args(["-c", "sleep 30"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn a child that never dials")];
+        let why = broker_announcements(&broker, &mut kids, deadline)
+            .expect_err("the child never dialled");
+        assert!(
+            why.contains("0 of 1 ranks reached the broker"),
+            "the error says how many arrived: {why}"
+        );
+        assert!(
+            kids[0].try_wait().expect("reap").is_some(),
+            "the broker kills the children it gives up on"
+        );
+    }
+
+    /// The resident set is read from each OS's own `time` report, in bytes.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_peak_resident_set_is_read_from_each_time_report_in_bytes() {
+        let bsd = "        0.23 real         0.10 user\n  52428800  maximum resident set size\n";
+        assert_eq!(RssProbe::Bsd.parse(bsd), Some(52_428_800));
+        let gnu = "\tCommand being timed: \"x\"\n\tMaximum resident set size (kbytes): 51200\n";
+        assert_eq!(RssProbe::Gnu.parse(gnu), Some(52_428_800));
+        assert_eq!(
+            RssProbe::Gnu.parse(bsd),
+            None,
+            "a BSD report is not a GNU one"
+        );
+        assert_eq!(
+            RssProbe::Bsd.parse(gnu),
+            None,
+            "a GNU report is not a BSD one"
+        );
+        assert_eq!(RssProbe::Bsd.flag(), "-l");
+        assert_eq!(RssProbe::Gnu.flag(), "-v");
+    }
+
     /// Manual measurement, not part of the suite: `n³` over `ranks` processes,
     /// timed and with each rank's peak resident set.
     ///
@@ -1968,7 +2208,9 @@ mod tests {
     /// `MacGrid`, so only for sizes that fit) and compares.
     #[cfg(feature = "std")]
     #[test]
-    #[ignore = "manual measurement: set ALICE_PHYSICS_MGD_N / _RANKS / _CYCLES"]
+    #[ignore = "runtime: the measurement harness at its default size (64³ over 4 processes, \
+                6 cycles, peak RSS where /usr/bin/time exists); set ALICE_PHYSICS_MGD_N / \
+                _RANKS / _CYCLES for a real measurement"]
     fn banded_processes_timed() {
         let get = |name: &str, default: usize| {
             std::env::var(name)
@@ -2010,7 +2252,7 @@ mod tests {
                 "  rank {}: solve {:.1} s, peak RSS {}",
                 r.rank,
                 r.secs,
-                r.peak_rss.map_or("n/a".to_string(), |b| format!(
+                r.peak_rss.map_or("not measured".to_string(), |b| format!(
                     "{:.2} GiB",
                     b as f64 / 1073741824.0
                 ))
