@@ -137,6 +137,8 @@ function wide(a) {
   out.wind = f([id(a.call(w, "addWindZone", -9, -9, -9, 9, 9, 9, 1, 0, 0.5, 2, 0.5, 1.5, 1.2, 0.9, 0.3), "addWindZone")]);
   // a pool under the scene: another resident, its count in the snapshot and the digest
   out.pool = f([id(a.call(w, "addBuoyancyZone", -9, -9, -9, 9, 0.5, 9, 40, 10, 0.75, 0.3), "addBuoyancyZone")]);
+  // a rope tied to one body: a resident whose particles are in the snapshot and the digest
+  out.rope = f([id(a.call(w, "addRope", [0, 6, 0], [1, 5, 0], 4, 0.5, 0.99, null, [0, 0, 0], b[5], [0, 0, 0]), "addRope")]);
   a.call(w, "applyImpulse", b[5], 1, 2, -0.5);
   a.call(w, "setVelocity", b[4], 0.5, 0, 0.25);
   a.call(w, "setKinematicTarget", b[7], -2.5, 1.2, -3, 0, 0.3826834323650898, 0, 0.9238795325112867);

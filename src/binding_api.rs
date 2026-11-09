@@ -16,6 +16,8 @@ use crate::joint::Joint;
 use crate::material::{MaterialId, PhysicsMaterial};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::plane_collider::PlaneCollider;
+use crate::rope::Rope;
+use crate::rope_participant::{RopeAnchor, RopeParticipant, ROPE_PARTICIPANT_KIND};
 use crate::shape::Shape;
 use crate::shape_raycast::{RayFilter, RayTarget};
 use crate::solver::PhysicsWorld;
@@ -358,6 +360,81 @@ pub(crate) fn add_buoyancy_zone(w: &mut PhysicsWorld, a: &BuoyancyZoneArgs) -> O
     };
     w.add_participant(Box::new(BuoyancyZoneParticipant::new(zone)))
         .ok()
+}
+
+/// One end of a rope tied to a body.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RopeTie {
+    pub(crate) body: usize,
+    pub(crate) local: Vec3Fix,
+}
+
+/// The arguments of [`add_rope`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RopeArgs {
+    pub(crate) start: Vec3Fix,
+    pub(crate) end: Vec3Fix,
+    pub(crate) segments: u32,
+    pub(crate) mass: f64,
+    pub(crate) damping: f64,
+    pub(crate) start_tie: Option<RopeTie>,
+    pub(crate) end_tie: Option<RopeTie>,
+}
+
+/// The most segments one rope may have: a substep costs `iterations * segments`
+/// constraint solves.
+pub(crate) const ROPE_MAX_SEGMENTS: u32 = 1024;
+
+/// Add a rope as a resident of the world, falling under the world's gravity.
+/// `None` for a bad value: no segments or too many, ends that coincide, a span
+/// out of range, a mass that is not positive after the conversion, a velocity
+/// retention outside `0..=1`, a tie on a body that does not exist, or both ends on
+/// one body at the same anchor.
+pub(crate) fn add_rope(w: &mut PhysicsWorld, a: &RopeArgs) -> Option<usize> {
+    if a.segments == 0 || a.segments > ROPE_MAX_SEGMENTS {
+        return None;
+    }
+    let length = a.end.checked_sub(a.start)?.checked_length()?;
+    let segments = Fix128::from_int(i64::from(a.segments));
+    let segment = length.checked_div(segments)?;
+    if segment.is_zero() {
+        return None;
+    }
+    let mass = positive(a.mass).filter(|m| *m > Fix128::ZERO)?;
+    let per_unit = mass.checked_div(length)?;
+    let particle = per_unit.checked_mul(segment)?;
+    if particle.is_zero() {
+        return None;
+    }
+    Fix128::ONE.checked_div(particle)?;
+    let damping = non_negative(a.damping).filter(|d| *d <= Fix128::ONE)?;
+    let mut anchors = Vec::new();
+    let last = a.segments as usize;
+    for (particle, tie) in [(0, a.start_tie), (last, a.end_tie)] {
+        if let Some(t) = tie {
+            if t.body >= w.bodies.len() {
+                return None;
+            }
+            anchors.push(RopeAnchor {
+                particle,
+                body: t.body,
+                local_anchor: t.local,
+            });
+        }
+    }
+    let mut rope = Rope::new(a.start, a.end, last, per_unit);
+    rope.config.damping = damping;
+    let resident = RopeParticipant::new(rope, anchors).ok()?;
+    w.add_participant(Box::new(resident)).ok()
+}
+
+/// The particles of the rope at participant `index` as `(position, velocity)`,
+/// `None` when that participant is not a rope.
+pub(crate) fn rope_particles(w: &PhysicsWorld, index: usize) -> Option<Vec<(Vec3Fix, Vec3Fix)>> {
+    if *w.participant_kinds().get(index)? != ROPE_PARTICIPANT_KIND {
+        return None;
+    }
+    RopeParticipant::particles(&w.participant_state(index)?)
 }
 
 /// Add a dynamic body with `shape`, its mass and inertia from `density`.

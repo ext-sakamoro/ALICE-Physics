@@ -559,6 +559,59 @@ impl PyPhysicsWorld {
         binding_api::add_buoyancy_zone(&mut self.inner, &args).ok_or_else(bad)
     }
 
+    /// Add a rope from `start` to `end` of `segments` segments and total `mass`, falling under the
+    /// world's gravity, keeping `damping` of its velocity per frame (1 keeps it all).
+    /// `start_tie` and `end_tie` tie an end to a body as `(body, (x, y, z))`, the anchor in the
+    /// body's frame: the rope then pulls that body and is pulled by it. The rope is part of the
+    /// world: `snapshot_world` keeps it, and `restore_world` needs the same ropes added in the same
+    /// order. Returns its index.
+    #[pyo3(signature = (start, end, segments, mass, damping = 1.0, start_tie = None, end_tie = None))]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the ends and their ties are what a rope is"
+    )]
+    fn add_rope(
+        &mut self,
+        start: (f64, f64, f64),
+        end: (f64, f64, f64),
+        segments: u32,
+        mass: f64,
+        damping: f64,
+        start_tie: Option<(usize, (f64, f64, f64))>,
+        end_tie: Option<(usize, (f64, f64, f64))>,
+    ) -> PyResult<usize> {
+        let bad = || {
+            PyValueError::new_err("bad rope: values must be finite and within the fixed-point range, the ends apart, 1 to 1024 segments, mass positive, damping in 0..=1, ties on bodies that exist")
+        };
+        let tie = |t: Option<(usize, (f64, f64, f64))>| match t {
+            None => Ok(None),
+            Some((body, l)) => Ok(Some(binding_api::RopeTie {
+                body,
+                local: binding_api::vec3(l.0, l.1, l.2).ok_or_else(bad)?,
+            })),
+        };
+        let args = binding_api::RopeArgs {
+            start: binding_api::vec3(start.0, start.1, start.2).ok_or_else(bad)?,
+            end: binding_api::vec3(end.0, end.1, end.2).ok_or_else(bad)?,
+            segments,
+            mass,
+            damping,
+            start_tie: tie(start_tie)?,
+            end_tie: tie(end_tie)?,
+        };
+        binding_api::add_rope(&mut self.inner, &args).ok_or_else(bad)
+    }
+
+    /// The particles of the rope at participant `index` as a list of `(x, y, z)`.
+    fn rope_positions(&self, index: usize) -> PyResult<Vec<(f64, f64, f64)>> {
+        let particles = binding_api::rope_particles(&self.inner, index)
+            .ok_or_else(|| PyValueError::new_err("that participant is not a rope"))?;
+        Ok(particles
+            .iter()
+            .map(|(p, _)| (p.x.to_f64(), p.y.to_f64(), p.z.to_f64()))
+            .collect())
+    }
+
     /// Drop a body's own collision radius (it falls back to the world default).
     fn clear_collision_radius(&mut self, body_id: usize) -> PyResult<()> {
         self.check_body(body_id)?;
