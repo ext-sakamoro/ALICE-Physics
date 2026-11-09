@@ -939,7 +939,6 @@ pub mod gpu_bridge;
 pub mod sketch;
 pub mod sleeping;
 pub mod smoke_fire;
-pub mod soft_body;
 pub mod soft_body_cut;
 pub mod solver;
 // Gyroscopic term `ω × Iω` by symplectic splitting, shared by XPBD and TGS.
@@ -993,7 +992,7 @@ pub use ccd::{
     aabb_plane_toi, capsule_plane_toi, speculative_contact, sphere_capsule_toi, CcdConfig,
 };
 pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
-pub use cloth::{Cloth, ClothConfig};
+pub use cloth::{Cloth, ClothConfig, Grab, GrabId, OutlineDesc, OutlineError};
 pub use cloth_fluid::{
     apply_cloth_boundary_to_fluid, apply_fluid_forces_to_cloth, ClothFluidCoupling,
 };
@@ -1134,7 +1133,6 @@ pub use sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 #[cfg(feature = "std")]
 pub use sketch::{CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable};
 pub use sleeping::{Island, IslandManager, SleepConfig, SleepData, SleepState};
-pub use soft_body::{Grab, GrabId, SoftBody, SoftBodyDesc, SoftBodyError};
 pub use soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 #[cfg(feature = "std")]
 pub use solver::ContactModifier;
