@@ -117,5 +117,12 @@ fn main() -> Result<(), alice_physics_core::linear_elastic_fem::FemError> {
         solver.accelerations()[tip].to_f64()
     );
     println!("conjugate gradient iterations over 200 steps: {iterations}");
+    // the state digest names the run: another machine replaying these inputs prints the same
+    let digest: String = solver
+        .state_digest()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    println!("state digest after the run: {digest}");
     Ok(())
 }
