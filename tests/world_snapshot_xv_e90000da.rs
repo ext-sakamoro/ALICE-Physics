@@ -1,7 +1,6 @@
 //! Snapshots of `e90000da…`, the stepping semantics identifier of the build before alice-det-math
-//! was folded per function (main `a58b37cd`, `alice-det-math` 0.5.2 at 2d01c63f), restored and
-//! stepped by this build, give the bits that build stepped to: a cross-version oracle, so
-//! `e90000da…` is in `PREVIOUS_PHYSICS_SEMANTICS_IDS`.
+//! was folded per function (main `a58b37cd`, `alice-det-math` 0.5.2 at 2d01c63f), are refused by
+//! this build, and the header facts of the two fixtures that build wrote stay frozen here.
 //!
 //! The fixtures were written outside this tree by a crate depending on `alice-physics-core` at
 //! `a58b37cd9dc874e3653b985e4c4bb89e421a5736` (path dependency, `default-features = false,
@@ -11,19 +10,45 @@
 //! `…_b.bin`. The writer printed semantics `e90000da…`, `scene().law_id(..)` `806977a8…`,
 //! `a` 5096 bytes (sha256 `c302d779…`), `b` 6021 bytes (sha256 `0f64c9a2…`).
 //!
-//! The scene has a static body and dynamic ones in contact (a sphere falling on a static sphere,
-//! two spheres meeting), and a chain of three bodies held by two distance constraints, with a
-//! world damping rate, so the restore carries contacts, constraints and damping, not only motion.
+//! # History
 //!
-//! oracle: the bits the old build stepped to (`b`, written by that build), compared byte for byte
-//! after both worlds are written again by this build.
+//! This file was a cross-version oracle while `e90000da…` was listed in
+//! `PREVIOUS_PHYSICS_SEMANTICS_IDS`: folding alice-det-math per function moved the identifier
+//! (to `c82742de…`) and no step, and `a` restored and stepped 40 times gave `b` byte for byte.
+//! The stepping then changed: the sleep rule became elapsed time (a world stepped at a step other
+//! than `1/60 s` falls asleep at another step), sleep became per island, and a sleeper a step
+//! moves now wakes its island. This build no longer reproduces that build's steps, so
+//! `e90000da…` was taken out of the list; its snapshots are format 6, whose sleep record counts
+//! steps.
+//!
+//! What this file checks now: the fixtures are still what the writer wrote (sizes, sha256, the
+//! header identifiers, and the `law_id` recomputed from the writer's rules as that build encoded
+//! them), and every way of restoring either of them is refused as a semantics mismatch naming
+//! `e90000da…` and this build's identifier, the target world unchanged.
+//!
+//! oracle: the header identifiers are compared with what the writing build printed, not with
+//! anything this build derives from the blobs.
 
 use alice_physics_core::solver::DistanceConstraint;
 use alice_physics_core::{
-    Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, PHYSICS_SEMANTICS_ID,
-    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    Fix128, LegacyPolicy, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldSnapshotError,
+    PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use sha2::{Digest, Sha256};
+
+#[path = "support/law_rows.rs"]
+mod law_rows;
+use law_rows::{spec, Laws};
+
+/// The rules of `scene()` folded as the writing build encoded them: gravity (0, −7, 0), the
+/// damping rate 3/10, and the sleep rule as the count of 60 idle steps.
+fn writer_laws() -> Laws {
+    let mut laws = Laws::defaults();
+    laws.config.gravity = Vec3Fix::from_int(0, -7, 0);
+    laws.config.damping_rate = Fix128::from_ratio(3, 10);
+    laws.legacy_sleep_steps = Some(60);
+    laws
+}
 
 const A: &[u8] = include_bytes!("fixtures/world_snapshot_xv_e90000da_a.bin");
 const B: &[u8] = include_bytes!("fixtures/world_snapshot_xv_e90000da_b.bin");
@@ -34,7 +59,6 @@ const WRITER_SEMANTICS: &str = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e1
 const WRITER_LAW_ID: &str = "806977a8f9d09eb96ac4d6d713fc8fc924f2c78618a736d048a8103134c5b8a2";
 const A_SHA256: &str = "c302d7792717beaa9f19628ed20f7fc95743e8b772377f40177a3394ccc49d27";
 const B_SHA256: &str = "0f64c9a2149c521bcb042f5bc6ece686097b7b0f8f69189571bdf7f45167b3e9";
-const STEPS: usize = 40;
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 60)
@@ -98,22 +122,6 @@ fn writer_id() -> [u8; 32] {
         .expect("32 bytes")
 }
 
-fn restored(blob: &[u8]) -> PhysicsWorld {
-    let mut w = scene();
-    w.restore_world(blob)
-        .expect("a snapshot of a previous identifier is read");
-    w
-}
-
-/// `a` restored and stepped `steps` times by this build, written by this build
-fn a_stepped(steps: usize) -> Vec<u8> {
-    let mut w = restored(A);
-    for _ in 0..steps {
-        w.step(dt());
-    }
-    w.snapshot_world()
-}
-
 #[test]
 fn the_fixtures_are_what_the_writer_wrote() {
     assert_eq!(A.len(), 5096);
@@ -127,24 +135,66 @@ fn the_fixtures_are_what_the_writer_wrote() {
         );
     }
     assert_eq!(hex(&A[LAW_AT..LAW_AT + 32]), WRITER_LAW_ID);
-    assert_eq!(scene().law_id(&writer_id()), A[LAW_AT..LAW_AT + 32]);
-    assert_ne!(writer_id(), PHYSICS_SEMANTICS_ID);
+    let writer = writer_id();
+    assert_ne!(writer, PHYSICS_SEMANTICS_ID);
+    // the header law_id is the scene's rule under the writer's semantics, folded as the writer
+    // encoded it (the sleep rule as 60 idle steps); this build folds the sleep rule as a time,
+    // so its own `law_id` under the writer's semantics is another one
+    assert_eq!(spec(&writer_laws(), &writer), A[LAW_AT..LAW_AT + 32]);
+    assert_ne!(scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
 }
 
+/// This build does not list `e90000da…` as an earlier semantics it reproduces
 #[test]
-fn the_earlier_identifier_is_listed_and_this_build_s_is_not() {
-    assert!(PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&writer_id()));
+fn the_earlier_identifier_is_not_listed() {
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&writer_id()));
     assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&PHYSICS_SEMANTICS_ID));
 }
 
-/// `a` stepped 40 times by this build is the world the old build wrote as `b`, to the byte
+/// Every way of restoring `blob` (the plain restore, the checked one with no expected id, the
+/// target's own `law_id` and the header's own, under both legacy policies, and the legacy damping
+/// reader with the writer's step) refuses it as a semantics mismatch naming the writer's
+/// identifier and this build's, and leaves the target's snapshot bytes unchanged
+fn refused_every_way(blob: &[u8]) -> usize {
+    let want = || WorldSnapshotError::SemanticsMismatch {
+        stored: writer_id(),
+        expected: PHYSICS_SEMANTICS_ID,
+    };
+    let mut compared = 0;
+    let mut target = scene();
+    let before = target.snapshot_world();
+    assert_eq!(target.restore_world(blob), Err(want()));
+    assert_eq!(target.snapshot_world(), before);
+    compared += 1;
+    let own = scene().law_id(&PHYSICS_SEMANTICS_ID);
+    let header: [u8; 32] = blob[LAW_AT..LAW_AT + 32].try_into().expect("32 bytes");
+    for expected in [None, Some(own), Some(header)] {
+        for policy in [LegacyPolicy::AcceptUnpinned, LegacyPolicy::RequirePinned] {
+            let mut target = scene();
+            let before = target.snapshot_world();
+            assert_eq!(
+                target.restore_world_checked(blob, expected.as_ref(), policy),
+                Err(want()),
+                "expected {expected:?}, policy {policy:?}"
+            );
+            assert_eq!(target.snapshot_world(), before);
+            compared += 1;
+        }
+    }
+    let mut target = scene();
+    let before = target.snapshot_world();
+    assert_eq!(target.restore_world_legacy_damping(blob, dt()), Err(want()));
+    assert_eq!(target.snapshot_world(), before);
+    compared += 1;
+    compared
+}
+
 #[test]
-fn a_restored_and_stepped_here_is_b_to_the_bit() {
-    let here = a_stepped(STEPS);
-    let there = restored(B).snapshot_world();
-    assert!(!there.is_empty());
-    assert_eq!(hex(&Sha256::digest(&here)), hex(&Sha256::digest(&there)));
-    assert_eq!(here, there);
-    // the comparison sees the stepping: one step fewer is another world
-    assert_ne!(a_stepped(STEPS - 1), there);
+fn the_first_fixture_is_refused_every_way() {
+    assert_eq!(refused_every_way(A), 8);
+}
+
+#[test]
+fn the_second_fixture_is_refused_every_way() {
+    assert_eq!(refused_every_way(B), 8);
 }

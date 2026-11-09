@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f
+//! 2f447a34412c672603df1b8f31b88f0d7f092bfa47b5aeeb5fea15fe45f24286
 //! ```
 //!
 //! # Entries
@@ -542,8 +542,9 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // then the stepping change (damping a rate per second, shaped bodies against static
     // colliders, static overlap pushed out without velocity) moved three pins
     // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations);
-    // then sleep by elapsed time was pinned (the rule `idle + dt/2 >= time_to_sleep`), moving
-    // every row from its value before (this one from e90000da…)
+    // then sleep by elapsed time was pinned (the rule `idle + dt/2 >= time_to_sleep`) and the
+    // pendulum's distance constraint pin moved with the island sleep, moving every row from its
+    // value before (this one from e90000da…)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
         hex32("e703ee83b9c159a18df6dcc17e7f6a1a5be8f897deaa503047095427122307ac"),
@@ -700,10 +701,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f`.
+/// Hex: `2f447a34412c672603df1b8f31b88f0d7f092bfa47b5aeeb5fea15fe45f24286`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("c82742de000629b51a5fa1717bb68620a683460617a89dc009c2374e7e9a470f");
+    hex32("2f447a34412c672603df1b8f31b88f0d7f092bfa47b5aeeb5fea15fe45f24286");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
@@ -736,6 +737,10 @@ pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
 /// * every identifier of an `alice-det-math` generation whose clamp differs
 ///   from this build's (0.5.2 at 39507d1b), since the clamp moved Law output
 ///   bits; so the 3.x snapshots (`79ca5297…`, `cd9aa3b8…`) are refused.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
-    "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6",
-)];
+/// * `e90000da…` was listed while the per-function fold of `alice-det-math` (`c82742de…`) moved
+///   only the identifier, not a step; it and `c82742de…` are taken out with sleep by elapsed
+///   time and the island sleep: a world stepped at a step other than `1/60 s` falls asleep at
+///   another step under the time rule, and a sleeper a step moves now wakes its island, so this
+///   build no longer steps their snapshots to their bits (`tests/analytic_magnet_world.rs`
+///   checks such a snapshot is refused).
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];
