@@ -312,3 +312,195 @@ fn measure_the_late_orbit_of_the_held_body() {
         println!("ω {omega}: recurrence (frame, period, max offset m, max speed m/s) = {found:?}");
     }
 }
+
+/// A spring-held body stepped at `1/rate` s, sleep on: `(the period of its late orbit, the
+/// first frame it is asleep)`, over `frames` frames. The period is measured on the sleeping
+/// off twin of the same world (bit for bit the same until the first sleep).
+fn period_and_sleep(rate: i64, frames: u64) -> (Option<usize>, Option<u64>) {
+    let dt = Fix128::from_ratio(1, rate);
+    let build = |sleep: bool| {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            substeps: 1,
+            gravity: v3(0.0, -G, 0.0),
+            ..SolverConfig::default()
+        });
+        if !sleep {
+            w.set_sleep_config(SleepConfig {
+                time_to_sleep: Fix128 {
+                    hi: i64::MAX,
+                    lo: u64::MAX,
+                },
+                ..SleepConfig::default()
+            });
+        }
+        let anchor = w.add_body(RigidBody::new_static(v3(0.0, 1.0 + G / 36.0, 5.0)));
+        let body = w.add_body(RigidBody::new_dynamic(v3(0.3, 3.0, 5.0), fx(1.0)));
+        w.add_joint(Joint::Spring(SpringJoint::new(
+            anchor,
+            body,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            Fix128::ZERO,
+            fx(36.0),
+            fx(12.0),
+        )));
+        (w, body)
+    };
+    let (mut off, body) = build(false);
+    let mut seen: Vec<(Vec3Fix, Vec3Fix)> = Vec::new();
+    let mut period = None;
+    for _ in 0..frames {
+        off.step(dt);
+        let s = (off.bodies[body].position, off.bodies[body].velocity);
+        if let Some(k) = seen.iter().rposition(|x| *x == s) {
+            period = Some(seen.len() - k);
+            break;
+        }
+        seen.push(s);
+    }
+    let (mut on, body) = build(true);
+    let mut asleep = None;
+    for frame in 1..=frames {
+        on.step(dt);
+        if asleep.is_none() && on.is_sleeping(body) {
+            asleep = Some(frame);
+        }
+    }
+    (period, asleep)
+}
+
+/// The recurrence window is 256 steps: an orbit of period 257 (the spring's late orbit at
+/// 257 steps per second) is never recognised, so the island never sleeps; the same spring at
+/// 100 steps per second (period 100) falls asleep on its orbit.
+#[test]
+fn an_orbit_longer_than_the_window_never_sleeps() {
+    let (period, asleep) = period_and_sleep(257, 20_000);
+    assert_eq!(
+        period,
+        Some(257),
+        "the premise: the late orbit's period at 1/257 s"
+    );
+    assert_eq!(asleep, None, "a period beyond the window is not recognised");
+    let (period, asleep) = period_and_sleep(100, 20_000);
+    assert_eq!(period, Some(100), "the premise at 1/100 s");
+    assert!(asleep.is_some(), "a period within the window is recognised");
+}
+
+/// the spring-held body of [`held_for_long`] at `ω` 6 and 1/60 s, sleep on
+fn held_world() -> (PhysicsWorld, usize) {
+    let mut w = PhysicsWorld::new(SolverConfig {
+        substeps: SUBSTEPS,
+        gravity: v3(0.0, -G, 0.0),
+        ..SolverConfig::default()
+    });
+    let anchor = w.add_body(RigidBody::new_static(v3(0.0, 1.0 + G / 36.0, 5.0)));
+    let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 3.0, 5.0), fx(1.0)));
+    w.add_joint(Joint::Spring(SpringJoint::new(
+        anchor,
+        body,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Fix128::ZERO,
+        fx(36.0),
+        fx(12.0),
+    )));
+    (w, body)
+}
+
+/// (first frame asleep after `from`, position at `to`), stepping `w` from frame `from`
+fn run_on(w: &mut PhysicsWorld, body: usize, from: u64, to: u64) -> (Option<u64>, Vec3Fix) {
+    let mut asleep = None;
+    for frame in from + 1..=to {
+        w.step(fx(DT));
+        if asleep.is_none() && w.is_sleeping(body) {
+            asleep = Some(frame);
+        }
+    }
+    (asleep, w.bodies[body].position)
+}
+
+/// A world snapshot taken while the island is recording its orbit (after the velocity rule
+/// is met, before the recurrence) restores the record: the restored world falls asleep at the
+/// same frame, at the same place, as the original. Without the record it would sleep up to a
+/// window later, elsewhere on the orbit.
+#[test]
+fn a_restored_world_snapshot_falls_asleep_with_the_original() {
+    let (mut a, body) = held_world();
+    let (early, _) = run_on(&mut a, body, 0, 520);
+    assert_eq!(early, None, "the premise: not yet asleep at frame 520");
+    let mut b = PhysicsWorld::from_world_snapshot(&a.snapshot_world()).expect("restores");
+    let (sa, pa) = run_on(&mut a, body, 520, 700);
+    let (sb, pb) = run_on(&mut b, body, 520, 700);
+    assert!(
+        sa.is_some(),
+        "the premise: the original falls asleep by frame 700"
+    );
+    assert_eq!((sa, pa), (sb, pb));
+    assert_eq!(a.state_digest(), b.state_digest());
+}
+
+/// The same through the rollback state blob ([`PhysicsWorld::serialize_state`]).
+#[test]
+fn a_rolled_back_world_falls_asleep_with_the_original() {
+    let (mut a, body) = held_world();
+    run_on(&mut a, body, 0, 520);
+    let blob = a.serialize_state();
+    let (mut b, _) = held_world();
+    assert!(b.deserialize_state(&blob), "the blob restores");
+    let (sa, pa) = run_on(&mut a, body, 520, 700);
+    let (sb, pb) = run_on(&mut b, body, 520, 700);
+    assert!(sa.is_some());
+    assert_eq!((sa, pa), (sb, pb));
+    assert_eq!(a.serialize_state(), b.serialize_state());
+}
+
+/// An island asleep on its orbit wakes as a whole when what its step reads changes: the
+/// gravity, the spring's stiffness, an impulse on the body. Each wakes it at the next step,
+/// and the body then moves as a twin restored from the same state with sleeping off: it is
+/// compared with that twin step by step.
+#[test]
+fn a_sleeping_orbit_wakes_when_its_inputs_change() {
+    type Edit = fn(&mut PhysicsWorld, usize);
+    let edits: [(&str, Edit); 3] = [
+        ("gravity", |w, _| w.config.gravity = v3(0.0, -G * 0.5, 0.0)),
+        ("stiffness", |w, _| {
+            if let Joint::Spring(s) = &mut w.joints[0] {
+                s.stiffness = fx(49.0);
+            }
+        }),
+        ("impulse", |w, b| {
+            w.bodies[b].apply_impulse(v3(0.0, 0.2, 0.0))
+        }),
+    ];
+    for (name, edit) in edits {
+        let (mut w, body) = held_world();
+        let (asleep, _) = run_on(&mut w, body, 0, 700);
+        assert!(
+            asleep.is_some() && w.is_sleeping(body),
+            "{name}: the premise"
+        );
+        let mut twin = PhysicsWorld::from_world_snapshot(&w.snapshot_world()).expect("restores");
+        twin.set_sleep_config(SleepConfig {
+            time_to_sleep: Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX,
+            },
+            ..SleepConfig::default()
+        });
+        edit(&mut w, body);
+        edit(&mut twin, body);
+        twin.wake_body(body);
+        for frame in 1..=30 {
+            w.step(fx(DT));
+            twin.step(fx(DT));
+            assert!(
+                !w.is_sleeping(body),
+                "{name}: asleep at frame {frame} after the change"
+            );
+            assert_eq!(
+                w.bodies[body].position, twin.bodies[body].position,
+                "{name}: frame {frame}"
+            );
+        }
+    }
+}
