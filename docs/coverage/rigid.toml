@@ -1258,3 +1258,13 @@ status = "missing"
 evidence = "COV-RIGID-038 の子 LDL 0 件 src/linear_solver は Krylov で剛体拘束には未接続"
 oracle_candidate = "鎖の静止張力を 1 回の solve で厳密"
 limitation = ""
+
+[[item]]
+id = "COV-RIGID-122"
+axis = "dynamics"
+item = "per-body locks of world translation and rotation axes (planar bodies, rails, turntables)"
+source = "Unity Rigidbody.constraints (FreezePosition / FreezeRotation); Jolt EAllowedDOFs; Rapier locked axes"
+status = "partial"
+evidence = "src/axis_lock.rs::AxisLock src/solver.rs::set_body_axis_lock tests/analytic_axis_lock.rs::a_locked_position_axis_stays_exact_and_the_free_axes_follow_the_twin tests/analytic_axis_lock.rs::locked_rotation_axes_leave_a_turn_about_the_free_axis tests/analytic_axis_lock.rs::contacts_and_joints_do_not_move_a_locked_axis"
+oracle_candidate = "回転 1 軸だけ固定した時の姿勢を、その軸の成分を持たない回転の閉形式と比べる"
+limitation = "src/axis_lock.rs 'With one locked rotation axis the removal of that component of `Δ` is exact to first order in the substep's rotation angle.'"
