@@ -178,6 +178,8 @@ GIT_CANDIDATES = ("/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git",
 GH_CANDIDATES = ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh",
                  r"C:\Program Files\GitHub CLI\gh.exe")
 # uv runs the hooks checkout's ci_evidence_receipt.py with pyyaml (a public repository lands on that receipt)
+# the pyyaml ci_evidence_receipt.py runs with, pinned so the receipt tool does not change between landings
+PYYAML_PIN = "pyyaml==6.0.3"
 UV_CANDIDATES = ("/opt/homebrew/bin/uv", "/usr/local/bin/uv", os.path.expanduser("~/.local/bin/uv"),
                  os.path.expanduser("~/.cargo/bin/uv"))
 SYSTEM_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin", "/usr/local/bin")
@@ -1343,7 +1345,7 @@ class Lander:
     def write_ci_receipt(self, sha: str) -> None:
         tool = hooks_tool("scripts/ci_evidence_receipt.py")
         uv = pinned_tool(UV_CANDIDATES)
-        r = subprocess.run([uv, "run", "-q", "--no-project", "--with", "pyyaml", "python3", str(tool), str(self.root),
+        r = subprocess.run([uv, "run", "-q", "--no-project", "--with", PYYAML_PIN, "python3", str(tool), str(self.root),
                             "--sha", sha], cwd=self.root, capture_output=True, text=True, env=gh_env(), timeout=7800)
         for line in (r.stdout + r.stderr).splitlines():
             self.log(f"ci-evidence: {line}")
