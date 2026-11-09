@@ -11,43 +11,54 @@
 //! - Pin constraints for attaching cloth to bodies
 //! - Wind force and gravity
 //!
-//! # What is modelled, and what is an approximation
+//! # MODEL
 //!
-//! Units: positions in metres, masses in kilograms, time in seconds, forces in newtons;
-//! every quantity is `Fix128` (Q64.64), so a run replays bit for bit on any target.
+//! **Equations.** Particles of mass `m` under XPBD: a predicted position
+//! `x* = x + v·h + a·h²` per substep `h`, then stretch constraints `|x_i − x_j| = l_0` on
+//! every mesh edge and bending constraints on the dihedral angle of every edge shared by two
+//! triangles, each with a compliance `α` (`Δλ = −(C + α̃·λ) / (Σ w·|∇C|² + α̃)`,
+//! `α̃ = α / h²`); velocities `v = (x − x_prev) / h` after the solve. The rest tether
+//! ([`Cloth::set_rest_tether`]) is the damped harmonic oscillator
+//! `m·ẍ = −k·(x − x_rest) − c·ẋ + m·a` solved exactly over `h` (`ω = √(k/m)`,
+//! `ζ = c / (2·√(k·m))`). Gravity and wind are a constant acceleration `a` per substep.
 //!
-//! Modelled by its equation:
-//! - The rest tether ([`Cloth::set_rest_tether`]): each free particle follows the damped
-//!   harmonic oscillator `m·ẍ = −k·(x − x_rest) − c·ẋ + m·a` with `k` in N/m and `c` in
-//!   N·s/m, advanced by the exact solution over each substep (angular frequency
-//!   `ω = √(k/m)`, damping ratio `ζ = c / (2·√(k·m))`), so the law holds for any step size
-//!   with no numerical damping and no stability limit on `ω·h`.
-//! - Gravity and wind enter as the constant acceleration `a` of a substep (wind as a
-//!   uniform acceleration, not a drag law).
-//! - Linear momentum of a constraint pair: a stretch correction moves the two particles in
-//!   opposite directions by amounts proportional to their inverse masses, so the pair's
-//!   momentum is unchanged by the correction (exactly, as `Fix128` addition is exact).
-//! - The exact sleep ([`Cloth::set_sleep`]): a step is skipped only when the previous step
-//!   changed no bit of the state under the same inputs, so sleeping never alters a
-//!   trajectory.
+//! **Units.** SI: positions m, masses kg, time s, `k` N/m, `c` N·s/m, compliances m/N,
+//! velocities m/s; every quantity is `Fix128` (Q64.64), so a run replays bit for bit.
 //!
-//! Approximations (position-based dynamics, not a discretised continuum):
-//! - Stretch and bending are XPBD constraints with compliance (`stretch_compliance`,
-//!   `bend_compliance`, in m/N); the effective stiffness depends on `iterations` and
-//!   `substeps` unless the compliance is set, and there is no material model (no Young's
-//!   modulus, thickness or Poisson ratio), so stress and strain are not reported.
-//! - `config.damping` is a velocity retention per frame, not a viscous law: energy is not
-//!   conserved and the decay depends on the frame rate.
-//! - Contact with SDF colliders is a position projection to `thickness` outside the
-//!   surface (the field is evaluated in `f32`); the normal velocity is dropped and the
-//!   tangential one scaled by `1 − sdf_friction`: no Coulomb friction, no restitution, no
-//!   reaction on the collider's body. Self-contact likewise.
-//! - A grab ([`Cloth::grab`]) is a kinematic pin: the particle has infinite mass while held
-//!   and the pointer feels no reaction; the throw velocity is the pointer's velocity over
-//!   the last step, not an impulse balance.
-//! - An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass, so
-//!   mass is per particle, not per area, and the sheet has no thickness.
-//! - A cloth held by a world does not collide with rigid bodies or static colliders.
+//! **Conservation.** A stretch correction moves the two particles in opposite directions
+//! in proportion to their inverse masses, so the pair's linear momentum is unchanged by the
+//! correction (exactly: `Fix128` addition is exact). Energy is not conserved: the tether's
+//! `c` dissipates it (physically), and `config.damping` is a velocity retention per frame
+//! (numerical, frame-rate dependent). The exact sleep ([`Cloth::set_sleep`]) skips a step
+//! only when the previous step changed no bit under the same inputs, so it alters no
+//! trajectory and conserves whatever the step conserves.
+//!
+//! **Valid range.** Stable for any `ω·h` on the tether (exact solution); the XPBD
+//! constraints converge with `iterations` and `substeps` (the effective stiffness depends on
+//! them unless the compliance is set). Positions, velocities and `k`, `c`, `m` must keep
+//! `k/m`, `c/m` and the squared edge lengths inside `Fix128` (|value| < 2^63 with products
+//! below 2^31.5 in magnitude); out of range the arithmetic wraps and the result is not a
+//! simulation (no detection at this layer; the world's range checks apply to rigid bodies,
+//! not to cloth particles). Negative `k` or `c` are treated as 0.
+//!
+//! **Approximations.** Position-based dynamics, not a discretised continuum: no material
+//! model (no Young's modulus, thickness or Poisson ratio), so stress and strain are not
+//! reported. Wind is a uniform acceleration, not a drag law. Contact with SDF colliders is a
+//! position projection to `thickness` outside the surface (field evaluated in `f32`); the
+//! normal velocity is dropped and the tangential one scaled by `1 − sdf_friction`: no
+//! Coulomb friction, no restitution, no reaction on the collider's body; self-contact
+//! likewise. A grab ([`Cloth::grab`]) is a kinematic pin (infinite mass while held, no
+//! reaction on the pointer; the throw velocity is the pointer's velocity over the last step).
+//! An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass (mass
+//! per particle, not per area) and the sheet has no thickness. A cloth held by a world does
+//! not collide with rigid bodies or static colliders. Tiers: L0 only (no lighter tier yet).
+//!
+//! **Validation.** `tests/analytic_cloth_rest_tether.rs` (oscillator closed form: period,
+//! decay, critical damping), `tests/cloth_sleep_oracle.rs` (exact fixed point, wake on
+//! input change, bit identity with sleep off), `tests/soft_letters_oracle.rs` (rest is
+//! still, local stretch, throw velocity bit identity, recovery to rest within 600 frames,
+//! digest coverage, frozen replay digest), `tests/cloth_state_digest.rs` (replay bit
+//! identity, every state field moves the digest), `tests/determinism_cloth_step_digest.rs`.
 //!
 //! Author: Moroya Sakamoto
 
