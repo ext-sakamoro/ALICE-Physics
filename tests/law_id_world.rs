@@ -330,7 +330,7 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
     s.fix(laws.ccd.unwrap_or(Fix128::ONE));
     s.fix(laws.sleep.linear_threshold);
     s.fix(laws.sleep.angular_threshold);
-    s.u32(laws.sleep.frames_to_sleep);
+    s.fix(laws.sleep.time_to_sleep);
 
     s.rule(laws.default_friction_combine);
     s.rule(laws.default_restitution_combine);
@@ -548,7 +548,7 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
     r.skip(FIX + 4); // 8 contact cache
     r.skip(FIX); // 9 sdf radius
     r.skip(1 + FIX); // 10 continuous collision
-    r.skip(FIX + FIX + 4); // 11 sleep
+    r.skip(FIX + FIX + FIX); // 11 sleep (thresholds and the time to sleep)
     r.bytes(); // 12 friction combine
     r.bytes(); //    restitution combine
     for _ in 0..r.len() {
@@ -655,7 +655,7 @@ fn a_world_that_sets_every_covered_field_is_encoded_as_documented() {
 /// per second with default 0, where it had been a retention per step with
 /// default 0.99: a default of a covered field moved.
 const GOLDEN_DEFAULT_LAW_ID: &str =
-    "b6e7575203a211bb33c37d9e2e133f148b9a52035ef9dc8ac2a4ef8b2a51a55a";
+    "19259542111e7ca54786d4e3a59f04d7146b5d421a31af828a7b790371bc33c3";
 
 #[test]
 fn golden_default_world_law_id() {
