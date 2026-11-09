@@ -65,7 +65,7 @@ impl DeterministicRng {
     #[inline]
     pub fn next_u32(&mut self) -> u32 {
         let old_state = self.state;
-        // Advance state
+        // DETERMINISTIC-RNG: the PCG step that makes every run replay bit for bit on every platform (never used for secrets)
         self.state = old_state
             .wrapping_mul(Self::MULTIPLIER)
             .wrapping_add(self.inc);

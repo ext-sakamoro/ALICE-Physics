@@ -223,11 +223,13 @@ src/quadratic_elastic_fem.rs	solve_quadratic	assign	residual_norm < best_residua
 src/quadratic_elastic_fem.rs	solve_quadratic	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t0 > t_min	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t1 < t_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/rng.rs	raw_state	raw	raw_state	integer	the generator's u64 state and increment returned as they are for a digest (the name is about exposing the state, not a platform operation)
 src/sdf_character.rs	resolve	assign	d > best_distance	selection	f32 argmax with a payload (best_position): the first strict maximum is kept, a NaN distance is never selected, ties keep the first (rule in alice-law-conformance.toml [G2]); moves to the alice-det-math argmax when it exists
 src/sdf_manifold.rs	reduce_manifold	assign	area > best_area	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	d > best_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	q > hull	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sdf_manifold.rs	reduce_manifold	assign	score > best_score	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/secondary_chain.rs	fit_to_rest	assign	d - cap . radius < r	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/sensors.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape.rs	bounding_radius	expr	apex > rim	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape.rs	bounding_radius	expr	corner > apex	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
@@ -307,4 +309,3 @@ src/world_shape_query.rs	max_fix	expr	b > a	fixed-point	operands are Fix128, so 
 src/world_shape_query.rs	min_fix	expr	b < a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/world_shape_query.rs	support	assign	d > best_dot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/world_shape_query.rs	trace	expr	gap <= tol	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/secondary_chain.rs	fit_to_rest	assign	d - cap . radius < r	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
