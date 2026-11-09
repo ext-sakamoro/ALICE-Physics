@@ -236,15 +236,15 @@ fn hex(b: &[u8]) -> String {
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
 const GOLDEN_STATE_DIGEST: &str =
-    "d44cdf153d4bddb4dea7da506bb6a1f51d47a5a1dfe30b38458e0728346992c9";
-const GOLDEN_LAW_ID: &str = "8c021167207e25a8c289bf5ef19c1df4ec735f81bbb3bf5269517e6e8a4df6dd";
+    "d712f3ee5fbe41c0664b7f1e1a1ad843a0616a25e9191c29f7bba247e4ce9d71";
+const GOLDEN_LAW_ID: &str = "8f319f3afe84da76d2aca6d67aa5ff1f30f219a5c66f55cf4c9a2048ba0e1f3a";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "ba49534c15e76e23bb1ad822da11f239557c62e48de7e0e8c91979b3beabcedc";
+    "428b8f0f804d6c6e073d8850a92a974dec095800cf2aa1ee74628bfde47b518b";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

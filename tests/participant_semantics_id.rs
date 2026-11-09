@@ -116,12 +116,12 @@ fn a_participant_semantics_id_changes_the_law_id() {
 /// damping became a rate per second: the world's damping field holds rate 0 by default where it
 /// held the retention 0.99, and the identifier moved to e90000da…; and again (aa6c7d77… before)
 /// when the sleep rule became a time (`time_to_sleep` folded as `Fix128` where row 11 folded a
-/// `u32` step count) and the identifier moved to c131f541…
+/// `u32` step count) and the identifier moved to e703ee83…
 #[test]
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
-        "8b2ca7d9d8a8cc405d05a513beee60d695c6612c90d7177aa1d70438cd9de6c1",
+        "91c0c8642919cd24aaf2cd360215b2359aaaace905397949a2ef08435d610898",
         "pinned from main 88f76d3b, then under the identifier with the alice-ml peer"
     );
 }

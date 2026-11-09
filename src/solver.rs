@@ -3637,9 +3637,11 @@ impl PhysicsWorld {
         }
     }
 
-    /// Before the sleep update: a body still asleep after the substeps ends the step where it
-    /// started (position, rotation, velocities): the substeps' joint solve and contacts may
-    /// have moved it although it was not integrated, and a sleeper does not move.
+    /// Before the sleep update, for each body still asleep after the substeps (the substeps'
+    /// joint solve and contacts may have moved it although it was not integrated): a member of
+    /// an island frozen on a recurrence ends the step where it started (position, rotation,
+    /// velocities), since the island's recorded state is what it holds; any other sleeper the
+    /// step moved wakes its island and keeps the move.
     fn restore_sleepers(&mut self, frame: &SleepFrame) {
         let n = self.bodies.len().min(frame.start.len());
         let mut held = vec![false; n];
@@ -9986,7 +9988,10 @@ mod tests {
         // 記録の後に余る byte も拒否する
         let mut long = bytes.clone();
         long.push(0);
-        assert!(!snapshot_world().deserialize_state(&long), "a trailing byte");
+        assert!(
+            !snapshot_world().deserialize_state(&long),
+            "a trailing byte"
+        );
 
         for pos in bytes.len() - 16..bytes.len() - 8 {
             let mut bad = bytes.clone();

@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb"
+        "e703ee83b9c159a18df6dcc17e7f6a1a5be8f897deaa503047095427122307ac"
     );
 }
 
@@ -654,8 +654,11 @@ fn drive_digest(backend: SolverBackend) -> String {
 // moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
 // own plane, not a static collider; the chassis state and payload after 240 frames hash the same
 // as the build before that change)
-const DRIVE_XPBD: &str = "bbce201d49dd1e63cda450654c8959131fed46efecfd5f3102b823e15f083a6c";
-const DRIVE_TGS: &str = "df11b5729277a93df663e4c6fbfc0e722791b3586e79cc65c39851ec4327e5c2";
+// re-pinned when the elastic islands' recurrence record joined world snapshot version 7 and the
+// semantics identifier moved to e703ee83…: the header and the checksum moved; with the record not
+// written the digest is the value before, so the chassis and the payload did not
+const DRIVE_XPBD: &str = "b498ef3e7468fb6193b68af694c661634c1fd436006fe8f078ca6f675a97001a";
+const DRIVE_TGS: &str = "34b27ec99978254b025906132df5f16978cc33edbe81f7426f9f6a77d1fc3bfe";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

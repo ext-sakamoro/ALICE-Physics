@@ -559,11 +559,15 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // moved; the bodies and the participant payload did not (no damping, no static collider here; the
 // body state and payload after 256 frames hash the same as the build before that change)
 // re-pinned for world snapshot version 7 (the sleep rule and idle times as seconds) and the
-// semantics identifier c131f541… (sleep by time): the header, the sleep fields and the
+// semantics identifier e703ee83… (sleep by time): the header, the sleep fields and the
 // checksum moved; the bodies and the participant payload did not (their hash after 256
 // frames, 47adc89f…, is the build before's)
-const THREE_BODY_XPBD: &str = "010f47ee0643539afdeaa9b40d924266bbfda735f1d9aa2ae42de77c7f19faeb";
-const THREE_BODY_TGS: &str = "392342c965fdf58095db648a3ec03a65f4245749e7e5e7aaadd7114dc83f91bc";
+// re-pinned when the elastic islands' recurrence record joined world snapshot version 7 and the
+// semantics identifier moved to e703ee83… (a sleeping body a step moves now wakes): the header and
+// the checksum moved; with the record not written the digest is the value before, so the bodies
+// and the participant payload did not
+const THREE_BODY_XPBD: &str = "3593173626023d410c14cb5de97cb55d51fe68192e5294310221e2967c0ed0f7";
+const THREE_BODY_TGS: &str = "fe6df7cd8384d37faeaf15569f9b4ad74dd7a4fb6c752b542f802ae66775da4c";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
