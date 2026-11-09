@@ -66,36 +66,108 @@ fn travel() -> Fix128 {
 }
 
 /// oracle: on an incline of angle `theta` the drop ends at `g sin(theta) / drag` down the
-/// slope, within the f32 of the field, and stays on the plane.
+/// slope, within the f32 of the field, and stays on the plane, for every step: the drag is
+/// implicit, so the fixed point of `v ← (v + g_t dt) / (1 + c dt)` is `g_t / c` whatever `dt`
+/// is (swept over 1/60, 1/240 and 1/960 s, the same 10 s of sim time each)
 #[test]
 fn on_an_incline_the_speed_reaches_the_closed_form() {
     let theta = 30.0_f64.to_radians();
     let (ny, nx) = (theta.cos() as f32, theta.sin() as f32);
     let plane = ClosureSdf::new(move |x, y, _| nx * x + ny * y, move |_, _, _| (nx, ny, 0.0));
     let targets = [LandingTarget::Field(&plane)];
-    let mut s = one_drop(v(0.0, 1.0, 0.0));
-    let mut rng = DeterministicRng::new(1);
     let drag = 2.0;
-    let mut landed = 0;
-    for _ in 0..2400 {
-        landed += s
-            .step_with_run_off(dt(), &mut rng, &targets, travel(), run_off(drag, 0.9))
-            .landed
-            .len();
-    }
-    assert_eq!(landed, 1);
-    assert_eq!(s.particle_on_surface(0), Some(0));
-    let p = &s.particles[0];
     let closed = G * theta.sin() / drag;
-    let speed = f(p.velocity.length());
-    assert!(
-        (speed - closed).abs() < closed * 1e-3,
-        "{speed} against {closed}"
-    );
-    let off = f64::from(nx) * f(p.position.x) + f64::from(ny) * f(p.position.y);
-    assert!(off.abs() < 1e-2, "{off} off the plane");
-    assert!(f(p.velocity.x) > 0.0, "down the slope");
-    assert!(f(p.velocity.y) < 0.0, "down the slope");
+    for per_second in [60, 240, 960] {
+        let step = Fix128::from_ratio(1, per_second);
+        let mut s = one_drop(v(0.0, 1.0, 0.0));
+        let mut rng = DeterministicRng::new(1);
+        let mut landed = 0;
+        for _ in 0..10 * per_second {
+            landed += s
+                .step_with_run_off(step, &mut rng, &targets, travel(), run_off(drag, 0.9))
+                .landed
+                .len();
+        }
+        assert_eq!(landed, 1, "1/{per_second} s");
+        assert_eq!(s.particle_on_surface(0), Some(0), "1/{per_second} s");
+        let p = &s.particles[0];
+        let speed = f(p.velocity.length());
+        assert!(
+            (speed - closed).abs() < closed * 1e-3,
+            "1/{per_second} s: {speed} against {closed}"
+        );
+        let off = f64::from(nx) * f(p.position.x) + f64::from(ny) * f(p.position.y);
+        assert!(off.abs() < 1e-2, "1/{per_second} s: {off} off the plane");
+        assert!(f(p.velocity.x) > 0.0, "down the slope");
+        assert!(f(p.velocity.y) < 0.0, "down the slope");
+    }
+}
+
+/// A drop that ran off a surface, died in another step and came back in its slot is a free
+/// drop: the surface it was on is not carried into the new life, so it falls (gravity, no
+/// drag) and nothing drips. Both ways back: revived by hand through the public particles, and
+/// reused by an emitter for a new particle.
+#[test]
+fn a_drop_that_died_and_came_back_is_free() {
+    let floor = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+    let targets = [LandingTarget::Field(&floor)];
+    for by_emitter in [false, true] {
+        let mut s = one_drop(v(0.0, 0.05, 0.0));
+        s.particles[0].lifetime = Fix128::from_f64(0.5);
+        let mut rng = DeterministicRng::new(3);
+        // it lands and runs (the floor is flat, so it rests)
+        for _ in 0..60 {
+            s.step_with_run_off(dt(), &mut rng, &targets, travel(), run_off(2.0, 0.9));
+        }
+        assert_eq!(s.particle_on_surface(0), Some(0), "on the floor");
+        // it dies of age in the plain step
+        while s.particles[0].alive {
+            s.step(dt(), &mut rng);
+        }
+        let high = v(0.0, 2.0, 0.0);
+        if by_emitter {
+            // particles straight up at no speed, from 2 m: with room for one particle
+            // only, it reuses the dead slot
+            s.max_particles = 1;
+            s.add_emitter(ParticleEmitter::new(
+                high,
+                v(0.0, 1.0, 0.0),
+                Fix128::ZERO,
+                // two a step, so the rounding of 1/240 s cannot leave the first step empty; the
+                // cap of one takes the first
+                Fix128::from_int(480),
+                Fix128::ZERO,
+                Fix128::from_int(10),
+                Fix128::ONE,
+            ));
+        } else {
+            let p = &mut s.particles[0];
+            p.alive = true;
+            p.age = Fix128::ZERO;
+            p.position = high;
+            p.velocity = Vec3Fix::ZERO;
+        }
+        assert_eq!(
+            s.particle_on_surface(0),
+            None,
+            "a new life is not on the floor"
+        );
+        let events = s.step_with_run_off(dt(), &mut rng, &targets, travel(), run_off(2.0, 0.9));
+        assert!(
+            events.dripped.is_empty(),
+            "nothing drips: {:?}",
+            events.dripped
+        );
+        assert!(
+            events.landed.is_empty(),
+            "nothing lands from 2 m in one step"
+        );
+        assert_eq!(s.particle_on_surface(0), None);
+        assert_eq!(s.particles.len(), 1, "the slot was reused");
+        assert!(s.particles[0].alive);
+        let fell = f(high.y) - f(s.particles[0].position.y);
+        assert!(fell > 0.0, "it falls free (emitter {by_emitter}): {fell}");
+    }
 }
 
 /// A unit sphere at the origin.
