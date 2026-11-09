@@ -865,4 +865,141 @@ mod tests {
         }
         assert_eq!(forces.force(0), Some(Vec3Fix::ZERO));
     }
+
+    /// The snapshot is 20 bytes (version, zone digest, count) and reads back the
+    /// count; a payload of another length, version or zone is refused; a context
+    /// without the world's radii is an invalid state once a body is a candidate.
+    #[test]
+    fn the_snapshot_round_trips_and_refuses_another_zone() {
+        use crate::world_participant::{ForceAccumulator, SubstepCtx};
+        let i = Fix128::from_int;
+        let shape = ZoneShape::Aabb {
+            min: Vec3Fix::new(i(-10), i(-10), i(-10)),
+            max: Vec3Fix::new(i(10), i(0), i(10)),
+        };
+        let zone = BuoyancyZone::water_pool(shape);
+        let mut p = BuoyancyZoneParticipant::new(zone);
+        assert_eq!(p.kind(), BUOYANCY_ZONE_PARTICIPANT_KIND);
+        assert_eq!(p.zone().density_kg_m3, zone.density_kg_m3);
+        assert_eq!(p.bodies_in_fluid(), 0);
+
+        let bodies = [RigidBody::new_dynamic(
+            Vec3Fix::new(i(0), i(-2), i(0)),
+            Fix128::ONE,
+        )];
+        let h = Fix128::from_ratio(1, 64);
+        let radii = [Some(Fix128::from_ratio(1, 2))];
+        let mut forces = ForceAccumulator::new(1);
+        {
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h)
+                .expect("ctx")
+                .with_body_radii(&radii, Fix128::ONE);
+            p.substep(&mut ctx, h).expect("substep");
+        }
+        assert_eq!(p.bodies_in_fluid(), 1);
+
+        let mut bytes = Vec::new();
+        p.write_state(&mut bytes);
+        assert_eq!(bytes.len(), BUOYANCY_ZONE_STATE_LEN);
+        assert_eq!(&bytes[0..4], &1u32.to_le_bytes());
+        assert_eq!(&bytes[12..20], &1u64.to_le_bytes());
+
+        let mut fresh = BuoyancyZoneParticipant::new(zone);
+        assert_eq!(fresh.check_state(&bytes), Ok(()));
+        fresh.read_state(&bytes);
+        assert_eq!(fresh.bodies_in_fluid(), 1);
+
+        assert_eq!(
+            fresh.check_state(&bytes[..19]),
+            Err(StateError::Length {
+                expected: BUOYANCY_ZONE_STATE_LEN,
+                found: 19
+            })
+        );
+        let mut other_version = bytes.clone();
+        other_version[0] = 2;
+        assert_eq!(
+            fresh.check_state(&other_version),
+            Err(StateError::InvalidValue)
+        );
+        let mut denser = zone;
+        denser.density_kg_m3 = i(1025);
+        let other = BuoyancyZoneParticipant::new(denser);
+        assert_eq!(other.check_state(&bytes), Err(StateError::InvalidValue));
+
+        let mut forces = ForceAccumulator::new(1);
+        let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h).expect("ctx");
+        assert_eq!(
+            fresh.substep(&mut ctx, h),
+            Err(ParticipantFault::InvalidState)
+        );
+        assert_eq!(fresh.bodies_in_fluid(), 1);
+    }
+
+    /// The checked force is `force_on` bit for bit, for a box and a sphere of
+    /// fluid, at rest and moving, deep, partly in, above the surface, beside the
+    /// footprint and below the floor; a sphere zone differs from a box zone in
+    /// its digest.
+    #[test]
+    fn the_checked_force_is_the_force_for_both_shapes() {
+        let i = Fix128::from_int;
+        let half = Fix128::from_ratio(1, 2);
+        let boxed = BuoyancyZone::water_pool(ZoneShape::Aabb {
+            min: Vec3Fix::new(i(-10), i(-10), i(-10)),
+            max: Vec3Fix::new(i(10), i(0), i(10)),
+        });
+        let ball = BuoyancyZone::water_pool(ZoneShape::Sphere {
+            centre: Vec3Fix::new(i(0), i(-5), i(0)),
+            radius: i(5),
+        });
+        let points = [
+            Vec3Fix::new(i(0), i(-3), i(0)),
+            Vec3Fix::new(i(0), Fix128::from_ratio(-1, 4), i(0)),
+            Vec3Fix::new(i(0), Fix128::from_ratio(1, 4), i(0)),
+            Vec3Fix::new(i(0), i(3), i(0)),
+            Vec3Fix::new(i(20), i(-3), i(0)),
+            Vec3Fix::new(i(0), i(-20), i(0)),
+            Vec3Fix::new(i(4), i(-3), i(4)),
+        ];
+        for zone in [boxed, ball] {
+            for p in points {
+                for v in [Vec3Fix::ZERO, Vec3Fix::new(i(1), i(-2), Fix128::ZERO)] {
+                    let mut b = RigidBody::new_dynamic(p, Fix128::ONE);
+                    b.velocity = v;
+                    assert_eq!(zone.try_force_on(&b, half), Some(zone.force_on(&b, half)));
+                }
+            }
+            let b = RigidBody::new_dynamic(points[0], Fix128::ONE);
+            assert_eq!(zone.try_force_on(&b, Fix128::ZERO), Some(Vec3Fix::ZERO));
+        }
+        assert_eq!(
+            ball.shape
+                .signed_depth_below_surface(Vec3Fix::new(i(0), i(-3), i(0))),
+            Some(i(3))
+        );
+        assert_eq!(
+            ball.shape
+                .signed_depth_below_surface(Vec3Fix::new(i(0), i(-20), i(0))),
+            None
+        );
+        assert_eq!(
+            ball.shape
+                .signed_depth_below_surface(Vec3Fix::new(i(9), i(-5), i(0))),
+            None
+        );
+        assert_eq!(
+            ball.shape
+                .depth_below_surface(Vec3Fix::new(i(0), i(-3), i(0))),
+            i(3)
+        );
+        assert_eq!(
+            ball.shape
+                .depth_below_surface(Vec3Fix::new(i(9), i(-5), i(0))),
+            Fix128::ZERO
+        );
+        assert_ne!(
+            BuoyancyZoneParticipant::new(boxed).digest,
+            BuoyancyZoneParticipant::new(ball).digest
+        );
+    }
 }
