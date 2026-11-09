@@ -948,8 +948,10 @@ fn crowd_hash(parallel: bool) -> String {
 /// default 0 (the scene's default config had damped every body by a retention
 /// 0.99 per step). Re-recorded (from `20919b00…`) when the sleep rule became time
 /// (state version 4: each body's sleep record is a state byte and a `Fix128` idle time,
-/// 17 bytes a body where version 3 held a state byte and a `u32` step count).
-const GOLDEN_CROWD: &str = "a5f488635db8559668fd32a5c9c87fe76d38636de4695eeebee1be1b0ebfbca6";
+/// 17 bytes a body where version 3 held a state byte and a `u32` step count). Re-recorded (from
+/// `a5f48863…`) when the elastic islands' recurrence record was appended to the blob (an 8-byte
+/// island count, 0 here); with the record not written the digest is the value before.
+const GOLDEN_CROWD: &str = "5b322687f3474f034c82efd6c82a6e57364420c25d847c4d6b35700ba29edf87";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
