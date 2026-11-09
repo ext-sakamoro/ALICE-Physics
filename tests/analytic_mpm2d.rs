@@ -653,3 +653,95 @@ fn a_load_on_no_particle_is_refused() {
     );
     assert_eq!(w.state_digest(), before);
 }
+
+/// the foundation's stiffness of the oracles, N/m⁴: a soft backing (`ω = √(κ/ρ)` well inside the step)
+const KAPPA: f64 = 2.0e5;
+
+/// the rest positions of a world's particles
+fn rest_of(w: &Mpm2d) -> Vec<[Fix128; 2]> {
+    w.particles().iter().map(|p| p.x).collect()
+}
+
+/// oracle: a body on an elastic foundation under a uniform load. Gravity is a uniform load
+/// `ρ g` per volume and the foundation pushes back `κ u`, so the body moves as a whole by
+/// `u = ρ g / κ` (no strain: the load and the support are uniform). The motion is the mass on
+/// a spring, `ω = √(κ / ρ)`, undamped by the foundation; its mean over whole periods is the
+/// static displacement
+#[test]
+fn a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let anchors = rest_of(&w);
+    let c0 = centre_of_mass(&w);
+    let rho = material().density.to_f64();
+    let omega = (KAPPA / rho).sqrt();
+    let period = 2.0 * std::f64::consts::PI / omega;
+    let h = dt();
+    let per = (period / h).round() as usize;
+    // four whole periods, the mean of the centre's displacement over them
+    let mut sum = 0.0;
+    for _ in 0..4 * per {
+        let loads = w
+            .foundation_loads(&anchors, fx(KAPPA))
+            .expect("one anchor a particle");
+        w.step_with_loads(&loads).expect("the step succeeds");
+        sum += centre_of_mass(&w)[1] - c0[1];
+    }
+    let mean = sum / (4 * per) as f64;
+    let want = -rho * G / KAPPA;
+    assert!(
+        (mean - want).abs() < 0.02 * want.abs(),
+        "mean displacement {mean} vs ρg/κ {want}"
+    );
+    // uniform: every particle has moved alike (no strain beyond the rounding of the transfer)
+    let strained = w
+        .particles()
+        .iter()
+        .map(|p| {
+            (p.f[0][0].to_f64() - 1.0)
+                .abs()
+                .max((p.f[1][1].to_f64() - 1.0).abs())
+        })
+        .fold(0.0_f64, f64::max);
+    assert!(strained < 1e-3, "strain {strained}");
+}
+
+/// anchors set where the body hangs at equilibrium (`X + ρ g / κ` against gravity) hold it
+/// where it rests: the backing carries the weight and nothing moves
+#[test]
+fn anchors_at_the_hanging_equilibrium_hold_the_body_at_rest() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let rest = rest_of(&w);
+    let rho = material().density.to_f64();
+    let lift = fx(rho * G / KAPPA);
+    let anchors: Vec<[Fix128; 2]> = rest.iter().map(|x| [x[0], x[1] + lift]).collect();
+    for _ in 0..400 {
+        let loads = w
+            .foundation_loads(&anchors, fx(KAPPA))
+            .expect("one anchor a particle");
+        w.step_with_loads(&loads).expect("the step succeeds");
+    }
+    let moved = w
+        .particles()
+        .iter()
+        .zip(&rest)
+        .map(|(p, x)| ((p.x[0] - x[0]).to_f64().abs()).max((p.x[1] - x[1]).to_f64().abs()))
+        .fold(0.0_f64, f64::max);
+    assert!(moved < 1e-9, "moved {moved} m");
+}
+
+/// anchors that do not match the particles one to one are refused
+#[test]
+fn foundation_anchors_must_match_the_particles() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let mut anchors = rest_of(&w);
+    anchors.pop();
+    assert_eq!(
+        w.foundation_loads(&anchors, fx(KAPPA)),
+        Err(alice_physics_core::mpm2d::Mpm2dError::Invalid(
+            "foundation: one anchor a particle"
+        ))
+    );
+}
