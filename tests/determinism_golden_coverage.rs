@@ -103,6 +103,13 @@ const STEP_ENTRIES: &[&str] = &[
 /// time and run no participant, so they are a stage of a step rather than a
 /// step law; their result is pinned through `step_with_bridge`, which runs them.
 const NOT_STEP: &[&str] = &[
+    // the soft letters (cloth): adding one and the grab handles only record state; the step
+    // advances them (`cloth_state_digest` and the soft-letter oracles pin that)
+    "add_cloth",
+    "cloth_grab",
+    "cloth_move_grab",
+    "cloth_release",
+    "cloth_release_with_velocity",
     "add_body",
     "add_body_with_attachments",
     "add_body_with_radius",
