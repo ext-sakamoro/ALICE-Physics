@@ -80,7 +80,6 @@ src/secondary_chain.rs
 src/sleeping.rs
 src/smoke_fire.rs
 src/soft_body_cut.rs
-src/solver.rs
 src/solver/world_ccd.rs
 src/solver_tgs.rs
 src/solver_tgs_hooks_6dof_oriented.rs
