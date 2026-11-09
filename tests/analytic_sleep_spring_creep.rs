@@ -507,7 +507,8 @@ fn a_sleeping_orbit_wakes_when_its_inputs_change() {
 
 /// A sleeper the step moves wakes and keeps the move: in a pendulum whose heavy, damped pivot
 /// falls asleep while the bob still swings on a distance constraint, every body asleep both
-/// before and after a step ends it exactly where it started it, and the steps in which the constraint
+/// before and after a step ends it with its position, rotation, velocity and angular velocity
+/// bit for bit as they were, and the steps in which the constraint
 /// pulled a sleeping pivot leave it awake at the pulled place (not put back, not asleep at the
 /// moved place). The scene is `determinism_golden.rs::determinism_joint_pendulum`'s.
 #[test]
@@ -542,13 +543,12 @@ fn a_sleeper_the_step_moves_wakes_and_keeps_the_move() {
     let dt = Fix128::from_ratio(1, 60);
     let mut pulled_awake = 0;
     for n in 1..=240 {
-        let before: Vec<(Vec3Fix, QuatFix, bool)> = (0..2)
-            .map(|i| (w.bodies[i].position, w.bodies[i].rotation, w.is_sleeping(i)))
+        let before: Vec<(BodyState, bool)> = (0..2)
+            .map(|i| (state_of(&w, i), w.is_sleeping(i)))
             .collect();
         w.step(dt);
-        for (i, &(p, q, was_asleep)) in before.iter().enumerate() {
-            let b = &w.bodies[i];
-            let moved = b.position != p || b.rotation != q;
+        for (i, &(was, was_asleep)) in before.iter().enumerate() {
+            let moved = state_of(&w, i) != was;
             if was_asleep && w.is_sleeping(i) {
                 assert!(
                     !moved,
@@ -564,5 +564,126 @@ fn a_sleeper_the_step_moves_wakes_and_keeps_the_move() {
     assert!(
         pulled_awake > 0,
         "the premise: the constraint pulls the sleeping pivot at least once"
+    );
+}
+
+/// position, rotation, velocity and angular velocity of one body
+type BodyState = (Vec3Fix, QuatFix, Vec3Fix, Vec3Fix);
+
+fn state_of(w: &PhysicsWorld, i: usize) -> BodyState {
+    let b = &w.bodies[i];
+    (b.position, b.rotation, b.velocity, b.angular_velocity)
+}
+
+/// A sleeper does not carry a velocity across a step: a sphere dropped on a resting one; the
+/// pair falls asleep under the velocity rule still carrying a velocity below the threshold.
+/// Every body asleep before and after a step ends it at its pose with velocity 0: a sleeper's
+/// velocity is derived from its unmoved pose, so the first step it sleeps through drops what
+/// it fell asleep with (as it drops an impulse given between steps without waking it).
+#[test]
+fn a_sleeper_asleep_through_a_step_ends_it_at_rest() {
+    let mut w = sphere_on_plane();
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        w.step(dt);
+    }
+    // a second sphere dropped on the first: the pair settles and falls asleep carrying a
+    // velocity below the threshold (measured 1.5e-17 m/s)
+    w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 4, 0), Fix128::ONE),
+        Fix128::ONE,
+    );
+    let mut through = 0;
+    for n in 1..=360 {
+        let before: Vec<(BodyState, bool)> = (0..w.bodies.len())
+            .map(|i| (state_of(&w, i), w.is_sleeping(i)))
+            .collect();
+        w.step(dt);
+        for (i, &(was, was_asleep)) in before.iter().enumerate().skip(1) {
+            if was_asleep && w.is_sleeping(i) {
+                through += 1;
+                let now = state_of(&w, i);
+                assert_eq!((now.0, now.1), (was.0, was.1), "step {n}: body {i} moved");
+                assert_eq!(
+                    now.2,
+                    Vec3Fix::ZERO,
+                    "step {n}: body {i} carries a velocity"
+                );
+            }
+        }
+    }
+    assert!(through > 0, "the premise: the spheres sleep through steps");
+}
+
+/// A sphere of radius 1 resting on a static sphere of radius 100 (a plane at y = 0), XPBD.
+fn sphere_on_plane() -> PhysicsWorld {
+    use alice_physics_core::solver::PhysicsConfig;
+    let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    w.add_body_with_radius(
+        RigidBody::new_static(Vec3Fix::from_int(0, -100, 0)),
+        Fix128::from_int(100),
+    );
+    w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 1, 0), Fix128::ONE),
+        Fix128::ONE,
+    );
+    w
+}
+
+/// A contact wakes a sleeper and the tiny velocity it gives survives: a sphere asleep on the
+/// plane, a light one (mass 1/100) released 0.1 m above it. The step in which they touch
+/// changes the sleeper's velocity (measured 6e-19 m/s, far below the 0.01 m/s threshold) and
+/// not its pose; the sleeper ends that step awake with that velocity, not put back to rest.
+/// Through the run a body asleep before and after a step ends it with its whole state
+/// unchanged.
+///
+/// What wakes it is the contact wake (the step's sleep rules wake a sleeper on a moved pose
+/// only; a sleeper's velocity is derived from its pose, so an unmoved one ends a step it
+/// sleeps through at rest, `a_sleeper_asleep_through_a_step_ends_it_at_rest`).
+#[test]
+fn a_contact_wakes_a_sleeper_and_its_tiny_velocity_survives() {
+    let mut w = sphere_on_plane();
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        w.step(dt);
+    }
+    assert!(
+        w.is_sleeping(1),
+        "the premise: the resting sphere is asleep"
+    );
+    // light (mass 1/100), released 0.1 m above it: the push it gives the sleeper is far below
+    // the velocity threshold (0.01 m/s; measured 6e-19 m/s), so only the comparison of the
+    // whole state can see it
+    w.add_body_with_radius(
+        RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(31, 10), Fix128::ZERO),
+            Fix128::from_ratio(1, 100),
+        ),
+        Fix128::ONE,
+    );
+    let mut velocity_only = 0;
+    for n in 1..=240 {
+        let before: Vec<(BodyState, bool)> = (0..w.bodies.len())
+            .map(|i| (state_of(&w, i), w.is_sleeping(i)))
+            .collect();
+        w.step(dt);
+        for (i, &(was, was_asleep)) in before.iter().enumerate().skip(1) {
+            let now = state_of(&w, i);
+            if !was_asleep || now == was {
+                continue;
+            }
+            assert!(
+                !w.is_sleeping(i),
+                "step {n}: body {i} slept through a step that changed its state"
+            );
+            if now.0 == was.0 && now.1 == was.1 {
+                assert_ne!((now.2, now.3), (was.2, was.3));
+                velocity_only += 1;
+            }
+        }
+    }
+    assert!(
+        velocity_only > 0,
+        "the premise: the drop changes the sleeper's velocity alone in some step"
     );
 }
