@@ -122,7 +122,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `rope` | XPBD rope and cable |  | [`rope_pin_constraints`](../examples/rope_pin_constraints.rs) | standalone (binding 6 of 13 items) |
 | `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | binding |
 | `rope_attach` | ropes attached to rigid bodies, with compliance and break force |  | [`rope_body_attachment`](../examples/rope_body_attachment.rs) | standalone |
-| `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | standalone |
+| `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | world API (step 6 of 48 items) |
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |
 | `cloth_fluid` | two-way cloth and fluid coupling |  |  | standalone |
 | `fluid` | position-based fluids (PBF) |  | [`fluid_block_column`](../examples/fluid_block_column.rs) | standalone |
@@ -266,7 +266,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `physics2d` | a separate 2D XPBD engine with circle, polygon, capsule and edge shapes and 2D joints |  | [`physics2d_impulse_spin`](../examples/physics2d_impulse_spin.rs) | standalone |
+| `physics2d` | a separate 2D XPBD engine with circle, polygon, capsule and edge shapes and 2D joints |  | [`physics2d_impulse_spin`](../examples/physics2d_impulse_spin.rs) | standalone (step 1 of 60 items) |
 
 ## Visualization
 
