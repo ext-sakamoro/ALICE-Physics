@@ -1869,6 +1869,12 @@ fn kinematic_substep_pose(
     )
 }
 
+/// The state every body starts a step with (position, rotation, velocity, angular
+/// velocity), for [`PhysicsWorld::restore_sleepers`] and [`PhysicsWorld::settle_islands`].
+struct SleepFrame {
+    start: Vec<(Vec3Fix, QuatFix, Vec3Fix, Vec3Fix)>,
+}
+
 impl PhysicsWorld {
     /// Create a new, empty physics world with the given solver configuration.
     ///
@@ -3581,14 +3587,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        self.islands.resize(self.bodies.len());
-        self.islands.reset_unions();
-        for j in &self.joints {
-            let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
-        }
+        let sleep_frame = self.begin_sleep_frame();
 
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
 
@@ -3652,7 +3651,9 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
+        self.restore_sleepers(&sleep_frame);
         self.update_sleep_states(dt);
+        self.settle_islands(&sleep_frame);
         self.park.active = false;
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
@@ -3690,6 +3691,121 @@ impl PhysicsWorld {
     pub fn step_n(&mut self, n: usize, dt: Fix128) {
         for _ in 0..n {
             self.step(dt);
+        }
+    }
+
+    /// Phase 0.5 of every step path: rebuild the joint islands, wake every island that holds
+    /// an awake body (or a kinematic body with a target to move to), and record the state
+    /// every body starts the step with ([`SleepFrame`]).
+    ///
+    /// The sleep rules ([`crate::sleeping`]'s MODEL): an island sleeps or wakes as a whole,
+    /// so a joint never connects a sleeping body to an awake one; a sleeping body is not
+    /// moved by the step ([`Self::restore_sleepers`]); an island that holds an elastic joint
+    /// (a [`crate::joint::Joint::Spring`]) falls asleep only at a step that left every one of
+    /// its bodies bit for bit as it was ([`Self::settle_islands`]).
+    fn begin_sleep_frame(&mut self) -> SleepFrame {
+        let n = self.bodies.len();
+        self.islands.resize(n);
+        self.islands.reset_unions();
+        for j in &self.joints {
+            let (a, b) = j.bodies();
+            if a < n && b < n {
+                self.islands.union(a, b);
+            }
+        }
+        let moving: Vec<usize> = (0..n)
+            .filter(|&i| {
+                let b = &self.bodies[i];
+                !b.is_static()
+                    && (!self.islands.is_sleeping(i)
+                        || b.kinematic_target
+                            .is_some_and(|(p, r)| p != b.position || r != b.rotation))
+            })
+            .collect();
+        if !moving.is_empty() {
+            // an island with an awake body: every sleeper in it wakes before the solve (the
+            // awake bodies keep their idle time, which is still counting toward sleep)
+            let mut live = vec![false; n];
+            for &i in &moving {
+                let r = self.islands.find(i);
+                live[r] = true;
+            }
+            for i in 0..n {
+                if !self.bodies[i].is_static() && self.islands.is_sleeping(i) {
+                    let r = self.islands.find(i);
+                    if live[r] {
+                        self.islands.sleep_data[i].wake();
+                    }
+                }
+            }
+        }
+        SleepFrame {
+            start: self
+                .bodies
+                .iter()
+                .map(|b| (b.position, b.rotation, b.velocity, b.angular_velocity))
+                .collect(),
+        }
+    }
+
+    /// Before the sleep update: a body still asleep after the substeps ends the step where it
+    /// started (position, rotation, velocities): the substeps' joint solve and contacts may
+    /// have moved it although it was not integrated, and a sleeper does not move.
+    fn restore_sleepers(&mut self, frame: &SleepFrame) {
+        for (i, &(p, r, v, w)) in frame.start.iter().enumerate() {
+            if i < self.bodies.len() && !self.bodies[i].is_static() && self.islands.is_sleeping(i) {
+                let b = &mut self.bodies[i];
+                b.position = p;
+                b.rotation = r;
+                b.velocity = v;
+                b.angular_velocity = w;
+            }
+        }
+    }
+
+    /// After the sleep update: an island sleeps only as a whole. It sleeps when every one of
+    /// its bodies that is not static met the velocity rule (`time_to_sleep` of idle time)
+    /// and, when the island holds an elastic joint, the step left each of them bit for bit
+    /// as it was (an elastic joint's backward Euler solve contracts to a `Q64.64` fixed
+    /// point; a body frozen anywhere else would be held off its rest by the frozen spring);
+    /// otherwise every body of the island is awake (their idle times are kept).
+    fn settle_islands(&mut self, frame: &SleepFrame) {
+        let n = self.bodies.len().min(self.islands.sleep_data.len());
+        if n == 0 {
+            return;
+        }
+        let mut elastic = vec![false; n];
+        for j in &self.joints {
+            if let crate::joint::Joint::Spring(s) = j {
+                if s.body_a < n {
+                    let r = self.islands.find(s.body_a);
+                    elastic[r] = true;
+                }
+            }
+        }
+        let mut qualifies = vec![true; n];
+        for i in 0..n {
+            let b = &self.bodies[i];
+            if b.is_static() {
+                continue;
+            }
+            let root = self.islands.find(i);
+            let unchanged = frame.start.get(i).is_some_and(|&(p, r, v, w)| {
+                p == b.position && r == b.rotation && v == b.velocity && w == b.angular_velocity
+            });
+            let ok = self.islands.is_sleeping(i) && (!elastic[root] || unchanged);
+            if !ok {
+                qualifies[root] = false;
+            }
+        }
+        for i in 0..n {
+            if self.bodies[i].is_static() {
+                continue;
+            }
+            let root = self.islands.find(i);
+            if !qualifies[root] && self.islands.is_sleeping(i) {
+                self.islands.sleep_data[i].state = crate::sleeping::SleepState::Awake;
+            }
         }
     }
 
@@ -4140,14 +4256,7 @@ impl PhysicsWorld {
         // `IslandManager` bookkeeping `step` performs; the TGS islands used
         // for solving below are a separate, local structure built from the
         // same joint list via `build_islands`).
-        self.islands.resize(self.bodies.len());
-        self.islands.reset_unions();
-        for j in &self.joints {
-            let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
-        }
+        let sleep_frame = self.begin_sleep_frame();
 
         // Phase 1: Apply force fields (identical call to `step`), then
         // advance kinematic targets before contacts are detected below.
@@ -4445,7 +4554,9 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping (identical call to `step`).
+        self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
+        self.settle_islands(&sleep_frame);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -4525,14 +4636,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        self.islands.resize(self.bodies.len());
-        self.islands.reset_unions();
-        for j in &self.joints {
-            let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
-        }
+        let sleep_frame = self.begin_sleep_frame();
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
@@ -4565,7 +4669,9 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
+        self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
+        self.settle_islands(&sleep_frame);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
@@ -5809,14 +5915,7 @@ impl PhysicsWorld {
         self.events.begin_frame();
 
         // Phase 0.5: Rebuild island connectivity from current joints
-        self.islands.resize(self.bodies.len());
-        self.islands.reset_unions();
-        for j in &self.joints {
-            let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
-        }
+        let sleep_frame = self.begin_sleep_frame();
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
@@ -5848,7 +5947,9 @@ impl PhysicsWorld {
         self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
+        self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
+        self.settle_islands(&sleep_frame);
 
         // Phase 4.5: Leave every SDF collider attached to a body at that
         // body's final pose, which is what the queries between steps
