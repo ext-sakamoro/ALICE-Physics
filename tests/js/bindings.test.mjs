@@ -204,6 +204,63 @@ test("a wind zone's arguments are checked and a world without it refuses its sna
   assert.throws(() => plain.restoreWorld(blob));
 });
 
+// A sphere of half the fluid's density floats with its centre on the surface, where the submerged
+// cap is half the ball: m·g = ρ·(V/2)·g. A rest height does not depend on the frame damping.
+test("a ball of half the density floats on its centre, from the radius the world knows", () => {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  const volume = (4 * Math.PI) / 3;
+  const ball = w.addDynamicBody(0, 0.25, 0, 0.5 * volume);
+  assert.equal(w.setCollisionRadius(ball, 1), true);
+  assert.equal(w.addBuoyancyZone(-1e3, -1e3, -1e3, 1e3, 0, 1e3, 1, 10, 8, 0), 0);
+  for (let i = 0; i < 1800; i++) w.step(DT);
+  const [x, y, z] = pos(w, ball);
+  assert.ok(Math.abs(y) < 1e-3, `y ${y}`);
+  assert.equal(x, 0);
+  assert.equal(z, 0);
+  // the same ball with half the radius displaces an eighth and sinks
+  assert.equal(w.setCollisionRadius(ball, 0.5), true);
+  for (let i = 0; i < 60; i++) w.step(DT);
+  assert.ok(pos(w, ball)[1] < -0.1, `y ${pos(w, ball)[1]}`);
+});
+
+test("a buoyancy zone rewinds to the same bits through snapshotWorld", () => {
+  const w = WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
+  const ball = w.addDynamicBody(0.5, 2, 0, 1);
+  w.setCollisionRadius(ball, 0.6);
+  assert.equal(w.addBuoyancyZone(-50, -50, -50, 50, 0, 50, 2, 10, 1.5, 0.5), 0);
+  for (let i = 0; i < 30; i++) w.step(DT);
+  const blob = w.snapshotWorld();
+  const run = () => {
+    for (let i = 0; i < 90; i++) w.step(DT);
+    return [Array.from(w.stateDigest()), Array.from(w.getPositions())];
+  };
+  const first = run();
+  w.restoreWorld(blob);
+  assert.deepEqual(Array.from(w.snapshotWorld()), Array.from(blob));
+  assert.deepEqual(run(), first);
+});
+
+test("a buoyancy zone's arguments are checked and a world without it refuses its snapshot", () => {
+  const w = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  assert.equal(w.addBuoyancyZone(1, 0, 0, 0, 1, 1, 1, 1, 0, 0), undefined, "inside out");
+  assert.equal(w.addBuoyancyZone(0, 0, 0, 1, 1, 1, 0, 1, 0, 0), undefined, "no density");
+  assert.equal(w.addBuoyancyZone(0, 0, 0, 1, 1, 1, 1, 0, 0, 0), undefined, "no gravity");
+  assert.equal(w.addBuoyancyZone(0, 0, 0, 1, 1, 1, 1, 1, -1, 0), undefined, "negative drag");
+  // past the range of the fixed point, on every argument and on either side
+  const good = [0, 0, 0, 1, 1, 1, 1, 1, 0, 0];
+  for (let i = 0; i < good.length; i++) {
+    for (const value of [1e19, 1e30, Number.MAX_VALUE, -1e19, -1e30, -Number.MAX_VALUE]) {
+      const p = good.slice();
+      p[i] = value;
+      assert.equal(w.addBuoyancyZone(...p), undefined, `argument ${i} = ${value}`);
+    }
+  }
+  assert.equal(w.addBuoyancyZone(0, 0, 0, 1, 1, 1, 1, 1, 0, 0), 0);
+  const blob = w.snapshotWorld();
+  const plain = WasmPhysicsWorld.withConfig(0, 0, 0, 8, 4);
+  assert.throws(() => plain.restoreWorld(blob));
+});
+
 test("a refused restoreWorld throws an Error named by its kind and changes nothing", () => {
   const w = jointedScene();
   const before = Array.from(w.stateDigest());
