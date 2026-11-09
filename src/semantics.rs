@@ -142,9 +142,11 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "contacts",
         hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
     ),
+    // re-recorded (from 8fe963f2…) when a sleeping body a step moves began to wake its
+    // island and keep the move (tests/determinism_golden.rs::determinism_joint_pendulum)
     (
         "distance constraint",
-        hex32("8fe963f2a89fbd96956eaee1c3651e94401f0511e8629b722070be6e3f12d793"),
+        hex32("6dcae0f3989e3ba3afd8e4056a98e774e093175ff2307d7fca8a7e8b3c204c37"),
     ),
     (
         "joint",
@@ -544,7 +546,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // every row from its value before (this one from e90000da…)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("c131f54110e492b6aca7e08fab88835429450f1261353c8a500a4d4b37af0beb"),
+        hex32("e703ee83b9c159a18df6dcc17e7f6a1a5be8f897deaa503047095427122307ac"),
     ),
 ];
 
