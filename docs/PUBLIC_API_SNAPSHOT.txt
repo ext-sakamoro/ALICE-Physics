@@ -4637,6 +4637,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_version() -> *const std::os::raw::c_char
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_buoyancy_zone(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_magnet(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, u32, f64, f64, f64) -> u32
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_rope(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, u32, f64, f64, u32, alice_physics_core::ffi::AliceVec3, u32, alice_physics_core::ffi::AliceVec3) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_add_wind_zone(*mut alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, f64, f64, f64, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_body_count(*const alice_physics_core::solver::PhysicsWorld) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_cast_capsule(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3, f64, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryHit) -> u8
@@ -4651,6 +4652,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_overlap_sphere(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryTarget, u32) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_register_material(*mut alice_physics_core::solver::PhysicsWorld, f64, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_restore(*mut alice_physics_core::solver::PhysicsWorld, *const u8, u32) -> u32
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_rope_positions(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceVec3, u32) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_gravity(*mut alice_physics_core::solver::PhysicsWorld, f64, f64, f64)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_substeps(*mut alice_physics_core::solver::PhysicsWorld, u32)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_velocities_batch(*mut alice_physics_core::solver::PhysicsWorld, *const f64, u32) -> u8
@@ -16247,6 +16249,70 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope_attach
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope_attach::RopeAttachment
 pub fn alice_physics_core::rope_attach::solve_rope_attachments(&[alice_physics_core::rope_attach::RopeAttachment], &mut [alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &[alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub fn alice_physics_core::rope_attach::solve_rope_attachments_two_way(&[alice_physics_core::rope_attach::RopeAttachment], &mut [alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
+pub mod alice_physics_core::rope_participant
+pub enum alice_physics_core::rope_participant::RopeAnchorError
+pub alice_physics_core::rope_participant::RopeAnchorError::ParticleOutOfRange
+pub alice_physics_core::rope_participant::RopeAnchorError::ParticleTiedTwice
+pub alice_physics_core::rope_participant::RopeAnchorError::PinsAreNotResidents
+impl core::clone::Clone for alice_physics_core::rope_participant::RopeAnchorError
+pub fn alice_physics_core::rope_participant::RopeAnchorError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::rope_participant::RopeAnchorError
+impl core::cmp::PartialEq for alice_physics_core::rope_participant::RopeAnchorError
+pub fn alice_physics_core::rope_participant::RopeAnchorError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::rope_participant::RopeAnchorError
+pub fn alice_physics_core::rope_participant::RopeAnchorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::StructuralPartialEq for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::Freeze for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::Send for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::Sync for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::Unpin for alice_physics_core::rope_participant::RopeAnchorError
+impl core::marker::UnsafeUnpin for alice_physics_core::rope_participant::RopeAnchorError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope_participant::RopeAnchorError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope_participant::RopeAnchorError
+pub struct alice_physics_core::rope_participant::RopeAnchor
+pub alice_physics_core::rope_participant::RopeAnchor::body: usize
+pub alice_physics_core::rope_participant::RopeAnchor::local_anchor: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::rope_participant::RopeAnchor::particle: usize
+impl core::clone::Clone for alice_physics_core::rope_participant::RopeAnchor
+pub fn alice_physics_core::rope_participant::RopeAnchor::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::rope_participant::RopeAnchor
+impl core::cmp::PartialEq for alice_physics_core::rope_participant::RopeAnchor
+pub fn alice_physics_core::rope_participant::RopeAnchor::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::rope_participant::RopeAnchor
+pub fn alice_physics_core::rope_participant::RopeAnchor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::StructuralPartialEq for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::Freeze for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::Send for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::Sync for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::Unpin for alice_physics_core::rope_participant::RopeAnchor
+impl core::marker::UnsafeUnpin for alice_physics_core::rope_participant::RopeAnchor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope_participant::RopeAnchor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope_participant::RopeAnchor
+pub struct alice_physics_core::rope_participant::RopeParticipant
+impl alice_physics_core::rope_participant::RopeParticipant
+pub fn alice_physics_core::rope_participant::RopeParticipant::new(alice_physics_core::rope::Rope, alloc::vec::Vec<alice_physics_core::rope_participant::RopeAnchor>) -> core::result::Result<Self, alice_physics_core::rope_participant::RopeAnchorError>
+pub fn alice_physics_core::rope_participant::RopeParticipant::particles(&[u8]) -> core::option::Option<alloc::vec::Vec<(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix)>>
+impl alice_physics_core::world_participant::Participant for alice_physics_core::rope_participant::RopeParticipant
+pub fn alice_physics_core::rope_participant::RopeParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::rope_participant::RopeParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::rope_participant::RopeParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::rope_participant::RopeParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::rope_participant::RopeParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::rope_participant::RopeParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::rope_participant::RopeParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::rope_participant::RopeParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::rope_participant::RopeParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::marker::Freeze for alice_physics_core::rope_participant::RopeParticipant
+impl core::marker::Send for alice_physics_core::rope_participant::RopeParticipant
+impl core::marker::Sync for alice_physics_core::rope_participant::RopeParticipant
+impl core::marker::Unpin for alice_physics_core::rope_participant::RopeParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::rope_participant::RopeParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::rope_participant::RopeParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope_participant::RopeParticipant
+pub const alice_physics_core::rope_participant::ROPE_OBS_TENSION: u32
+pub const alice_physics_core::rope_participant::ROPE_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub mod alice_physics_core::rotor
 pub enum alice_physics_core::rotor::RotorError
 pub alice_physics_core::rotor::RotorError::DegenerateAxis
@@ -21287,6 +21353,7 @@ pub fn alice_physics_core::world_participant::SubstepCtx<'a>::add_torque(&mut se
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::bodies(&self) -> &[alice_physics_core::solver::RigidBody]
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::body_radius(&self, usize) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::field(&self, alice_physics_core::world_participant::PortId) -> core::result::Result<&'a [alice_physics_core::math::Fix128], alice_physics_core::world_participant::FieldAccessError>
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::gravity(&self) -> core::option::Option<alice_physics_core::math::Vec3Fix>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::h(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::new(&'a [alice_physics_core::solver::RigidBody], &'a mut alice_physics_core::world_participant::ForceAccumulator, usize, usize, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::world_participant::AccumulateError>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::sdf_contacts(&self) -> &'a [alice_physics_core::sdf_collider::SdfContact]
@@ -21295,6 +21362,7 @@ pub fn alice_physics_core::world_participant::SubstepCtx<'a>::substep_index(&sel
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::substeps(&self) -> usize
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_body_radii(self, &'a [core::option::Option<alice_physics_core::math::Fix128>], alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_fields(self, &'a alice_physics_core::world_participant::FieldBoard, &'a mut alice_physics_core::world_participant::FieldStage, &'a [alice_physics_core::world_participant::Port]) -> Self
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_gravity(self, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_sdf_contacts(self, &'a [alice_physics_core::sdf_collider::SdfContact]) -> Self
 impl<'a> core::fmt::Debug for alice_physics_core::world_participant::SubstepCtx<'a>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -21415,6 +21483,16 @@ pub fn alice_physics_core::pressure::PressureModifier::semantics_id(&self) -> co
 pub fn alice_physics_core::pressure::PressureModifier::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::pressure::PressureModifier::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::rope_participant::RopeParticipant
+pub fn alice_physics_core::rope_participant::RopeParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::rope_participant::RopeParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::rope_participant::RopeParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::rope_participant::RopeParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::rope_participant::RopeParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::rope_participant::RopeParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::rope_participant::RopeParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::rope_participant::RopeParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::rope_participant::RopeParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::thermal::ThermalModifier
 pub fn alice_physics_core::thermal::ThermalModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::thermal::ThermalModifier::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
