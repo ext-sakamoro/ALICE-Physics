@@ -1589,6 +1589,207 @@ fn static_friction_correction(
     ))
 }
 
+/// The turn of `body` in the current substep as a rotation vector: the
+/// prediction `ω h` composed with the turns the contact solve has applied so
+/// far (`body.turn`).
+fn substep_turn(body: &RigidBody, dt: Fix128) -> Vec3Fix {
+    body.angular_velocity * dt + angular_from_rotations(body.turn, QuatFix::IDENTITY, Fix128::ONE)
+}
+
+/// Lever arm for rolling resistance: the turning body's arm, or for two
+/// turning bodies the reduced radius `r_a r_b / (r_a + r_b)`.
+fn rolling_arm(r_a: Vec3Fix, turns_a: bool, r_b: Vec3Fix, turns_b: bool) -> Fix128 {
+    let (la, lb) = (r_a.length(), r_b.length());
+    match (turns_a, turns_b) {
+        (true, true) if !(la + lb).is_zero() => la * lb / (la + lb),
+        (true, _) => la,
+        _ => lb,
+    }
+}
+
+/// The rotation and applied turn of `body` after the angular positional
+/// impulse `l` (`exp(I⁻¹ l)`); identity when it does not turn.
+fn turned_by(body: &RigidBody, turns: bool, l: Vec3Fix) -> (QuatFix, QuatFix) {
+    if !turns {
+        return (body.rotation, QuatFix::IDENTITY);
+    }
+    let theta = inv_inertia_world_apply(body.rotation, body.inv_inertia, l);
+    let (axis, angle) = theta.normalize_with_length();
+    if angle.is_zero() {
+        (body.rotation, QuatFix::IDENTITY)
+    } else {
+        let dq = QuatFix::from_axis_angle(axis, angle);
+        (dq.mul(body.rotation).normalize(), dq)
+    }
+}
+
+/// `k = u·I_a⁻¹u + u·I_b⁻¹u` over the turning bodies
+fn angular_weight(
+    a: &RigidBody,
+    turns_a: bool,
+    b: &RigidBody,
+    turns_b: bool,
+    u: Vec3Fix,
+) -> Fix128 {
+    let ka = if turns_a {
+        u.dot(inv_inertia_world_apply(a.rotation, a.inv_inertia, u))
+    } else {
+        Fix128::ZERO
+    };
+    let kb = if turns_b {
+        u.dot(inv_inertia_world_apply(b.rotation, b.inv_inertia, u))
+    } else {
+        Fix128::ZERO
+    };
+    ka + kb
+}
+
+/// Position-level rolling hold: a contact whose rolling resistance can carry
+/// the whole moment holds the pair against relative rolling as well as
+/// sliding.
+///
+/// With the centres' tangential displacement since the substep start
+/// `Δp_t` (under `μ λ`, else the contact slides), the centre-form friction
+/// impulse `p = |Δp_t| / w` has the moment `p r` about the centre, and
+/// undoing the substep's relative rolling turn `θ_t` (the tangential part
+/// of `θ_a − θ_b`, see `substep_turn`) takes the angular impulse
+/// `|θ_t| / k`. When `p r + |θ_t| / k ≤ c r λ` (`c λ` is `roll_limit`) the
+/// rolling resistance supplies that moment: the centres are corrected in the
+/// centre form (no turn from the friction impulse) and `θ_t` is turned back,
+/// so the contact material points return to where they were. On a slope
+/// this is `sin θ ≤ c cos θ`: a ball holds up to `tan θ = c`. Otherwise
+/// `None`: the turning static friction and the velocity-level resistance
+/// apply.
+#[allow(
+    clippy::type_complexity,
+    reason = "each side is (body, solved position, lever arm, turns)"
+)]
+fn rolling_hold(
+    (a, pos_a, r_a, turns_a): (&RigidBody, Vec3Fix, Vec3Fix, bool),
+    (b, pos_b, r_b, turns_b): (&RigidBody, Vec3Fix, Vec3Fix, bool),
+    normal: Vec3Fix,
+    dt: Fix128,
+    inv_w_sum: Fix128,
+    slide_limit: Fix128,
+    roll_limit: Fix128,
+) -> Option<(PosRotTurn, PosRotTurn)> {
+    let disp = |body: &RigidBody, pos: Vec3Fix| -> Vec3Fix {
+        if body.is_static() {
+            Vec3Fix::ZERO
+        } else {
+            pos - body.prev_position
+        }
+    };
+    let dp = disp(a, pos_a) - disp(b, pos_b);
+    let dp_t = dp - normal * dp.dot(normal);
+    if dp_t.length_squared() >= slide_limit * slide_limit {
+        return None;
+    }
+    let p = dp_t.length() * inv_w_sum;
+    let ta = if turns_a {
+        substep_turn(a, dt)
+    } else {
+        Vec3Fix::ZERO
+    };
+    let tb = if turns_b {
+        substep_turn(b, dt)
+    } else {
+        Vec3Fix::ZERO
+    };
+    let rel = ta - tb;
+    let theta_t = rel - normal * rel.dot(normal);
+    let (u, angle) = theta_t.normalize_with_length();
+    let l_rot = if angle.is_zero() {
+        Fix128::ZERO
+    } else {
+        let k = angular_weight(a, turns_a, b, turns_b, u);
+        if k.is_zero() {
+            return None;
+        }
+        angle / k
+    };
+    let arm = rolling_arm(r_a, turns_a, r_b, turns_b);
+    if p * arm + l_rot > roll_limit * arm {
+        return None;
+    }
+    let l = u * l_rot;
+    let (qa, da) = turned_by(a, turns_a, -l);
+    let (qb, db) = turned_by(b, turns_b, l);
+    Some((
+        (
+            select_vec3(
+                !a.inv_mass.is_zero(),
+                pos_a - dp_t * (a.inv_mass * inv_w_sum),
+                pos_a,
+            ),
+            qa,
+            da,
+        ),
+        (
+            select_vec3(
+                !b.inv_mass.is_zero(),
+                pos_b + dp_t * (b.inv_mass * inv_w_sum),
+                pos_b,
+            ),
+            qb,
+            db,
+        ),
+    ))
+}
+
+/// Position-level torsional hold: the substep's relative turn about the
+/// normal `θ_n` is turned back when the angular impulse it takes,
+/// `|θ_n| / k_n`, is under `μ_t λ`; otherwise nothing (the velocity-level
+/// torsional friction applies). Returns the new rotation and applied turn of
+/// each body.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "both bodies with their rotations and turning flags, the normal, the substep and the cap"
+)]
+fn torsional_hold(
+    a: &RigidBody,
+    b: &RigidBody,
+    turns: (bool, bool),
+    normal: Vec3Fix,
+    dt: Fix128,
+    mu_t: Fix128,
+    lambda: Fix128,
+) -> Option<((QuatFix, QuatFix), (QuatFix, QuatFix))> {
+    let cap = mu_t * lambda;
+    if cap <= Fix128::ZERO {
+        return None;
+    }
+    let turns_a = turns.0 && !a.is_static();
+    let turns_b = turns.1 && !b.is_static();
+    if !turns_a && !turns_b {
+        return None;
+    }
+    let ta = if turns_a {
+        substep_turn(a, dt)
+    } else {
+        Vec3Fix::ZERO
+    };
+    let tb = if turns_b {
+        substep_turn(b, dt)
+    } else {
+        Vec3Fix::ZERO
+    };
+    let spin = (ta - tb).dot(normal);
+    if spin.is_zero() {
+        return None;
+    }
+    let k = angular_weight(a, turns_a, b, turns_b, normal);
+    if k.is_zero() {
+        return None;
+    }
+    let l_len = spin / k;
+    if l_len.abs() >= cap {
+        return None;
+    }
+    let l = normal * l_len;
+    Some((turned_by(a, turns_a, -l), turned_by(b, turns_b, l)))
+}
+
 /// Position-level static friction at the contact point (Müller et al. 2020,
 /// eq. (26)–(28)): the tangential displacement of the two contact *material
 /// points* since the substep start — each body's centre motion plus the turn
@@ -1627,6 +1828,7 @@ fn static_friction_correction_at_point(
     inv_w_sum: Fix128,
     mu: Fix128,
     lambda: Fix128,
+    rolling: Fix128,
 ) -> Option<(PosRotTurn, PosRotTurn)> {
     let limit = mu * lambda;
     if limit <= Fix128::ZERO {
@@ -1678,6 +1880,19 @@ fn static_friction_correction_at_point(
             pos - body.prev_position
         }
     };
+    if !rolling.is_zero() && (turns_a || turns_b) {
+        if let Some(held) = rolling_hold(
+            (a, pos_a, r_a, turns_a),
+            (b, pos_b, r_b, turns_b),
+            normal,
+            dt,
+            inv_w_sum,
+            limit,
+            rolling * lambda,
+        ) {
+            return Some(held);
+        }
+    }
     let dp = moved(turns_a, a, pos_a, r_a) - moved(turns_b, b, pos_b, r_b);
     let dp_t = dp - normal * dp.dot(normal);
     let len_sq = dp_t.length_squared();
@@ -5859,9 +6074,29 @@ impl PhysicsWorld {
             inv_w_sum,
             constraint.friction,
             constraint.cached_lambda,
+            constraint.rolling_friction,
         ) {
             (pos_a, rot_a, pos_b, rot_b) = (xa, qa, xb, qb);
             (turn_a, turn_b) = (da, db);
+        }
+        // Torsional hold, on the bodies as the static friction left them
+        if !constraint.torsional_friction.is_zero() {
+            let mut a = *body_a.get();
+            let mut b = *body_b.get();
+            (a.rotation, a.turn) = (rot_a, turn_a.mul(a.turn));
+            (b.rotation, b.turn) = (rot_b, turn_b.mul(b.turn));
+            if let Some(((qa, da), (qb, db))) = torsional_hold(
+                &a,
+                &b,
+                turns,
+                contact.normal,
+                dt,
+                constraint.torsional_friction,
+                constraint.cached_lambda,
+            ) {
+                (rot_a, rot_b) = (qa, qb);
+                (turn_a, turn_b) = (da.mul(turn_a), db.mul(turn_b));
+            }
         }
 
         // `set_position` / `set_rotation` / `compose_turn` are no-ops for `BodyRef::Static`.
@@ -6048,6 +6283,7 @@ impl PhysicsWorld {
             inv_w_sum,
             constraint.friction,
             constraint.cached_lambda,
+            constraint.rolling_friction,
         ) {
             if !a.is_static() {
                 let body = &mut self.bodies[constraint.body_a];
@@ -6063,6 +6299,30 @@ impl PhysicsWorld {
                 body.rotation = qb;
                 if db != QuatFix::IDENTITY {
                     body.turn = db.mul(body.turn);
+                }
+            }
+        }
+        if !constraint.torsional_friction.is_zero() {
+            let a = self.bodies[constraint.body_a];
+            let b = self.bodies[constraint.body_b];
+            if let Some(((qa, da), (qb, db))) = torsional_hold(
+                &a,
+                &b,
+                turns,
+                constraint.contact.normal,
+                dt,
+                constraint.torsional_friction,
+                constraint.cached_lambda,
+            ) {
+                for (idx, body, q, d) in [
+                    (constraint.body_a, &a, qa, da),
+                    (constraint.body_b, &b, qb, db),
+                ] {
+                    if !body.is_static() && d != QuatFix::IDENTITY {
+                        let t = &mut self.bodies[idx];
+                        t.rotation = q;
+                        t.turn = d.mul(t.turn);
+                    }
                 }
             }
         }

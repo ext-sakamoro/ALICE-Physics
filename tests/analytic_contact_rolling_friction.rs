@@ -337,18 +337,60 @@ fn a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t
 #[ignore = "diagnostic sweep"]
 fn diag_sweep() {
     for n in [4usize, 8, 16, 32] {
-        let (_, v) = level_run(0.05, 2.0, n, 120);
-        let want = 2.0 - 5.0 / 7.0 * 0.05 * g() * 2.0;
-        let wy = spin_run(0.01, 6.0, n, 120);
-        let (mut w, ball) = spinning(0.01, 6.0, n);
-        let start = w.bodies[ball].position;
-        for _ in 0..120 { w.step(fx(DT)); }
-        let d = w.bodies[ball].position - start;
-        let held = incline_run(0.15, 0.1, n, 120);
-        let (mut w2, b2) = level(0.05, 2.0, n);
-        w2.step(fx(DT));
-        let first = w2.bodies[b2].velocity.x.to_f64();
-        println!("n={n}: v_err {:.3e} spin_err {:.3e} drift ({:.3e},{:.3e},{:.3e}) held {:.3e} first_frame_dv {:.3e} (want {:.3e})",
-            v - want, wy - 4.0, d.x.to_f64(), d.y.to_f64(), d.z.to_f64(), held, first - 2.0, -5.0/7.0*0.05*g()*DT);
+        // level roll: window rate and stop vs prediction from t = 1
+        let (mut w, b) = level(0.05, 2.0, n);
+        let (mut v1, mut x1, mut v2, mut stop_frame) = (0.0, 0.0, 0.0, 0usize);
+        for f in 1..=480 {
+            w.step(fx(DT));
+            let v = w.bodies[b].velocity.x.to_f64();
+            if f == 60 {
+                v1 = v;
+                x1 = w.bodies[b].position.x.to_f64();
+            }
+            if f == 120 {
+                v2 = v;
+            }
+            if stop_frame == 0 && v == 0.0 {
+                stop_frame = f;
+            }
+        }
+        let a = 5.0 / 7.0 * 0.05 * g();
+        let x_end = w.bodies[b].position.x.to_f64();
+        let pred = x1 + v1 * v1 / (2.0 * a);
+        let wv = w.bodies[b].velocity.x.to_f64();
+        // spin
+        let (mut s, sb) = spinning(0.01, 6.0, n);
+        let (mut w1, mut w2, mut sstop, mut p1) = (0.0, 0.0, 0usize, Vec3Fix::ZERO);
+        for f in 1..=480 {
+            s.step(fx(DT));
+            let wy = s.bodies[sb].angular_velocity.y.to_f64();
+            if f == 60 {
+                w1 = wy;
+                p1 = s.bodies[sb].position;
+            }
+            if f == 120 {
+                w2 = wy;
+            }
+            if sstop == 0 && wy == 0.0 {
+                sstop = f;
+            }
+        }
+        let d = s.bodies[sb].position - p1;
+        let rate = 0.01 * g() * 0.4f64.recip() / (R * R);
+        // held
+        let (mut h, hb) = incline(0.15, 0.1, n);
+        let start = h.bodies[hb].position;
+        let mut p_half = start;
+        for f in 1..=150 {
+            h.step(fx(DT));
+            if f == 30 {
+                p_half = h.bodies[hb].position;
+            }
+        }
+        let total = downhill(&h, hb, start, 0.1);
+        let after = downhill(&h, hb, p_half, 0.1);
+        println!("n={n}: roll win_err {:.3e} stop_err {:.3e} v_end {:.1e} stop@{} | spin win_err {:.3e} stop@{} (pred {:.1}) drift_after1 ({:.1e},{:.1e},{:.1e}) | held total {:.3e} after0.5 {:.3e}",
+            (v2 - v1) + a, x_end - pred, wv, stop_frame,
+            (w2 - w1) + rate, sstop, 60.0 + w1 / rate * 60.0, d.x.to_f64(), d.y.to_f64(), d.z.to_f64(), total, after);
     }
 }
