@@ -286,7 +286,7 @@ fn observe_body_mirrors_the_body_and_none_out_of_range() {
 }
 
 /// `sleeping` follows the island manager: a resting body falls asleep after
-/// `frames_to_sleep` idle frames.
+/// `time_to_sleep` of idle time.
 #[test]
 fn observe_body_reports_sleeping() {
     let mut w = PhysicsWorld::new(weightless());
