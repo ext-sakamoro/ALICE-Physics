@@ -4021,7 +4021,9 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        // version 7 came later with the rolling / torsional coefficients; the
+        // magnet's tag did not need it
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4169,10 +4171,11 @@ mod tests {
         assert_eq!(super::header_len(4), 80);
         assert_eq!(super::header_len(5), 80);
         assert_eq!(super::header_len(6), 80);
+        assert_eq!(super::header_len(7), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &6u16.to_le_bytes());
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
+        assert_eq!(&b[4..6], &7u16.to_le_bytes());
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 7);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -4324,6 +4327,84 @@ mod tests {
         );
     }
 
+    /// The snapshot of `w` with the version 7 slots (each material's and each
+    /// contact's rolling and torsional coefficients) cut out: the bytes a
+    /// version 6 writer gave the same world (header and checksum not yet
+    /// rewritten). The slots are found by writing `w` with a sentinel in each
+    /// and taking the offsets where the sentinel's bytes appear; their count is
+    /// checked, and every slot must hold zero in `w`, so the cut loses nothing.
+    fn without_v7_slots(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
+        let plain = make().snapshot_world();
+        let mut marked = make();
+        let sentinel = fx(123_456_789, 1_000_033);
+        for m in &mut marked.material_table.materials {
+            m.rolling_friction = sentinel;
+            m.torsional_friction = sentinel;
+        }
+        for c in &mut marked.contact_constraints {
+            c.rolling_friction = sentinel;
+            c.torsional_friction = sentinel;
+        }
+        let slots = 2 * (marked.material_table.materials.len() + marked.contact_constraints.len());
+        let marked = marked.snapshot_world();
+        assert_eq!(marked.len(), plain.len());
+        let needle = {
+            let mut b = super::W(Vec::new());
+            b.fix(sentinel);
+            b.0
+        };
+        let hits: Vec<usize> = (80..marked.len() - 16)
+            .filter(|&i| marked[i..i + 16] == needle[..])
+            .collect();
+        assert_eq!(hits.len(), slots, "version 7 slots found: {hits:?}");
+        let mut out = plain;
+        for &at in hits.iter().rev() {
+            assert!(out[at..at + 16].iter().all(|&x| x == 0), "slot holds zero");
+            out.drain(at..at + 16);
+        }
+        out
+    }
+
+    /// The version 6 form of `variant_world` (rates as given, no rolling /
+    /// torsional slots) restores to the same world, its coefficients zero.
+    #[test]
+    fn version_6_form_reads_the_rolling_and_torsional_coefficients_as_zero() {
+        let blob = variant_world().snapshot_world();
+        let mut v6 = without_v7_slots(variant_world);
+        v6[4..6].copy_from_slice(&6u16.to_le_bytes());
+        let v6 = reseal(v6);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&v6).expect("version 6 restores");
+        assert!(t
+            .material_table
+            .materials
+            .iter()
+            .all(|m| m.rolling_friction.is_zero() && m.torsional_friction.is_zero()));
+        assert_eq!(t.snapshot_world(), blob);
+    }
+
+    /// Nonzero coefficients on a material and a contact survive a version 7
+    /// round trip.
+    #[test]
+    fn version_7_round_trip_keeps_rolling_and_torsional_coefficients() {
+        use crate::material::PhysicsMaterial;
+        let mut src = variant_world();
+        let id = src.material_table.register(
+            PhysicsMaterial::new(0, fx(1, 2), Fix128::ZERO)
+                .with_rolling_friction(fx(3, 100))
+                .with_torsional_friction(fx(7, 1000)),
+        );
+        let blob = src.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("version 7 restores");
+        let m = t.material_table.get(id);
+        assert_eq!(
+            (m.rolling_friction, m.torsional_friction),
+            (fx(3, 100), fx(7, 1000))
+        );
+        assert_eq!(t.snapshot_world(), blob);
+    }
+
     /// The `variant_world` blob in the form an older writer (`version` 1 to 5)
     /// gave it: the current payload with every damping slot (the config's and
     /// each body's linear and angular one) holding `retention` per step where
@@ -4337,16 +4418,19 @@ mod tests {
     /// the result is a faithful older blob of exactly that world.
     fn legacy_form(version: u16, retention: Fix128) -> Vec<u8> {
         assert!((1..=5).contains(&version));
-        let plain = variant_world().snapshot_world();
-        let mut marked = variant_world();
+        let plain = without_v7_slots(variant_world);
         let sentinel = fx(987_654_321, 1_000_003);
-        marked.config.damping_rate = sentinel;
-        for b in &mut marked.bodies {
-            b.linear_damping_rate = sentinel;
-            b.angular_damping_rate = sentinel;
-        }
-        let slots = 1 + 2 * marked.bodies.len();
-        let marked = marked.snapshot_world();
+        let damped = || {
+            let mut m = variant_world();
+            m.config.damping_rate = sentinel;
+            for b in &mut m.bodies {
+                b.linear_damping_rate = sentinel;
+                b.angular_damping_rate = sentinel;
+            }
+            m
+        };
+        let slots = 1 + 2 * variant_world().bodies.len();
+        let marked = without_v7_slots(damped);
         assert_eq!(marked.len(), plain.len());
         let bytes = |x: Fix128| {
             let mut w = super::W(Vec::new());
@@ -4440,7 +4524,7 @@ mod tests {
             b.angular_damping_rate = fx(2 * i + 2, 11);
         }
         let blob = src.snapshot_world();
-        assert_eq!(&blob[4..6], &6u16.to_le_bytes());
+        assert_eq!(&blob[4..6], &7u16.to_le_bytes());
         let mut t = PhysicsWorld::new(SolverConfig::default());
         t.restore_world(&blob).expect("version 6 restores");
         assert_eq!(t.config.damping_rate, fx(3, 10));
