@@ -1829,7 +1829,8 @@ mod tests {
             Joint::Ball(BallJoint::new(1, 2, Vec3Fix::ZERO, Vec3Fix::ZERO)),
             Vec3Fix::from_int(0, 3, 0),
         );
-        let mut m1 = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100));
+        let mut m1 = PdController::new(Fix128::from_int(10), Fix128::ZERO, Fix128::from_int(100))
+            .expect("a non-negative force limit");
         m1.set_position_target(Fix128::from_int(6));
         let mut m2 = m1;
         m2.set_position_target(Fix128::ONE);

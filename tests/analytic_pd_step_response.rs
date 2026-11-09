@@ -62,7 +62,8 @@ fn pd_controlled_mass_overshoot_matches_second_order_closed_form() {
     });
     let body_idx = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, ffx(mass)));
 
-    let mut controller = PdController::new(ffx(kp), ffx(kd), ffx(1.0e9));
+    let mut controller =
+        PdController::new(ffx(kp), ffx(kd), ffx(1.0e9)).expect("a non-negative force limit");
     controller.set_position_target(ffx(target));
     assert_eq!(controller.mode, MotorMode::Position);
 
