@@ -45,7 +45,7 @@ fn world(kind: Broadphase, skip: bool) -> PhysicsWorld {
 
 fn sleep(w: &mut PhysicsWorld, i: usize) {
     w.islands.sleep_data[i].state = SleepState::Sleeping;
-    w.islands.sleep_data[i].idle_frames = 100;
+    w.islands.sleep_data[i].idle_time = Fix128::from_int(100);
 }
 
 fn step(w: &mut PhysicsWorld, n: usize) {
