@@ -235,6 +235,9 @@ fn hex(b: &[u8]) -> String {
 /// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
+// re-pinned for world snapshot version 8: the scene has no cloth, so its snapshot is the
+// version 7 one with the version, the length, an empty cloth section (12 bytes) and the
+// checksum changed, and the law_id below did not move
 const GOLDEN_STATE_DIGEST: &str =
     "ae339480def0fcb4e1d1668888eea3a5180d4cab8cf8863ff050031c1c290f14";
 const GOLDEN_LAW_ID: &str = "696e21114645842b8a3b6db7346eae96f2f126b44fc5b8444a4da04d9726afd0";
