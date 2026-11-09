@@ -178,17 +178,19 @@ fn run() -> (usize, usize, u64, String) {
     (scenes, raised, dg.0, hex)
 }
 
-/// Recorded with the one-predicate rule (`pair_radius_sum_overflows`). Before it,
+/// Recorded with the one-predicate rule (`pair_radius_sum_overflows`), and recorded again
+/// when the state blob gained the sleep time, the island records and the cloth section (the
+/// bytes each scene hashes are its `serialize_state`; the flags raised did not change). Before it,
 /// on main `06b1e84b` (2026-11-07), the same scenes gave 189 flags raised and
 /// the digest `0xb923ddd589b2f53d`: 33 scenes changed their flag (static pairs
 /// and pairs whose layers do not collide no longer raise it under Bvh /
 /// DynamicTree, parked pairs raise it with the skip on as without).
 const EXPECTED_SCENES: usize = 216;
 const EXPECTED_RAISED: usize = 156;
-const EXPECTED_DIGEST: u64 = 0xe7709d30a6cb254f;
+const EXPECTED_DIGEST: u64 = 0x6e5daff63bcadd9d;
 /// SHA-256 over the same bytes, the entry `"overflow flag"` of
 /// `PHYSICS_SEMANTICS_PINS` folds (see `tests/physics_semantics_id.rs`).
-const EXPECTED_SHA256: &str = "b26ddb11d0a9ae0d8f2d11de595e71bbefc9294673ab6f46fe6a7544554913cc";
+const EXPECTED_SHA256: &str = "a673ff33022aeb79a6302a34009893acb120c01019d18cdcc74dc27b25b1b802";
 
 #[test]
 fn the_overflow_flag_keeps_its_previous_bits_on_the_path_dependent_scenes() {
