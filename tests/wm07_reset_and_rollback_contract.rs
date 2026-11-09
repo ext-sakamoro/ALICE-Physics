@@ -105,7 +105,7 @@ fn idle_frames_matters_in_the_reset_oracle_scene() {
         "前提: まだ眠っていない状態で比較する"
     );
     assert!(
-        a.islands.sleep_data[0].idle_time > 0,
+        a.islands.sleep_data[0].idle_time > Fix128::ZERO,
         "前提: idle_frames が溜まっている scene でないと対照実験にならない"
     );
 
@@ -137,7 +137,7 @@ fn reset_world_is_bit_identical_in_a_scene_where_idle_frames_matters() {
         world.add_body(drifting_body());
         step_n(world, 10);
         assert!(
-            world.islands.sleep_data[0].idle_time > 0 || world.is_sleeping(0),
+            world.islands.sleep_data[0].idle_time > Fix128::ZERO || world.is_sleeping(0),
             "前提: reset 前に islands が汚れている (idle_frames or sleeping)"
         );
 
