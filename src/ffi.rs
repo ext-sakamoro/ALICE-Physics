@@ -2305,8 +2305,16 @@ mod tests {
             let call = |p: &[f64; 10]| {
                 alice_physics_world_add_buoyancy_zone(
                     c,
-                    AliceVec3 { x: p[0], y: p[1], z: p[2] },
-                    AliceVec3 { x: p[3], y: p[4], z: p[5] },
+                    AliceVec3 {
+                        x: p[0],
+                        y: p[1],
+                        z: p[2],
+                    },
+                    AliceVec3 {
+                        x: p[3],
+                        y: p[4],
+                        z: p[5],
+                    },
                     p[6],
                     p[7],
                     p[8],
