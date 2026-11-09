@@ -707,8 +707,11 @@ fn swing_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const SWING_XPBD: &str = "c4e095498ee2d7503aa22a5695e904fbc73fae4e54196f68d43630e35414a7a9";
-const SWING_TGS: &str = "fe97e1d93132915b8556b2f1bccac8824130846811637a21d9a3c64d89187217";
+// The snapshot's header holds `PHYSICS_SEMANTICS_ID` and the law id, so these move with the
+// identifier: the values pinned under `e90000da…` come back bit for bit from today's snapshot
+// with that identifier and its law id written into the header, so only the header moved.
+const SWING_XPBD: &str = "9a7df836d86a34d5064b022b50c687e9bc42325d3e5bf273af2eec24706280ba";
+const SWING_TGS: &str = "81e5c1b2ca45fe8d447226274891fa53ea9d5d73ba791c64aa993a81fe3de79c";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene
 /// after 256 frames, for each backend, printed so the log shows the bits.

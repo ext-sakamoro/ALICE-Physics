@@ -621,8 +621,8 @@ fn splash_digest(backend: SolverBackend) -> String {
 }
 
 // The snapshot's header holds `PHYSICS_SEMANTICS_ID` and the law id, so these move with the
-// identifier: when it moved to `c82742de…` the bodies and the payload after 256 frames stayed
-// bit for bit the same (both backends), and only the header changed the digests.
+// identifier: the values pinned under `e90000da…` come back bit for bit from today's snapshot
+// with that identifier and its law id written into the header, so only the header moved.
 const SPLASH_XPBD: &str = "b4a4b2235ea5e8b0910cd165c3c3647cbc925a70d317be06757e51fbcf6199ff";
 const SPLASH_TGS: &str = "fa207bee00a662deeb3baa005e9f2dce933d7d14ba347089cd465f2b5391a86a";
 
