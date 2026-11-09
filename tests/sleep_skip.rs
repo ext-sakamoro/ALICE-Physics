@@ -542,7 +542,11 @@ fn single_sleeping_body_is_parked_and_counts_idle_frames() {
     assert_eq!(s.broadphase_pairs, 0);
     assert_eq!(s.sleep_scanned, 1);
     assert_eq!(s.parked_sleep_updates, 1);
-    assert_eq!(w.islands.sleep_data[0].idle_time, 103, "100 + one per step");
+    assert_eq!(
+        w.islands.sleep_data[0].idle_time,
+        Fix128::from_int(100) + dt() + dt() + dt(),
+        "100 s + dt per step"
+    );
     assert_eq!(w.bodies[0].position, before.position);
     assert!(w.is_sleeping(0));
 }
