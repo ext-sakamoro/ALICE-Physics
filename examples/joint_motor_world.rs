@@ -52,9 +52,18 @@ fn main() {
     );
     assert!(spun > Fix128::from_int(2));
 
-    // stiffer gain, then off: the wheel coasts down under the world damping
+    // stiffer gain and a higher limit (a negative limit is refused and leaves the old one),
+    // then off: the wheel coasts down under the world damping
     if let Some(m) = world.joint_motor_mut(motor) {
         m.controller.kp = Fix128::from_int(4);
+        assert!(m.controller.set_max_force(Fix128::from_int(-1)).is_err());
+        m.controller
+            .set_max_force(Fix128::from_int(8))
+            .expect("a non-negative force limit");
+        println!(
+            "hinge motor limit now {}",
+            m.controller.max_force().to_f64()
+        );
     }
     world.disable_joint_motor(motor);
     for _ in 0..60 {
@@ -86,11 +95,19 @@ fn main() {
             Fix128::from_ratio(8, 5),
             Fix128::from_ratio(8, 5),
         );
+        c.set_max_torque(Fix128::from_int(100))
+            .expect("a non-negative torque limit");
+        println!("ball motor torque limit {}", c.max_torque().to_f64());
     }
     let target = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 1, 0), Fix128::from_ratio(1, 2));
     world
         .set_joint_motor_3d_rotation_target(turn, target)
         .expect("a non-zero rotation target");
+    // the target is stored as a unit quaternion; `from_axis_angle` is unit to rounding, so its
+    // bits are kept
+    if let Some(c) = world.joint_motor_3d_mut(turn) {
+        assert_eq!(c.target_rotation(), target);
+    }
     for _ in 0..300 {
         world.step(dt);
     }
