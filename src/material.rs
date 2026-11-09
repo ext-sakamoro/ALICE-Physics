@@ -501,8 +501,10 @@ mod tests {
             (c.rolling_friction, c.torsional_friction),
             (r(1, 4), r(1, 32))
         );
+        // Min has the lowest priority (an Average side would win), so both sides take Min
+        let lo_small = table.register(mk(CombineRule::Min, r(1, 8), r(1, 64)));
         let lo = table.register(mk(CombineRule::Min, r(1, 2), r(1, 32)));
-        let c = table.combine(a, lo);
+        let c = table.combine(lo_small, lo);
         assert_eq!(
             (c.rolling_friction, c.torsional_friction),
             (r(1, 8), r(1, 64))
