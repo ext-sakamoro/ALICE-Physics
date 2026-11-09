@@ -13,9 +13,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Level | Meaning | Modules |
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 26 |
-| world API | used through another `PhysicsWorld` method | 13 |
+| world API | used through another `PhysicsWorld` method | 14 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 123 |
+| standalone | a Rust API that only examples call | 122 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -26,7 +26,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `convex_mesh_builder` | step | 3 / 0 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `dynamic_bvh` | step | 10 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 13 / 5 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 1 / 1 / 1 / 0 | C ABI, Python, WebAssembly |
@@ -39,12 +39,12 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | step | 28 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `sleeping` | step | 17 / 3 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `sleeping` | step | 23 / 3 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 13 / 0 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 41 / 22 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `cloth` | world API (step 6 of 48 items) | 6 / 25 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
@@ -58,7 +58,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 54 of 210 items) | 54 / 124 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 59 of 221 items) | 59 / 130 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
