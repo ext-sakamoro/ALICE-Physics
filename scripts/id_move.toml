@@ -23,3 +23,10 @@ previous = "alice_physics_core::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS"
 # against it) is computed from it, so it moves only as an identifier does (a breaking version, both
 # values in CHANGELOG.md); tests/state_digest.rs pins its bytes and the golden digest it gives
 path = "alice_physics_core::PhysicsWorld::STATE_DIGEST_DOMAIN"
+
+
+[[id]]
+# the domain of Cloth::state_digest: a stored cloth digest is computed from it, so it moves only
+# as an identifier does (a breaking version, both values in CHANGELOG.md); tests/cloth_state_digest.rs
+# pins its bytes and the golden digest it gives
+path = "alice_physics_core::cloth::Cloth::CLOTH_DIGEST_DOMAIN"
