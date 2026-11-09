@@ -2282,6 +2282,31 @@ mod tests {
             assert_eq!(add(v(9.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.6), u32::MAX);
             assert_eq!(add(v(-3.0, -4.0, -5.0), v(0.0, 0.0, 0.0), 0.6), u32::MAX);
             assert_eq!(add(v(-3.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.0), u32::MAX);
+            // past the range of Fix128, on every argument and on either side
+            let call = |p: &[f64; 15]| {
+                alice_physics_world_add_wind_zone(
+                    c,
+                    v(p[0], p[1], p[2]),
+                    v(p[3], p[4], p[5]),
+                    v(p[6], p[7], p[8]),
+                    p[9],
+                    p[10],
+                    p[11],
+                    p[12],
+                    p[13],
+                    p[14],
+                )
+            };
+            let good = [
+                -3.0, -4.0, -5.0, 6.0, 7.0, 8.0, 1.0, 2.0, -2.0, 4.0, 1.5, 0.75, 1.25, 0.8, 0.6,
+            ];
+            for i in 0..good.len() {
+                for value in [1e19, 1e30, f64::MAX, -1e19, -1e30, f64::MIN] {
+                    let mut p = good;
+                    p[i] = value;
+                    assert_eq!(call(&p), u32::MAX, "argument {i} = {value}");
+                }
+            }
             assert_eq!(add(v(-3.0, -4.0, -5.0), v(1.0, 2.0, -2.0), 0.6), 0);
             assert_eq!(
                 alice_physics_world_add_wind_zone(
