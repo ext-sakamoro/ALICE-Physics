@@ -4701,6 +4701,13 @@ mod tests {
             "sleep slots found: {sleep_hits:?}"
         );
         sleep_hits.sort_unstable_by(|a, b| b.cmp(a));
+        // Version 7 also holds the elastic islands' recurrence records right after the
+        // last idle time (a `u64` count, 0 here: the world holds no spring), which no
+        // earlier version has.
+        assert!(variant_world().islands.orbits.is_empty());
+        let after = sleep_hits[0] + 16;
+        assert_eq!(payload[after..after + 8], [0u8; 8], "an empty record count");
+        payload.drain(after..after + 8);
         for at in sleep_hits {
             let mut hi = [0u8; 8];
             let mut lo = [0u8; 8];

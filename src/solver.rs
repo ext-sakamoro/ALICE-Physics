@@ -10060,8 +10060,9 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        // v3: header 12 + body ごと 208 + body ごと sleep 5 + world ごと flag 1 + fingerprint 8
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8);
+        // v4: header 12 + body ごと 208 + body ごと sleep 17 + world ごと flag 1 + fingerprint 8
+        //     + 弾性の島の再帰の記録 (spring が無いので島の数 0 の 8 byte)
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8 + 8);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -10092,10 +10093,11 @@ mod tests {
         //   [12+n*208, 12+n*208+n*5)             sleep 状態 → 該当 body の sleep_data が変わる
         //   [12+n*208+n*5, 12+n*208+n*5+1)       overflow flag (1 byte)
         //   [12+n*208+n*5+1, ..+9)               population fingerprint (8 byte) → **拒否される**
+        //   [.., 末尾)                           弾性の島の再帰の記録 (v4、ここでは島の数 0 の 8 byte) → **拒否される**
         let src = snapshot_world();
         let bytes = src.serialize_state();
         let body_end = 12 + 2 * 208;
-        let flag_pos = bytes.len() - 9;
+        let flag_pos = bytes.len() - 17;
 
         // 領域 1: header — 1 byte 壊れたら受け付けない
         for pos in 0..12 {
@@ -10128,7 +10130,20 @@ mod tests {
         // 領域 5: population fingerprint (末尾 8 byte) — 1 byte でも壊れたら
         // 拒否する (= count は一致しているが fingerprint 不一致で fail-fast、
         // gap #3 の population 検査そのもの)
+        // 領域 6: 再帰の記録 (末尾 8 byte、島の数 0) — 壊すと島の数が 0 でなくなり、続く
+        // byte が無いので拒否する
         for pos in bytes.len() - 8..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(!dst.deserialize_state(&bad), "orbit record byte {pos}");
+        }
+        // 記録の後に余る byte も拒否する
+        let mut long = bytes.clone();
+        long.push(0);
+        assert!(!snapshot_world().deserialize_state(&long), "a trailing byte");
+
+        for pos in bytes.len() - 16..bytes.len() - 8 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -10243,6 +10258,7 @@ mod tests {
         one.extend_from_slice(&bytes[12 + 2 * 208..12 + 2 * 208 + 17]);
         one.push(0); // v2: flag
         one.extend_from_slice(&exact.population_fingerprint().to_le_bytes()); // v3: fingerprint
+        one.extend_from_slice(&0u64.to_le_bytes()); // v4: 弾性の島の再帰の記録 (島 0)
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -11355,8 +11371,8 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        // v3: body 0 体でも header 12 + flag 1 + fingerprint 8
-        assert_eq!(bytes.len(), 21);
+        // v4: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
+        assert_eq!(bytes.len(), 29);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);
