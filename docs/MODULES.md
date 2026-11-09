@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 54 of 210 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 58 of 217 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -65,7 +65,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `force` | force fields: wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |  | [`particle_emitter_forces`](../examples/particle_emitter_forces.rs) | step |
 | `motor` | 1D / 3D PD controllers for joint motors |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | step |
 | `sleeping` | sleep detection and union-find islands |  |  | step |
-| `axis_lock` | per-body locks of world position and rotation axes (planar bodies, rails, turntables) |  | [`axis_lock_planar`](../examples/axis_lock_planar.rs) | step |
+| `axis_lock` | per-body locks of world position and rotation axes (planar bodies, rails, turntables) |  | [`axis_lock_planar`](../examples/axis_lock_planar.rs) | standalone (step 6, world API 3 of 18 items) |
 | `event` | begin / persist / end contact and trigger events |  | [`world_events_and_islands`](../examples/world_events_and_islands.rs) | step |
 | `interpolation` | world snapshots and quaternion blending for rendering between steps |  | [`substep_interpolation`](../examples/substep_interpolation.rs) | standalone (step 1 of 19 items) |
 | `netcode` | lockstep frame inputs, snapshots, checksums and rollback |  | [`rollback_netcode`](../examples/rollback_netcode.rs) | binding |

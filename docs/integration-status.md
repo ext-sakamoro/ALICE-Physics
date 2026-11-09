@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2567 |
-| live | reached without examples (crate-internal roots or a binding) | 749 |
-| | **total** | **3347** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2576 |
+| live | reached without examples (crate-internal roots or a binding) | 768 |
+| | **total** | **3375** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2567)
+## L1 — example-only (2576)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -120,6 +120,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/articulation.rs`: `ArticulatedBody`, `ArticulatedBody::add_link`, `ArticulatedBody::apply_motors`, `ArticulatedBody::body_indices`, `ArticulatedBody::dof_count`, `ArticulatedBody::forward_kinematics`, `ArticulatedBody::joints`, `ArticulatedBody::link_count`, `ArticulatedBody::new`, `ArticulatedBody::set_motor`, `FeatherstoneSolver`, `FeatherstoneSolver::new`, `FeatherstoneSolver::solve`, `FeatherstoneSolver::solve_with_mass_splitting`, `LINK_ROOT`, `Link`, `build_ragdoll`
 - `src/atmosphere.rs`: `AtmosphereState`, `Isa1976`, `Isa1976::MAX_GEOPOTENTIAL_ALTITUDE_M`, `Isa1976::at_geometric_altitude`, `Isa1976::at_geopotential_altitude`, `Isa1976::geopotential_altitude_m`, `IsaError`
 - `src/audio_physics.rs`: `AudioConfig`, `AudioEvent`, `AudioEventType`, `AudioGenerator`, `AudioGenerator::begin_frame`, `AudioGenerator::get_events`, `AudioGenerator::new`, `AudioGenerator::process_contact`, `AudioGenerator::set_material`, `AudioMaterial`, `AudioMaterial::METAL`, `AudioMaterial::RUBBER`, `AudioMaterial::STONE`, `AudioMaterial::WOOD`, `MaterialType`, `PhysicsWorld::emit_contact_audio`
+- `src/axis_lock.rs`: `AxisLock::ANGULAR`, `AxisLock::ANGULAR_X`, `AxisLock::ANGULAR_Y`, `AxisLock::ANGULAR_Z`, `AxisLock::LINEAR`, `AxisLock::LINEAR_X`, `AxisLock::LINEAR_Y`, `AxisLock::LINEAR_Z`, `AxisLock::contains`
 - `src/beam_stress.rs`: `BeamAnalysis`, `BeamAnalysis::analyze`, `BeamAnalysis::new`, `BeamAnalysis::with_end_condition`, `BeamAnalysis::with_min_fos`, `BeamReport`, `ColumnEndCondition`, `ColumnEndCondition::k_factor`, `CrossSection`, `CrossSection::area_mm2`, `CrossSection::max_c_mm`, `CrossSection::second_moment_of_area_mm4`, `CrossSection::section_modulus_mm3`, `LoadCase`, `LoadCase::length_mm`, `LoadCase::max_bending_moment_nmm`, `LoadCase::max_deflection_mm`, `euler_critical_load_n`
 - `src/bimaterial.rs`: `BimaterialReport`, `BimaterialSide`, `BimaterialSide::from_material`, `analyze_bimaterial`, `effective_modulus_reuss_mpa`, `effective_modulus_voigt_mpa`, `interfacial_bond_strength_mpa`, `published_cte_per_c`, `thermal_residual_stress_mpa`
 - `src/body_collider.rs`: `BodyCollider::bounding_radius`, `collider_meets_sphere`, `colliders_meet`, `quat_from_rotation`

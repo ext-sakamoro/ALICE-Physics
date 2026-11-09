@@ -73,6 +73,8 @@ use alice_physics::audio_physics::AudioEventType as _;
 use alice_physics::audio_physics::AudioGenerator as _;
 use alice_physics::audio_physics::AudioMaterial as _;
 use alice_physics::audio_physics::MaterialType as _;
+use alice_physics::axis_lock as _;
+use alice_physics::axis_lock::AxisLock as _;
 use alice_physics::batch_raycast as _;
 use alice_physics::batch_size as _;
 use alice_physics::batch_sphere_cast as _;
@@ -575,6 +577,7 @@ use alice_physics::laminate_failure::InvalidStrengthError as _;
 use alice_physics::laminate_failure::LaminateStrengths as _;
 use alice_physics::laminate_failure::StressState as _;
 use alice_physics::law_id as _;
+use alice_physics::law_id::BODY_AXIS_LOCK_ROW as _;
 use alice_physics::law_id::LAW_ID_DOMAIN as _;
 use alice_physics::law_id::PARTICIPANT_SEMANTICS_ROW as _;
 use alice_physics::law_id::WORLD_LAW_KIND as _;
@@ -1643,6 +1646,7 @@ use alice_physics::AudioConfig as _;
 use alice_physics::AudioEvent as _;
 use alice_physics::AudioGenerator as _;
 use alice_physics::AudioMaterial as _;
+use alice_physics::AxisLock as _;
 use alice_physics::BallJoint as _;
 use alice_physics::BatchRayQuery as _;
 use alice_physics::BlendMode as _;
@@ -1877,7 +1881,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1859 paths, checked at compile time
+    // 1863 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

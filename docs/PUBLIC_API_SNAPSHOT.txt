@@ -750,6 +750,48 @@ impl core::marker::Unpin for alice_physics_core::audio_physics::AudioMaterial
 impl core::marker::UnsafeUnpin for alice_physics_core::audio_physics::AudioMaterial
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::audio_physics::AudioMaterial
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::audio_physics::AudioMaterial
+pub mod alice_physics_core::axis_lock
+pub struct alice_physics_core::axis_lock::AxisLock(_)
+impl alice_physics_core::axis_lock::AxisLock
+pub const alice_physics_core::axis_lock::AxisLock::ALL: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_X: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_Y: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_Z: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_X: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_Y: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_Z: Self
+pub const alice_physics_core::axis_lock::AxisLock::NONE: Self
+pub const fn alice_physics_core::axis_lock::AxisLock::bits(self) -> u8
+pub const fn alice_physics_core::axis_lock::AxisLock::contains(self, Self) -> bool
+pub const fn alice_physics_core::axis_lock::AxisLock::from_bits(u8) -> core::option::Option<Self>
+pub const fn alice_physics_core::axis_lock::AxisLock::is_none(self) -> bool
+impl core::clone::Clone for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::axis_lock::AxisLock
+impl core::cmp::PartialEq for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::default() -> Self
+impl core::fmt::Debug for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics_core::axis_lock::AxisLock
+impl core::marker::StructuralPartialEq for alice_physics_core::axis_lock::AxisLock
+impl core::ops::bit::BitOr for alice_physics_core::axis_lock::AxisLock
+pub type alice_physics_core::axis_lock::AxisLock::Output = alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::bitor(self, Self) -> Self
+impl core::ops::bit::BitOrAssign for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::bitor_assign(&mut self, Self)
+impl core::marker::Freeze for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Send for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Sync for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Unpin for alice_physics_core::axis_lock::AxisLock
+impl core::marker::UnsafeUnpin for alice_physics_core::axis_lock::AxisLock
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::axis_lock::AxisLock
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::axis_lock::AxisLock
 pub mod alice_physics_core::beam_stress
 pub enum alice_physics_core::beam_stress::ColumnEndCondition
 pub alice_physics_core::beam_stress::ColumnEndCondition::Cantilever
@@ -4597,6 +4639,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_apply_impulse(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_apply_impulse_at(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3, alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_apply_impulses_batch(*mut alice_physics_core::solver::PhysicsWorld, *const f64, u32) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_axis_lock(*const alice_physics_core::solver::PhysicsWorld, u32) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_clear_collision_radius(*mut alice_physics_core::solver::PhysicsWorld, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_get_info(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceBodyInfo) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_get_position(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceVec3) -> u8
@@ -4605,6 +4648,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_get_velocity(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceVec3) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_observe(*const alice_physics_core::solver::PhysicsWorld, u32, *mut alice_physics_core::ffi::AliceBodyObservation) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_angular_velocity(*mut alice_physics_core::solver::PhysicsWorld, u32, alice_physics_core::ffi::AliceVec3) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_axis_lock(*mut alice_physics_core::solver::PhysicsWorld, u32, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_collision_radius(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_friction(*mut alice_physics_core::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_body_set_material(*mut alice_physics_core::solver::PhysicsWorld, u32, u32) -> u8
@@ -6412,6 +6456,7 @@ pub fn alice_physics_core::laminate_failure::puck_failure_mode(alice_physics_cor
 pub fn alice_physics_core::laminate_failure::tsai_hill_failure_index(alice_physics_core::laminate_failure::LaminateStrengths, alice_physics_core::laminate_failure::StressState) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::laminate_failure::tsai_wu_failure_index(alice_physics_core::laminate_failure::LaminateStrengths, alice_physics_core::laminate_failure::StressState) -> alice_physics_core::math::Fix128
 pub mod alice_physics_core::law_id
+pub const alice_physics_core::law_id::BODY_AXIS_LOCK_ROW: &[u8]
 pub const alice_physics_core::law_id::LAW_ID_DOMAIN: &[u8]
 pub const alice_physics_core::law_id::PARTICIPANT_SEMANTICS_ROW: &[u8]
 pub const alice_physics_core::law_id::WORLD_LAW_KIND: &[u8]
@@ -13604,6 +13649,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, ali
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics_core::static_collider::StaticCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::begin_frame(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::body_axis_lock(&self, usize) -> core::option::Option<alice_physics_core::axis_lock::AxisLock>
 pub fn alice_physics_core::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics_core::filter::CollisionFilter
 pub fn alice_physics_core::solver::PhysicsWorld::broadphase(&self) -> alice_physics_core::solver::Broadphase
@@ -13651,6 +13697,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self
 pub fn alice_physics_core::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics_core::collider::Contact)>
 pub fn alice_physics_core::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::set_body_axis_lock(&mut self, usize, alice_physics_core::axis_lock::AxisLock) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics_core::filter::CollisionFilter)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics_core::material::MaterialId)
@@ -18646,6 +18693,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, ali
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics_core::static_collider::StaticCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::begin_frame(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::body_axis_lock(&self, usize) -> core::option::Option<alice_physics_core::axis_lock::AxisLock>
 pub fn alice_physics_core::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics_core::filter::CollisionFilter
 pub fn alice_physics_core::solver::PhysicsWorld::broadphase(&self) -> alice_physics_core::solver::Broadphase
@@ -18693,6 +18741,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self
 pub fn alice_physics_core::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics_core::collider::Contact)>
 pub fn alice_physics_core::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::set_body_axis_lock(&mut self, usize, alice_physics_core::axis_lock::AxisLock) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics_core::filter::CollisionFilter)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics_core::material::MaterialId)
@@ -22587,6 +22636,47 @@ impl core::marker::Unpin for alice_physics_core::audio_physics::AudioMaterial
 impl core::marker::UnsafeUnpin for alice_physics_core::audio_physics::AudioMaterial
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::audio_physics::AudioMaterial
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::audio_physics::AudioMaterial
+pub struct alice_physics_core::AxisLock(_)
+impl alice_physics_core::axis_lock::AxisLock
+pub const alice_physics_core::axis_lock::AxisLock::ALL: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_X: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_Y: Self
+pub const alice_physics_core::axis_lock::AxisLock::ANGULAR_Z: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_X: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_Y: Self
+pub const alice_physics_core::axis_lock::AxisLock::LINEAR_Z: Self
+pub const alice_physics_core::axis_lock::AxisLock::NONE: Self
+pub const fn alice_physics_core::axis_lock::AxisLock::bits(self) -> u8
+pub const fn alice_physics_core::axis_lock::AxisLock::contains(self, Self) -> bool
+pub const fn alice_physics_core::axis_lock::AxisLock::from_bits(u8) -> core::option::Option<Self>
+pub const fn alice_physics_core::axis_lock::AxisLock::is_none(self) -> bool
+impl core::clone::Clone for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::axis_lock::AxisLock
+impl core::cmp::PartialEq for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::default() -> Self
+impl core::fmt::Debug for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics_core::axis_lock::AxisLock
+impl core::marker::StructuralPartialEq for alice_physics_core::axis_lock::AxisLock
+impl core::ops::bit::BitOr for alice_physics_core::axis_lock::AxisLock
+pub type alice_physics_core::axis_lock::AxisLock::Output = alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::bitor(self, Self) -> Self
+impl core::ops::bit::BitOrAssign for alice_physics_core::axis_lock::AxisLock
+pub fn alice_physics_core::axis_lock::AxisLock::bitor_assign(&mut self, Self)
+impl core::marker::Freeze for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Send for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Sync for alice_physics_core::axis_lock::AxisLock
+impl core::marker::Unpin for alice_physics_core::axis_lock::AxisLock
+impl core::marker::UnsafeUnpin for alice_physics_core::axis_lock::AxisLock
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::axis_lock::AxisLock
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::axis_lock::AxisLock
 pub struct alice_physics_core::BallJoint
 pub alice_physics_core::BallJoint::body_a: usize
 pub alice_physics_core::BallJoint::body_b: usize
@@ -25409,6 +25499,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::add_sdf_collider(&mut self, ali
 pub fn alice_physics_core::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics_core::shape::Shape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_static_collider(&mut self, alice_physics_core::static_collider::StaticCollider) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::begin_frame(&mut self)
+pub fn alice_physics_core::solver::PhysicsWorld::body_axis_lock(&self, usize) -> core::option::Option<alice_physics_core::axis_lock::AxisLock>
 pub fn alice_physics_core::solver::PhysicsWorld::body_count(&self) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::body_filter(&self, usize) -> alice_physics_core::filter::CollisionFilter
 pub fn alice_physics_core::solver::PhysicsWorld::broadphase(&self) -> alice_physics_core::solver::Broadphase
@@ -25456,6 +25547,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::reset_tgs_cache_stats(&mut self
 pub fn alice_physics_core::solver::PhysicsWorld::reset_world(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::sdf_contacts(&self) -> alloc::vec::Vec<(usize, alice_physics_core::collider::Contact)>
 pub fn alice_physics_core::solver::PhysicsWorld::serialize_state(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::set_body_axis_lock(&mut self, usize, alice_physics_core::axis_lock::AxisLock) -> bool
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_collision_radius(&mut self, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_filter(&mut self, usize, alice_physics_core::filter::CollisionFilter)
 pub fn alice_physics_core::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics_core::material::MaterialId)

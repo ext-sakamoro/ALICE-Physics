@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 26 |
 | world API | used through another `PhysicsWorld` method | 13 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 3 |
-| standalone | a Rust API that only examples call | 123 |
+| standalone | a Rust API that only examples call | 124 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -51,13 +51,13 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
-| `law_id` | world API | 0 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `law_id` | world API | 0 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 54 of 210 items) | 54 / 124 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 58 of 217 items) | 58 / 127 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
@@ -71,6 +71,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `anomaly` | standalone | 0 / 0 / 0 / 54 / 0 | — |
 | `articulation` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `atmosphere` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `axis_lock` | standalone (step 6, world API 3 of 18 items) | 6 / 3 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
 | `beam_stress` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
@@ -189,24 +190,26 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 ### C ABI (`--features ffi`)
 
-`src/ffi.rs` exports 69 `extern "C"` functions. Which consumers declare or call each one:
+`src/ffi.rs` exports 71 `extern "C"` functions. Which consumers declare or call each one:
 
 | Consumer | Functions used | Missing |
 |----------|---------------:|---------|
-| C header | 69 / 69 | — |
-| bindings header | 69 / 69 | — |
-| Unity C# | 69 / 69 | — |
-| Unreal Engine plugin | 44 / 69 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_body_set_angular_velocity`, `alice_physics_body_set_material`, `alice_physics_body_set_rotation`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_add_buoyancy_zone`, `alice_physics_world_add_magnet`, `alice_physics_world_add_rope`, `alice_physics_world_add_wind_zone`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_register_material`, `alice_physics_world_restore`, `alice_physics_world_rope_positions`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
+| C header | 71 / 71 | — |
+| bindings header | 71 / 71 | — |
+| Unity C# | 71 / 71 | — |
+| Unreal Engine plugin | 44 / 71 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_axis_lock`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_body_set_angular_velocity`, `alice_physics_body_set_axis_lock`, `alice_physics_body_set_material`, `alice_physics_body_set_rotation`, `alice_physics_law_id`, `alice_physics_state_digest`, `alice_physics_world_add_buoyancy_zone`, `alice_physics_world_add_magnet`, `alice_physics_world_add_rope`, `alice_physics_world_add_wind_zone`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_register_material`, `alice_physics_world_restore`, `alice_physics_world_rope_positions`, `alice_physics_world_set_velocities_batch`, `alice_physics_world_snapshot` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
 | Consumer | Function | Reason |
 |----------|----------|--------|
 | Unreal Engine plugin | `alice_physics_body_apply_impulses_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_body_axis_lock` | the component exposes no axis-lock Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_get_info` | AliceBodyInfo has no Blueprint struct; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_get_position_fix128_raw` | Blueprint has no 128-bit integer type; determinism checks call the C ABI from C++ |
 | Unreal Engine plugin | `alice_physics_body_observe` | AliceBodyObservation has no Blueprint struct; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_set_angular_velocity` | not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_body_set_axis_lock` | the component exposes no axis-lock Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_set_material` | the component exposes no material or magnet Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_set_rotation` | not wrapped yet: a Blueprint setter waits for an Unreal build in CI to check it; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_law_id` | a 32-byte identifier has no Blueprint type yet; C++ code in a project calls the C ABI directly |
