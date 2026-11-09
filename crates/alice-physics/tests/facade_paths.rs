@@ -482,6 +482,9 @@ use alice_physics::heatmap::SliceAxis as _;
 use alice_physics::heatmap_to_rgba as _;
 use alice_physics::heightfield as _;
 use alice_physics::heightfield::HeightField as _;
+use alice_physics::holds as _;
+use alice_physics::holds::HoldError as _;
+use alice_physics::holds::Holds as _;
 use alice_physics::hyperelastic as _;
 use alice_physics::hyperelastic::cauchy_stress as _;
 use alice_physics::hyperelastic::small_strain_moduli as _;
@@ -494,6 +497,10 @@ use alice_physics::hyperelastic::Stretch as _;
 use alice_physics::ik_physics_bridge as _;
 use alice_physics::ik_physics_bridge::IkTarget as _;
 use alice_physics::ik_physics_bridge::IkTargetSet as _;
+use alice_physics::input_log as _;
+use alice_physics::input_log::InputLog as _;
+use alice_physics::input_log::LogError as _;
+use alice_physics::input_log::LogInput as _;
 use alice_physics::interface_capture as _;
 use alice_physics::interface_capture::fast_sweeping_reinit as _;
 use alice_physics::interface_capture::plic_normal as _;
@@ -1473,6 +1480,11 @@ use alice_physics::thin_wall::ThinWallConfig as _;
 use alice_physics::thin_wall::ThinWallReport as _;
 use alice_physics::torus as _;
 use alice_physics::torus::Torus as _;
+use alice_physics::touch as _;
+use alice_physics::touch::Grabbable as _;
+use alice_physics::touch::Grip as _;
+use alice_physics::touch::Hand as _;
+use alice_physics::touch::Touch as _;
 use alice_physics::transient_thermal as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d_nonlinear as _;
@@ -1864,7 +1876,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1846 paths, checked at compile time
+    // 1858 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
