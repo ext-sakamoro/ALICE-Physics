@@ -446,3 +446,141 @@ fn vec_at(bytes: &[u8], at: usize) -> Vec3Fix {
         fix_at(bytes, at + 2 * FIX),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world_participant::{ForceAccumulator, ObservationSink};
+
+    /// A rope from a fixed body at the origin down to a dynamic body.
+    fn hanging() -> (RopeParticipant, [RigidBody; 2]) {
+        let i = Fix128::from_int;
+        let rope = Rope::new(
+            Vec3Fix::ZERO,
+            Vec3Fix::new(Fix128::ZERO, i(-2), Fix128::ZERO),
+            4,
+            Fix128::ONE,
+        );
+        let anchors = vec![
+            RopeAnchor {
+                particle: 0,
+                body: 0,
+                local_anchor: Vec3Fix::ZERO,
+            },
+            RopeAnchor {
+                particle: 4,
+                body: 1,
+                local_anchor: Vec3Fix::ZERO,
+            },
+        ];
+        let bodies = [
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new_dynamic(Vec3Fix::new(Fix128::ZERO, i(-2), Fix128::ZERO), Fix128::ONE),
+        ];
+        (
+            RopeParticipant::new(rope, anchors).expect("anchors"),
+            bodies,
+        )
+    }
+
+    /// The anchors are checked: a pinned rope, a particle past the end and a
+    /// particle tied twice are refused.
+    #[test]
+    fn the_anchors_are_checked() {
+        let i = Fix128::from_int;
+        let line = || {
+            Rope::new(
+                Vec3Fix::ZERO,
+                Vec3Fix::new(i(1), i(0), i(0)),
+                2,
+                Fix128::ONE,
+            )
+        };
+        let tie = |particle| RopeAnchor {
+            particle,
+            body: 0,
+            local_anchor: Vec3Fix::ZERO,
+        };
+        let mut pinned = line();
+        pinned.pin_start();
+        assert_eq!(
+            RopeParticipant::new(pinned, vec![]).err(),
+            Some(RopeAnchorError::PinsAreNotResidents)
+        );
+        assert_eq!(
+            RopeParticipant::new(line(), vec![tie(3)]).err(),
+            Some(RopeAnchorError::ParticleOutOfRange)
+        );
+        assert_eq!(
+            RopeParticipant::new(line(), vec![tie(1), tie(1)]).err(),
+            Some(RopeAnchorError::ParticleTiedTwice)
+        );
+    }
+
+    /// Under gravity the hanging rope pulls the dynamic body up and stages
+    /// nothing on the fixed body; one tension is observed per anchor; the
+    /// snapshot reads back and refuses another length; a context without the
+    /// world's gravity or with too few bodies is an invalid state.
+    #[test]
+    fn the_substep_pulls_the_tied_body_and_the_snapshot_round_trips() {
+        let (mut p, bodies) = hanging();
+        let h = Fix128::from_ratio(1, 240);
+        let g = Vec3Fix::new(Fix128::ZERO, Fix128::from_f64(-9.81), Fix128::ZERO);
+        let mut forces = ForceAccumulator::new(2);
+        for k in 0..4 {
+            // one buffer per substep, as the world does
+            forces = ForceAccumulator::new(2);
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, k, 4, h)
+                .expect("ctx")
+                .with_gravity(g);
+            p.substep(&mut ctx, h).expect("substep");
+        }
+        assert_eq!(forces.force(0), Some(Vec3Fix::ZERO));
+        let pull = forces.force(1).expect("slot");
+        assert!(
+            pull.y > Fix128::ZERO,
+            "the rope holds the body up: {pull:?}"
+        );
+        let mut sink = ObservationSink::new();
+        p.observe(&mut sink);
+        assert_eq!(sink.values().len(), 2);
+        assert_eq!(sink.values()[1], (ROPE_OBS_TENSION + 1, pull.length()));
+
+        let mut bytes = Vec::new();
+        p.write_state(&mut bytes);
+        assert_eq!(bytes.len(), payload_len(5, 2));
+        let (mut fresh, _) = hanging();
+        assert_eq!(fresh.check_state(&bytes), Ok(()));
+        fresh.read_state(&bytes);
+        let mut again = Vec::new();
+        fresh.write_state(&mut again);
+        assert_eq!(again, bytes);
+        let particles = RopeParticipant::particles(&bytes).expect("rope payload");
+        assert_eq!(particles.len(), 5);
+        assert_eq!(particles[0].0, Vec3Fix::ZERO);
+        assert_eq!(RopeParticipant::particles(&bytes[..10]), None);
+        assert!(matches!(
+            fresh.check_state(&bytes[..bytes.len() - 1]),
+            Err(StateError::Length { .. })
+        ));
+        let mut other = bytes.clone();
+        other[4] ^= 1;
+        assert_eq!(fresh.check_state(&other), Err(StateError::InvalidValue));
+
+        let mut forces = ForceAccumulator::new(2);
+        let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h).expect("ctx");
+        assert_eq!(
+            fresh.substep(&mut ctx, h),
+            Err(ParticipantFault::InvalidState)
+        );
+        let one = [bodies[0]];
+        let mut forces = ForceAccumulator::new(1);
+        let mut ctx = SubstepCtx::new(&one, &mut forces, 0, 1, h)
+            .expect("ctx")
+            .with_gravity(g);
+        assert_eq!(
+            fresh.substep(&mut ctx, h),
+            Err(ParticipantFault::InvalidState)
+        );
+    }
+}
