@@ -46,7 +46,7 @@
 //! `ρ V g sin α < γ w (cos θ_r − cos θ_a)` is not modelled). No splash or bounce. The drag
 //! is linear (a viscous film), not inertial.
 //!
-//! **Verified by** `tests/analytic_particle_run_off.rs`:
+//! **Validation.** `tests/analytic_particle_run_off.rs`:
 //! - `on_an_incline_the_speed_reaches_the_closed_form` (`|g| sin α / c`)
 //! - `on_a_sphere_the_drop_drips_at_the_cosine_it_was_told`
 //! - `past_an_edge_the_drop_falls_free`
@@ -54,6 +54,8 @@
 //! - `rain_scene_digest_is_pinned`
 //! - `the_same_calls_give_the_same_bits`
 //! - `every_part_of_the_state_moves_the_digest`
+//!
+//! **Tiers.** L0 only.
 
 use crate::force::{field_force_at, ForceField};
 use crate::math::{Fix128, Vec3Fix};
