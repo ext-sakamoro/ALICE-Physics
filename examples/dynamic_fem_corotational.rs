@@ -239,4 +239,14 @@ fn main() {
         .map(|b| format!("{b:02x}"))
         .collect();
     println!("state digest after the run: {digest}");
+    let (v, a) = (solver.velocities(), solver.accelerations());
+    println!(
+        "vertex 0 at the end: velocity ({:.4e}, {:.4e}, {:.4e}) mm/s, acceleration ({:.4e}, {:.4e}, {:.4e}) mm/s²",
+        v[0].to_f64(),
+        v[1].to_f64(),
+        v[2].to_f64(),
+        a[0].to_f64(),
+        a[1].to_f64(),
+        a[2].to_f64()
+    );
 }
