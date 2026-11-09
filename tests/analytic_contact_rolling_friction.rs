@@ -426,9 +426,12 @@ fn driven(mu_t: f64, tau: f64, substeps: usize, path: Path) -> (f64, f64) {
     )
 }
 
-/// oracle: a steady torque about the normal below `μ_t m g` (`τ = μ_t m g / 2`)
-/// does not turn the ball at all (static torsional friction holds it; the
-/// angle after 2 s is within one rounding `2⁻⁴⁰` per substep); above it
+/// oracle: `add_torque` gives the frame's whole impulse `τ Δt` before the
+/// step, and the contact can resist at most `μ_t λ` per substep (`λ = m g h²`,
+/// so an impulse `μ_t m g h`), so static torsional friction holds the ball
+/// when `τ Δt ≤ μ_t m g h`, i.e. `τ ≤ μ_t m g / n` for `n` substeps: at half
+/// that (`τ = μ_t m g / 2n`) the ball does not turn at all (the angle after 2 s
+/// within one rounding `2⁻⁴⁰` per substep). Above the kinetic cap
 /// (`τ = 2 μ_t m g`) the ball spins up at `(τ − μ_t m g) / I`, within the
 /// Richardson bound from the default and half the substeps plus one rounding
 /// per substep.
@@ -443,7 +446,7 @@ fn a_torque_below_mu_t_m_g_holds_the_ball_and_above_it_spins_it_up() {
     let (w2, _) = driven(mu_t, 2.0 * cap, n / 2, Path::Serial);
     let bound = 2.0 * (w1 - w2).abs() + rounding;
     for path in paths() {
-        let (wy, angle) = driven(mu_t, 0.5 * cap, n, path);
+        let (wy, angle) = driven(mu_t, 0.5 * cap / n as f64, n, path);
         println!("{path:?} held torque: ω {wy:.3e} angle {angle:.3e} (bound {rounding:.2e})");
         assert!(
             angle <= rounding && wy.abs() <= rounding,

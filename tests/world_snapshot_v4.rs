@@ -640,6 +640,7 @@ fn a_target_differing_only_in_configuration_is_refused() {
 /// checksum rewritten. The slots are found by writing the world with a
 /// sentinel in each; their count is checked.
 fn version_6_form(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
+    use alice_physics_core::CombineRule;
     let fix = |x: Fix128| {
         let mut b = x.hi.to_le_bytes().to_vec();
         b.extend_from_slice(&x.lo.to_le_bytes());
@@ -648,22 +649,46 @@ fn version_6_form(make: impl Fn() -> PhysicsWorld) -> Vec<u8> {
     let plain = make().snapshot_world();
     let mut marked = make();
     let sentinel = Fix128::from_ratio(123_456_789, 1_000_033);
-    for m in &mut marked.material_table.materials {
-        m.rolling_friction = sentinel;
-        m.torsional_friction = sentinel;
-    }
+    // contacts: a sentinel in each slot (the fields are public)
     for c in &mut marked.contact_constraints {
         c.rolling_friction = sentinel;
         c.torsional_friction = sentinel;
     }
-    let slots = 2 * (marked.material_table.materials.len() + marked.contact_constraints.len());
+    let contact_slots = 2 * marked.contact_constraints.len();
     let marked = marked.snapshot_world();
     assert_eq!(marked.len(), plain.len());
     let needle = fix(sentinel);
-    let hits: Vec<usize> = (80..marked.len() - 8 - 15)
+    let mut hits: Vec<usize> = (80..marked.len() - 8 - 15)
         .filter(|&i| marked[i..i + 16] == needle[..])
         .collect();
-    assert_eq!(hits.len(), slots, "version 7 slots found: {hits:?}");
+    assert_eq!(hits.len(), contact_slots, "contact slots found: {hits:?}");
+    // materials: each entry is found by its own bytes (id, three coefficients,
+    // two combine tags, as `MaterialTable::get` reports them), and the two
+    // slots follow it
+    let world = make();
+    let tag = |r: CombineRule| match r {
+        CombineRule::Average => 0u8,
+        CombineRule::Min => 1,
+        CombineRule::Max => 2,
+        CombineRule::Multiply => 3,
+        other => panic!("no documented tag for {other:?}"),
+    };
+    for id in 0..world.material_table.len() {
+        let m = world.material_table.get(id as u16);
+        let mut entry = (id as u16).to_le_bytes().to_vec();
+        for x in [m.static_friction, m.dynamic_friction, m.restitution] {
+            entry.extend_from_slice(&fix(x));
+        }
+        entry.push(tag(m.friction_combine));
+        entry.push(tag(m.restitution_combine));
+        let at: Vec<usize> = (80..plain.len() - entry.len())
+            .filter(|&i| plain[i..i + entry.len()] == entry[..])
+            .collect();
+        assert_eq!(at.len(), 1, "material {id} entry found at {at:?}");
+        hits.push(at[0] + entry.len());
+        hits.push(at[0] + entry.len() + 16);
+    }
+    hits.sort_unstable();
     let mut out = plain;
     for &at in hits.iter().rev() {
         assert_eq!(out[at..at + 16], fix(Fix128::ZERO)[..], "slot holds zero");
