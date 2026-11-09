@@ -57,7 +57,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 59 of 221 items) |
-| `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
+| `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 11 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
 | `material` | per-pair friction and restitution with combine rules |  | [`material_registry_presets`](../examples/material_registry_presets.rs) | step |
