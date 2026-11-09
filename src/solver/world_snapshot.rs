@@ -4362,6 +4362,10 @@ mod tests {
             assert!(out[at..at + 16].iter().all(|&x| x == 0), "slot holds zero");
             out.drain(at..at + 16);
         }
+        // the header's payload length (`[8..16)`) counts the bytes between the
+        // header and the checksum
+        let payload = (out.len() - 80 - super::CHECKSUM_LEN) as u64;
+        out[8..16].copy_from_slice(&payload.to_le_bytes());
         out
     }
 

@@ -30,8 +30,24 @@
 //!   displacement of the contact material points `(x − x̄) + (r − q̄ q⁻¹ r)`
 //!   is cancelled when `|Δp_t| < μ λ_n` (eq. 26–28). The angular velocity
 //!   after the solve is `ω = ω_pred + log(turn) / h`, `turn` the exact
-//!   composition of the turns the friction applied.
+//!   composition of the turns the friction applied. Rolling resistance and
+//!   torsional friction (`apply_rolling_torsional_friction`, velocity stage,
+//!   before the sliding friction): the pair's relative angular velocity is
+//!   split into the spin about the normal and the rolling part, and each is
+//!   removed by an angular impulse capped at `c r λ_n / (h w)` and
+//!   `μ_t λ_n / (h w)` (`r` the lever arm, the reduced radius for two turning
+//!   bodies), so the torque at the cap is `c r N` and `μ_t N`; at the
+//!   position stage (`rolling_hold`, `torsional_hold`) the substep's relative
+//!   rolling turn and the centres' tangential displacement are both undone
+//!   when the moment they take, `p r + |θ_t| / k`, is within `c r λ_n`, and
+//!   the relative spin when `|θ_n| / k_n < μ_t λ_n`, so a held contact holds
+//!   exactly. Both coefficients combine with the material's friction rule
+//!   (`MaterialTable::combine_with_surface`): they are friction of the same
+//!   contact, so a pair taking the smaller sliding coefficient takes the
+//!   smaller rolling and torsional ones.
 //! - **単位 (units)**: SI in `Fix128` — m, s, kg, N, rad; quaternions unit.
+//!   The rolling coefficient `c` is dimensionless (`c = M / (r N)`), the
+//!   torsional coefficient `μ_t` is a length in m (`μ_t = M / N`).
 //! - **保存則 (conservation)**: contact impulses are equal and opposite, so
 //!   linear momentum is conserved and angular momentum about the contact
 //!   point is consistent with the lever arms
@@ -58,10 +74,16 @@
 //!   `analytic_contact_detection_small_penetration.rs`). Outside the range
 //!   nothing is clamped: a contact that slides takes the kinetic path, one
 //!   that sticks the static path; bodies that cannot turn use the centre
-//!   form bit for bit.
+//!   form bit for bit. Rolling and torsional friction act only where the
+//!   contact point is exact (plain spheres, `contact_point_is_exact`); a
+//!   shaped body gets no rolling or torsional resistance. With both
+//!   coefficients zero (the default) the step is bit for bit the step
+//!   without them.
 //! - **近似 (approximations)**: static and kinetic coefficients equal
-//!   (COV-RIGID-080); isotropic friction cone; no rolling or spinning
-//!   resistance, no contact compliance, no speed-dependent (Stribeck) or
+//!   (COV-RIGID-080); isotropic friction cone; rolling resistance and
+//!   torsional friction are Coulomb-like caps with constant coefficients (no
+//!   speed dependence, no viscoelastic hysteresis model, no growth of the
+//!   contact patch with load), no contact compliance, no speed-dependent (Stribeck) or
 //!   lubricated friction, no granular or soft contact; the contact patch is
 //!   a point, so a shaped body's torque comes from the support vertex, not
 //!   a patch (COV-RIGID-083); a cylinder or capsule lying on a plane has
@@ -99,6 +121,15 @@
 //!   rolling_down_an_incline_converges_at_first_order_in_the_substep`,
 //!   `::sliding_down_an_incline_converges_at_first_order_in_the_substep`,
 //!   `::just_below_the_slip_limit_the_ball_rolls_and_the_slip_falls_with_the_substep`;
+//!   rolling and torsional friction
+//!   `tests/analytic_contact_rolling_friction.rs::
+//!   a_rolling_ball_on_level_ground_slows_at_five_sevenths_of_c_g_and_stops`
+//!   (a = (5/7) c g, stopping distance v² / (2a)),
+//!   `::a_ball_rolls_down_an_incline_at_five_sevenths_of_g_sin_minus_c_cos`,
+//!   `::a_ball_on_an_incline_flatter_than_c_stays_at_rest` (tan θ = c),
+//!   `::a_spinning_ball_slows_under_torsional_friction_and_stops_at_i_omega_over_mu_t_m_g`;
+//!   the GPU-bridge path `tests/analytic_bridge_rolling_parity.rs::
+//!   the_bridged_step_applies_rolling_and_torsional_friction_like_the_cpu_step`;
 //!   the contact depth above EPA's threshold
 //!   `tests/analytic_contact_detection_small_penetration.rs::
 //!   a_penetration_above_the_epa_threshold_is_corrected_within_the_threshold`.
