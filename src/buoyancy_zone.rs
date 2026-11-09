@@ -1,3 +1,35 @@
+//! # MODEL
+//!
+//! - **Equations**: Archimedes buoyancy plus linear and quadratic drag on each dynamic
+//!   body inside the zone, `F = ρ V_sub |g| ŷ − c_lin v − c_quad |v| v`, with
+//!   `V_sub = f · (4/3) π r³` and `f` the submerged fraction of a sphere of the world's
+//!   radius `r` of that body, `f = h² (3r − h) / (4 r³)`, `h = clamp(d + r, 0, 2r)`, `d`
+//!   the signed depth of the centre below the surface.
+//! - **Units**: SI. ρ kg/m³, r m, V m³, g m/s², v m/s, `c_lin` kg/s, `c_quad` kg/m, F N.
+//! - **Conservation**: the fluid is an external reservoir at rest, so the bodies'
+//!   momentum is not conserved; buoyancy is conservative (a potential in depth) and
+//!   the drag dissipates kinetic energy. The fluid carries no state of its own except
+//!   the count of bodies inside, which is in the world's state and digest.
+//! - **Range**: the force is integrated explicitly once per substep of width `h`; the
+//!   drag is stable while `c_lin h / m < 2` and `c_quad |v| h / m < 2` (a substep
+//!   multiplies the velocity by `1 − x`). A force out of the fixed-point range is a
+//!   participant fault that changes nothing; the submerged fraction is clamped to
+//!   `[0, 1]` by construction. The density and coefficients are constants.
+//! - **Approximations**: a static fluid (no flow, no waves, no free surface motion),
+//!   a sphere of the body's radius stands for the body's shape, the force acts at the
+//!   body's centre (no torque from an offset centre of buoyancy), no added mass, no
+//!   surface tension, isotropic drag.
+//! - **Tiers**: prescribed static fluid volume (no flow): a tier below the fluid L0.
+//!   This is not the fluid model: the L0, a fluid solved with a free surface around
+//!   SDF solids, is not built, so this tier's error against it is not measured.
+//! - **Validation**: `tests/analytic_buoyancy_zone_participant.rs::a_half_density_sphere_floats_on_its_centre::a_quarter_density_sphere_floats_at_the_cap_root::terminal_speed_under_linear_drag::terminal_speed_under_quadratic_drag::the_displaced_volume_is_the_worlds_radius_of_each_body::staged_force_matches_the_formula::outside_the_zone_nothing_changes::the_box_bounds_the_fluid_on_every_side::the_sphere_bounds_the_fluid_and_far_bodies_stay_in_range::rewind_and_fork_are_bit_identical::splash_scene_digest_is_pinned`
+//!   (Archimedes at ½ and ¼ density against the cap root, terminal speeds against the
+//!   closed forms, the formula at one substep, the bounds of the volume, replay bits).
+//! - validation missing: the hydrostatic pressure field `p = ρ g h` inside the fluid
+//!   (the fluid L0; this tier has no pressure field)
+//! - validation missing: added mass and the torque of an offset centre of buoyancy
+//!   (the fluid L0)
+//!
 //! `BuoyancyZone` — 3-D fluid volume that applies buoyancy + drag to
 //! immersed rigid bodies.
 //!
@@ -784,5 +816,53 @@ mod tests {
         let zone = BuoyancyZone::water_pool(shape);
         let fraction = zone.submerged_fraction(Vec3Fix::ZERO, Fix128::ZERO);
         assert_eq!(fraction, Fix128::ZERO);
+    }
+
+    /// The substep stages `force_on` with the world's radius of each dynamic body in the
+    /// fluid, leaves static and outside bodies alone and reports the count; a force out of
+    /// range is a fault that stages nothing and keeps the count.
+    #[test]
+    fn the_substep_stages_the_force_with_the_worlds_radius() {
+        use crate::world_participant::{ForceAccumulator, ObservationSink, SubstepCtx};
+        let i = Fix128::from_int;
+        let shape = ZoneShape::Aabb {
+            min: Vec3Fix::new(i(-10), i(-10), i(-10)),
+            max: Vec3Fix::new(i(10), i(0), i(10)),
+        };
+        let zone = BuoyancyZone::water_pool(shape);
+        let mut inside = RigidBody::new_dynamic(Vec3Fix::new(i(0), i(-2), i(0)), Fix128::ONE);
+        inside.velocity = Vec3Fix::new(Fix128::ZERO, i(-1), Fix128::ZERO);
+        let outside = RigidBody::new_dynamic(Vec3Fix::new(i(50), i(-2), i(0)), Fix128::ONE);
+        let fixed = RigidBody::new_static(Vec3Fix::new(i(0), i(-2), i(0)));
+        let bodies = [inside, outside, fixed];
+        let radius = Fix128::from_ratio(1, 2);
+        let radii = [Some(radius), None, None];
+        let h = Fix128::from_ratio(1, 64);
+        let mut p = BuoyancyZoneParticipant::new(zone);
+        let mut forces = ForceAccumulator::new(bodies.len());
+        {
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h)
+                .expect("ctx")
+                .with_body_radii(&radii, Fix128::ONE);
+            p.substep(&mut ctx, h).expect("substep");
+        }
+        assert_eq!(forces.force(0), Some(zone.force_on(&bodies[0], radius)));
+        assert_eq!(forces.force(1), Some(Vec3Fix::ZERO));
+        assert_eq!(forces.force(2), Some(Vec3Fix::ZERO));
+        let mut sink = ObservationSink::new();
+        p.observe(&mut sink);
+        assert_eq!(sink.values(), &[(BUOYANCY_ZONE_OBS_BODIES, Fix128::ONE)]);
+
+        let mut huge = zone;
+        huge.density_kg_m3 = Fix128::from_int(1 << 62);
+        let mut q = BuoyancyZoneParticipant::new(huge);
+        let mut forces = ForceAccumulator::new(bodies.len());
+        {
+            let mut ctx = SubstepCtx::new(&bodies, &mut forces, 0, 1, h)
+                .expect("ctx")
+                .with_body_radii(&radii, Fix128::ONE);
+            assert_eq!(q.substep(&mut ctx, h), Err(ParticipantFault::OutOfRange));
+        }
+        assert_eq!(forces.force(0), Some(Vec3Fix::ZERO));
     }
 }
