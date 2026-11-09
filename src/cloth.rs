@@ -11,6 +11,44 @@
 //! - Pin constraints for attaching cloth to bodies
 //! - Wind force and gravity
 //!
+//! # What is modelled, and what is an approximation
+//!
+//! Units: positions in metres, masses in kilograms, time in seconds, forces in newtons;
+//! every quantity is `Fix128` (Q64.64), so a run replays bit for bit on any target.
+//!
+//! Modelled by its equation:
+//! - The rest tether ([`Cloth::set_rest_tether`]): each free particle follows the damped
+//!   harmonic oscillator `m·ẍ = −k·(x − x_rest) − c·ẋ + m·a` with `k` in N/m and `c` in
+//!   N·s/m, advanced by the exact solution over each substep (angular frequency
+//!   `ω = √(k/m)`, damping ratio `ζ = c / (2·√(k·m))`), so the law holds for any step size
+//!   with no numerical damping and no stability limit on `ω·h`.
+//! - Gravity and wind enter as the constant acceleration `a` of a substep (wind as a
+//!   uniform acceleration, not a drag law).
+//! - Linear momentum of a constraint pair: a stretch correction moves the two particles in
+//!   opposite directions by amounts proportional to their inverse masses, so the pair's
+//!   momentum is unchanged by the correction (exactly, as `Fix128` addition is exact).
+//! - The exact sleep ([`Cloth::set_sleep`]): a step is skipped only when the previous step
+//!   changed no bit of the state under the same inputs, so sleeping never alters a
+//!   trajectory.
+//!
+//! Approximations (position-based dynamics, not a discretised continuum):
+//! - Stretch and bending are XPBD constraints with compliance (`stretch_compliance`,
+//!   `bend_compliance`, in m/N); the effective stiffness depends on `iterations` and
+//!   `substeps` unless the compliance is set, and there is no material model (no Young's
+//!   modulus, thickness or Poisson ratio), so stress and strain are not reported.
+//! - `config.damping` is a velocity retention per frame, not a viscous law: energy is not
+//!   conserved and the decay depends on the frame rate.
+//! - Contact with SDF colliders is a position projection to `thickness` outside the
+//!   surface (the field is evaluated in `f32`); the normal velocity is dropped and the
+//!   tangential one scaled by `1 − sdf_friction`: no Coulomb friction, no restitution, no
+//!   reaction on the collider's body. Self-contact likewise.
+//! - A grab ([`Cloth::grab`]) is a kinematic pin: the particle has infinite mass while held
+//!   and the pointer feels no reaction; the throw velocity is the pointer's velocity over
+//!   the last step, not an impulse balance.
+//! - An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass, so
+//!   mass is per particle, not per area, and the sheet has no thickness.
+//! - A cloth held by a world does not collide with rigid bodies or static colliders.
+//!
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
