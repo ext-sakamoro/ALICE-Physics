@@ -230,6 +230,8 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern uint alice_physics_world_add_wind_zone(IntPtr world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double baseSpeed, double gustAmplitude, double gustHz, double airDensity, double dragCoefficient, double area);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_magnet(IntPtr world, AliceVec3 position, AliceVec3 moment, double radius, uint material, double chiEff, double saturation, double density);
         [DllImport(DLL)] public static extern uint alice_physics_world_add_buoyancy_zone(IntPtr world, AliceVec3 min, AliceVec3 max, double density, double gravity, double dragLinear, double dragQuadratic);
+        [DllImport(DLL)] public static extern uint alice_physics_world_add_rope(IntPtr world, AliceVec3 start, AliceVec3 end, uint segments, double mass, double damping, uint startBody, AliceVec3 startLocal, uint endBody, AliceVec3 endLocal);
+        [DllImport(DLL)] public static extern uint alice_physics_world_rope_positions(IntPtr world, uint index, [Out] AliceVec3[] positions, uint capacity);
         [DllImport(DLL)] public static extern byte alice_physics_body_clear_collision_radius(IntPtr world, uint bodyId);
         [DllImport(DLL)] public static extern uint alice_physics_body_add_shaped(IntPtr world, AlicePhysicsShape shape, double density, AliceVec3 position);
         [DllImport(DLL)] public static extern byte alice_physics_body_set_shape(IntPtr world, uint bodyId, AlicePhysicsShape shape);
@@ -397,6 +399,26 @@ namespace AlicePhysics
         {
             ThrowIfDisposed();
             return Native.alice_physics_world_add_buoyancy_zone(_ptr, AliceVec3.FromVector3(min), AliceVec3.FromVector3(max), density, gravity, dragLinear, dragQuadratic);
+        }
+
+        /// <summary>Add a rope from start to end, falling under the world's gravity. startBody / endBody (uint.MaxValue = free) tie an end to a body at a local anchor. Part of the world snapshot. Returns its index or uint.MaxValue.</summary>
+        public uint AddRope(Vector3 start, Vector3 end, uint segments, double mass, double damping, uint startBody, Vector3 startLocal, uint endBody, Vector3 endLocal)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_add_rope(_ptr, AliceVec3.FromVector3(start), AliceVec3.FromVector3(end), segments, mass, damping, startBody, AliceVec3.FromVector3(startLocal), endBody, AliceVec3.FromVector3(endLocal));
+        }
+
+        /// <summary>The particles of the rope at participant index, or null when that participant is not a rope.</summary>
+        public Vector3[] GetRopePositions(uint index)
+        {
+            ThrowIfDisposed();
+            uint count = Native.alice_physics_world_rope_positions(_ptr, index, new AliceVec3[1], 1);
+            if (count == uint.MaxValue) return null;
+            var raw = new AliceVec3[count];
+            Native.alice_physics_world_rope_positions(_ptr, index, raw, count);
+            var result = new Vector3[count];
+            for (uint i = 0; i < count; i++) result[i] = raw[i].ToVector3();
+            return result;
         }
 
         /// <summary>Set body position.</summary>

@@ -119,6 +119,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `rope` | XPBD rope and cable |  | [`rope_pin_constraints`](../examples/rope_pin_constraints.rs) | standalone |
+| `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | standalone |
 | `rope_attach` | ropes attached to rigid bodies, with compliance and break force |  | [`rope_body_attachment`](../examples/rope_body_attachment.rs) | standalone |
 | `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | standalone |
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |

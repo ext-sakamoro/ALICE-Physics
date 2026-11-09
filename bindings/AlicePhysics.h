@@ -138,6 +138,8 @@ uint8_t  alice_physics_body_set_material(AlicePhysicsWorldHandle world, uint32_t
 uint32_t alice_physics_world_add_magnet(AlicePhysicsWorldHandle world, AliceVec3 position, AliceVec3 moment, double radius, uint32_t material, double chi_eff, double saturation, double density);
 uint32_t alice_physics_world_add_wind_zone(AlicePhysicsWorldHandle world, AliceVec3 min, AliceVec3 max, AliceVec3 direction, double base_speed, double gust_amplitude, double gust_hz, double air_density, double drag_coefficient, double area);
 uint32_t alice_physics_world_add_buoyancy_zone(AlicePhysicsWorldHandle world, AliceVec3 min, AliceVec3 max, double density, double gravity, double drag_linear, double drag_quadratic);
+uint32_t alice_physics_world_add_rope(AlicePhysicsWorldHandle world, AliceVec3 start, AliceVec3 end, uint32_t segments, double mass, double damping, uint32_t start_body, AliceVec3 start_local, uint32_t end_body, AliceVec3 end_local);
+uint32_t alice_physics_world_rope_positions(const AlicePhysicsWorldHandle world, uint32_t index, AliceVec3* out, uint32_t capacity);
 uint8_t  alice_physics_body_clear_collision_radius(AlicePhysicsWorldHandle world, uint32_t body_id);
 uint32_t alice_physics_body_add_shaped(AlicePhysicsWorldHandle world, AlicePhysicsShape shape, double density, AliceVec3 position);
 uint8_t  alice_physics_body_set_shape(AlicePhysicsWorldHandle world, uint32_t body_id, AlicePhysicsShape shape);

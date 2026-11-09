@@ -43,6 +43,7 @@ C	src/physics2d.rs
 C	src/rolling_contact.rs
 C	src/rope.rs
 C	src/rope_attach.rs
+C	src/rope_participant.rs
 C	src/rotor.rs
 C	src/sdf_ccd.rs
 C	src/sdf_character.rs

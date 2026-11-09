@@ -889,6 +889,7 @@ pub mod rope;
 // 二次運動の鎖 (髪・尻尾・リボン・スカート): pose を慣性・重力・pose への引き戻しで追う粒子、
 // 長さ > 角度の制限 > capsule の衝突 の順に拘束 (Fix128、CORDIC の三角関数)
 pub mod rope_attach;
+pub mod rope_participant;
 pub mod rotor;
 #[cfg(feature = "std")]
 pub mod scene_io;
