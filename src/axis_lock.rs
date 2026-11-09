@@ -15,6 +15,7 @@
 //!   and kinetic energy along the locked axes (the reaction is not applied to
 //!   anything else), and conserves both along the free axes for a body that is
 //!   otherwise free.
+// LIMITATION(COV-RIGID-122): With one locked rotation axis the removal of that component of `Δ` is exact to first order in the substep's rotation angle.
 //! - **Range**: dynamic bodies only (static and kinematic bodies move as they
 //!   do without a lock). Exact for any number of locked position axes and for
 //!   zero, two or three locked rotation axes (two locked leave the rotation
