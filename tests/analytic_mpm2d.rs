@@ -785,3 +785,62 @@ fn a_damped_foundation_decays_by_the_logarithmic_decrement() {
         );
     }
 }
+
+/// a hand's patch: the particles within a fixed radius of the touch, at the cell's resolution or any other
+#[test]
+fn a_patch_takes_the_particles_within_its_radius() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let centre = [fx(0.3 + W / 2.0), fx(0.4 + W / 2.0)];
+    let r = 0.05;
+    let got = w.particles_within(centre, fx(r));
+    let want: Vec<usize> = (0..w.particles().len())
+        .filter(|&i| {
+            let p = w.particles()[i].x;
+            let (dx, dy) = (
+                p[0].to_f64() - (0.3 + W / 2.0),
+                p[1].to_f64() - (0.4 + W / 2.0),
+            );
+            dx * dx + dy * dy <= r * r
+        })
+        .collect();
+    assert!(!want.is_empty());
+    assert_eq!(got, want);
+    // nothing under a patch off the body
+    assert!(w
+        .particles_within([fx(0.05), fx(0.05)], fx(0.01))
+        .is_empty());
+}
+
+/// oracle: a force shared over a patch. The parts are in proportion to the particles' rest areas and add up to
+/// the force exactly (bit for bit: the last part takes what the rounding of the others left), so the hand applies
+/// what it pulls with whatever the resolution
+#[test]
+fn a_shared_force_adds_up_to_the_force_exactly() {
+    let mut w = world(G, None, [64, 64]);
+    block(&mut w, 0.3, 0.4, W, W, |_, _| [0.0, 0.0]);
+    let taken = w.particles_within([fx(0.3 + W / 2.0), fx(0.4 + W / 2.0)], fx(0.05));
+    // a force that does not divide evenly
+    let force = [Fix128::from_ratio(7, 3), -Fix128::from_ratio(5, 11)];
+    let loads = w
+        .shared_loads(&taken, force)
+        .expect("a patch with particles");
+    assert_eq!(loads.len(), taken.len());
+    let mut sum = [Fix128::ZERO; 2];
+    for (_, f) in &loads {
+        sum[0] = sum[0] + f[0];
+        sum[1] = sum[1] + f[1];
+    }
+    assert_eq!(sum, force, "the parts add up to the force exactly");
+    let total_area: f64 = taken.iter().map(|&i| w.particles()[i].area0.to_f64()).sum();
+    for (i, f) in &loads {
+        let share = w.particles()[*i].area0.to_f64() / total_area;
+        assert!(
+            (f[0].to_f64() - force[0].to_f64() * share).abs() < 1e-15,
+            "in proportion to area"
+        );
+    }
+    // a patch with no particle under it, or one naming no particle, is refused
+    assert!(w.shared_loads(&[], force).is_err());
+    assert!(w.shared_loads(&[w.particles().len()], force).is_err());
+}
