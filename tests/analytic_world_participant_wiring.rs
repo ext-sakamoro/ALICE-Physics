@@ -78,6 +78,39 @@ fn as_version_6_payload(p1: &[u8], bodies: usize, rate: Fix128) -> Vec<u8> {
     p
 }
 
+/// The version 1 payload `p1` of the fixture as version 7 writes it: the damping slots of
+/// [`as_version_6_payload`], and the sleep section re-expressed as time: the rule
+/// `frames_to_sleep` (u32, 60 for the writer) becomes `time_to_sleep = 60 × step`
+/// (`Fix128`, the reader's own product, 16 bytes), and each body's `idle_frames` (u32)
+/// becomes `idle × step` (`Fix128`); the section is found by its rule and count
+/// (`60u32`, then `bodies` as u64), which occur once in the fixture. Every other byte is kept.
+fn as_version_7_payload(p1: &[u8], bodies: usize, rate: Fix128, step: Fix128) -> Vec<u8> {
+    let p6 = as_version_6_payload(p1, bodies, rate);
+    let mut needle = 60u32.to_le_bytes().to_vec();
+    needle.extend_from_slice(&(bodies as u64).to_le_bytes());
+    let hits: Vec<usize> = (0..p6.len() - needle.len())
+        .filter(|&i| p6[i..i + needle.len()] == needle[..])
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "the sleep rule and count occur once in the version 1 payload"
+    );
+    let at = hits[0];
+    let mut p = p6[..at].to_vec();
+    p.extend_from_slice(&fix_bytes(Fix128::from_int(60) * step));
+    p.extend_from_slice(&p6[at + 4..at + 12]);
+    let mut k = at + 12;
+    for _ in 0..bodies {
+        p.push(p6[k]);
+        let idle = u32::from_le_bytes(p6[k + 1..k + 5].try_into().expect("4 bytes"));
+        p.extend_from_slice(&fix_bytes(Fix128::from_int(i64::from(idle)) * step));
+        k += 5;
+    }
+    p.extend_from_slice(&p6[k..]);
+    p
+}
+
 /// The bytes of a `Fix128` as the snapshot writes it (`hi`, then `lo`).
 fn fix_bytes(x: Fix128) -> Vec<u8> {
     let mut b = x.hi.to_le_bytes().to_vec();
@@ -538,29 +571,33 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
 /// than kept: from version 6 damping is stored as a rate per second, so the
 /// world damping slot holds −ln(0.99)/(1/60) where the version 1 payload held
 /// the retention 0.99 per step, and each body slot holds rate 0 where it held
-/// retention 1 (no damping in both forms). Every other byte of the version 1
-/// payload is kept.
+/// retention 1 (no damping in both forms); from version 7 the sleep rule and
+/// the idle counts are time (`frames × step`, 16 bytes each where the version 1
+/// payload held 4). Every other byte of the version 1 payload is kept, and the
+/// sections added after version 1 follow it.
 #[test]
-fn a_version_6_blob_extends_the_version_1_payload() {
+fn a_version_7_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = legacy_snapshot(v1);
-    let v6 = w.snapshot_world();
-    assert_eq!(&v6[0..4], &v1[0..4]);
-    assert_eq!(&v6[4..6], &6u16.to_le_bytes());
+    let v7 = w.snapshot_world();
+    assert_eq!(&v7[0..4], &v1[0..4]);
+    assert_eq!(&v7[4..6], &7u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
-    let (l1, l6) = (len(v1), len(&v6));
+    let (l1, l7) = (len(v1), len(&v7));
+    let expected = as_version_7_payload(
+        &v1[16..16 + l1],
+        w.bodies.len(),
+        w.config.damping_rate,
+        Fix128::from_ratio(1, 60),
+    );
     let mut tail = vec![0u8; 17];
     tail.push(0); // continuous collision off
     tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
     tail.extend_from_slice(&0u64.to_le_bytes()); // lo
-    assert_eq!(l6, l1 + tail.len());
-    let (p1, p6) = (&v1[16..16 + l1], &v6[80..80 + l1]);
-    assert_eq!(
-        p6,
-        &as_version_6_payload(p1, w.bodies.len(), w.config.damping_rate)[..]
-    );
+    assert_eq!(l7, expected.len() + tail.len());
+    assert_eq!(&v7[80..80 + expected.len()], &expected[..]);
     assert_converted_rate(w.config.damping_rate);
-    assert_eq!(&v6[80 + l1..80 + l6], &tail[..]);
+    assert_eq!(&v7[80 + expected.len()..80 + l7], &tail[..]);
 }
 
 /// The version 1 fixture still reads as the world it was taken from (a static
@@ -570,8 +607,8 @@ fn a_version_6_blob_extends_the_version_1_payload() {
 /// writer's step, the restored world has that world's configuration (the
 /// damping as the rate −ln(0.99)·60) and bodies, writing it again reproduces
 /// the fixture's payload byte for byte except the damping slots, which hold
-/// rates, and it steps on exactly like the same state restored from its
-/// own current blob.
+/// rates, and the sleep slots, which hold time, and it steps on exactly like
+/// the same state restored from its own current blob.
 ///
 /// The fixture holds the state of the solver it was written with, and the
 /// writer no longer emits version 1, so the comparison is against the
@@ -616,17 +653,20 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
     assert_converted_rate(config.damping_rate);
 
     // Writing it again keeps every byte of the version 1 payload but the
-    // damping slots, which now hold rates (version 6 stores rates): the
-    // world's −ln(0.99)·60, the bodies' 0
+    // damping slots, which now hold rates (version 6 stores rates: the world's
+    // −ln(0.99)·60, the bodies' 0), and the sleep slots, which now hold time
+    // (version 7: frames × the writer's step)
     let v2 = restored.snapshot_world();
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let l1 = len(v1);
     // (the version 4 payload starts after the 80-byte header)
-    let (p1, p6) = (&v1[16..16 + l1], &v2[80..80 + l1]);
-    assert_eq!(
-        p6,
-        &as_version_6_payload(p1, restored.bodies.len(), restored.config.damping_rate)[..]
+    let expected = as_version_7_payload(
+        &v1[16..16 + l1],
+        restored.bodies.len(),
+        restored.config.damping_rate,
+        Fix128::from_ratio(1, 60),
     );
+    assert_eq!(&v2[80..80 + expected.len()], &expected[..]);
 
     // It steps on like the same state restored from the blob written today
     let mut again = PhysicsWorld::from_world_snapshot(&v2).expect("v2 blob");
@@ -1406,7 +1446,9 @@ fn a_change_near_the_range_edge_wakes_a_parked_body_whatever_the_threshold() {
         ..free_config(SolverBackend::Xpbd)
     });
     w.add_body(edge_body());
-    for _ in 0..120 {
+    // the default `time_to_sleep` is 1 s: 256 idle steps of 1/256 s reach it (the rule
+    // `idle + dt/2 >= time_to_sleep` is met at the 256th step exactly)
+    for _ in 0..256 {
         w.step(Fix128::from_ratio(1, 256));
     }
     assert!(w.is_sleeping(0), "fixture: the body must be asleep");
