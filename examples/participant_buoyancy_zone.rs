@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     let reach = Fix128::from_int(1000);
-    let resident = BuoyancyZoneParticipant::new(BuoyancyZone {
+    let zone = BuoyancyZone {
         shape: ZoneShape::Aabb {
             min: Vec3Fix::new(-reach, -reach, -reach),
             max: Vec3Fix::new(reach, Fix128::ZERO, reach),
@@ -61,7 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gravity,
         drag_linear: Fix128::from_int(8),
         drag_quadratic: Fix128::ZERO,
-    });
+    };
+    let resident = BuoyancyZoneParticipant::new(zone);
     println!(
         "fluid density {:.1}, bodies in it before the first step: {}",
         resident.zone().density_kg_m3.to_f64(),
@@ -86,6 +87,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "density {density:.2}: centre at {got:+.6} (closed form {:+.6})",
             closed_form(density)
         );
+        // At rest the fluid's force carries the ball's weight.
+        let body = &world.bodies[ball];
+        let lift = zone
+            .try_force_on(body, Fix128::ONE)
+            .ok_or("the force left the fixed-point range")?;
+        let weight = (gravity / body.inv_mass).to_f64();
+        println!("  upward force {:.6}, weight {weight:.6}", lift.y.to_f64());
     }
     if let Some(Observed::Exact(sink)) = world.observe_participant(index) {
         for &(channel, value) in sink.values() {
