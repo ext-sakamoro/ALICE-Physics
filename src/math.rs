@@ -237,7 +237,7 @@ impl Fix128 {
         let neg = self.is_negative() != (n < 0);
         let a = if self.is_negative() { -self } else { self };
         let magnitude = ((a.hi as u128) << 64) | u128::from(a.lo);
-        let quotient = magnitude / u128::from(n.unsigned_abs());
+        let quotient = div_u128_by(magnitude, n.unsigned_abs());
         let result = Self {
             hi: (quotient >> 64) as i64,
             lo: quotient as u64,
@@ -452,6 +452,36 @@ impl Sub for Fix128 {
         let hi = self.hi.wrapping_sub(rhs.hi).wrapping_sub(borrow as i64);
         Self { hi, lo }
     }
+}
+
+/// `a / d` (floor) for `d ≥ 1`. On wasm32 a `u128` division is a call into a general routine,
+/// so a divisor that fits 32 bits is divided limb by limb (four 32-bit limbs of `a`, each step a
+/// native 64-by-32 division of the remainder and the next limb): the same integer quotient.
+#[inline]
+fn div_u128_by(a: u128, d: u64) -> u128 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Ok(d) = u32::try_from(d) {
+            return div_u128_by_u32(a, d);
+        }
+    }
+    a / u128::from(d)
+}
+
+/// `a / d` (floor) for `d ≥ 1`, by schoolbook division of `a`'s four 32-bit limbs from the top.
+/// Every step divides `remainder · 2³² + limb` (below `d · 2³²`, so it fits `u64`) by `d`.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#[inline]
+fn div_u128_by_u32(a: u128, d: u32) -> u128 {
+    let d = u64::from(d);
+    let mut rem = 0u64;
+    let mut q = 0u128;
+    for k in (0..4).rev() {
+        let cur = (rem << 32) | ((a >> (32 * k)) as u32 as u64);
+        q |= u128::from(cur / d) << (32 * k);
+        rem = cur % d;
+    }
+    q
 }
 
 /// `a * b` as (high, low) words.
@@ -942,8 +972,8 @@ impl Fix128 {
         let mut term = t;
         let mut sum = Self::ZERO;
         for n in 0..16u32 {
-            let denom = Self::from_int(i64::from(2 * n + 1));
-            sum = sum + term / denom;
+            // `term / from_int(2n + 1)` bit for bit, without the long division
+            sum = sum + term.div_int(i64::from(2 * n + 1));
             term = term * t2;
         }
         Self::from_int(k) * LN2 + sum.double()

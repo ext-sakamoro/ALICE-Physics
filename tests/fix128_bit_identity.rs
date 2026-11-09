@@ -287,3 +287,100 @@ fn multiplication_matches_the_reference_on_every_input_class() {
     }
     assert!(compared > RANDOM_CASES + 200_000, "compared {compared}");
 }
+
+/// `ln` as it was before its series divided by `div_int`: every term divided by `from_int(2n + 1)`
+fn ln_ref(v: Fix128) -> Fix128 {
+    if v <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    const LN2: Fix128 = Fix128 {
+        hi: 0,
+        lo: 0xB172_17F7_D1CF_79AC,
+    };
+    let mut m = v;
+    let mut k: i64 = 0;
+    while m >= Fix128::from_int(2) {
+        m = m.half();
+        k += 1;
+    }
+    while m < Fix128::ONE {
+        m = m.double();
+        k -= 1;
+    }
+    let t = (m - Fix128::ONE) / (m + Fix128::ONE);
+    let t2 = t * t;
+    let mut term = t;
+    let mut sum = Fix128::ZERO;
+    for n in 0..16u32 {
+        let denom = Fix128::from_int(i64::from(2 * n + 1));
+        sum = sum + term / denom;
+        term = term * t2;
+    }
+    Fix128::from_int(k) * LN2 + sum.double()
+}
+
+/// `ln` gives the bits of `ln_ref` on edge values, on a dense band around 1 (the volume ratios
+/// `J` the soft body solvers take the log of) and on random positive values of every magnitude.
+#[test]
+fn ln_matches_the_reference_on_every_input_class() {
+    let mut compared = 0usize;
+    let mut same = |v: i128| {
+        let x = raw(v);
+        assert_eq!(bits(x.ln()), bits(ln_ref(x)), "ln {x:?}");
+        compared += 1;
+    };
+    for v in edges() {
+        same(v);
+    }
+    let one = 1i128 << 64;
+    for d in -20_000i128..=20_000 {
+        same(one + d * (one >> 16));
+        same(one + d);
+    }
+    let mut rng = Rng(0x4C4E_3132);
+    for _ in 0..(RANDOM_CASES / 8) {
+        same(rng.any_magnitude().abs());
+    }
+    assert!(compared > 200_000, "compared {compared}");
+}
+
+/// `div_int(n)` gives the bits of `/ from_int(n)` for the small odd divisors of the series, for
+/// divisors on both sides of 2³² (the wasm32 build divides by a 32-bit divisor limb by limb),
+/// and for random divisors, against numerators of every class.
+#[test]
+fn div_int_matches_division_by_the_integer_on_every_input_class() {
+    let mut compared = 0usize;
+    let mut same = |a: i128, n: i64| {
+        let x = raw(a);
+        assert_eq!(
+            bits(x.div_int(n)),
+            bits(x / Fix128::from_int(n)),
+            "{x:?} div_int {n}"
+        );
+        compared += 1;
+    };
+    let mut divisors: Vec<i64> = (1..=40).collect();
+    for p in [31u32, 32, 33, 62] {
+        let v = 1i64 << p;
+        divisors.extend([v - 1, v, v + 1]);
+    }
+    divisors.extend([i64::MAX, i64::from(u32::MAX), i64::from(u32::MAX) - 1]);
+    let negatives: Vec<i64> = divisors.iter().map(|d| -d).collect();
+    divisors.extend(negatives);
+    divisors.push(i64::MIN);
+    let edge = edges();
+    for &a in &edge {
+        for &n in &divisors {
+            same(a, n);
+        }
+    }
+    let mut rng = Rng(0x4449_5649);
+    for _ in 0..(RANDOM_CASES / 4) {
+        let n = (rng.next() as i64) >> (rng.next() % 64);
+        if n != 0 {
+            same(rng.any_magnitude(), n);
+        }
+        same(rng.any_magnitude(), (rng.next() % 64) as i64 + 1);
+    }
+    assert!(compared > 300_000, "compared {compared}");
+}
