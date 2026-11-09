@@ -1225,6 +1225,12 @@ use alice_physics::rope_attach as _;
 use alice_physics::rope_attach::solve_rope_attachments as _;
 use alice_physics::rope_attach::solve_rope_attachments_two_way as _;
 use alice_physics::rope_attach::RopeAttachment as _;
+use alice_physics::rope_participant as _;
+use alice_physics::rope_participant::RopeAnchor as _;
+use alice_physics::rope_participant::RopeAnchorError as _;
+use alice_physics::rope_participant::RopeParticipant as _;
+use alice_physics::rope_participant::ROPE_OBS_TENSION as _;
+use alice_physics::rope_participant::ROPE_PARTICIPANT_KIND as _;
 use alice_physics::rotor as _;
 use alice_physics::rotor::hover_induced_velocity_m_s as _;
 use alice_physics::rotor::ideal_hover_power_w as _;
@@ -1877,7 +1883,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1859 paths, checked at compile time
+    // 1865 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
