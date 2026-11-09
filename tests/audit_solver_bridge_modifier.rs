@@ -106,18 +106,20 @@ fn bridge_solve_stores_the_modified_friction_and_restitution_in_the_constraint()
     let mut w = PhysicsWorld::new(weightless());
     w.add_body(RigidBody::new(v3(0.0, 0.0, 0.0), Fix128::ONE));
     w.add_body(RigidBody::new(v3(1.0, 0.0, 0.0), Fix128::ONE));
-    w.add_contact(ContactConstraint {
-        body_a: 0,
-        body_b: 1,
-        contact: Contact {
-            depth: fx(0.25),
-            normal: v3(1.0, 0.0, 0.0),
-            point_a: Vec3Fix::ZERO,
-            point_b: Vec3Fix::ZERO,
-        },
-        friction: fx(0.5),
-        restitution: fx(0.25),
-        cached_lambda: Fix128::ZERO,
+    w.add_contact({
+        let mut c = ContactConstraint::new(
+            0,
+            1,
+            Contact {
+                depth: fx(0.25),
+                normal: v3(1.0, 0.0, 0.0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        );
+        c.friction = fx(0.5);
+        c.restitution = fx(0.25);
+        c
     });
     w.add_contact_modifier(Box::new(SetMaterial {
         friction: Some(Fix128::from_ratio(1, 8)),
@@ -139,18 +141,20 @@ fn bridge_solve_keeps_the_constraint_values_without_a_modifier() {
     let mut w = PhysicsWorld::new(weightless());
     w.add_body(RigidBody::new(v3(0.0, 0.0, 0.0), Fix128::ONE));
     w.add_body(RigidBody::new(v3(1.0, 0.0, 0.0), Fix128::ONE));
-    w.add_contact(ContactConstraint {
-        body_a: 0,
-        body_b: 1,
-        contact: Contact {
-            depth: fx(0.25),
-            normal: v3(1.0, 0.0, 0.0),
-            point_a: Vec3Fix::ZERO,
-            point_b: Vec3Fix::ZERO,
-        },
-        friction: fx(0.5),
-        restitution: fx(0.25),
-        cached_lambda: Fix128::ZERO,
+    w.add_contact({
+        let mut c = ContactConstraint::new(
+            0,
+            1,
+            Contact {
+                depth: fx(0.25),
+                normal: v3(1.0, 0.0, 0.0),
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::ZERO,
+            },
+        );
+        c.friction = fx(0.5);
+        c.restitution = fx(0.25);
+        c
     });
     let mut bridge = PassThrough::default();
     w.solve_contact_constraints_with_bridge(&mut bridge, Fix128::from_ratio(1, 60))

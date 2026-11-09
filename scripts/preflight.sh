@@ -449,6 +449,9 @@ step "ALICE-Law G7 handshakes (analytics + gpu-solver-bridge)"
 scripts/run_tests.sh physics_semantics_id=22 -- cargo test --test physics_semantics_id --features "analytics,neural"
 scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
+step "bridged step parity with rolling and torsional friction (gpu-solver-bridge)"
+scripts/run_tests.sh analytic_bridge_rolling_parity=1 -- cargo test --test analytic_bridge_rolling_parity --features "gpu-solver-bridge"
+
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 

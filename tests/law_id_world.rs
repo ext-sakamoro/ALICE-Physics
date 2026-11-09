@@ -150,22 +150,12 @@ impl Laws {
             default_friction_combine: CombineRule::Max,
             default_restitution_combine: CombineRule::Multiply,
             materials: vec![
-                PhysicsMaterial {
-                    id: 0,
-                    static_friction: fx(9, 10),
-                    dynamic_friction: fx(4, 10),
-                    restitution: fx(2, 10),
-                    friction_combine: CombineRule::Min,
-                    restitution_combine: CombineRule::Max,
-                },
-                PhysicsMaterial {
-                    id: 0,
-                    static_friction: fx(1, 10),
-                    dynamic_friction: fx(1, 20),
-                    restitution: fx(7, 10),
-                    friction_combine: CombineRule::Multiply,
-                    restitution_combine: CombineRule::Average,
-                },
+                PhysicsMaterial::new(0, fx(4, 10), fx(2, 10))
+                    .with_static_friction(fx(9, 10))
+                    .with_combine_rules(CombineRule::Min, CombineRule::Max),
+                PhysicsMaterial::new(0, fx(1, 20), fx(7, 10))
+                    .with_static_friction(fx(1, 10))
+                    .with_combine_rules(CombineRule::Multiply, CombineRule::Average),
             ],
             // set out of order and with the second pair given as (2, 1)
             pair_overrides: vec![(2, 1, fx(1, 4), fx(3, 4)), (0, 1, fx(2, 3), fx(1, 6))],
@@ -502,6 +492,23 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
             s.0.extend_from_slice(id);
         }
     }
+    // row 18: only when a material has a nonzero rolling or torsional
+    // coefficient; every material in id order (the default one first)
+    let all: Vec<PhysicsMaterial> = core::iter::once(PhysicsMaterial::default())
+        .chain(laws.materials.iter().copied())
+        .collect();
+    if all
+        .iter()
+        .any(|m| !m.rolling_friction.is_zero() || !m.torsional_friction.is_zero())
+    {
+        s.bytes(b"rolling-torsional-friction");
+        s.len(all.len());
+        for (i, m) in all.iter().enumerate() {
+            s.u64(i as u64);
+            s.fix(m.rolling_friction);
+            s.fix(m.torsional_friction);
+        }
+    }
     s.0
 }
 
@@ -628,6 +635,77 @@ fn rows_1_to_16_end_at_a_fixed_point_and_row_17_follows() {
     assert_eq!(
         alice_physics_core::law_id::PARTICIPANT_SEMANTICS_ROW,
         b"participant-semantics"
+    );
+}
+
+/// Row 18 (rolling and torsional coefficients) is written only when a
+/// material has a nonzero one, opens with its own tag after rows 1 to 16 and
+/// row 17, and reads to the end: zero coefficients leave the encoding as it
+/// was before the row existed (the same physics), and the four combinations
+/// of rows 17 and 18 give four distinct identifiers.
+#[test]
+fn row_18_is_written_only_for_nonzero_coefficients_and_follows_row_17() {
+    let zero = Laws::everything();
+    let mut zero_explicit = Laws::everything();
+    for m in &mut zero_explicit.materials {
+        *m = m
+            .with_rolling_friction(Fix128::ZERO)
+            .with_torsional_friction(Fix128::ZERO);
+    }
+    assert_eq!(
+        spec_bytes(&zero, &PHYSICS_SEMANTICS_ID),
+        spec_bytes(&zero_explicit, &PHYSICS_SEMANTICS_ID)
+    );
+    assert_eq!(
+        zero_explicit.build().law_id(&PHYSICS_SEMANTICS_ID),
+        id(&zero.build())
+    );
+
+    let mut rolling = Laws::everything();
+    rolling.materials[0] = rolling.materials[0]
+        .with_rolling_friction(fx(1, 20))
+        .with_torsional_friction(fx(1, 100));
+    let b = spec_bytes(&rolling, &PHYSICS_SEMANTICS_ID);
+    let mut r = Rows(&b, rows_1_to_16_end(&b));
+    assert_eq!(r.bytes(), b"participant-semantics");
+    let n = r.len();
+    r.skip(n * (8 + 32));
+    assert_eq!(r.bytes(), b"rolling-torsional-friction");
+    let m = r.len();
+    assert_eq!(m, 1 + rolling.materials.len());
+    r.skip(m * (8 + FIX + FIX));
+    assert_eq!(r.1, b.len(), "row 18 reads to the end");
+    assert_eq!(
+        rolling.build().law_id(&PHYSICS_SEMANTICS_ID),
+        spec(&rolling, &PHYSICS_SEMANTICS_ID)
+    );
+
+    let mut ids = Vec::new();
+    for declares in [false, true] {
+        for nonzero in [false, true] {
+            let mut laws = Laws::everything();
+            if nonzero {
+                laws.materials[0] = laws.materials[0].with_rolling_friction(fx(1, 20));
+            }
+            if !declares {
+                laws.declaring_participants.clear();
+            }
+            let built = laws.build();
+            assert_eq!(id(&built), spec(&laws, &PHYSICS_SEMANTICS_ID));
+            ids.push(id(&built));
+        }
+    }
+    for i in 0..ids.len() {
+        for j in i + 1..ids.len() {
+            assert_ne!(
+                ids[i], ids[j],
+                "combinations {i} and {j} share an identifier"
+            );
+        }
+    }
+    assert_eq!(
+        alice_physics_core::law_id::ROLLING_TORSIONAL_ROW,
+        b"rolling-torsional-friction"
     );
 }
 

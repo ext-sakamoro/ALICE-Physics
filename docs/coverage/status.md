@@ -34,14 +34,14 @@ crate has today.
 | `docs/coverage/plasma.toml` | 156 | 3 | 1 | 0 | 152 | 0 |
 | `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
-| `docs/coverage/rigid.toml` | 121 | 78 | 4 | 9 | 29 | 1 |
+| `docs/coverage/rigid.toml` | 121 | 80 | 4 | 9 | 27 | 1 |
 | `docs/coverage/sense.toml` | 92 | 20 | 1 | 2 | 69 | 0 |
 | `docs/coverage/shock.toml` | 115 | 29 | 7 | 2 | 77 | 0 |
 | `docs/coverage/soft.toml` | 96 | 22 | 3 | 6 | 65 | 0 |
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 582 | 74 | 105 | 3519 | 12 |
+| **total** | 4292 | 584 | 74 | 105 | 3517 | 12 |
 
 ## `docs/coverage/acous.toml`
 
@@ -575,7 +575,7 @@ crate has today.
 | benchmark | 14 | 5 | 0 | 1 | 7 | 1 |
 | broadphase | 5 | 3 | 0 | 0 | 2 | 0 |
 | ccd | 6 | 5 | 0 | 0 | 1 | 0 |
-| contact | 17 | 10 | 1 | 2 | 4 | 0 |
+| contact | 17 | 12 | 1 | 2 | 2 | 0 |
 | dynamics | 15 | 12 | 0 | 0 | 3 | 0 |
 | joint | 19 | 16 | 1 | 1 | 1 | 0 |
 | narrowphase | 18 | 12 | 2 | 2 | 2 | 0 |

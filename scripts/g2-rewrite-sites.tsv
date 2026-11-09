@@ -245,6 +245,7 @@ src/sketch.rs	merge	assign	src > dst	integer	operands are u8 (integer, no signed
 src/solver.rs	<module>	macro	remap	macro-scanned	body parsed and scanned: rewrites body indices on an == match, no select between comparison operands
 src/solver.rs	broadphase_box_checked	expr	x < y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	broadphase_box_checked	expr	x > y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	capped_angular_impulse	expr	needed < cap	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . x < endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . x > endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . y < endpoint . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN

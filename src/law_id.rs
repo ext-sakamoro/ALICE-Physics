@@ -24,6 +24,10 @@ pub const WORLD_LAW_KIND: &[u8] = b"physics-world/v1";
 /// identifiers participants declare).
 pub const PARTICIPANT_SEMANTICS_ROW: &[u8] = b"participant-semantics";
 
+/// The tag that opens row 18 of [`PhysicsWorld::law_id`] (the materials'
+/// rolling and torsional friction coefficients).
+pub const ROLLING_TORSIONAL_ROW: &[u8] = b"rolling-torsional-friction";
+
 use crate::force::ForceField;
 use crate::material::CombineRule;
 use crate::math::{Fix128, Vec3Fix};
@@ -279,6 +283,7 @@ impl PhysicsWorld {
     /// | 15 | force fields, in the order they were added | list of: `enabled` (`bool`), the bodies it is limited to (`Option` of a list of `u64`, sorted ascending without duplicates), then the field |
     /// | 16 | participants, in registration order | list of: kind (`u32`), step rule, ports |
     /// | 17 | only when at least one participant declares a semantics identifier: [`PARTICIPANT_SEMANTICS_ROW`], then the declaring participants in registration order | byte string, then list of: registration index (`u64`), the 32 bytes (no length) |
+    /// | 18 | only when at least one material has a nonzero rolling or torsional friction coefficient: [`ROLLING_TORSIONAL_ROW`], then every material in id order | byte string, then list of: id (`MaterialId`), `rolling_friction`, `torsional_friction` (`Fix128`) |
     ///
     /// A field is its tag followed by its parameters in declaration order:
     /// `directional` (direction `Vec3Fix`, strength), `point` (center
@@ -297,7 +302,8 @@ impl PhysicsWorld {
     /// Rows 1 to 16 end where their own lengths and counts say, so row 17 is
     /// either absent (the encoding ends there) or follows; a world whose
     /// participants declare no identifier has the encoding it had before row 17
-    /// existed.
+    /// existed. Row 18 likewise follows only when written, and its tag differs
+    /// from row 17's, so the four combinations never share an encoding.
     ///
     /// Sorting the pair overrides and the body lists keeps the identifier
     /// independent of the order they were registered in, which the step does
@@ -377,6 +383,7 @@ impl PhysicsWorld {
 
         self.encode_participants(&mut e);
         self.encode_participant_semantics(&mut e);
+        self.encode_rolling_torsional(&mut e);
         e.0.finalize().into()
     }
 
@@ -399,6 +406,27 @@ impl PhysicsWorld {
         for (index, id) in declared {
             e.u64(index as u64);
             e.0.update(id);
+        }
+    }
+
+    /// Row 18: written only when a material has a nonzero rolling or torsional
+    /// friction coefficient. Zero coefficients are the same physics as no
+    /// coefficients, so a world without them keeps the identifier it had
+    /// before the row existed; the row opens with its own tag, distinct from
+    /// row 17's, so the encoding stays prefix-free.
+    fn encode_rolling_torsional(&self, e: &mut Encoder) {
+        let m = &self.material_table.materials;
+        if m.iter()
+            .all(|mat| mat.rolling_friction.is_zero() && mat.torsional_friction.is_zero())
+        {
+            return;
+        }
+        e.bytes(ROLLING_TORSIONAL_ROW);
+        e.len(m.len());
+        for mat in m {
+            e.u64(u64::from(mat.id));
+            e.fix(mat.rolling_friction);
+            e.fix(mat.torsional_friction);
         }
     }
 

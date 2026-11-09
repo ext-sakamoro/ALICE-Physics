@@ -22,8 +22,9 @@ use alice_physics_core::{
     WorldSnapshotError,
 };
 
-/// Bytes of one encoded material: id u16 + 3 `Fix128` + 2 combine tags.
-const ENTRY: usize = 2 + 3 * 16 + 2;
+/// Bytes of one encoded material (version 7): id u16 + 3 `Fix128` + 2
+/// combine tags + the rolling and torsional coefficients (2 `Fix128`).
+const ENTRY: usize = 2 + 3 * 16 + 2 + 2 * 16;
 /// Header (version 4): magic 4 + version 2 + reserved 2 + payload length 8
 /// + semantics id 32 + law id 32.
 const HEADER: usize = 80;
