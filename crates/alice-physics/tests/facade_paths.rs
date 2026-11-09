@@ -790,6 +790,8 @@ use alice_physics::particle::LandingTarget as _;
 use alice_physics::particle::Particle as _;
 use alice_physics::particle::ParticleEmitter as _;
 use alice_physics::particle::ParticleSystem as _;
+use alice_physics::particle::RunOff as _;
+use alice_physics::particle::RunOffEvents as _;
 use alice_physics::phase_change as _;
 use alice_physics::phase_change::Phase as _;
 use alice_physics::phase_change::PhaseChangeConfig as _;
@@ -1058,6 +1060,8 @@ use alice_physics::prelude::RingBuffer as _;
 use alice_physics::prelude::Rope as _;
 use alice_physics::prelude::RopeAttachment as _;
 use alice_physics::prelude::RopeConfig as _;
+use alice_physics::prelude::RunOff as _;
+use alice_physics::prelude::RunOffEvents as _;
 use alice_physics::prelude::ScalarField3D as _;
 use alice_physics::prelude::ScaledShape as _;
 use alice_physics::prelude::SdfCcdConfig as _;
@@ -1796,6 +1800,8 @@ use alice_physics::RingBuffer as _;
 use alice_physics::Rope as _;
 use alice_physics::RopeAttachment as _;
 use alice_physics::RopeConfig as _;
+use alice_physics::RunOff as _;
+use alice_physics::RunOffEvents as _;
 use alice_physics::ScalarField3D as _;
 use alice_physics::ScaledShape as _;
 use alice_physics::SdfCcdConfig as _;
@@ -1864,7 +1870,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1846 paths, checked at compile time
+    // 1852 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
