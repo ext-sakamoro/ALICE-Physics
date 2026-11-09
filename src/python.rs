@@ -583,12 +583,14 @@ impl PyPhysicsWorld {
         let bad = || {
             PyValueError::new_err("bad rope: values must be finite and within the fixed-point range, the ends apart, 1 to 1024 segments, mass positive, damping in 0..=1, ties on bodies that exist")
         };
-        let tie = |t: Option<(usize, (f64, f64, f64))>| match t {
-            None => Ok(None),
-            Some((body, l)) => Ok(Some(binding_api::RopeTie {
-                body,
-                local: binding_api::vec3(l.0, l.1, l.2).ok_or_else(bad)?,
-            })),
+        let tie = |t: Option<(usize, (f64, f64, f64))>| -> PyResult<Option<binding_api::RopeTie>> {
+            match t {
+                None => Ok(None),
+                Some((body, l)) => Ok(Some(binding_api::RopeTie {
+                    body,
+                    local: binding_api::vec3(l.0, l.1, l.2).ok_or_else(bad)?,
+                })),
+            }
         };
         let args = binding_api::RopeArgs {
             start: binding_api::vec3(start.0, start.1, start.2).ok_or_else(bad)?,
