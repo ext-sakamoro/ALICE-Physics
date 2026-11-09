@@ -88,7 +88,10 @@ fn no_gravity_world() -> PhysicsWorld {
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX },
+        time_to_sleep: Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        },
     });
     world
 }
