@@ -3703,7 +3703,8 @@ mod tests {
 
     impl Driver {
         fn new() -> Self {
-            let mut pd = PdController::new(fx(20, 1), fx(2, 1), fx(50, 1));
+            let mut pd = PdController::new(fx(20, 1), fx(2, 1), fx(50, 1))
+                .expect("a non-negative force limit");
             pd.set_position_target(fx(3, 2));
             Self {
                 motors: vec![JointMotor::new(1, pd)],

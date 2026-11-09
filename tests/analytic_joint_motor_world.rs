@@ -136,7 +136,8 @@ fn angle_z(w: &PhysicsWorld) -> f64 {
 }
 
 fn velocity_pd(kp: f64, max: f64, target: f64) -> PdController {
-    let mut pd = PdController::new(f(kp), Fix128::ZERO, f(max));
+    let mut pd =
+        PdController::new(f(kp), Fix128::ZERO, f(max)).expect("a non-negative force limit");
     pd.set_velocity_target(f(target));
     pd
 }
@@ -291,7 +292,7 @@ fn hinge_position_pd_follows_critically_damped_closed_form() {
     };
     let (mut w, j) = world_with(cfg, true);
     let (kp, kd, target) = (4.0, 4.0, 0.5);
-    let mut pd = PdController::new(f(kp), f(kd), f(1000.0));
+    let mut pd = PdController::new(f(kp), f(kd), f(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(f(target));
     w.add_joint_motor(j, pd);
     let reference = pd_reference(kp, kd, 1.0, cfg.substeps, target, 300);
@@ -343,14 +344,18 @@ fn ball_rotation_motor_converges_with_analytic_error_decay() {
     let cfg = w.config;
     let d = frame_damping(&cfg);
     let (kp, kd, target) = (4.0, 4.0, 0.4);
-    let m = w.add_joint_motor_3d(
-        j,
-        Vec3Fix::new(f(kp), f(kp), f(kp)),
-        Vec3Fix::new(f(kd), f(kd), f(kd)),
-        f(1000.0),
-    );
+    let m = w
+        .add_joint_motor_3d(
+            j,
+            Vec3Fix::new(f(kp), f(kp), f(kp)),
+            Vec3Fix::new(f(kd), f(kd), f(kd)),
+            f(1000.0),
+        )
+        .expect("a non-negative torque limit");
     let axis = Vec3Fix::new(Fix128::ZERO, f(0.6), f(0.8));
-    assert!(w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(target))));
+    assert!(w
+        .set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(target)))
+        .expect("a non-zero rotation target"));
     let reference = pd3d_reference(kp, kd, d, cfg.substeps, target, 300);
     for (k, want) in reference.iter().enumerate() {
         w.step(dt());
@@ -382,13 +387,16 @@ fn ball_rotation_motor_converges_with_analytic_error_decay() {
         ..PhysicsConfig::default()
     };
     let (mut w1, j1) = world_with(cfg1, false);
-    let m1 = w1.add_joint_motor_3d(
-        j1,
-        Vec3Fix::new(f(kp), f(kp), f(kp)),
-        Vec3Fix::new(f(kd), f(kd), f(kd)),
-        f(1000.0),
-    );
-    w1.set_joint_motor_3d_rotation_target(m1, QuatFix::from_axis_angle(axis, f(target)));
+    let m1 = w1
+        .add_joint_motor_3d(
+            j1,
+            Vec3Fix::new(f(kp), f(kp), f(kp)),
+            Vec3Fix::new(f(kd), f(kd), f(kd)),
+            f(1000.0),
+        )
+        .expect("a non-negative torque limit");
+    w1.set_joint_motor_3d_rotation_target(m1, QuatFix::from_axis_angle(axis, f(target)))
+        .expect("a non-zero rotation target");
     for k in 1..=180 {
         w1.step(dt());
         let q = w1.bodies[1].rotation;
@@ -440,7 +448,9 @@ fn disable_stops_the_motor_torque() {
     // out of range: nothing to disable
     assert!(!w.disable_joint_motor(m + 1));
     assert!(!w.set_joint_motor_velocity_target(m + 1, Fix128::ONE));
-    assert!(!w.set_joint_motor_3d_rotation_target(0, QuatFix::IDENTITY));
+    assert!(!w
+        .set_joint_motor_3d_rotation_target(0, QuatFix::IDENTITY)
+        .expect("a non-zero rotation target"));
 }
 
 /// oracle: set_velocity_target moves the steady state to ω*(ω_t), which is
@@ -555,12 +565,14 @@ fn remove_body_remaps_motor_of_a_shifted_joint() {
     };
     w.add_joint(hinge(0, 1));
     let j1 = w.add_joint(hinge(2, 3));
-    let m = w.add_joint_motor_3d(
-        j1,
-        Vec3Fix::from_int(4, 4, 4),
-        Vec3Fix::from_int(4, 4, 4),
-        Fix128::from_int(1000),
-    );
+    let m = w
+        .add_joint_motor_3d(
+            j1,
+            Vec3Fix::from_int(4, 4, 4),
+            Vec3Fix::from_int(4, 4, 4),
+            Fix128::from_int(1000),
+        )
+        .expect("a non-negative torque limit");
     // body 1 goes with joint 0; body 3 is swapped into index 1
     w.remove_body(1);
     assert_eq!(w.joint_count(), 1);
@@ -568,7 +580,8 @@ fn remove_body_remaps_motor_of_a_shifted_joint() {
     w.set_joint_motor_3d_rotation_target(
         m,
         QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), f(0.3)),
-    );
+    )
+    .expect("a non-zero rotation target");
     for _ in 0..240 {
         w.step(dt());
     }
@@ -581,7 +594,7 @@ fn remove_body_remaps_motor_of_a_shifted_joint() {
 #[test]
 fn motor_wakes_a_sleeping_joint_and_lets_an_idle_one_sleep() {
     let (mut w, j) = hinge_world();
-    let mut pd = PdController::new(f(4.0), f(4.0), f(1000.0));
+    let mut pd = PdController::new(f(4.0), f(4.0), f(1000.0)).expect("a non-negative force limit");
     pd.set_position_target(Fix128::ZERO);
     let m = w.add_joint_motor(j, pd);
     for _ in 0..600 {
@@ -607,14 +620,21 @@ fn motor_wakes_a_sleeping_joint_and_lets_an_idle_one_sleep() {
 fn motor_with_no_joint_or_off_does_nothing() {
     let (mut w, _) = hinge_world();
     w.add_joint_motor(7, velocity_pd(2.0, 1000.0, 1.0));
-    w.add_joint_motor_3d(9, Vec3Fix::from_int(1, 1, 1), Vec3Fix::ZERO, Fix128::ONE);
+    w.add_joint_motor_3d(9, Vec3Fix::from_int(1, 1, 1), Vec3Fix::ZERO, Fix128::ONE)
+        .expect("a non-negative torque limit");
     w.set_joint_motor_3d_rotation_target(
         0,
         QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), f(1.0)),
-    );
+    )
+    .expect("a non-zero rotation target");
     let (mut w_off, j) = hinge_world();
-    w_off.add_joint_motor(j, PdController::new(f(2.0), Fix128::ZERO, f(1000.0)));
-    w_off.add_joint_motor_3d(j, Vec3Fix::from_int(1, 1, 1), Vec3Fix::ZERO, Fix128::ONE);
+    w_off.add_joint_motor(
+        j,
+        PdController::new(f(2.0), Fix128::ZERO, f(1000.0)).expect("a non-negative force limit"),
+    );
+    w_off
+        .add_joint_motor_3d(j, Vec3Fix::from_int(1, 1, 1), Vec3Fix::ZERO, Fix128::ONE)
+        .expect("a non-negative torque limit");
     let (mut w_ref, _) = hinge_world();
     for _ in 0..30 {
         w.step(dt());
@@ -687,14 +707,17 @@ fn ball_rotation_motor_torque_cap_limits_acceleration() {
         let d = frame_damping(&w.config);
         let n = w.config.substeps;
         let tau_max = 0.25;
-        let m = w.add_joint_motor_3d(
-            j,
-            Vec3Fix::from_int(1000, 1000, 1000),
-            Vec3Fix::ZERO,
-            f(tau_max),
-        );
+        let m = w
+            .add_joint_motor_3d(
+                j,
+                Vec3Fix::from_int(1000, 1000, 1000),
+                Vec3Fix::ZERO,
+                f(tau_max),
+            )
+            .expect("a non-negative torque limit");
         let axis = Vec3Fix::new(Fix128::ZERO, f(0.6), f(0.8));
-        w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(1.0)));
+        w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(1.0)))
+            .expect("a non-zero rotation target");
         let reference = velocity_reference(1e9, tau_max, d, n, 1e9, 0.0, 30);
         for k in 1..=30 {
             w.step(dt());
