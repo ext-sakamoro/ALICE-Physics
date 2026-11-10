@@ -133,6 +133,9 @@ function wide(a) {
   // an orientation and a spin set directly (both report whether the body exists)
   out.rotationSet = val(a.call(w, "setRotation", b[1], 0, 0.3826834323650898, 0, 0.9238795325112867), "setRotation");
   out.spinSet = val(a.call(w, "setAngularVelocity", b[2], 0, 0, 1.5), "setAngularVelocity");
+  // a body locked to the x-y plane (z position, x and y rotations), and the lock read back
+  out.axisLockSet = val(a.call(w, "setBodyAxisLock", b[4], 28), "setBodyAxisLock");
+  out.axisLock = val(a.call(w, "bodyAxisLock", b[4]), "bodyAxisLock");
   // a wind zone over the scene: a resident, in the snapshot and the digest from here on
   out.wind = f([id(a.call(w, "addWindZone", -9, -9, -9, 9, 9, 9, 1, 0, 0.5, 2, 0.5, 1.5, 1.2, 0.9, 0.3), "addWindZone")]);
   // a pool under the scene: another resident, its count in the snapshot and the digest

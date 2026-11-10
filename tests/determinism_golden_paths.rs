@@ -712,3 +712,66 @@ fn golden_installed_bridge() {
         GOLDEN_XPBD_STEP_WITH_BRIDGE,
     );
 }
+
+const GOLDEN_AXIS_LOCK_XPBD: &str =
+    "b0b46d86ef23cdee4061d68860981d5480539abf5d70e608f476f02aa75bb38d";
+const GOLDEN_AXIS_LOCK_TGS: &str =
+    "d80455a72a5539984bea270e1b5e7b4b2fc4d56437bc032de7c47af007c75fee";
+
+/// The axis-lock scene stepped 60 frames on `backend`: a ball dropped onto a dynamic shelf
+/// with every axis locked, and a thrown body locked to the x-y plane. The locked coordinates are
+/// checked exactly before the world is returned.
+fn axis_lock_world(backend: SolverBackend) -> PhysicsWorld {
+    use alice_physics_core::AxisLock;
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        solver_backend: backend,
+        ..PhysicsConfig::default()
+    });
+    let shelf = w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 2, 0), Fix128::from_int(4)),
+        Fix128::ONE,
+    );
+    w.set_body_axis_lock(shelf, AxisLock::ALL);
+    let ball = w.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE),
+        Fix128::ONE,
+    );
+    let mut thrown = RigidBody::new_dynamic(Vec3Fix::from_int(6, 8, 1), Fix128::ONE);
+    thrown.velocity = Vec3Fix::from_int(1, 2, 3);
+    thrown.angular_velocity = Vec3Fix::from_int(1, 1, 2);
+    let planar = w.add_body(thrown);
+    w.set_body_axis_lock(
+        planar,
+        AxisLock::LINEAR_Z | AxisLock::ANGULAR_X | AxisLock::ANGULAR_Y,
+    );
+    for _ in 0..60 {
+        w.step(Fix128::from_ratio(1, 60));
+    }
+    assert_eq!(
+        w.bodies[shelf].position,
+        Vec3Fix::from_int(0, 2, 0),
+        "{backend:?}"
+    );
+    assert_eq!(w.bodies[planar].position.z, Fix128::ONE, "{backend:?}");
+    assert_eq!(w.bodies[planar].rotation.x, Fix128::ZERO, "{backend:?}");
+    assert!(
+        w.bodies[ball].position.y < Fix128::from_int(5),
+        "{backend:?}"
+    );
+    w
+}
+
+/// Axis locks on both backends, pinned after 60 frames.
+#[test]
+fn golden_axis_lock() {
+    assert_golden(
+        "axis lock xpbd",
+        &hash_world(&axis_lock_world(SolverBackend::Xpbd)),
+        GOLDEN_AXIS_LOCK_XPBD,
+    );
+    assert_golden(
+        "axis lock tgs",
+        &hash_world(&axis_lock_world(SolverBackend::Tgs)),
+        GOLDEN_AXIS_LOCK_TGS,
+    );
+}

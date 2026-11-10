@@ -152,6 +152,7 @@ const NOT_STEP: &[&str] = &[
     "restore_world_legacy_damping",
     "set_body_collision_radius",
     "set_body_filter",
+    "set_body_axis_lock",
     "set_body_material",
     "set_body_shape",
     "set_broadphase",
@@ -287,6 +288,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "axis lock",
+        "determinism_golden_paths.rs",
+        "golden_axis_lock",
+        "",
+    ),
+    (
         "cloth",
         "determinism_golden.rs",
         "determinism_cloth_drape",
@@ -373,6 +380,7 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("continuous collision", &["set_continuous_collision("], 1),
     ("sleeping", &["is_sleeping("], 1),
     ("participant", &["add_participant("], 1),
+    ("axis lock", &["set_body_axis_lock("], 1),
     ("cloth", &["Cloth::"], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
     ("physics2d", &["PhysicsWorld2D"], 1),

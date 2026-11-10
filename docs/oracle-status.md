@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6011 |
+| 🟢 Not ignored (run by CI) | 6012 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6107** |
+| **Total** | **6108** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6011)
+## 🟢 Not ignored (6012)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -213,6 +213,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_reactions.rs` | 22 |
 | `analytic_world_sweeps.rs` | 22 |
 | `audit_thin_wall.rs` | 22 |
+| `determinism_golden_paths.rs` | 22 |
 | `determinism_semantic.rs` | 22 |
 | `analytic_adaptive_refinement.rs` | 21 |
 | `analytic_buoyancy_zone_participant.rs` | 21 |
@@ -226,7 +227,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_neural.rs` | 21 |
 | `audit_privacy.rs` | 21 |
 | `audit_sketch.rs` | 21 |
-| `determinism_golden_paths.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
