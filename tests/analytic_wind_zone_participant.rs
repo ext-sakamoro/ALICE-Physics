@@ -547,7 +547,8 @@ fn gust_digest(backend: SolverBackend) -> String {
 
 // The snapshot's header holds `PHYSICS_SEMANTICS_ID` and the law id, so these move with the
 // identifier: the values pinned under `e90000da…` come back bit for bit from today's snapshot
-// with that identifier and its law id written into the header, so only the header moved.
+// with that identifier and its law id written into the header and the checksum (the last 8
+// bytes, FNV-1a 64 over the rest) recomputed, so only the header moved.
 const GUST_XPBD: &str = "9f6a8c78d3e68c369a9fed6ba84e596089e40cc6b4d1ab033ce145c7a04de1aa";
 const GUST_TGS: &str = "cfb0c985c17abad2e2213ca06f57906c5af71225c48a5cc9753d44460537b637";
 

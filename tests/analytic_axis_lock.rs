@@ -172,6 +172,41 @@ fn contacts_and_joints_do_not_move_a_locked_axis() {
     }
 }
 
+/// A bounce along a locked axis leaves no velocity on it: a free ball dropped with full
+/// restitution onto a body whose y is locked is pushed back, and the restitution of the
+/// contact, which the velocity update adds after the pose projection, is removed from the
+/// locked body too (its y velocity is exactly zero after every step, in the snapshot too).
+#[test]
+fn a_bounce_along_a_locked_axis_leaves_no_velocity_on_it() {
+    for backend in BACKENDS {
+        let mut w = world(backend);
+        let mut base = RigidBody::new_dynamic(Vec3Fix::new(Fix128::ZERO, i(2), Fix128::ZERO), i(4));
+        base.restitution = Fix128::ONE;
+        let locked = w.add_body_with_radius(base, Fix128::ONE);
+        w.set_body_axis_lock(locked, AxisLock::LINEAR_Y);
+        let mut ball =
+            RigidBody::new_dynamic(Vec3Fix::new(Fix128::ZERO, i(5), Fix128::ZERO), Fix128::ONE);
+        ball.restitution = Fix128::ONE;
+        ball.velocity = Vec3Fix::new(Fix128::ZERO, i(-6), Fix128::ZERO);
+        let ball = w.add_body_with_radius(ball, Fix128::ONE);
+        let mut touched = false;
+        for _ in 0..60 {
+            w.step(dt());
+            let b = &w.bodies[locked];
+            assert_eq!(b.position.y, i(2), "{backend:?}");
+            assert_eq!(b.velocity.y, Fix128::ZERO, "{backend:?}: {:?}", b.velocity);
+            touched |= w.bodies[ball].velocity.y > Fix128::ZERO;
+        }
+        assert!(
+            touched,
+            "{backend:?}: the ball never bounced off the locked body"
+        );
+        let mut back = world(backend);
+        back.restore_world(&w.snapshot_world()).expect("restore");
+        assert_eq!(back.bodies[locked].velocity.y, Fix128::ZERO);
+    }
+}
+
 /// The lock table follows the swap-remove: removing the first of three bodies
 /// moves the last body, and its lock, into index 0.
 #[test]

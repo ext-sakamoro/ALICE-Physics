@@ -709,7 +709,8 @@ fn swing_digest(backend: SolverBackend) -> String {
 
 // The snapshot's header holds `PHYSICS_SEMANTICS_ID` and the law id, so these move with the
 // identifier: the values pinned under `e90000da…` come back bit for bit from today's snapshot
-// with that identifier and its law id written into the header, so only the header moved.
+// with that identifier and its law id written into the header and the checksum (the last 8
+// bytes, FNV-1a 64 over the rest) recomputed, so only the header moved.
 const SWING_XPBD: &str = "9a7df836d86a34d5064b022b50c687e9bc42325d3e5bf273af2eec24706280ba";
 const SWING_TGS: &str = "81e5c1b2ca45fe8d447226274891fa53ea9d5d73ba791c64aa993a81fe3de79c";
 
