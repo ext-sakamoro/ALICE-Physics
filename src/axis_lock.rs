@@ -176,3 +176,72 @@ pub(crate) fn project_pose(start: &LockedStart, body: &mut RigidBody) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn moving() -> RigidBody {
+        let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(1, 2, 3), Fix128::ONE);
+        b.velocity = Vec3Fix::from_int(4, 5, 6);
+        b.angular_velocity = Vec3Fix::from_int(7, 8, 9);
+        b
+    }
+
+    #[test]
+    fn the_bits_are_the_six_axes() {
+        assert_eq!(AxisLock::from_bits(64), None);
+        assert_eq!(
+            AxisLock::from_bits(0b101),
+            Some(AxisLock::LINEAR_X | AxisLock::LINEAR_Z)
+        );
+        let mut l = AxisLock::NONE;
+        assert!(l.is_none());
+        l |= AxisLock::ANGULAR_Y;
+        assert_eq!(l.bits(), 16);
+        assert_eq!(l.linear(), [false; 3]);
+        assert_eq!(l.angular(), [false, true, false]);
+        assert!(AxisLock::ALL.contains(AxisLock::LINEAR | AxisLock::ANGULAR));
+    }
+
+    #[test]
+    fn the_velocity_loses_exactly_the_locked_components() {
+        let mut b = moving();
+        project_velocity(AxisLock::LINEAR_Y | AxisLock::ANGULAR_X, &mut b);
+        assert_eq!(b.velocity, Vec3Fix::from_int(4, 0, 6));
+        assert_eq!(b.angular_velocity, Vec3Fix::from_int(0, 8, 9));
+    }
+
+    #[test]
+    fn the_pose_returns_to_the_start_on_the_locked_axes() {
+        let start = LockedStart {
+            body: 0,
+            lock: AxisLock::LINEAR_X | AxisLock::ANGULAR,
+            position: Vec3Fix::from_int(1, 2, 3),
+            rotation: QuatFix::IDENTITY,
+        };
+        let mut b = moving();
+        b.position = Vec3Fix::from_int(9, 9, 9);
+        b.rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), Fix128::ONE);
+        project_pose(&start, &mut b);
+        assert_eq!(b.position, Vec3Fix::from_int(1, 9, 9));
+        assert_eq!(b.rotation, QuatFix::IDENTITY);
+
+        // two locked rotation axes keep the turn about the free one, bit for bit
+        let twist = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), Fix128::ONE);
+        let about_z = LockedStart {
+            lock: AxisLock::ANGULAR_X | AxisLock::ANGULAR_Y,
+            ..start
+        };
+        let mut c = moving();
+        c.rotation = twist;
+        project_pose(&about_z, &mut c);
+        assert_eq!(c.rotation, twist);
+        // a tilt is removed: the x and y parts of the turn are gone
+        let mut d = moving();
+        d.rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(1, 0, 1), Fix128::ONE);
+        project_pose(&about_z, &mut d);
+        assert_eq!((d.rotation.x, d.rotation.y), (Fix128::ZERO, Fix128::ZERO));
+        assert!(d.rotation.z != Fix128::ZERO);
+    }
+}
