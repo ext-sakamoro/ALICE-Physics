@@ -636,3 +636,65 @@ mod domain_tests {
         assert_eq!(&super::law_id_domain()[..], super::LAW_ID_DOMAIN);
     }
 }
+
+// Row 18 (body axis locks): absent without a lock, so the identifier of a world without locks
+// is the one it had before the row existed; present, it names each locked body and its bits.
+#[cfg(test)]
+mod axis_lock_row {
+    use crate::axis_lock::AxisLock;
+    use crate::math::{Fix128, Vec3Fix};
+    use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+
+    fn two_bodies() -> PhysicsWorld {
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        for x in [0, 3] {
+            w.add_body(RigidBody::new_dynamic(
+                Vec3Fix::from_int(x, 5, 0),
+                Fix128::ONE,
+            ));
+        }
+        w
+    }
+
+    #[test]
+    fn the_row_is_absent_without_locks_and_names_body_and_bits() {
+        let sem = [9u8; 32];
+        let plain = two_bodies().law_id(&sem);
+        let mut cleared = two_bodies();
+        cleared.set_body_axis_lock(1, AxisLock::LINEAR_Z);
+        cleared.set_body_axis_lock(1, AxisLock::NONE);
+        assert_eq!(cleared.law_id(&sem), plain, "a cleared lock leaves no row");
+
+        let id = |body: usize, lock: AxisLock| {
+            let mut w = two_bodies();
+            w.set_body_axis_lock(body, lock);
+            w.law_id(&sem)
+        };
+        let z1 = id(1, AxisLock::LINEAR_Z);
+        assert_ne!(z1, plain);
+        assert_ne!(
+            z1,
+            id(0, AxisLock::LINEAR_Z),
+            "the body index is in the row"
+        );
+        assert_ne!(z1, id(1, AxisLock::LINEAR_Y), "the bits are in the row");
+        let mut both = two_bodies();
+        both.set_body_axis_lock(0, AxisLock::ANGULAR);
+        both.set_body_axis_lock(1, AxisLock::LINEAR_Z);
+        assert_ne!(both.law_id(&sem), z1, "every locked body is listed");
+        // a body pushed onto the public field has no lock and adds nothing to the row
+        let mut pushed = two_bodies();
+        pushed.set_body_axis_lock(1, AxisLock::LINEAR_Z);
+        pushed.bodies.push(RigidBody::new_dynamic(
+            Vec3Fix::from_int(9, 5, 0),
+            Fix128::ONE,
+        ));
+        let mut with_third = two_bodies();
+        with_third.set_body_axis_lock(1, AxisLock::LINEAR_Z);
+        with_third.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(9, 5, 0),
+            Fix128::ONE,
+        ));
+        assert_eq!(pushed.law_id(&sem), with_third.law_id(&sem));
+    }
+}
