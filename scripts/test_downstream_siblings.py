@@ -73,6 +73,19 @@ class Plan(unittest.TestCase):
         _, problems, _ = ds.plan("ALICE-LOL", {}, set(), {}, True, False, ["ALICE-Physics"])
         self.assertTrue(any("0 compared" in p for p in problems))
 
+    def test_a_required_repository_taken_by_git_is_compared(self):
+        by_git = ds.git_repos({"a/Cargo.toml": '[dependencies]\n'
+                               'p = { git = "https://github.com/ext-sakamoro/ALICE-Physics", branch = "main" }\n'
+                               'q = { git = "https://github.com/someone/ALICE-Other" }\n'})
+        self.assertEqual(by_git, {"ALICE-Physics": ["a/Cargo.toml"]})
+        _, problems, _ = ds.plan("ALICE-LOL", {}, set(), {}, True, False, ["ALICE-Physics"], by_git)
+        self.assertEqual(problems, [])
+
+    def test_a_consumer_that_drops_the_dependency_compares_nothing(self):
+        by_git = ds.git_repos({"Cargo.toml": '[dependencies]\nplain = "1"\n'})
+        _, problems, _ = ds.plan("ALICE-LOL", {}, set(), {}, True, False, ["ALICE-Physics"], by_git)
+        self.assertTrue(any("0 compared" in p for p in problems), problems)
+
     def test_a_present_sibling_is_not_placed_again(self):
         out, problems, _ = ds.plan("ALICE-LOL", self.NEEDED, {"ALICE-Sign"}, {"ALICE-Sign": SHA}, True, False, [])
         self.assertEqual((out, problems), ([], []))
@@ -128,6 +141,22 @@ class Cli(unittest.TestCase):
         self.lol(f"ALICE-Sign {SHA}\n")
         r = self.run_cli("ALICE-LOL", "--require", "ALICE-Physics")
         self.assertEqual((r.returncode, r.stdout), (0, f"ALICE-Sign {SHA}\n"), r.stderr)
+
+    def test_a_consumer_taking_physics_by_git_passes_the_requirement(self):
+        manifests = {"Cargo.toml": '[workspace]\nmembers = ["core"]\n',
+                     "core/Cargo.toml": '[package]\nname = "core"\nversion = "0.1.0"\n\n[dependencies]\n'
+                     'phys = { git = "https://github.com/ext-sakamoro/ALICE-Physics", branch = "main" }\n'}
+        self.lol("", manifests)
+        r = self.run_cli("ALICE-LOL", "--require", "ALICE-Physics", "--verify")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("1 by git (ALICE-Physics)", r.stderr)
+
+    def test_a_consumer_without_physics_fails_the_requirement(self):
+        manifests = {"Cargo.toml": '[package]\nname = "x"\nversion = "0.1.0"\n\n[dependencies]\nplain = "1"\n'}
+        self.lol("", manifests)
+        r = self.run_cli("ALICE-LOL", "--require", "ALICE-Physics", "--verify")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("0 compared", r.stderr)
 
     def test_fails_without_the_pin_file(self):
         self.lol(None)

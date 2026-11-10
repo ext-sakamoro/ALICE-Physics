@@ -7,8 +7,9 @@
 #              its Cargo.lock names, for alice-physics and alice-physics-core, is
 #              replaced with this checkout through `--config patch.<source>.<name>.path`
 #              (scripts/downstream_patches.py: `crates-io` or the quoted git URL).
-#   ALICE-LOL  depends on it by path (`../../ALICE-Physics`, feature
-#              `physics`). Its workspace also needs ALICE-SDF, ALICE-Kinematics,
+#   ALICE-LOL  depends on it by path (`../../ALICE-Physics`) or by git (the
+#              ALICE-Physics repository, `branch = "main"`; patched as for
+#              ALICE-SDF), feature `physics`. Its workspace also needs ALICE-SDF, ALICE-Kinematics,
 #              ALICE-LLM, ALICE-Zip and ALICE-Sign next to it, so all of them are
 #              fetched into one directory with this checkout linked in as
 #              ALICE-Physics.
@@ -143,7 +144,7 @@ declare_layout() {
         trt) echo ALICE-TRT ;;
     esac
 }
-# ALICE-LOL takes alice-physics by path, so a layout without it compared nothing;
+# ALICE-LOL takes alice-physics by path or git, so a layout without it compared nothing;
 # ALICE-SDF takes it from crates.io or git (patched below) and needs no path sibling.
 # ALICE-TRT has no .github/alice-siblings yet: its siblings are placed at main, and
 # the script names each one in the job log
@@ -324,16 +325,28 @@ if requirements_ok sdf "$SDF" && patch_args sdf "$SDF"; then
     build sdf-example "$SDF" cargo build --features physics "${PATCHES[@]}" --example sim_bridge
 fi
 
+# ALICE-LOL takes alice-physics by path or by git (`branch = "main"`); a git source is
+# pointed at this checkout with the same `--config patch."<url>"` arguments as ALICE-SDF,
+# and check_resolved then requires `cargo tree` to show this checkout, not the git commit
+lol_patches() {
+    PATCHES=()
+    if grep -q 'source = "git+https://github.com/ext-sakamoro/ALICE-Physics' "$LOL/Cargo.lock" 2>/dev/null; then
+        patch_args lol "$LOL" || return 1
+    fi
+}
+
 export CARGO_TARGET_DIR="$TARGET/lol"
-if requirements_ok lol "$LOL"; then
+if requirements_ok lol "$LOL" && lol_patches; then
     compared=$((compared + 1))
-    check_resolved lol-world-auditor "$LOL" -p alice-world-auditor --features physics
-    check_resolved lol "$LOL" -p alice-lol --features physics
+    relock lol-world-auditor "$LOL" "${PATCHES[@]}"
+    check_resolved lol-world-auditor "$LOL" -p alice-world-auditor --features physics "${PATCHES[@]}"
+    relock lol "$LOL" "${PATCHES[@]}"
+    check_resolved lol "$LOL" -p alice-lol --features physics "${PATCHES[@]}"
     # its integration tests (`--test '*'`); the lib has no unit tests, and a
     # binary with 0 tests fails the step
-    run lol-world-auditor "$LOL" cargo test -p alice-world-auditor --features physics --test '*'
-    run lol-thermal "$LOL" cargo test -p alice-lol --features physics --test analytic_thermal
-    run lol-lib "$LOL" cargo test -p alice-lol --features physics --lib -- law:: stdlib::hardsurface::reinforcement
+    run lol-world-auditor "$LOL" cargo test -p alice-world-auditor --features physics "${PATCHES[@]}" --test '*'
+    run lol-thermal "$LOL" cargo test -p alice-lol --features physics "${PATCHES[@]}" --test analytic_thermal
+    run lol-lib "$LOL" cargo test -p alice-lol --features physics "${PATCHES[@]}" --lib -- law:: stdlib::hardsurface::reinforcement
 fi
 
 # trt_gpu_probe: scripts/downstream_trt_probe.sh (sourced, so its tests can run it

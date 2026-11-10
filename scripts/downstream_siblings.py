@@ -23,7 +23,10 @@ Fails (exit 1) when
   - a needed repository is not pinned (the pin file is missing without --unpinned-main,
     empty, or does not list it),
   - a line of the pin file is not "<Repo> <40-hex SHA>", or names a repository twice,
-  - a repository given with --require is not taken by path (nothing was compared),
+  - a repository given with --require is taken neither by path nor by git from its
+    repository (nothing was compared); a git dependency is tested against this checkout
+    by the caller through a `[patch."<url>"]` path override (scripts/downstream_patches.py),
+    which scripts/downstream_resolve.sh then checks in `cargo tree`,
   - a path dependency leaves the layout directory,
   - with --verify: a placed repository the consumer pins is not at its pin (nothing is
     printed; one placed at main is named in a notice).
@@ -79,6 +82,23 @@ def outside_repos(root: str, manifests: dict[str, str]) -> dict[str, list[str]]:
     return found
 
 
+GIT_URL = re.compile(r"^https://github\.com/ext-sakamoro/([A-Za-z0-9._-]+?)(?:\.git)?/?$")
+
+
+def git_repos(manifests: dict[str, str]) -> dict[str, list[str]]:
+    """{repository: [manifest paths]} for each dependency taken by git from an
+    ext-sakamoro repository (`git = "https://github.com/ext-sakamoro/<Repo>"`)."""
+    found: dict[str, list[str]] = {}
+    for rel, text in sorted(manifests.items()):
+        for spec in _dep_specs(tomllib.loads(text)):
+            if not isinstance(spec, dict) or "git" not in spec:
+                continue
+            m = GIT_URL.match(spec["git"])
+            if m:
+                found.setdefault(m.group(1), []).append(rel)
+    return found
+
+
 def read_pins(text: str | None) -> tuple[dict[str, str], list[str]]:
     pins: dict[str, str] = {}
     problems: list[str] = []
@@ -100,13 +120,18 @@ def read_pins(text: str | None) -> tuple[dict[str, str], list[str]]:
 
 
 def plan(consumer: str, needed: dict[str, list[str]], present: set[str], pins: dict[str, str],
-         pin_file_present: bool, unpinned_main: bool, require: list[str]
+         pin_file_present: bool, unpinned_main: bool, require: list[str],
+         by_git: dict[str, list[str]] | None = None,
          ) -> tuple[list[tuple[str, str]], list[str], list[str]]:
-    """(to place as (repo, ref), problems, notices)"""
+    """(to place as (repo, ref), problems, notices)
+
+    A required repository is compared when the consumer takes it by path (`needed`) or by
+    git from its repository (`by_git`)."""
     problems, notices, out = [], [], []
+    by_git = by_git or {}
     for repo in require:
-        if repo not in needed:
-            problems.append(f"{consumer} takes no path dependency on {repo} (0 compared)")
+        if repo not in needed and repo not in by_git:
+            problems.append(f"{consumer} takes no path or git dependency on {repo} (0 compared)")
     for repo, where in sorted(needed.items()):
         if repo in (consumer, CANDIDATE) or repo in present:
             continue
@@ -152,6 +177,7 @@ def main(argv: list[str]) -> int:
                if n not in (args.consumer, CANDIDATE) and os.path.isdir(os.path.join(layout, n, ".git"))}
     problems: list[str] = []
     needed: dict[str, list[str]] = {}
+    by_git: dict[str, list[str]] = {}
     n_manifests = 0
     try:
         for repo in sorted({args.consumer, *present}):
@@ -159,6 +185,9 @@ def main(argv: list[str]) -> int:
             n_manifests += len(ms)
             for dep, where in outside_repos(os.path.join(layout, repo), ms).items():
                 needed.setdefault(dep, []).extend(f"{repo}/{w}" for w in where)
+            if repo == args.consumer:
+                for dep, where in git_repos(ms).items():
+                    by_git.setdefault(dep, []).extend(f"{repo}/{w}" for w in where)
     except ValueError as e:
         problems.append(str(e))
     pin_path = os.path.join(consumer_dir, PIN_FILE)
@@ -169,7 +198,7 @@ def main(argv: list[str]) -> int:
     pins, more = read_pins(pin_text)
     problems += more
     place, more, notices = plan(args.consumer, needed, present, pins, pin_text is not None,
-                                args.unpinned_main, args.require)
+                                args.unpinned_main, args.require, by_git)
     problems += more
     if args.verify and not problems:
         for repo in sorted(present):
@@ -188,7 +217,8 @@ def main(argv: list[str]) -> int:
     for p in problems:
         print(f"downstream_siblings: {p}", file=sys.stderr)
     print(f"downstream_siblings: {args.consumer}: {n_manifests} manifest(s), {len(needed)} repositor(ies) taken by "
-          f"path ({', '.join(sorted(needed))}), {len(place)} to place, {len(problems)} problem(s)", file=sys.stderr)
+          f"path ({', '.join(sorted(needed))}), {len(by_git)} by git ({', '.join(sorted(by_git))}), "
+          f"{len(place)} to place, {len(problems)} problem(s)", file=sys.stderr)
     if problems:
         return 1
     if not args.verify:

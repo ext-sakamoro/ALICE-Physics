@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI (downstream): ALICE-LOL が alice-physics を path でなく git (`branch = "main"`) で取る形に移ったので、`scripts/downstream_siblings.py --require ALICE-Physics` は git の依存も比較した数に入れ (path も git も無い時は 0 compared で fail)、`scripts/downstream_check.sh` は ALICE-SDF と同じ `--config patch."<url>"` で git の source をこの checkout に向けて `cargo tree` がこの checkout を示すことを確かめてから試験する
 - `scripts/land.py`: 公開 repository は手元の `scripts/preflight.sh --fast` を走らせず、`ci/<id>` の SHA の CI の run が全部 (取り込みの後に読む脚も含む) success で終わるのを待ち、`ci_evidence_receipt.py` (pyyaml 6.0.3 に固定) で CI の receipt を書いてから main に取り込む 手元では `run-preflight.sh --cheap` だけを走らせる main が文書だけ進んだ時も証拠を取り直す (取り込む SHA 自身に receipt が要る) 公開かどうかは GitHub の答えで決め、読めなければ止める 試験 `scripts/test_land.py` の `PublicLanding` / `AllRunsVerdict` / `CiReceipt` CI: `scripts/test_affected_tests.py` を `ci.yml` で走らせる (手元の preflight だけが走らせていた)
 - 依存: `alice-crypto` (feature `privacy-crypto`) を crates.io の 0.4 から ALICE-Crypto の git `main` (0.7.0、feature `std` で 0.6 までと同じ module を引く) に移した lock の `alice-det-math` は 1 つ (0.6.1) のまま
 - **Breaking**: `det_math` から、この crate の production code も ALICE-* の他の crate も呼んでいない 8 関数 `ln` / `atan` / `asin` / `tan` / `tanh` / `atan64` / `atan2_64` / `atan2` の委譲を外した 同じ関数は `alice_det_math` (`alice_det_math::ln` など) にある この crate の試験 (`ln` 2 本、`atan2_64` 5 本、`atan2` 1 本) は `alice_det_math` を直接呼ぶ
