@@ -1783,21 +1783,43 @@ impl CorotationalTransientSolver {
     /// SHA-256 of the solver's state: `STATE_DIGEST_DOMAIN`, then the raw `Fix128` bits of
     /// every displacement, velocity and acceleration (little-endian `i64` high, `u64` low,
     /// degree of freedom by degree of freedom), then one byte per vertex for the ground hold
-    /// (`1` held, `0` free). Two runs agree exactly when their states are the same to the
-    /// bit, which is what a replay of the same inputs gives on every target. This digest
-    /// stands alone: the finite element state is not yet part of
+    /// (`1` held, `0` free), then the two settings a step reads that can change between
+    /// steps: the ground plane ([`Self::set_ground`]: `0`, or `1` and the bits of `y`) and
+    /// the damping ([`Self::set_damping`]: `0`, or `1` and the bits of `α` then `β`). Two
+    /// solvers built from the same mesh, material, boundary conditions and step agree
+    /// exactly when these are the same to the bit, which is what a replay of the same inputs
+    /// gives on every target, and the next step of each is then the same. This digest stands
+    /// alone: the finite element state is not yet part of
     /// [`crate::PhysicsWorld::state_digest`] or its snapshot.
     #[must_use]
     pub fn state_digest(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
-        let mut h = Sha256::new();
-        h.update(Self::STATE_DIGEST_DOMAIN);
-        for x in self.u.iter().chain(&self.v).chain(&self.a) {
+        fn put(h: &mut Sha256, x: Fix128) {
             h.update(x.hi.to_le_bytes());
             h.update(x.lo.to_le_bytes());
         }
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        for &x in self.u.iter().chain(&self.v).chain(&self.a) {
+            put(&mut h, x);
+        }
         for &held in &self.on_ground {
             h.update([u8::from(held)]);
+        }
+        match self.ground {
+            None => h.update([0u8]),
+            Some(y) => {
+                h.update([1u8]);
+                put(&mut h, y);
+            }
+        }
+        match self.damping {
+            None => h.update([0u8]),
+            Some(d) => {
+                h.update([1u8]);
+                put(&mut h, d.alpha);
+                put(&mut h, d.beta);
+            }
         }
         h.finalize().into()
     }
@@ -2505,6 +2527,43 @@ mod corotational_tests {
         assert_eq!(
             TransientSolver::STATE_DIGEST_DOMAIN,
             CorotationalTransientSolver::STATE_DIGEST_DOMAIN
+        );
+    }
+
+    /// Each part of the state a step reads moves the digest on its own: the ground hold of
+    /// one vertex, the ground plane (none, `y = 0`, `y = 1`) and the damping (none, zero,
+    /// `α` only, `β` only), with the displacements, velocities and accelerations the same.
+    #[test]
+    fn the_state_digest_tells_apart_states_that_differ_only_in_hold_plane_or_damping() {
+        let fresh = || solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let base = fresh().state_digest();
+        let mut held = fresh();
+        held.on_ground[0] = true;
+        assert_ne!(held.state_digest(), base, "the hold of one vertex");
+        let mut digests = vec![base];
+        for y in [Fix128::ZERO, Fix128::ONE] {
+            let mut s = fresh();
+            s.set_ground(Some(y));
+            digests.push(s.state_digest());
+        }
+        let (zero, one) = (Fix128::ZERO, Fix128::ONE);
+        for (alpha, beta) in [(zero, zero), (one, zero), (zero, one)] {
+            let mut s = fresh();
+            s.set_damping(Some(RayleighCoefficients { alpha, beta }));
+            digests.push(s.state_digest());
+        }
+        for i in 0..digests.len() {
+            for j in 0..i {
+                assert_ne!(
+                    digests[i], digests[j],
+                    "settings {i} and {j} share a digest"
+                );
+            }
+        }
+        assert_eq!(
+            fresh().state_digest(),
+            base,
+            "the same solver, the same digest"
         );
     }
 }
