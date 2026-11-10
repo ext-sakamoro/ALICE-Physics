@@ -5454,3 +5454,277 @@ mod outline_tests {
         assert!(!within_of_outline([r(104), r(104)], &c, r2));
     }
 }
+
+/// Small, fast versions of the soft-letters oracles (`tests/soft_letters_oracle.rs`,
+/// `tests/cloth_state_digest.rs`, `tests/cloth_sleep_oracle.rs`): a 1 × 1 square with a
+/// 0.4 × 0.4 hole at spacing 0.1, a few frames each, so the outline, grab, pin, sleep,
+/// digest and rollback paths count in the `--lib` coverage without the long scripts.
+#[cfg(test)]
+mod soft_letters_lib_tests {
+    use super::*;
+    use crate::solver::{PhysicsWorld, SolverConfig};
+
+    fn r(n: i64, d: i64) -> Fix128 {
+        Fix128::from_ratio(n, d)
+    }
+
+    fn square_with_hole() -> Vec<Vec<[Fix128; 2]>> {
+        let p = |x: i64, y: i64| [r(x, 10), r(y, 10)];
+        vec![
+            vec![p(0, 0), p(10, 0), p(10, 10), p(0, 10)],
+            vec![p(3, 3), p(7, 3), p(7, 7), p(3, 7)],
+        ]
+    }
+
+    fn desc(contours: Vec<Vec<[Fix128; 2]>>) -> OutlineDesc {
+        OutlineDesc {
+            origin: Vec3Fix::ZERO,
+            u: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            v: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+            contours,
+            spacing: r(1, 10),
+            mass_per_particle: Fix128::ONE,
+            config: ClothConfig {
+                iterations: 2,
+                substeps: 1,
+                gravity: Vec3Fix::ZERO,
+                damping: r(98, 100),
+                ..ClothConfig::default()
+            },
+            tether: Some((Fix128::from_int(40), Fix128::from_int(4))),
+        }
+    }
+
+    fn cloth() -> Cloth {
+        Cloth::from_outline(&desc(square_with_hole())).expect("the square keeps triangles")
+    }
+
+    fn dt() -> Fix128 {
+        r(1, 60)
+    }
+
+    fn at(x: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::new(r(x, 10), Fix128::ZERO, r(z, 10))
+    }
+
+    /// Grab the corner, drag it for 10 frames, throw it, run on to `frames`; the digest
+    /// after each frame.
+    fn script(c: &mut Cloth, frames: usize) -> Vec<[u8; 32]> {
+        let id = GrabId(3);
+        assert_eq!(c.grab(id, at(0, 0), r(1, 10)), Some(id));
+        let mut out = Vec::with_capacity(frames);
+        for f in 0..frames {
+            if f < 10 {
+                assert!(c.move_grab(id, at(-(f as i64), -1)));
+            } else if f == 10 {
+                assert!(c.release_grab_with_velocity(
+                    id,
+                    Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO)
+                ));
+            }
+            c.step(dt());
+            out.push(c.state_digest());
+        }
+        out
+    }
+
+    /// The even-odd fill: no particle and no triangle centroid sits deeper than half a
+    /// spacing inside the hole, and every centroid lies inside the square.
+    #[test]
+    fn an_outline_with_a_hole_keeps_the_lattice_of_its_fill() {
+        let c = cloth();
+        assert!(c.particle_count() > 0 && !c.triangles.is_empty());
+        let (lo, hi) = (r(3, 10) + r(1, 20), r(7, 10) - r(1, 20));
+        for p in &c.positions {
+            let deep = p.x > lo && p.x < hi && p.z > lo && p.z < hi;
+            assert!(!deep, "a particle deep in the hole at {p:?}");
+        }
+        let three = Fix128::from_int(3);
+        for t in &c.triangles {
+            let g = (c.positions[t[0]] + c.positions[t[1]] + c.positions[t[2]]) / three;
+            // the kept band reaches half a spacing into the hole, so may a centroid
+            let in_hole = g.x > lo && g.x < hi && g.z > lo && g.z < hi;
+            let in_square = g.x >= Fix128::ZERO
+                && g.x <= Fix128::ONE
+                && g.z >= Fix128::ZERO
+                && g.z <= Fix128::ONE;
+            assert!(
+                in_square && !in_hole,
+                "triangle centroid {g:?} outside the fill"
+            );
+        }
+        assert_eq!(
+            c.rest_positions, c.positions,
+            "the tether's rest shape is the lattice"
+        );
+    }
+
+    #[test]
+    fn a_bad_outline_is_refused_with_its_reason() {
+        assert_eq!(
+            Cloth::from_outline(&desc(Vec::new())).err(),
+            Some(OutlineError::EmptyOutline)
+        );
+        let mut d = desc(square_with_hole());
+        d.spacing = Fix128::ZERO;
+        assert_eq!(
+            Cloth::from_outline(&d).err(),
+            Some(OutlineError::SpacingNotPositive)
+        );
+        let mut d = desc(square_with_hole());
+        d.mass_per_particle = Fix128::ZERO;
+        assert_eq!(
+            Cloth::from_outline(&d).err(),
+            Some(OutlineError::MassNotPositive)
+        );
+        let sliver = vec![vec![
+            [r(0, 1), r(0, 1)],
+            [r(10, 1), r(0, 1)],
+            [r(10, 1), r(1, 100)],
+            [r(0, 1), r(1, 100)],
+        ]];
+        assert_eq!(
+            Cloth::from_outline(&desc(sliver)).err(),
+            Some(OutlineError::NoTriangles)
+        );
+        assert_eq!(
+            OutlineError::NoTriangles.to_string(),
+            "the lattice keeps no triangle"
+        );
+    }
+
+    /// A grab holds the nearest free particle exactly on its target after a step, a moved
+    /// grab moves it, and a release with a velocity gives the particle that velocity.
+    #[test]
+    fn a_grab_holds_moves_and_throws_one_particle() {
+        let mut c = cloth();
+        let id = GrabId(9);
+        let near = c
+            .nearest_free(at(0, 0), r(1, 10))
+            .expect("the corner is in reach");
+        assert_eq!(
+            c.nearest_free(Vec3Fix::from_int(5, 0, 5), r(1, 10)),
+            None,
+            "nothing in reach"
+        );
+        assert_eq!(c.grab(id, at(0, 0), r(1, 10)), Some(id));
+        assert_eq!(c.grab_particle(id), Some(near));
+        assert_eq!(c.grabs().len(), 1);
+        assert_ne!(
+            c.nearest_free(at(0, 0), r(1, 10)),
+            Some(near),
+            "a held particle is not free"
+        );
+        let target = at(-2, -1);
+        assert!(c.move_grab(id, target));
+        assert!(!c.move_grab(GrabId(99), target), "an unknown grab");
+        c.step(dt());
+        assert_eq!(c.positions[near], target);
+        assert_eq!(c.last_dt(), dt());
+        let v = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        assert!(c.release_grab_with_velocity(id, v));
+        assert_eq!(c.velocities[near], v);
+        assert!(c.grabs().is_empty());
+        assert!(!c.release_grab(id), "released already");
+    }
+
+    /// A pin keeps the inverse mass it replaced and `unpin` gives back exactly that.
+    #[test]
+    fn unpin_gives_back_the_inverse_mass_the_pin_took() {
+        let mut c = Cloth::from_mesh(
+            vec![
+                Vec3Fix::ZERO,
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::from_int(1, 0, 1),
+                Vec3Fix::from_int(0, 0, 1),
+            ],
+            vec![[0, 1, 2], [0, 2, 3]],
+            r(1, 2),
+        );
+        assert_eq!(
+            c.edge_constraints.len(),
+            5,
+            "a quad of two triangles has five edges"
+        );
+        c.pin(2);
+        c.pin(2);
+        assert_eq!(c.inv_masses[2], Fix128::ZERO);
+        assert_eq!(c.pin_released(), &[(2, r(1, 2))]);
+        c.unpin(2);
+        c.unpin(1);
+        assert_eq!(c.inv_masses[2], r(1, 2));
+        assert!(c.pinned.is_empty() && c.pin_released().is_empty());
+    }
+
+    /// Sleep is exact: a run with sleep on and one with it off give the same digest every
+    /// frame; a cloth at rest falls asleep and turning sleep off forgets it.
+    #[test]
+    fn sleep_never_changes_a_digest() {
+        let (mut a, mut b) = (cloth(), cloth());
+        a.set_sleep(true);
+        b.set_sleep(false);
+        assert!(a.sleep_enabled() && !b.sleep_enabled());
+        assert_eq!(script(&mut a, 30), script(&mut b, 30));
+        let mut rest = cloth();
+        rest.set_sleep(true);
+        rest.step(dt());
+        rest.step(dt());
+        assert!(rest.is_asleep(), "a cloth at rest is a fixed point");
+        let d = rest.state_digest();
+        rest.step(dt());
+        assert_eq!(rest.state_digest(), d);
+        rest.set_sleep(false);
+        assert!(!rest.is_asleep());
+    }
+
+    /// The digest is the SHA-256 of the domain and the state bytes, a replay gives the same digests, and
+    /// the state moves it.
+    #[test]
+    fn the_digest_replays_and_is_the_hash_of_the_domain_and_state_bytes() {
+        use sha2::{Digest, Sha256};
+        let (mut a, mut b) = (cloth(), cloth());
+        let (da, db) = (script(&mut a, 20), script(&mut b, 20));
+        assert_eq!(da, db);
+        assert_ne!(da[0], da[19], "the cloth moved");
+        let mut hasher = Sha256::new();
+        hasher.update(Cloth::CLOTH_DIGEST_DOMAIN);
+        hasher.update(a.state_bytes());
+        let h: [u8; 32] = hasher.finalize().into();
+        assert_eq!(h, a.state_digest());
+        let mut out = Vec::new();
+        a.write_state(&mut out);
+        assert_eq!(out, a.state_bytes());
+    }
+
+    /// A world with a cloth: the world snapshot and the rollback state both bring the cloth
+    /// back to its digest, and the restored world steps on to the same digest.
+    #[test]
+    fn a_world_snapshot_and_a_rollback_bring_the_cloth_back() {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        let i = w.add_cloth(cloth());
+        let id = w
+            .cloth_grab(i, at(0, 0), r(1, 10))
+            .expect("the corner is in reach");
+        for f in 0..8 {
+            assert!(w.cloth_move_grab(id, at(-f, -1)));
+            w.step(dt());
+        }
+        let d = w.cloths[i].state_digest();
+        let blob = w.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("restore");
+        assert_eq!(t.cloths[i].state_digest(), d);
+        let saved = w.serialize_state();
+        assert!(w.cloth_release(id));
+        w.step(dt());
+        assert_ne!(w.cloths[i].state_digest(), d);
+        assert!(w.deserialize_state(&saved), "the rollback applies");
+        assert_eq!(w.cloths[i].state_digest(), d);
+        w.step(dt());
+        t.step(dt());
+        assert_eq!(t.cloths[i].state_digest(), w.cloths[i].state_digest());
+    }
+}
