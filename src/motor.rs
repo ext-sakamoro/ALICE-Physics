@@ -993,3 +993,12 @@ mod tests {
         assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(0, 1, 0));
     }
 }
+
+// The motor oracles (limits, targets, the joint motor in a world) compile as lib tests
+// too, so their paths count in the `--lib` coverage.
+#[cfg(test)]
+#[path = "../tests/analytic_joint_motor_world.rs"]
+mod analytic_joint_motor_world_oracle;
+#[cfg(test)]
+#[path = "../tests/audit_motor.rs"]
+mod audit_motor_oracle;
