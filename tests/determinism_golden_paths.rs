@@ -761,7 +761,10 @@ fn axis_lock_world(backend: SolverBackend) -> PhysicsWorld {
     w
 }
 
-/// Axis locks on both backends, pinned after 60 frames.
+/// Axis locks on both backends, pinned after 60 frames. Not yet a row of the stepping
+/// coverage (`determinism_golden_coverage.rs`): a row there is an entry of
+/// `PHYSICS_SEMANTICS_PINS`, so adding it moves `PHYSICS_SEMANTICS_ID`, which waits for the
+/// next identifier move.
 #[test]
 fn golden_axis_lock() {
     assert_golden(
