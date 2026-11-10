@@ -4,6 +4,9 @@
 # 占有すると取り込み (ci/** の CI 待ち) を止めるため 夜間は前日 main に入った変更の行だけを変異試験:
 # - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  夜間 / PR では --in-diff で差分のみ (見逃しは失敗)、
 #             週次は core shard の見逃しを scripts/mutants-missed-baseline.txt と比べる (scripts/mutants_ratchet.py)
+#             どちらも 2 段: 1 段目は lib test だけ、1 段目の見逃しを 2 段目 (scripts/mutants_pass2.py) が
+#             その行を実行する統合試験と回し直す (結果は全統合試験で回した場合と同じ、費用は見逃しの分だけ)
+# - coverage-map : 統合試験の target ごとの行 coverage (2 段目が使う、週次で作り直して artifact に置く)
 # - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
 # - ignored : `#[ignore]` test を実際に走らせて理由文の主張と突き合わせる (2026-09-30 追加)
@@ -48,6 +51,11 @@ on:
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
+
+# the in-diff run reads the last weekly coverage map (an artifact of an earlier run)
+permissions:
+  contents: read
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -123,7 +131,7 @@ jobs:
     # Mac 実測 66 s → 28 s) + timeout 300 に変更 shard 2 の score: caught 64 / missed 192 = 25%
     # 2026-09-15 3 回目実測: default feature だけだと `#[cfg(feature = "parallel")]` / gpu-solver-bridge 内の
     # code が compile されず「変異しても変わらない = missed」に数えられる (solver.rs で 163 / 575) → feature 軸を追加
-    name: Mutation testing (cargo-mutants${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && ', in-diff' || format(', core shard {0}/16', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
+    name: Mutation testing (cargo-mutants${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && ', in-diff' || format(', core shard {0}/20', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -132,7 +140,7 @@ jobs:
       # held the runners the landing CI needed for hours
       max-parallel: 4
       matrix:
-        shard: ${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
+        shard: ${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]') }}
         # the second axis also turns `simd` on: the x86_64 SIMD paths (`cross_simd`,
         # `dot_batch_4`, the `simd_width` lane count) are only compiled with it, and the
         # default axis keeps testing the scalar fallbacks
@@ -147,6 +155,8 @@ jobs:
         uses: taiki-e/install-action@cargo-mutants
       - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
         if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" = pull_request ]; then
             base="origin/${{ github.base_ref }}"
@@ -157,25 +167,25 @@ jobs:
           git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
           if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; exit 0; fi
           # a module behind #[cfg(feature = ...)] is not compiled without its feature, so all
-          # its mutants would read "missed"; turn the features of the changed modules on and
-          # run the integration tests named after them besides --lib
+          # its mutants would read "missed"; turn the features of the changed modules on.
+          # Pass 1 runs the lib tests only; its missed mutants go to pass 2 below, which runs
+          # each with the integration targets that execute it (the plan's name-matched targets
+          # missed most of them: 2 of 43 in the 2026-11-10 measurement)
           plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff \
             --features "${{ matrix.features }}" --out /tmp/planned.diff)
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
-          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
+          echo "$features" > /tmp/features.txt
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
           ulimit -v 6291456
           set +e
-          # `--cargo-arg` limits the build of every mutant to the lib tests and the planned
-          # integration tests (`-- --lib` built every test target, about 4 min per mutant).
+          # `--cargo-arg=--lib` limits the build of every mutant to the lib tests.
           # The run is stopped with SIGINT before the job's own timeout, so cargo-mutants
           # writes what it tested; an unfinished run then fails below instead of being
           # cancelled with its missed mutants unreported.
-          # shellcheck disable=SC2086
-          timeout --signal=INT --kill-after=10m 270m \
+          timeout --signal=INT --kill-after=10m 170m \
             cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${features:+--features "$features"} --cargo-arg=--lib $tests
+            ${features:+--features "$features"} --cargo-arg=--lib
           rc=$?
           set -e
           # cargo-mutants exits 0 without an output directory when the diff holds nothing
@@ -184,6 +194,30 @@ jobs:
             echo "no mutant in the changed lines"
             exit 0
           fi
+          if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
+            echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
+            exit 1
+          fi
+          case $rc in
+            0|2|3) ;;
+            *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc" ;;
+          esac
+          # pass 2: the lib-missed mutants with the integration targets that execute them,
+          # from the last weekly coverage map of this axis (the function's targets, since the
+          # map is older than this commit, plus every target changed since the map); without
+          # a map yet, every target
+          map=-
+          name="coverage-map-${{ matrix.features == '' && 'default' || 'parallel' }}"
+          run_id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=$name&per_page=1" \
+            --jq '.artifacts[0].workflow_run.id // empty')
+          if [ -n "$run_id" ] && gh run download "$run_id" -n "$name" -D /tmp/map; then
+            map=/tmp/map/coverage-map.json
+          fi
+          echo "coverage map: $map (run ${run_id:-none})"
+          timeout --signal=INT --kill-after=5m 100m \
+            python3 scripts/mutants_pass2.py run --map "$map" --pass1 mutants.out --out mutants-pass2.out \
+              --features "$(cat /tmp/features.txt)"
+          rm -rf mutants.out && mv mutants-pass2.out mutants.out
           # equivalent mutants (scripts/mutants-equivalent.txt, keyed by position and the
           # hash of their source line) are reported by cargo-mutants on every run; only
           # the others are survivors
@@ -193,26 +227,20 @@ jobs:
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
             cat mutants.out/missed-real.txt
           fi
-          if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
-            echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
-            exit 1
-          fi
-          # 0 = all caught, 2 = a mutant survived (fails unless every survivor is a listed
-          # equivalent mutant: the change came without a test that sees it),
-          # 3 = timeouts only (reported, not failed), anything else = baseline red / usage error
-          case $rc in
-            0|2|3) [ "${missed:-0}" -eq 0 ] || exit 1 ;;
-            *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc" ;;
-          esac
+          # a mutant that survived both passes fails unless it is a listed equivalent mutant
+          # (the change came without a test that sees it); timeouts are reported, not failed
+          [ "${missed:-0}" -eq 0 ] || exit 1
       # `--cargo-arg=--lib` restricts both the build and the test run of every mutant to the
       # lib tests. `-- --lib` (until 2026-10) ran the same tests but built every integration
-      # test and example per mutant: 3.5 min per mutant against 10 s, same missed set.
-      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
+      # test and example per mutant: 3.5 min per mutant against 10 s. This is pass 1: its
+      # missed mutants are run again with the integration targets in mutants-pass2.
+      # 20 shards (16 until 2026-11): pass 2 adds about 90 min to the largest shard.
+      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/20, pass 1 = lib test のみ)
         if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
         run: |
           ulimit -v 6291456
           set +e
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
+          cargo mutants --shard ${{ matrix.shard }}/20 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
@@ -247,13 +275,94 @@ jobs:
           path: mutants.out
           if-no-files-found: ignore
 
+  coverage-map:
+    # the test targets that execute each source line and each function, per feature axis
+    # (scripts/mutants_pass2.py map): pass 2 of this run uses it at this commit, and the
+    # nightly in-diff runs read the last one
+    name: Coverage map (${{ matrix.features == '' && 'default' || matrix.features }})
+    if: github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ['', 'parallel,gpu-solver-bridge,simd']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: coverage-map
+      - name: Install cargo-llvm-cov and cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-mutants
+      - name: Build the map
+        run: python3 scripts/mutants_pass2.py map --out coverage-map.json --features "${{ matrix.features }}"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: coverage-map-${{ matrix.features == '' && 'default' || 'parallel' }}
+          path: coverage-map.json
+          retention-days: 30
+
+  mutants-pass2:
+    # pass 2 of the weekly run: each shard's lib-missed mutants with the integration
+    # targets that execute their line (the map was built at this commit)
+    name: Mutation testing pass 2 (core shard ${{ matrix.shard }}/20, ${{ matrix.features == '' && 'default' || matrix.features }})
+    needs: [mutants, coverage-map]
+    if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        features: ['', 'parallel,gpu-solver-bridge,simd']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@cargo-mutants
+      - uses: actions/download-artifact@v7
+        with:
+          name: mutants-out-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || 'parallel' }}
+          path: pass1
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-map-${{ matrix.features == '' && 'default' || 'parallel' }}
+          path: map
+      - name: Pass 2
+        run: |
+          ulimit -v 6291456
+          timeout --signal=INT --kill-after=10m 280m \
+            python3 scripts/mutants_pass2.py run --map map/coverage-map.json --pass1 pass1 \
+              --out mutants.out --features "${{ matrix.features }}"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## pass 2 (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            [ -f mutants.out/pass2.json ] && cat mutants.out/pass2.json || echo "no pass-2 output"
+            echo; echo "### missed after pass 2"; cat mutants.out/missed.txt 2>/dev/null | head -50
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mutants-pass2-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || 'parallel' }}
+          path: mutants.out
+          if-no-files-found: ignore
+
   mutants-ratchet:
     # the weekly shards' missed mutants against scripts/mutants-missed-baseline.txt:
     # a mutant missed that was not missed before fails, and so does a baseline
     # entry this run caught (remove it); a shard that did not finish, or is
     # missing, fails the ratchet. Record a new baseline with `--write` after reviewing it.
     name: Mutation ratchet (weekly shards vs the missed baseline)
-    needs: mutants
+    needs: mutants-pass2
     if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -261,12 +370,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v7
         with:
-          pattern: mutants-out-*
+          pattern: mutants-pass2-*
           path: mutants-runs
       - name: Compare the missed mutants with the baseline
-        # 16 shards x 2 feature axes: a shard that was cancelled, timed out or never
-        # uploaded fails the ratchet instead of leaving its mutants unchecked
-        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 32
+        # 20 shards x 2 feature axes, after pass 2: a shard that was cancelled, timed out or
+        # never uploaded fails the ratchet instead of leaving its mutants unchecked
+        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 40
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)

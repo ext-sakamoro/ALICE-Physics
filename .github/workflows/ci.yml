@@ -200,6 +200,8 @@ jobs:
         run: python scripts/test_mutants_exclude_check.py
       - name: Equivalent mutants (tests)
         run: python scripts/test_mutants_equivalent.py
+      - name: Mutation pass 2, target selection and merge (tests)
+        run: python scripts/test_mutants_pass2.py
       # every equivalent-mutant entry has a reason and still matches its source line
       # (a moved or edited line fails here); an empty list fails
       - name: Equivalent mutants still match the source
