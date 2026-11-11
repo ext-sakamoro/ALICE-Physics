@@ -206,7 +206,7 @@ fn two_ball_world(
         let mut b = RigidBody::new_dynamic(pos, Fix128::ONE).with_velocity(vel);
         b.inv_inertia = inv_inertia;
         b.set_rotation(q);
-        let i = w.add_body_with_radius(b, half);
+        let i = w.add_body_with_radius_keeping_inertia(b, half);
         w.set_body_material(i, id);
     }
     w

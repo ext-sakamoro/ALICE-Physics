@@ -195,6 +195,23 @@ fn checked_quat_mul(a: QuatFix, b: QuatFix) -> Option<QuatFix> {
     Some(QuatFix::new(x, y, z, w))
 }
 
+/// The inverse inertia `inv_mass · 5 / (2 r²)` of a solid sphere of radius `r`
+/// (`I = 2/5 m r²`), or `None` for a body without inverse mass, a radius that is
+/// not positive, or a value at or above `2⁶¹` (it would not fit the products the
+/// solve forms).
+pub(crate) fn solid_sphere_inv_inertia(inv_mass: Fix128, radius: Fix128) -> Option<Fix128> {
+    if !(inv_mass > Fix128::ZERO && radius > Fix128::ZERO) {
+        return None;
+    }
+    let r = radius.to_f64();
+    let estimate = inv_mass.to_f64() * 2.5 / (r * r);
+    if !(estimate.is_finite() && estimate < (1u64 << 61) as f64) {
+        return None;
+    }
+    let r2 = radius.checked_mul(radius)?;
+    (inv_mass * Fix128::from_ratio(5, 2)).checked_div(r2)
+}
+
 /// Whether a body-frame diagonal inverse inertia is isotropic (`x = y = z`).
 ///
 /// For such a body `R · diag(c, c, c) · Rᵀ = c · E` for every rotation `R`,
@@ -2109,14 +2126,41 @@ impl PhysicsWorld {
         idx
     }
 
-    /// Add rigid body with a collision sphere radius for automatic detection.
+    /// Add a rigid body that is a solid sphere of `radius`: its collision radius is
+    /// `radius`, and a dynamic body gets the solid-sphere inertia `I = 2/5 m r²`
+    /// about every axis.
     ///
     /// Bodies with a collision radius participate in BVH broad-phase and
     /// sphere-sphere narrow-phase collision detection during `step()`.
     ///
+    /// - The inertia replaces the one `body` carries (the [`RigidBody::new`]
+    ///   default is the inertia of a sphere of radius 1, so a smaller or larger ball
+    ///   kept it and rolled as the wrong solid: `k = I / (m r²) = 1.6` for `r = 0.5`
+    ///   instead of `0.4`). A body whose inertia is already set (a box, an
+    ///   ellipsoid, a hand-tuned tensor) with a sphere only for collision goes
+    ///   through [`Self::add_body_with_radius_keeping_inertia`].
+    /// - A static, kinematic or sensor body (no inverse mass) keeps its inertia.
+    /// - A radius that is not positive, or whose inverse inertia
+    ///   `inv_mass · 5 / (2 r²)` would not fit `Fix128` (`≥ 2⁶¹`), keeps the body's
+    ///   inertia.
+    ///
     /// The body's rotations are stored as unit quaternions, as in
     /// [`Self::add_body`].
     pub fn add_body_with_radius(&mut self, mut body: RigidBody, radius: Fix128) -> usize {
+        if let Some(inv_i) = solid_sphere_inv_inertia(body.inv_mass, radius) {
+            body.inv_inertia = Vec3Fix::new(inv_i, inv_i, inv_i);
+        }
+        self.add_body_with_radius_keeping_inertia(body, radius)
+    }
+
+    /// [`Self::add_body_with_radius`] for a body whose inertia is already what it
+    /// should be: the collision radius is set, the inertia is left as `body`
+    /// carries it.
+    pub fn add_body_with_radius_keeping_inertia(
+        &mut self,
+        mut body: RigidBody,
+        radius: Fix128,
+    ) -> usize {
         body.make_rotations_unit();
         let idx = self.bodies.len();
         self.bodies.push(body);
@@ -2159,7 +2203,7 @@ impl PhysicsWorld {
             Fix128::ONE / inertia.y,
             Fix128::ONE / inertia.z,
         );
-        let idx = self.add_body_with_radius(body, shape.bounding_radius());
+        let idx = self.add_body_with_radius_keeping_inertia(body, shape.bounding_radius());
         self.body_colliders[idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         Ok(idx)
     }
@@ -2292,7 +2336,7 @@ impl PhysicsWorld {
             Fix128::ONE / moments.y,
             Fix128::ONE / moments.z,
         );
-        let idx = self.add_body_with_radius(body, radius);
+        let idx = self.add_body_with_radius_keeping_inertia(body, radius);
         self.body_colliders[idx] = Some(collider);
         Ok(idx)
     }
