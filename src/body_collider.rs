@@ -508,6 +508,21 @@ pub(crate) fn quat_from_rotation(m: Mat3Fix) -> QuatFix {
 const FIELD_SUPPORT_ITERATIONS: usize = 2;
 
 impl BodyCollider {
+    /// The deepest point of [`Self::static_manifold`] (what the unit tests of
+    /// the single-point contact compare).
+    #[cfg(test)]
+    pub(crate) fn static_contact(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        collider: &StaticCollider,
+    ) -> Option<Contact> {
+        self.static_manifold(position, rotation, collider)
+            .into_iter()
+            .map(|(c, _)| c)
+            .max_by(|x, y| x.depth.cmp(&y.depth))
+    }
+
     // LIMITATION(COV-RIGID-065): a height field whose bilinear cells curve under a piece is met at the tangent plane under its lowest point
     /// The contacts of this collider, for a body at `position` turned by `rotation`,
     /// with a static collider (empty when no piece reaches into it). Each normal

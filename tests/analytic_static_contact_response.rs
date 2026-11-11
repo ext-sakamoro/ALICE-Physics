@@ -457,22 +457,7 @@ fn a_domino_falls_over_only_past_atan_w_over_h() {
     let mut wrong = Vec::new();
     let mut compared = 0;
     for (bname, backend) in backends() {
-        for (k, (fname, floor)) in floors().into_iter().enumerate() {
-            let back = domino_tilt_after(backend, floor, 9f64.to_radians()).to_degrees();
-            let (_, again) = floors().swap_remove(k);
-            let over = domino_tilt_after(backend, again, 14f64.to_radians()).to_degrees();
-            compared += 2;
-            if back >= 1.0 || back.is_nan() {
-                wrong.push(format!(
-                    "{bname} {fname}: 9° ends at {back:.2}° (want upright, < 1°)"
-                ));
-            }
-            if (over - 90.0).abs() >= 1.0 || over.is_nan() {
-                wrong.push(format!(
-                    "{bname} {fname}: 14° ends at {over:.2}° (want on its side, 90°)"
-                ));
-            }
-        }
+        compared += domino_misses(bname, backend, &mut wrong);
     }
     assert_eq!(compared, 2 * floors().len() * 2);
     assert!(
@@ -481,6 +466,68 @@ fn a_domino_falls_over_only_past_atan_w_over_h() {
         wrong.len(),
         wrong.join("\n")
     );
+}
+
+/// The XPBD half of the torque law (the domino), running on its own: the
+/// position-based contact turns the body it pushes (Müller et al. 2020, §3.5), so
+/// 9° falls back and 14° falls over on every floor.
+#[test]
+fn a_domino_falls_over_only_past_atan_w_over_h_under_xpbd() {
+    let mut wrong = Vec::new();
+    let compared = domino_misses("xpbd", SolverBackend::Xpbd, &mut wrong);
+    assert_eq!(compared, floors().len() * 2);
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The XPBD half of the rolling law, running on its own (both a ball built from
+/// its shape and one added with a radius, every floor).
+#[test]
+fn a_sliding_ball_rolls_at_five_sevenths_of_v0_under_xpbd() {
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for by_radius in [false, true] {
+        for (fname, floor) in floors() {
+            compared += 1;
+            if let Some(miss) = rolling_miss(SolverBackend::Xpbd, floor, by_radius) {
+                wrong.push(format!("{fname} (by radius: {by_radius}): {miss}"));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The domino on every floor under `backend`: the misses go to `wrong`, the
+/// number of cases compared is returned (2 per floor: 9° and 14°).
+fn domino_misses(bname: &str, backend: SolverBackend, wrong: &mut Vec<String>) -> usize {
+    let mut compared = 0;
+    for (k, (fname, floor)) in floors().into_iter().enumerate() {
+        let back = domino_tilt_after(backend, floor, 9f64.to_radians()).to_degrees();
+        let (_, again) = floors().swap_remove(k);
+        let over = domino_tilt_after(backend, again, 14f64.to_radians()).to_degrees();
+        compared += 2;
+        if back >= 1.0 || back.is_nan() {
+            wrong.push(format!(
+                "{bname} {fname}: 9° ends at {back:.2}° (want upright, < 1°)"
+            ));
+        }
+        if (over - 90.0).abs() >= 1.0 || over.is_nan() {
+            wrong.push(format!(
+                "{bname} {fname}: 14° ends at {over:.2}° (want on its side, 90°)"
+            ));
+        }
+    }
+    compared
 }
 
 /// Degenerate pair coefficients: restitution 0 gives no bounce, friction 0 keeps

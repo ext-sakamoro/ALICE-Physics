@@ -1431,56 +1431,37 @@ impl BodySlicePtr {
     }
 }
 
-/// Static friction of a contact at the position level (Müller, Macklin,
-/// Chentanez, Jeschke, Kim, "Detailed Rigid Body Simulation with Extended
-/// Position Based Dynamics", SCA 2020, eq. (26)).
-///
-/// `disp_a` / `disp_b` are the displacements of the two bodies since the
-/// start of the substep (`position − prev_position`), `lambda` the contact's
-/// accumulated normal separation this substep (`cached_lambda`) and `mu` its
-/// friction coefficient. The relative tangential displacement
-/// `Δp_t = (Δx_a − Δx_b)` minus its normal part is cancelled when
-/// `|Δp_t| < μ λ` (both are distances: the paper compares the multipliers
-/// `λ_t < μ_s λ_n`, which share the factor `1 / (w_a + w_b)`), split by
-/// inverse mass like the normal correction. Returns the corrections to
-/// subtract from `a` and add to `b`, or `None` when the contact slides (or
-/// has no tangential motion / no normal multiplier). Contact points are
-/// taken at the body centres: the contact solve is translational only.
-///
-/// `mu` is the contact's friction (`ContactConstraint::friction`, after the
-/// contact modifiers); the combined material carries one coefficient, so the
-/// static and the kinetic coefficients are equal.
-// LIMITATION(COV-RIGID-080): the combined material carries one coefficient, so the static and the kinetic coefficients are equal.
-// LIMITATION(COV-RIGID-083): Contact points are taken at the body centres: the contact solve is translational only.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "friction correction needs both displacements, normal, both inverse masses, weight sum, mu and the normal lambda"
-)]
-#[inline]
-fn static_friction_correction(
-    disp_a: Vec3Fix,
-    disp_b: Vec3Fix,
-    normal: Vec3Fix,
-    inv_mass_a: Fix128,
-    inv_mass_b: Fix128,
-    inv_w_sum: Fix128,
-    mu: Fix128,
-    lambda: Fix128,
-) -> Option<(Vec3Fix, Vec3Fix)> {
-    let limit = mu * lambda;
-    if limit <= Fix128::ZERO {
-        return None;
+/// Pointer wrapper for the per-body contact turns ([`crate::xpbd_contact`])
+/// written by the parallel contact phase: graph coloring gives a dynamic body
+/// to one constraint per batch, so its turn slot is written by one thread.
+#[cfg(feature = "parallel")]
+struct TurnSlicePtr {
+    ptr: *mut Vec3Fix,
+    len: usize,
+}
+
+// SAFETY: as `BodySlicePtr`: a dynamic body (and so its turn slot) appears in
+// at most one constraint of a batch.
+#[cfg(feature = "parallel")]
+unsafe impl Send for TurnSlicePtr {}
+#[cfg(feature = "parallel")]
+unsafe impl Sync for TurnSlicePtr {}
+
+#[cfg(feature = "parallel")]
+impl TurnSlicePtr {
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "parallel contact phase writes the turn of a dynamic body from the one thread that holds that body; get_mut is unsafe and the caller guarantees exclusivity"
+    )]
+    #[inline(always)]
+    /// # Safety
+    ///
+    /// Caller must ensure `idx < self.len` and that no other thread accesses
+    /// the same index.
+    unsafe fn get_mut(&self, idx: usize) -> &mut Vec3Fix {
+        debug_assert!(idx < self.len);
+        &mut *self.ptr.add(idx)
     }
-    let dp = disp_a - disp_b;
-    let dp_t = dp - normal * dp.dot(normal);
-    let len_sq = dp_t.length_squared();
-    if len_sq.is_zero() || len_sq >= limit * limit {
-        return None;
-    }
-    Some((
-        dp_t * (inv_mass_a * inv_w_sum),
-        dp_t * (inv_mass_b * inv_w_sum),
-    ))
 }
 
 /// Body access handed to the parallel pair solvers.
@@ -1749,6 +1730,13 @@ pub struct PhysicsWorld {
     /// [`Self::update_velocities`] before it derives the post-solve
     /// velocities; the restitution target is `−e v̄_n`
     contact_pre_vn: Vec<Fix128>,
+    /// Per contact constraint, its arms at the poses it was detected at (taken
+    /// by `begin_contact_solve` once per substep, read by the XPBD contact
+    /// solve and `update_velocities`; see [`crate::xpbd_contact`]).
+    contact_anchors: Vec<crate::xpbd_contact::ContactAnchor>,
+    /// Per body, the rotation vector the substep's contact corrections have
+    /// turned it by (reset by `begin_contact_solve`).
+    contact_turn: Vec<Vec3Fix>,
     /// Free rotation of each body in the current substep, written by
     /// `integrate_positions` and read by `update_velocities` (indexed like
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
@@ -1994,6 +1982,8 @@ impl PhysicsWorld {
             #[cfg(feature = "std")]
             contact_discarded: Vec::new(),
             contact_pre_vn: Vec::new(),
+            contact_anchors: Vec::new(),
+            contact_turn: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
@@ -2982,6 +2972,104 @@ impl PhysicsWorld {
         self.bodies[i].velocity = v;
     }
 
+    /// Set the angular velocity of a constraint's body. For [`STATIC_BODY`]
+    /// nothing is written, and the value must be zero.
+    #[inline]
+    pub(crate) fn contact_set_angular_velocity(&mut self, i: usize, w: Vec3Fix) {
+        if i == STATIC_BODY {
+            assert!(
+                w == Vec3Fix::ZERO,
+                "a contact wrote an angular velocity into a static target"
+            );
+            return;
+        }
+        self.bodies[i].angular_velocity = w;
+    }
+
+    /// Take every contact constraint's anchor at the present poses and reset the
+    /// bodies' turns: the start of the substep's XPBD contact solve (see
+    /// [`crate::xpbd_contact`]).
+    fn begin_contact_solve(&mut self) {
+        let anchors: Vec<_> = self
+            .contact_constraints
+            .iter()
+            .map(|c| {
+                crate::xpbd_contact::ContactAnchor::at(
+                    c,
+                    &self.contact_body(c.body_a),
+                    &self.contact_body(c.body_b),
+                )
+            })
+            .collect();
+        self.contact_anchors = anchors;
+        self.contact_turn.clear();
+        self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+    }
+
+    /// The anchor of contact `i` (the one at its present poses when the solve
+    /// did not take one: a contact added between `begin_contact_solve` and the
+    /// solve, or a solve entered without it).
+    fn contact_anchor(&self, i: usize) -> crate::xpbd_contact::ContactAnchor {
+        let c = &self.contact_constraints[i];
+        self.contact_anchors.get(i).copied().unwrap_or_else(|| {
+            crate::xpbd_contact::ContactAnchor::at(
+                c,
+                &self.contact_body(c.body_a),
+                &self.contact_body(c.body_b),
+            )
+        })
+    }
+
+    /// The turn of a constraint's body (zero for [`STATIC_BODY`] and before the
+    /// solve began).
+    fn contact_turn_of(&self, i: usize) -> Vec3Fix {
+        self.contact_turn.get(i).copied().unwrap_or(Vec3Fix::ZERO)
+    }
+
+    /// Apply one contact correction to the constraint's bodies (see
+    /// [`crate::xpbd_contact::apply`]); nothing is written to a static target.
+    fn contact_apply(&mut self, i: usize, delta: crate::xpbd_contact::BodyDelta) {
+        if i == STATIC_BODY || i >= self.bodies.len() {
+            return;
+        }
+        if self.contact_turn.len() < self.bodies.len() {
+            self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+        }
+        crate::xpbd_contact::apply(&mut self.bodies[i], &mut self.contact_turn[i], delta);
+    }
+
+    /// The arms of contact `i` at the present turn of its bodies.
+    fn contact_arms(&self, i: usize) -> (Vec3Fix, Vec3Fix) {
+        let c = self.contact_constraints[i];
+        let anchor = self.contact_anchor(i);
+        (
+            crate::xpbd_contact::arm(anchor.r_a, self.contact_turn_of(c.body_a)),
+            crate::xpbd_contact::arm(anchor.r_b, self.contact_turn_of(c.body_b)),
+        )
+    }
+
+    /// A velocity impulse `j` along `axis` at the arms of contact `i`: body A
+    /// takes `+j`, B `−j`, each in linear and angular velocity.
+    fn contact_velocity_impulse(
+        &mut self,
+        i: usize,
+        r_a: Vec3Fix,
+        r_b: Vec3Fix,
+        axis: Vec3Fix,
+        j: Fix128,
+    ) {
+        let c = self.contact_constraints[i];
+        for (idx, r, sign) in [(c.body_a, r_a, j), (c.body_b, r_b, -j)] {
+            let body = self.contact_body(idx);
+            if body.inv_mass.is_zero() {
+                continue;
+            }
+            let (dv, dw) = crate::xpbd_contact::velocity_share(&body, r, axis, sign);
+            self.contact_set_velocity(idx, body.velocity + dv);
+            self.contact_set_angular_velocity(idx, body.angular_velocity + dw);
+        }
+    }
+
     /// Set the position of a constraint's body. For [`STATIC_BODY`] nothing is
     /// written, and the value must be the static body's own (the origin).
     #[inline]
@@ -3466,6 +3554,7 @@ impl PhysicsWorld {
     /// if you generate contacts outside the built-in sphere / SDF detection.
     pub fn clear_contacts(&mut self) {
         self.contact_constraints.clear();
+        self.contact_anchors.clear();
         #[cfg(feature = "std")]
         self.contact_discarded.clear();
         self.batches_dirty = true;
@@ -4770,6 +4859,7 @@ impl PhysicsWorld {
         //    substep, ahead of the iteration loop.
         #[cfg(feature = "std")]
         self.apply_contact_filters();
+        self.begin_contact_solve();
         for _ in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             self.solve_contact_constraints(dt);
@@ -4818,6 +4908,7 @@ impl PhysicsWorld {
         //    substep, ahead of the iteration loop, as in `substep`.
         #[cfg(feature = "std")]
         self.apply_contact_filters();
+        self.begin_contact_solve();
         for _ in 0..self.config.iterations {
             self.solve_constraints_batched(dt);
         }
@@ -5118,10 +5209,18 @@ impl PhysicsWorld {
         // `velocity` still holds the substep's predicted velocity (gravity
         // applied in `integrate_positions`, untouched by the position solve),
         // so this is the approach velocity before any constraint acted.
+        // The velocity is that of the contact point (`v + ω × r`, Müller et
+        // al. 2020 eq. (29)) at the arms the position solve left.
         self.contact_pre_vn.clear();
-        for constraint in &self.contact_constraints {
-            let relative = self.contact_body(constraint.body_a).velocity
-                - self.contact_body(constraint.body_b).velocity;
+        for i in 0..self.contact_constraints.len() {
+            let constraint = self.contact_constraints[i];
+            let (r_a, r_b) = self.contact_arms(i);
+            let relative = crate::xpbd_contact::point_velocity(
+                &self.contact_body(constraint.body_a),
+                &self.contact_body(constraint.body_b),
+                r_a,
+                r_b,
+            );
             self.contact_pre_vn
                 .push(relative.dot(constraint.contact.normal));
         }
@@ -5218,17 +5317,23 @@ impl PhysicsWorld {
             }
 
             let n = constraint.contact.normal;
-            let relative_vel = body_a.velocity - body_b.velocity;
-            let vn = relative_vel.dot(n);
+            let (r_a, r_b) = self.contact_arms(i);
+            let w_n = crate::xpbd_contact::point_w(&body_a, &body_b, r_a, r_b, n);
+            if w_n <= Fix128::ZERO {
+                continue;
+            }
+            let vn = crate::xpbd_contact::point_velocity(&body_a, &body_b, r_a, r_b).dot(n);
 
             // Restitution (Müller, Macklin, Chentanez, Jeschke, Kim,
             // "Detailed Rigid Body Simulation with Extended Position Based
-            // Dynamics", SCA 2020, eq. (34)): the target normal velocity is
-            // `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal velocity. The
-            // post-solve `vn` only reflects how far into the substep the
-            // bodies first touched (`vn = −gap / h`), so reversing `vn`
-            // itself made the bounce depend on that phase. The correction is
-            // one-sided (only raises `vn` to the target), as in the 2D solver.
+            // Dynamics", SCA 2020, eq. (34)): the target normal velocity of the
+            // contact point is `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal
+            // velocity. The post-solve `vn` only reflects how far into the
+            // substep the bodies first touched (`vn = −gap / h`), so reversing
+            // `vn` itself made the bounce depend on that phase. The correction
+            // is one-sided (only raises `vn` to the target), as in the 2D
+            // solver. An impulse `j` along `n` at the arms changes the point's
+            // normal velocity by `w_n j`.
             let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
             let restitution = if pre_vn < -restitution_threshold {
                 constraint.restitution
@@ -5242,59 +5347,38 @@ impl PhysicsWorld {
                 target
             };
             if vn < target {
-                let delta_vn = target - vn;
-                let impulse_n = n * delta_vn;
-                let inv_w = Fix128::ONE / w_sum;
-                self.contact_set_velocity(
-                    constraint.body_a,
-                    self.contact_body(constraint.body_a).velocity
-                        + impulse_n * (body_a.inv_mass * inv_w),
-                );
-                self.contact_set_velocity(
-                    constraint.body_b,
-                    self.contact_body(constraint.body_b).velocity
-                        - impulse_n * (body_b.inv_mass * inv_w),
-                );
+                self.contact_velocity_impulse(i, r_a, r_b, n, (target - vn) / w_n);
             }
 
-            // Friction: reduce tangential velocity
-            let relative_vel2 = self.contact_body(constraint.body_a).velocity
-                - self.contact_body(constraint.body_b).velocity;
+            // Friction: reduce the tangential velocity of the contact point
+            // (Coulomb, Müller et al. 2020 eq. (30)): the tangential correction
+            // is capped by `h μ |f_n| w = μ λ_n / h` in relative velocity.
+            // `cached_lambda` is this substep's accumulated normal separation
+            // from the position solve, so the cap is `μ λ / h`. The normal
+            // velocity after the solve (`vn2`) is not the normal force: it is
+            // about 0 for a resting contact, which removed the friction of
+            // sliding and resting bodies.
+            let (a2, b2) = (
+                self.contact_body(constraint.body_a),
+                self.contact_body(constraint.body_b),
+            );
+            let relative_vel2 = crate::xpbd_contact::point_velocity(&a2, &b2, r_a, r_b);
             let vn2 = relative_vel2.dot(n);
             let tangent_vel = relative_vel2 - n * vn2;
             let tangent_speed_sq = tangent_vel.length_squared();
             if tangent_speed_sq > Fix128::ZERO {
                 let tangent_speed = tangent_speed_sq.sqrt();
-                let friction = constraint.friction;
-                // Coulomb friction (Müller, Macklin, Chentanez, Jeschke, Kim,
-                // "Detailed Rigid Body Simulation with Extended Position Based
-                // Dynamics", SCA 2020, eq. (30)): the tangential correction
-                // is capped by `h μ |f_n| w = μ λ_n / h` in relative velocity.
-                // `cached_lambda` is this substep's accumulated normal
-                // separation from the position solve (the paper's multiplier
-                // times `w_sum`), so the cap is `μ λ / h`. The normal
-                // velocity after the solve (`vn2`) is not the normal force:
-                // it is about 0 for a resting contact, which removed the
-                // friction of sliding and resting bodies.
-                let max_friction_impulse = friction * constraint.cached_lambda * inv_dt;
-                let applied = if tangent_speed < max_friction_impulse {
+                let max_friction = constraint.friction * constraint.cached_lambda * inv_dt;
+                let applied = if tangent_speed < max_friction {
                     tangent_speed
                 } else {
-                    max_friction_impulse
+                    max_friction
                 };
-                let friction_dir = tangent_vel / tangent_speed;
-                let friction_impulse = friction_dir * applied;
-                let inv_w = Fix128::ONE / w_sum;
-                self.contact_set_velocity(
-                    constraint.body_a,
-                    self.contact_body(constraint.body_a).velocity
-                        - friction_impulse * (body_a.inv_mass * inv_w),
-                );
-                self.contact_set_velocity(
-                    constraint.body_b,
-                    self.contact_body(constraint.body_b).velocity
-                        + friction_impulse * (body_b.inv_mass * inv_w),
-                );
+                let t = tangent_vel / tangent_speed;
+                let w_t = crate::xpbd_contact::point_w(&a2, &b2, r_a, r_b, t);
+                if w_t > Fix128::ZERO {
+                    self.contact_velocity_impulse(i, r_a, r_b, t, -(applied / w_t));
+                }
             }
         }
 
@@ -5456,6 +5540,14 @@ impl PhysicsWorld {
                     ptr: self.contact_constraints.as_mut_ptr(),
                     len: self.contact_constraints.len(),
                 };
+                if self.contact_turn.len() < self.bodies.len() {
+                    self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+                }
+                let turns = TurnSlicePtr {
+                    ptr: self.contact_turn.as_mut_ptr(),
+                    len: self.contact_turn.len(),
+                };
+                let anchors: &[crate::xpbd_contact::ContactAnchor] = &self.contact_anchors;
                 let indices = &self.constraint_batches[batch_idx].contact_indices;
                 indices.par_iter().for_each(|&idx| {
                     if discarded.get(idx).copied().unwrap_or(false) {
@@ -5474,7 +5566,20 @@ impl PhysicsWorld {
                             constraint.body_b,
                             is_static_target(static_bodies, constraint.body_b),
                         );
-                        Self::solve_contact_pair(body_a, body_b, constraint);
+                        let anchor = anchors.get(idx).copied().unwrap_or_else(|| {
+                            crate::xpbd_contact::ContactAnchor::at(
+                                constraint,
+                                body_a.get(),
+                                body_b.get(),
+                            )
+                        });
+                        let turn_a = (!is_static_target(static_bodies, constraint.body_a))
+                            .then(|| turns.get_mut(constraint.body_a));
+                        let turn_b = (!is_static_target(static_bodies, constraint.body_b))
+                            .then(|| turns.get_mut(constraint.body_b));
+                        Self::solve_contact_pair(
+                            body_a, body_b, constraint, anchor, turn_a, turn_b, dt,
+                        );
                     }
                 });
             }
@@ -5555,74 +5660,55 @@ impl PhysicsWorld {
         mut body_a: BodyRef<'_>,
         mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
+        anchor: crate::xpbd_contact::ContactAnchor,
+        mut turn_a: Option<&mut Vec3Fix>,
+        mut turn_b: Option<&mut Vec3Fix>,
+        h: Fix128,
     ) {
-        let (pos_a, prev_a, inv_mass_a, sensor_a) = {
-            let a = body_a.get();
-            (a.position, a.prev_position, a.inv_mass, a.is_sensor)
-        };
-        let (pos_b, prev_b, inv_mass_b, sensor_b) = {
-            let b = body_b.get();
-            (b.position, b.prev_position, b.inv_mass, b.is_sensor)
-        };
-
+        let (a, b) = (*body_a.get(), *body_b.get());
         // Skip physics response for sensor/trigger bodies
-        if sensor_a || sensor_b {
+        if a.is_sensor || b.is_sensor {
             return;
         }
-
-        let contact = constraint.contact;
-
-        if contact.depth <= Fix128::ZERO {
+        if constraint.contact.depth <= Fix128::ZERO {
             return;
         }
-
-        let w_sum = inv_mass_a + inv_mass_b;
-        if w_sum < W_SUM_EPSILON {
+        if a.inv_mass + b.inv_mass < W_SUM_EPSILON {
             return;
         }
-
-        // Accumulated non-negative contact multiplier (1.2.0). The contact is
-        // re-detected every substep, so `depth` is the penetration at the start
-        // of this substep and `cached_lambda` the separation already applied in
-        // earlier iterations: dlambda = depth - lambda, clamped to lambda >= 0.
-        // Before 1.2.0 every iteration re-pushed `depth - 0.85 * lambda_prev`
-        // against a frame-stale depth, which multiplied the separation by the
-        // iteration and substep counts (5 m/s collision → 700 m/s at defaults).
-        let inv_w_sum = Fix128::ONE / w_sum;
-        let lambda = constraint.cached_lambda;
-        let dlambda = contact.depth - lambda;
-        let (mut pos_a, mut pos_b) = (pos_a, pos_b);
-        if dlambda > Fix128::ZERO {
-            constraint.cached_lambda = lambda + dlambda;
-
-            let correction = contact.normal * dlambda;
-            let correction_a = correction * (inv_mass_a * inv_w_sum);
-            let correction_b = correction * (inv_mass_b * inv_w_sum);
-
-            // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-            pos_a = select_vec3(!inv_mass_a.is_zero(), pos_a + correction_a, pos_a);
-            pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b - correction_b, pos_b);
-        }
-
-        // Static friction (Müller et al. 2020, eq. (26)), see
-        // `static_friction_correction`.
-        if let Some((fa, fb)) = static_friction_correction(
-            pos_a - prev_a,
-            pos_b - prev_b,
-            contact.normal,
-            inv_mass_a,
-            inv_mass_b,
-            inv_w_sum,
-            constraint.friction,
-            constraint.cached_lambda,
+        let turn = |t: &Option<&mut Vec3Fix>| t.as_deref().copied().unwrap_or(Vec3Fix::ZERO);
+        let apply = |body: &mut BodyRef<'_>,
+                     t: &mut Option<&mut Vec3Fix>,
+                     d: crate::xpbd_contact::BodyDelta| {
+            if let (BodyRef::Dynamic(rb), Some(slot)) = (body, t.as_deref_mut()) {
+                crate::xpbd_contact::apply(rb, slot, d);
+            }
+        };
+        if let Some(fix) = crate::xpbd_contact::normal_correction(
+            constraint,
+            anchor,
+            &a,
+            &b,
+            turn(&turn_a),
+            turn(&turn_b),
         ) {
-            pos_a = select_vec3(!inv_mass_a.is_zero(), pos_a - fa, pos_a);
-            pos_b = select_vec3(!inv_mass_b.is_zero(), pos_b + fb, pos_b);
+            constraint.cached_lambda = constraint.cached_lambda + fix.separation;
+            apply(&mut body_a, &mut turn_a, fix.a);
+            apply(&mut body_b, &mut turn_b, fix.b);
         }
-
-        // `set_position` is a no-op for `BodyRef::Static`.
-        body_a.set_position(pos_a);
-        body_b.set_position(pos_b);
+        let (a, b) = (*body_a.get(), *body_b.get());
+        if let Some(fix) = crate::xpbd_contact::static_friction(
+            constraint,
+            anchor,
+            &a,
+            &b,
+            turn(&turn_a),
+            turn(&turn_b),
+            h,
+        ) {
+            apply(&mut body_a, &mut turn_a, fix.a);
+            apply(&mut body_b, &mut turn_b, fix.b);
+        }
     }
 
     /// Solve distance constraints (sequential) with warm-starting (Gap 3.1).
@@ -5714,10 +5800,10 @@ impl PhysicsWorld {
     ///
     /// If no bridge is installed, the existing CPU-only code path runs
     /// unchanged.
-    fn solve_contact_constraints(&mut self, _dt: Fix128) {
+    fn solve_contact_constraints(&mut self, dt: Fix128) {
         #[cfg(feature = "gpu-solver-bridge")]
         if let Some(mut bridge) = self.gpu_solver_bridge.take() {
-            self.solve_contact_pass_with_bridge(bridge.as_mut());
+            self.solve_contact_pass_with_bridge(bridge.as_mut(), dt);
             self.gpu_solver_bridge = Some(bridge);
             return;
         }
@@ -5752,69 +5838,48 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // Accumulated contact multiplier, see `solve_contact_pair`.
-            let inv_w_sum = Fix128::ONE / w_sum;
-            let lambda = constraint.cached_lambda;
-            let dlambda = contact.depth - lambda;
-            if dlambda > Fix128::ZERO {
-                self.contact_constraints[i].cached_lambda = lambda + dlambda;
-
-                let correction = contact.normal * dlambda;
-                let correction_a = correction * (body_a.inv_mass * inv_w_sum);
-                let correction_b = correction * (body_b.inv_mass * inv_w_sum);
-
-                // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-                self.contact_set_position(
-                    constraint.body_a,
-                    select_vec3(
-                        !body_a.inv_mass.is_zero(),
-                        self.contact_body(constraint.body_a).position + correction_a,
-                        self.contact_body(constraint.body_a).position,
-                    ),
-                );
-                self.contact_set_position(
-                    constraint.body_b,
-                    select_vec3(
-                        !body_b.inv_mass.is_zero(),
-                        self.contact_body(constraint.body_b).position - correction_b,
-                        self.contact_body(constraint.body_b).position,
-                    ),
-                );
+            // The point constraint of Müller et al. 2020 at the contact's
+            // current depth (see `crate::xpbd_contact`).
+            let anchor = self.contact_anchor(i);
+            if let Some(fix) = crate::xpbd_contact::normal_correction(
+                &constraint,
+                anchor,
+                &body_a,
+                &body_b,
+                self.contact_turn_of(constraint.body_a),
+                self.contact_turn_of(constraint.body_b),
+            ) {
+                self.contact_constraints[i].cached_lambda =
+                    constraint.cached_lambda + fix.separation;
+                self.contact_apply(constraint.body_a, fix.a);
+                self.contact_apply(constraint.body_b, fix.b);
             }
 
-            // Static friction (Müller et al. 2020, eq. (26)), see
-            // `static_friction_correction`.
-            self.apply_static_friction(i, inv_w_sum);
+            // Static friction (Müller et al. 2020, eq. (26)).
+            self.apply_static_friction(i, dt);
         }
     }
 
     /// Position-level static friction of contact `i` against the current
-    /// body positions, shared by the serial and bridge contact passes (the
-    /// batched pass calls [`static_friction_correction`] on its pair
-    /// references). The caller has already skipped sensor, discarded and
-    /// non-penetrating contacts.
-    fn apply_static_friction(&mut self, i: usize, inv_w_sum: Fix128) {
+    /// body poses over a substep of width `h`, shared by the serial and bridge
+    /// contact passes (the batched pass calls
+    /// [`crate::xpbd_contact::static_friction`] on its pair references). The
+    /// caller has already skipped sensor and discarded contacts.
+    fn apply_static_friction(&mut self, i: usize, h: Fix128) {
         let constraint = self.contact_constraints[i];
         let a = self.contact_body(constraint.body_a);
         let b = self.contact_body(constraint.body_b);
-        if let Some((fa, fb)) = static_friction_correction(
-            a.position - a.prev_position,
-            b.position - b.prev_position,
-            constraint.contact.normal,
-            a.inv_mass,
-            b.inv_mass,
-            inv_w_sum,
-            constraint.friction,
-            constraint.cached_lambda,
+        if let Some(fix) = crate::xpbd_contact::static_friction(
+            &constraint,
+            self.contact_anchor(i),
+            &a,
+            &b,
+            self.contact_turn_of(constraint.body_a),
+            self.contact_turn_of(constraint.body_b),
+            h,
         ) {
-            self.contact_set_position(
-                constraint.body_a,
-                select_vec3(!a.inv_mass.is_zero(), a.position - fa, a.position),
-            );
-            self.contact_set_position(
-                constraint.body_b,
-                select_vec3(!b.inv_mass.is_zero(), b.position + fb, b.position),
-            );
+            self.contact_apply(constraint.body_a, fix.a);
+            self.contact_apply(constraint.body_b, fix.b);
         }
     }
 
@@ -5827,7 +5892,10 @@ impl PhysicsWorld {
         bridge: &mut B,
     ) {
         self.apply_contact_filters();
-        self.solve_contact_pass_with_bridge(bridge);
+        self.begin_contact_solve();
+        // One iteration on its own has no substep width: the static friction
+        // sees the corrections' turn but not the `ω h` of the substep.
+        self.solve_contact_pass_with_bridge(bridge, Fix128::ZERO);
     }
 
     /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
@@ -5902,6 +5970,7 @@ impl PhysicsWorld {
     fn solve_contact_pass_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
+        h: Fix128,
     ) {
         // ---- Stage A: select the surviving constraints ----
         let num_constraints = self.contact_constraints.len();
@@ -5989,7 +6058,7 @@ impl PhysicsWorld {
             if c.contact.depth <= Fix128::ZERO || w_sum < W_SUM_EPSILON {
                 continue;
             }
-            self.apply_static_friction(orig_slot, Fix128::ONE / w_sum);
+            self.apply_static_friction(orig_slot, h);
         }
     }
 
@@ -6138,10 +6207,10 @@ impl PhysicsWorld {
         for iteration in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             if iteration == 0 {
-                self.solve_contact_constraints_with_bridge_unchecked(bridge);
-            } else {
-                self.solve_contact_pass_with_bridge(bridge);
+                self.apply_contact_filters();
+                self.begin_contact_solve();
             }
+            self.solve_contact_pass_with_bridge(bridge, dt);
         }
 
         // 3. Solve joint constraints — route through the same bridge, then

@@ -3527,7 +3527,6 @@ mod tests {
             target_distance: fx(3, 2),
             compliance: fx(1, 1000),
             cached_lambda: Fix128::ZERO,
-            feature: 0,
         });
 
         // shaped + compound bodies above the height field, a body above the SDF

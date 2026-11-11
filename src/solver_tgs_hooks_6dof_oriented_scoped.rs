@@ -742,7 +742,8 @@ mod closed_form {
                 Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
             tgs_step(&mut hooks, &one_substep(0, passes, false), dt());
             let y = bodies[1].position[1].to_f64();
-            let want = (pen.to_f64() - slop).max(0.0) * (1.0 - (1.0 - beta).powi(passes as i32));
+            let kept = (0..passes).fold(1.0f64, |k, _| k * (1.0 - beta));
+            let want = (pen.to_f64() - slop).max(0.0) * (1.0 - kept);
             assert!(
                 (y - want).abs() < 1e-12,
                 "p = {}: y = {y}, want {want} (tol 1e-12)",
