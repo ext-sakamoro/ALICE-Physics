@@ -243,11 +243,12 @@ fn sleep_by_time_scene_has_its_pinned_sha256() {
 
 /// The state format moved to version 4 with the sleep rule (each body's sleep record is a
 /// state byte and a `Fix128` idle time, 17 bytes, where version 3 held a state byte and a
-/// `u32` idle step count, 5 bytes): a blob that says version 3 is refused, not read with
-/// the new layout, and the world it was offered to is left as it was. The same blob with
-/// its version put back to 4 is read, so the refusal is the version's.
+/// `u32` idle step count, 5 bytes) and to version 5 with the cloths: a blob that says an
+/// earlier version is refused, not read with the new layout, and the world it was offered
+/// to is left as it was. The same blob with its version put back is read, so the refusal
+/// is the version's.
 #[test]
-fn a_version_3_state_blob_is_refused_and_leaves_the_world_unchanged() {
+fn an_earlier_version_state_blob_is_refused_and_leaves_the_world_unchanged() {
     let mut w = pinned_scene();
     for _ in 0..30 {
         w.step(Fix128::from_ratio(1, 60));
@@ -255,11 +256,26 @@ fn a_version_3_state_blob_is_refused_and_leaves_the_world_unchanged() {
     let current = w.serialize_state();
     assert_eq!(
         &current[4..6],
-        &4u16.to_le_bytes(),
+        &5u16.to_le_bytes(),
         "the current state version"
     );
+    for version in [3u16, 4] {
+        let mut old = current.clone();
+        old[4..6].copy_from_slice(&version.to_le_bytes());
+        let mut target = pinned_scene();
+        let before = target.serialize_state();
+        assert!(
+            !target.deserialize_state(&old),
+            "a version {version} state blob was read"
+        );
+        assert_eq!(
+            target.serialize_state(),
+            before,
+            "a refused blob changed the world"
+        );
+    }
     let mut old = current.clone();
-    old[4..6].copy_from_slice(&3u16.to_le_bytes());
+    old[4..6].copy_from_slice(&4u16.to_le_bytes());
     let mut target = pinned_scene();
     let before = target.serialize_state();
     assert!(

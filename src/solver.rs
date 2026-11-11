@@ -1785,6 +1785,12 @@ pub struct PhysicsWorld {
     park_generation: u64,
     /// Work counters of the last `step`.
     stage_work: StageWork,
+    /// Cloths ([`crate::cloth::Cloth`], e.g. soft letters from [`crate::cloth::Cloth::from_outline`]):
+    /// stepped after the rigid bodies, in index order, without contact with them; saved in
+    /// the snapshot and the rollback blob.
+    pub cloths: Vec<crate::cloth::Cloth>,
+    /// Next [`crate::cloth::GrabId`] (unique in this world).
+    next_grab_id: u32,
     /// SDF contacts resolved by the current (or last) step, in the order they
     /// were applied ([`Self::last_step_sdf_contacts`]). Cleared at the head of
     /// each step; the allocation is kept from step to step.
@@ -1949,6 +1955,8 @@ impl PhysicsWorld {
             park: ParkState::default(),
             park_generation: 0,
             stage_work: StageWork::default(),
+            cloths: Vec::new(),
+            next_grab_id: 0,
             sdf_contact_log: Vec::new(),
             sdf_contact_substep: 0,
             sdf_generations: Vec::new(),
@@ -3650,6 +3658,9 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
 
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
+
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
         self.update_sleep_states(dt);
@@ -3663,6 +3674,64 @@ impl PhysicsWorld {
 
         // Phase 5: End event frame
         self.events.end_frame();
+    }
+
+    /// Step every cloth with the world's `dt` (grabbed particles placed first).
+    fn step_cloths(&mut self, dt: Fix128) {
+        for c in &mut self.cloths {
+            c.step(dt);
+        }
+    }
+
+    /// Add a cloth (for a soft letter, [`crate::cloth::Cloth::from_outline`]); returns its
+    /// index in [`Self::cloths`].
+    pub fn add_cloth(&mut self, cloth: crate::cloth::Cloth) -> usize {
+        self.cloths.push(cloth);
+        self.cloths.len() - 1
+    }
+
+    /// Grab cloth `cloth` at `point`: the nearest particle within `reach` that no grab
+    /// holds is pinned to the pointer (placed there by the next step) under a world-unique
+    /// id. `None` when there is no such cloth or no particle in reach.
+    pub fn cloth_grab(
+        &mut self,
+        cloth: usize,
+        point: Vec3Fix,
+        reach: Fix128,
+    ) -> Option<crate::cloth::GrabId> {
+        let id = crate::cloth::GrabId(self.next_grab_id);
+        let taken = self.cloths.get_mut(cloth)?.grab(id, point, reach)?;
+        self.next_grab_id = self.next_grab_id.wrapping_add(1);
+        Some(taken)
+    }
+
+    /// Move grab `id`'s pointer; `false` when no grab has that id.
+    pub fn cloth_move_grab(&mut self, id: crate::cloth::GrabId, point: Vec3Fix) -> bool {
+        self.cloths.iter_mut().any(|c| c.move_grab(id, point))
+    }
+
+    /// Release grab `id`: the particle gets its mass back and the pointer's velocity
+    /// over the last step ([`crate::cloth::Cloth::release_grab`]); `false` when no grab
+    /// has that id.
+    pub fn cloth_release(&mut self, id: crate::cloth::GrabId) -> bool {
+        self.cloths.iter_mut().any(|c| c.release_grab(id))
+    }
+
+    /// Release grab `id` giving the particle exactly `velocity`.
+    pub fn cloth_release_with_velocity(
+        &mut self,
+        id: crate::cloth::GrabId,
+        velocity: Vec3Fix,
+    ) -> bool {
+        self.cloths
+            .iter_mut()
+            .any(|c| c.release_grab_with_velocity(id, velocity))
+    }
+
+    /// Whether some cloth holds grab `id`.
+    #[must_use]
+    pub fn has_cloth_grab(&self, id: crate::cloth::GrabId) -> bool {
+        self.cloths.iter().any(|c| c.has_grab(id))
     }
 
     /// Run [`Self::step`] `n` times with the same `dt`.
@@ -4668,6 +4737,9 @@ impl PhysicsWorld {
         // `damping` factor, so this still needs to run here).
         self.apply_frame_damping(dt);
 
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
+
         // Phase 4: Update sleeping (identical call to `step`).
         self.restore_sleepers(&sleep_frame);
         self.islands.update_sleep(&self.bodies, dt);
@@ -4782,6 +4854,9 @@ impl PhysicsWorld {
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
+
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
@@ -6060,6 +6135,9 @@ impl PhysicsWorld {
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping(dt);
+
+        // Phase 3.7: Cloths (independent of the rigid bodies)
+        self.step_cloths(dt);
 
         // Phase 4: Update sleeping
         self.restore_sleepers(&sleep_frame);
@@ -7433,7 +7511,7 @@ impl PhysicsWorld {
     /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否、
     /// v1 / v2 の blob は v3 実装に対して version 不一致で拒否される、
     /// 既存の v1→v2 bump と同じ方針)
-    pub const STATE_VERSION: u16 = 4;
+    pub const STATE_VERSION: u16 = 5;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -7450,6 +7528,7 @@ impl PhysicsWorld {
     /// | 続き | world ごと overflow flag 1 byte (v2) |
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     /// | 続き | 弾性 joint の島の再帰の記録 (v4、[`crate::sleeping::IslandOrbit`]、world snapshot の `islands` と同じ符号化: 島の数 u64、島ごとに member 数 u64 + index u64、inputs 長 u64 + byte、asleep u8、状態数 u64 + 状態ごとに長さ u64 + byte) |
+    /// | 続き | cloth 数 u32、cloth ごとに [`crate::cloth::Cloth`] の運動状態 (粒子数 u32 + 構造の hash u64 + 粒子ごと 160 byte + pin / grab の列 + last_dt)、world ごと次の grab id u32 構造 (三角形 / rest / config / tether) は復元しない: 不一致は拒否 (v5) |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -7556,6 +7635,12 @@ impl PhysicsWorld {
         // the elastic islands' recurrence records (v4): sleep state, so a rollback falls
         // asleep at the same step as the original
         data.extend_from_slice(&world_snapshot::encode_orbits(&self.islands.orbits));
+        // cloths (v5): their motion state; the structure is checked by hash
+        data.extend_from_slice(&(self.cloths.len() as u32).to_le_bytes());
+        for b in &self.cloths {
+            b.write_rollback(&mut data);
+        }
+        data.extend_from_slice(&self.next_grab_id.to_le_bytes());
 
         data
     }
@@ -7686,10 +7771,19 @@ impl PhysicsWorld {
         if stored_fingerprint != self.population_fingerprint() {
             return false;
         }
-        // the recurrence records end the blob exactly (v4)
-        let Some(orbits) = world_snapshot::decode_orbits(&data[expected..], count) else {
+        // the recurrence records (v4), then the soft bodies (v5), which end the blob exactly
+        let Some((orbits, used)) = world_snapshot::decode_orbits_prefix(&data[expected..], count)
+        else {
             return false;
         };
+        let soft_at = expected + used;
+
+        // cloths (v5): checked before any byte is written, written after the
+        // rigid bodies; a blob of other cloths (count, particles, structure)
+        // is refused with the world unchanged, and so is a byte after them
+        if self.read_cloth_rollback(data, soft_at, false) != Some(data.len()) {
+            return false;
+        }
 
         // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
         let mut offset = 12;
@@ -7801,7 +7895,28 @@ impl PhysicsWorld {
         // step で全 body を park し直させ、挿入時の述語をもう一度通す
         self.park_generation = self.park_generation.wrapping_add(1);
 
+        self.read_cloth_rollback(data, soft_at, true)
+            .expect("checked before the rigid bodies were written");
         true
+    }
+
+    /// Read the cloth section of a rollback blob at `offset` (see
+    /// [`Self::serialize_state`]); with `apply` false only check it.
+    /// The cloths' section of a rollback blob at `offset`: checked (and with `apply`,
+    /// written). Returns where the section ends.
+    fn read_cloth_rollback(&mut self, data: &[u8], offset: usize, apply: bool) -> Option<usize> {
+        let mut cur = crate::cloth::Cursor::new(data, offset);
+        if usize::try_from(cur.u32()?).ok()? != self.cloths.len() {
+            return None;
+        }
+        for b in &mut self.cloths {
+            b.read_rollback(&mut cur, apply)?;
+        }
+        let next = cur.u32()?;
+        if apply {
+            self.next_grab_id = next;
+        }
+        Some(cur.pos)
     }
 }
 
@@ -10133,9 +10248,9 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        // v4: header 12 + body ごと 208 + body ごと sleep 17 + world ごと flag 1 + fingerprint 8
-        //     + 弾性の島の再帰の記録 (spring が無いので島の数 0 の 8 byte)
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8 + 8);
+        // v5: header 12 + body ごと 208 + body ごと sleep 17 + world ごと flag 1 + fingerprint 8
+        //     + 弾性の島の再帰の記録 (spring が無いので島の数 0 の 8 byte) + soft body 数 4 + 次の grab id 4
+        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8 + 8 + 4 + 4);
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -10170,7 +10285,9 @@ mod tests {
         let src = snapshot_world();
         let bytes = src.serialize_state();
         let body_end = 12 + 2 * 208;
-        let flag_pos = bytes.len() - 17;
+        // v5: 末尾は soft body 数 4 + 次の grab id 4、その前に再帰の記録 8 (島 0)、その前に
+        // fingerprint 8、その前が flag
+        let flag_pos = bytes.len() - 8 - 8 - 8 - 1;
 
         // 領域 1: header — 1 byte 壊れたら受け付けない
         for pos in 0..12 {
@@ -10200,12 +10317,12 @@ mod tests {
             );
         }
 
-        // 領域 5: population fingerprint (末尾 8 byte) — 1 byte でも壊れたら
-        // 拒否する (= count は一致しているが fingerprint 不一致で fail-fast、
+        // 領域 5: population fingerprint (soft body の節の手前の 8 byte) — 1 byte でも
+        // 壊れたら拒否する (= count は一致しているが fingerprint 不一致で fail-fast、
         // gap #3 の population 検査そのもの)
-        // 領域 6: 再帰の記録 (末尾 8 byte、島の数 0) — 壊すと島の数が 0 でなくなり、続く
-        // byte が無いので拒否する
-        for pos in bytes.len() - 8..bytes.len() {
+        // 領域 6: 再帰の記録 (soft body の節の手前の 8 byte、島の数 0) — 壊すと島の数が 0 で
+        // なくなり、続く byte が島の記録として読めないので拒否する
+        for pos in bytes.len() - 16..bytes.len() - 8 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -10219,7 +10336,7 @@ mod tests {
             "a trailing byte"
         );
 
-        for pos in bytes.len() - 16..bytes.len() - 8 {
+        for pos in bytes.len() - 24..bytes.len() - 16 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -10229,6 +10346,29 @@ mod tests {
             );
             // 拒否時は元の状態を保つ
             assert_eq!(dst.bodies[0].position, src.bodies[0].position);
+        }
+
+        // 領域 6 (v5): soft body 数 (4 byte) — 壊れたら数が合わず拒否する
+        for pos in bytes.len() - 8..bytes.len() - 4 {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(
+                !dst.deserialize_state(&bad),
+                "soft body 数の byte {pos} を壊しても受け付けている"
+            );
+            assert_eq!(dst.bodies[0].position, src.bodies[0].position);
+        }
+        // 領域 7 (v5): 次の grab id (末尾 4 byte) — 壊したら next_grab_id が変わる
+        for pos in bytes.len() - 4..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "next grab id byte {pos}");
+            assert_ne!(
+                dst.next_grab_id, src.next_grab_id,
+                "next grab id byte {pos} を壊しても next_grab_id が変わらない"
+            );
         }
 
         // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる (flag の手前まで)
@@ -10335,6 +10475,8 @@ mod tests {
         one.push(0); // v2: flag
         one.extend_from_slice(&exact.population_fingerprint().to_le_bytes()); // v3: fingerprint
         one.extend_from_slice(&0u64.to_le_bytes()); // v4: 弾性の島の再帰の記録 (島 0)
+        one.extend_from_slice(&0u32.to_le_bytes()); // v5: soft body 数
+        one.extend_from_slice(&0u32.to_le_bytes()); // v5: 次の grab id
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -11447,8 +11589,9 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        // v4: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
-        assert_eq!(bytes.len(), 29);
+        // v5: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
+        //     + cloth 数 4 + 次の grab id 4
+        assert_eq!(bytes.len(), 37);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);

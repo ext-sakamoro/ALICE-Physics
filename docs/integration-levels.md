@@ -47,6 +47,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `world_participant` | step | 43 / 23 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
+| `cloth` | world API (step 6 of 48 items) | 6 / 25 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -82,7 +83,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `cloth` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `cloth_fluid` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `collision_mesh_gen` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -137,7 +137,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `physics2d` | standalone | 0 / 0 / 0 / 60 / 0 | — |
+| `physics2d` | standalone (step 1 of 60 items) | 1 / 0 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |

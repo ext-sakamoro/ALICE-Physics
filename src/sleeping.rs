@@ -69,6 +69,41 @@
 //!   second holds the sleep to frame 132.)
 //! - **Tiers.** L0 only.
 //!
+//! The rule is in time: a body sleeps at the first step whose accumulated idle time
+//! reaches [`SleepConfig::time_to_sleep`] within half a step
+//! (`idle + dt / 2 >= time_to_sleep`), so the sleep step is a function of elapsed seconds,
+//! not of the step count. Closed form for a fixed step `dt`: the smallest integer `k` with
+//! `(2k + 1)·dt >= 2·time_to_sleep`.
+//!
+//! # MODEL
+//!
+//! **Equations.** Idle time per body: `idle += dt` while `|v| < linear_threshold` and
+//! `|ω| < angular_threshold`, else `idle = 0`; asleep when `idle + dt / 2 >= time_to_sleep`.
+//! Closed form at a fixed step `dt`: the first `k` with `(2k + 1)·dt >= 2·time_to_sleep`.
+//!
+//! **Units.** `time_to_sleep` and `idle` in s, thresholds in m/s and rad/s, all `Fix128`.
+//!
+//! **Conservation.** A sleeping body is frozen exactly (no integration, no creep): its
+//! momentum and energy are held, not dissipated; waking restores integration with the
+//! held velocity. Sleep is a scheduling rule, not a physical law.
+//!
+//! **Valid range.** Any positive `dt`; `idle` saturates at the `Fix128` maximum instead of
+//! wrapping. A `time_to_sleep` of 0 sleeps every idle body at once; negative values are
+//! not meaningful and are not clamped (set the configuration from validated values).
+//!
+//! **Approximations.** The speed thresholds and the idle time are heuristics chosen per
+//! scene: a body that should keep moving slowly below the threshold (viscous settling,
+//! creep) is stopped early. A sleeping body is woken by a contact, a joint, an applied
+//! impulse or force, or a configuration change, not by a force it would have felt while
+//! asleep (a slowly growing field does not wake it until it acts on the body).
+//!
+//! **Validation.** `tests/analytic_sleep_by_time.rs` (closed-form step at six step sizes
+//! and two rules, mixed steps, the pinned four-sphere scene), `tests/sleep_skip.rs`,
+//! `tests/wm08_state_coverage.rs` (idle time in the rollback blob).
+//!
+//! **Tiers.** L0 only: the rule is the same at every precision tier of the bodies it
+//! freezes.
+//!
 //! # Islands
 //!
 //! Connected components of bodies (via joints/contacts) are grouped into islands.

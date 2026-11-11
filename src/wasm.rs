@@ -1061,6 +1061,209 @@ impl WasmPhysicsWorld {
     pub fn joint_count(&self) -> usize {
         self.inner.joint_count()
     }
+
+    // ---- cloths / soft letters ([`crate::cloth::Cloth::from_outline`]) ----
+
+    /// Add a cloth cut from a planar outline (a soft letter). `contours` is the flat list of plane
+    /// coordinates `[x0, y0, x1, y1, …]` of every contour in turn and `contour_lens`
+    /// the point count of each; the plane is `origin + u·x + v·y` (`origin`, `u`, `v`
+    /// as 9 numbers in `plane`). `tether_k` / `tether_c` are the rest tether's
+    /// stiffness and damping (both 0: no tether). Returns the cloth index, or -1 when
+    /// the description is refused (empty outline, spacing or mass not positive, no
+    /// triangle kept).
+    #[wasm_bindgen(js_name = "addClothOutline")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the outline, lattice and cloth configuration arrive as plain numbers from JS"
+    )]
+    pub fn add_cloth_outline(
+        &mut self,
+        plane: &[f64],
+        contours: &[f64],
+        contour_lens: &[u32],
+        spacing: f64,
+        mass_per_particle: f64,
+        tether_k: f64,
+        tether_c: f64,
+        iterations: u32,
+        substeps: u32,
+        damping: f64,
+        stretch_compliance: f64,
+        bend_compliance: f64,
+    ) -> i32 {
+        use crate::cloth::{Cloth, ClothConfig, OutlineDesc};
+        if plane.len() != 9 || contours.len() % 2 != 0 {
+            return -1;
+        }
+        let total: usize = contour_lens.iter().map(|&n| n as usize).sum();
+        if total * 2 != contours.len() {
+            return -1;
+        }
+        let v3 = |k: usize| {
+            Vec3Fix::new(
+                Fix128::from_f64(plane[k]),
+                Fix128::from_f64(plane[k + 1]),
+                Fix128::from_f64(plane[k + 2]),
+            )
+        };
+        let mut polys = Vec::with_capacity(contour_lens.len());
+        let mut at = 0usize;
+        for &n in contour_lens {
+            let n = n as usize;
+            let mut poly = Vec::with_capacity(n);
+            for k in 0..n {
+                poly.push([
+                    Fix128::from_f64(contours[(at + k) * 2]),
+                    Fix128::from_f64(contours[(at + k) * 2 + 1]),
+                ]);
+            }
+            at += n;
+            polys.push(poly);
+        }
+        let tether = (tether_k != 0.0 || tether_c != 0.0)
+            .then(|| (Fix128::from_f64(tether_k), Fix128::from_f64(tether_c)));
+        let desc = OutlineDesc {
+            origin: v3(0),
+            u: v3(3),
+            v: v3(6),
+            contours: polys,
+            spacing: Fix128::from_f64(spacing),
+            mass_per_particle: Fix128::from_f64(mass_per_particle),
+            config: ClothConfig {
+                iterations: iterations as usize,
+                substeps: substeps.max(1) as usize,
+                gravity: Vec3Fix::ZERO,
+                damping: Fix128::from_f64(damping),
+                stretch_compliance: Fix128::from_f64(stretch_compliance),
+                bend_compliance: Fix128::from_f64(bend_compliance),
+                ..ClothConfig::default()
+            },
+            tether,
+        };
+        match Cloth::from_outline(&desc) {
+            Ok(cloth) => i32::try_from(self.inner.add_cloth(cloth)).unwrap_or(-1),
+            Err(_) => -1,
+        }
+    }
+
+    /// Number of cloths.
+    #[wasm_bindgen(js_name = "clothCount")]
+    pub fn cloth_count(&self) -> usize {
+        self.inner.cloths.len()
+    }
+
+    /// Number of particles of cloth `body` (0 when there is no such cloth).
+    #[wasm_bindgen(js_name = "clothParticleCount")]
+    pub fn cloth_particle_count(&self, body: usize) -> usize {
+        self.inner
+            .cloths
+            .get(body)
+            .map_or(0, crate::cloth::Cloth::particle_count)
+    }
+
+    /// Particle positions of cloth `body` as `[x, y, z, …]` (empty when none).
+    #[wasm_bindgen(js_name = "clothPositions")]
+    pub fn cloth_positions(&self, body: usize) -> Vec<f64> {
+        self.inner.cloths.get(body).map_or_else(Vec::new, |c| {
+            c.positions
+                .iter()
+                .flat_map(|p| [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()])
+                .collect()
+        })
+    }
+
+    /// Rest positions of cloth `body` as `[x, y, z, …]`.
+    #[wasm_bindgen(js_name = "clothRestPositions")]
+    pub fn cloth_rest_positions(&self, body: usize) -> Vec<f64> {
+        self.inner.cloths.get(body).map_or_else(Vec::new, |c| {
+            c.rest_positions()
+                .iter()
+                .flat_map(|p| [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()])
+                .collect()
+        })
+    }
+
+    /// Triangles of cloth `body` as `[i0, i1, i2, …]`.
+    #[wasm_bindgen(js_name = "clothTriangles")]
+    pub fn cloth_triangles(&self, body: usize) -> Vec<u32> {
+        self.inner.cloths.get(body).map_or_else(Vec::new, |c| {
+            c.triangles
+                .iter()
+                .flat_map(|t| t.iter().map(|&k| k as u32))
+                .collect()
+        })
+    }
+
+    /// State digest of cloth `body` ([`crate::cloth::Cloth::state_digest`]: SHA-256 over every
+    /// bit a step reads or writes), 32 bytes; empty when there is no such cloth.
+    #[wasm_bindgen(js_name = "clothStateDigest")]
+    pub fn cloth_state_digest(&self, body: usize) -> Vec<u8> {
+        self.inner
+            .cloths
+            .get(body)
+            .map_or_else(Vec::new, |c| c.state_digest().to_vec())
+    }
+
+    /// The bytes [`crate::cloth::Cloth::state_bytes`] hashes for cloth `body` (its section of
+    /// the world snapshot); empty when there is no such cloth.
+    #[wasm_bindgen(js_name = "clothStateBytes")]
+    pub fn cloth_state_bytes(&self, body: usize) -> Vec<u8> {
+        self.inner
+            .cloths
+            .get(body)
+            .map_or_else(Vec::new, crate::cloth::Cloth::state_bytes)
+    }
+
+    /// Whether cloth `body` is asleep at its exact fixed point.
+    #[wasm_bindgen(js_name = "clothAsleep")]
+    pub fn cloth_asleep(&self, body: usize) -> bool {
+        self.inner
+            .cloths
+            .get(body)
+            .is_some_and(crate::cloth::Cloth::is_asleep)
+    }
+
+    /// Grab cloth `body` at `(x, y, z)` within `reach`: the grab id, or -1.
+    #[wasm_bindgen(js_name = "clothGrab")]
+    pub fn cloth_grab(&mut self, body: usize, x: f64, y: f64, z: f64, reach: f64) -> i64 {
+        let p = Vec3Fix::new(
+            Fix128::from_f64(x),
+            Fix128::from_f64(y),
+            Fix128::from_f64(z),
+        );
+        self.inner
+            .cloth_grab(body, p, Fix128::from_f64(reach))
+            .map_or(-1, |g| i64::from(g.0))
+    }
+
+    /// Move grab `id`'s pointer; `false` when no grab has that id.
+    #[wasm_bindgen(js_name = "clothMoveGrab")]
+    pub fn cloth_move_grab(&mut self, id: u32, x: f64, y: f64, z: f64) -> bool {
+        let p = Vec3Fix::new(
+            Fix128::from_f64(x),
+            Fix128::from_f64(y),
+            Fix128::from_f64(z),
+        );
+        self.inner.cloth_move_grab(crate::cloth::GrabId(id), p)
+    }
+
+    /// Release grab `id` with the pointer's velocity over the last step.
+    #[wasm_bindgen(js_name = "clothRelease")]
+    pub fn cloth_release(&mut self, id: u32) -> bool {
+        self.inner.cloth_release(crate::cloth::GrabId(id))
+    }
+
+    /// Release grab `id` giving the particle exactly `(vx, vy, vz)`.
+    #[wasm_bindgen(js_name = "clothReleaseWithVelocity")]
+    pub fn cloth_release_with_velocity(&mut self, id: u32, vx: f64, vy: f64, vz: f64) -> bool {
+        let v = Vec3Fix::new(
+            Fix128::from_f64(vx),
+            Fix128::from_f64(vy),
+            Fix128::from_f64(vz),
+        );
+        self.inner
+            .cloth_release_with_velocity(crate::cloth::GrabId(id), v)
+    }
 }
 
 // ============================================================================

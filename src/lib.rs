@@ -994,7 +994,7 @@ pub use ccd::{
     aabb_plane_toi, capsule_plane_toi, speculative_contact, sphere_capsule_toi, CcdConfig,
 };
 pub use character::{CharacterConfig, CharacterController, MoveResult, PushImpulse};
-pub use cloth::{Cloth, ClothConfig};
+pub use cloth::{Cloth, ClothConfig, Grab, GrabId, OutlineDesc, OutlineError};
 pub use cloth_fluid::{
     apply_cloth_boundary_to_fluid, apply_fluid_forces_to_cloth, ClothFluidCoupling,
 };
