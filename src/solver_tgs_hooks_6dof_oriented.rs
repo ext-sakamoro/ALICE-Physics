@@ -114,6 +114,13 @@ pub(crate) struct Body6DofOrientedState {
     /// was. Sticky over the sub-steps of a tick: the world folds it into
     /// its overflow flag when it copies the state back.
     pub(crate) overflow: bool,
+    /// The body's turn since the start of the tick (identity there): every
+    /// orientation increment of the tick (the sub-step's `ω h`, a contact's
+    /// positional turn) left-multiplied on it in the same order as on
+    /// `orientation`. A contact's arm at detection turned by it is the arm now
+    /// ([`Pgs6DofOrientedHooks::current_arms`]); it depends on the increments
+    /// only, not on the orientation the body started the tick with.
+    pub(crate) turn: QuatFix,
 }
 
 impl Default for Body6DofOrientedState {
@@ -128,6 +135,7 @@ impl Default for Body6DofOrientedState {
             is_dynamic: false,
             stable_id: 0,
             overflow: false,
+            turn: QuatFix::IDENTITY,
         }
     }
 }
@@ -170,6 +178,7 @@ impl Body6DofOrientedState {
         self.advance_position(sub_dt);
         // Orientation: standard quaternion integration.
         self.orientation = integrate_orientation(self.orientation, self.angular_velocity, sub_dt);
+        self.turn = integrate_orientation(self.turn, self.angular_velocity, sub_dt);
     }
 
     /// [`Self::advance`] for a body whose free rotation over this sub-step was
@@ -184,6 +193,10 @@ impl Body6DofOrientedState {
             return;
         }
         self.advance_position(sub_dt);
+        // The turn follows the sub-step's angular velocity (the split's end
+        // rotation is not an increment of the tick's turn; the arms only need
+        // the turn to first order in `h`).
+        self.turn = integrate_orientation(self.turn, self.angular_velocity, sub_dt);
         let correction = v_sub(self.angular_velocity, from_vec3fix(free.omega));
         self.orientation = if correction == V_ZERO {
             free.rotation
@@ -229,6 +242,50 @@ pub(crate) struct ContactOriented {
     pub(crate) accum_tangent1: Fix128,
     /// Accumulated second-tangent impulse magnitude during the current sub-step.
     pub(crate) accum_tangent2: Fix128,
+    /// Where the contact sits on each body, taken at the poses the contact was
+    /// detected at. `None` until the first [`Pgs6DofOrientedHooks::new`] over the
+    /// contact fills it from the bodies (which are then still at those poses);
+    /// the contact slice outlives the hooks of each sub-step, so it is filled
+    /// once per tick.
+    pub(crate) anchors: Option<ContactAnchors>,
+}
+
+/// The contact point on each body in that body's frame, and in the world frame
+/// at detection, for [`Pgs6DofOrientedHooks::current_penetration`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ContactAnchors {
+    /// `r_a` at detection (world frame).
+    pub(crate) arm_a: Vec3,
+    /// A's [`Body6DofOrientedState::turn`] at detection.
+    pub(crate) turn_a: QuatFix,
+    /// `r_b` at detection (world frame).
+    pub(crate) arm_b: Vec3,
+    /// B's [`Body6DofOrientedState::turn`] at detection.
+    pub(crate) turn_b: QuatFix,
+    /// `x_a + r_a` at detection.
+    pub(crate) point_a: Vec3,
+    /// `x_b + r_b` at detection.
+    pub(crate) point_b: Vec3,
+}
+
+impl ContactAnchors {
+    /// The anchors of a contact with arms `r_a`, `r_b` between bodies `a` and `b`
+    /// at their present poses.
+    pub(crate) fn at(
+        a: &Body6DofOrientedState,
+        b: &Body6DofOrientedState,
+        r_a: Vec3,
+        r_b: Vec3,
+    ) -> Self {
+        Self {
+            arm_a: r_a,
+            turn_a: a.turn,
+            arm_b: r_b,
+            turn_b: b.turn,
+            point_a: v_add(a.position, r_a),
+            point_b: v_add(b.position, r_b),
+        }
+    }
 }
 
 impl ContactLike for ContactOriented {
@@ -398,6 +455,16 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
     ) -> Self {
         let n = contacts.len();
         let nb = bodies.len();
+        for c in contacts.iter_mut() {
+            if c.anchors.is_none() {
+                c.anchors = Some(ContactAnchors::at(
+                    &bodies[c.body_a],
+                    &bodies[c.body_b],
+                    c.r_a,
+                    c.r_b,
+                ));
+            }
+        }
         Self {
             bodies,
             contacts,
@@ -468,6 +535,49 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
     fn contact_rel_velocity(&self, c_idx: usize) -> Vec3 {
         let contact = self.contacts[c_idx];
         self.rel_velocity_between(contact.body_a, contact.body_b, contact.r_a, contact.r_b)
+    }
+
+    /// The contact's arms at the bodies' present poses: each detection arm
+    /// turned by what its body has turned since detection (`turn · turn₀⁻¹`;
+    /// the arm itself while the body has not turned, and for a contact without
+    /// anchors). The turn is built from the tick's increments, so an isotropic
+    /// body's arms do not depend on the orientation it started with.
+    fn current_arms(&self, c_idx: usize) -> (Vec3, Vec3) {
+        let c = self.contacts[c_idx];
+        let Some(an) = c.anchors else {
+            return (c.r_a, c.r_b);
+        };
+        let arm = |body: usize, at: QuatFix, arm: Vec3| {
+            let turn = self.bodies[body].turn;
+            if turn == at {
+                arm
+            } else {
+                local_to_world_v(turn.mul(at.conjugate()), arm)
+            }
+        };
+        (
+            arm(c.body_a, an.turn_a, an.arm_a),
+            arm(c.body_b, an.turn_b, an.arm_b),
+        )
+    }
+
+    /// The contact's penetration at the bodies' present poses. The contact was
+    /// detected once for the tick, at depth `d₀` with the point `p_a` on A and `p_b`
+    /// on B (`d₀ = n · (p_a − p_b)`, `n` from A into B); each body has since moved
+    /// its point to `x + q · local`, so the depth now is
+    /// `d₀ + n · ((p_a' − p_a) − (p_b' − p_b))`: A advancing along `n` deepens it,
+    /// B advancing along `n` relieves it. Reading `d₀` instead (the detection
+    /// depth for every sub-step) pushed by the same amount whatever the bodies
+    /// had already moved, and a box rattled on its edges in a limit cycle.
+    fn current_penetration(&self, c_idx: usize) -> Fix128 {
+        let c = self.contacts[c_idx];
+        let Some(an) = c.anchors else {
+            return c.penetration;
+        };
+        let (r_a, r_b) = self.current_arms(c_idx);
+        let moved_a = v_sub(v_add(self.bodies[c.body_a].position, r_a), an.point_a);
+        let moved_b = v_sub(v_add(self.bodies[c.body_b].position, r_b), an.point_b);
+        c.penetration + v_dot(c.normal, v_sub(moved_a, moved_b))
     }
 
     /// Effective mass along `axis` for a pair of bodies with moment arms
@@ -728,27 +838,52 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
     }
 
     fn position_iteration(&mut self, _sub_dt: Fix128) {
+        // Contacts: a positional impulse `λ = β (d − slop) m_eff` along `n` at
+        // the contact's present arms, with `d` the penetration at the bodies'
+        // present poses ([`Self::current_penetration`]) and `m_eff` the full
+        // effective mass (linear and angular, at the same arms). Each body moves
+        // by `±n λ / m` and turns by `±I⁻¹ (r × n λ)` (exact exponential map),
+        // A away from B. Order per contact: depth, arms, effective mass, then A,
+        // then B; contacts in slice order (Gauss–Seidel).
         for i in 0..self.contacts.len() {
             let contact = self.contacts[i];
-            let excess = contact.penetration - self.cfg.slop;
+            let excess = self.current_penetration(i) - self.cfg.slop;
             if excess <= Fix128::ZERO {
                 continue;
             }
-            let eff_m = self.effective_mass(i, contact.normal);
+            let (r_a, r_b) = self.current_arms(i);
+            let eff_m = self.effective_mass_between(
+                contact.body_a,
+                contact.body_b,
+                r_a,
+                r_b,
+                contact.normal,
+            );
             if eff_m <= Fix128::ZERO {
                 continue;
             }
             let correction = self.cfg.baumgarte * excess * eff_m;
             let disp = v_scale(contact.normal, correction);
             if self.bodies[contact.body_a].is_dynamic {
-                let m = self.bodies[contact.body_a].inv_mass;
-                self.bodies[contact.body_a].position =
-                    v_sub(self.bodies[contact.body_a].position, v_scale(disp, m));
+                let body = &mut self.bodies[contact.body_a];
+                body.position = v_sub(body.position, v_scale(disp, body.inv_mass));
+                let turn =
+                    inv_inertia_apply(body.orientation, body.inv_inertia_local, v_cross(r_a, disp));
+                body.orientation = integrate_orientation(
+                    body.orientation,
+                    v_scale(turn, -Fix128::ONE),
+                    Fix128::ONE,
+                );
+                body.turn =
+                    integrate_orientation(body.turn, v_scale(turn, -Fix128::ONE), Fix128::ONE);
             }
             if self.bodies[contact.body_b].is_dynamic {
-                let m = self.bodies[contact.body_b].inv_mass;
-                self.bodies[contact.body_b].position =
-                    v_add(self.bodies[contact.body_b].position, v_scale(disp, m));
+                let body = &mut self.bodies[contact.body_b];
+                body.position = v_add(body.position, v_scale(disp, body.inv_mass));
+                let turn =
+                    inv_inertia_apply(body.orientation, body.inv_inertia_local, v_cross(r_b, disp));
+                body.orientation = integrate_orientation(body.orientation, turn, Fix128::ONE);
+                body.turn = integrate_orientation(body.turn, turn, Fix128::ONE);
             }
         }
         // Bilateral joints: Baumgarte position correction for whatever
@@ -960,6 +1095,7 @@ mod tests {
             accum_normal: Fix128::ZERO,
             accum_tangent1: Fix128::ZERO,
             accum_tangent2: Fix128::ZERO,
+            anchors: None,
         }
     }
 

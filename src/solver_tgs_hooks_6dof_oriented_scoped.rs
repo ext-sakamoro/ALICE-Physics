@@ -380,6 +380,7 @@ mod tests {
             is_dynamic,
             stable_id,
             overflow: false,
+            turn: QuatFix::IDENTITY,
         }
     }
 
@@ -399,6 +400,7 @@ mod tests {
             accum_normal: Fix128::ZERO,
             accum_tangent1: Fix128::ZERO,
             accum_tangent2: Fix128::ZERO,
+            anchors: None,
         }
     }
 
@@ -569,6 +571,7 @@ mod closed_form {
             accum_normal: Fix128::ZERO,
             accum_tangent1: Fix128::ZERO,
             accum_tangent2: Fix128::ZERO,
+            anchors: None,
         }
     }
 
@@ -719,9 +722,10 @@ mod closed_form {
 
     /// Baumgarte position correction: penetration at or below `slop` is
     /// left alone; above it each position pass moves the dynamic body
-    /// (fixed partner, so the effective mass is `m`) by
-    /// `β (p - slop)` along the normal, the penetration being held fixed
-    /// within the tick. `n` passes give `n β (p - slop)`.
+    /// (fixed partner, so the effective mass is `m`) by `β (d - slop)` along
+    /// the normal, `d` the penetration at the body's present position, so the
+    /// excess shrinks by `(1 − β)` per pass. `n` passes move it by
+    /// `(p - slop)(1 − (1 − β)ⁿ)`.
     #[test]
     fn position_correction_moves_by_baumgarte_times_excess_per_pass() {
         let cfg = no_gravity_cold();
@@ -738,7 +742,7 @@ mod closed_form {
                 Pgs6DofOrientedHooks::new(&mut bodies, &mut contacts, &mut [], &mut cache, cfg);
             tgs_step(&mut hooks, &one_substep(0, passes, false), dt());
             let y = bodies[1].position[1].to_f64();
-            let want = f64::from(passes) * beta * (pen.to_f64() - slop).max(0.0);
+            let want = (pen.to_f64() - slop).max(0.0) * (1.0 - (1.0 - beta).powi(passes as i32));
             assert!(
                 (y - want).abs() < 1e-12,
                 "p = {}: y = {y}, want {want} (tol 1e-12)",

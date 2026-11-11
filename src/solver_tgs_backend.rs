@@ -44,6 +44,7 @@ pub(crate) fn body_to_tgs(body: &RigidBody, stable_id: u64) -> Body6DofOrientedS
         is_dynamic: body.is_dynamic(),
         stable_id,
         overflow: false,
+        turn: crate::math::QuatFix::IDENTITY,
     }
 }
 
@@ -135,6 +136,7 @@ pub(crate) fn contact_to_tgs(
         accum_normal: Fix128::ZERO,
         accum_tangent1: Fix128::ZERO,
         accum_tangent2: Fix128::ZERO,
+        anchors: None,
     }
 }
 
