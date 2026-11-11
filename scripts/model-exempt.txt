@@ -36,6 +36,7 @@ src/gpu_sdf.rs	SDF upload layout for a GPU (data layout)
 src/heatmap.rs	heat map drawing
 src/heightfield.rs	height field shape
 src/ik_physics_bridge.rs	bridge from an IK chain to the physics bodies (wiring), no equation of its own
+src/input_log.rs	a record of inputs by step and its code, no physics
 src/interpolation.rs	render interpolation between substeps (output smoothing), no equation of motion
 src/law_id.rs	content identifier of the law (infrastructure)
 src/lib.rs	crate root

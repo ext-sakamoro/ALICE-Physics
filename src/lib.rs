@@ -828,6 +828,8 @@ pub mod kinematic_loop;
 pub mod laminate;
 pub mod laminate_failure;
 // Content identifier of the rules a world is configured with.
+pub mod holds;
+pub mod input_log;
 pub mod law_id;
 pub mod layer_adhesion;
 pub mod lift_drag;
@@ -887,6 +889,8 @@ pub mod rng;
 #[cfg(feature = "std")]
 pub mod rolling_contact;
 pub mod rope;
+/// A visitor's touch on a body (grab, drag, let go) as inputs a log carries
+pub mod touch;
 // 二次運動の鎖 (髪・尻尾・リボン・スカート): pose を慣性・重力・pose への引き戻しで追う粒子、
 // 長さ > 角度の制限 > capsule の衝突 の順に拘束 (Fix128、CORDIC の三角関数)
 pub mod rope_attach;

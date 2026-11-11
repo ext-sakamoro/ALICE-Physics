@@ -111,6 +111,9 @@ const NOT_STEP: &[&str] = &[
     "cloth_release",
     "cloth_release_with_velocity",
     "add_body",
+    // an input between steps: it sets velocities and integrates no time; its effect on the next steps is pinned by
+    // tests/analytic_holds.rs (closed form) and replayed through the input log
+    "apply_radial_impulse",
     "add_body_with_attachments",
     "add_body_with_radius",
     "add_compound_body",
