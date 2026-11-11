@@ -55,7 +55,6 @@ src/multiphase.rs
 src/nbody.rs
 src/non_newtonian.rs
 src/pair_potential.rs
-src/particle.rs
 src/phase_change.rs
 src/physics2d.rs
 src/piezoelectric.rs
