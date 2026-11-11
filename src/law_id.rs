@@ -272,13 +272,13 @@ impl PhysicsWorld {
     /// | 4 | `config.substeps`, `config.iterations` | `u64`, `u64` |
     /// | 5 | `config.gravity`, `config.damping` | `Vec3Fix`, `Fix128` |
     /// | 6 | `config.solver_backend` | tag `xpbd` or `tgs` |
-    /// | 7 | `config.warm_start_factor` | `Fix128` |
+    /// | 7 | `config.warm_start_factor`, `config.speculative_contacts` | `Fix128`, `bool` |
     /// | 8 | contact cache `warm_start_factor`, `max_stale_frames` | `Fix128`, `u32` |
     /// | 9 | `sdf_collision_radius` | `Fix128` |
     /// | 10 | continuous collision: enabled, motion threshold | `bool`, `Fix128` |
     /// | 11 | sleep `linear_threshold`, `angular_threshold`, `frames_to_sleep` | `Fix128`, `Fix128`, `u32` |
     /// | 12 | default friction and restitution combine rules | tag `average`, `min`, `max` or `multiply`, twice |
-    /// | 13 | materials, in id order | list of: id (`MaterialId`), `static_friction`, `dynamic_friction`, `restitution` (`Fix128` each), friction combine, restitution combine (tags) |
+    /// | 13 | materials, in id order | list of: id (`MaterialId`), `static_friction`, `dynamic_friction`, `restitution` (`Fix128` each), friction combine, restitution combine (tags), `contact_compliance` (`Fix128`) |
     /// | 14 | pair overrides, sorted by `(mat_a, mat_b)` with `mat_a <= mat_b` | list of: `mat_a`, `mat_b` (`MaterialId`), `friction`, `restitution` (`Fix128`) |
     /// | 15 | force fields, in the order they were added | list of: `enabled` (`bool`), the bodies it is limited to (`Option` of a list of `u64`, sorted ascending without duplicates), then the field |
     /// | 16 | participants, in registration order | list of: kind (`u32`), step rule, ports |
@@ -327,6 +327,7 @@ impl PhysicsWorld {
             SolverBackend::Tgs => b"tgs",
         });
         e.fix(c.warm_start_factor);
+        e.bool(c.speculative_contacts);
 
         e.fix(self.contact_cache.warm_start_factor);
         e.u32(self.contact_cache.max_stale_frames);
@@ -352,6 +353,7 @@ impl PhysicsWorld {
             e.fix(mat.restitution);
             e.combine(mat.friction_combine);
             e.combine(mat.restitution_combine);
+            e.fix(mat.contact_compliance);
         }
         let mut overrides: Vec<_> = m.pair_overrides.iter().collect();
         overrides.sort_by_key(|p| (p.mat_a, p.mat_b));

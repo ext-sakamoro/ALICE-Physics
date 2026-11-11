@@ -125,6 +125,7 @@ impl Laws {
             damping_rate: fx(3, 2),
             solver_backend: SolverBackend::Tgs,
             warm_start_factor: fx(1, 3),
+            speculative_contacts: false,
         };
         let mut limited = ForceFieldInstance::new(ForceField::Drag {
             coefficient: fx(3, 10),
@@ -157,7 +158,7 @@ impl Laws {
                     restitution: fx(2, 10),
                     friction_combine: CombineRule::Min,
                     restitution_combine: CombineRule::Max,
-                    contact_compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
+                    contact_compliance: fx(1, 1_000_000_000),
                 },
                 PhysicsMaterial {
                     id: 0,
@@ -300,6 +301,7 @@ impl Spec {
         self.fix(m.restitution);
         self.rule(m.friction_combine);
         self.rule(m.restitution_combine);
+        self.fix(m.contact_compliance);
     }
 }
 
@@ -325,6 +327,7 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
         other => panic!("no documented encoding for {other:?}"),
     });
     s.fix(c.warm_start_factor);
+    s.bool(c.speculative_contacts);
     s.fix(laws.contact_warm_start);
     s.u32(laws.contact_stale_frames);
     s.fix(laws.sdf_radius);
@@ -546,7 +549,7 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
     r.skip(8 + 8); // 4 substeps, iterations
     r.skip(VEC3 + FIX); // 5 gravity, damping
     r.bytes(); // 6 backend
-    r.skip(FIX); // 7 warm start
+    r.skip(FIX + 1); // 7 warm start, speculative contacts
     r.skip(FIX + 4); // 8 contact cache
     r.skip(FIX); // 9 sdf radius
     r.skip(1 + FIX); // 10 continuous collision
@@ -554,10 +557,11 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
     r.bytes(); // 12 friction combine
     r.bytes(); //    restitution combine
     for _ in 0..r.len() {
-        // 13 material: id, three Fix128, two tags
+        // 13 material: id, three Fix128, two tags, contact compliance
         r.skip(8 + 3 * FIX);
         r.bytes();
         r.bytes();
+        r.skip(FIX);
     }
     for _ in 0..r.len() {
         r.skip(8 + 8 + FIX + FIX); // 14 pair override
@@ -698,6 +702,19 @@ fn every_covered_field_moves_the_law_id() {
         (
             "config warm start",
             Box::new(|w| w.config.warm_start_factor = Fix128::ZERO),
+        ),
+        (
+            "speculative contacts",
+            Box::new(|w| w.config.speculative_contacts = false),
+        ),
+        (
+            "material contact compliance",
+            Box::new(|w| {
+                w.material_table.register(PhysicsMaterial {
+                    contact_compliance: fx(1, 1_000_000_000),
+                    ..PhysicsMaterial::default()
+                });
+            }),
         ),
         (
             "contact warm start",
