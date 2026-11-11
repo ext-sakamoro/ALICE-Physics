@@ -3251,7 +3251,23 @@ impl PhysicsWorld {
     /// The restitution target of contact `i` (Müller et al. 2020 eq. (34)):
     /// `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal velocity of the contact
     /// point, `e` taken as 0 for an approach slower than `threshold`.
-    fn restitution_target(&self, i: usize, vn: Fix128, threshold: Fix128) -> Fix128 {
+    fn restitution_target(&self, i: usize, vn: Fix128, threshold: Fix128, h: Fix128) -> Fix128 {
+        // A speculative point (a gap at detection, Catto 2013) may approach by
+        // as much as closes its present gap in one substep, `vn ≥ −gap / h`; it
+        // gets no restitution (it has not hit).
+        let c = &self.contact_constraints[i];
+        if c.contact.depth <= Fix128::ZERO {
+            let gap = -crate::xpbd_contact::current_depth(
+                c,
+                self.contact_anchor(i),
+                &self.contact_body(c.body_a),
+                &self.contact_body(c.body_b),
+                self.contact_turn_of(c.body_a),
+                self.contact_turn_of(c.body_b),
+            );
+            let gap = gap.max(Fix128::ZERO);
+            return if h.is_zero() { Fix128::ZERO } else { -(gap / h) };
+        }
         let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
         let e = if pre_vn < -threshold {
             self.contact_constraints[i].restitution
@@ -3289,7 +3305,7 @@ impl PhysicsWorld {
             rb[k] = r_b;
             n[k] = self.contact_constraints[first + k].contact.normal;
             let vn = crate::xpbd_contact::point_velocity(&a, &b, r_a, r_b).dot(n[k]);
-            d[k] = self.restitution_target(first + k, vn, threshold) - vn;
+            d[k] = self.restitution_target(first + k, vn, threshold, h) - vn;
         }
         if d[..len].iter().all(|x| *x <= Fix128::ZERO) {
             return;
@@ -5627,7 +5643,7 @@ impl PhysicsWorld {
             // is one-sided (only raises `vn` to the target), as in the 2D
             // solver. An impulse `j` along `n` at the arms changes the point's
             // normal velocity by `w_n j`.
-            let target = self.restitution_target(i, vn, restitution_threshold);
+            let target = self.restitution_target(i, vn, restitution_threshold, dt);
             if len <= 1 && vn < target {
                 self.contact_velocity_impulse(i, r_a, r_b, n, (target - vn) / w_n);
             }
@@ -7331,11 +7347,20 @@ impl PhysicsWorld {
             }
             let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
             let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
+            // Speculative margin (Catto, "Continuous Collision", GDC 2013): a
+            // point within `(|v| + |ω| R) h + |g| h²` of the floor is kept as a
+            // contact with a gap. No point of the body moves faster than
+            // `|v| + |ω| R` (`R` its bounding radius), so in one substep no point
+            // the margin leaves out can reach the floor, and gravity adds at
+            // most `|g| h²`; a pivot the body turns on stays a contact instead of
+            // leaving the floor between substeps and landing again.
+            let margin = (body.velocity.length() + body.angular_velocity.length() * radius) * h
+                + self.config.gravity.length() * h * h;
             // Every collider is met at the pose the body was predicted at.
             let mut per_collider: Vec<(usize, Vec<(Contact, u32)>)> = Vec::new();
             for (collider_index, collider) in self.static_colliders.iter().enumerate() {
                 let points = match shaped {
-                    Some(c) => c.static_manifold(body.position, body.rotation, collider),
+                    Some(c) => c.static_manifold(body.position, body.rotation, collider, margin),
                     None => collider
                         .collide_sphere(body.position, radius)
                         .map(|c| (c, 0))
@@ -7352,13 +7377,15 @@ impl PhysicsWorld {
                 else {
                     continue;
                 };
-                self.events.report_static_hit(crate::event::StaticHit {
-                    body: i,
-                    collider: collider_index,
-                    normal: deepest.normal,
-                    point: deepest.point_a,
-                    speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
-                });
+                if deepest.depth > Fix128::ZERO {
+                    self.events.report_static_hit(crate::event::StaticHit {
+                        body: i,
+                        collider: collider_index,
+                        normal: deepest.normal,
+                        point: deepest.point_a,
+                        speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
+                    });
+                }
                 // Only the points new this substep are pre-projected: a point
                 // found again holds the overlap the compliant contact keeps at
                 // rest (`α F`), which the solve needs to carry the load.

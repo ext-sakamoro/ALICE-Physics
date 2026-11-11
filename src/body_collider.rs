@@ -722,7 +722,7 @@ impl BodyCollider {
         rotation: QuatFix,
         collider: &StaticCollider,
     ) -> Option<Contact> {
-        self.static_manifold(position, rotation, collider)
+        self.static_manifold(position, rotation, collider, Fix128::ZERO)
             .into_iter()
             .map(|(c, _)| c)
             .max_by(|x, y| x.depth.cmp(&y.depth))
@@ -752,6 +752,7 @@ impl BodyCollider {
         position: Vec3Fix,
         rotation: QuatFix,
         collider: &StaticCollider,
+        margin: Fix128,
     ) -> Vec<(Contact, u32)> {
         let own = self.world_aabb(position, rotation);
         let mut out = Vec::new();
@@ -761,12 +762,14 @@ impl BodyCollider {
             .enumerate()
         {
             let hit = match collider {
-                StaticCollider::Plane(plane) => plane_piece_contact(&piece, position, plane),
+                StaticCollider::Plane(plane) => {
+                    plane_piece_contact(&piece, position, plane, margin)
+                }
                 StaticCollider::TriMesh(mesh) => {
                     mesh_piece_contact(&piece, &piece_box, position, mesh)
                 }
                 StaticCollider::HeightField(field) => {
-                    field_piece_contact(&piece, &piece_box, field)
+                    field_piece_contact(&piece, &piece_box, field, margin)
                 }
             };
             let Some(deepest) = hit else {
@@ -774,7 +777,7 @@ impl BodyCollider {
             };
             let base = 4 * index as u32;
             if piece.has_flat_faces() {
-                for (c, k) in face_manifold(&piece, deepest) {
+                for (c, k) in face_manifold(&piece, deepest, margin) {
                     out.push((c, base + k));
                 }
             } else {
@@ -804,7 +807,7 @@ const FACE_LEAN: (i64, i64) = (1, 4);
 /// at the deepest point. Each point carries its direction `0..4` as its feature
 /// number, so a corner keeps its number while it touches. A piece that gives no
 /// point below the plane (not flat-faced at the contact) keeps `deepest`.
-fn face_manifold(piece: &impl Support, deepest: Contact) -> Vec<(Contact, u32)> {
+fn face_manifold(piece: &impl Support, deepest: Contact, margin: Fix128) -> Vec<(Contact, u32)> {
     let n = deepest.normal;
     let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
     let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
@@ -816,7 +819,7 @@ fn face_manifold(piece: &impl Support, deepest: Contact) -> Vec<(Contact, u32)> 
             continue;
         }
         let height = n.dot(p - deepest.point_b);
-        if height < Fix128::ZERO {
+        if height < margin {
             out.push((
                 Contact {
                     depth: -height,
@@ -840,6 +843,7 @@ fn plane_piece_contact(
     piece: &Piece<'_>,
     reference: Vec3Fix,
     plane: &PlaneCollider,
+    margin: Fix128,
 ) -> Option<Contact> {
     let side = if plane.distance_to_point(reference) < Fix128::ZERO {
         -plane.normal
@@ -853,7 +857,7 @@ fn plane_piece_contact(
     } else {
         -plane.distance_to_point(lowest)
     };
-    (height < Fix128::ZERO).then(|| Contact {
+    (height < margin).then(|| Contact {
         depth: -height,
         normal: side,
         point_a: lowest,
@@ -1046,6 +1050,7 @@ fn field_piece_contact(
     piece: &Piece<'_>,
     piece_box: &AABB,
     field: &HeightField,
+    speculative: Fix128,
 ) -> Option<Contact> {
     if field.width == 0 || field.depth == 0 || field.spacing <= Fix128::ZERO {
         return None;
@@ -1070,7 +1075,7 @@ fn field_piece_contact(
     let ground = field.sample_height(lowest.x, lowest.z);
     // distance from the lowest point to the tangent plane at the point below it
     let height = (lowest.y - ground) * normal.y;
-    (height < Fix128::ZERO).then(|| Contact {
+    (height < speculative).then(|| Contact {
         depth: -height,
         normal,
         point_a: lowest,
