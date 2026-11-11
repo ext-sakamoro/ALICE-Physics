@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6026 |
+| 🟢 Not ignored (run by CI) | 6035 |
 | 🔴 Red by design | 77 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6129** |
+| **Total** | **6138** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -24,7 +24,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `a_box_set_down_flat_rests_flat_on_an_sdf_floor_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
 - `a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
-- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: static colliders, SDF colliders and the XPBD body-body contact give no torque (a tilted box keep…
+- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
 - `a_sliding_ball_rolls_at_five_sevenths_of_v0` (analytic_static_contact_response.rs) — known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball sl…
 - `a_sliding_box_stops_after_v0_squared_over_two_mu_g` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders apply no friction (the box slides on at v0)
@@ -126,7 +126,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
 - `a_ball_bounces_to_e_squared_h_on_every_floor_and_backend` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders only push out (no restitution), TGS static contacts too; body…
-- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: static colliders, SDF colliders and the XPBD body-body contact give no torque (a tilted box keep…
+- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_sliding_ball_rolls_at_five_sevenths_of_v0` (analytic_static_contact_response.rs) — known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball sl…
 - `a_sliding_box_stops_after_v0_squared_over_two_mu_g` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders apply no friction (the box slides on at v0)
 - `a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs` (analytic_static_contact_response.rs) — known defect: a box touches the floor at one point per tick (the deepest corner), so under TGS it rocks from c…
@@ -166,7 +166,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6026)
+## 🟢 Not ignored (6035)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -549,6 +549,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
+| `analytic_static_contact_response.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
 | `analytic_xpbd_velocity.rs` | 5 |
@@ -611,7 +612,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
 | `analytic_sphere_inertia.rs` | 3 |
-| `analytic_static_contact_response.rs` | 3 |
 | `analytic_static_hit_events.rs` | 3 |
 | `analytic_static_target.rs` | 3 |
 | `analytic_world_query_round_solids.rs` | 3 |
@@ -640,12 +640,15 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
+| `analytic_compliant_rest.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
 | `analytic_impulse_sign_exact.rs` | 2 |
 | `analytic_impulsive_burn_vis_viva.rs` | 2 |
 | `analytic_mesh_grazing_cast.rs` | 2 |
+| `analytic_rocking_block.rs` | 2 |
 | `analytic_rotation_integration.rs` | 2 |
 | `analytic_scalar_field_first_order_decay.rs` | 2 |
+| `analytic_sphere_exact_contact.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
 | `analytic_tgs_contact_separation.rs` | 2 |
 | `analytic_tgs_rotation.rs` | 2 |
@@ -661,6 +664,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
+| `analytic_flat_landing.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
 | `analytic_pd_step_response.rs` | 1 |

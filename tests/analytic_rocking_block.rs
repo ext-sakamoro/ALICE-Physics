@@ -108,7 +108,11 @@ fn rock(mu: f64, hz: f64, n: usize) -> (Vec<f64>, Vec<f64>, f64) {
         .set_pair_override(m, DEFAULT_MATERIAL, fx(mu), Fix128::ZERO);
     let (hw, hh) = (B / 2.0, H / 2.0);
     let (s, c) = theta.sin_cos();
-    let centre = Vec3Fix::new(fx(hw - (hw * c + hh * s)), fx(hw * s + hh * c), Fix128::ZERO);
+    let centre = Vec3Fix::new(
+        fx(hw - (hw * c + hh * s)),
+        fx(hw * s + hh * c),
+        Fix128::ZERO,
+    );
     let b = w
         .add_shaped_body(
             &Shape::Box {
@@ -119,10 +123,12 @@ fn rock(mu: f64, hz: f64, n: usize) -> (Vec<f64>, Vec<f64>, f64) {
         )
         .expect("block");
     w.set_body_material(b, m);
-    w.get_body_mut(b).expect("block").set_rotation(QuatFix::from_axis_angle(
-        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
-        fx(-theta),
-    ));
+    w.get_body_mut(b)
+        .expect("block")
+        .set_rotation(QuatFix::from_axis_angle(
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+            fx(-theta),
+        ));
     let (mut peaks, mut omegas) = (Vec::new(), Vec::new());
     let (mut sgn, mut pk, mut max_tilt, mut last_w) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for _ in 0..(3.0 * hz) as usize {
@@ -167,7 +173,10 @@ fn check(mu: f64, ratio: f64, envelope: f64, rates: &[f64]) -> Vec<String> {
             continue;
         }
         if peaks.len() < 3 {
-            wrong.push(format!("μ {mu} {hz} Hz: {} peaks (did not rock)", peaks.len()));
+            wrong.push(format!(
+                "μ {mu} {hz} Hz: {} peaks (did not rock)",
+                peaks.len()
+            ));
             continue;
         }
         let mut allowed = 0.0;
