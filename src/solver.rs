@@ -1377,7 +1377,9 @@ impl BodySlicePtr {
     /// index (see `PhysicsWorld::batch_static_bodies`); passing `false` for a
     /// body that another thread also borrows is undefined behaviour.
     unsafe fn borrow(&self, idx: usize, is_static: bool) -> BodyRef<'_> {
-        if is_static {
+        if idx == STATIC_BODY {
+            BodyRef::Static(&STATIC_TARGET)
+        } else if is_static {
             BodyRef::Static(self.get(idx))
         } else {
             BodyRef::Dynamic(self.get_mut(idx))
@@ -1443,6 +1445,13 @@ fn static_friction_correction(
 /// static / kinematic bodies are borrowed shared and position writes are
 /// dropped (they would be no-ops anyway: `inv_mass == 0` makes every
 /// correction zero and the sequential path writes the unchanged position).
+/// Whether a constraint's body is borrowed read-only: [`STATIC_BODY`], or a body
+/// the coloring recorded as static.
+#[cfg(feature = "parallel")]
+fn is_static_target(static_bodies: &[bool], idx: usize) -> bool {
+    idx == STATIC_BODY || static_bodies[idx]
+}
+
 #[cfg(feature = "parallel")]
 enum BodyRef<'a> {
     Dynamic(&'a mut RigidBody),
@@ -1614,6 +1623,26 @@ pub struct BodyAttachments {
     collider: Option<crate::body_collider::BodyCollider>,
     filter: CollisionFilter,
 }
+
+/// The `body_b` of a contact against something that does not move (a static
+/// collider or an SDF collider): no body of the world, read as a static body at
+/// rest at the origin with no mass. Every read of a contact's bodies goes through
+/// [`PhysicsWorld::contact_body`], so this index never reaches `bodies[..]`.
+pub const STATIC_BODY: usize = usize::MAX;
+
+/// [`PhysicsWorld::contact_body`] over a slice of bodies (the TGS conversion
+/// reads the world's bodies this way).
+#[inline]
+pub(crate) fn contact_body_in(bodies: &[RigidBody], i: usize) -> RigidBody {
+    if i == STATIC_BODY {
+        STATIC_TARGET
+    } else {
+        bodies[i]
+    }
+}
+
+/// The body [`STATIC_BODY`] stands for.
+static STATIC_TARGET: RigidBody = RigidBody::new_static(Vec3Fix::ZERO);
 
 /// XPBD physics world with batched constraint solving
 ///
@@ -2847,6 +2876,41 @@ impl PhysicsWorld {
             .get(body_idx)
             .copied()
             .unwrap_or(CollisionFilter::DEFAULT)
+    }
+
+    /// The body of a contact (`body_a` or `body_b` of a contact or distance
+    /// constraint): the world's body, or for [`STATIC_BODY`] a static body at rest
+    /// at the origin with no mass. The one way the solvers read a constraint's
+    /// bodies (`scripts/contact_body_access.py` checks there is no other).
+    #[inline]
+    pub(crate) fn contact_body(&self, i: usize) -> RigidBody {
+        contact_body_in(&self.bodies, i)
+    }
+
+    /// Set the velocity of a constraint's body. For [`STATIC_BODY`] nothing is
+    /// written, and the value must be the static body's own (zero): a contact
+    /// never moves what does not move.
+    #[inline]
+    pub(crate) fn contact_set_velocity(&mut self, i: usize, v: Vec3Fix) {
+        if i == STATIC_BODY {
+            assert!(
+                v == Vec3Fix::ZERO,
+                "a contact wrote a velocity into a static target"
+            );
+            return;
+        }
+        self.bodies[i].velocity = v;
+    }
+
+    /// Set the position of a constraint's body. For [`STATIC_BODY`] nothing is
+    /// written, and the value must be the static body's own (the origin).
+    #[inline]
+    pub(crate) fn contact_set_position(&mut self, i: usize, p: Vec3Fix) {
+        if i == STATIC_BODY {
+            assert!(p == Vec3Fix::ZERO, "a contact moved a static target");
+            return;
+        }
+        self.bodies[i].position = p;
     }
 
     /// Lock the world axes `lock` of body `body_idx` (see [`crate::axis_lock`]):
@@ -4962,8 +5026,8 @@ impl PhysicsWorld {
         // so this is the approach velocity before any constraint acted.
         self.contact_pre_vn.clear();
         for constraint in &self.contact_constraints {
-            let relative =
-                self.bodies[constraint.body_a].velocity - self.bodies[constraint.body_b].velocity;
+            let relative = self.contact_body(constraint.body_a).velocity
+                - self.contact_body(constraint.body_b).velocity;
             self.contact_pre_vn
                 .push(relative.dot(constraint.contact.normal));
         }
@@ -5037,8 +5101,8 @@ impl PhysicsWorld {
         let num_contacts = self.contact_constraints.len();
         for i in 0..num_contacts {
             let constraint = self.contact_constraints[i];
-            let body_a = self.bodies[constraint.body_a];
-            let body_b = self.bodies[constraint.body_b];
+            let body_a = self.contact_body(constraint.body_a);
+            let body_b = self.contact_body(constraint.body_b);
 
             if body_a.is_sensor || body_b.is_sensor {
                 continue;
@@ -5086,15 +5150,21 @@ impl PhysicsWorld {
                 let delta_vn = target - vn;
                 let impulse_n = n * delta_vn;
                 let inv_w = Fix128::ONE / w_sum;
-                self.bodies[constraint.body_a].velocity =
-                    self.bodies[constraint.body_a].velocity + impulse_n * (body_a.inv_mass * inv_w);
-                self.bodies[constraint.body_b].velocity =
-                    self.bodies[constraint.body_b].velocity - impulse_n * (body_b.inv_mass * inv_w);
+                self.contact_set_velocity(
+                    constraint.body_a,
+                    self.contact_body(constraint.body_a).velocity
+                        + impulse_n * (body_a.inv_mass * inv_w),
+                );
+                self.contact_set_velocity(
+                    constraint.body_b,
+                    self.contact_body(constraint.body_b).velocity
+                        - impulse_n * (body_b.inv_mass * inv_w),
+                );
             }
 
             // Friction: reduce tangential velocity
-            let relative_vel2 =
-                self.bodies[constraint.body_a].velocity - self.bodies[constraint.body_b].velocity;
+            let relative_vel2 = self.contact_body(constraint.body_a).velocity
+                - self.contact_body(constraint.body_b).velocity;
             let vn2 = relative_vel2.dot(n);
             let tangent_vel = relative_vel2 - n * vn2;
             let tangent_speed_sq = tangent_vel.length_squared();
@@ -5120,10 +5190,16 @@ impl PhysicsWorld {
                 let friction_dir = tangent_vel / tangent_speed;
                 let friction_impulse = friction_dir * applied;
                 let inv_w = Fix128::ONE / w_sum;
-                self.bodies[constraint.body_a].velocity = self.bodies[constraint.body_a].velocity
-                    - friction_impulse * (body_a.inv_mass * inv_w);
-                self.bodies[constraint.body_b].velocity = self.bodies[constraint.body_b].velocity
-                    + friction_impulse * (body_b.inv_mass * inv_w);
+                self.contact_set_velocity(
+                    constraint.body_a,
+                    self.contact_body(constraint.body_a).velocity
+                        - friction_impulse * (body_a.inv_mass * inv_w),
+                );
+                self.contact_set_velocity(
+                    constraint.body_b,
+                    self.contact_body(constraint.body_b).velocity
+                        + friction_impulse * (body_b.inv_mass * inv_w),
+                );
             }
         }
 
@@ -5162,7 +5238,8 @@ impl PhysicsWorld {
         self.contact_discarded.resize(num, false);
         for i in 0..num {
             let constraint = self.contact_constraints[i];
-            if self.bodies[constraint.body_a].is_sensor || self.bodies[constraint.body_b].is_sensor
+            if self.contact_body(constraint.body_a).is_sensor
+                || self.contact_body(constraint.body_b).is_sensor
             {
                 continue;
             }
@@ -5265,10 +5342,14 @@ impl PhysicsWorld {
                     // cached_lambda writes are also disjoint.
                     unsafe {
                         let constraint = dists.get_mut(idx);
-                        let body_a =
-                            bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
-                        let body_b =
-                            bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
+                        let body_a = bodies.borrow(
+                            constraint.body_a,
+                            is_static_target(static_bodies, constraint.body_a),
+                        );
+                        let body_b = bodies.borrow(
+                            constraint.body_b,
+                            is_static_target(static_bodies, constraint.body_b),
+                        );
                         Self::solve_distance_pair(body_a, body_b, constraint, dt);
                     }
                 });
@@ -5290,10 +5371,14 @@ impl PhysicsWorld {
                     // each constraint index in exactly one batch.
                     unsafe {
                         let constraint = contacts.get_mut(idx);
-                        let body_a =
-                            bodies.borrow(constraint.body_a, static_bodies[constraint.body_a]);
-                        let body_b =
-                            bodies.borrow(constraint.body_b, static_bodies[constraint.body_b]);
+                        let body_a = bodies.borrow(
+                            constraint.body_a,
+                            is_static_target(static_bodies, constraint.body_a),
+                        );
+                        let body_b = bodies.borrow(
+                            constraint.body_b,
+                            is_static_target(static_bodies, constraint.body_b),
+                        );
                         Self::solve_contact_pair(body_a, body_b, constraint);
                     }
                 });
@@ -5454,8 +5539,8 @@ impl PhysicsWorld {
         let num_constraints = self.distance_constraints.len();
         for i in 0..num_constraints {
             let constraint = self.distance_constraints[i];
-            let body_a = self.bodies[constraint.body_a];
-            let body_b = self.bodies[constraint.body_b];
+            let body_a = self.contact_body(constraint.body_a);
+            let body_b = self.contact_body(constraint.body_b);
 
             // Get world-space anchor positions
             let anchor_a = body_a.position + body_a.rotation.rotate_vec(constraint.local_anchor_a);
@@ -5490,15 +5575,21 @@ impl PhysicsWorld {
             // Branchless apply corrections: static bodies have inv_mass == ZERO.
             let delta_a = correction * body_a.inv_mass;
             let delta_b = correction * body_b.inv_mass;
-            self.bodies[constraint.body_a].position = select_vec3(
-                !body_a.inv_mass.is_zero(),
-                self.bodies[constraint.body_a].position + delta_a,
-                self.bodies[constraint.body_a].position,
+            self.contact_set_position(
+                constraint.body_a,
+                select_vec3(
+                    !body_a.inv_mass.is_zero(),
+                    self.contact_body(constraint.body_a).position + delta_a,
+                    self.contact_body(constraint.body_a).position,
+                ),
             );
-            self.bodies[constraint.body_b].position = select_vec3(
-                !body_b.inv_mass.is_zero(),
-                self.bodies[constraint.body_b].position - delta_b,
-                self.bodies[constraint.body_b].position,
+            self.contact_set_position(
+                constraint.body_b,
+                select_vec3(
+                    !body_b.inv_mass.is_zero(),
+                    self.contact_body(constraint.body_b).position - delta_b,
+                    self.contact_body(constraint.body_b).position,
+                ),
             );
         }
     }
@@ -5538,8 +5629,8 @@ impl PhysicsWorld {
         let num_constraints = self.contact_constraints.len();
         for i in 0..num_constraints {
             let constraint = self.contact_constraints[i];
-            let body_a = self.bodies[constraint.body_a];
-            let body_b = self.bodies[constraint.body_b];
+            let body_a = self.contact_body(constraint.body_a);
+            let body_b = self.contact_body(constraint.body_b);
 
             // Skip physics response for sensor/trigger bodies
             if body_a.is_sensor || body_b.is_sensor {
@@ -5578,15 +5669,21 @@ impl PhysicsWorld {
                 let correction_b = correction * (body_b.inv_mass * inv_w_sum);
 
                 // Branchless: inv_mass == ZERO for static bodies, correction_x will be ZERO.
-                self.bodies[constraint.body_a].position = select_vec3(
-                    !body_a.inv_mass.is_zero(),
-                    self.bodies[constraint.body_a].position + correction_a,
-                    self.bodies[constraint.body_a].position,
+                self.contact_set_position(
+                    constraint.body_a,
+                    select_vec3(
+                        !body_a.inv_mass.is_zero(),
+                        self.contact_body(constraint.body_a).position + correction_a,
+                        self.contact_body(constraint.body_a).position,
+                    ),
                 );
-                self.bodies[constraint.body_b].position = select_vec3(
-                    !body_b.inv_mass.is_zero(),
-                    self.bodies[constraint.body_b].position - correction_b,
-                    self.bodies[constraint.body_b].position,
+                self.contact_set_position(
+                    constraint.body_b,
+                    select_vec3(
+                        !body_b.inv_mass.is_zero(),
+                        self.contact_body(constraint.body_b).position - correction_b,
+                        self.contact_body(constraint.body_b).position,
+                    ),
                 );
             }
 
@@ -5603,8 +5700,8 @@ impl PhysicsWorld {
     /// non-penetrating contacts.
     fn apply_static_friction(&mut self, i: usize, inv_w_sum: Fix128) {
         let constraint = self.contact_constraints[i];
-        let a = self.bodies[constraint.body_a];
-        let b = self.bodies[constraint.body_b];
+        let a = self.contact_body(constraint.body_a);
+        let b = self.contact_body(constraint.body_b);
         if let Some((fa, fb)) = static_friction_correction(
             a.position - a.prev_position,
             b.position - b.prev_position,
@@ -5615,10 +5712,14 @@ impl PhysicsWorld {
             constraint.friction,
             constraint.cached_lambda,
         ) {
-            self.bodies[constraint.body_a].position =
-                select_vec3(!a.inv_mass.is_zero(), a.position - fa, a.position);
-            self.bodies[constraint.body_b].position =
-                select_vec3(!b.inv_mass.is_zero(), b.position + fb, b.position);
+            self.contact_set_position(
+                constraint.body_a,
+                select_vec3(!a.inv_mass.is_zero(), a.position - fa, a.position),
+            );
+            self.contact_set_position(
+                constraint.body_b,
+                select_vec3(!b.inv_mass.is_zero(), b.position + fb, b.position),
+            );
         }
     }
 
@@ -5714,8 +5815,8 @@ impl PhysicsWorld {
 
         for i in 0..num_constraints {
             let constraint = self.contact_constraints[i];
-            let body_a = self.bodies[constraint.body_a];
-            let body_b = self.bodies[constraint.body_b];
+            let body_a = self.contact_body(constraint.body_a);
+            let body_b = self.contact_body(constraint.body_b);
 
             if body_a.is_sensor || body_b.is_sensor {
                 continue;
@@ -5775,7 +5876,7 @@ impl PhysicsWorld {
         // bridge contract carries only the normal multiplier).
         for &orig_slot in &mapping {
             let c = self.contact_constraints[orig_slot];
-            let w_sum = self.bodies[c.body_a].inv_mass + self.bodies[c.body_b].inv_mass;
+            let w_sum = self.contact_body(c.body_a).inv_mass + self.contact_body(c.body_b).inv_mass;
             if c.contact.depth <= Fix128::ZERO || w_sum < W_SUM_EPSILON {
                 continue;
             }
@@ -6464,7 +6565,7 @@ impl PhysicsWorld {
         c: &ContactConstraint,
         h2: Fix128,
     ) -> Option<(Vec3Fix, Vec3Fix, Fix128)> {
-        let w = self.bodies.get(c.body_a)?.inv_mass + self.bodies.get(c.body_b)?.inv_mass;
+        let w = self.contact_body(c.body_a).inv_mass + self.contact_body(c.body_b).inv_mass;
         if w < W_SUM_EPSILON || h2.is_zero() {
             return None;
         }
