@@ -3143,7 +3143,38 @@ impl PhysicsWorld {
         }
         let (mut dx, mut dtheta) = (Vec3Fix::ZERO, Vec3Fix::ZERO);
         let moved_at = |dx: Vec3Fix, dtheta: Vec3Fix, r: Vec3Fix| dx + dtheta.cross(r);
-        for _ in 0..PRE_PROJECTION_PASSES {
+        // A manifold (up to `BLOCK_MAX` points) is pushed out as one block
+        // (the corrections that leave no point overlapping, solved together,
+        // `crate::xpbd_contact::block_lcp`); one point at a time otherwise.
+        let mut solved = false;
+        if points.len() > 1 && points.len() <= crate::xpbd_contact::BLOCK_MAX {
+            use crate::xpbd_contact::BLOCK_MAX;
+            let still = RigidBody::new_static(Vec3Fix::ZERO);
+            let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
+            let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
+            let mut d = [Fix128::ZERO; BLOCK_MAX];
+            for (k, c) in points.iter().enumerate() {
+                ra[k] = arms[k];
+                n[k] = c.normal;
+                d[k] = overlaps[k];
+            }
+            let big_a = crate::xpbd_contact::coupling(
+                &body,
+                &still,
+                &ra,
+                &[Vec3Fix::ZERO; BLOCK_MAX],
+                &n,
+                points.len(),
+            );
+            if let Some(lambda) = crate::xpbd_contact::block_lcp(&big_a, &d, points.len()) {
+                for k in 0..points.len() {
+                    dx = dx + n[k] * (lambda[k] * body.inv_mass);
+                    dtheta = dtheta + body.world_inv_inertia_apply(ra[k].cross(n[k])) * lambda[k];
+                }
+                solved = true;
+            }
+        }
+        for _ in 0..if solved { 0 } else { PRE_PROJECTION_PASSES } {
             for (k, c) in points.iter().enumerate() {
                 let n = c.normal;
                 let left = overlaps[k] - n.dot(moved_at(dx, dtheta, arms[k]));
@@ -3181,6 +3212,63 @@ impl PhysicsWorld {
         if let Some(Some((x, q))) = self.predicted_pose.get_mut(i) {
             *x = *x + dx;
             *q = turn(*q);
+        }
+    }
+
+    /// The restitution target of contact `i` (Müller et al. 2020 eq. (34)):
+    /// `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal velocity of the contact
+    /// point, `e` taken as 0 for an approach slower than `threshold`.
+    fn restitution_target(&self, i: usize, vn: Fix128, threshold: Fix128) -> Fix128 {
+        let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
+        let e = if pre_vn < -threshold {
+            self.contact_constraints[i].restitution
+        } else {
+            Fix128::ZERO
+        };
+        let target = -e * pre_vn;
+        if target.is_negative() {
+            Fix128::ZERO
+        } else {
+            target
+        }
+    }
+
+    /// The restitution of the block `first .. first + len` (one manifold),
+    /// solved together: the impulses `j ≥ 0` that raise each point's normal
+    /// velocity to at least its target, through the coupling of the points
+    /// ([`crate::xpbd_contact::block_lcp`], `d_k = target_k − vn_k`). One point
+    /// after another, the first corner's impulse turned the body and the others
+    /// only partly undid it (a box falling flat left the floor spinning).
+    fn block_restitution(&mut self, first: usize, len: usize, threshold: Fix128) {
+        use crate::xpbd_contact::BLOCK_MAX;
+        let c0 = self.contact_constraints[first];
+        let (a, b) = (self.contact_body(c0.body_a), self.contact_body(c0.body_b));
+        if a.is_sensor || b.is_sensor || a.inv_mass + b.inv_mass < W_SUM_EPSILON {
+            return;
+        }
+        let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
+        let mut rb = [Vec3Fix::ZERO; BLOCK_MAX];
+        let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
+        let mut d = [Fix128::ZERO; BLOCK_MAX];
+        for k in 0..len {
+            let (r_a, r_b) = self.contact_arms(first + k);
+            ra[k] = r_a;
+            rb[k] = r_b;
+            n[k] = self.contact_constraints[first + k].contact.normal;
+            let vn = crate::xpbd_contact::point_velocity(&a, &b, r_a, r_b).dot(n[k]);
+            d[k] = self.restitution_target(first + k, vn, threshold) - vn;
+        }
+        if d[..len].iter().all(|x| *x <= Fix128::ZERO) {
+            return;
+        }
+        let big_a = crate::xpbd_contact::coupling(&a, &b, &ra, &rb, &n, len);
+        let Some(j) = crate::xpbd_contact::block_lcp(&big_a, &d, len) else {
+            return;
+        };
+        for k in 0..len {
+            if j[k] > Fix128::ZERO {
+                self.contact_velocity_impulse(first + k, ra[k], rb[k], n[k], j[k]);
+            }
         }
     }
 
@@ -5461,6 +5549,17 @@ impl PhysicsWorld {
                 continue;
             }
 
+            // A manifold's restitution is solved as one block at its first
+            // point (`block_restitution`); its points then each get friction.
+            let (first, len) = self.contact_block.get(i).copied().unwrap_or((i, 1));
+            if len > 1 && first == i {
+                self.block_restitution(first, len, restitution_threshold);
+            }
+            let (body_a, body_b) = (
+                self.contact_body(constraint.body_a),
+                self.contact_body(constraint.body_b),
+            );
+
             let n = constraint.contact.normal;
             let (r_a, r_b) = self.contact_arms(i);
             let w_n = crate::xpbd_contact::point_w(&body_a, &body_b, r_a, r_b, n);
@@ -5479,19 +5578,8 @@ impl PhysicsWorld {
             // is one-sided (only raises `vn` to the target), as in the 2D
             // solver. An impulse `j` along `n` at the arms changes the point's
             // normal velocity by `w_n j`.
-            let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
-            let restitution = if pre_vn < -restitution_threshold {
-                constraint.restitution
-            } else {
-                Fix128::ZERO
-            };
-            let target = -restitution * pre_vn;
-            let target = if target.is_negative() {
-                Fix128::ZERO
-            } else {
-                target
-            };
-            if vn < target {
+            let target = self.restitution_target(i, vn, restitution_threshold);
+            if len <= 1 && vn < target {
                 self.contact_velocity_impulse(i, r_a, r_b, n, (target - vn) / w_n);
             }
 

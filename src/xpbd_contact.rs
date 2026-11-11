@@ -341,45 +341,10 @@ pub(crate) fn block_normal_correction(
     if d[..m].iter().all(|x| *x <= Fix128::ZERO) {
         return None;
     }
-    let lin = a.inv_mass + b.inv_mass;
-    let ang = |body: &RigidBody, r: &[Vec3Fix; BLOCK_MAX], j: usize, k: usize| {
-        if body.inv_mass.is_zero() {
-            return Fix128::ZERO;
-        }
-        r[j].cross(n[j])
-            .dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
-    };
-    let mut big_a = [[Fix128::ZERO; BLOCK_MAX]; BLOCK_MAX];
-    for j in 0..m {
-        for k in 0..m {
-            big_a[j][k] = n[j].dot(n[k]) * lin + ang(a, &ra, j, k) + ang(b, &rb, j, k);
-        }
-    }
-    // Active sets: more points first, then ascending bit pattern.
-    let mut masks: Vec<u32> = (1..(1u32 << m)).collect();
-    masks.sort_by_key(|s| (core::cmp::Reverse(s.count_ones()), *s));
-    for mask in masks {
-        let set: Vec<usize> = (0..m).filter(|k| mask & (1 << k) != 0).collect();
-        let Some(sol) = solve_small(&big_a, &d, &set) else {
-            continue;
-        };
-        let mut lambda = [Fix128::ZERO; BLOCK_MAX];
-        for (i, &k) in set.iter().enumerate() {
-            lambda[k] = sol[i];
-        }
-        if set.iter().any(|&k| lambda[k] < Fix128::ZERO) {
-            continue;
-        }
-        let left_out_ok = (0..m).filter(|j| mask & (1 << j) == 0).all(|j| {
-            let mut relieved = Fix128::ZERO;
-            for &k in &set {
-                relieved = relieved + big_a[j][k] * lambda[k];
-            }
-            d[j] - relieved <= Fix128::ZERO
-        });
-        if !left_out_ok {
-            continue;
-        }
+    let big_a = coupling(a, b, &ra, &rb, &n, m);
+    let lambda = block_lcp(&big_a, &d, m)?;
+    {
+        let set: Vec<usize> = (0..m).filter(|&k| lambda[k] > Fix128::ZERO).collect();
         let mut da = BodyDelta::ZERO;
         let mut db = BodyDelta::ZERO;
         let mut sep = [Fix128::ZERO; BLOCK_MAX];
@@ -396,7 +361,73 @@ pub(crate) fn block_normal_correction(
             };
             sep[k] = lambda[k] * big_a[k][k];
         }
-        return Some((da, db, sep));
+        Some((da, db, sep))
+    }
+}
+
+/// The coupling `A_jk` of up to [`BLOCK_MAX`] contact points between two bodies:
+/// how much a unit multiplier (or impulse) along `n_k` at point `k` moves point
+/// `j` along `n_j`:
+/// `n_j · n_k (m_a⁻¹ + m_b⁻¹) + (r_aj × n_j) · I_a⁻¹ (r_ak × n_k)
+///  + (r_bj × n_j) · I_b⁻¹ (r_bk × n_k)`.
+pub(crate) fn coupling(
+    a: &RigidBody,
+    b: &RigidBody,
+    ra: &[Vec3Fix; BLOCK_MAX],
+    rb: &[Vec3Fix; BLOCK_MAX],
+    n: &[Vec3Fix; BLOCK_MAX],
+    m: usize,
+) -> [[Fix128; BLOCK_MAX]; BLOCK_MAX] {
+    let lin = a.inv_mass + b.inv_mass;
+    let ang = |body: &RigidBody, r: &[Vec3Fix; BLOCK_MAX], j: usize, k: usize| {
+        if body.inv_mass.is_zero() {
+            return Fix128::ZERO;
+        }
+        r[j].cross(n[j]).dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
+    };
+    let mut big_a = [[Fix128::ZERO; BLOCK_MAX]; BLOCK_MAX];
+    for j in 0..m {
+        for k in 0..m {
+            big_a[j][k] = n[j].dot(n[k]) * lin + ang(a, ra, j, k) + ang(b, rb, j, k);
+        }
+    }
+    big_a
+}
+
+/// The complementarity problem `λ ≥ 0`, `w = d − A λ ≤ 0`, `λ_k w_k = 0` on the
+/// first `m` points: the active sets tried in a fixed order (more points first,
+/// then ascending bit pattern), each solved by [`solve_small`]; the first with
+/// `λ_S ≥ 0` that leaves every other point at `d_j − Σ A_jk λ_k ≤ 0` is taken.
+/// `None` when none does.
+pub(crate) fn block_lcp(
+    big_a: &[[Fix128; BLOCK_MAX]; BLOCK_MAX],
+    d: &[Fix128; BLOCK_MAX],
+    m: usize,
+) -> Option<[Fix128; BLOCK_MAX]> {
+    let mut masks: Vec<u32> = (1..(1u32 << m)).collect();
+    masks.sort_by_key(|s| (core::cmp::Reverse(s.count_ones()), *s));
+    for mask in masks {
+        let set: Vec<usize> = (0..m).filter(|k| mask & (1 << k) != 0).collect();
+        let Some(sol) = solve_small(big_a, d, &set) else {
+            continue;
+        };
+        let mut lambda = [Fix128::ZERO; BLOCK_MAX];
+        for (i, &k) in set.iter().enumerate() {
+            lambda[k] = sol[i];
+        }
+        if set.iter().any(|&k| lambda[k] < Fix128::ZERO) {
+            continue;
+        }
+        let left_out_ok = (0..m).filter(|j| mask & (1 << j) == 0).all(|j| {
+            let mut relieved = Fix128::ZERO;
+            for &k in &set {
+                relieved = relieved + big_a[j][k] * lambda[k];
+            }
+            d[j] - relieved <= Fix128::ZERO
+        });
+        if left_out_ok {
+            return Some(lambda);
+        }
     }
     None
 }
