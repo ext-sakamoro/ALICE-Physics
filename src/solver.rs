@@ -3187,7 +3187,19 @@ impl PhysicsWorld {
             for (k, row) in big_a.iter_mut().enumerate().take(points.len()) {
                 row[k] = row[k] + alpha;
             }
-            if let Some(lambda) = crate::xpbd_contact::block_lcp(&big_a, &d, points.len()) {
+            let alphas = [alpha; BLOCK_MAX];
+            let block = crate::xpbd_contact::body_lcp(
+                &body,
+                &still,
+                &ra,
+                &[Vec3Fix::ZERO; BLOCK_MAX],
+                &n,
+                &alphas,
+                &d,
+                points.len(),
+            )
+            .or_else(|| crate::xpbd_contact::block_lcp(&big_a, &d, points.len()));
+            if let Some(lambda) = block {
                 for k in 0..points.len() {
                     dx = dx + n[k] * (lambda[k] * body.inv_mass);
                     dtheta = dtheta + body.world_inv_inertia_apply(ra[k].cross(n[k])) * lambda[k];
@@ -3286,15 +3298,19 @@ impl PhysicsWorld {
         // The contact compliance at the substep keeps the block regular (a
         // face's corners constrain three motions, so `A` alone is singular and
         // its impulses are not unique): the impulse a point takes gives way by
-        // `α̃` per unit, as the position solve does.
+        // `α̃` per unit, as the position solve does. Solved in the bodies'
+        // coordinates (`body_lcp`), so a symmetric face gets equal impulses.
+        let mut alphas = [Fix128::ZERO; BLOCK_MAX];
         for (k, row) in big_a.iter_mut().enumerate().take(len) {
-            row[k] = row[k]
-                + crate::xpbd_contact::compliance_over_h2(
-                    self.contact_constraints[first + k].compliance,
-                    h,
-                );
+            alphas[k] = crate::xpbd_contact::compliance_over_h2(
+                self.contact_constraints[first + k].compliance,
+                h,
+            );
+            row[k] = row[k] + alphas[k];
         }
-        let Some(j) = crate::xpbd_contact::block_lcp(&big_a, &d, len) else {
+        let solved = crate::xpbd_contact::body_lcp(&a, &b, &ra, &rb, &n, &alphas, &d, len)
+            .or_else(|| crate::xpbd_contact::block_lcp(&big_a, &d, len));
+        let Some(j) = solved else {
             return;
         };
         for k in 0..len {

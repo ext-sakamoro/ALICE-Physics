@@ -47,6 +47,58 @@
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{ContactConstraint, RigidBody};
 
+// ---------------------------------------------------------------------------
+// Odd arithmetic: `Fix128`'s product floors toward −∞, so `(−a)·b` is one unit
+// below `−(a·b)`. The shares of mirror-image contact points (a face's corners)
+// must cancel exactly when summed, or the remainder (a few units) spins a body
+// that should rest, and a stiff contact turns that tilt into uneven loads. The
+// contact math therefore uses products that are odd by construction.
+// ---------------------------------------------------------------------------
+
+/// `a · b` rounded symmetrically about zero: `(−a)·b = −(a·b)` exactly.
+#[inline]
+pub(crate) fn mul_odd(a: Fix128, b: Fix128) -> Fix128 {
+    let p = a.abs() * b.abs();
+    if a.is_negative() != b.is_negative() {
+        -p
+    } else {
+        p
+    }
+}
+
+/// `v · s` componentwise with [`mul_odd`].
+#[inline]
+pub(crate) fn scale_odd(v: Vec3Fix, s: Fix128) -> Vec3Fix {
+    Vec3Fix::new(mul_odd(v.x, s), mul_odd(v.y, s), mul_odd(v.z, s))
+}
+
+/// `u × v` with [`mul_odd`] products.
+#[inline]
+pub(crate) fn cross_odd(u: Vec3Fix, v: Vec3Fix) -> Vec3Fix {
+    Vec3Fix::new(
+        mul_odd(u.y, v.z) - mul_odd(u.z, v.y),
+        mul_odd(u.z, v.x) - mul_odd(u.x, v.z),
+        mul_odd(u.x, v.y) - mul_odd(u.y, v.x),
+    )
+}
+
+/// `u · v` with [`mul_odd`] products.
+#[inline]
+pub(crate) fn dot_odd(u: Vec3Fix, v: Vec3Fix) -> Fix128 {
+    mul_odd(u.x, v.x) + mul_odd(u.y, v.y) + mul_odd(u.z, v.z)
+}
+
+/// The body's world inverse inertia applied to `v`, made odd:
+/// `(I⁻¹ v − I⁻¹ (−v)) / 2` (the quotient truncates symmetrically), so the
+/// mirror image of `v` gets exactly the negated result.
+#[inline]
+pub(crate) fn inv_inertia_odd(body: &RigidBody, v: Vec3Fix) -> Vec3Fix {
+    let p = body.world_inv_inertia_apply(v);
+    let q = body.world_inv_inertia_apply(-v);
+    let two = Fix128::from_int(2);
+    Vec3Fix::new((p.x - q.x) / two, (p.y - q.y) / two, (p.z - q.z) / two)
+}
+
 /// The arms of a contact at the poses it was detected at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ContactAnchor {
@@ -127,7 +179,7 @@ pub(crate) struct PointCorrection {
 /// The arm `r` turned by `turn` (first order): `r + turn × r`.
 #[inline]
 pub(crate) fn arm(r: Vec3Fix, turn: Vec3Fix) -> Vec3Fix {
-    r + turn.cross(r)
+    r + cross_odd(turn, r)
 }
 
 /// `(r × axis)ᵀ I⁻¹ (r × axis)` of `body` (zero for a body without inverse mass).
@@ -136,8 +188,8 @@ pub(crate) fn angular_w(body: &RigidBody, r: Vec3Fix, axis: Vec3Fix) -> Fix128 {
     if body.inv_mass.is_zero() {
         return Fix128::ZERO;
     }
-    let rn = r.cross(axis);
-    rn.dot(body.world_inv_inertia_apply(rn))
+    let rn = cross_odd(r, axis);
+    dot_odd(rn, inv_inertia_odd(body, rn))
 }
 
 /// The generalised inverse mass of a point correction along `axis` at arms
@@ -161,8 +213,8 @@ fn share(body: &RigidBody, r: Vec3Fix, axis: Vec3Fix, lambda: Fix128) -> BodyDel
         return BodyDelta::ZERO;
     }
     BodyDelta {
-        dx: axis * (lambda * body.inv_mass),
-        dtheta: body.world_inv_inertia_apply(r.cross(axis)) * lambda,
+        dx: scale_odd(axis, mul_odd(lambda, body.inv_mass)),
+        dtheta: scale_odd(inv_inertia_odd(body, cross_odd(r, axis)), lambda),
     }
 }
 
@@ -177,7 +229,7 @@ pub(crate) fn current_depth(
 ) -> Fix128 {
     let moved_a = a.position + arm(anchor.r_a, turn_a) - c.contact.point_a;
     let moved_b = b.position + arm(anchor.r_b, turn_b) - c.contact.point_b;
-    c.contact.depth - c.contact.normal.dot(moved_a - moved_b)
+    c.contact.depth - dot_odd(c.contact.normal, moved_a - moved_b)
 }
 
 /// The normal correction of contact `c` (see the module MODEL), or `None` when
@@ -294,7 +346,8 @@ pub(crate) fn apply(body: &mut RigidBody, turn: &mut ContactTurn, delta: BodyDel
 /// The relative velocity of the contact points (`v + ω × r` of A minus B's).
 #[inline]
 pub(crate) fn point_velocity(a: &RigidBody, b: &RigidBody, r_a: Vec3Fix, r_b: Vec3Fix) -> Vec3Fix {
-    (a.velocity + a.angular_velocity.cross(r_a)) - (b.velocity + b.angular_velocity.cross(r_b))
+    (a.velocity + cross_odd(a.angular_velocity, r_a))
+        - (b.velocity + cross_odd(b.angular_velocity, r_b))
 }
 
 /// What a velocity impulse `j` along `axis` at arm `r` gives `body`: a change of
@@ -379,7 +432,15 @@ pub(crate) fn block_normal_correction(
             rhs[j] = rhs[j] + big_a[j][k] * held[k];
         }
     }
-    let total = block_lcp(&stiff, &rhs, m)?;
+    let alphas: [Fix128; BLOCK_MAX] = core::array::from_fn(|k| {
+        points
+            .get(k)
+            .map_or(Fix128::ZERO, |p| compliance_over_h2(p.0.compliance, h))
+    });
+    let total = match body_lcp(a, b, &ra, &rb, &n, &alphas, &rhs, m) {
+        Some(t) => t,
+        None => block_lcp(&stiff, &rhs, m)?,
+    };
     let lambda: [Fix128; BLOCK_MAX] = core::array::from_fn(|k| total[k] - held[k]);
     {
         let set: Vec<usize> = (0..m).filter(|&k| !lambda[k].is_zero()).collect();
@@ -421,13 +482,15 @@ pub(crate) fn coupling(
         if body.inv_mass.is_zero() {
             return Fix128::ZERO;
         }
-        r[j].cross(n[j])
-            .dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
+        dot_odd(
+            cross_odd(r[j], n[j]),
+            inv_inertia_odd(body, cross_odd(r[k], n[k])),
+        )
     };
     let mut big_a = [[Fix128::ZERO; BLOCK_MAX]; BLOCK_MAX];
     for j in 0..m {
         for k in 0..m {
-            big_a[j][k] = n[j].dot(n[k]) * lin + ang(a, ra, j, k) + ang(b, rb, j, k);
+            big_a[j][k] = mul_odd(dot_odd(n[j], n[k]), lin) + ang(a, ra, j, k) + ang(b, rb, j, k);
         }
     }
     big_a
@@ -515,4 +578,160 @@ fn solve_small(
         x[row] = acc / m[row][row];
     }
     Some(x)
+}
+
+/// The compliant complementarity problem of a block, `(A + D) λ = r`,
+/// `D = diag(α̃_k) > 0`, solved in the bodies' coordinates instead of the
+/// points' (Woodbury): with `J` the points' rows (body A `[n, r_a × n]`, body B
+/// `[−n, −(r_b × n)]`, a body without inverse mass left out) and `W` the bodies'
+/// inverse mass (`m⁻¹ I`, `I⁻¹` in the world frame), the bodies' generalised
+/// impulse `y = Jᵀ λ` solves `(I + Jᵀ D⁻¹ J W) y = Jᵀ D⁻¹ r` (6 unknowns per body
+/// that moves) and each point's multiplier is `λ_k = (r_k − J_k W y) / α̃_k`.
+///
+/// Why: the multipliers of a face's corners are fixed only through the
+/// compliance (four corners constrain three motions), so eliminating in the
+/// points' coordinates rounds them unevenly (the pivot order favours some), and
+/// the uneven multipliers tilt the body; in the bodies' coordinates a symmetric
+/// face makes the coupling between force and tilt cancel exactly, the tilt part
+/// of `y` is exactly zero, and every corner gets the same `λ` by construction.
+///
+/// The active sets are tried in [`block_lcp`]'s order; the body system is
+/// eliminated in a fixed order (row by row, no pivoting: its matrix is the
+/// identity plus a positive semi-definite product, so the pivots stay at least
+/// 1 in exact arithmetic). `None` when a point has `α̃ = 0` (the caller then
+/// solves in the points' coordinates, [`block_lcp`]) or no active set fits.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the two bodies, the points' arms and normals, their compliances, the right-hand side and the point count are the block's whole input"
+)]
+pub(crate) fn body_lcp(
+    a: &RigidBody,
+    b: &RigidBody,
+    ra: &[Vec3Fix; BLOCK_MAX],
+    rb: &[Vec3Fix; BLOCK_MAX],
+    n: &[Vec3Fix; BLOCK_MAX],
+    alpha: &[Fix128; BLOCK_MAX],
+    r: &[Fix128; BLOCK_MAX],
+    m: usize,
+) -> Option<[Fix128; BLOCK_MAX]> {
+    if alpha[..m].iter().any(|x| *x <= Fix128::ZERO) {
+        return None;
+    }
+    // Bodies that move, each with 6 unknowns (linear, angular).
+    let moving: Vec<(&RigidBody, bool)> = [(a, true), (b, false)]
+        .into_iter()
+        .filter(|(body, _)| !body.inv_mass.is_zero())
+        .collect();
+    let dof = 6 * moving.len();
+    if dof == 0 {
+        return None;
+    }
+    // Rows J_k (length dof) and W applied to a dof vector.
+    let row = |k: usize| -> Vec<Fix128> {
+        let mut out = Vec::with_capacity(dof);
+        for (_, is_a) in &moving {
+            let (lin, ang) = if *is_a {
+                (n[k], cross_odd(ra[k], n[k]))
+            } else {
+                (-n[k], -cross_odd(rb[k], n[k]))
+            };
+            out.extend_from_slice(&[lin.x, lin.y, lin.z, ang.x, ang.y, ang.z]);
+        }
+        out
+    };
+    let apply_w = |v: &[Fix128]| -> Vec<Fix128> {
+        let mut out = Vec::with_capacity(dof);
+        for (i, (body, _)) in moving.iter().enumerate() {
+            let o = 6 * i;
+            out.extend_from_slice(&[
+                mul_odd(v[o], body.inv_mass),
+                mul_odd(v[o + 1], body.inv_mass),
+                mul_odd(v[o + 2], body.inv_mass),
+            ]);
+            let w = inv_inertia_odd(body, Vec3Fix::new(v[o + 3], v[o + 4], v[o + 5]));
+            out.extend_from_slice(&[w.x, w.y, w.z]);
+        }
+        out
+    };
+    let rows: Vec<Vec<Fix128>> = (0..m).map(row).collect();
+    let jw: Vec<Vec<Fix128>> = rows.iter().map(|j| apply_w(j)).collect();
+    let dot = |x: &[Fix128], y: &[Fix128]| {
+        let mut s = Fix128::ZERO;
+        for (p, q) in x.iter().zip(y) {
+            s = s + mul_odd(*p, *q);
+        }
+        s
+    };
+    let mut masks: Vec<u32> = (1..(1u32 << m)).collect();
+    masks.sort_by_key(|s| (core::cmp::Reverse(s.count_ones()), *s));
+    for mask in masks {
+        let set: Vec<usize> = (0..m).filter(|k| mask & (1 << k) != 0).collect();
+        // K = I + Σ J_kᵀ (J_k W) / α̃_k, rhs = Σ J_kᵀ r_k / α̃_k.
+        let mut kmat = vec![vec![Fix128::ZERO; dof + 1]; dof];
+        for (i, krow) in kmat.iter_mut().enumerate() {
+            krow[i] = Fix128::ONE;
+        }
+        for &k in &set {
+            let inv = Fix128::ONE / alpha[k];
+            for i in 0..dof {
+                let ji = mul_odd(rows[k][i], inv);
+                if ji.is_zero() {
+                    continue;
+                }
+                for c in 0..dof {
+                    kmat[i][c] = kmat[i][c] + mul_odd(ji, jw[k][c]);
+                }
+                kmat[i][dof] = kmat[i][dof] + mul_odd(ji, r[k]);
+            }
+        }
+        // Fixed-order elimination (no pivoting).
+        let mut singular = false;
+        for col in 0..dof {
+            let p = kmat[col][col];
+            if p.is_zero() {
+                singular = true;
+                break;
+            }
+            let pivot_row = kmat[col].clone();
+            for krow in kmat.iter_mut().skip(col + 1) {
+                let f = krow[col] / p;
+                if f.is_zero() {
+                    continue;
+                }
+                for (cell, q) in krow.iter_mut().zip(pivot_row.iter()).skip(col) {
+                    *cell = *cell - mul_odd(f, *q);
+                }
+            }
+        }
+        if singular {
+            continue;
+        }
+        let mut y = vec![Fix128::ZERO; dof];
+        for i in (0..dof).rev() {
+            let mut acc = kmat[i][dof];
+            for c in i + 1..dof {
+                acc = acc - mul_odd(kmat[i][c], y[c]);
+            }
+            y[i] = acc / kmat[i][i];
+        }
+        let mut lambda = [Fix128::ZERO; BLOCK_MAX];
+        let mut ok = true;
+        for j in 0..m {
+            let left = r[j] - dot(&jw[j], &y);
+            if mask & (1 << j) != 0 {
+                lambda[j] = left / alpha[j];
+                if lambda[j] < Fix128::ZERO {
+                    ok = false;
+                    break;
+                }
+            } else if left > Fix128::ZERO {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            return Some(lambda);
+        }
+    }
+    None
 }
