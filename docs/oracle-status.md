@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6124 |
-| 🔴 Red by design | 70 |
+| 🟢 Not ignored (run by CI) | 6165 |
+| 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6225** |
+| **Total** | **6267** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (70)
+## 🔴 Red by design (71)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -49,6 +49,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `editing_the_public_triangles_keeps_queries_consistent` (audit_trimesh.rs) — known defect: AUD-A-S4W2-016: triangles は pub field だが BVH は構築時の AABB のまま。triangles[i] を書き換えると raycast / colli…
 - `escape_index_above_the_24_bit_field_is_not_silently_truncated` (audit_bvh.rs) — known defect: AUD-A-S3W2-011: the escape index is stored in 24 bits and ESCAPE_NONE (u32::MAX) is masked to 0x…
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
+- `held_for_long_with_sleep_on_it_stays_at_its_place` (analytic_holds.rs) — known defect: physics-hold-sleep-creep: the island sleeps while the spring is not at rest, and the sleeping bo…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
@@ -109,7 +110,7 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (9)
+## ⚠️ Known defects without an id (10)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
@@ -117,6 +118,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
+- `held_for_long_with_sleep_on_it_stays_at_its_place` (analytic_holds.rs) — known defect: physics-hold-sleep-creep: the island sleeps while the spring is not at rest, and the sleeping bo…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
@@ -161,7 +163,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6124)
+## 🟢 Not ignored (6165)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -264,6 +266,7 @@ Per-file counts (the test names are in `tests/`):
 | `participant_crowd_md.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
+| `analytic_holds.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
 | `analytic_sdf_force_wiring.rs` | 18 |
 | `analytic_spherical_terrain.rs` | 18 |
@@ -380,6 +383,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_contact_record.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `analytic_sweep_sphere_inside.rs` | 12 |
+| `analytic_touch.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_buckling.rs` | 12 |
 | `audit_fillet_stress.rs` | 12 |
@@ -418,6 +422,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_vibration_wall.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
 | `indep_participant_order.rs` | 11 |
+| `input_log.rs` | 11 |
 | `law_id_world.rs` | 11 |
 | `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
