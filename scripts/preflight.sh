@@ -123,6 +123,8 @@ python3 scripts/package_git_patches.py args >/dev/null
 
 step "identifier moves (G9, against the published release)"
 CARGO_TERM_COLOR=always python3 scripts/test_id_move_check.py
+CARGO_TERM_COLOR=always python3 scripts/test_lock_sources_check.py
+CARGO_TERM_COLOR=always python3 scripts/lock_sources_check.py
 python3 scripts/id_move_check.py
 
 step "browser package without names (scripts)"
