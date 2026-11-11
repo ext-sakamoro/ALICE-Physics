@@ -7669,6 +7669,10 @@ impl PhysicsWorld {
             depth: Fix128,
             rel_vel: Fix128,
             is_sensor: bool,
+            /// Which point of the pair's manifold (`ContactConstraint::feature`).
+            feature: u32,
+            /// The pair's event is reported once, for its first (deepest) point.
+            report: bool,
         }
         let mut results: Vec<ContactInfo> = Vec::new();
         let mut radius_overflow = false;
@@ -7790,25 +7794,37 @@ impl PhysicsWorld {
             if collider_a.is_some() || collider_b.is_some() {
                 let pose_a = (self.bodies[a].position, self.bodies[a].rotation);
                 let pose_b = (self.bodies[b].position, self.bodies[b].rotation);
-                let hit = match (collider_a, collider_b) {
+                let points: Vec<(Contact, u32)> = match (collider_a, collider_b) {
                     (Some(ca), Some(cb)) => {
-                        crate::body_collider::contact_between(ca, pose_a, cb, pose_b)
+                        crate::body_collider::contact_manifold_between(ca, pose_a, cb, pose_b)
                     }
                     (Some(ca), None) => crate::body_collider::contact_with_sphere(
                         ca,
                         pose_a,
                         crate::collider::Sphere::new(pose_b.0, radius_b),
                         true,
-                    ),
+                    )
+                    .map(|c| (c, 0))
+                    .into_iter()
+                    .collect(),
                     (None, Some(cb)) => crate::body_collider::contact_with_sphere(
                         cb,
                         pose_b,
                         crate::collider::Sphere::new(pose_a.0, radius_a),
                         false,
-                    ),
-                    (None, None) => None,
+                    )
+                    .map(|c| (c, 0))
+                    .into_iter()
+                    .collect(),
+                    (None, None) => Vec::new(),
                 };
-                if let Some(contact) = hit {
+                let deepest = points
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (c, _))| c.depth > Fix128::ZERO)
+                    .max_by(|x, y| x.1 .0.depth.cmp(&y.1 .0.depth))
+                    .map(|(k, _)| k);
+                for (k, (contact, feature)) in points.into_iter().enumerate() {
                     if contact.depth > Fix128::ZERO {
                         let rel_vel = (velocity_of(a) - velocity_of(b)).dot(contact.normal);
                         results.push(ContactInfo {
@@ -7820,6 +7836,8 @@ impl PhysicsWorld {
                             depth: contact.depth,
                             rel_vel,
                             is_sensor: self.bodies[a].is_sensor || self.bodies[b].is_sensor,
+                            feature,
+                            report: Some(k) == deepest,
                         });
                     }
                 }
@@ -7852,6 +7870,8 @@ impl PhysicsWorld {
                     depth,
                     rel_vel,
                     is_sensor,
+                    feature: 0,
+                    report: true,
                 });
             }
         }
@@ -7862,15 +7882,17 @@ impl PhysicsWorld {
 
         // Apply results
         for info in results {
-            // Report contact event
-            self.events.report_contact(
-                info.body_a,
-                info.body_b,
-                info.normal,
-                info.point,
-                info.depth,
-                info.rel_vel,
-            );
+            // Report contact event (once per pair, for its deepest point)
+            if info.report {
+                self.events.report_contact(
+                    info.body_a,
+                    info.body_b,
+                    info.normal,
+                    info.point,
+                    info.depth,
+                    info.rel_vel,
+                );
+            }
 
             // Wake a *sleeping* island touched by this contact. Waking
             // unconditionally (pre-1.2.0) reset `idle_frames` of every body in
@@ -7893,9 +7915,11 @@ impl PhysicsWorld {
             }
 
             if info.is_sensor {
-                self.events.report_trigger(info.body_a, info.body_b);
+                if info.report {
+                    self.events.report_trigger(info.body_a, info.body_b);
+                }
             } else {
-                self.add_contact_with_material(info.body_a, info.body_b, info.contact);
+                self.add_manifold_point(info.body_a, info.body_b, info.contact, info.feature);
             }
         }
     }

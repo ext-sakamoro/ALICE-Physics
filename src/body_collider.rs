@@ -344,6 +344,7 @@ impl BodyCollider {
 
 /// The deepest contact between two colliders, or `None`: GJK/EPA on every pair of
 /// pieces whose boxes meet. The normal points from `b` to `a`.
+#[cfg(test)]
 pub(crate) fn contact_between(
     a: &BodyCollider,
     (position_a, rotation_a): (Vec3Fix, QuatFix),
@@ -373,6 +374,53 @@ pub(crate) fn contact_between(
         }
     }
     deepest
+}
+
+/// The contact manifold between two colliders: for every pair of pieces whose
+/// boxes meet and which touch, the box–box clipping manifold
+/// ([`box_box_manifold`], about the pair's deepest GJK/EPA normal) when both
+/// pieces are boxes, the deepest point otherwise. Feature numbers are
+/// `64 · pair + point` (pairs in the order of the two piece lists). The normal
+/// points from `b` to `a`.
+pub(crate) fn contact_manifold_between(
+    a: &BodyCollider,
+    (position_a, rotation_a): (Vec3Fix, QuatFix),
+    b: &BodyCollider,
+    (position_b, rotation_b): (Vec3Fix, QuatFix),
+) -> Vec<(Contact, u32)> {
+    let (box_a, box_b) = (
+        a.world_aabb(position_a, rotation_a),
+        b.world_aabb(position_b, rotation_b),
+    );
+    if !box_a.intersects(&box_b) {
+        return Vec::new();
+    }
+    let pieces_a = a.pieces(position_a, rotation_a, &box_b);
+    let pieces_b = b.pieces(position_b, rotation_b, &box_a);
+    let mut out = Vec::new();
+    let mut pair = 0u32;
+    for (pa, box_a) in &pieces_a {
+        for (pb, box_b) in &pieces_b {
+            let base = 64 * pair;
+            pair += 1;
+            if !box_a.intersects(box_b) {
+                continue;
+            }
+            let Some(deepest) = contact(pa, pb) else {
+                continue;
+            };
+            let points = match (placed_box(pa), placed_box(pb)) {
+                (Some(ba), Some(bb)) => box_box_manifold(&ba, &bb, deepest.normal),
+                _ => Vec::new(),
+            };
+            if points.is_empty() {
+                out.push((deepest, base));
+            } else {
+                out.extend(points.into_iter().map(|(c, f)| (c, base + f)));
+            }
+        }
+    }
+    out
 }
 
 /// Whether any piece of `a` meets any piece of `b` (GJK; touching counts).
@@ -2029,4 +2077,217 @@ mod tests {
             .static_contact(at, QuatFix::IDENTITY, &field(5, 5, Fix128::ZERO))
             .is_none());
     }
+}
+
+/// A box placed in the world: centre, rotation, half extents.
+#[derive(Clone, Copy)]
+struct PlacedBox {
+    centre: Vec3Fix,
+    rotation: QuatFix,
+    half: Vec3Fix,
+}
+
+impl PlacedBox {
+    fn axis(&self, i: usize) -> Vec3Fix {
+        let e = [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z][i];
+        self.rotation.unit_rotation().rotate_vec(e)
+    }
+    fn half_along(&self, i: usize) -> Fix128 {
+        [self.half.x, self.half.y, self.half.z][i]
+    }
+}
+
+/// The piece as a box in the world, when it is one (a box shape, or a compound's
+/// box child placed by the body's pose and its own).
+fn placed_box(piece: &Piece<'_>) -> Option<PlacedBox> {
+    match piece {
+        Piece::Shape(PosedShape {
+            shape: Shape::Box { half_extents },
+            position,
+            rotation,
+        }) => Some(PlacedBox {
+            centre: *position,
+            rotation: *rotation,
+            half: *half_extents,
+        }),
+        Piece::Child {
+            child,
+            position,
+            rotation,
+        } => match &child.shape {
+            ShapeRef::Box(ob) => {
+                let body_rot = rotation.unit_rotation();
+                let child_rot = body_rot.mul(child.local_rotation);
+                let child_pos = *position + body_rot.rotate_vec(child.local_position);
+                Some(PlacedBox {
+                    centre: child_pos + child_rot.rotate_vec(ob.center),
+                    rotation: child_rot.mul(ob.rotation),
+                    half: ob.half_extents,
+                })
+            }
+            _ => None,
+        },
+        Piece::Shape(_) => None,
+    }
+}
+
+/// The face of `b` whose outward normal is closest to `dir`: `(axis, sign)`,
+/// the lowest axis on ties.
+fn face_towards(b: &PlacedBox, dir: Vec3Fix) -> (usize, Fix128, Fix128) {
+    let mut best = (0, Fix128::ONE, Fix128::NEG_ONE);
+    for i in 0..3 {
+        let d = b.axis(i).dot(dir);
+        let (mag, sign) = if d.is_negative() {
+            (-d, Fix128::NEG_ONE)
+        } else {
+            (d, Fix128::ONE)
+        };
+        if mag > best.2 {
+            best = (i, sign, mag);
+        }
+    }
+    best
+}
+
+/// The contact manifold of two boxes (face clipping, Ericson "Real-Time
+/// Collision Detection" §5.3 and Catto's Box2D): the reference face is the face
+/// of either box most aligned with the contact normal `n` (from B to A; B's
+/// face on ties), the incident face the other box's face most opposed to it;
+/// the incident face is clipped against the reference face's four side planes
+/// (Sutherland–Hodgman) and every clipped point below the reference plane is a
+/// contact of that depth, with the reference normal (oriented from B to A). At
+/// most four points are kept: the deepest, the farthest from it, and the two of
+/// largest signed area on either side of that pair. A point's feature number
+/// names where it came from (an incident vertex `0..4`, or an incident edge cut
+/// by a side plane `32 + 4·plane + edge`), so it keeps its number while the
+/// boxes rest. Empty when no clipped point is below the plane.
+fn box_box_manifold(a: &PlacedBox, b: &PlacedBox, n: Vec3Fix) -> Vec<(Contact, u32)> {
+    let (ia, sa, va) = face_towards(a, -n);
+    let (ib, sb, vb) = face_towards(b, n);
+    // Reference: B (normal along +n) unless A's face is strictly better aligned.
+    let (reference, incident, ref_axis, ref_sign, ref_is_b) = if va > vb {
+        (a, b, ia, sa, false)
+    } else {
+        (b, a, ib, sb, true)
+    };
+    let ref_n = reference.axis(ref_axis) * ref_sign;
+    let ref_c = reference.centre + ref_n * reference.half_along(ref_axis);
+    let (inc_axis, inc_sign, _) = face_towards(incident, -ref_n);
+    let inc_n = incident.axis(inc_axis) * inc_sign;
+    let others = |i: usize| -> (usize, usize) { ((i + 1) % 3, (i + 2) % 3) };
+    let (j, k) = others(inc_axis);
+    let (uj, uk) = (incident.axis(j), incident.axis(k));
+    let (hj, hk) = (incident.half_along(j), incident.half_along(k));
+    let fc = incident.centre + inc_n * incident.half_along(inc_axis);
+    let mut poly: Vec<(Vec3Fix, u32)> = [(1, 1), (-1, 1), (-1, -1), (1, -1)]
+        .iter()
+        .enumerate()
+        .map(|(v, (s1, s2))| {
+            (
+                fc + uj * (hj * Fix128::from_int(*s1)) + uk * (hk * Fix128::from_int(*s2)),
+                v as u32,
+            )
+        })
+        .collect();
+    // The reference face's side planes: normal `±u`, offset `u·c_ref ± h`.
+    let (rj, rk) = others(ref_axis);
+    let mut planes = Vec::with_capacity(4);
+    for axis in [rj, rk] {
+        let u = reference.axis(axis);
+        let h = reference.half_along(axis);
+        let c = u.dot(reference.centre);
+        planes.push((u, c + h));
+        planes.push((-u, -c + h));
+    }
+    for (pi, (pn, off)) in planes.iter().enumerate() {
+        if poly.is_empty() {
+            break;
+        }
+        let mut out = Vec::with_capacity(poly.len() + 1);
+        for e in 0..poly.len() {
+            let (p, fp) = poly[e];
+            let (q, _) = poly[(e + 1) % poly.len()];
+            let dp = pn.dot(p) - *off;
+            let dq = pn.dot(q) - *off;
+            if dp <= Fix128::ZERO {
+                out.push((p, fp));
+            }
+            if (dp <= Fix128::ZERO) != (dq <= Fix128::ZERO) {
+                let t = dp / (dp - dq);
+                out.push((p + (q - p) * t, 32 + 4 * pi as u32 + (fp & 3)));
+            }
+        }
+        poly = out;
+    }
+    let mut points: Vec<(Vec3Fix, Fix128, u32)> = poly
+        .into_iter()
+        .filter_map(|(p, f)| {
+            let s = ref_n.dot(p - ref_c);
+            (s < Fix128::ZERO).then_some((p, -s, f))
+        })
+        .collect();
+    if points.len() > 4 {
+        points = reduce_to_four(points, ref_n);
+    }
+    points
+        .into_iter()
+        .map(|(p, depth, f)| {
+            let on_ref = p + ref_n * depth;
+            let contact = if ref_is_b {
+                Contact {
+                    depth,
+                    normal: ref_n,
+                    point_a: p,
+                    point_b: on_ref,
+                }
+            } else {
+                Contact {
+                    depth,
+                    normal: -ref_n,
+                    point_a: on_ref,
+                    point_b: p,
+                }
+            };
+            (contact, f)
+        })
+        .collect()
+}
+
+/// Four of the clipped points that keep the support area: the deepest, the
+/// farthest from it, then the largest positive and the largest negative signed
+/// area with that pair about `n` (the first in order on ties).
+fn reduce_to_four(points: Vec<(Vec3Fix, Fix128, u32)>, n: Vec3Fix) -> Vec<(Vec3Fix, Fix128, u32)> {
+    let mut i0 = 0;
+    for (i, p) in points.iter().enumerate() {
+        if p.1 > points[i0].1 {
+            i0 = i;
+        }
+    }
+    let p0 = points[i0].0;
+    let mut i1 = if i0 == 0 { 1 } else { 0 };
+    for (i, p) in points.iter().enumerate() {
+        if i != i0 && (p.0 - p0).length_squared() > (points[i1].0 - p0).length_squared() {
+            i1 = i;
+        }
+    }
+    let p1 = points[i1].0;
+    let area = |p: Vec3Fix| (p1 - p0).cross(p - p0).dot(n);
+    let (mut i2, mut i3): (Option<usize>, Option<usize>) = (None, None);
+    for (i, p) in points.iter().enumerate() {
+        if i == i0 || i == i1 {
+            continue;
+        }
+        let s = area(p.0);
+        if s > Fix128::ZERO && i2.is_none_or(|j| s > area(points[j].0)) {
+            i2 = Some(i);
+        }
+        if s < Fix128::ZERO && i3.is_none_or(|j| s < area(points[j].0)) {
+            i3 = Some(i);
+        }
+    }
+    let mut keep = vec![i0, i1];
+    keep.extend(i2);
+    keep.extend(i3);
+    keep.sort_unstable();
+    keep.into_iter().map(|i| points[i]).collect()
 }
