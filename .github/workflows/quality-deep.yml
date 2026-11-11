@@ -7,6 +7,7 @@
 # - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
 # - ignored : `#[ignore]` test を実際に走らせて理由文の主張と突き合わせる (2026-09-30 追加)
+# - opt0-suite : CI が opt-level 2 (profile ci-test) で走らせる suite 全体の 2 step を opt-level 0 で
 # - coverage-full : lib + 統合試験 (tests/) の行 coverage を週次で測り、専用の baseline
 #                   (scripts/line-coverage-baseline-full.txt) を下回ったら失敗 push ごとの
 #                   ratchet (security-audit.yml) は lib だけを測る (統合込みは 8 core で約 68 分)
@@ -355,6 +356,33 @@ jobs:
           name: ignored-report
           path: target/ignored-report.md
           if-no-files-found: ignore
+
+  opt0-suite:
+    # CI の Test job は suite 全体の 2 step (`cargo test` / `cargo test --features parallel`) を
+    # opt-level 2 の profile ci-test で走らせる (Cargo.toml、debug assertions と overflow 検査は有効)
+    # 最適化しない build でだけ現れる差 (未定義の振る舞いに依る結果・時間に依る oracle 等) を
+    # 見落とさないため、同じ 2 step を週に 1 回 opt-level 0 (test profile) で走らせる
+    # 0 件の実行は red (test result の行が無い・passed が 0)
+    name: Whole suite at opt-level 0 (the two ci-test steps of CI, unoptimised)
+    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test and cargo test --features parallel at opt-level 0
+        shell: bash
+        run: |
+          set -o pipefail
+          for features in "" "parallel"; do
+            log="opt0-${features:-default}.log"
+            cargo test --no-fail-fast ${features:+--features "$features"} 2>&1 | tee "$log"
+            lines=$(grep -c '^test result: ' "$log" || true)
+            passed=$(grep -E '^test result: ' "$log" | sed -E 's/.* ([0-9]+) passed.*/\1/' | awk '{s+=$1} END {print s+0}')
+            echo "opt-level 0, features '${features:-default}': $lines result line(s), $passed test(s) passed" | tee -a "$GITHUB_STEP_SUMMARY"
+            [ "${lines:-0}" -gt 0 ] && [ "${passed:-0}" -gt 0 ] || { echo "::error::no test ran at opt-level 0 (features '${features:-default}')"; exit 1; }
+          done
 
   bench-regress:
     name: Bench regression (criterion, informational)

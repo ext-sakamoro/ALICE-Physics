@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6106 |
+| 🟢 Not ignored (run by CI) | 6108 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6207** |
+| **Total** | **6209** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -161,7 +161,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6106)
+## 🟢 Not ignored (6108)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -659,6 +659,7 @@ Per-file counts (the test names are in `tests/`):
 | `overflow_flag_previous_bits.rs` | 2 |
 | `participant_panic_leaves_world_faulted.rs` | 2 |
 | `poisoned_world_fault.rs` | 2 |
+| `test_profile_checks.rs` | 2 |
 | `vehicle_update_bits.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
 | `world_query_previous_bits.rs` | 2 |

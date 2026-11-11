@@ -699,6 +699,22 @@ codegen-units = 1
 panic = "unwind"
 strip = true
 
+# the two whole-suite test steps of CI (`cargo test` and `cargo test --features parallel`,
+# and the same two in scripts/preflight.sh) build at opt-level 2: the transient FEM oracles
+# alone took 41 min of a 2 h job in an unoptimised build and about 4 min at opt-level 2.
+# Debug assertions and overflow checks stay on (tests/test_profile_checks.rs fails
+# otherwise), and the other test steps (the count-gated goldens among them) stay at
+# opt-level 0, so every committed golden is compared at both levels. The coverage run
+# keeps the test profile: optimisation would move line attribution
+[profile.ci-test]
+inherits = "test"
+opt-level = 2
+debug-assertions = true
+overflow-checks = true
+# line tables only: two full test builds (default and parallel) with full debug info ran
+# the ubuntu runner out of disk; panics still name the file and line
+debug = "line-tables-only"
+
 [profile.bench]
 opt-level = 3
 lto = "thin"
