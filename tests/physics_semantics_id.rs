@@ -981,7 +981,7 @@ const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[(
 
 /// Stepping paths pinned after the 3.x releases (their folds did not hold them), left out of the
 /// fold that reproduces the identifiers 3.x stamped, as the peer and Law output entries are
-const PINNED_AFTER_3X: &[&str] = &["secondary chain", "sleep by time"];
+const PINNED_AFTER_3X: &[&str] = &["secondary chain", "sleep by time", "overflow flag"];
 
 /// An identifier of an earlier `alice-det-math` generation (a row of another generation, or the
 /// fold of its pins before the peer and Law output entries were folded, as 3.x stamped) is in
