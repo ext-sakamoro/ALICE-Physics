@@ -14,8 +14,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 26 |
 | world API | used through another `PhysicsWorld` method | 13 |
-| binding | reached only from the C ABI, Python or WebAssembly bindings | 3 |
-| standalone | a Rust API that only examples call | 124 |
+| binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
+| standalone | a Rust API that only examples call | 125 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -57,9 +57,11 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 63 of 228 items) | 63 / 133 / 10 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 63 of 228 items) | 63 / 134 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
+| `holds` | binding (world API 1 of 10 items) | 0 / 1 / 8 / 1 / 0 | WebAssembly |
+| `input_log` | binding | 0 / 0 / 7 / 2 / 0 | WebAssembly |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
 | `rope_participant` | binding | 0 / 0 / 6 / 1 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -103,7 +105,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `fatigue` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `filter` | standalone (step 3 of 18 items) | 3 / 0 / 0 / 15 / 0 | C ABI, Python, WebAssembly |
+| `filter` | standalone (step 3, binding 1 of 18 items) | 3 / 0 / 1 / 14 / 0 | C ABI, Python, WebAssembly |
 | `flow_viz` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fluid` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `fluid_netcode` | standalone | 0 / 0 / 0 / 10 / 0 | — |
@@ -178,6 +180,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `thermal` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
+| `touch` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `turbulence` | standalone | 0 / 0 / 0 / 34 / 0 | — |
 | `vehicle` | standalone | 0 / 0 / 0 / 28 / 0 | — |

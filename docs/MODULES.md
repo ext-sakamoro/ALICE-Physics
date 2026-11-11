@@ -61,7 +61,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
 | `material` | per-pair friction and restitution with combine rules |  | [`material_registry_presets`](../examples/material_registry_presets.rs) | step |
-| `filter` | collision layers, masks and groups |  |  | standalone (step 3 of 18 items) |
+| `filter` | collision layers, masks and groups |  |  | standalone (step 3, binding 1 of 18 items) |
 | `force` | force fields: wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |  | [`particle_emitter_forces`](../examples/particle_emitter_forces.rs) | step |
 | `motor` | 1D / 3D PD controllers for joint motors |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | step |
 | `sleeping` | sleep detection and union-find islands |  |  | step |
@@ -145,9 +145,9 @@ this file or listed twice, or when a linked example or test does not exist.
 | `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | world API |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) |  | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) | standalone |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag, also as a world participant |  | [`participant_buoyancy_zone`](../examples/participant_buoyancy_zone.rs) | standalone (binding 8 of 17 items) |
-| `holds` | a blow from a point, and holding bodies at places by critically damped springs |  | [`analytic_holds`](../tests/analytic_holds.rs) |  |
-| `input_log` | the inputs of a run by step, replayed to the same state digest and carried as a short code |  | [`input_log`](../tests/input_log.rs) |  |
-| `touch` | a visitor's touch on a body (grab a point, drag it, let go) as log inputs on a 2⁻¹⁶ grid; a cloth's point is a particle, held pinned, returned with its mass |  | [`analytic_touch`](../tests/analytic_touch.rs) |  |
+| `holds` | a blow from a point, and holding bodies at places by critically damped springs |  | [`analytic_holds`](../tests/analytic_holds.rs) | binding (world API 1 of 10 items) |
+| `input_log` | the inputs of a run by step, replayed to the same state digest and carried as a short code |  | [`input_log`](../tests/input_log.rs) | binding |
+| `touch` | a visitor's touch on a body (grab a point, drag it, let go) as log inputs on a 2⁻¹⁶ grid; a cloth's point is a particle, held pinned, returned with its mass |  | [`analytic_touch`](../tests/analytic_touch.rs) | standalone |
 | `wind_zone` | bounded wind volume applying drag, also as a world participant |  | [`participant_wind_zone`](../examples/participant_wind_zone.rs) | standalone (binding 5 of 14 items) |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |
