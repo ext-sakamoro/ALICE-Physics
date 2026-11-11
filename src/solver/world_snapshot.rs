@@ -645,6 +645,10 @@ fn r_config(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<Sol
             1 => SolverBackend::Tgs,
             _ => return Err(invalid(S)),
         },
+        // Version 9 writes the setting in its tail when it is off; every
+        // older blob had speculative contacts' absence written as nothing
+        // and reads them as on (the default).
+        speculative_contacts: true,
     })
 }
 
@@ -1746,6 +1750,11 @@ struct Decoded {
     ccd: super::WorldCcdConfig,
     /// The body axis locks (version 7; none before)
     axis_locks: Vec<crate::axis_lock::AxisLock>,
+    /// The contact points of the last substep (`static_touch`, `sdf_touch`,
+    /// `body_touch`) and the speculative setting (version 9; none and on
+    /// before)
+    touches: [Vec<(usize, usize, u32)>; 3],
+    speculative_contacts: bool,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -1954,6 +1963,14 @@ impl PhysicsWorld {
                 .materials
                 .iter()
                 .any(|m| m.contact_compliance != crate::material::DEFAULT_CONTACT_COMPLIANCE);
+        // ... or when the substep's contact points (`static_touch`,
+        // `sdf_touch`, `body_touch`: which points the next substep treats as
+        // found again) or the speculative setting differ from a fresh world's.
+        let touches = !self.static_touch.is_empty()
+            || !self.sdf_touch.is_empty()
+            || !self.body_touch.is_empty()
+            || !self.config.speculative_contacts;
+        let features = features || touches;
         let version = if features {
             Self::WORLD_SNAPSHOT_VERSION
         } else if static_target {
@@ -2173,6 +2190,17 @@ impl PhysicsWorld {
         } else if version >= 7 {
             // a version 8 blob always has the lock section; empty: no lock
             w.usize(0);
+        }
+        if version >= 9 {
+            for set in [&self.static_touch, &self.sdf_touch, &self.body_touch] {
+                w.usize(set.len());
+                for &(x, y, f) in set.iter() {
+                    w.usize(x);
+                    w.usize(y);
+                    w.u32(f);
+                }
+            }
+            w.bool(self.config.speculative_contacts);
         }
 
         let mut data = w.0;
@@ -2537,6 +2565,11 @@ impl PhysicsWorld {
         self.fields_mut().read_values(&d.fields);
         self.ccd = d.ccd;
         self.set_axis_locks(d.axis_locks);
+        let [static_touch, sdf_touch, body_touch] = d.touches;
+        self.static_touch = static_touch;
+        self.sdf_touch = sdf_touch;
+        self.body_touch = body_touch;
+        self.config.speculative_contacts = d.speculative_contacts;
     }
 }
 
@@ -2910,6 +2943,23 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     } else {
         Vec::new()
     };
+    let mut touches: [Vec<(usize, usize, u32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut speculative_contacts = true;
+    if version >= 9 {
+        for (k, set) in touches.iter_mut().enumerate() {
+            let section = ["static_touch", "sdf_touch", "body_touch"][k];
+            let n = r.len(section, 2 * 8 + 4)?;
+            for _ in 0..n {
+                let entry = (r.usize(section)?, r.usize(section)?, r.u32()?);
+                // Sorted, as the solver keeps them (it searches them).
+                if set.last().is_some_and(|last| *last >= entry) {
+                    return Err(WorldSnapshotError::InvalidValue { section });
+                }
+                set.push(entry);
+            }
+        }
+        speculative_contacts = r.bool("speculative_contacts")?;
+    }
 
     Ok(Decoded {
         config,
@@ -2946,6 +2996,8 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         fields,
         ccd,
         axis_locks,
+        touches,
+        speculative_contacts,
         ids: None,
     })
 }

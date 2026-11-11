@@ -1337,6 +1337,17 @@ pub struct SolverConfig {
     /// keeps today's `step` behavior bit-for-bit. See [`SolverBackend`] for
     /// the `Tgs` path's documented gaps.
     pub solver_backend: SolverBackend,
+    /// Speculative contacts (Catto, "Continuous Collision", GDC 2013), on by
+    /// default: a point within `(|v_rel| + |ω_a| R_a + |ω_b| R_b) h + |g| h²` of
+    /// a static collider or another body is kept as a contact with a gap, and
+    /// may approach by at most that gap in the substep, so no translation in
+    /// a substep carries a body through a surface whatever its speed (the
+    /// limit is the `Fix128` range of the grown broad-phase box, a reach near
+    /// `2⁶²` m per substep, not a physical speed). Off, a contact exists only
+    /// while two shapes overlap at detection, and a body fast enough to cross
+    /// a thin surface in one substep passes it unless the continuous
+    /// collision ([`crate::solver::WorldCcdConfig`]) sweeps it.
+    pub speculative_contacts: bool,
 }
 
 /// Physics configuration (alias for `SolverConfig`)
@@ -1360,6 +1371,7 @@ impl Default for SolverConfig {
             damping_rate: Fix128::ZERO,
             warm_start_factor: Fix128::from_ratio(85, 100), // 0.85
             solver_backend: SolverBackend::Xpbd,
+            speculative_contacts: true,
         }
     }
 }
@@ -2587,6 +2599,26 @@ impl PhysicsWorld {
             }
             self.remap_joint_indices(last, idx);
         }
+        // The contact points of the last substep (which points the next one
+        // finds again): the removed body's go, the moved body's follow it. A
+        // pair is kept as `(a, b)` with `a < b`, as detection reports it; one
+        // whose order the move reverses is dropped (detection would report it
+        // the other way round, with other point numbers), so its points count
+        // as new in the next substep.
+        let remap = |x: usize| if x == last { idx } else { x };
+        for set in [&mut self.static_touch, &mut self.sdf_touch] {
+            set.retain(|&(b, _, _)| b != idx);
+            for e in set.iter_mut() {
+                e.0 = remap(e.0);
+            }
+            set.sort_unstable();
+        }
+        self.body_touch.retain(|&(a, b, _)| a != idx && b != idx);
+        for e in &mut self.body_touch {
+            *e = (remap(e.0), remap(e.1), e.2);
+        }
+        self.body_touch.retain(|&(a, b, _)| a < b);
+        self.body_touch.sort_unstable();
 
         // Rebuild IslandManager to match new body count and connectivity
         let new_len = self.bodies.len();
@@ -2673,6 +2705,14 @@ impl PhysicsWorld {
     ///
     /// The hook is called with (`body_a_index`, `body_b_index`, &contact).
     /// Return `false` to skip the contact (e.g., for one-way platforms).
+    ///
+    /// It is called once per contact point per substep, for every point the
+    /// detection reports: an overlapping one (`depth > 0`), and, with
+    /// [`SolverConfig::speculative_contacts`] on (the default), one apart by
+    /// less than the speculative margin (`depth ≤ 0`, the gap). So a hook sees
+    /// a pair in the substeps before it touches, and can veto an approaching
+    /// pair before the speculative bound slows it; a skipped point is neither
+    /// solved nor pushed out of a start-of-substep overlap.
     #[cfg(feature = "std")]
     pub fn add_pre_solve_hook(&mut self, hook: PreSolveHook) {
         self.pre_solve_hooks.push(hook);
@@ -2688,6 +2728,9 @@ impl PhysicsWorld {
     ///
     /// Contact modifiers can mutate contact properties (normal, depth, friction,
     /// restitution) before solving. Return false from `modify_contact` to discard.
+    /// They see the same points as the pre-solve hooks (speculative points
+    /// with `depth ≤ 0` included), before any start-of-substep overlap is
+    /// pushed out.
     #[cfg(feature = "std")]
     pub fn add_contact_modifier(&mut self, modifier: Box<dyn ContactModifier>) {
         self.contact_modifiers.push(modifier);
@@ -7445,8 +7488,12 @@ impl PhysicsWorld {
             // the margin leaves out can reach the floor, and gravity adds at
             // most `|g| h²`; a pivot the body turns on stays a contact instead of
             // leaving the floor between substeps and landing again.
-            let margin = (body.velocity.length() + body.angular_velocity.length() * radius) * h
-                + self.config.gravity.length() * h * h;
+            let margin = if self.config.speculative_contacts {
+                (body.velocity.length() + body.angular_velocity.length() * radius) * h
+                    + self.config.gravity.length() * h * h
+            } else {
+                Fix128::ZERO
+            };
             // Every collider is met at the pose the body was predicted at.
             let per_collider = self.static_points(i, radius, margin);
             // The deepest point stands for each collider in the event.
@@ -7717,9 +7764,10 @@ impl PhysicsWorld {
         // kept as a contact with a gap. Zero for `h = 0` (the temporal
         // Gauss–Seidel backend detects once per tick, without gaps).
         let gravity_reach = self.config.gravity.length() * h * h;
+        let speculative = self.config.speculative_contacts;
         let margins: Vec<Fix128> = (0..n)
             .map(|i| {
-                if h.is_zero() {
+                if h.is_zero() || !speculative {
                     return Fix128::ZERO;
                 }
                 let body = &self.bodies[i];
@@ -8062,8 +8110,14 @@ impl PhysicsWorld {
                     // Parked bodies are on no joint, so their island is
                     // themselves: same outcome as `wake_island`, without its
                     // walk over every body.
+                    // It takes the force-field kick of phase 1 it skipped
+                    // while parked (an unparked body carries it from phase 1
+                    // on), so the stages after detection read the same
+                    // velocity either way.
+                    let kicked = self.detection_velocity(x);
                     self.islands.wake_body(x);
                     self.park.unpark(x, &mut self.stage_work);
+                    self.bodies[x].velocity = kicked;
                 } else {
                     self.islands.wake_island(x);
                 }
