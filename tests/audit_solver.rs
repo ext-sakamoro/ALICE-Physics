@@ -740,6 +740,7 @@ mod bridge {
                 friction: fx(0.5),
                 restitution: fx(0.25),
                 cached_lambda: Fix128::ZERO,
+                feature: 0,
             });
         }
         let mut rec = Recorder::default();
@@ -779,6 +780,7 @@ mod bridge {
             friction: fx(0.5),
             restitution: fx(0.25),
             cached_lambda: Fix128::ZERO,
+            feature: 0,
         });
         let mut rec = Recorder::default();
         w.solve_contact_constraints_with_bridge(&mut rec)

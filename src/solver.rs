@@ -732,6 +732,14 @@ pub struct ContactConstraint {
     /// (contacts are re-detected every substep since 1.2.0): the separation
     /// along `contact.normal` already applied by earlier solver iterations.
     pub cached_lambda: Fix128,
+    /// Which point of the pair's contact manifold this is: 0 for a pair that
+    /// touches at one point; for a face of a box (or another solid with flat
+    /// faces) on a floor, the piece and the corner direction the point came
+    /// from (`4 · piece + direction`, see `crate::body_collider`). The same
+    /// corner keeps its number from tick to tick, so the warm start of the
+    /// temporal Gauss–Seidel backend finds its impulse again when another corner
+    /// lifts off.
+    pub feature: u32,
 }
 
 impl ContactConstraint {
@@ -745,6 +753,7 @@ impl ContactConstraint {
             friction: Fix128::from_ratio(3, 10), // 0.3 friction
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
             cached_lambda: Fix128::ZERO,
+            feature: 0,
         }
     }
 }
@@ -1056,11 +1065,29 @@ fn tgs_cache_key(
     b: u64,
     ordinals: &mut std::collections::BTreeMap<(u64, u64), u64>,
 ) -> u64 {
-    let slot = ordinals.entry((a, b)).or_insert(0);
+    tgs_feature_key(tag, a, b, 0, ordinals)
+}
+
+/// [`tgs_cache_key`] for manifold point `feature` of the pair
+/// ([`ContactConstraint::feature`]): the ordinal counts the entries of the same
+/// pair *and feature*, so a corner keeps its key when another corner lifts off.
+/// Feature 0 hashes the words [`tgs_cache_key`] always hashed (its keys are
+/// unchanged); a nonzero feature is one more word.
+fn tgs_feature_key(
+    tag: u64,
+    a: u64,
+    b: u64,
+    feature: u32,
+    ordinals: &mut std::collections::BTreeMap<(u64, u64), u64>,
+) -> u64 {
+    let pair = (a, b ^ (u64::from(feature) << 32));
+    let slot = ordinals.entry(pair).or_insert(0);
     let ordinal = *slot;
     *slot += 1;
     let mut h: u64 = 0x9E37_79B9_7F4A_7C15;
-    for w in [tag, a, b, ordinal] {
+    let words = [tag, a, b, ordinal, u64::from(feature)];
+    let used = if feature == 0 { 4 } else { 5 };
+    for &w in &words[..used] {
         h ^= w;
         h = h.wrapping_add(0x9E37_79B9_7F4A_7C15);
         h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -3408,6 +3435,18 @@ impl PhysicsWorld {
     ///
     /// Automatically looks up friction/restitution from the material table.
     pub fn add_contact_with_material(&mut self, body_a: usize, body_b: usize, contact: Contact) {
+        self.add_manifold_point(body_a, body_b, contact, 0);
+    }
+
+    /// [`Self::add_contact_with_material`] for point `feature` of a pair's
+    /// contact manifold ([`ContactConstraint::feature`]).
+    pub(crate) fn add_manifold_point(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        contact: Contact,
+        feature: u32,
+    ) {
         let combined = self.combined_material(body_a, body_b);
         let constraint = ContactConstraint {
             body_a,
@@ -3416,6 +3455,7 @@ impl PhysicsWorld {
             friction: combined.friction,
             restitution: combined.restitution,
             cached_lambda: Fix128::ZERO,
+            feature,
         };
         self.add_contact(constraint);
     }
@@ -4365,10 +4405,11 @@ impl PhysicsWorld {
                 } else {
                     c
                 };
-                let key = tgs_cache_key(
+                let key = tgs_feature_key(
                     TGS_KEY_CONTACT,
                     ia.min(ib),
                     ia.max(ib),
+                    c.feature,
                     &mut contact_ordinals,
                 );
                 if discarded.get(i).copied().unwrap_or(false) {
@@ -5895,6 +5936,7 @@ impl PhysicsWorld {
                 friction,
                 restitution,
                 cached_lambda: constraint.cached_lambda,
+                feature: constraint.feature,
             });
             mapping.push(i);
         }
@@ -6765,7 +6807,7 @@ impl PhysicsWorld {
     fn add_static_contacts(&mut self) {
         let default_radius = self.sdf_collision_radius;
         let count = self.stage_count();
-        let mut found: Vec<(usize, Contact)> = Vec::new();
+        let mut found: Vec<(usize, Contact, u32)> = Vec::new();
         for k in 0..count {
             let i = self.stage_body(k);
             self.stage_work.resolution_bodies += 1;
@@ -6776,34 +6818,46 @@ impl PhysicsWorld {
             let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
             let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
             for (collider_index, collider) in self.static_colliders.iter().enumerate() {
-                let hit = match shaped {
-                    Some(c) => c.static_contact(body.position, body.rotation, collider),
-                    None => collider.collide_sphere(body.position, radius),
+                let points = match shaped {
+                    Some(c) => c.static_manifold(body.position, body.rotation, collider),
+                    None => collider
+                        .collide_sphere(body.position, radius)
+                        .map(|c| (c, 0))
+                        .into_iter()
+                        .collect(),
                 };
-                if let Some(contact) = hit {
-                    self.events.report_static_hit(crate::event::StaticHit {
-                        body: i,
-                        collider: collider_index,
-                        normal: contact.normal,
-                        point: contact.point_a,
-                        speed: (-body.velocity.dot(contact.normal)).max(Fix128::ZERO),
-                    });
-                    let approach = -(body.position - body.prev_position).dot(contact.normal);
-                    let moved = approach.max(Fix128::ZERO).min(contact.depth);
-                    let overlap = contact.depth - moved;
-                    if overlap > Fix128::ZERO {
-                        let shift = contact.normal * overlap;
-                        body.prev_position = body.prev_position + shift;
-                        if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
-                            *x = *x + shift;
-                        }
+                // The deepest point stands for the collider in the event and in
+                // the start-of-substep overlap (the manifold's points share the
+                // normal; shifting once per point would shift the body as many
+                // times).
+                let Some(&(deepest, _)) = points.iter().max_by(|x, y| x.0.depth.cmp(&y.0.depth))
+                else {
+                    continue;
+                };
+                self.events.report_static_hit(crate::event::StaticHit {
+                    body: i,
+                    collider: collider_index,
+                    normal: deepest.normal,
+                    point: deepest.point_a,
+                    speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
+                });
+                let approach = -(body.position - body.prev_position).dot(deepest.normal);
+                let moved = approach.max(Fix128::ZERO).min(deepest.depth);
+                let overlap = deepest.depth - moved;
+                if overlap > Fix128::ZERO {
+                    let shift = deepest.normal * overlap;
+                    body.prev_position = body.prev_position + shift;
+                    if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                        *x = *x + shift;
                     }
-                    found.push((i, contact));
+                }
+                for (contact, feature) in points {
+                    found.push((i, contact, feature));
                 }
             }
         }
-        for (i, contact) in found {
-            self.add_contact_with_material(i, STATIC_BODY, contact);
+        for (i, contact, feature) in found {
+            self.add_manifold_point(i, STATIC_BODY, contact, feature);
         }
     }
 

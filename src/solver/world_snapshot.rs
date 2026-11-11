@@ -1779,7 +1779,15 @@ impl PhysicsWorld {
     /// collider), written as the tag `u64::MAX`; the writer uses it only when such
     /// a contact is held, so a reader of version 7 refuses the blob by its version
     /// instead of reading the tag as a body index.
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 8;
+    /// Version 9 has the layout of version 8 with each contact constraint
+    /// followed by its manifold point number ([`ContactConstraint::feature`],
+    /// u32); the writer uses it only when a held contact has a nonzero one, so a
+    /// world whose contacts are single points writes the version it wrote before.
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 9;
+
+    /// The version [`Self::snapshot_world`] writes for a world with a contact
+    /// against a static target and no manifold point numbers.
+    const WORLD_SNAPSHOT_VERSION_WITH_STATIC_TARGET: u16 = 8;
 
     /// The version [`Self::snapshot_world`] writes for a world with axis locks and
     /// no contact against a static target.
@@ -1922,8 +1930,11 @@ impl PhysicsWorld {
         let static_target = self.contact_constraints.iter().any(|c| {
             c.body_a == crate::solver::STATIC_BODY || c.body_b == crate::solver::STATIC_BODY
         });
-        let version = if static_target {
+        let features = self.contact_constraints.iter().any(|c| c.feature != 0);
+        let version = if features {
             Self::WORLD_SNAPSHOT_VERSION
+        } else if static_target {
+            Self::WORLD_SNAPSHOT_VERSION_WITH_STATIC_TARGET
         } else if locks.is_some() {
             Self::WORLD_SNAPSHOT_VERSION_WITH_LOCKS
         } else {
@@ -1963,6 +1974,9 @@ impl PhysicsWorld {
             w.fix(c.friction);
             w.fix(c.restitution);
             w.fix(c.cached_lambda);
+            if features {
+                w.u32(c.feature);
+            }
         }
 
         w.usize(self.sdf_colliders.len());
@@ -2669,6 +2683,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             friction: r.fix()?,
             restitution: r.fix()?,
             cached_lambda: r.fix()?,
+            feature: if version >= 9 { r.u32()? } else { 0 },
         });
     }
 
@@ -3512,6 +3527,7 @@ mod tests {
             target_distance: fx(3, 2),
             compliance: fx(1, 1000),
             cached_lambda: Fix128::ZERO,
+            feature: 0,
         });
 
         // shaped + compound bodies above the height field, a body above the SDF

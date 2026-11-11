@@ -63,6 +63,25 @@ impl Support for Piece<'_> {
 }
 
 impl Piece<'_> {
+    /// Whether the piece has flat faces (or a flat cap) it can rest on: a box, a
+    /// wedge, a cylinder, a cone, a compound's box or convex hull. Such a piece
+    /// touches a floor along a face, so it gets a contact manifold
+    /// ([`face_manifold`]); a round piece touches at one point.
+    fn has_flat_faces(&self) -> bool {
+        match self {
+            Self::Shape(posed) => matches!(
+                posed.shape,
+                Shape::Box { .. }
+                    | Shape::Wedge { .. }
+                    | Shape::Cylinder { .. }
+                    | Shape::Cone { .. }
+            ),
+            Self::Child { child, .. } => {
+                matches!(child.shape, ShapeRef::Box(_) | ShapeRef::ConvexHull(_))
+            }
+        }
+    }
+
     /// This piece as a ball, when it is one: a compound's sphere child, or an
     /// ellipsoid with equal semi-axes.
     fn as_ball(&self) -> Option<Sphere> {
@@ -489,10 +508,11 @@ pub(crate) fn quat_from_rotation(m: Mat3Fix) -> QuatFix {
 const FIELD_SUPPORT_ITERATIONS: usize = 2;
 
 impl BodyCollider {
-    /// The deepest contact of this collider, for a body at `position` turned by
-    /// `rotation`, with a static collider, or `None` when no piece reaches into it.
-    /// The normal points from the surface toward the body; translating the body by
-    /// `depth · normal` moves the deepest piece out.
+    // LIMITATION(COV-RIGID-065): a height field whose bilinear cells curve under a piece is met at the tangent plane under its lowest point
+    /// The contacts of this collider, for a body at `position` turned by `rotation`,
+    /// with a static collider (empty when no piece reaches into it). Each normal
+    /// points from the surface toward the body; translating the body by
+    /// `depth · normal` moves that point out. Each touching piece's deepest point:
     ///
     /// - **Plane**: closed form. The plane is two-sided, as for a sphere: the side
     ///   is the one the body's centre of mass is on, and the piece's support point
@@ -503,16 +523,23 @@ impl BodyCollider {
     ///   point, taken again at the new lowest point ([`FIELD_SUPPORT_ITERATIONS`]),
     ///   as for a sphere (the distance along the surface normal). Exact where the
     ///   field is planar under the piece (flat, or one constant slope).
-    // LIMITATION(COV-RIGID-065): a height field whose bilinear cells curve under a piece is met at the tangent plane under its lowest point
-    pub(crate) fn static_contact(
+    ///
+    /// A piece with flat faces is widened from its deepest point by
+    /// [`face_manifold`] to the corners of the face it rests on. Feature numbers are `4 · piece + direction` (piece in the
+    /// order [`Self::pieces`] gives them).
+    pub(crate) fn static_manifold(
         &self,
         position: Vec3Fix,
         rotation: QuatFix,
         collider: &StaticCollider,
-    ) -> Option<Contact> {
+    ) -> Vec<(Contact, u32)> {
         let own = self.world_aabb(position, rotation);
-        let mut best: Option<Contact> = None;
-        for (piece, piece_box) in self.pieces(position, rotation, &own) {
+        let mut out = Vec::new();
+        for (index, (piece, piece_box)) in self
+            .pieces(position, rotation, &own)
+            .into_iter()
+            .enumerate()
+        {
             let hit = match collider {
                 StaticCollider::Plane(plane) => plane_piece_contact(&piece, position, plane),
                 StaticCollider::TriMesh(mesh) => {
@@ -522,14 +549,69 @@ impl BodyCollider {
                     field_piece_contact(&piece, &piece_box, field)
                 }
             };
-            if let Some(c) = hit {
-                if best.is_none_or(|b| c.depth > b.depth) {
-                    best = Some(c);
+            let Some(deepest) = hit else {
+                continue;
+            };
+            let base = 4 * index as u32;
+            if piece.has_flat_faces() {
+                for (c, k) in face_manifold(&piece, deepest) {
+                    out.push((c, base + k));
                 }
+            } else {
+                out.push((deepest, base));
             }
         }
-        best
+        out
     }
+}
+
+/// How far the manifold's search directions lean off the floor normal: `1/4`
+/// (14°). A face tilted less than that from the floor gives its corners, one per
+/// direction; a piece tilted more rests on an edge or a corner and the directions
+/// meet the same points (kept once).
+const FACE_LEAN: (i64, i64) = (1, 4);
+
+/// The points of a flat-faced piece on a floor, from its deepest contact
+/// `deepest` (normal out of the floor, `point_b` on the floor surface).
+///
+/// Method (the support-perturbation manifold): the piece's support point is taken
+/// along four directions leaning `FACE_LEAN` off `−n` towards the diagonals of
+/// the floor's tangent plane (`±t₁ ± t₂`); each lies on the face the piece rests
+/// on, at its corner nearest that diagonal. A point lower than the floor surface
+/// through `deepest.point_b` (the plane `n · (p − point_b) = 0`) is a contact of
+/// depth `−n · (p − point_b)`. Exact for a flat floor (a plane, a flat triangle
+/// or height-field cell, a box's face); on a curved floor it is the tangent plane
+/// at the deepest point. Each point carries its direction `0..4` as its feature
+/// number, so a corner keeps its number while it touches. A piece that gives no
+/// point below the plane (not flat-faced at the contact) keeps `deepest`.
+fn face_manifold(piece: &impl Support, deepest: Contact) -> Vec<(Contact, u32)> {
+    let n = deepest.normal;
+    let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+    let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
+    let mut out: Vec<(Contact, u32)> = Vec::with_capacity(4);
+    for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
+        let lean_dir = t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2);
+        let p = piece.support(-n + lean_dir * lean);
+        if out.iter().any(|(c, _)| c.point_a == p) {
+            continue;
+        }
+        let height = n.dot(p - deepest.point_b);
+        if height < Fix128::ZERO {
+            out.push((
+                Contact {
+                    depth: -height,
+                    normal: n,
+                    point_a: p,
+                    point_b: p - n * height,
+                },
+                k as u32,
+            ));
+        }
+    }
+    if out.is_empty() {
+        out.push((deepest, 0));
+    }
+    out
 }
 
 /// A convex piece against a two-sided plane: the side is the one `reference` (the

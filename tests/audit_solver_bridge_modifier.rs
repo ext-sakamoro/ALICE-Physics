@@ -118,6 +118,7 @@ fn bridge_solve_stores_the_modified_friction_and_restitution_in_the_constraint()
         friction: fx(0.5),
         restitution: fx(0.25),
         cached_lambda: Fix128::ZERO,
+        feature: 0,
     });
     w.add_contact_modifier(Box::new(SetMaterial {
         friction: Some(Fix128::from_ratio(1, 8)),
@@ -151,6 +152,7 @@ fn bridge_solve_keeps_the_constraint_values_without_a_modifier() {
         friction: fx(0.5),
         restitution: fx(0.25),
         cached_lambda: Fix128::ZERO,
+        feature: 0,
     });
     let mut bridge = PassThrough::default();
     w.solve_contact_constraints_with_bridge(&mut bridge)
