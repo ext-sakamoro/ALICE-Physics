@@ -102,6 +102,320 @@ const TORUS_MAX_STEPS: usize = 512;
 /// Newton steps on the torus quartic after sphere tracing.
 const TORUS_NEWTON_STEPS: usize = 4;
 
+// ---------------------------------------------------------------- range
+//
+// A query whose inputs are all below `DIRECT_LIMIT` (2³⁰) in magnitude is computed
+// with the arithmetic it always had, bit for bit. Above that, the products of a
+// ray test can leave the `Fix128` range (a position at 2⁶² squares to 2¹²⁴, which
+// `Mul` wraps to 0), so a body beyond the limit is reached in two steps:
+//
+// 1. **Advance** ([`advance_to`]): the ray origin is moved along the ray to one
+//    unit before the body's bounding sphere, with the distance `t₀` kept. Every
+//    test below only ever uses `origin − center` and the body's own lengths, so
+//    for a body of ordinary size the advanced ray is in range and the test is the
+//    direct one; the hit is `t₀ + t'`. `t₀` is found at a coarse scale (an exact
+//    shift of the raw bits), its error is below 2⁻²⁹ and is absorbed by the unit
+//    of slack; `origin + direction · t₀` is one truncated product per axis, so the
+//    hit distance is within `2⁻⁶⁰` of the exact value for a non-grazing ray.
+// 2. **Scale**: a body whose own extent reaches 2²⁹ squares out of range even up
+//    close, so the advanced ray and a copy of the geometry are shifted to the
+//    scale `2⁻ᵏ` (`k` from [`scale_bits`] over the extent, see the bound below),
+//    solved there, and the distance shifted back.
+//
+// Error of the scaled step: every scaled operand is floored to 2⁻⁶⁴ scaled
+// units = 2ᵏ⁻⁶⁴ world units and the quadratic's rounding is a few units of that,
+// so for a ray that is not grazing (scaled discriminant at least 1) the distance
+// is within `2ᵏ⁻⁶⁰` of the exact value; the torus, which sphere-traces to 2⁻³² at
+// the scale, within `2ᵏ⁻³²` (`tests/analytic_query_box_range.rs` checks both
+// against exact integer closed forms). A grazing ray loses up to the same amount
+// divided by the square root of its scaled discriminant, as the direct path does
+// with its own rounding. Only `Fix128` integer arithmetic is used, so the result
+// is the same bits on every platform, as the direct path is. A hit point past
+// the end of the range wraps as the segment the caller asked for does.
+
+/// Inputs below this in magnitude take the direct (unchanged) arithmetic: 2³⁰.
+pub(crate) const DIRECT_LIMIT: Fix128 = Fix128 { hi: 1 << 30, lo: 0 };
+
+/// Whether every value is below [`DIRECT_LIMIT`] in magnitude.
+pub(crate) fn direct(values: &[Fix128]) -> bool {
+    values
+        .iter()
+        .all(|v| v.hi > -(1 << 30) && *v < DIRECT_LIMIT)
+}
+
+/// The number of bits `k` such that every value shifted right by `k` is below
+/// 2²⁹ in magnitude (0 when they already are). The shift is exact on the raw
+/// bits, so a value and its scaled copy agree to 2ᵏ⁻⁶⁴.
+pub(crate) fn scale_bits(values: &[Fix128]) -> u32 {
+    scale_bits_to(values, 29)
+}
+
+/// [`scale_bits`] with the target `2^keep` instead of 2²⁹.
+fn scale_bits_to(values: &[Fix128], keep: u32) -> u32 {
+    let top = values
+        .iter()
+        .map(|v| {
+            // bits of the integer part's magnitude (a negative value by its
+            // one's complement, which bounds it from above)
+            let m = if v.hi < 0 { !v.hi } else { v.hi };
+            64 - m.leading_zeros()
+        })
+        .max()
+        .unwrap_or(0);
+    top.saturating_sub(keep)
+}
+
+/// The scale a shape needs on top of [`body_scale_bits`]: an ellipsoid is tested
+/// in the coordinates `x / radii`, where a direction divided by a huge radius
+/// falls below [`PARALLEL_EPSILON`] and the quadratic degenerates, so its radii
+/// are brought down to below 2 (its bound is `2ᵏ⁻⁶⁰` with this larger `k`).
+fn shape_scale_bits(collider: Option<&BodyCollider>) -> u32 {
+    match collider {
+        Some(BodyCollider::Shape(Shape::Ellipsoid { radii })) => {
+            scale_bits_to(&[radii.x, radii.y, radii.z], 1)
+        }
+        _ => 0,
+    }
+}
+
+/// `v · 2ᵏ`: the exact inverse of `v.shr_bits(k)` for a value that fits.
+pub(crate) fn shl_bits(v: Fix128, k: u32) -> Fix128 {
+    if k == 0 {
+        return v;
+    }
+    let raw = ((i128::from(v.hi)) << 64) | i128::from(v.lo);
+    let out = raw << k;
+    Fix128::from_raw((out >> 64) as i64, out as u64)
+}
+
+/// Every component shifted right by `k` bits (exact on the raw bits).
+pub(crate) fn shrink(v: Vec3Fix, k: u32) -> Vec3Fix {
+    Vec3Fix::new(v.x.shr_bits(k), v.y.shr_bits(k), v.z.shr_bits(k))
+}
+
+/// `|x| + |y| + |z|`, saturating at the end of the range: a bound on the length
+/// that needs no square (the stored collision radius of a huge shape was squared
+/// into the range's wrap when the shape was set, so it is not used here).
+fn reach_of(v: Vec3Fix) -> Fix128 {
+    sat_add(sat_add(v.x.abs(), v.y.abs()), v.z.abs())
+}
+
+/// `a + b`, or the end of the range when the sum leaves it.
+fn sat_add(a: Fix128, b: Fix128) -> Fix128 {
+    a.checked_add(b).unwrap_or(Fix128 {
+        hi: i64::MAX,
+        lo: u64::MAX,
+    })
+}
+
+/// A bound on how far the body's geometry reaches from its position, from the
+/// geometry's own lengths (sums, never squares); the collision radius for a body
+/// without a collider. Used only beyond the direct limit, to advance the ray and
+/// to choose the scale.
+pub(crate) fn ray_extent(radius: Fix128, collider: Option<&BodyCollider>) -> Fix128 {
+    match collider {
+        None => radius,
+        Some(BodyCollider::Shape(shape)) => {
+            let own = match *shape {
+                Shape::Box { half_extents } => reach_of(half_extents),
+                Shape::Cylinder {
+                    radius,
+                    half_height,
+                }
+                | Shape::Cone {
+                    radius,
+                    half_height,
+                } => sat_add(radius, half_height),
+                Shape::Ellipsoid { radii } => reach_of(radii),
+                Shape::Wedge {
+                    width,
+                    height,
+                    depth,
+                } => sat_add(sat_add(width, height), depth),
+                Shape::Torus {
+                    major_radius,
+                    minor_radius,
+                } => sat_add(major_radius, minor_radius),
+            };
+            sat_add(own, reach_of(shape.center_of_mass_offset()))
+        }
+        Some(BodyCollider::Compound(compound)) => {
+            let mut out = Fix128::ZERO;
+            for child in &compound.children {
+                let own = match &child.shape {
+                    ShapeRef::Sphere(s) => sat_add(reach_of(s.center), s.radius),
+                    ShapeRef::Capsule(c) => {
+                        let (a, b) = (reach_of(c.a), reach_of(c.b));
+                        sat_add(if a > b { a } else { b }, c.radius)
+                    }
+                    ShapeRef::Box(b) => sat_add(reach_of(b.center), reach_of(b.half_extents)),
+                    ShapeRef::ConvexHull(hull) => hull
+                        .vertices
+                        .iter()
+                        .map(|&v| reach_of(v))
+                        .fold(Fix128::ZERO, |m, r| if r > m { r } else { m }),
+                };
+                let reach = sat_add(own, reach_of(child.local_position));
+                if reach > out {
+                    out = reach;
+                }
+            }
+            out
+        }
+    }
+}
+
+/// The scale that brings a body of bounding `radius` and a ray advanced to it
+/// below the direct limit: 0 for a body of ordinary size.
+pub(crate) fn body_scale_bits(radius: Fix128) -> u32 {
+    // the advanced origin is within radius + 1 of the centre along the ray and
+    // within radius beside it: 2 · radius + 2 bounds every coordinate difference
+    let reach = radius
+        .double()
+        .checked_add(Fix128::from_int(2))
+        .unwrap_or(Fix128 {
+            hi: i64::MAX,
+            lo: 0,
+        });
+    scale_bits(&[reach])
+}
+
+/// The ray moved to one unit before the bounding sphere `(center, radius)`:
+/// `(origin', t₀, max_t')` with `origin' = origin + direction · t₀` and
+/// `max_t' = max_t − t₀`, or `None` when the sphere begins beyond `max_t`. `t₀`
+/// is 0 when the origin is already within one unit of the sphere, so a ray that
+/// starts inside is not moved.
+pub(crate) fn advance_to(
+    origin: Vec3Fix,
+    direction: Vec3Fix,
+    center: Vec3Fix,
+    radius: Fix128,
+    max_t: Fix128,
+) -> Option<(Vec3Fix, Fix128, Fix128)> {
+    let inputs = [
+        origin.x, origin.y, origin.z, center.x, center.y, center.z, radius, max_t,
+    ];
+    let k = scale_bits(&inputs);
+    // the centre's distance along the ray, at the coarse scale (error < 2ᵏ⁻⁶²)
+    let along = (shrink(center, k) - shrink(origin, k)).dot(direction);
+    let t0 = shl_bits(along - radius.shr_bits(k), k) - Fix128::ONE;
+    if t0 <= Fix128::ZERO {
+        return Some((origin, Fix128::ZERO, max_t));
+    }
+    if t0 > max_t {
+        return None;
+    }
+    Some((origin + direction * t0, t0, max_t - t0))
+}
+
+/// The shape at the scale `2⁻ᵏ`: every length shifted right by `k` bits. The
+/// rotation is unchanged (a direction) and so is the kind, so the scaled ray meets
+/// the scaled shape where the ray meets the shape, at `t / 2ᵏ`.
+fn shape_shrunk(shape: &Shape, k: u32) -> Shape {
+    match *shape {
+        Shape::Box { half_extents } => Shape::Box {
+            half_extents: shrink(half_extents, k),
+        },
+        Shape::Cylinder {
+            radius,
+            half_height,
+        } => Shape::Cylinder {
+            radius: radius.shr_bits(k),
+            half_height: half_height.shr_bits(k),
+        },
+        Shape::Cone {
+            radius,
+            half_height,
+        } => Shape::Cone {
+            radius: radius.shr_bits(k),
+            half_height: half_height.shr_bits(k),
+        },
+        Shape::Ellipsoid { radii } => Shape::Ellipsoid {
+            radii: shrink(radii, k),
+        },
+        Shape::Wedge {
+            width,
+            height,
+            depth,
+        } => Shape::Wedge {
+            width: width.shr_bits(k),
+            height: height.shr_bits(k),
+            depth: depth.shr_bits(k),
+        },
+        Shape::Torus {
+            major_radius,
+            minor_radius,
+        } => Shape::Torus {
+            major_radius: major_radius.shr_bits(k),
+            minor_radius: minor_radius.shr_bits(k),
+        },
+    }
+}
+
+/// A compound child at the scale `2⁻ᵏ` (see [`shape_shrunk`]).
+fn child_shrunk(child: &CompoundChild, k: u32) -> CompoundChild {
+    let shape = match &child.shape {
+        ShapeRef::Sphere(s) => ShapeRef::Sphere(crate::collider::Sphere {
+            center: shrink(s.center, k),
+            radius: s.radius.shr_bits(k),
+        }),
+        ShapeRef::Capsule(c) => ShapeRef::Capsule(Capsule::new(
+            shrink(c.a, k),
+            shrink(c.b, k),
+            c.radius.shr_bits(k),
+        )),
+        ShapeRef::Box(b) => ShapeRef::Box(crate::box_collider::OrientedBox {
+            center: shrink(b.center, k),
+            half_extents: shrink(b.half_extents, k),
+            rotation: b.rotation,
+        }),
+        ShapeRef::ConvexHull(hull) => ShapeRef::ConvexHull(ConvexHull::new(
+            hull.vertices.iter().map(|&v| shrink(v, k)).collect(),
+        )),
+    };
+    CompoundChild {
+        shape,
+        local_position: shrink(child.local_position, k),
+        local_rotation: child.local_rotation,
+    }
+}
+
+/// The nearest distance along the unit `direction` at which the ray from
+/// `origin` meets the solid sphere `(center, radius)`, within `max_t`, computed
+/// at the scale `2⁻ᵏ` (`k` from [`scale_bits`] over the inputs): the ray/sphere
+/// test of [`PhysicsWorld::raycast`] for inputs beyond [`DIRECT_LIMIT`]. A ray
+/// starting inside reports the far intersection, as the direct test does.
+pub(crate) fn scaled_sphere_t(
+    origin: Vec3Fix,
+    direction: Vec3Fix,
+    center: Vec3Fix,
+    radius: Fix128,
+    max_t: Fix128,
+    k: u32,
+) -> Option<Fix128> {
+    // shift before subtracting: `origin - center` itself may not fit
+    let shrink = |v: Vec3Fix| Vec3Fix::new(v.x.shr_bits(k), v.y.shr_bits(k), v.z.shr_bits(k));
+    let oc = shrink(origin) - shrink(center);
+    let r = radius.shr_bits(k);
+    let max_s = max_t.shr_bits(k);
+    let b = oc.dot(direction);
+    let c = oc.dot(oc) - r * r;
+    let discriminant = b * b - c;
+    if discriminant < Fix128::ZERO {
+        return None;
+    }
+    let sqrt_d = discriminant.sqrt();
+    let mut t = -b - sqrt_d;
+    if t < Fix128::ZERO {
+        t = -b + sqrt_d;
+    }
+    if t < Fix128::ZERO || t > max_s {
+        return None;
+    }
+    // t ≤ max_s = floor(max_t / 2ᵏ), so t · 2ᵏ ≤ max_t fits
+    Some(shl_bits(t, k))
+}
+
 /// The first crossing of a ray with one piece of geometry: the distance along the
 /// unit direction and the normal there (unit, see the module conventions).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -830,26 +1144,138 @@ fn ray_bilinear_cell(
 }
 
 /// A static surface.
+/// A static collider. Beyond [`DIRECT_LIMIT`] a plane is met at the scale `2⁻ᵏ`
+/// (one quotient, so the distance is within `2ᵏ⁻⁶⁰` divided by the cosine of
+/// incidence); a height field or a triangle mesh of ordinary size anywhere in
+/// the range is met by advancing the ray to its box first, as a body is, and
+/// one whose own extent reaches 2²⁹ by a copy of its data at the scale `2⁻ᵏ`
+/// (made for the query; the bound is the body's). An SDF collider marches in
+/// the field's own `f32` from the ray moved into its frame (a `Fix128`
+/// difference), so a far SDF is reached as well, to the field's precision.
 fn ray_static(
     origin: Vec3Fix,
     direction: Vec3Fix,
     collider: &StaticCollider,
     max_t: Fix128,
 ) -> Option<LocalHit> {
-    let ray = Ray { origin, direction };
     match collider {
         StaticCollider::Plane(plane) => {
-            ray_plane(&ray, plane.normal, plane.offset, max_t).map(|h| LocalHit {
-                t: h.t,
+            let inputs = [origin.x, origin.y, origin.z, plane.offset, max_t];
+            let k = if direct(&inputs) {
+                0
+            } else {
+                scale_bits(&inputs)
+            };
+            let ray = Ray {
+                origin: shrink(origin, k),
+                direction,
+            };
+            ray_plane(
+                &ray,
+                plane.normal,
+                plane.offset.shr_bits(k),
+                max_t.shr_bits(k),
+            )
+            .map(|h| LocalHit {
+                // t ≤ floor(max_t / 2ᵏ), so t · 2ᵏ ≤ max_t fits
+                t: shl_bits(h.t, k),
                 normal: h.normal,
             })
         }
-        StaticCollider::HeightField(field) => ray_heightfield(origin, direction, field, max_t),
-        StaticCollider::TriMesh(mesh) => mesh.raycast(&ray, max_t).map(|h| LocalHit {
-            t: h.t,
-            normal: h.normal,
-        }),
+        StaticCollider::HeightField(field) => {
+            let aabb = field.aabb();
+            let (origin, t0, max_t) = advance_to_box(origin, direction, &aabb, max_t)?;
+            let k = box_scale_bits(&aabb);
+            let hit = if k == 0 {
+                ray_heightfield(origin, direction, field, max_t)
+            } else {
+                // a huge field: a copy at the scale 2⁻ᵏ (its data, once per query)
+                let scaled = HeightField::new(
+                    field.heights.iter().map(|h| h.shr_bits(k)).collect(),
+                    field.width,
+                    field.depth,
+                    field.spacing.shr_bits(k),
+                    shrink(field.origin, k),
+                );
+                ray_heightfield(shrink(origin, k), direction, &scaled, max_t.shr_bits(k)).map(|h| {
+                    LocalHit {
+                        t: shl_bits(h.t, k),
+                        normal: h.normal,
+                    }
+                })
+            };
+            hit.map(|h| LocalHit {
+                t: t0 + h.t,
+                normal: h.normal,
+            })
+        }
+        StaticCollider::TriMesh(mesh) => {
+            let (origin, t0, max_t) = advance_to_box(origin, direction, &mesh.bounds, max_t)?;
+            let k = box_scale_bits(&mesh.bounds);
+            let hit = if k == 0 {
+                let ray = Ray { origin, direction };
+                mesh.raycast(&ray, max_t)
+            } else {
+                // a huge mesh: a copy at the scale 2⁻ᵏ (its triangles and their tree,
+                // once per query)
+                let scaled = crate::trimesh::TriMesh::from_triangles(
+                    mesh.triangles
+                        .iter()
+                        .map(|t| {
+                            crate::trimesh::Triangle::new(
+                                shrink(t.v0, k),
+                                shrink(t.v1, k),
+                                shrink(t.v2, k),
+                            )
+                        })
+                        .collect(),
+                );
+                let ray = Ray {
+                    origin: shrink(origin, k),
+                    direction,
+                };
+                scaled
+                    .raycast(&ray, max_t.shr_bits(k))
+                    .map(|h| crate::raycast::RayHit {
+                        t: shl_bits(h.t, k),
+                        ..h
+                    })
+            };
+            hit.map(|h| LocalHit {
+                t: t0 + h.t,
+                normal: h.normal,
+            })
+        }
     }
+}
+
+/// The scale a static collider inside `aabb` needs by its own extent (0 for an
+/// ordinary size), as [`body_scale_bits`] for a body.
+fn box_scale_bits(aabb: &AABB) -> u32 {
+    let (lo, hi) = (shrink(aabb.min, 1), shrink(aabb.max, 1));
+    body_scale_bits(reach_of(hi - lo))
+}
+
+/// [`advance_to`] for geometry inside `aabb`: unchanged (`t₀ = 0`) when the ray
+/// and the box are within the direct limit.
+fn advance_to_box(
+    origin: Vec3Fix,
+    direction: Vec3Fix,
+    aabb: &AABB,
+    max_t: Fix128,
+) -> Option<(Vec3Fix, Fix128, Fix128)> {
+    let inputs = [
+        origin.x, origin.y, origin.z, aabb.min.x, aabb.min.y, aabb.min.z, aabb.max.x, aabb.max.y,
+        aabb.max.z, max_t,
+    ];
+    if direct(&inputs) {
+        return Some((origin, Fix128::ZERO, max_t));
+    }
+    // halves first: the sum of the corners may not fit
+    let (lo, hi) = (shrink(aabb.min, 1), shrink(aabb.max, 1));
+    let center = lo + hi;
+    let reach = reach_of(hi - lo);
+    advance_to(origin, direction, center, reach, max_t)
 }
 
 /// An SDF collider: inside (negative distance at the origin) is a hit at `t = 0`;
@@ -1043,7 +1469,14 @@ impl PhysicsWorld {
             let body = &self.bodies[i];
             let aabb = match collider {
                 Some(c) => c.world_aabb(body.position, body.rotation),
-                None => AABB::from_center_half(body.position, Vec3Fix::new(radius, radius, radius)),
+                None => {
+                    // saturating: a box past the range stops at its end instead of wrapping
+                    AABB::from_center_half_saturating(
+                        body.position,
+                        Vec3Fix::new(radius, radius, radius),
+                    )
+                    .0
+                }
             };
             *slot = aabb;
             primitives.push(BvhPrimitive {
@@ -1100,8 +1533,25 @@ fn query_direction(direction: Vec3Fix, max_t: Fix128) -> Option<Vec3Fix> {
     direction.try_normalize_scaled()
 }
 
-/// Whether the ray segment `[0, max_t]` passes through `aabb`.
+/// Whether the ray segment `[0, max_t]` passes through `aabb`. Beyond
+/// [`DIRECT_LIMIT`] the slabs are compared at the scale `2⁻ᵏ`, where the
+/// differences `lo − o` fit (a saturated box reaches the end of the range, so
+/// the difference itself may not).
 fn segment_meets_box(origin: Vec3Fix, direction: Vec3Fix, aabb: &AABB, max_t: Fix128) -> bool {
+    let inputs = [
+        origin.x, origin.y, origin.z, aabb.min.x, aabb.min.y, aabb.min.z, aabb.max.x, aabb.max.y,
+        aabb.max.z, max_t,
+    ];
+    let k = if direct(&inputs) {
+        0
+    } else {
+        scale_bits(&inputs)
+    };
+    let (origin, max_t) = (shrink(origin, k), max_t.shr_bits(k));
+    let aabb = &AABB {
+        min: shrink(aabb.min, k),
+        max: shrink(aabb.max, k),
+    };
     let mut t0 = Fix128::ZERO;
     let mut t1 = max_t;
     for (o, d, lo, hi) in [
@@ -1172,10 +1622,105 @@ impl WorldRayCaster<'_> {
         out
     }
 
-    /// One body's geometry.
+    /// One body's geometry. Beyond [`DIRECT_LIMIT`] (the ray origin, the body
+    /// position, its collision radius or `max_t` at 2³⁰ or more) the ray and a
+    /// copy of the geometry are shifted to the scale `2⁻ᵏ`, where the products
+    /// of every shape test fit, and the distance is shifted back; the normal is
+    /// a direction and needs no scaling. See the range notes at the top of this
+    /// module for the bound.
     fn body_hit(&self, i: usize, origin: Vec3Fix, dir: Vec3Fix, max_t: Fix128) -> Option<LocalHit> {
         let (radius, collider) = self.world.ray_geometry(i)?;
         let body = &self.world.bodies[i];
+        let extent = ray_extent(radius, collider);
+        let inputs = [
+            origin.x,
+            origin.y,
+            origin.z,
+            body.position.x,
+            body.position.y,
+            body.position.z,
+            extent,
+            max_t,
+        ];
+        if !direct(&inputs) {
+            let (origin, t0, max_t) = advance_to(origin, dir, body.position, extent, max_t)?;
+            let k = body_scale_bits(extent).max(shape_scale_bits(collider));
+            let hit = if k == 0 {
+                self.body_hit_direct(radius, collider, body, origin, dir, max_t)
+            } else {
+                self.body_hit_scaled(radius, collider, body, origin, dir, max_t, k)
+            };
+            return hit.map(|h| LocalHit {
+                t: t0 + h.t,
+                normal: h.normal,
+            });
+        }
+        self.body_hit_direct(radius, collider, body, origin, dir, max_t)
+    }
+
+    /// The body's geometry at the scale `2⁻ᵏ`: the ray and a copy of the geometry
+    /// shifted right by `k` bits, the distance shifted back.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the direct test takes the same six inputs plus the scale"
+    )]
+    fn body_hit_scaled(
+        &self,
+        radius: Fix128,
+        collider: Option<&BodyCollider>,
+        body: &crate::solver::RigidBody,
+        origin: Vec3Fix,
+        dir: Vec3Fix,
+        max_t: Fix128,
+        k: u32,
+    ) -> Option<LocalHit> {
+        let (o, p, m) = (
+            shrink(origin, k),
+            shrink(body.position, k),
+            max_t.shr_bits(k),
+        );
+        {
+            let hit = match collider {
+                None => ray_solid_sphere(o, dir, p, radius.shr_bits(k), m),
+                Some(BodyCollider::Shape(shape)) => {
+                    ray_posed_shape(o, dir, &shape_shrunk(shape, k), p, body.rotation, m)
+                }
+                Some(BodyCollider::Compound(compound)) => {
+                    let mut best = None;
+                    for child in &compound.children {
+                        best = nearer(
+                            best,
+                            ray_compound_child(
+                                o,
+                                dir,
+                                &child_shrunk(child, k),
+                                p,
+                                body.rotation,
+                                m,
+                            ),
+                        );
+                    }
+                    best
+                }
+            };
+            // t ≤ m = floor(max_t / 2ᵏ), so t · 2ᵏ ≤ max_t fits
+            hit.map(|h| LocalHit {
+                t: shl_bits(h.t, k),
+                normal: h.normal,
+            })
+        }
+    }
+
+    /// The body's geometry with the arithmetic it always had.
+    fn body_hit_direct(
+        &self,
+        radius: Fix128,
+        collider: Option<&BodyCollider>,
+        body: &crate::solver::RigidBody,
+        origin: Vec3Fix,
+        dir: Vec3Fix,
+        max_t: Fix128,
+    ) -> Option<LocalHit> {
         match collider {
             None => ray_solid_sphere(origin, dir, body.position, radius, max_t),
             Some(BodyCollider::Shape(shape)) => {
@@ -1285,3 +1830,13 @@ impl WorldRayCaster<'_> {
         found
     }
 }
+
+// The range oracles and the previous-bits golden of the ray queries compile as lib tests
+// too, so their lines count in the `--lib` coverage (the far / scaled paths below are
+// reached only by them).
+#[cfg(test)]
+#[path = "../tests/analytic_query_box_range.rs"]
+mod query_box_range_oracle;
+#[cfg(test)]
+#[path = "../tests/ray_query_previous_bits.rs"]
+mod ray_query_previous_bits_oracle;

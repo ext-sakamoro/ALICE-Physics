@@ -2144,7 +2144,11 @@ impl PhysicsWorld {
             Fix128::ONE / inertia.y,
             Fix128::ONE / inertia.z,
         );
-        let idx = self.add_body_with_radius(body, shape.bounding_radius());
+        // the mass check above refuses a shape this large; kept as the contract
+        let radius = shape
+            .checked_bounding_radius()
+            .ok_or(crate::shape::ShapeError::MassNotRepresentable)?;
+        let idx = self.add_body_with_radius(body, radius);
         self.body_colliders[idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         Ok(idx)
     }
@@ -2158,12 +2162,24 @@ impl PhysicsWorld {
     /// The body's position is taken as the shape's **centre of mass** (see
     /// [`crate::shape`]); its mass and inertia are not changed — use
     /// [`Self::add_shaped_body`] for a body whose mass properties come from the shape.
+    ///
+    /// A shape whose bounding radius does not fit `Fix128` (dimensions near 2⁶³)
+    /// is set with the radius at the end of the range and the world's overflow
+    /// flag raised ([`Self::overflow_detected`]): the step's data is then out of
+    /// range, as any other `Fix128` value that left it.
     pub fn set_body_shape(&mut self, body_idx: usize, shape: &crate::shape::Shape) -> bool {
         if body_idx >= self.bodies.len() || body_idx >= self.body_colliders.len() {
             return false;
         }
         self.park_generation = self.park_generation.wrapping_add(1);
-        self.body_collision_radii[body_idx] = Some(shape.bounding_radius());
+        let radius = match shape.checked_bounding_radius() {
+            Some(r) => r,
+            None => {
+                self.note_rigid_overflow();
+                shape.bounding_radius()
+            }
+        };
+        self.body_collision_radii[body_idx] = Some(radius);
         self.body_colliders[body_idx] = Some(crate::body_collider::BodyCollider::Shape(*shape));
         true
     }
@@ -2264,7 +2280,9 @@ impl PhysicsWorld {
             });
         }
         let collider = crate::body_collider::BodyCollider::Compound(stored);
-        let radius = collider.bounding_radius();
+        let radius = collider
+            .checked_bounding_radius()
+            .ok_or(ShapeError::MassNotRepresentable)?;
         // The largest quantity the solve forms, as an `f64`, before it is formed.
         let estimate = props.mass.to_f64() * radius.to_f64() * radius.to_f64();
         if !(estimate.is_finite() && estimate < (1u64 << 61) as f64) {
@@ -3148,7 +3166,9 @@ impl PhysicsWorld {
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
                 let pos = self.bodies[i].position;
                 let half = Vec3Fix::new(radius, radius, radius);
-                let aabb = crate::collider::AABB::from_center_half(pos, half);
+                // saturating: a box past the range stops at its end instead of wrapping
+                // to the other side, so the body stays a candidate (a query writes no flag)
+                let aabb = crate::collider::AABB::from_center_half_saturating(pos, half).0;
                 primitives.push(crate::bvh::BvhPrimitive {
                     aabb,
                     index: i as u32,
@@ -3213,23 +3233,66 @@ impl PhysicsWorld {
                 Some(Some(r)) => *r,
                 _ => continue,
             };
-            let oc = origin - self.bodies[i].position;
-            let b = oc.dot(dir_norm);
-            let c = oc.dot(oc) - radius * radius;
-            let discriminant = b * b - c;
-            if discriminant < Fix128::ZERO {
+            let position = self.bodies[i].position;
+            // the ray/sphere test with the arithmetic it always had
+            let sphere_t = |origin: Vec3Fix, max_distance: Fix128| -> Option<Fix128> {
+                let oc = origin - position;
+                let b = oc.dot(dir_norm);
+                let c = oc.dot(oc) - radius * radius;
+                let discriminant = b * b - c;
+                if discriminant < Fix128::ZERO {
+                    return None;
+                }
+                let sqrt_d = discriminant.sqrt();
+                // Try the nearest intersection first
+                let mut t = -b - sqrt_d;
+                // If nearest t is behind origin, try the far intersection (ray inside sphere)
+                if t < Fix128::ZERO {
+                    t = -b + sqrt_d;
+                }
+                if t < Fix128::ZERO || t > max_distance {
+                    return None;
+                }
+                Some(t)
+            };
+            let inputs = [
+                origin.x,
+                origin.y,
+                origin.z,
+                position.x,
+                position.y,
+                position.z,
+                radius,
+                max_distance,
+            ];
+            let t = if crate::shape_raycast::direct(&inputs) {
+                sphere_t(origin, max_distance)
+            } else {
+                // beyond 2³⁰ the squares leave the range: advance the ray to the
+                // sphere, then test from there, at a smaller scale if the sphere
+                // itself is huge (see the range notes in `shape_raycast`)
+                let Some((near, t0, reach)) = crate::shape_raycast::advance_to(
+                    origin,
+                    dir_norm,
+                    position,
+                    radius,
+                    max_distance,
+                ) else {
+                    continue;
+                };
+                let k = crate::shape_raycast::body_scale_bits(radius);
+                let t = if k == 0 {
+                    sphere_t(near, reach)
+                } else {
+                    crate::shape_raycast::scaled_sphere_t(
+                        near, dir_norm, position, radius, reach, k,
+                    )
+                };
+                t.map(|t| t0 + t)
+            };
+            let Some(t) = t else {
                 continue;
-            }
-            let sqrt_d = discriminant.sqrt();
-            // Try the nearest intersection first
-            let mut t = -b - sqrt_d;
-            // If nearest t is behind origin, try the far intersection (ray inside sphere)
-            if t < Fix128::ZERO {
-                t = -b + sqrt_d;
-            }
-            if t < Fix128::ZERO || t > max_distance {
-                continue;
-            }
+            };
             let dominated = match best {
                 None => true,
                 Some((_, prev_t)) => t < prev_t,

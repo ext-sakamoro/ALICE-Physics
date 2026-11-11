@@ -238,16 +238,32 @@ impl Shape {
         }
     }
 
-    /// Radius of the smallest sphere about the **centre of mass** that encloses
-    /// the solid.
+    /// Radius of a sphere about the centre of mass that contains the whole solid
+    /// (the collision radius a world gives a body with this shape). When the
+    /// radius does not fit `Fix128` (dimensions near 2⁶³) it is the end of the
+    /// range; see [`Self::checked_bounding_radius`].
     #[must_use]
     pub fn bounding_radius(&self) -> Fix128 {
+        self.checked_bounding_radius().unwrap_or(Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        })
+    }
+
+    /// [`Self::bounding_radius`], or `None` when it does not fit `Fix128`. The
+    /// lengths are formed without squaring out of the range
+    /// ([`Vec3Fix::checked_length_scaled`]), so a huge shape gets its true radius
+    /// where one fits instead of a wrapped one; inside the range the bits are the
+    /// ones the squared form gives.
+    #[must_use]
+    pub fn checked_bounding_radius(&self) -> Option<Fix128> {
+        let len = |x: Fix128, y: Fix128, z: Fix128| Vec3Fix::new(x, y, z).checked_length_scaled();
         match *self {
-            Self::Box { half_extents } => half_extents.length(),
+            Self::Box { half_extents } => half_extents.checked_length_scaled(),
             Self::Cylinder {
                 radius,
                 half_height,
-            } => (radius * radius + half_height * half_height).sqrt(),
+            } => len(radius, half_height, Fix128::ZERO),
             Self::Cone {
                 radius,
                 half_height,
@@ -256,16 +272,12 @@ impl Shape {
                 // apex is `3·half_height / 2` from it, a point of the base rim
                 // `√(r² + (half_height / 2)²)`.
                 let quarter = half_height.half();
-                let apex = half_height + quarter;
-                let rim = (radius * radius + quarter * quarter).sqrt();
-                if apex > rim {
-                    apex
-                } else {
-                    rim
-                }
+                let apex = half_height.checked_add(quarter)?;
+                let rim = len(radius, quarter, Fix128::ZERO)?;
+                Some(if apex > rim { apex } else { rim })
             }
             Self::Ellipsoid { radii } => {
-                Ellipsoid::new(Vec3Fix::ZERO, radii).bounding_sphere_radius()
+                Some(Ellipsoid::new(Vec3Fix::ZERO, radii).bounding_sphere_radius())
             }
             Self::Wedge {
                 width,
@@ -278,19 +290,15 @@ impl Shape {
                 let hd = depth.half();
                 let hw = width.half();
                 let third = height / Fix128::from_int(3);
-                let two_thirds = third + third;
-                let corner = (hw * hw + third * third + hd * hd).sqrt();
-                let apex = (two_thirds * two_thirds + hd * hd).sqrt();
-                if corner > apex {
-                    corner
-                } else {
-                    apex
-                }
+                let two_thirds = third.checked_add(third)?;
+                let corner = len(hw, third, hd)?;
+                let apex = len(two_thirds, hd, Fix128::ZERO)?;
+                Some(if corner > apex { corner } else { apex })
             }
             Self::Torus {
                 major_radius,
                 minor_radius,
-            } => major_radius + minor_radius,
+            } => major_radius.checked_add(minor_radius),
         }
     }
 
