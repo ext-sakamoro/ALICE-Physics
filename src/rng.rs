@@ -28,6 +28,12 @@ impl DeterministicRng {
     /// PCG multiplier
     const MULTIPLIER: u64 = 6364136223846793005;
 
+    /// The generator's whole state as `(state, increment)`, for a digest of what holds it.
+    #[must_use]
+    pub const fn raw_state(&self) -> (u64, u64) {
+        (self.state, self.inc)
+    }
+
     /// Create RNG with the given seed
     #[must_use]
     pub fn new(seed: u64) -> Self {
@@ -59,7 +65,7 @@ impl DeterministicRng {
     #[inline]
     pub fn next_u32(&mut self) -> u32 {
         let old_state = self.state;
-        // Advance state
+        // DETERMINISTIC-RNG: the PCG step that makes every run replay bit for bit on every platform (never used for secrets)
         self.state = old_state
             .wrapping_mul(Self::MULTIPLIER)
             .wrapping_add(self.inc);
