@@ -67,7 +67,7 @@ fn loose_sleep_config() -> SleepConfig {
     SleepConfig {
         linear_threshold: Fix128::from_ratio(1, 2),
         angular_threshold: Fix128::from_ratio(1, 2),
-        frames_to_sleep: 4,
+        time_to_sleep: Fix128::from_ratio(4, 60),
     }
 }
 
@@ -105,11 +105,11 @@ fn idle_frames_matters_in_the_reset_oracle_scene() {
         "前提: まだ眠っていない状態で比較する"
     );
     assert!(
-        a.islands.sleep_data[0].idle_frames > 0,
+        a.islands.sleep_data[0].idle_time > Fix128::ZERO,
         "前提: idle_frames が溜まっている scene でないと対照実験にならない"
     );
 
-    b.islands.sleep_data[0].idle_frames = 0;
+    b.islands.sleep_data[0].idle_time = Fix128::from_int(0);
     step_n(&mut a, 9);
     step_n(&mut b, 9);
     assert_ne!(
@@ -137,7 +137,7 @@ fn reset_world_is_bit_identical_in_a_scene_where_idle_frames_matters() {
         world.add_body(drifting_body());
         step_n(world, 10);
         assert!(
-            world.islands.sleep_data[0].idle_frames > 0 || world.is_sleeping(0),
+            world.islands.sleep_data[0].idle_time > Fix128::ZERO || world.is_sleeping(0),
             "前提: reset 前に islands が汚れている (idle_frames or sleeping)"
         );
 

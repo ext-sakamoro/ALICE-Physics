@@ -27,9 +27,10 @@
 //! precision is not expected; the tolerances below are sized from the
 //! step count instead (see comments at each assertion).
 //!
-//! Sleep must be disabled for this to measure the physics rather than the
-//! sleep system: `SleepConfig::frames_to_sleep` (default 60) counts steps,
-//! not real time, and assumes a ~1/60 s step. Driving `PhysicsWorld::step`
+//! Sleep is disabled for this to measure the physics rather than the sleep
+//! system: `SleepConfig::time_to_sleep` (default 1 s) would park a body whose
+//! motion stays under the thresholds for a second of simulated time, and the
+//! slow drift measured here is below them. Driving `PhysicsWorld::step`
 //! directly at a much smaller dt (here T/20000, needed for integration
 //! accuracy over a cyclotron period) makes that threshold correspond to a
 //! tiny fraction of a real second, so a body whose instantaneous speed
@@ -83,12 +84,15 @@ fn no_gravity_world() -> PhysicsWorld {
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);
-    // See the module doc: sleep's frames_to_sleep is a step count, not a
-    // real-time threshold, and fires far too early at this test's dt.
+    // See the module doc: the drift measured here is under the sleep thresholds,
+    // so the body would be parked after `time_to_sleep` and the measurement lost.
     world.set_sleep_config(SleepConfig {
         linear_threshold: Fix128::ZERO,
         angular_threshold: Fix128::ZERO,
-        frames_to_sleep: u32::MAX,
+        time_to_sleep: Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        },
     });
     world
 }

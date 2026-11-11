@@ -34,8 +34,9 @@ pub enum SleepState {
 pub struct SleepData {
     /// Current sleep state
     pub state: SleepState,
-    /// Number of consecutive frames below velocity threshold
-    pub idle_frames: u32,
+    /// Time spent below the velocity thresholds without interruption, in
+    /// seconds (the sum of the steps' `dt` while idle)
+    pub idle_time: Fix128,
 }
 
 impl SleepData {
@@ -44,7 +45,7 @@ impl SleepData {
     pub const fn new() -> Self {
         Self {
             state: SleepState::Awake,
-            idle_frames: 0,
+            idle_time: Fix128::ZERO,
         }
     }
 
@@ -59,7 +60,7 @@ impl SleepData {
     #[inline]
     pub fn wake(&mut self) {
         self.state = SleepState::Awake;
-        self.idle_frames = 0;
+        self.idle_time = Fix128::ZERO;
     }
 }
 
@@ -76,8 +77,13 @@ pub struct SleepConfig {
     pub linear_threshold: Fix128,
     /// Angular velocity threshold below which a body is considered idle
     pub angular_threshold: Fix128,
-    /// Number of consecutive idle frames before putting to sleep
-    pub frames_to_sleep: u32,
+    /// Idle time, in seconds, after which a body is put to sleep: the body
+    /// sleeps at the first step whose accumulated idle time reaches this value
+    /// within half a step (`idle_time + dt / 2 >= time_to_sleep`), so a world
+    /// stepped at `dt` sleeps after `round(time_to_sleep / dt)` idle steps
+    /// whatever `dt` is (60 steps at 1/60 s for the default of 1 s, 3000 at
+    /// 1/3000 s). Before 4.0.0 this was a step count (`frames_to_sleep`).
+    pub time_to_sleep: Fix128,
 }
 
 impl Default for SleepConfig {
@@ -85,7 +91,7 @@ impl Default for SleepConfig {
         Self {
             linear_threshold: Fix128::from_ratio(1, 100), // 0.01 m/s
             angular_threshold: Fix128::from_ratio(1, 100), // 0.01 rad/s
-            frames_to_sleep: 60,                          // 1 second at 60fps
+            time_to_sleep: Fix128::ONE,                   // 1 second of idle time
         }
     }
 }
@@ -200,18 +206,19 @@ impl IslandManager {
         islands
     }
 
-    /// Update sleep states based on current velocities
-    pub fn update_sleep(&mut self, bodies: &[RigidBody]) {
+    /// Update sleep states based on current velocities, after a step of `dt`
+    /// (the idle time of an idle body grows by `dt`).
+    pub fn update_sleep(&mut self, bodies: &[RigidBody], dt: Fix128) {
         for (i, body) in bodies.iter().enumerate() {
             if i >= self.sleep_data.len() {
                 break;
             }
-            self.update_sleep_body(i, body);
+            self.update_sleep_body(i, body, dt);
         }
     }
 
     /// [`Self::update_sleep`] for one body (`i` must be in range).
-    pub(crate) fn update_sleep_body(&mut self, i: usize, body: &RigidBody) {
+    pub(crate) fn update_sleep_body(&mut self, i: usize, body: &RigidBody, dt: Fix128) {
         // Static bodies are always "sleeping"
         if body.is_static() {
             self.sleep_data[i].state = SleepState::Sleeping;
@@ -225,27 +232,38 @@ impl IslandManager {
             && angular_speed < self.config.angular_threshold;
 
         if is_idle {
-            self.mark_idle(i);
+            self.mark_idle(i, dt);
         } else {
             self.sleep_data[i].state = SleepState::Awake;
-            self.sleep_data[i].idle_frames = 0;
+            self.sleep_data[i].idle_time = Fix128::ZERO;
         }
     }
 
     /// [`Self::update_sleep_body`] for a body already known to be idle (or
     /// static when `is_static`), without looking at its velocity.
-    pub(crate) fn update_sleep_idle(&mut self, i: usize, is_static: bool) {
+    pub(crate) fn update_sleep_idle(&mut self, i: usize, is_static: bool, dt: Fix128) {
         if is_static {
             self.sleep_data[i].state = SleepState::Sleeping;
         } else {
-            self.mark_idle(i);
+            self.mark_idle(i, dt);
         }
     }
 
+    /// One more step of `dt` idle: the body sleeps once its idle time reaches
+    /// [`SleepConfig::time_to_sleep`] within half a step. The sum saturates at
+    /// the end of the range instead of wrapping (a body idle for 2⁶³ seconds).
     #[inline]
-    fn mark_idle(&mut self, i: usize) {
-        self.sleep_data[i].idle_frames += 1;
-        if self.sleep_data[i].idle_frames >= self.config.frames_to_sleep {
+    fn mark_idle(&mut self, i: usize, dt: Fix128) {
+        let end = Fix128 {
+            hi: i64::MAX,
+            lo: u64::MAX,
+        };
+        let idle = self.sleep_data[i].idle_time.checked_add(dt).unwrap_or(end);
+        self.sleep_data[i].idle_time = idle;
+        let reached = idle
+            .checked_add(dt.half())
+            .is_none_or(|t| t >= self.config.time_to_sleep);
+        if reached {
             self.sleep_data[i].state = SleepState::Sleeping;
         }
     }
@@ -338,7 +356,7 @@ mod tests {
     #[test]
     fn test_sleep_after_threshold() {
         let config = SleepConfig {
-            frames_to_sleep: 3,
+            time_to_sleep: Fix128::from_int(3),
             ..Default::default()
         };
         let mut mgr = IslandManager::new(1, config);
@@ -348,7 +366,7 @@ mod tests {
 
         // Should become sleeping after 3 frames
         for _ in 0..3 {
-            mgr.update_sleep(&bodies);
+            mgr.update_sleep(&bodies, Fix128::ONE);
         }
 
         assert!(mgr.is_sleeping(0));
@@ -358,21 +376,21 @@ mod tests {
     fn test_wake_on_motion() {
         let config = SleepConfig {
             linear_threshold: Fix128::from_ratio(1, 100),
-            frames_to_sleep: 2,
+            time_to_sleep: Fix128::from_int(2),
             ..Default::default()
         };
         let mut mgr = IslandManager::new(1, config);
 
         // Put to sleep
         let still_body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
-        mgr.update_sleep(&[still_body]);
-        mgr.update_sleep(&[still_body]);
+        mgr.update_sleep(&[still_body], Fix128::ONE);
+        mgr.update_sleep(&[still_body], Fix128::ONE);
         assert!(mgr.is_sleeping(0));
 
         // Moving body should wake up
         let mut moving_body = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
         moving_body.velocity = Vec3Fix::from_int(10, 0, 0);
-        mgr.update_sleep(&[moving_body]);
+        mgr.update_sleep(&[moving_body], Fix128::ONE);
         assert!(!mgr.is_sleeping(0));
     }
 

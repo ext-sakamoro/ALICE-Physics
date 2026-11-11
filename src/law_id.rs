@@ -276,7 +276,7 @@ impl PhysicsWorld {
     /// | 8 | contact cache `warm_start_factor`, `max_stale_frames` | `Fix128`, `u32` |
     /// | 9 | `sdf_collision_radius` | `Fix128` |
     /// | 10 | continuous collision: enabled, motion threshold | `bool`, `Fix128` |
-    /// | 11 | sleep `linear_threshold`, `angular_threshold`, `frames_to_sleep` | `Fix128`, `Fix128`, `u32` |
+    /// | 11 | sleep `linear_threshold`, `angular_threshold`, `time_to_sleep` | `Fix128`, `Fix128`, `Fix128` |
     /// | 12 | default friction and restitution combine rules | tag `average`, `min`, `max` or `multiply`, twice |
     /// | 13 | materials, in id order | list of: id (`MaterialId`), `static_friction`, `dynamic_friction`, `restitution` (`Fix128` each), friction combine, restitution combine (tags) |
     /// | 14 | pair overrides, sorted by `(mat_a, mat_b)` with `mat_a <= mat_b` | list of: `mat_a`, `mat_b` (`MaterialId`), `friction`, `restitution` (`Fix128`) |
@@ -339,7 +339,7 @@ impl PhysicsWorld {
         let sleep = self.islands.config;
         e.fix(sleep.linear_threshold);
         e.fix(sleep.angular_threshold);
-        e.u32(sleep.frames_to_sleep);
+        e.fix(sleep.time_to_sleep);
 
         let m = &self.material_table;
         e.combine(m.default_friction_combine);
@@ -562,7 +562,7 @@ mod induced_dipole_arm {
     // change; that the bytes follow the documented table is checked by the separate encoder in
     // `tests/law_id_world.rs`, which builds them from the table alone.
     const GOLDEN_INDUCED_DIPOLE_LAW_ID: &str =
-        "be8669587f4b8a709f3e8586752192269d6b347eb169cee319370bf291a28cf1";
+        "ea1119c9631400d6e70bf800ef8719d593bc1f1943f80e16728e6fb4d9526592";
 
     #[test]
     fn golden_law_id_of_a_world_with_one_magnet() {

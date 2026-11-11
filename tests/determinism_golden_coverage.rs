@@ -300,6 +300,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "sleep by time",
+        "analytic_sleep_by_time.rs",
+        "sleep_by_time_scene_has_its_pinned_sha256",
+        "",
+    ),
+    (
         "physics2d",
         "determinism_physics2d_step_digest.rs",
         "step_digest_is_unchanged",
@@ -376,6 +382,8 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("participant", &["add_participant("], 1),
     ("cloth", &["Cloth::"], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
+    // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
+    ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),
     ("physics2d", &["PhysicsWorld2D"], 1),
     // an installed bridge reroutes the contact solve of `step` / `substep`
     ("installed bridge", &["set_gpu_solver_bridge("], 1),
@@ -1015,7 +1023,9 @@ fn exercises(req: &Required, t: &TestFacts, combo: &str) -> Result<(), String> {
             return Err(format!("does not use `{missing}`"));
         }
         if combo == "sleeping"
-            && (t.text.contains("frames_to_sleep: u32::MAX")
+            && (t
+                .text
+                .contains("time_to_sleep: Fix128 { hi: i64::MAX, lo: u64::MAX }")
                 || t.text.contains("set_sleep_skip(false)"))
         {
             return Err("disables sleeping".into());
