@@ -288,3 +288,161 @@ pub(crate) fn velocity_share(
     let d = share(body, r, axis, j);
     (d.dx, d.dtheta)
 }
+
+/// The most points one block solve takes ([`block_normal_correction`]).
+pub(crate) const BLOCK_MAX: usize = 4;
+
+/// The normal corrections of up to [`BLOCK_MAX`] contacts between the same two
+/// bodies, solved together (the block solver of Catto, Box2D, generalised from
+/// two points to four, at the position level of Müller et al. 2020).
+///
+/// # MODEL
+///
+/// With current depths `d_j` and the coupling
+/// `A_jk = n_j · n_k (m_a⁻¹ + m_b⁻¹) + (r_aj × n_j) · I_a⁻¹ (r_ak × n_k)
+///         + (r_bj × n_j) · I_b⁻¹ (r_bk × n_k)`
+/// (how much a unit multiplier at point `k` relieves point `j`), the
+/// multipliers `λ ≥ 0` solve the complementarity problem: on an active set `S`,
+/// `A_S λ_S = d_S`, and every point outside it is left out of penetration,
+/// `d_j − Σ_k A_jk λ_k ≤ 0`. Solving the points one after another instead
+/// (Gauss–Seidel) overshoots when they are coupled through the rotation: one
+/// iteration over the four corners of a face pushed the centre of mass past the
+/// floor and the excess became velocity.
+///
+/// The active sets are tried in a fixed order (more points first, then by the
+/// bit pattern of the set), each solved by Gaussian elimination with partial
+/// pivoting (exact comparisons, no tolerance); the first that satisfies both
+/// conditions is taken. `None` when none does (the caller falls back to one
+/// point at a time).
+///
+/// Returns each body's share and the separation each point's own multiplier
+/// applied (`λ_k A_kk`, the unit of `cached_lambda`).
+pub(crate) fn block_normal_correction(
+    points: &[(ContactConstraint, ContactAnchor)],
+    a: &RigidBody,
+    b: &RigidBody,
+    turn_a: Vec3Fix,
+    turn_b: Vec3Fix,
+) -> Option<(BodyDelta, BodyDelta, [Fix128; BLOCK_MAX])> {
+    let m = points.len();
+    if m == 0 || m > BLOCK_MAX {
+        return None;
+    }
+    let mut d = [Fix128::ZERO; BLOCK_MAX];
+    let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
+    let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
+    let mut rb = [Vec3Fix::ZERO; BLOCK_MAX];
+    for (k, (c, anchor)) in points.iter().enumerate() {
+        d[k] = current_depth(c, *anchor, a, b, turn_a, turn_b);
+        n[k] = c.contact.normal;
+        ra[k] = arm(anchor.r_a, turn_a);
+        rb[k] = arm(anchor.r_b, turn_b);
+    }
+    if d[..m].iter().all(|x| *x <= Fix128::ZERO) {
+        return None;
+    }
+    let lin = a.inv_mass + b.inv_mass;
+    let ang = |body: &RigidBody, r: &[Vec3Fix; BLOCK_MAX], j: usize, k: usize| {
+        if body.inv_mass.is_zero() {
+            return Fix128::ZERO;
+        }
+        r[j].cross(n[j])
+            .dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
+    };
+    let mut big_a = [[Fix128::ZERO; BLOCK_MAX]; BLOCK_MAX];
+    for j in 0..m {
+        for k in 0..m {
+            big_a[j][k] = n[j].dot(n[k]) * lin + ang(a, &ra, j, k) + ang(b, &rb, j, k);
+        }
+    }
+    // Active sets: more points first, then ascending bit pattern.
+    let mut masks: Vec<u32> = (1..(1u32 << m)).collect();
+    masks.sort_by_key(|s| (core::cmp::Reverse(s.count_ones()), *s));
+    for mask in masks {
+        let set: Vec<usize> = (0..m).filter(|k| mask & (1 << k) != 0).collect();
+        let Some(sol) = solve_small(&big_a, &d, &set) else {
+            continue;
+        };
+        let mut lambda = [Fix128::ZERO; BLOCK_MAX];
+        for (i, &k) in set.iter().enumerate() {
+            lambda[k] = sol[i];
+        }
+        if set.iter().any(|&k| lambda[k] < Fix128::ZERO) {
+            continue;
+        }
+        let left_out_ok = (0..m).filter(|j| mask & (1 << j) == 0).all(|j| {
+            let mut relieved = Fix128::ZERO;
+            for &k in &set {
+                relieved = relieved + big_a[j][k] * lambda[k];
+            }
+            d[j] - relieved <= Fix128::ZERO
+        });
+        if !left_out_ok {
+            continue;
+        }
+        let mut da = BodyDelta::ZERO;
+        let mut db = BodyDelta::ZERO;
+        let mut sep = [Fix128::ZERO; BLOCK_MAX];
+        for &k in &set {
+            let sa = share(a, ra[k], n[k], lambda[k]);
+            let sb = share(b, rb[k], n[k], -lambda[k]);
+            da = BodyDelta {
+                dx: da.dx + sa.dx,
+                dtheta: da.dtheta + sa.dtheta,
+            };
+            db = BodyDelta {
+                dx: db.dx + sb.dx,
+                dtheta: db.dtheta + sb.dtheta,
+            };
+            sep[k] = lambda[k] * big_a[k][k];
+        }
+        return Some((da, db, sep));
+    }
+    None
+}
+
+/// `A_S x = d_S` for the rows and columns of `set`, by Gaussian elimination with
+/// partial pivoting (the largest magnitude, first on ties); `None` for a zero
+/// pivot.
+fn solve_small(
+    big_a: &[[Fix128; BLOCK_MAX]; BLOCK_MAX],
+    d: &[Fix128; BLOCK_MAX],
+    set: &[usize],
+) -> Option<[Fix128; BLOCK_MAX]> {
+    let s = set.len();
+    let mut m = [[Fix128::ZERO; BLOCK_MAX + 1]; BLOCK_MAX];
+    for (i, &j) in set.iter().enumerate() {
+        for (c, &k) in set.iter().enumerate() {
+            m[i][c] = big_a[j][k];
+        }
+        m[i][s] = d[j];
+    }
+    for col in 0..s {
+        let mut piv = col;
+        for row in col + 1..s {
+            if m[row][col].abs() > m[piv][col].abs() {
+                piv = row;
+            }
+        }
+        if m[piv][col].is_zero() {
+            return None;
+        }
+        m.swap(col, piv);
+        let pivot_row = m[col];
+        for row in m.iter_mut().take(s).skip(col + 1) {
+            let f = row[col] / pivot_row[col];
+            for (cell, p) in row.iter_mut().zip(pivot_row.iter()).take(s + 1).skip(col) {
+                *cell = *cell - f * *p;
+            }
+        }
+    }
+    let mut x = [Fix128::ZERO; BLOCK_MAX];
+    for row in (0..s).rev() {
+        let mut acc = m[row][s];
+        for c in row + 1..s {
+            acc = acc - m[row][c] * x[c];
+        }
+        x[row] = acc / m[row][row];
+    }
+    Some(x)
+}
