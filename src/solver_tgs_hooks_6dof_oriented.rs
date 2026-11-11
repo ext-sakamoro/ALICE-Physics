@@ -745,15 +745,23 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
         }
     }
 
-    fn velocity_iteration(&mut self, _sub_dt: Fix128) {
+    fn velocity_iteration(&mut self, sub_dt: Fix128) {
         for i in 0..self.contacts.len() {
-            // Normal with Newton restitution.
+            // Normal with Newton restitution. A speculative contact (a gap at
+            // the bodies' present poses, Catto 2013) may approach by as much as
+            // closes the gap in this sub-step, `vn ≥ −gap / h`, and no faster.
             let contact = self.contacts[i];
             let rel_v = self.contact_rel_velocity(i);
             let vn = v_dot(rel_v, contact.normal);
             let eff_m_n = self.effective_mass(i, contact.normal);
             if eff_m_n > Fix128::ZERO {
-                let lambda = (self.restitution_bias[i] - vn) * eff_m_n;
+                let separation = self.current_penetration(i);
+                let target = if separation < Fix128::ZERO && !sub_dt.is_zero() {
+                    separation / sub_dt
+                } else {
+                    self.restitution_bias[i]
+                };
+                let lambda = (target - vn) * eff_m_n;
                 let prev = contact.accum_normal;
                 let mut new_acc = prev + lambda;
                 if new_acc < Fix128::ZERO {

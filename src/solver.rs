@@ -3266,7 +3266,11 @@ impl PhysicsWorld {
                 self.contact_turn_of(c.body_b),
             );
             let gap = gap.max(Fix128::ZERO);
-            return if h.is_zero() { Fix128::ZERO } else { -(gap / h) };
+            return if h.is_zero() {
+                Fix128::ZERO
+            } else {
+                -(gap / h)
+            };
         }
         let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
         let e = if pre_vn < -threshold {

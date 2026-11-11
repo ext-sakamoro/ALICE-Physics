@@ -446,11 +446,62 @@ fn domino_tilt_after(backend: SolverBackend, floor: Floor, theta: f64) -> f64 {
     tilt(w.get_body(b).expect("domino").rotation)
 }
 
-/// oracle: the critical tilt is atan(w / h) = atan(0.1 / 0.5) = 11.31°. 9° falls
-/// back upright (tilt < 1°), 14° falls over (tilt within 1° of 90°, lying on its
-/// side).
+/// The domino of [`domino_tilt_after`] tilted by `theta`, over 2 s: its largest
+/// tilt (degrees), whether it crossed upright, and its first rebound's peak
+/// (degrees, after the first crossing).
+fn domino_rocking(backend: SolverBackend, floor: Floor, theta: f64) -> (f64, bool, f64) {
+    let (hw, hh) = (0.05, 0.25);
+    let (mut w, m) = world(backend, floor, 0.8, 0.0);
+    let q = QuatFix::from_axis_angle(v3(0.0, 0.0, 1.0), fx(-theta));
+    let (s, c) = theta.sin_cos();
+    let centre = v3(hw - (hw * c + hh * s), -(-hw * s - hh * c), 0.0);
+    let b = w
+        .add_shaped_body(
+            &Shape::Box {
+                half_extents: v3(hw, hh, 0.2),
+            },
+            fx(500.0),
+            centre,
+        )
+        .expect("domino");
+    w.set_body_material(b, m);
+    w.get_body_mut(b).expect("domino").set_rotation(q);
+    let (mut max_tilt, mut crossings, mut rebound, mut start_sign) = (0.0f64, 0, 0.0f64, 0.0f64);
+    for _ in 0..(2.0 / DT).round() as usize {
+        w.step(fx(DT));
+        let up = w
+            .get_body(b)
+            .expect("domino")
+            .rotation
+            .rotate_vec(v3(0.0, 1.0, 0.0));
+        let a = up.x.to_f64().clamp(-1.0, 1.0).asin().to_degrees();
+        max_tilt = max_tilt.max(a.abs());
+        if start_sign == 0.0 {
+            start_sign = a.signum();
+        }
+        let sign = a.signum();
+        // A crossing: the tilt changes side (away from the start's side on an
+        // even count, back to it on an odd one).
+        let on_start_side = sign == start_sign;
+        if a.abs() > 1e-9 && on_start_side == (crossings % 2 == 1) {
+            crossings += 1;
+        }
+        if crossings == 1 {
+            rebound = rebound.max(a.abs());
+        }
+    }
+    (max_tilt, crossings > 0, rebound)
+}
+
+/// oracle: the critical tilt is atan(w / h) = atan(0.1 / 0.5) = 11.31°. 14° falls
+/// over (tilt within 1° of 90°, lying on its side). 9° does not tip: it falls
+/// back, crosses upright and rocks on its bottom edges (Housner 1963, see
+/// tests/analytic_rocking_block.rs), its tilt staying below 11.31°, and its
+/// first rebound keeps no more energy than Housner's plastic impact allows
+/// (6.947° from 9°). The earlier "9° ends upright, tilt < 1° by 2 s" encoded the
+/// dissipation of the rigid point-by-point contact the solver had then.
 #[test]
-#[ignore = "known defect: static colliders, SDF colliders and the XPBD body-body contact give no torque (a tilted box keeps its tilt)"]
+#[ignore = "known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bound (7.005° and 7.514° against 6.947°: energy gained at the landing)"]
 fn a_domino_falls_over_only_past_atan_w_over_h() {
     let critical = (0.1f64 / 0.5).atan().to_degrees();
     assert!((critical - 11.31).abs() < 0.01);
@@ -512,13 +563,17 @@ fn a_sliding_ball_rolls_at_five_sevenths_of_v0_under_xpbd() {
 fn domino_misses(bname: &str, backend: SolverBackend, wrong: &mut Vec<String>) -> usize {
     let mut compared = 0;
     for (k, (fname, floor)) in floors().into_iter().enumerate() {
-        let back = domino_tilt_after(backend, floor, 9f64.to_radians()).to_degrees();
+        let (max_tilt, crossed, rebound) = domino_rocking(backend, floor, 9f64.to_radians());
         let (_, again) = floors().swap_remove(k);
         let over = domino_tilt_after(backend, again, 14f64.to_radians()).to_degrees();
         compared += 2;
-        if back >= 1.0 || back.is_nan() {
+        let excess = |deg: f64| {
+            let t = deg.to_radians();
+            0.25 * t.cos() + 0.05 * t.sin() - 0.25
+        };
+        if max_tilt >= 11.31 || !crossed || excess(rebound) > excess(6.947) * (1.0 + 1e-3) {
             wrong.push(format!(
-                "{bname} {fname}: 9° ends at {back:.2}° (want upright, < 1°)"
+                "{bname} {fname}: 9° reaches {max_tilt:.2}°, crossed upright {crossed}, first rebound {rebound:.3}° (want < 11.31°, a crossing, ≤ 6.947°)"
             ));
         }
         if (over - 90.0).abs() >= 1.0 || over.is_nan() {
