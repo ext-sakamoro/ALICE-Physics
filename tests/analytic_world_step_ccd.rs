@@ -1060,7 +1060,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 8 blob carries the setting (its section was added in version
+/// A version 9 blob carries the setting (its section was added in version
 /// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
@@ -1070,10 +1070,10 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    // version 8 (damping as rates per second from version 6, the sleep rule and
-    // the idle counts as time from version 7, the cloth section from version 8)
-    assert_eq!(&blob[4..6], &8u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v8 blob");
+    // version 9 (damping as rates per second from version 6, the sleep rule and
+    // the idle counts as time from version 8, the cloth section from version 9)
+    assert_eq!(&blob[4..6], &9u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v9 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

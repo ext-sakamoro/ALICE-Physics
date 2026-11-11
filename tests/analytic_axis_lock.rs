@@ -239,8 +239,9 @@ fn remove_body_keeps_the_lock_table_aligned() {
     assert_eq!(w.body_axis_lock(1), Some(AxisLock::ANGULAR_Z));
 }
 
-/// Without locks the snapshot and law identifier are the ones written before
-/// locks existed; a lock changes both and survives a snapshot round trip, and
+/// Without locks the law identifier is the one written before locks existed and
+/// the snapshot holds a lock count of 0 (version 8 onward always writes the
+/// section); a lock changes both and survives a snapshot round trip, and
 /// clearing it gives the lock-free bytes back.
 #[test]
 fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
@@ -261,8 +262,8 @@ fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
     let blob = plain.snapshot_world();
     assert_eq!(
         u16::from_le_bytes([blob[4], blob[5]]),
-        6,
-        "a lock-free world writes version 6"
+        9,
+        "a lock-free world writes the current version"
     );
 
     let mut locked = build();
@@ -276,7 +277,8 @@ fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
     assert_ne!(moved.law_id(&sem), locked.law_id(&sem));
 
     let lblob = locked.snapshot_world();
-    assert_eq!(u16::from_le_bytes([lblob[4], lblob[5]]), 7);
+    assert_eq!(u16::from_le_bytes([lblob[4], lblob[5]]), 9);
+    assert_ne!(lblob, blob);
     assert_ne!(locked.state_digest(), plain.state_digest());
     let mut back = build();
     back.restore_world(&lblob).expect("restore");
@@ -286,8 +288,8 @@ fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
     );
     assert_eq!(back.snapshot_world(), lblob);
 
-    // a version 6 blob restores as a world without locks
-    locked.restore_world(&blob).expect("restore v6");
+    // a lock-free blob restores as a world without locks
+    locked.restore_world(&blob).expect("restore lock-free");
     assert_eq!(locked.body_axis_lock(1), Some(AxisLock::NONE));
     assert_eq!(locked.snapshot_world(), blob);
     assert_eq!(locked.law_id(&sem), plain.law_id(&sem));
