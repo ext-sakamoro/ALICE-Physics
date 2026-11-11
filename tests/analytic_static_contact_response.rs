@@ -25,6 +25,11 @@
 //!
 //! Author: Moroya Sakamoto
 
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 closed forms (atan of the tipping angle, the tilt of a box from its rotation) the solver's Fix128 result is compared with"
+)]
+
 use alice_physics_core::heightfield::HeightField;
 use alice_physics_core::material::{PhysicsMaterial, DEFAULT_MATERIAL};
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
@@ -53,7 +58,7 @@ fn backends() -> [(&'static str, SolverBackend); 2] {
 /// What the body stands on: a static collider, a static body with a box shape
 /// (its top face at `y = 0`), or a static SDF collider (the half-space `y ≤ 0`).
 enum Floor {
-    Static(StaticCollider),
+    Static(Box<StaticCollider>),
     Body,
     Sdf,
 }
@@ -62,7 +67,7 @@ enum Floor {
 fn install(w: &mut PhysicsWorld, floor: Floor) {
     match floor {
         Floor::Static(c) => {
-            w.add_static_collider(c);
+            w.add_static_collider(*c);
         }
         Floor::Body => {
             let b = w.add_body(RigidBody::new_static(v3(0.0, -1.0, 0.0)));
@@ -85,10 +90,10 @@ fn install(w: &mut PhysicsWorld, floor: Floor) {
 }
 
 fn plane() -> Floor {
-    Floor::Static(StaticCollider::Plane(PlaneCollider::new(
+    Floor::Static(Box::new(StaticCollider::Plane(PlaneCollider::new(
         v3(0.0, 1.0, 0.0),
         fx(0.0),
-    )))
+    ))))
 }
 
 /// Every kind of floor at `y = 0`, facing up
@@ -103,20 +108,19 @@ fn floors() -> Vec<(&'static str, Floor)> {
         ("plane", plane()),
         (
             "mesh",
-            Floor::Static(StaticCollider::TriMesh(TriMesh::from_triangles(vec![
-                Triangle::new(a, c, b),
-                Triangle::new(a, d, c),
-            ]))),
+            Floor::Static(Box::new(StaticCollider::TriMesh(TriMesh::from_triangles(
+                vec![Triangle::new(a, c, b), Triangle::new(a, d, c)],
+            )))),
         ),
         (
             "height field",
-            Floor::Static(StaticCollider::HeightField(HeightField::flat(
+            Floor::Static(Box::new(StaticCollider::HeightField(HeightField::flat(
                 41,
                 41,
                 fx(1.0),
                 v3(-20.0, 0.0, -20.0),
                 fx(0.0),
-            ))),
+            )))),
         ),
         ("static body", Floor::Body),
         ("sdf", Floor::Sdf),
@@ -198,7 +202,7 @@ fn a_ball_bounces_to_e_squared_h_on_every_floor_and_backend() {
                 let got = bounce_height(backend, floor, e, h);
                 let want = e * e * h;
                 compared += 1;
-                if !((got - want).abs() <= 0.02 * h) {
+                if (got - want).abs() > 0.02 * h || got.is_nan() {
                     wrong.push(format!(
                         "{bname} {fname} e {e}: rises {got:.4} (closed form {want:.4})"
                     ));
@@ -269,28 +273,13 @@ fn a_sliding_box_stops_after_v0_squared_over_two_mu_g() {
 #[test]
 #[ignore = "known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball slides, or stops without spinning)"]
 fn a_sliding_ball_rolls_at_five_sevenths_of_v0() {
-    let (v0, mu, r) = (3.0, 0.3, 0.25);
-    let want = 5.0 * v0 / 7.0;
-    let shape = Shape::Ellipsoid { radii: v3(r, r, r) };
     let mut wrong = Vec::new();
     let mut compared = 0;
     for (bname, backend) in backends() {
         for (fname, floor) in floors() {
-            let (mut w, m) = world(backend, floor, mu, 0.0);
-            let b = w
-                .add_shaped_body(&shape, fx(500.0), v3(0.0, r, 0.0))
-                .expect("ball");
-            w.set_body_material(b, m);
-            w.get_body_mut(b).expect("ball").velocity = v3(v0, 0.0, 0.0);
-            step(&mut w, 1.0);
-            let body = w.get_body(b).expect("ball");
-            let (vx, wz) = (body.velocity.x.to_f64(), body.angular_velocity.z.to_f64());
             compared += 1;
-            if !((vx - want).abs() <= 0.01 * want && (-wz * r - want).abs() <= 0.01 * want) {
-                wrong.push(format!(
-                    "{bname} {fname}: v {vx:.4}, -ω_z r {:.4} (closed form both {want:.4})",
-                    -wz * r
-                ));
+            if let Some(miss) = rolling_miss(backend, floor, false) {
+                wrong.push(format!("{bname} {fname}: {miss}"));
             }
         }
     }
@@ -301,6 +290,63 @@ fn a_sliding_ball_rolls_at_five_sevenths_of_v0() {
         wrong.len(),
         wrong.join("\n")
     );
+}
+
+/// The TGS half of the rolling law, kept running while the XPBD half is a known
+/// defect: on every floor, for a ball built from its shape and one added with a
+/// radius (whose inertia is the solid sphere's), the slip turns into rolling at
+/// `5 v0 / 7`. The friction torque carries the whole transition (without it the
+/// ball keeps `ω = 0` and slides to rest), so a solve that drops it misses by
+/// the full `5 v0 / 7`.
+#[test]
+fn a_sliding_ball_rolls_at_five_sevenths_of_v0_under_tgs() {
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for by_radius in [false, true] {
+        for (fname, floor) in floors() {
+            compared += 1;
+            if let Some(miss) = rolling_miss(SolverBackend::Tgs, floor, by_radius) {
+                wrong.push(format!("{fname} (by radius: {by_radius}): {miss}"));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// Slide a solid ball (`r = 0.25`, `μ = 0.3`) at `v0 = 3` with no spin for 1 s and
+/// return how it misses rolling at `5 v0 / 7` with `ω r = v` (within 1 %), or
+/// `None`. The ball is built from its shape (`add_shaped_body`) or, with
+/// `by_radius`, added with a radius (`add_body_with_radius`, mass 1).
+fn rolling_miss(backend: SolverBackend, floor: Floor, by_radius: bool) -> Option<String> {
+    let (v0, mu, r) = (3.0, 0.3, 0.25);
+    let want = 5.0 * v0 / 7.0;
+    let (mut w, m) = world(backend, floor, mu, 0.0);
+    let b = if by_radius {
+        w.add_body_with_radius(RigidBody::new_dynamic(v3(0.0, r, 0.0), Fix128::ONE), fx(r))
+    } else {
+        let shape = Shape::Ellipsoid { radii: v3(r, r, r) };
+        w.add_shaped_body(&shape, fx(500.0), v3(0.0, r, 0.0))
+            .expect("ball")
+    };
+    w.set_body_material(b, m);
+    w.get_body_mut(b).expect("ball").velocity = v3(v0, 0.0, 0.0);
+    step(&mut w, 1.0);
+    let body = w.get_body(b).expect("ball");
+    let (vx, wz) = (body.velocity.x.to_f64(), body.angular_velocity.z.to_f64());
+    if (vx - want).abs() <= 0.01 * want && (-wz * r - want).abs() <= 0.01 * want {
+        None
+    } else {
+        Some(format!(
+            "v {vx:.4}, -ω_z r {:.4} (closed form both {want:.4})",
+            -wz * r
+        ))
+    }
 }
 
 /// The angle (radians) between the body's local `y` axis and world `y`
@@ -350,12 +396,12 @@ fn a_domino_falls_over_only_past_atan_w_over_h() {
             let (_, again) = floors().swap_remove(k);
             let over = domino_tilt_after(backend, again, 14f64.to_radians()).to_degrees();
             compared += 2;
-            if !(back < 1.0) {
+            if back >= 1.0 || back.is_nan() {
                 wrong.push(format!(
                     "{bname} {fname}: 9° ends at {back:.2}° (want upright, < 1°)"
                 ));
             }
-            if !((over - 90.0).abs() < 1.0) {
+            if (over - 90.0).abs() >= 1.0 || over.is_nan() {
                 wrong.push(format!(
                     "{bname} {fname}: 14° ends at {over:.2}° (want on its side, 90°)"
                 ));

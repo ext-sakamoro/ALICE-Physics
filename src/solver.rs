@@ -1682,7 +1682,8 @@ pub struct PhysicsWorld {
     pub contact_constraints: Vec<ContactConstraint>,
     /// SDF colliders for implicit collision detection
     pub sdf_colliders: Vec<SdfCollider>,
-    /// Default collision radius for body-vs-SDF queries
+    /// Default sphere radius against static and SDF colliders for a body with no
+    /// collision radius and no shape (a body with a collision radius uses its own)
     pub sdf_collision_radius: Fix128,
     /// Planes, height fields and triangle meshes that bodies rest on (see
     /// [`crate::static_collider`])
@@ -1879,6 +1880,14 @@ fn fnv1a_fold(hash: &mut u64, bytes: &[u8]) {
 /// The contact of one body with one SDF collider: as its shape or compound when it
 /// has one, otherwise as a sphere of `radius` at its position.
 #[cfg(feature = "std")]
+/// The sphere a body without a shape is tested as against a static collider or an
+/// SDF collider: its own collision radius (`add_body_with_radius`,
+/// `set_body_collision_radius`), else the world's default
+/// (`set_sdf_collision_radius`). One rule for every path.
+fn body_sphere_radius(radii: &[Option<Fix128>], i: usize, default: Fix128) -> Fix128 {
+    radii.get(i).copied().flatten().unwrap_or(default)
+}
+
 fn sdf_contact_of(
     collider: Option<&crate::body_collider::BodyCollider>,
     body: &RigidBody,
@@ -4026,11 +4035,7 @@ impl PhysicsWorld {
         if body.is_static() || body.is_sensor {
             return true; // both resolution passes skip it
         }
-        let radius = self
-            .body_collision_radii
-            .get(i)
-            .and_then(|r| *r)
-            .unwrap_or(self.sdf_collision_radius);
+        let radius = body_sphere_radius(&self.body_collision_radii, i, self.sdf_collision_radius);
         for collider in &self.static_colliders {
             if collider.collide_sphere(body.position, radius).is_some() {
                 return false;
@@ -4044,7 +4049,7 @@ impl PhysicsWorld {
                 if sdf.body_index == i {
                     continue;
                 }
-                if sdf_contact_of(collider, body, self.sdf_collision_radius, sdf).is_some() {
+                if sdf_contact_of(collider, body, radius, sdf).is_some() {
                     return false;
                 }
             }
@@ -6466,7 +6471,9 @@ impl PhysicsWorld {
         }
     }
 
-    /// Set the collision radius for body-vs-SDF queries
+    /// Set the default sphere radius a body without a collision radius or a shape
+    /// is tested with against static colliders and SDF colliders (a body with a
+    /// collision radius uses its own).
     pub fn set_sdf_collision_radius(&mut self, radius: Fix128) {
         self.sdf_collision_radius = radius;
     }
@@ -6523,7 +6530,8 @@ impl PhysicsWorld {
         self.sync_sdf_colliders();
         let sdf_colliders = &self.sdf_colliders;
         let colliders = &self.body_colliders;
-        let collision_radius = self.sdf_collision_radius;
+        let default_radius = self.sdf_collision_radius;
+        let radii = &self.body_collision_radii;
         let substep = self.sdf_contact_substep;
 
         // Each push-out is recorded into `log` (observation only: the record
@@ -6539,7 +6547,8 @@ impl PhysicsWorld {
                     if sdf.body_index == idx {
                         continue;
                     }
-                    if let Some(contact) = sdf_contact_of(collider, body, collision_radius, sdf) {
+                    let radius = body_sphere_radius(radii, idx, default_radius);
+                    if let Some(contact) = sdf_contact_of(collider, body, radius, sdf) {
                         log.push(crate::sdf_collider::SdfContact {
                             body_index: idx,
                             collider_index,
@@ -6606,7 +6615,8 @@ impl PhysicsWorld {
     /// The contacts of the bodies with the SDF colliders, as `(body index, contact)`:
     /// what [`step`](Self::step) would push each body out of, without moving
     /// anything. A body with a shape or a compound is tested as that collider, any
-    /// other body as a sphere of [`sdf_collision_radius`](Self::sdf_collision_radius);
+    /// other body as a sphere of its own collision radius, or of
+    /// [`sdf_collision_radius`](Self::sdf_collision_radius) when it has none;
     /// static bodies, sensors and an SDF attached to the body itself are skipped.
     /// An SDF attached to a body is queried at the pose it was given when it was
     /// added or at the end of the last step; after moving a body by hand, call
@@ -6625,7 +6635,9 @@ impl PhysicsWorld {
                 if sdf.body_index == idx {
                     continue;
                 }
-                if let Some(c) = sdf_contact_of(collider, body, self.sdf_collision_radius, sdf) {
+                let radius =
+                    body_sphere_radius(&self.body_collision_radii, idx, self.sdf_collision_radius);
+                if let Some(c) = sdf_contact_of(collider, body, radius, sdf) {
                     contacts.push((idx, c));
                 }
             }
@@ -6761,11 +6773,7 @@ impl PhysicsWorld {
             if body.is_static() || body.is_sensor {
                 continue;
             }
-            let radius = self
-                .body_collision_radii
-                .get(i)
-                .and_then(|r| *r)
-                .unwrap_or(default_radius);
+            let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
             let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
             for (collider_index, collider) in self.static_colliders.iter().enumerate() {
                 let hit = match shaped {
