@@ -194,7 +194,7 @@ fn forward_kinematics_chains_through_updated_parents() {
 // ---------------------------------------------------------------------------
 
 fn motor_pos(kp: f64, kd: f64, max: f64, target: f64) -> PdController {
-    let mut m = PdController::new(fx(kp), fx(kd), fx(max));
+    let mut m = PdController::new(fx(kp), fx(kd), fx(max)).expect("a non-negative force limit");
     m.set_position_target(fx(target));
     m
 }
@@ -254,7 +254,10 @@ fn motor_off_zero_force_and_static_partner() {
     let mut a = ArticulatedBody::new(0, false);
     a.add_link(0, 1, ball(0, 1), Vec3Fix::ZERO);
     // off
-    a.set_motor(1, PdController::new(fx(10.0), fx(1.0), fx(100.0)));
+    a.set_motor(
+        1,
+        PdController::new(fx(10.0), fx(1.0), fx(100.0)).expect("a non-negative force limit"),
+    );
     let mut b = mk(3.0);
     a.apply_motors(&mut b, fx(0.25));
     assert_eq!(arr(b[1].velocity), [0.0; 3]);
@@ -298,7 +301,8 @@ fn hinge_motor_drives_the_hinge_angle() {
         )),
         v3(1.0, 0.0, 0.0),
     );
-    let mut m = PdController::new(fx(10.0), fx(0.0), fx(100.0));
+    let mut m =
+        PdController::new(fx(10.0), fx(0.0), fx(100.0)).expect("a non-negative force limit");
     m.set_velocity_target(fx(1.0));
     a.set_motor(1, m);
     a.apply_motors(&mut bodies, fx(0.25));
