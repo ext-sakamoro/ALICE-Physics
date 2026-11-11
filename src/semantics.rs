@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b
+//! aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52
 //! ```
 //!
 //! # Entries
@@ -431,7 +431,7 @@ pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
     // folds the alice-det-math functions it calls
     (
         "alice-analytics",
-        hex32("54cbe6e9c9a3aa1170f2b9cdb22c2a9503fa78be5e079aad5b42795fee6cbf53"),
+        hex32("847535174fa305517aa11fe8b98f604d1b1ec48abaa23d2b1dce9ccc8aa8884f"),
     ),
     // alice-ml on main: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights `crate::neural`
     // takes, which folds the alice-det-math functions it calls
@@ -707,10 +707,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b`.
+/// Hex: `aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b");
+    hex32("aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
