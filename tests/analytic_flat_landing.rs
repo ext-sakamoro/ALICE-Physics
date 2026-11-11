@@ -51,7 +51,9 @@ fn landing(hz: f64, drop: f64) -> (f64, f64) {
     for _ in 0..(0.5 * hz) as usize {
         w.step(fx(1.0 / hz));
         let body = w.get_body(b).expect("box");
-        let up = body.rotation.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO));
+        let up = body
+            .rotation
+            .rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO));
         tilt = tilt.max(up.y.to_f64().clamp(-1.0, 1.0).acos());
         spin = spin.max(body.angular_velocity.length().to_f64());
     }
@@ -66,7 +68,9 @@ fn a_box_falling_flat_lands_without_turning() {
         let (tilt, spin) = landing(hz, 0.45);
         eprintln!("{hz} Hz: tilt {tilt:.3e} rad, |ω| {spin:.3e} rad/s");
         if tilt > 1e-9 || spin > 1e-9 {
-            wrong.push(format!("{hz} Hz: tilt {tilt:.3e} rad, |ω| {spin:.3e} rad/s"));
+            wrong.push(format!(
+                "{hz} Hz: tilt {tilt:.3e} rad, |ω| {spin:.3e} rad/s"
+            ));
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));

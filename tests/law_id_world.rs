@@ -157,6 +157,7 @@ impl Laws {
                     restitution: fx(2, 10),
                     friction_combine: CombineRule::Min,
                     restitution_combine: CombineRule::Max,
+                    contact_compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
                 },
                 PhysicsMaterial {
                     id: 0,
@@ -165,6 +166,7 @@ impl Laws {
                     restitution: fx(7, 10),
                     friction_combine: CombineRule::Multiply,
                     restitution_combine: CombineRule::Average,
+                    contact_compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
                 },
             ],
             // set out of order and with the second pair given as (2, 1)

@@ -741,6 +741,8 @@ mod bridge {
                 restitution: fx(0.25),
                 cached_lambda: Fix128::ZERO,
                 feature: 0,
+                compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE
+                    + alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
             });
         }
         let mut rec = Recorder::default();
@@ -781,6 +783,8 @@ mod bridge {
             restitution: fx(0.25),
             cached_lambda: Fix128::ZERO,
             feature: 0,
+            compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE
+                + alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
         });
         let mut rec = Recorder::default();
         w.solve_contact_constraints_with_bridge(&mut rec)

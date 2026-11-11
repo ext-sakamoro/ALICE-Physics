@@ -120,8 +120,8 @@ pub(crate) struct PointCorrection {
     pub(crate) a: BodyDelta,
     /// Body B's share.
     pub(crate) b: BodyDelta,
-    /// The separation applied along the normal (0 for friction).
-    pub(crate) separation: Fix128,
+    /// The change of the contact's normal multiplier (0 for friction).
+    pub(crate) dlambda: Fix128,
 }
 
 /// The arm `r` turned by `turn` (first order): `r + turn × r`.
@@ -189,23 +189,41 @@ pub(crate) fn normal_correction(
     b: &RigidBody,
     turn_a: Vec3Fix,
     turn_b: Vec3Fix,
+    h: Fix128,
 ) -> Option<PointCorrection> {
     let d = current_depth(c, anchor, a, b, turn_a, turn_b);
-    if d <= Fix128::ZERO {
+    if d <= Fix128::ZERO && c.cached_lambda <= Fix128::ZERO {
         return None;
     }
     let (r_a, r_b) = (arm(anchor.r_a, turn_a), arm(anchor.r_b, turn_b));
     let n = c.contact.normal;
     let w = point_w(a, b, r_a, r_b, n);
-    if w <= Fix128::ZERO {
+    let alpha = compliance_over_h2(c.compliance, h);
+    if w + alpha <= Fix128::ZERO {
         return None;
     }
-    let lambda = d / w;
+    // Macklin et al. 2016 eq. (18): Δλ = (d − α̃ λ) / (w + α̃), the total kept
+    // non-negative (a contact only pushes).
+    let dlambda = ((d - alpha * c.cached_lambda) / (w + alpha)).max(-c.cached_lambda);
+    if dlambda.is_zero() {
+        return None;
+    }
     Some(PointCorrection {
-        a: share(a, r_a, n, lambda),
-        b: share(b, r_b, n, -lambda),
-        separation: d,
+        a: share(a, r_a, n, dlambda),
+        b: share(b, r_b, n, -dlambda),
+        dlambda,
     })
+}
+
+/// `α̃ = α / h²` (zero for a zero substep width).
+#[inline]
+pub(crate) fn compliance_over_h2(alpha: Fix128, h: Fix128) -> Fix128 {
+    let h2 = h * h;
+    if h2.is_zero() {
+        Fix128::ZERO
+    } else {
+        alpha / h2
+    }
 }
 
 /// The static friction correction of contact `c` over a substep of width `h`
@@ -220,8 +238,7 @@ pub(crate) fn static_friction(
     turn_b: Vec3Fix,
     h: Fix128,
 ) -> Option<PointCorrection> {
-    let limit = c.friction * c.cached_lambda;
-    if limit <= Fix128::ZERO {
+    if c.friction * c.cached_lambda <= Fix128::ZERO {
         return None;
     }
     let (r_a, r_b) = (arm(anchor.r_a, turn_a), arm(anchor.r_b, turn_b));
@@ -234,8 +251,7 @@ pub(crate) fn static_friction(
     let n = c.contact.normal;
     let dp = disp(a, r_a, turn_a) - disp(b, r_b, turn_b);
     let dp_t = dp - n * dp.dot(n);
-    let len_sq = dp_t.length_squared();
-    if len_sq.is_zero() || len_sq >= limit * limit {
+    if dp_t.length_squared().is_zero() {
         return None;
     }
     let (t, len) = dp_t.normalize_with_length();
@@ -243,12 +259,17 @@ pub(crate) fn static_friction(
     if w <= Fix128::ZERO {
         return None;
     }
+    // Static while the multiplier that holds the point, `λ_t = |Δp_t| / w`, stays
+    // inside the cone `μ λ_n` (eq. (27)).
     let lambda = len / w;
+    if lambda >= c.friction * c.cached_lambda {
+        return None;
+    }
     // A's point moved by `+dp_t` relative to B's: A is moved back along `−t`.
     Some(PointCorrection {
         a: share(a, r_a, t, -lambda),
         b: share(b, r_b, t, lambda),
-        separation: Fix128::ZERO,
+        dlambda: Fix128::ZERO,
     })
 }
 
@@ -315,14 +336,15 @@ pub(crate) const BLOCK_MAX: usize = 4;
 /// conditions is taken. `None` when none does (the caller falls back to one
 /// point at a time).
 ///
-/// Returns each body's share and the separation each point's own multiplier
-/// applied (`λ_k A_kk`, the unit of `cached_lambda`).
+/// Returns each body's share and each point's change of multiplier (`Δλ_k`,
+/// added to its `cached_lambda`).
 pub(crate) fn block_normal_correction(
     points: &[(ContactConstraint, ContactAnchor)],
     a: &RigidBody,
     b: &RigidBody,
     turn_a: Vec3Fix,
     turn_b: Vec3Fix,
+    h: Fix128,
 ) -> Option<(BodyDelta, BodyDelta, [Fix128; BLOCK_MAX])> {
     let m = points.len();
     if m == 0 || m > BLOCK_MAX {
@@ -338,13 +360,29 @@ pub(crate) fn block_normal_correction(
         ra[k] = arm(anchor.r_a, turn_a);
         rb[k] = arm(anchor.r_b, turn_b);
     }
-    if d[..m].iter().all(|x| *x <= Fix128::ZERO) {
+    let held: [Fix128; BLOCK_MAX] =
+        core::array::from_fn(|k| points.get(k).map_or(Fix128::ZERO, |p| p.0.cached_lambda));
+    if d[..m].iter().all(|x| *x <= Fix128::ZERO) && held[..m].iter().all(|x| *x <= Fix128::ZERO) {
         return None;
     }
+    // With compliance (Macklin et al. 2016) the totals `λ' = λ + Δλ ≥ 0` solve
+    // `(A + α̃ I) λ' = d + A λ` on the active set: `(A + α̃ I) Δλ = d − α̃ λ`
+    // rewritten for the totals, so the complementarity is on what each point
+    // pushes in all. `α̃ > 0` makes the matrix regular even when the points
+    // constrain fewer motions than there are points (a face's four corners).
     let big_a = coupling(a, b, &ra, &rb, &n, m);
-    let lambda = block_lcp(&big_a, &d, m)?;
+    let mut stiff = big_a;
+    let mut rhs = d;
+    for j in 0..m {
+        stiff[j][j] = stiff[j][j] + compliance_over_h2(points[j].0.compliance, h);
+        for k in 0..m {
+            rhs[j] = rhs[j] + big_a[j][k] * held[k];
+        }
+    }
+    let total = block_lcp(&stiff, &rhs, m)?;
+    let lambda: [Fix128; BLOCK_MAX] = core::array::from_fn(|k| total[k] - held[k]);
     {
-        let set: Vec<usize> = (0..m).filter(|&k| lambda[k] > Fix128::ZERO).collect();
+        let set: Vec<usize> = (0..m).filter(|&k| !lambda[k].is_zero()).collect();
         let mut da = BodyDelta::ZERO;
         let mut db = BodyDelta::ZERO;
         let mut sep = [Fix128::ZERO; BLOCK_MAX];
@@ -359,7 +397,7 @@ pub(crate) fn block_normal_correction(
                 dx: db.dx + sb.dx,
                 dtheta: db.dtheta + sb.dtheta,
             };
-            sep[k] = lambda[k] * big_a[k][k];
+            sep[k] = lambda[k];
         }
         Some((da, db, sep))
     }
@@ -383,7 +421,8 @@ pub(crate) fn coupling(
         if body.inv_mass.is_zero() {
             return Fix128::ZERO;
         }
-        r[j].cross(n[j]).dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
+        r[j].cross(n[j])
+            .dot(body.world_inv_inertia_apply(r[k].cross(n[k])))
     };
     let mut big_a = [[Fix128::ZERO; BLOCK_MAX]; BLOCK_MAX];
     for j in 0..m {

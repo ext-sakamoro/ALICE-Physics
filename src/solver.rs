@@ -740,6 +740,10 @@ pub struct ContactConstraint {
     /// temporal Gauss–Seidel backend finds its impulse again when another corner
     /// lifts off.
     pub feature: u32,
+    /// The pair's contact compliance `α` (m/N, [`crate::material::CombinedMaterial::compliance`]):
+    /// the XPBD contact gives way by `α F` under a force `F`
+    /// ([`crate::xpbd_contact`]).
+    pub compliance: Fix128,
 }
 
 impl ContactConstraint {
@@ -754,6 +758,8 @@ impl ContactConstraint {
             restitution: Fix128::from_ratio(2, 10), // 0.2 restitution
             cached_lambda: Fix128::ZERO,
             feature: 0,
+            compliance: crate::material::DEFAULT_CONTACT_COMPLIANCE
+                + crate::material::DEFAULT_CONTACT_COMPLIANCE,
         }
     }
 }
@@ -1754,6 +1760,11 @@ pub struct PhysicsWorld {
     /// run of consecutive constraints between the same two bodies (at most
     /// [`crate::xpbd_contact::BLOCK_MAX`]), taken by `begin_contact_solve`.
     contact_block: Vec<(usize, usize)>,
+    /// The static-collider contact points of the previous substep, as
+    /// `(body, collider, feature)` sorted: a point found again carries the
+    /// overlap the compliant contact holds at rest, and only a point new this
+    /// substep has its overlap pre-projected (`pre_project_overlap`).
+    static_touch: Vec<(usize, usize, u32)>,
     /// Free rotation of each body in the current substep, written by
     /// `integrate_positions` and read by `update_velocities` (indexed like
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
@@ -2002,6 +2013,7 @@ impl PhysicsWorld {
             contact_anchors: Vec::new(),
             contact_turn: Vec::new(),
             contact_block: Vec::new(),
+            static_touch: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
@@ -3104,7 +3116,7 @@ impl PhysicsWorld {
     /// times; the body moves by `Δx` and turns by `Δθ` (their sums). Each
     /// point's depth then drops, and its `point_a` moves, by what the push moved
     /// that point (`Δx + Δθ × r`), so the solve sees only the rest.
-    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact]) {
+    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact], h: Fix128) {
         const PRE_PROJECTION_PASSES: usize = 4;
         let body = self.bodies[i];
         if body.inv_mass.is_zero() || body.is_sensor {
@@ -3158,7 +3170,7 @@ impl PhysicsWorld {
                 n[k] = c.normal;
                 d[k] = overlaps[k];
             }
-            let big_a = crate::xpbd_contact::coupling(
+            let mut big_a = crate::xpbd_contact::coupling(
                 &body,
                 &still,
                 &ra,
@@ -3166,6 +3178,15 @@ impl PhysicsWorld {
                 &n,
                 points.len(),
             );
+            // The pair's contact compliance keeps the block regular (a face's
+            // corners constrain three motions), as in the solve.
+            let alpha = crate::xpbd_contact::compliance_over_h2(
+                self.combined_material(i, STATIC_BODY).compliance,
+                h,
+            );
+            for (k, row) in big_a.iter_mut().enumerate().take(points.len()) {
+                row[k] = row[k] + alpha;
+            }
             if let Some(lambda) = crate::xpbd_contact::block_lcp(&big_a, &d, points.len()) {
                 for k in 0..points.len() {
                     dx = dx + n[k] * (lambda[k] * body.inv_mass);
@@ -3239,7 +3260,7 @@ impl PhysicsWorld {
     /// ([`crate::xpbd_contact::block_lcp`], `d_k = target_k − vn_k`). One point
     /// after another, the first corner's impulse turned the body and the others
     /// only partly undid it (a box falling flat left the floor spinning).
-    fn block_restitution(&mut self, first: usize, len: usize, threshold: Fix128) {
+    fn block_restitution(&mut self, first: usize, len: usize, threshold: Fix128, h: Fix128) {
         use crate::xpbd_contact::BLOCK_MAX;
         let c0 = self.contact_constraints[first];
         let (a, b) = (self.contact_body(c0.body_a), self.contact_body(c0.body_b));
@@ -3261,7 +3282,18 @@ impl PhysicsWorld {
         if d[..len].iter().all(|x| *x <= Fix128::ZERO) {
             return;
         }
-        let big_a = crate::xpbd_contact::coupling(&a, &b, &ra, &rb, &n, len);
+        let mut big_a = crate::xpbd_contact::coupling(&a, &b, &ra, &rb, &n, len);
+        // The contact compliance at the substep keeps the block regular (a
+        // face's corners constrain three motions, so `A` alone is singular and
+        // its impulses are not unique): the impulse a point takes gives way by
+        // `α̃` per unit, as the position solve does.
+        for (k, row) in big_a.iter_mut().enumerate().take(len) {
+            row[k] = row[k]
+                + crate::xpbd_contact::compliance_over_h2(
+                    self.contact_constraints[first + k].compliance,
+                    h,
+                );
+        }
         let Some(j) = crate::xpbd_contact::block_lcp(&big_a, &d, len) else {
             return;
         };
@@ -3774,6 +3806,7 @@ impl PhysicsWorld {
             restitution: combined.restitution,
             cached_lambda: Fix128::ZERO,
             feature,
+            compliance: combined.compliance,
         };
         self.add_contact(constraint);
     }
@@ -4652,7 +4685,7 @@ impl PhysicsWorld {
         // Phase 2.6: the static colliders' contacts join the tick's contact set
         // as constraints against `STATIC_BODY` (solved with the rest below)
         if !self.static_colliders.is_empty() {
-            self.add_static_contacts();
+            self.add_static_contacts(dt);
         }
 
         // Phase 2.7: Pre-solve hooks and contact modifiers, once over the
@@ -5082,7 +5115,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.add_static_contacts();
+            self.add_static_contacts(dt);
         }
 
         // 2. Solve constraints (sequential). Hooks and modifiers run once per
@@ -5130,7 +5163,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.add_static_contacts();
+            self.add_static_contacts(dt);
         }
         self.rebuild_batches();
 
@@ -5553,7 +5586,7 @@ impl PhysicsWorld {
             // point (`block_restitution`); its points then each get friction.
             let (first, len) = self.contact_block.get(i).copied().unwrap_or((i, 1));
             if len > 1 && first == i {
-                self.block_restitution(first, len, restitution_threshold);
+                self.block_restitution(first, len, restitution_threshold, dt);
             }
             let (body_a, body_b) = (
                 self.contact_body(constraint.body_a),
@@ -5584,13 +5617,12 @@ impl PhysicsWorld {
             }
 
             // Friction: reduce the tangential velocity of the contact point
-            // (Coulomb, Müller et al. 2020 eq. (30)): the tangential correction
-            // is capped by `h μ |f_n| w = μ λ_n / h` in relative velocity.
-            // `cached_lambda` is this substep's accumulated normal separation
-            // from the position solve, so the cap is `μ λ / h`. The normal
-            // velocity after the solve (`vn2`) is not the normal force: it is
-            // about 0 for a resting contact, which removed the friction of
-            // sliding and resting bodies.
+            // (Coulomb, Müller et al. 2020 eq. (30)): the tangential impulse is
+            // capped by `h μ |f_n| = μ λ_n / h`, with `λ_n` (`cached_lambda`) this
+            // substep's normal multiplier from the position solve (`f_n = λ_n /
+            // h²`). The normal velocity after the solve (`vn2`) is not the normal
+            // force: it is about 0 for a resting contact, which removed the
+            // friction of sliding and resting bodies.
             let (a2, b2) = (
                 self.contact_body(constraint.body_a),
                 self.contact_body(constraint.body_b),
@@ -5601,16 +5633,13 @@ impl PhysicsWorld {
             let tangent_speed_sq = tangent_vel.length_squared();
             if tangent_speed_sq > Fix128::ZERO {
                 let tangent_speed = tangent_speed_sq.sqrt();
-                let max_friction = constraint.friction * constraint.cached_lambda * inv_dt;
-                let applied = if tangent_speed < max_friction {
-                    tangent_speed
-                } else {
-                    max_friction
-                };
                 let t = tangent_vel / tangent_speed;
                 let w_t = crate::xpbd_contact::point_w(&a2, &b2, r_a, r_b, t);
                 if w_t > Fix128::ZERO {
-                    self.contact_velocity_impulse(i, r_a, r_b, t, -(applied / w_t));
+                    let stop = tangent_speed / w_t;
+                    let cap = constraint.friction * constraint.cached_lambda * inv_dt;
+                    let j = if stop < cap { stop } else { cap };
+                    self.contact_velocity_impulse(i, r_a, r_b, t, -j);
                 }
             }
         }
@@ -5951,8 +5980,9 @@ impl PhysicsWorld {
             &b,
             turn(&turn_a),
             turn(&turn_b),
+            h,
         ) {
-            constraint.cached_lambda = constraint.cached_lambda + fix.separation;
+            constraint.cached_lambda = constraint.cached_lambda + fix.dlambda;
             apply(&mut body_a, &mut turn_a, fix.a);
             apply(&mut body_b, &mut turn_b, fix.b);
         }
@@ -6008,6 +6038,7 @@ impl PhysicsWorld {
             &b,
             turn(&turn_a),
             turn(&turn_b),
+            h,
         ) {
             Some((da, db, sep)) => {
                 for (k, c) in group.iter_mut().enumerate() {
@@ -6026,8 +6057,9 @@ impl PhysicsWorld {
                         &b,
                         turn(&turn_a),
                         turn(&turn_b),
+                        h,
                     ) {
-                        c.cached_lambda = c.cached_lambda + fix.separation;
+                        c.cached_lambda = c.cached_lambda + fix.dlambda;
                         apply(&mut body_a, &mut turn_a, fix.a);
                         apply(&mut body_b, &mut turn_b, fix.b);
                     }
@@ -6202,9 +6234,9 @@ impl PhysicsWorld {
                 &body_b,
                 self.contact_turn_of(constraint.body_a),
                 self.contact_turn_of(constraint.body_b),
+                dt,
             ) {
-                self.contact_constraints[i].cached_lambda =
-                    constraint.cached_lambda + fix.separation;
+                self.contact_constraints[i].cached_lambda = constraint.cached_lambda + fix.dlambda;
                 self.contact_apply(constraint.body_a, fix.a);
                 self.contact_apply(constraint.body_b, fix.b);
             }
@@ -6232,7 +6264,7 @@ impl PhysicsWorld {
             self.contact_turn_of(c0.body_a),
             self.contact_turn_of(c0.body_b),
         );
-        match crate::xpbd_contact::block_normal_correction(&points, &a, &b, turn_a, turn_b) {
+        match crate::xpbd_contact::block_normal_correction(&points, &a, &b, turn_a, turn_b, dt) {
             Some((da, db, sep)) => {
                 for (k, applied) in sep.iter().enumerate().take(len) {
                     self.contact_constraints[first + k].cached_lambda =
@@ -6252,9 +6284,9 @@ impl PhysicsWorld {
                         &b,
                         self.contact_turn_of(c.body_a),
                         self.contact_turn_of(c.body_b),
+                        dt,
                     ) {
-                        self.contact_constraints[k].cached_lambda =
-                            c.cached_lambda + fix.separation;
+                        self.contact_constraints[k].cached_lambda = c.cached_lambda + fix.dlambda;
                         self.contact_apply(c.body_a, fix.a);
                         self.contact_apply(c.body_b, fix.b);
                     }
@@ -6414,6 +6446,7 @@ impl PhysicsWorld {
                 restitution,
                 cached_lambda: constraint.cached_lambda,
                 feature: constraint.feature,
+                compliance: constraint.compliance,
             });
             mapping.push(i);
         }
@@ -6605,7 +6638,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.add_static_contacts();
+            self.add_static_contacts(dt);
         }
 
         // 2. Solve constraints (sequential). Distance stays CPU;
@@ -7029,7 +7062,7 @@ impl PhysicsWorld {
             // As before the pre-projection, a field attached to a moving body is
             // treated as immovable for the start-of-substep overlap.
             let _ = target;
-            self.pre_project_overlap(c.body_index, &mut contact);
+            self.pre_project_overlap(c.body_index, &mut contact, Fix128::ZERO);
             self.add_contact_with_material(c.body_index, target, contact[0]);
         }
     }
@@ -7160,12 +7193,10 @@ impl PhysicsWorld {
     /// The normal force each contact of the last step carries, as
     /// `(contact point, normal, force)` — the input [`crate::contact_viz`] draws.
     ///
-    /// `dt` is the frame step passed to [`step`](Self::step). The solver applies a
-    /// separation `λ` (`cached_lambda`) along the normal at the contact point in
-    /// the last substep, of length `h = dt / substeps`: the displacement of a force
-    /// `F` over `h` through the point's generalised inverse mass
-    /// (`w = wₐ + w_b + (rₐ × n)ᵀ Iₐ⁻¹ (rₐ × n) + (r_b × n)ᵀ I_b⁻¹ (r_b × n)` at the
-    /// contact's arms at the end of the solve), `λ = w·F·h²`, so `F = λ / (w·h²)`. A body resting under gravity then carries its
+    /// `dt` is the frame step passed to [`step`](Self::step). The solver's normal
+    /// multiplier `λ` (`cached_lambda`, the XPBD multiplier of the contact in the
+    /// last substep, of length `h = dt / substeps`) is a force times `h²`
+    /// (Macklin et al. 2016), so `F = λ / h²`. A body resting under gravity then carries its
     /// weight: `m·g`. The normal points from B to A and the force acts on A. Contacts
     /// between two immovable bodies carry none and are left out. A body that has gone
     /// to sleep (about a minute of rest) is not solved, so its contacts are not there
@@ -7190,13 +7221,7 @@ impl PhysicsWorld {
         if a.inv_mass + b.inv_mass < W_SUM_EPSILON || h2.is_zero() {
             return None;
         }
-        let (r_a, r_b) = self.contact_arms(i);
-        let w = crate::xpbd_contact::point_w(&a, &b, r_a, r_b, c.contact.normal);
-        Some((
-            c.contact.point_a,
-            c.contact.normal,
-            c.cached_lambda / (w * h2),
-        ))
+        Some((c.contact.point_a, c.contact.normal, c.cached_lambda / h2))
     }
 
     /// Arrows for the normal forces of the last step's contacts
@@ -7275,10 +7300,12 @@ impl PhysicsWorld {
     /// The overlap a body starts the substep with is not turned into velocity:
     /// its previous (and predicted) position moves with it, as the push-out
     /// did; only the part that cancels this substep's approach is velocity.
-    fn add_static_contacts(&mut self) {
+    fn add_static_contacts(&mut self, h: Fix128) {
         let default_radius = self.sdf_collision_radius;
         let count = self.stage_count();
         let mut found: Vec<(usize, Contact, u32)> = Vec::new();
+        let previous = core::mem::take(&mut self.static_touch);
+        let mut touch: Vec<(usize, usize, u32)> = Vec::new();
         for k in 0..count {
             let i = self.stage_body(k);
             self.stage_work.resolution_bodies += 1;
@@ -7316,13 +7343,48 @@ impl PhysicsWorld {
                     point: deepest.point_a,
                     speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
                 });
+                // Only the points new this substep are pre-projected: a point
+                // found again holds the overlap the compliant contact keeps at
+                // rest (`α F`), which the solve needs to carry the load.
+                let fresh: Vec<usize> = (0..points.len())
+                    .filter(|&k| {
+                        previous
+                            .binary_search(&(i, collider_index, points[k].1))
+                            .is_err()
+                    })
+                    .collect();
                 let mut contacts: Vec<Contact> = points.iter().map(|(c, _)| *c).collect();
-                self.pre_project_overlap(i, &mut contacts);
+                if !fresh.is_empty() {
+                    let mut new_points: Vec<Contact> = fresh.iter().map(|&k| contacts[k]).collect();
+                    let before = self.bodies[i];
+                    self.pre_project_overlap(i, &mut new_points, h);
+                    let after = self.bodies[i];
+                    for (n, &k) in fresh.iter().enumerate() {
+                        contacts[k] = new_points[n];
+                    }
+                    // The persisting points move with the body too.
+                    if after.position != before.position || after.rotation != before.rotation {
+                        let dx = after.position - before.position;
+                        for k in (0..contacts.len()).filter(|k| !fresh.contains(k)) {
+                            let r = contacts[k].point_a - before.position;
+                            let r_new = after
+                                .rotation
+                                .mul(before.rotation.conjugate())
+                                .rotate_vec(r);
+                            let moved = dx + (r_new - r);
+                            contacts[k].depth = contacts[k].depth - contacts[k].normal.dot(moved);
+                            contacts[k].point_a = contacts[k].point_a + moved;
+                        }
+                    }
+                }
                 for (contact, (_, feature)) in contacts.into_iter().zip(points) {
+                    touch.push((i, collider_index, feature));
                     found.push((i, contact, feature));
                 }
             }
         }
+        touch.sort_unstable();
+        self.static_touch = touch;
         for (i, contact, feature) in found {
             self.add_manifold_point(i, STATIC_BODY, contact, feature);
         }

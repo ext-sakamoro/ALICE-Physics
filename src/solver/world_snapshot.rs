@@ -1471,7 +1471,7 @@ fn r_combine(r: &mut R<'_>) -> Res<CombineRule> {
     }
 }
 
-fn w_material_table(w: &mut W, t: &MaterialTable) {
+fn w_material_table(w: &mut W, t: &MaterialTable, compliance: bool) {
     w.usize(t.materials.len());
     for m in &t.materials {
         w.u16(m.id);
@@ -1480,6 +1480,9 @@ fn w_material_table(w: &mut W, t: &MaterialTable) {
         w.fix(m.restitution);
         w.u8(combine_tag(m.friction_combine));
         w.u8(combine_tag(m.restitution_combine));
+        if compliance {
+            w.fix(m.contact_compliance);
+        }
     }
     w.usize(t.pair_overrides.len());
     for p in &t.pair_overrides {
@@ -1497,7 +1500,7 @@ fn w_material_table(w: &mut W, t: &MaterialTable) {
 /// `try_register` assigns `id = len` up to 65,536 ids, so a valid table holds
 /// `1..=65_536` materials with `materials[i].id == i` (`get` indexes by
 /// position and falls back to entry 0, so an empty table panics there).
-fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
+fn r_material_table(r: &mut R<'_>, version: u16) -> Res<MaterialTable> {
     const S: &str = "material_table";
     let n = r.len(S, 52)?;
     // `n > 65_536` is also caught by the id check below (an id is a `u16`);
@@ -1518,6 +1521,11 @@ fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
             restitution: r.fix()?,
             friction_combine: r_combine(r)?,
             restitution_combine: r_combine(r)?,
+            contact_compliance: if version >= 9 {
+                r.fix()?
+            } else {
+                crate::material::DEFAULT_CONTACT_COMPLIANCE
+            },
         });
     }
     let n = r.len(S, 36)?;
@@ -1781,8 +1789,10 @@ impl PhysicsWorld {
     /// instead of reading the tag as a body index.
     /// Version 9 has the layout of version 8 with each contact constraint
     /// followed by its manifold point number ([`ContactConstraint::feature`],
-    /// u32); the writer uses it only when a held contact has a nonzero one, so a
-    /// world whose contacts are single points writes the version it wrote before.
+    /// u32) and its compliance ([`ContactConstraint::compliance`]), and each
+    /// material by its contact compliance; the writer uses it only when one of
+    /// these is not the value an older version reads back (feature 0, the
+    /// default compliances), so such a world writes the version it wrote before.
     pub const WORLD_SNAPSHOT_VERSION: u16 = 9;
 
     /// The version [`Self::snapshot_world`] writes for a world with a contact
@@ -1930,7 +1940,20 @@ impl PhysicsWorld {
         let static_target = self.contact_constraints.iter().any(|c| {
             c.body_a == crate::solver::STATIC_BODY || c.body_b == crate::solver::STATIC_BODY
         });
-        let features = self.contact_constraints.iter().any(|c| c.feature != 0);
+        // Version 9 carries the manifold point numbers and the contact
+        // compliances (contacts and materials); it is written only when one of
+        // them is not what an older version reads back.
+        let default_pair = crate::material::DEFAULT_CONTACT_COMPLIANCE
+            + crate::material::DEFAULT_CONTACT_COMPLIANCE;
+        let features = self
+            .contact_constraints
+            .iter()
+            .any(|c| c.feature != 0 || c.compliance != default_pair)
+            || self
+                .material_table
+                .materials
+                .iter()
+                .any(|m| m.contact_compliance != crate::material::DEFAULT_CONTACT_COMPLIANCE);
         let version = if features {
             Self::WORLD_SNAPSHOT_VERSION
         } else if static_target {
@@ -1976,6 +1999,7 @@ impl PhysicsWorld {
             w.fix(c.cached_lambda);
             if features {
                 w.u32(c.feature);
+                w.fix(c.compliance);
             }
         }
 
@@ -2019,7 +2043,7 @@ impl PhysicsWorld {
         }
 
         w_contact_cache(&mut w, &self.contact_cache);
-        w_material_table(&mut w, &self.material_table);
+        w_material_table(&mut w, &self.material_table, features);
         w.usize(self.body_materials.len());
         for &m in &self.body_materials {
             w.u16(m);
@@ -2684,6 +2708,12 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             restitution: r.fix()?,
             cached_lambda: r.fix()?,
             feature: if version >= 9 { r.u32()? } else { 0 },
+            compliance: if version >= 9 {
+                r.fix()?
+            } else {
+                crate::material::DEFAULT_CONTACT_COMPLIANCE
+                    + crate::material::DEFAULT_CONTACT_COMPLIANCE
+            },
         });
     }
 
@@ -2747,7 +2777,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     }
 
     let contact_cache = r_contact_cache(r)?;
-    let material_table = r_material_table(r)?;
+    let material_table = r_material_table(r, version)?;
     let n = r.len("body_materials", 2)?;
     let mut body_materials = Vec::with_capacity(n);
     for _ in 0..n {
