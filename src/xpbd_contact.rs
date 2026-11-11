@@ -400,7 +400,28 @@ pub(crate) fn rigid_push_out(
     for (k, row) in big_a.iter_mut().enumerate().take(m) {
         row[k] = row[k] + eps;
     }
-    let lambda = block_lcp(&big_a, d, m)?;
+    // `λ` is linear in `d`: a small push is solved scaled up by an exact power
+    // of two (to `|d| ≥ 1/2`) and scaled back, so the block keeps its
+    // precision (`Fix128` resolves `2⁻⁶⁴` absolutely, and a face's block is
+    // regularised only by `2⁻⁵⁰` of its scale).
+    let mut biggest = Fix128::ZERO;
+    for x in d.iter().take(m) {
+        biggest = biggest.max(x.abs());
+    }
+    let mut shift = 0u32;
+    while !biggest.is_zero() && biggest < Fix128::from_ratio(1, 2) && shift < 62 {
+        biggest = biggest + biggest;
+        shift += 1;
+    }
+    let up = Fix128::from_int(1i64 << shift);
+    let mut scaled = [Fix128::ZERO; BLOCK_MAX];
+    for k in 0..m {
+        scaled[k] = d[k] * up;
+    }
+    let mut lambda = block_lcp(&big_a, &scaled, m)?;
+    for x in lambda.iter_mut().take(m) {
+        *x = *x / up;
+    }
     let (mut da, mut db) = (BodyDelta::ZERO, BodyDelta::ZERO);
     for k in 0..m {
         let (pa, pb) = (

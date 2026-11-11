@@ -107,3 +107,35 @@ fn an_overlapping_pair_is_pushed_apart_without_momentum() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A pair whose every contact a pre-solve hook vetoes is not pushed apart:
+/// the push-out of start-of-substep overlap runs after the hooks and
+/// modifiers, over the points they kept, so the two overlapping boxes keep
+/// their exact poses (no gravity, no velocity; the bits, at 1 and 8 substeps).
+///
+/// What it catches: a push-out run before the hooks (the vetoed boxes are
+/// moved apart by the overlap, 0.1 m here).
+#[cfg(feature = "std")]
+#[test]
+fn a_vetoed_overlapping_pair_keeps_its_poses() {
+    for substeps in [1usize, 8] {
+        let (mut w, a, b) = scene(substeps);
+        w.add_pre_solve_hook(Box::new(|_, _, _| false));
+        let before: Vec<_> = [a, b]
+            .iter()
+            .map(|&i| {
+                let x = w.get_body(i).expect("body");
+                (x.position, x.rotation)
+            })
+            .collect();
+        w.step(fx(1.0 / 60.0));
+        for (k, &i) in [a, b].iter().enumerate() {
+            let x = w.get_body(i).expect("body");
+            assert_eq!(
+                (x.position, x.rotation),
+                before[k],
+                "{substeps} substeps: body {i} moved although every contact was vetoed"
+            );
+        }
+    }
+}
