@@ -567,7 +567,10 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 
 /// Frozen digest of the throw script at frame 600 (E and O, spacing 0.1). Every CI OS
 /// and the wasm lane must agree with it; it moves only with an announced law change.
-const THROW_DIGEST_600: &str = "e72e10da4b0c876a0446067bd263bb1bdba1b982f5c2002d45d5cefafab8d0e4";
+// re-pinned under aa8c72e9… (world snapshot version 9): the 9a stack's version 8 bytes come
+// back exactly from today's blob with the header ids and without the lock count of 0; the
+// letters did not move
+const THROW_DIGEST_600: &str = "49b6642c8f9bd107070518d3ea295bb5acc09f2eb7f5e6b5a3fa43cdccd3a4af";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -693,8 +696,11 @@ fn rollback_blob_carries_the_letters() {
 /// the golden of the soft-letter stepping path (two letters stepped by `PhysicsWorld::step`,
 /// a grab dragged for 30 frames and released with a velocity), checked on every lane so
 /// a change of any bit of the soft-letter step on any target fails here.
+// re-pinned under aa8c72e9… (world snapshot version 9): the 9a stack's version 8 bytes come
+// back exactly from today's blob with the header ids and without the lock count of 0; the
+// letters did not move
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "3acb542508c9d061194f335503e422551a9e215577215db1f0adf9ef67808cad";
+    "915941400ed013eee3ab8bfe48dd271b04bf11f75fb23395438b59958b7b0fdf";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {

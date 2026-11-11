@@ -656,8 +656,11 @@ fn drive_digest(backend: SolverBackend) -> String {
 // as the build before that change)
 // re-pinned for the semantics identifier c82742de… (each alice-det-math function pinned by its own
 // id): the digest moved with the identifier
-const DRIVE_XPBD: &str = "0b712bcb47332d1f1a8364fd8efbde505cc5eca6953ba5df380eb7d476d5d3f0";
-const DRIVE_TGS: &str = "d628dcd636b453ffc5da7421980fb7131ff414b906f5e36856acc9aa0d715d01";
+// re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
+// come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
+// count and no lock or cloth section; the bodies and the participant state did not move
+const DRIVE_XPBD: &str = "7cbf830e4934db88cca95fd9b1fd92198da121141879265209948cbb7a60c289";
+const DRIVE_TGS: &str = "a12696b5be3e345e5a1c8f43b0b3daf31b24ea0fcae7975e8e9a1d00961fabab";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

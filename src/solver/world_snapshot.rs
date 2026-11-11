@@ -4828,17 +4828,18 @@ mod tests {
             );
             payload[at..at + 16].copy_from_slice(&with);
         }
-        // version 9 appended the cloth section (count u64 + next grab id u32)
-        // before the checksum: a world without cloths ends in 12 zero bytes
-        // that the older versions do not have
+        // version 8 always writes the axis-lock count (u64) and version 9 appends
+        // the cloth section (count u64 + next grab id u32) before the checksum: a
+        // world without locks or cloths ends in 20 zero bytes that versions 1 to 6
+        // do not have
         let n = payload.len();
         assert!(
-            payload[n - 20..n - 8].iter().all(|&x| x == 0),
-            "empty section"
+            payload[n - 28..n - 8].iter().all(|&x| x == 0),
+            "empty lock and cloth sections"
         );
-        payload.drain(n - 20..n - 8);
-        // Version 7 holds the sleep rule and each body's idle time as `Fix128`
-        // seconds where versions 1 to 6 held step counts (`u32`): find those
+        payload.drain(n - 28..n - 8);
+        // Version 8 holds the sleep rule and each body's idle time as `Fix128`
+        // seconds where versions 1 to 7 held step counts (`u32`): find those
         // slots the same way and shrink each to the count at a 1/60 s step.
         let mut sleepy = variant_world();
         let t_sentinel = fx(123_456_789, 1_000_003);
@@ -4863,7 +4864,7 @@ mod tests {
             "sleep slots found: {sleep_hits:?}"
         );
         sleep_hits.sort_unstable_by(|a, b| b.cmp(a));
-        // Version 7 also holds the elastic islands' recurrence records right after the
+        // Version 8 also holds the elastic islands' recurrence records right after the
         // last idle time (a `u64` count, 0 here: the world holds no spring), which no
         // earlier version has.
         assert!(variant_world().islands.orbits.is_empty());
