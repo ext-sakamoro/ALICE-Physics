@@ -256,4 +256,6 @@ src/transient_thermal.rs	transient_step_1d	capacity <= 0.0	1	f32	predicate	an op
 src/transient_thermal.rs	transient_step_1d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
 src/transient_thermal.rs	transient_step_3d	capacity <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/transient_thermal.rs	transient_step_3d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/wasm.rs	record	step <= 9_007_199_254_740_991.0	1	f64	predicate	a check of a value the host passes at the wasm boundary: a step outside 0 .. 2^53 is refused, no value is chosen by the comparison
+src/wasm.rs	record	step >= 0.0	1	f64	predicate	a check of a value the host passes at the wasm boundary: a negative step is refused, no value is chosen by the comparison
 src/world_shape_query.rs	point_sdf	d < 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
