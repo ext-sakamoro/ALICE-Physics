@@ -2,10 +2,72 @@
 //!
 //! Puts low-energy bodies to sleep and groups connected bodies into islands.
 //!
-//! # Sleeping
+//! # MODEL
 //!
-//! Bodies whose velocities remain below a threshold for a sustained period
-//! are put to sleep, skipping integration and constraint solving.
+//! - **Equations.** A body is idle at a step when `|v| < linear_threshold` and
+//!   `|ω| < angular_threshold`; its idle time is the sum of the steps' `dt` while idle and
+//!   restarts at 0 otherwise. Bodies joined by a joint (static anchors included) form an
+//!   island, rebuilt at every step. An island sleeps or wakes as a whole: it sleeps at the end
+//!   of a step when every member that is not static has an idle time within half a step of
+//!   `time_to_sleep`, and a sleeping member is not moved by the step (it ends the step in the
+//!   state it started it in). An island that holds an elastic joint (a spring) must in
+//!   addition end the step in a state it already ended a step in within the last
+//!   [`ORBIT_WINDOW`] = 256 steps, compared bit for bit (the state: the members' position,
+//!   velocity, rotation and angular velocity, and the cached impulses of their contacts and
+//!   distance constraints; the record holds only steps at which the velocity rule held and
+//!   restarts when it does not). The hash of a state only finds a candidate. Such an island
+//!   wakes as a whole at the next step head when anything its step reads changed since it
+//!   fell asleep: the step width, the solver or sleep configuration, a member's mass,
+//!   material, collider or filter, the island's joints and distance constraints, force
+//!   fields, static or SDF colliders, participants' state, field values, or its held state
+//!   (an impulse, a moved body). A sleeper is not integrated and its velocities are derived
+//!   from its pose change, so a step that does not move it leaves it at rest where it was
+//!   (the velocity it fell asleep with, below the thresholds, is dropped at its first asleep
+//!   step, as is an impulse given between steps without waking it). A step's joint solve
+//!   and contacts can change it: a member of an island frozen on a recurrence is put back where
+//!   the step started it, any other sleeper the step moved wakes its island and keeps the
+//!   move; a sleeper the step did not move ends it at rest (its velocities derived from its
+//!   unmoved pose).
+//! - **Units.** Time and `time_to_sleep` in s, speeds in m/s and rad/s, positions in m.
+//! - **Conservation.** Sleeping conserves nothing by itself: it freezes a state. A body
+//!   that sleeps at rest under the velocity rule keeps the kinetic energy below the
+//!   thresholds it had (at most `m |v|² / 2` with `|v| < linear_threshold`). A spring-held
+//!   body is frozen on its late orbit, so its distance from the spring's rest is at most the
+//!   orbit's amplitude (the table below) and the spring's force on it is at most
+//!   `k × amplitude`.
+//! - **Range.** The recurrence is found for an orbit of period at most 256 steps. The late
+//!   orbit of a spring in `Q64.64` has a period equal to the step rate in steps per second
+//!   or one of its divisors (measured: 60 at `1/60 s`, 100 at `1/100 s`, 37 at `1/37 s`,
+//!   257 at `1/257 s`, 1000 at `1/1000 s`; 80 at `1/240 s`, 75 at `1/300 s`), so the window
+//!   covers step rates up to 256 Hz. Above that an island with a spring may never sleep: it
+//!   keeps being solved, by design, not an error. The record costs per elastic island at
+//!   most 256 states of `208 B` per member plus its contacts (two members: about 106 KiB),
+//!   and is saved in the world snapshot and the rollback state blob, so a restored world
+//!   falls asleep at the same step as the original.
+//! - **Approximations.** The thresholds are a cut-off, not a model of rest; a body creeping
+//!   below them under the velocity rule is frozen where it is (only islands with a spring are
+//!   held to the recurrence rule). Callbacks (pre-solve hooks, contact modifiers) are code
+//!   and are not part of the inputs an elastic island compares: a callback that changes its
+//!   output does not wake it.
+//! - **Validation.** `tests/analytic_sleep_spring_creep.rs::a_spring_held_body_stays_at_its_place_with_sleep_off::a_spring_held_body_stays_at_its_place_with_sleep_on::a_sleeper_jointed_to_a_moving_body_wakes_with_it::an_orbit_longer_than_the_window_never_sleeps::a_restored_world_snapshot_falls_asleep_with_the_original::a_rolled_back_world_falls_asleep_with_the_original::a_sleeping_orbit_wakes_when_its_inputs_change::a_sleeper_the_step_moves_wakes_and_keeps_the_move::a_contact_wakes_a_sleeper_and_its_tiny_velocity_survives::a_sleeper_asleep_through_a_step_ends_it_at_rest`
+//!   (in order: a spring-held body stays within
+//!   the backward Euler bound of its place with sleeping on as off; a sleeper jointed to a
+//!   moving kinematic body moves as with sleeping off; an orbit longer than the window never
+//!   sleeps while one within it does; a restored snapshot and a rolled-back state fall asleep
+//!   at the original's step and place; a change of gravity, stiffness or an impulse wakes a
+//!   sleeping orbit at the next step). Measured time to sleep and frozen error of a
+//!   critically damped spring-held body (`dt = 1/60 s`, 8 substeps, released 2 m from its
+//!   place):
+//!
+//!   | `ω` (rad/s) | asleep at frame | time | frozen distance from the place |
+//!   |---|---|---|---|
+//!   | 0.6 | 5748 | 95.8 s | 1.8e-13 m |
+//!   | 6 | 543 | 9.05 s | 2.2e-15 m |
+//!   | 60 | 132 | 2.2 s | 0 |
+//!
+//!   (the ignored measurement of the time to sleep in the same file prints these; at `ω` 60 the orbit is reached at frame 115 and the velocity rule's one
+//!   second holds the sleep to frame 132.)
+//! - **Tiers.** L0 only.
 //!
 //! # Islands
 //!
@@ -105,6 +167,76 @@ pub struct Island {
     pub all_sleeping: bool,
 }
 
+/// The number of end-of-step states an island holding an elastic joint keeps for the
+/// recurrence rule (see [`crate::solver::PhysicsWorld`]'s sleep rules and the MODEL section
+/// of this module): an orbit whose period is at most this many steps is recognised.
+///
+/// 256 covers the period measured for a spring-held body in `Q64.64` (60 steps at
+/// `dt = 1/60 s`, 8 substeps, for `ω` from 0.6 to 60 rad/s) four times over; an orbit with
+/// a longer period is never recognised and its island never sleeps.
+pub const ORBIT_WINDOW: usize = 256;
+
+/// The recent end-of-step states of one island that holds an elastic joint (the recurrence
+/// rule of [`crate::solver::PhysicsWorld`]'s sleep).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct IslandOrbit {
+    /// The island's bodies, ascending (the first is the island's key)
+    pub members: Vec<usize>,
+    /// Everything the island's step reads that the step itself does not change (the step
+    /// width, the solver and sleep configuration, the members' mass, material and
+    /// collider data, the island's joints, force fields, static and SDF colliders,
+    /// participants' state and field values), as bytes: a change empties `states` and
+    /// wakes the island
+    pub inputs: Vec<u8>,
+    /// Whether the island fell asleep on a recurrence and is held at `states`' last entry
+    pub asleep: bool,
+    /// The end-of-step states (the members' position, velocity, rotation and angular
+    /// velocity, and the cached impulses of the contacts and distance constraints they take
+    /// part in), oldest first, at most [`ORBIT_WINDOW`]
+    pub states: Vec<Vec<u8>>,
+    /// FNV-1a 64 of each entry of `states`: a lookup key only, every hit is confirmed by
+    /// comparing the bytes
+    pub(crate) hashes: Vec<u64>,
+}
+
+impl IslandOrbit {
+    /// FNV-1a 64 of `bytes`
+    #[must_use]
+    pub(crate) fn hash(bytes: &[u8]) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h
+    }
+
+    /// Whether `state` equals one of the kept states bit for bit (found through its hash)
+    #[must_use]
+    pub fn recurs(&self, state: &[u8]) -> bool {
+        let h = Self::hash(state);
+        self.hashes
+            .iter()
+            .zip(&self.states)
+            .any(|(&k, s)| k == h && s.as_slice() == state)
+    }
+
+    /// Keep `state` as the newest entry, dropping the oldest beyond [`ORBIT_WINDOW`]
+    pub fn push(&mut self, state: Vec<u8>) {
+        self.hashes.push(Self::hash(&state));
+        self.states.push(state);
+        if self.states.len() > ORBIT_WINDOW {
+            self.states.remove(0);
+            self.hashes.remove(0);
+        }
+    }
+
+    /// Rebuild the hashes from `states` (after a restore)
+    pub(crate) fn rehash(&mut self) {
+        self.hashes = self.states.iter().map(|s| Self::hash(s)).collect();
+    }
+}
+
 /// Island manager using Union-Find (disjoint set)
 pub struct IslandManager {
     /// Parent array for union-find
@@ -115,6 +247,9 @@ pub struct IslandManager {
     pub sleep_data: Vec<SleepData>,
     /// Sleep configuration
     pub config: SleepConfig,
+    /// The recurrence records of the islands that hold an elastic joint, by ascending first
+    /// member
+    pub orbits: Vec<IslandOrbit>,
 }
 
 impl IslandManager {
@@ -132,6 +267,7 @@ impl IslandManager {
             rank,
             sleep_data,
             config,
+            orbits: Vec::new(),
         }
     }
 

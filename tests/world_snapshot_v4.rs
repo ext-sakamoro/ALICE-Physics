@@ -142,6 +142,11 @@ fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
         "sleep slots found: {sleep_hits:?}"
     );
     sleep_hits.sort_unstable_by(|a, b| b.cmp(a));
+    // version 7 also holds the elastic islands' recurrence records right after the
+    // last idle time (a `u64` count, 0 here: no spring), which no earlier version has
+    let after = sleep_hits[0] + 16;
+    assert_eq!(payload[after..after + 8], [0u8; 8], "an empty record count");
+    payload.drain(after..after + 8);
     for at in sleep_hits {
         let mut hi = [0u8; 8];
         let mut lo = [0u8; 8];
