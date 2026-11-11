@@ -44,7 +44,7 @@
 //! `a_domino_falls_over_only_past_atan_w_over_h_under_xpbd`) and
 //! `tests/analytic_resting_box_manifold.rs`.
 
-use crate::math::{Fix128, Vec3Fix};
+use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{ContactConstraint, RigidBody};
 
 /// The arms of a contact at the poses it was detected at.
@@ -63,6 +63,35 @@ impl ContactAnchor {
             r_a: c.contact.point_a - a.position,
             r_b: c.contact.point_b - b.position,
         }
+    }
+}
+
+/// What the substep's contact corrections have turned a body by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct ContactTurn {
+    /// The sum of the rotation vectors applied (world frame).
+    pub(crate) turn: Vec3Fix,
+    /// The body's rotation before the first of them (`None`: none applied).
+    pub(crate) start: Option<QuatFix>,
+    /// The body's rotation right after the last of them.
+    pub(crate) end: Option<QuatFix>,
+}
+
+impl ContactTurn {
+    /// The angular velocity of a body whose rotation went from `predicted` to
+    /// `rotation` over the substep `1 / inv_dt`, when nothing but the contact
+    /// corrections turned it after the prediction: `omega + turn / h`, built from
+    /// the corrections themselves (no quaternion difference, whose rounding
+    /// would depend on the orientation the body had). `None` otherwise.
+    pub(crate) fn angular_velocity(
+        &self,
+        predicted: QuatFix,
+        rotation: QuatFix,
+        omega: Vec3Fix,
+        inv_dt: Fix128,
+    ) -> Option<Vec3Fix> {
+        (self.start == Some(predicted) && self.end == Some(rotation))
+            .then(|| omega + self.turn * inv_dt)
     }
 }
 
@@ -225,15 +254,19 @@ pub(crate) fn static_friction(
 
 /// Apply a body's share: move it, turn it (exact angle about the rotation
 /// vector's axis) and add the rotation to its turn.
-pub(crate) fn apply(body: &mut RigidBody, turn: &mut Vec3Fix, delta: BodyDelta) {
+pub(crate) fn apply(body: &mut RigidBody, turn: &mut ContactTurn, delta: BodyDelta) {
     if body.inv_mass.is_zero() {
         return;
     }
     body.position = body.position + delta.dx;
     let (axis, angle) = delta.dtheta.normalize_with_length();
     if !angle.is_zero() {
+        if turn.start.is_none() {
+            turn.start = Some(body.rotation);
+        }
         body.rotation = crate::joint::rotate_by_angle(body.rotation, axis, angle);
-        *turn = *turn + delta.dtheta;
+        turn.turn = turn.turn + delta.dtheta;
+        turn.end = Some(body.rotation);
     }
 }
 

@@ -90,11 +90,14 @@ fn an_overlapping_ball_comes_out_by_the_geometric_decay_in_one_tick() {
 
 /// A plank tilted by `θ₀ = 0.05` rad about `z` (and `ψ = 0.002` rad about `x`,
 /// so one corner is the lowest alone), that corner overlapping the plane by
-/// `d₀ = 0.01`, brings it to `slop + (d₀ − slop)(1 − β)^N` in one tick
-/// (substeps 4 and 8), turning as it rises. The plank is thin along `z` (half
-/// depth 0.01 m), so the turn about `x` that the corner's arm along `z` gives is
-/// small. Tolerance: the second-order part of the turn, `r θ²` with `r` the
-/// corner's arm (0.46 m) and `θ` the total turn (below `d₀ / r`), `2e-4` m.
+/// `d₀ = 0.01`, rests on its low edge: the floor's manifold holds both corners
+/// of that edge (`80 µm` apart in height), and the position iteration corrects
+/// one, then the other. Both rise together (the plank is thin along `z`, half
+/// depth 0.01 m, so the turn about `x` between them is small), so each iteration
+/// takes the fraction `(1 − β)` out twice:
+/// `d = slop + (d₀ − slop)(1 − β)^{2N}` in one tick (substeps 4 and 8), turning
+/// as it rises. Tolerance: the second-order part of the turn, `r θ²` with `r`
+/// the corner's arm (0.46 m) and `θ` the total turn (below `d₀ / r`), `2e-4` m.
 #[test]
 fn a_tilted_box_brings_its_corner_out_by_the_geometric_decay_turning() {
     let (hx, hy, hz) = (0.45, 0.06, 0.01);
@@ -146,7 +149,7 @@ fn a_tilted_box_brings_its_corner_out_by_the_geometric_decay_turning() {
         w.step(fx(1.0 / 60.0));
         let body = w.get_body(b).expect("box");
         let depth = -(body.position.y.to_f64() + height(body.rotation, low));
-        let want = decayed(d0, substeps * POSITION_ITERS);
+        let want = decayed(d0, 2 * substeps * POSITION_ITERS);
         if (depth - want).abs() > 2e-4 {
             wrong.push(format!(
                 "s {substeps}: corner depth {depth:.6}, want {want:.6}"

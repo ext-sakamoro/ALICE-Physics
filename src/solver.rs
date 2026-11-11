@@ -1215,8 +1215,21 @@ fn derived_angular_velocity(
     body: &RigidBody,
     free: Option<crate::gyroscopic::FreeRotation>,
     predicted: Option<QuatFix>,
+    contact: Option<crate::xpbd_contact::ContactTurn>,
     inv_dt: Fix128,
 ) -> Vec3Fix {
+    // Turned only by the contact corrections after the prediction: the
+    // corrections' own rotation vectors (see `ContactTurn::angular_velocity`).
+    if let Some(ct) = contact {
+        let from_contacts = match (free, predicted) {
+            (Some(f), _) => ct.angular_velocity(f.rotation, body.rotation, f.omega, inv_dt),
+            (None, Some(q)) => ct.angular_velocity(q, body.rotation, body.angular_velocity, inv_dt),
+            (None, None) => None,
+        };
+        if let Some(w) = from_contacts {
+            return w;
+        }
+    }
     match (free, predicted) {
         (Some(f), _) if body.rotation == f.rotation => f.omega,
         (Some(f), _) => f.omega + angular_from_rotations(body.rotation, f.rotation, inv_dt),
@@ -1436,7 +1449,7 @@ impl BodySlicePtr {
 /// to one constraint per batch, so its turn slot is written by one thread.
 #[cfg(feature = "parallel")]
 struct TurnSlicePtr {
-    ptr: *mut Vec3Fix,
+    ptr: *mut crate::xpbd_contact::ContactTurn,
     len: usize,
 }
 
@@ -1458,7 +1471,7 @@ impl TurnSlicePtr {
     ///
     /// Caller must ensure `idx < self.len` and that no other thread accesses
     /// the same index.
-    unsafe fn get_mut(&self, idx: usize) -> &mut Vec3Fix {
+    unsafe fn get_mut(&self, idx: usize) -> &mut crate::xpbd_contact::ContactTurn {
         debug_assert!(idx < self.len);
         &mut *self.ptr.add(idx)
     }
@@ -1736,7 +1749,7 @@ pub struct PhysicsWorld {
     contact_anchors: Vec<crate::xpbd_contact::ContactAnchor>,
     /// Per body, the rotation vector the substep's contact corrections have
     /// turned it by (reset by `begin_contact_solve`).
-    contact_turn: Vec<Vec3Fix>,
+    contact_turn: Vec<crate::xpbd_contact::ContactTurn>,
     /// Free rotation of each body in the current substep, written by
     /// `integrate_positions` and read by `update_velocities` (indexed like
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
@@ -3003,7 +3016,10 @@ impl PhysicsWorld {
             .collect();
         self.contact_anchors = anchors;
         self.contact_turn.clear();
-        self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+        self.contact_turn.resize(
+            self.bodies.len(),
+            crate::xpbd_contact::ContactTurn::default(),
+        );
     }
 
     /// The anchor of contact `i` (the one at its present poses when the solve
@@ -3023,7 +3039,7 @@ impl PhysicsWorld {
     /// The turn of a constraint's body (zero for [`STATIC_BODY`] and before the
     /// solve began).
     fn contact_turn_of(&self, i: usize) -> Vec3Fix {
-        self.contact_turn.get(i).copied().unwrap_or(Vec3Fix::ZERO)
+        self.contact_turn.get(i).map_or(Vec3Fix::ZERO, |t| t.turn)
     }
 
     /// Apply one contact correction to the constraint's bodies (see
@@ -3033,9 +3049,105 @@ impl PhysicsWorld {
             return;
         }
         if self.contact_turn.len() < self.bodies.len() {
-            self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+            self.contact_turn.resize(
+                self.bodies.len(),
+                crate::xpbd_contact::ContactTurn::default(),
+            );
         }
         crate::xpbd_contact::apply(&mut self.bodies[i], &mut self.contact_turn[i], delta);
+    }
+
+    /// Push body `i` out of the overlap it started the substep with against an
+    /// immovable partner, moving its present, previous and predicted poses
+    /// together so the push creates no velocity (the start-of-substep overlap is
+    /// not an approach of this substep).
+    ///
+    /// `points` are its contacts with one immovable partner (a manifold, or one
+    /// point). The overlap of a point is its depth minus the part the body's
+    /// approach this substep (`−n · (x − x_prev)`) explains. The push is the
+    /// point constraint of [`crate::xpbd_contact`] (generalised inverse mass with
+    /// the angular term), over the points in order, `PRE_PROJECTION_PASSES`
+    /// times; the body moves by `Δx` and turns by `Δθ` (their sums). Each
+    /// point's depth then drops, and its `point_a` moves, by what the push moved
+    /// that point (`Δx + Δθ × r`), so the solve sees only the rest.
+    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact]) {
+        const PRE_PROJECTION_PASSES: usize = 4;
+        let body = self.bodies[i];
+        if body.inv_mass.is_zero() || body.is_sensor {
+            return;
+        }
+        // The temporal Gauss–Seidel backend corrects penetration in its own
+        // position iteration (geometric decay, velocities kept apart); it only
+        // needs the start-of-substep overlap out of its previous pose, as it
+        // always had (translation of the deepest point's overlap).
+        if self.config.solver_backend == SolverBackend::Tgs {
+            let Some(deepest) = points.iter().max_by(|x, y| x.depth.cmp(&y.depth)) else {
+                return;
+            };
+            let approach = -(body.position - body.prev_position).dot(deepest.normal);
+            let overlap = deepest.depth - approach.max(Fix128::ZERO).min(deepest.depth);
+            if overlap > Fix128::ZERO {
+                let shift = deepest.normal * overlap;
+                self.bodies[i].prev_position = body.prev_position + shift;
+                if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                    *x = *x + shift;
+                }
+            }
+            return;
+        }
+        let travel = body.position - body.prev_position;
+        let arms: Vec<Vec3Fix> = points.iter().map(|c| c.point_a - body.position).collect();
+        let overlaps: Vec<Fix128> = points
+            .iter()
+            .map(|c| {
+                let approach = -travel.dot(c.normal);
+                c.depth - approach.max(Fix128::ZERO).min(c.depth)
+            })
+            .collect();
+        if overlaps.iter().all(|o| *o <= Fix128::ZERO) {
+            return;
+        }
+        let (mut dx, mut dtheta) = (Vec3Fix::ZERO, Vec3Fix::ZERO);
+        let moved_at = |dx: Vec3Fix, dtheta: Vec3Fix, r: Vec3Fix| dx + dtheta.cross(r);
+        for _ in 0..PRE_PROJECTION_PASSES {
+            for (k, c) in points.iter().enumerate() {
+                let n = c.normal;
+                let left = overlaps[k] - n.dot(moved_at(dx, dtheta, arms[k]));
+                if left <= Fix128::ZERO {
+                    continue;
+                }
+                let r = crate::xpbd_contact::arm(arms[k], dtheta);
+                let w = body.inv_mass + crate::xpbd_contact::angular_w(&body, r, n);
+                if w <= Fix128::ZERO {
+                    continue;
+                }
+                let lambda = left / w;
+                dx = dx + n * (lambda * body.inv_mass);
+                dtheta = dtheta + body.world_inv_inertia_apply(r.cross(n)) * lambda;
+            }
+        }
+        for (k, c) in points.iter_mut().enumerate() {
+            let moved = moved_at(dx, dtheta, arms[k]);
+            c.depth = c.depth - c.normal.dot(moved);
+            c.point_a = c.point_a + moved;
+        }
+        let (axis, angle) = dtheta.normalize_with_length();
+        let turn = |q: QuatFix| {
+            if angle.is_zero() {
+                q
+            } else {
+                crate::joint::rotate_by_angle(q, axis, angle)
+            }
+        };
+        let b = &mut self.bodies[i];
+        b.position = b.position + dx;
+        b.prev_position = b.prev_position + dx;
+        b.rotation = turn(b.rotation);
+        b.prev_rotation = turn(b.prev_rotation);
+        if let Some(Some((x, q))) = self.predicted_pose.get_mut(i) {
+            *x = *x + dx;
+            *q = turn(*q);
+        }
     }
 
     /// The arms of contact `i` at the present turn of its bodies.
@@ -5236,6 +5348,7 @@ impl PhysicsWorld {
             self.stage_work.velocity_bodies += self.unparked_count();
             let free: &[Option<crate::gyroscopic::FreeRotation>] = &self.free_rotation;
             let predicted: &[Option<(Vec3Fix, QuatFix)>] = &self.predicted_pose;
+            let contact_turn: &[crate::xpbd_contact::ContactTurn] = &self.contact_turn;
             self.bodies
                 .par_iter_mut()
                 .enumerate()
@@ -5255,8 +5368,9 @@ impl PhysicsWorld {
                     // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
                     // (split bodies: the split's ω plus the solve's change)
                     let f = free.get(i).copied().flatten();
+                    let ct = contact_turn.get(i).copied();
                     body.angular_velocity =
-                        derived_angular_velocity(body, f, pose.map(|(_, q)| q), inv_dt);
+                        derived_angular_velocity(body, f, pose.map(|(_, q)| q), ct, inv_dt);
                 });
         }
 
@@ -5279,9 +5393,10 @@ impl PhysicsWorld {
                 // Angular velocity from rotation change (split bodies: the
                 // split's ω plus the solve's change)
                 let f = self.free_rotation.get(i).copied().flatten();
+                let ct = self.contact_turn.get(i).copied();
                 let body = &mut self.bodies[i];
                 body.angular_velocity =
-                    derived_angular_velocity(body, f, pose.map(|(_, q)| q), inv_dt);
+                    derived_angular_velocity(body, f, pose.map(|(_, q)| q), ct, inv_dt);
             }
         }
 
@@ -5541,7 +5656,10 @@ impl PhysicsWorld {
                     len: self.contact_constraints.len(),
                 };
                 if self.contact_turn.len() < self.bodies.len() {
-                    self.contact_turn.resize(self.bodies.len(), Vec3Fix::ZERO);
+                    self.contact_turn.resize(
+                        self.bodies.len(),
+                        crate::xpbd_contact::ContactTurn::default(),
+                    );
                 }
                 let turns = TurnSlicePtr {
                     ptr: self.contact_turn.as_mut_ptr(),
@@ -5661,8 +5779,8 @@ impl PhysicsWorld {
         mut body_b: BodyRef<'_>,
         constraint: &mut ContactConstraint,
         anchor: crate::xpbd_contact::ContactAnchor,
-        mut turn_a: Option<&mut Vec3Fix>,
-        mut turn_b: Option<&mut Vec3Fix>,
+        mut turn_a: Option<&mut crate::xpbd_contact::ContactTurn>,
+        mut turn_b: Option<&mut crate::xpbd_contact::ContactTurn>,
         h: Fix128,
     ) {
         let (a, b) = (*body_a.get(), *body_b.get());
@@ -5676,9 +5794,11 @@ impl PhysicsWorld {
         if a.inv_mass + b.inv_mass < W_SUM_EPSILON {
             return;
         }
-        let turn = |t: &Option<&mut Vec3Fix>| t.as_deref().copied().unwrap_or(Vec3Fix::ZERO);
+        let turn = |t: &Option<&mut crate::xpbd_contact::ContactTurn>| {
+            t.as_deref().map_or(Vec3Fix::ZERO, |t| t.turn)
+        };
         let apply = |body: &mut BodyRef<'_>,
-                     t: &mut Option<&mut Vec3Fix>,
+                     t: &mut Option<&mut crate::xpbd_contact::ContactTurn>,
                      d: crate::xpbd_contact::BodyDelta| {
             if let (BodyRef::Dynamic(rb), Some(slot)) = (body, t.as_deref_mut()) {
                 crate::xpbd_contact::apply(rb, slot, d);
@@ -6612,24 +6732,17 @@ impl PhysicsWorld {
             } else {
                 owner
             };
-            let body = &mut self.bodies[c.body_index];
-            let approach = -(body.position - body.prev_position).dot(c.normal);
-            let moved = approach.max(Fix128::ZERO).min(c.depth);
-            let overlap = c.depth - moved;
-            if overlap > Fix128::ZERO {
-                let shift = c.normal * overlap;
-                body.prev_position = body.prev_position + shift;
-                if let Some(Some((x, _))) = self.predicted_pose.get_mut(c.body_index) {
-                    *x = *x + shift;
-                }
-            }
-            let contact = Contact {
+            let mut contact = [Contact {
                 depth: c.depth,
                 normal: c.normal,
                 point_a: c.point - c.normal * c.depth,
                 point_b: c.point,
-            };
-            self.add_contact_with_material(c.body_index, target, contact);
+            }];
+            // As before the pre-projection, a field attached to a moving body is
+            // treated as immovable for the start-of-substep overlap.
+            let _ = target;
+            self.pre_project_overlap(c.body_index, &mut contact);
+            self.add_contact_with_material(c.body_index, target, contact[0]);
         }
     }
 
@@ -6880,12 +6993,14 @@ impl PhysicsWorld {
         for k in 0..count {
             let i = self.stage_body(k);
             self.stage_work.resolution_bodies += 1;
-            let body = &mut self.bodies[i];
+            let body = self.bodies[i];
             if body.is_static() || body.is_sensor {
                 continue;
             }
             let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
             let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
+            // Every collider is met at the pose the body was predicted at.
+            let mut per_collider: Vec<(usize, Vec<(Contact, u32)>)> = Vec::new();
             for (collider_index, collider) in self.static_colliders.iter().enumerate() {
                 let points = match shaped {
                     Some(c) => c.static_manifold(body.position, body.rotation, collider),
@@ -6895,10 +7010,12 @@ impl PhysicsWorld {
                         .into_iter()
                         .collect(),
                 };
-                // The deepest point stands for the collider in the event and in
-                // the start-of-substep overlap (the manifold's points share the
-                // normal; shifting once per point would shift the body as many
-                // times).
+                if !points.is_empty() {
+                    per_collider.push((collider_index, points));
+                }
+            }
+            for (collider_index, points) in per_collider {
+                // The deepest point stands for the collider in the event.
                 let Some(&(deepest, _)) = points.iter().max_by(|x, y| x.0.depth.cmp(&y.0.depth))
                 else {
                     continue;
@@ -6910,17 +7027,9 @@ impl PhysicsWorld {
                     point: deepest.point_a,
                     speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
                 });
-                let approach = -(body.position - body.prev_position).dot(deepest.normal);
-                let moved = approach.max(Fix128::ZERO).min(deepest.depth);
-                let overlap = deepest.depth - moved;
-                if overlap > Fix128::ZERO {
-                    let shift = deepest.normal * overlap;
-                    body.prev_position = body.prev_position + shift;
-                    if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
-                        *x = *x + shift;
-                    }
-                }
-                for (contact, feature) in points {
+                let mut contacts: Vec<Contact> = points.iter().map(|(c, _)| *c).collect();
+                self.pre_project_overlap(i, &mut contacts);
+                for (contact, (_, feature)) in contacts.into_iter().zip(points) {
                     found.push((i, contact, feature));
                 }
             }

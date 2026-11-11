@@ -119,6 +119,163 @@ impl Ellipsoid {
     }
 }
 
+/// Halvings of the bracket of the nearest-point root (Eberly's `GetRoot`): a
+/// fixed count, not a tolerance, so the result is the same bits everywhere.
+/// 128 halvings shrink any bracket of the `Fix128` range below one raw unit.
+const NEAREST_ROOT_HALVINGS: usize = 128;
+
+/// The root of `F(s) = Σ (rᵢ zᵢ / (s + rᵢ))² − 1` on the bracket
+/// `(z_last − 1, g < 0 ? 0 : |r ⊙ z| − 1)` by `NEAREST_ROOT_HALVINGS` fixed
+/// halvings (Eberly, "Distance from a Point to an Ellipse, an Ellipsoid, or a
+/// Hyperellipsoid", 2013, §2.6, normalised coordinates `r = (e/e_last)²`,
+/// `z = y/e`).
+fn nearest_root(n: usize, r: [Fix128; 3], z: [Fix128; 3], g: Fix128) -> Fix128 {
+    let mut rz = [Fix128::ZERO; 3];
+    let mut norm2 = Fix128::ZERO;
+    for i in 0..n {
+        rz[i] = r[i] * z[i];
+        norm2 = norm2 + rz[i] * rz[i];
+    }
+    let mut s0 = z[n - 1] - Fix128::ONE;
+    let mut s1 = if g < Fix128::ZERO {
+        Fix128::ZERO
+    } else {
+        norm2.sqrt() - Fix128::ONE
+    };
+    let two = Fix128::from_int(2);
+    let mut s = (s0 + s1) / two;
+    for _ in 0..NEAREST_ROOT_HALVINGS {
+        s = (s0 + s1) / two;
+        let mut f = -Fix128::ONE;
+        for i in 0..n {
+            let q = rz[i] / (s + r[i]);
+            f = f + q * q;
+        }
+        if f > Fix128::ZERO {
+            s0 = s;
+        } else {
+            s1 = s;
+        }
+    }
+    s
+}
+
+/// The nearest point of the ellipsoid with semi-axes `e` (decreasing) to `y`
+/// (first orthant), on the first `n` axes: Eberly's `DistancePointEllipsoid`,
+/// recursive in the dimension when the last coordinate is 0.
+fn nearest_sorted(n: usize, e: [Fix128; 3], y: [Fix128; 3]) -> [Fix128; 3] {
+    let mut x = [Fix128::ZERO; 3];
+    if n == 1 {
+        x[0] = e[0];
+        return x;
+    }
+    let last = n - 1;
+    if y[last] > Fix128::ZERO {
+        let mut z = [Fix128::ZERO; 3];
+        let mut g = -Fix128::ONE;
+        for i in 0..n {
+            z[i] = y[i] / e[i];
+            g = g + z[i] * z[i];
+        }
+        if g.is_zero() {
+            x[..n].copy_from_slice(&y[..n]);
+            return x;
+        }
+        let mut r = [Fix128::ZERO; 3];
+        for i in 0..n {
+            let q = e[i] / e[last];
+            r[i] = q * q;
+        }
+        let s = nearest_root(n, r, z, g);
+        for i in 0..n {
+            x[i] = r[i] * y[i] / (s + r[i]);
+        }
+        return x;
+    }
+    // y[last] = 0: the nearest point may lie off the y[last] = 0 plane
+    let mut numer = [Fix128::ZERO; 3];
+    let mut denom = [Fix128::ZERO; 3];
+    let mut inside = true;
+    for i in 0..last {
+        numer[i] = e[i] * y[i];
+        denom[i] = e[i] * e[i] - e[last] * e[last];
+        if numer[i] >= denom[i] {
+            inside = false;
+        }
+    }
+    if inside {
+        let mut discr = Fix128::ONE;
+        let mut xde = [Fix128::ZERO; 3];
+        for i in 0..last {
+            xde[i] = numer[i] / denom[i];
+            discr = discr - xde[i] * xde[i];
+        }
+        if discr > Fix128::ZERO {
+            for i in 0..last {
+                x[i] = e[i] * xde[i];
+            }
+            x[last] = e[last] * discr.sqrt();
+            return x;
+        }
+    }
+    let sub = nearest_sorted(last, e, y);
+    x[..last].copy_from_slice(&sub[..last]);
+    x
+}
+
+impl Ellipsoid {
+    /// The point of the ellipsoid's surface nearest to `p` (world frame), and
+    /// whether `p` is inside. Exact (Eberly's algorithm, fixed-count bisection):
+    /// a point on a symmetry axis gets the axis point, so the normal there is
+    /// the axis itself, not an iterative estimate.
+    #[must_use]
+    pub fn nearest_point(&self, p: Vec3Fix) -> (Vec3Fix, bool) {
+        let q = self.rotation.unit_rotation();
+        let local = q.conjugate().rotate_vec(p - self.center);
+        let mut y = [local.x.abs(), local.y.abs(), local.z.abs()];
+        let mut e = [self.radii.x, self.radii.y, self.radii.z];
+        let mut axis = [0usize, 1, 2];
+        // Sort the semi-axes decreasing, carrying the point and the axis index.
+        for (a, b) in [(0, 1), (1, 2), (0, 1)] {
+            if e[a] < e[b] {
+                e.swap(a, b);
+                y.swap(a, b);
+                axis.swap(a, b);
+            }
+        }
+        let x_sorted = nearest_sorted(3, e, y);
+        let mut out = [Fix128::ZERO; 3];
+        let signs = [local.x, local.y, local.z];
+        for k in 0..3 {
+            let i = axis[k];
+            out[i] = if signs[i].is_negative() {
+                -x_sorted[k]
+            } else {
+                x_sorted[k]
+            };
+        }
+        let level = (local.x / self.radii.x) * (local.x / self.radii.x)
+            + (local.y / self.radii.y) * (local.y / self.radii.y)
+            + (local.z / self.radii.z) * (local.z / self.radii.z);
+        let nearest = self.center + q.rotate_vec(Vec3Fix::new(out[0], out[1], out[2]));
+        (nearest, level < Fix128::ONE)
+    }
+
+    /// The outward unit normal of the surface at its point `x` (world frame):
+    /// the gradient of the quadric, `(xᵢ / eᵢ²)` in the local frame.
+    #[must_use]
+    pub fn normal_at(&self, x: Vec3Fix) -> Vec3Fix {
+        let q = self.rotation.unit_rotation();
+        let l = q.conjugate().rotate_vec(x - self.center);
+        let grad = Vec3Fix::new(
+            l.x / (self.radii.x * self.radii.x),
+            l.y / (self.radii.y * self.radii.y),
+            l.z / (self.radii.z * self.radii.z),
+        );
+        q.rotate_vec(grad.rescaled_direction().normalize())
+    }
+}
+
 impl Support for Ellipsoid {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         // Only the direction matters: bring its scale into range first so the

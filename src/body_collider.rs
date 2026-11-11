@@ -423,10 +423,10 @@ pub(crate) fn contact_with_sphere(
         if !piece_box.intersects(&sphere_box) {
             continue;
         }
-        let hit = if collider_is_a {
-            contact(&piece, &sphere)
-        } else {
-            contact(&sphere, &piece)
+        let hit = match ellipsoid_sphere_contact(&piece, sphere, collider_is_a) {
+            Some(exact) => exact,
+            None if collider_is_a => contact(&piece, &sphere),
+            None => contact(&sphere, &piece),
         };
         if let Some(hit) = hit {
             if deepest.is_none_or(|d| hit.depth > d.depth) {
@@ -435,6 +435,163 @@ pub(crate) fn contact_with_sphere(
         }
     }
     deepest
+}
+
+/// The point of a box's surface nearest to `c` and the outward normal there,
+/// exactly: outside, `c` clamped into the box (the normal from the clamped point
+/// to `c`); inside, the nearest face (its normal, the point `c` moved onto it).
+/// `None` when `c` is on the surface or equally near two faces from inside (no
+/// unique normal).
+fn box_nearest_point(
+    position: Vec3Fix,
+    half: Vec3Fix,
+    rotation: QuatFix,
+    c: Vec3Fix,
+) -> Option<(Vec3Fix, Vec3Fix)> {
+    let q = rotation.unit_rotation();
+    let l = q.conjugate().rotate_vec(c - position);
+    let clamp = |v: Fix128, h: Fix128| v.max(-h).min(h);
+    let k = Vec3Fix::new(clamp(l.x, half.x), clamp(l.y, half.y), clamp(l.z, half.z));
+    let (n_local, x_local) = if k != l {
+        let (n, d) = (l - k).normalize_with_length();
+        if d.is_zero() {
+            return None;
+        }
+        (n, k)
+    } else {
+        // Inside: the face with the smallest gap, in axis order on ties.
+        let gaps = [half.x - l.x.abs(), half.y - l.y.abs(), half.z - l.z.abs()];
+        let mut best = 0;
+        for i in 1..3 {
+            if gaps[i] < gaps[best] {
+                best = i;
+            }
+        }
+        if (0..3).any(|i| i != best && gaps[i] == gaps[best]) {
+            return None;
+        }
+        let comp = [l.x, l.y, l.z][best];
+        let sign = if comp.is_negative() {
+            -Fix128::ONE
+        } else {
+            Fix128::ONE
+        };
+        let mut n = [Fix128::ZERO; 3];
+        n[best] = sign;
+        let mut x = [l.x, l.y, l.z];
+        x[best] = sign * [half.x, half.y, half.z][best];
+        (
+            Vec3Fix::new(n[0], n[1], n[2]),
+            Vec3Fix::new(x[0], x[1], x[2]),
+        )
+    };
+    Some((position + q.rotate_vec(x_local), q.rotate_vec(n_local)))
+}
+
+/// The exact contact of a curved piece with a plain sphere: `Some(contact)`
+/// (the inner `None` when they do not touch) for an ellipsoid with unequal
+/// semi-axes or a torus, `None` for any other piece (GJK/EPA decides it), and
+/// for a sphere centre where the nearest point is not unique (a torus's axis or
+/// tube centreline).
+///
+/// The sphere's centre `c` has the nearest surface point `x` and the outward
+/// normal `n` there; the signed distance is `(c − x) · n` and the depth `r`
+/// minus it.
+/// - Ellipsoid: [`crate::ellipsoid::Ellipsoid::nearest_point`] (Eberly's exact
+///   algorithm) and the quadric's gradient.
+/// - Box: [`box_nearest_point`].
+/// - Torus (around local `Y`, ring radius `R`, tube radius `ρ`): the nearest
+///   point of the ring circle `R (q_x, 0, q_z) / |(q_x, 0, q_z)|`, then `ρ` along
+///   the unit vector from it to `q`.
+///
+/// GJK/EPA's normal for these pairs wobbled about `1e-3` off the exact one,
+/// which rolled a ball off an apex where it should stay.
+fn ellipsoid_sphere_contact(
+    piece: &Piece<'_>,
+    sphere: Sphere,
+    collider_is_a: bool,
+) -> Option<Option<Contact>> {
+    let c = sphere.center;
+    let (shape, position, rotation) = match piece {
+        Piece::Shape(PosedShape {
+            shape,
+            position,
+            rotation,
+        }) => (*shape, *position, *rotation),
+        // A compound's box child: its box placed by the body's pose and the
+        // child's own (as `Piece::as_ball` places a sphere child).
+        Piece::Child {
+            child,
+            position,
+            rotation,
+        } => match &child.shape {
+            ShapeRef::Box(ob) => {
+                let body_rot = rotation.unit_rotation();
+                let child_rot = body_rot.mul(child.local_rotation);
+                let child_pos = *position + body_rot.rotate_vec(child.local_position);
+                (
+                    Shape::Box {
+                        half_extents: ob.half_extents,
+                    },
+                    child_pos + child_rot.rotate_vec(ob.center),
+                    child_rot.mul(ob.rotation),
+                )
+            }
+            _ => return None,
+        },
+    };
+    let (position, rotation) = (&position, &rotation);
+    let (x, n) = match shape {
+        Shape::Ellipsoid { radii } if !(radii.x == radii.y && radii.y == radii.z) => {
+            let ellipsoid = crate::ellipsoid::Ellipsoid::with_rotation(*position, radii, *rotation);
+            let (x, _) = ellipsoid.nearest_point(c);
+            (x, ellipsoid.normal_at(x))
+        }
+        Shape::Torus {
+            major_radius,
+            minor_radius,
+        } => {
+            let q_rot = rotation.unit_rotation();
+            let q = q_rot.conjugate().rotate_vec(c - *position);
+            let flat = Vec3Fix::new(q.x, Fix128::ZERO, q.z);
+            let (dir, rho) = flat.normalize_with_length();
+            if rho.is_zero() {
+                return None;
+            }
+            let ring = dir * major_radius;
+            let (n_local, dist) = (q - ring).normalize_with_length();
+            if dist.is_zero() {
+                return None;
+            }
+            let x_local = ring + n_local * minor_radius;
+            (
+                *position + q_rot.rotate_vec(x_local),
+                q_rot.rotate_vec(n_local),
+            )
+        }
+        Shape::Box { half_extents } => box_nearest_point(*position, half_extents, *rotation, c)?,
+        _ => return None,
+    };
+    let depth = sphere.radius - (c - x).dot(n);
+    if depth <= Fix128::ZERO {
+        return Some(None);
+    }
+    let on_sphere = c - n * sphere.radius;
+    Some(Some(if collider_is_a {
+        Contact {
+            depth,
+            normal: -n,
+            point_a: x,
+            point_b: on_sphere,
+        }
+    } else {
+        Contact {
+            depth,
+            normal: n,
+            point_a: on_sphere,
+            point_b: x,
+        }
+    }))
 }
 
 /// Whether any piece of a collider meets a plain sphere (GJK; touching counts).
