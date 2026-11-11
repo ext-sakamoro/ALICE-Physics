@@ -220,7 +220,8 @@ fn a_ball_bounces_to_e_squared_h_on_every_floor_and_backend() {
 /// body–body pairing of the temporal Gauss-Seidel backend (a contact that already
 /// had friction): 0.0387, 0.0196 and 0.0097 m past the closed form at 240, 480
 /// and 960 Hz, halving with the step, so it is the discretisation, about
-/// `3.1 v0 DT`. The bound is `0.02 want + 4 v0 DT` (0.0725 m at 240 Hz). A
+/// `3.1 v0 DT`. The bound is `4 v0 DT` (0.050 m at 240 Hz, above all three
+/// measurements scaled to their step). A
 /// friction that is wrong rather than coarse keeps its error as `DT` shrinks
 /// (the XPBD static plane stopped at 1.261 m at all three rates).
 #[test]
@@ -245,7 +246,7 @@ fn a_sliding_box_stops_after_v0_squared_over_two_mu_g() {
             let body = w.get_body(b).expect("pad");
             let (x, speed) = (body.position.x.to_f64(), body.velocity.length().to_f64());
             compared += 1;
-            if !((x - want).abs() <= 0.02 * want + 4.0 * v0 * DT && speed <= 1e-3) {
+            if !((x - want).abs() <= 4.0 * v0 * DT && speed <= 1e-3) {
                 wrong.push(format!(
                     "{bname} {fname}: stops at {x:.4} (closed form {want:.4}), speed {speed:.3e}"
                 ));
