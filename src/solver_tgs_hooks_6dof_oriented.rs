@@ -756,7 +756,13 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
             let eff_m_n = self.effective_mass(i, contact.normal);
             if eff_m_n > Fix128::ZERO {
                 let separation = self.current_penetration(i);
-                let target = if separation < Fix128::ZERO && !sub_dt.is_zero() {
+                // Only a contact that was a gap when detected: a touching
+                // contact's body-fixed point can turn away from the true
+                // contact point (a rolling ball) and read a gap it does not have.
+                let target = if contact.penetration < Fix128::ZERO
+                    && separation < Fix128::ZERO
+                    && !sub_dt.is_zero()
+                {
                     separation / sub_dt
                 } else {
                     self.restitution_bias[i]

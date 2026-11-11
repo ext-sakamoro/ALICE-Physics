@@ -3259,7 +3259,9 @@ impl PhysicsWorld {
         // as much as closes its present gap in one substep, `vn ≥ −gap / h`; it
         // gets no restitution (it has not hit).
         let c = &self.contact_constraints[i];
-        if c.contact.depth <= Fix128::ZERO {
+        // Strictly negative: a contact placed at the time of impact (depth 0,
+        // the continuous collision's) is touching and keeps its restitution.
+        if c.contact.depth < Fix128::ZERO {
             let gap = -crate::xpbd_contact::current_depth(
                 c,
                 self.contact_anchor(i),

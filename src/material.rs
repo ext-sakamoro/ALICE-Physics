@@ -591,12 +591,12 @@ mod tests {
 mod default_compliance_tests {
     use super::*;
 
-    /// The default compliance's bits are `1 / 10⁸` as `Fix128::from_ratio` gives it.
+    /// The default compliance's bits are `1 / 10¹⁰` as `Fix128::from_ratio` gives it.
     #[test]
-    fn the_default_compliance_is_one_over_ten_to_the_eight() {
+    fn the_default_compliance_is_one_over_ten_to_the_ten() {
         assert_eq!(
             DEFAULT_CONTACT_COMPLIANCE,
-            Fix128::from_ratio(1, 100_000_000)
+            Fix128::from_ratio(1, 10_000_000_000)
         );
     }
 }
