@@ -13,9 +13,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Level | Meaning | Modules |
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 26 |
-| world API | used through another `PhysicsWorld` method | 14 |
+| world API | used through another `PhysicsWorld` method | 13 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 3 |
-| standalone | a Rust API that only examples call | 123 |
+| standalone | a Rust API that only examples call | 124 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -54,7 +54,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
 | `law_id` | world API | 0 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
-| `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -135,7 +134,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `neural` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
-| `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `particle` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `physics2d` | standalone (step 1 of 60 items) | 1 / 0 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
@@ -150,6 +149,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `query` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `raycast` | standalone (step 4, binding 2 of 16 items) | 4 / 0 / 2 / 10 / 0 | C ABI, Python, WebAssembly |
+| `rng` | standalone (world API 6 of 13 items) | 0 / 6 / 0 / 7 / 0 | — |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone (binding 6 of 13 items) | 0 / 0 / 6 / 7 / 0 | C ABI, Python, WebAssembly |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
