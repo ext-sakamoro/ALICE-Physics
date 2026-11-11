@@ -79,10 +79,11 @@ jobs:
           --patterns-file .github/paths/downstream.txt
 
   downstream:
+    # ubuntu-24.04, not ubuntu-latest: ubuntu-latest moved to 26.04, where Mesa 26's lavapipe crashes (SIGSEGV)
     needs: changes
     if: needs.changes.outputs.run == 'true'
     name: ALICE-SDF, ALICE-LOL and ALICE-TRT against this commit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
