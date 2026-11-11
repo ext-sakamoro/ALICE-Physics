@@ -14,10 +14,6 @@
 //! the run is what is compared. Run with
 //! `cargo test --release --test analytic_deformable_integrators -- --ignored --nocapture`.
 #![cfg(feature = "std")]
-#![allow(
-    clippy::disallowed_methods,
-    reason = "timing harness: std::time::Instant measures the wall-clock cost; the reference values are computed in f64 from the mesh, never by the solvers under test"
-)]
 
 use alice_physics_core::deformable::{DeformableBody, DeformableConfig, Material, NeoHookeanLaw};
 use alice_physics_core::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
@@ -139,14 +135,20 @@ fn xpbd_body(mesh: &SdfTetMesh, substeps: usize, iterations: usize) -> Deformabl
 fn run_xpbd(mesh: &SdfTetMesh, substeps: usize, iterations: usize) -> (f64, f64) {
     let mut body = xpbd_body(mesh, substeps, iterations);
     let dt = Fix128::from_ratio(1, 60);
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock start of the measured run, printed, never asserted"
+    )]
     let t = Instant::now();
     for _ in 0..FRAMES {
         body.step(dt);
     }
-    (
-        t.elapsed().as_secs_f64() / FRAMES as f64,
-        top_sag_of_body(mesh, &body),
-    )
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock cost of the measured run, printed, never asserted"
+    )]
+    let secs = t.elapsed().as_secs_f64();
+    (secs / FRAMES as f64, top_sag_of_body(mesh, &body))
 }
 
 /// (seconds per frame, conjugate gradient iterations per step, mean sag over the second half
@@ -162,12 +164,21 @@ fn run_newmark(mesh: &SdfTetMesh, steps_per_frame: usize, tolerance: f64) -> (f6
     .expect("density and dt positive");
     let config =
         SolverConfig::try_new(20_000, Fix128::from_f64(tolerance)).expect("budget and tolerance");
-    let mut solver =
-        TransientSolver::new(&mm, &material, &bc, &dynamics, &config).expect("the column solves");
+    let mut solver = match TransientSolver::new(&mm, &material, &bc, &dynamics, &config) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("  newmark  {steps_per_frame} step/frame tol {tolerance:.0e}: the consistent acceleration solve failed: {e:?} (the attainable residual depends on the mesh, see the MODEL's valid range)");
+            return (f64::NAN, f64::NAN, f64::NAN);
+        }
+    };
     let top = top_vertices(mesh);
     let mut iterations = 0u64;
     let mut sag_sum = 0.0;
     let mut sag_count = 0;
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock start of the measured run, printed, never asserted"
+    )]
     let t = Instant::now();
     for frame in 0..FRAMES {
         for _ in 0..steps_per_frame {
@@ -186,8 +197,13 @@ fn run_newmark(mesh: &SdfTetMesh, steps_per_frame: usize, tolerance: f64) -> (f6
             sag_count += 1;
         }
     }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the wall-clock cost of the measured run, printed, never asserted"
+    )]
+    let secs = t.elapsed().as_secs_f64();
     (
-        t.elapsed().as_secs_f64() / FRAMES as f64,
+        secs / FRAMES as f64,
         iterations as f64 / (FRAMES * steps_per_frame) as f64,
         sag_sum / f64::from(sag_count),
     )

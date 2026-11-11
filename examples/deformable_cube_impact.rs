@@ -11,7 +11,7 @@
 //! cargo run --release --example deformable_cube_impact --features std
 //! ```
 
-use alice_physics_core::deformable::DeformableBody;
+use alice_physics_core::deformable::{DeformableBody, MaterialError, NeoHookeanLaw};
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::RigidBody;
 
@@ -44,5 +44,26 @@ fn main() {
                 sphere[0].velocity.y.to_f64()
             );
         }
+    }
+
+    // the Neo-Hookean law of a soft body is built through its checked constructor: a rubber
+    // (E 1 MPa, ν 0.45) is accepted, a value past the limits is refused with its reason
+    println!(
+        "Neo-Hookean limits: E up to {:.3e} Pa, ν below 0.5 by {:.3e}",
+        NeoHookeanLaw::MAX_YOUNG_MODULUS.to_f64(),
+        NeoHookeanLaw::POISSON_MARGIN.to_f64()
+    );
+    let rubber = NeoHookeanLaw::new(Fix128::from_int(1_000_000), Fix128::from_ratio(45, 100));
+    println!(
+        "rubber E 1 MPa, ν 0.45: {}",
+        if rubber.is_ok() {
+            "accepted"
+        } else {
+            "refused"
+        }
+    );
+    match NeoHookeanLaw::new(Fix128::from_int(1_000_000), Fix128::from_ratio(1, 2)) {
+        Err(e @ MaterialError::PoissonRatioOutOfRange) => println!("ν 0.5: refused ({e})"),
+        other => println!("ν 0.5: unexpected {other:?}"),
     }
 }

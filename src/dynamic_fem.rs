@@ -6,6 +6,161 @@
 //! a `dt`, so "add Newmark" was not a missing integrator but a missing *system
 //! to integrate*: this module supplies both halves, `M u'' + K u = f`.
 //!
+//! # MODEL — transient linear and co-rotational elasticity on P1 tetrahedra
+//!
+//! **Equations.** `M ü + fᵢₙₜ(u) = f` on the nodes of a tetrahedral mesh, advanced by the
+//! average-acceleration Newmark step (`β = 1/4`, `γ = 1/2`): predictor
+//! `ũ = u + dt·v + (dt²/4)·a`, the linear solve `(K + 4M/dt²) u' = f + (4M/dt²)·ũ`, corrector
+//! `a' = (4/dt²)(u' − ũ)`, `v' = v + (dt/2)(a + a')` (`newmark_predictor`, `newmark_corrector`).
+//! [`TransientSolver`]: small strain,
+//! `fᵢₙₜ = K u` with the P1 stiffness `K = Σₑ ∫ Bᵀ D B dV` of isotropic Hooke's law
+//! (`σ = λ tr(ε) I + 2μ ε`, `μ = E/(2(1+ν))`, `λ = Eν/((1+ν)(1−2ν))`).
+//! [`CorotationalTransientSolver`]: `fᵢₙₜ(x) = Σₑ Rₑ Kₑ (Rₑᵀ x − x₀)` with `Rₑ` the polar
+//! factor of the element's deformation gradient `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ` at the start of the
+//! step (Müller & Gross, "Interactive Virtual Materials", GI 2004), so the step solves
+//! `(Rₑ Kₑ Rₑᵀ + 4M/dt²) u' = f + (4M/dt²)·ũ − Σₑ Rₑ Kₑ (Rₑᵀ x₀ − x₀)`: one warped
+//! linearisation per step, no inner Newton loop. With Rayleigh damping
+//! ([`CorotationalTransientSolver::set_damping`], `C = α M + β K'`, the coefficients of
+//! [`crate::damping_rayleigh`]) the equation is `M ü + C u̇ + fᵢₙₜ(u) = f` and the step solves
+//! `(K' + (2/dt) C + 4M/dt²) u' = f + (4M/dt²)·ũ − C ṽ − …` with `ṽ = v + (dt/2) a − (2/dt) ũ`
+//! (the trapezoidal rule on the damped system). Ground contact
+//! ([`CorotationalTransientSolver::set_ground`], a plane `y = y_g` with outward normal `+y`)
+//! is an active set per step, iterated to consistency: a vertex whose predictor `ũ` is at or
+//! below the plane is held on it (its `y` prescribed to the plane, `v_y = a_y = 0`), the step
+//! is solved, the reaction `R = (A u' − rhs)_y` each hold provides is read, the holds that
+//! turned tensile (the plane cannot pull) are released and the step solved again, a released
+//! vertex that would end below the plane is held again for good, until the set is unchanged
+//! (`CONTACT_ACTIVE_SET_CAP` passes at most, else [`FemError::ContactUnsettled`] with the
+//! state unchanged); a resting vertex's predictor is the plane exactly, so it stays held
+//! until something lifts it (an upward velocity from an impulse or the body pulling up);
+//! frictionless (`x`, `z` free), exact non-penetration at every step's end, no penalty
+//! stiffness. `M` is the consistent Galerkin mass
+//! `ρV/20 (1 + δᵢⱼ)` or its row-sum lumping `ρV/4` ([`MassLumping`]). The linear system is
+//! solved by a Jacobi-preconditioned conjugate gradient in `Fix128` to a relative residual
+//! ([`SolverConfig`]).
+//!
+//! **Units.** mm, N, MPa, s and tonne (`N = t·mm/s²`): density in t/mm³, displacements mm,
+//! velocities mm/s, accelerations mm/s², loads N; every quantity is `Fix128` (Q64.64), so a
+//! run replays bit for bit on every target ([`TransientSolver::state_digest`] /
+//! [`CorotationalTransientSolver::state_digest`] name the state; they stand alone, the finite
+//! element state is not yet in the world's snapshot or digest).
+//!
+//! **Conservation.** The scheme is unconditionally stable and, for a linear system,
+//! conserves the discrete energy `½ vᵀMv + ½ uᵀKu` up to the rounding of the Newmark
+//! coefficients (exact for a dyadic `dt`, a measured `1.5e-5` drift over 500 steps for a
+//! general one before the coefficient was formed by inverting first; see `dyadic_dt` and the
+//! section on the arithmetic below); without Rayleigh damping there is no dissipation, with it a mode of
+//! frequency `ω` loses energy at the rate `2 ζ(ω) ω`, `ζ(ω) = α/(2ω) + βω/2`, which the
+//! trapezoidal step reproduces as the per-step factor `|z|²`, `z = (1 + λ dt/2)/(1 − λ dt/2)`,
+//! `λ = −ζω ± iω√(1−ζ²)` (closed form of `set_damping`, validated below). Momentum of a free
+//! body follows the applied force exactly, and an external impulse `J` changes it by `J`
+//! (`apply_impulses`: `M Δv = J` through the mass solve, exact for the lumped mass, to the
+//! solve's tolerance for the consistent one; `momentum` reads `M v`)
+//! and the free steps keep it within `n (2/dt) tol |u| M_total` (the corrector amplifies the
+//! solve's displacement error into velocity). The co-rotational step conserves the same
+//! quantities within one linearisation per step: a rotation as a whole produces no elastic
+//! force or energy (`rotation_offset` cancels it).
+//!
+//! **Valid range.** Any `dt > 0` (unconditional stability, [`DynamicsConfig::try_new`]); the
+//! modes resolved are those with `ω dt ≲ 1`, above that the period is elongated by
+//! `ω̄ = (2/dt)·atan(ω dt/2)` with no amplitude change (`newmark_corrector`). Small strain (a
+//! few per cent) in the element frame (`element_stress_local`); the co-rotational
+//! form admits any rigid rotation and refuses an element whose `det F` falls to `2⁻²⁰` or
+//! below ([`FemError::RotationFailed`], the state unchanged). `E > 0`, `−1 < ν < 0.5`
+//! ([`ElasticMaterial::new`] refuses the rest); density and `dt` positive and
+//! `4ρ/dt²` within `Fix128` ([`DynamicsConfig::try_new`]). A conjugate gradient that does
+//! not reach its tolerance within its budget, or stagnates, is [`FemError::NotConverged`] /
+//! [`FemError::Stagnated`], never a wrong answer; the attainable relative residual depends on
+//! the mesh (the `Fix128` floor of the residual norm, [`crate::linear_elastic_fem::RESIDUAL_NORM_FLOOR`],
+//! against the right-hand side's size): about `1e-9` on a 36-vertex column of 1.25 cm
+//! tetrahedra (`tests/support/deformable_column.rs`), `6e-8` on the 153-vertex column of
+//! `tests/analytic_deformable_integrators.rs` at one step per frame.
+//!
+//! **Approximations.** P1 (constant strain) tetrahedra (`build_elements`); Hooke's law in the
+//! element frame (no hyperelastic law, no plasticity, no thermal strain here,
+//! `element_stress_local`); the co-rotational frame is frozen over a step (first order in the
+//! rotation increment per step, `rotations` at the step's start); damping is Rayleigh's
+//! (viscous, `α M + β K'`, no hysteretic or frictional loss, see `crate::damping_rayleigh`)
+//! or none; contact is a single plane, frictionless, resolved to the step's end (no
+//! time-of-impact subdivision, a vertex arriving mid-step is held from the end of that step),
+//! no restitution (the hold is inelastic, `set_ground`), no adhesion (a tensile hold is
+//! released within the step); external impulses are applied between
+//! steps, not inside one (`apply_impulses`); the lumped mass lowers the frequencies and the
+//! consistent one raises them relative to the continuum (Rayleigh quotient on the trial
+//! space, [`MassLumping`]); loads and prescribed displacements are constant over a run
+//! ([`BoundaryConditions`] fixed at `new`); the tetrahedra are
+//! the caller's, and a mesh from [`crate::sdf_fem_mesh::generate_marching_tets`] carries that
+//! mesher's own errors (the chamfer of flat faces and the overfill at reflex edges, its MODEL's
+//! known defects) into the mass, the stiffness and the contact area here.
+//!
+//! **Validation.** `tests/analytic_dynamic_fem.rs` (a free body under a total force follows
+//! the closed-form parabola, a single degree of freedom tracks the closed-form step response,
+//! the two mass distributions differ by the closed-form ratio, the axial bar's peak arrives
+//! at the closed-form wave transit time and scales as the square root of density, prescribed
+//! displacements are held exactly, degenerate configurations are refused),
+//! `tests/analytic_dynamic_fem_corotational.rs::a_rigidly_rotated_body_feels_no_elastic_force`
+//! (a column rotated by 30° and released does not move beyond what the solves' residual
+//! guarantee allows, measured `9e-8 mm` against a bound of `1.3e-2 mm`),
+//! `::the_corotational_oscillation_has_the_modal_period_and_the_static_mean_at_three_step_sizes`
+//! and `::the_linear_newmark_oscillation_has_the_modal_period_and_the_static_mean_at_three_step_sizes`
+//! (at `dt = T₁/32, /64, /128`: the first axial modal coordinate of a column under its own
+//! weight oscillates at `2π/ω̄` of the mesh's own `ω₁` from inverse iteration on
+//! `K φ = ω² M φ`, the co-rotational one within the range the warping spans, and the means
+//! of `q₁` and of the top sag are the static ones; every tolerance is computed in the test
+//! from the crossing interpolation, the solves' residual guarantee, the Dirichlet kernel of
+//! the window and two static solves),
+//! `::the_discrete_axial_mode_lies_above_the_thin_rod_frequency_by_at_most_the_base_layer_share`
+//! (the discrete mode against `(π/2H)√(E/ρ)` with the rod's assumptions stated),
+//! `::stiffness_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate_at_three_step_sizes`
+//! and `::mass_proportional_damping_decays_the_first_mode_at_the_trapezoidal_rate_at_three_step_sizes`
+//! (`ζ = 0.05` by `β` alone and by `α` alone at the three step sizes: the three-term
+//! recurrence fitted to `q₁` gives the per-step decay and phase, checked against the
+//! trapezoidal closed form over the warping's frequency range, the tolerance propagated
+//! from the solves' residual guarantee through the least squares),
+//! `::a_column_standing_on_the_ground_settles_to_the_roller_static_sag_with_its_whole_bottom_in_contact`
+//! (no base fix, the plane under it, three step sizes: the sag is the static solve of the
+//! same mesh with a roller base within the decay the trapezoidal map allows the modes,
+//! `max_ω |z(ω)|ⁿ/ω² ‖e_top‖_{M⁻¹} ‖f‖_{M⁻¹}`, measured +1e-4; every bottom vertex held at
+//! every step; the closed form `ρ g H² / (2E)` is the O(h) limit, 0.6 % away on this mesh),
+//! `::a_dropped_column_never_penetrates_the_ground_and_settles_to_the_roller_static_sag` (a
+//! 10 mm drop at three step sizes: no step ends below the plane, touchdown within one step
+//! of `√(2h/g)`, and from the final contact the sag over the last two periods is the roller
+//! static within the bound the state at contact and the modes' decay allow), `::an_impulse_on_a_free_lumped_body_is_its_momentum_exactly_and_is_kept` and
+//! `::an_impulse_on_a_free_consistent_body_is_its_momentum_to_the_solve_tolerance` (an oblique
+//! impulse on the top of a free column: `Σ M v = J` to 1e-12 with the lumped mass, to the solve
+//! tolerance with the consistent one, and the momentum and centre-of-mass velocity are kept
+//! over 200 free steps within the derived bound),
+//! `::an_impulse_on_a_held_vertex_releases_it_upward_and_is_taken_by_the_ground_downward`,
+//! `::a_column_kicked_upward_leaves_the_plane_with_every_bottom_vertex_released` (the hold is
+//! not adhesive: an upward impulse on the top of a standing column lifts the whole bottom
+//! off the plane within the flight time, every vertex free, and it lands again),
+//! `::two_runs_of_the_same_inputs_replay_to_the_same_bits_and_digest` (the linear and the
+//! co-rotational solver, with damping, ground, impulses: identical raw bits and digests, a
+//! changed input changes the digest), `tests/audit_dynamic_fem.rs`.
+//!
+//! **Known defects.** `tests/analytic_fem_cantilever_bending.rs::a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3`
+//! and `::a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49`:
+//! the P1 tetrahedra lock in bending (one constant strain per element, so the linear strain
+//! of bending is not representable): a cantilever under its own weight
+//! deflects 0.49 of the Timoshenko closed form with 2 cells through the depth and 0.78 with 4
+//! at ν 0.3, 0.09 and 0.26 at ν 0.49 (volumetric locking on top); the static solve
+//! (`linear_elastic_fem::solve`) shows it, and this transient solver shares the element, so
+//! no bending accuracy is claimed for the tier until the quadratic tier (P2, with a
+//! volumetric treatment if ν 0.49 still locks) replaces it. The axial sag and modes above are
+//! unaffected (measured against the closed form within 6 % by the base layer, see
+//! `tests/analytic_deformable_static_sag.rs`).
+//!
+//! **Tiers.** L0 of a stiff elastic solid is the implicit co-rotational step (axial and
+//! shear response of the P1 mesh; its bending is a known defect above)
+//! ([`CorotationalTransientSolver`]): measured on the same Kuhn-split column of 1.25 cm
+//! tetrahedra (`E = 1.27e6 Pa`, `ν = 0.49`, `ρ = 1100 kg/m³`,
+//! `tests/analytic_deformable_integrators.rs`) it reaches 0.6–1 % of the static sag at one
+//! step per frame for 0.0002 s (24 tetrahedra) to 0.026 s (384) per frame, where the XPBD
+//! Neo-Hookean body of [`crate::deformable`] needs 256 substeps per frame for 2.8 % at 17 to
+//! 100 times the cost. No lighter tier yet (a coarse cage with the fine surface embedded is
+//! the candidate; its error against this L0 will be measured by the same sag and period
+//! problems).
+//!
 //! # Units
 //!
 //! Millimetre / newton / megapascal as in [`crate::linear_elastic_fem`], plus
@@ -84,11 +239,12 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::damping_rayleigh::RayleighCoefficients;
 use crate::linear_elastic_fem::{
     BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig, StressTensor,
     RESIDUAL_NORM_FLOOR,
 };
-use crate::math::Fix128;
+use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
 
 // ---------------------------------------------------------------------------
@@ -978,6 +1134,673 @@ impl TransientSolver {
     pub fn accelerations(&self) -> &[Fix128] {
         &self.a
     }
+
+    /// Domain separation of [`Self::state_digest`]: the SHA-256 of the text
+    /// `alice-physics/dynamic-fem-state-digest/v1`, computed once; the bytes, not the text,
+    /// are hashed first.
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = [
+        0x4b, 0x8d, 0xd0, 0x67, 0x23, 0xde, 0xb2, 0x07, 0x64, 0x13, 0x07, 0xc2, 0x3a, 0xd4, 0x26,
+        0xd3, 0x94, 0x18, 0x26, 0x7f, 0xfe, 0x83, 0x0a, 0x75, 0x19, 0xf5, 0x9d, 0x0c, 0x28, 0x43,
+        0x46, 0x9d,
+    ];
+
+    /// SHA-256 of the solver's state: `STATE_DIGEST_DOMAIN`, then the raw `Fix128` bits of
+    /// every displacement, velocity and acceleration (little-endian `i64` high, `u64` low,
+    /// degree of freedom by degree of freedom). Two runs agree exactly when their states
+    /// are the same to the bit, which is what a replay of the same inputs gives on every
+    /// target. This digest stands alone: the finite element state is not yet part of
+    /// [`crate::PhysicsWorld::state_digest`] or its snapshot.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        for x in self.u.iter().chain(&self.v).chain(&self.a) {
+            h.update(x.hi.to_le_bytes());
+            h.update(x.lo.to_le_bytes());
+        }
+        h.finalize().into()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// the co-rotational solver
+// ---------------------------------------------------------------------------
+
+/// Floor on `det F` below which an element's rotation is refused: the same `2⁻²⁰` the static
+/// co-rotational solve uses (an element that flat or inverted has no polar factor).
+const COROTATIONAL_DET_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 44);
+/// Iteration budget of the polar decomposition per element and step.
+const COROTATIONAL_POLAR_ITERATIONS: u32 = 64;
+/// Cap on the ground contact's active-set iterations per step (each a solve): every pass
+/// releases at least one tensile hold or locks at least one penetrating release, so the set
+/// settles within the number of bottom vertices; the cap is for a cycle, which is an error.
+const CONTACT_ACTIVE_SET_CAP: u32 = 32;
+
+impl Operators {
+    /// `out = (R Kₑ Rᵀ + Ṁ) u`, one element loop in mesh order: the element stiffness warped
+    /// by its rotation `R` (the nodal displacements are rotated into the element frame, the
+    /// small-strain stress and force formed there, the force rotated back), the mass term
+    /// unrotated.
+    fn apply_effective_rotated(&self, rotations: &[Mat3Fix], u: &[Fix128], out: &mut [Fix128]) {
+        self.apply_scaled_rotated(rotations, Fix128::ONE, Fix128::ONE, u, out);
+    }
+
+    /// `out = (k_scale · R Kₑ Rᵀ + m_scale · Ṁ) u`: the rotated stiffness and the mass term
+    /// with a scalar each, so the damped effective operator
+    /// `K' + (2/dt) C + Ṁ = (1 + 2β/dt) K' + (1 + α dt/2) Ṁ` for `C = α M + β K'` costs the
+    /// one element loop too.
+    fn apply_scaled_rotated(
+        &self,
+        rotations: &[Mat3Fix],
+        k_scale: Fix128,
+        m_scale: Fix128,
+        u: &[Fix128],
+        out: &mut [Fix128],
+    ) {
+        out.fill(Fix128::ZERO);
+        for ((element, &scale), r) in self
+            .elements
+            .iter()
+            .zip(self.mass_scale.iter())
+            .zip(rotations)
+        {
+            let local = gather(element, u);
+            let rt = r.transpose();
+            let mut frame = [[Fix128::ZERO; 3]; 4];
+            for (slot, node_u) in frame.iter_mut().zip(local.iter()) {
+                let v = rt.mul_vec(Vec3Fix::new(node_u[0], node_u[1], node_u[2]));
+                *slot = [v.x, v.y, v.z];
+            }
+            let stress = element_stress_local(element, &frame, self.lambda, self.mu);
+            let stiffness = element_force_from_stress(element, stress);
+            let mass = Self::element_mass_force(self.lumping, scale, &local);
+            for ((k, m), &node) in stiffness.iter().zip(mass.iter()).zip(element.nodes.iter()) {
+                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2])) * k_scale;
+                let base = node * 3;
+                out[base] = out[base] + f.x + m[0] * m_scale;
+                out[base + 1] = out[base + 1] + f.y + m[1] * m_scale;
+                out[base + 2] = out[base + 2] + f.z + m[2] * m_scale;
+            }
+        }
+    }
+
+    /// `out = Σₑ R Kₑ (Rᵀ x₀ − x₀)`: the part of the warped element force that does not
+    /// depend on the displacement (the rest positions seen from the rotated frame).
+    fn rotation_offset(&self, rotations: &[Mat3Fix], rest: &[Fix128], out: &mut [Fix128]) {
+        out.fill(Fix128::ZERO);
+        for (element, r) in self.elements.iter().zip(rotations) {
+            let local = gather(element, rest);
+            let rt = r.transpose();
+            let mut frame = [[Fix128::ZERO; 3]; 4];
+            for (slot, x0) in frame.iter_mut().zip(local.iter()) {
+                let v = rt.mul_vec(Vec3Fix::new(x0[0], x0[1], x0[2]));
+                *slot = [v.x - x0[0], v.y - x0[1], v.z - x0[2]];
+            }
+            let stress = element_stress_local(element, &frame, self.lambda, self.mu);
+            let force = element_force_from_stress(element, stress);
+            for (k, &node) in force.iter().zip(element.nodes.iter()) {
+                let f = r.mul_vec(Vec3Fix::new(k[0], k[1], k[2]));
+                let base = node * 3;
+                out[base] = out[base] + f.x;
+                out[base + 1] = out[base + 1] + f.y;
+                out[base + 2] = out[base + 2] + f.z;
+            }
+        }
+    }
+
+    /// The rotation of every element at the displacement `u`: the polar factor of
+    /// `F = I + Σᵢ uᵢ ⊗ ∇Nᵢ`.
+    fn rotations(&self, u: &[Fix128]) -> Result<Vec<Mat3Fix>, FemError> {
+        let mut out = Vec::with_capacity(self.elements.len());
+        for (tet, element) in self.elements.iter().enumerate() {
+            let local = gather(element, u);
+            // `cols[b][a]` is row `a`, column `b`: F_ab = δ_ab + Σᵢ u_i,a ∇N_i,b
+            let mut cols = [[Fix128::ZERO; 3]; 3];
+            for (g, node_u) in element.grad.iter().zip(local.iter()) {
+                for (b, gb) in g.iter().enumerate() {
+                    for (a, ua) in node_u.iter().enumerate() {
+                        cols[b][a] = cols[b][a] + *ua * *gb;
+                    }
+                }
+            }
+            for (k, col) in cols.iter_mut().enumerate() {
+                col[k] = col[k] + Fix128::ONE;
+            }
+            let f = Mat3Fix::from_cols(
+                Vec3Fix::new(cols[0][0], cols[0][1], cols[0][2]),
+                Vec3Fix::new(cols[1][0], cols[1][1], cols[1][2]),
+                Vec3Fix::new(cols[2][0], cols[2][1], cols[2][2]),
+            );
+            match f.polar_rotation(COROTATIONAL_DET_FLOOR, COROTATIONAL_POLAR_ITERATIONS) {
+                Ok(r) => out.push(r),
+                Err(cause) => return Err(FemError::RotationFailed { tet, cause }),
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// A transient co-rotational FEM solve, advanced one Newmark step at a time: the element
+/// stiffness is warped by each element's rotation (the polar factor of its deformation
+/// gradient at the start of the step, Müller & Gross 2004), so a rotation as a whole
+/// produces no elastic force and the small-strain law holds in the rotated frame; the
+/// time integration is the average-acceleration Newmark step of [`TransientSolver`] with the
+/// warped stiffness frozen over the step (one linearisation per step, no inner Newton loop).
+/// The internal force is `fᵢₙₜ(x) = Σₑ R Kₑ (Rᵀ x − x₀)`, so the step solves
+/// `(R Kₑ Rᵀ + Ṁ) u_{n+1} = f + Ṁ ũ − Σₑ R Kₑ (Rᵀ x₀ − x₀)` on the free degrees of freedom.
+/// Checked by `tests/analytic_dynamic_fem_corotational.rs`.
+pub struct CorotationalTransientSolver {
+    ops: Operators,
+    /// rest positions (mm), three per vertex
+    rest: Vec<Fix128>,
+    /// Rayleigh damping `C = α M + β K'` (`α` 1/s, `β` s), none by default
+    damping: Option<RayleighCoefficients>,
+    /// the ground: a plane `y = ground` (mm) with outward normal `+y`, none by default
+    ground: Option<Fix128>,
+    /// per vertex, whether it rests on the ground this step (held on the plane in `y`)
+    on_ground: Vec<bool>,
+    dt: Fix128,
+    inv_beta_dt2: Fix128,
+    half_dt: Fix128,
+    is_free: Vec<bool>,
+    prescribed_value: Vec<Fix128>,
+    load: Vec<Fix128>,
+    precond: Vec<Fix128>,
+    mass_precond: Vec<Fix128>,
+    config: SolverConfig,
+    u: Vec<Fix128>,
+    v: Vec<Fix128>,
+    a: Vec<Fix128>,
+}
+
+impl CorotationalTransientSolver {
+    /// The same inputs as [`TransientSolver::new`]; the initial state is the prescribed
+    /// field with zero velocity and the consistent acceleration.
+    ///
+    /// # Errors
+    ///
+    /// As [`TransientSolver::new`], plus [`FemError::RotationFailed`] when an element's
+    /// deformation gradient at the initial state has no polar factor.
+    pub fn new(
+        mesh: &SdfTetMesh,
+        material: &ElasticMaterial,
+        boundary: &BoundaryConditions,
+        dynamics: &DynamicsConfig,
+        config: &SolverConfig,
+    ) -> Result<Self, FemError> {
+        let vertex_count = mesh.vertices.len();
+        if vertex_count == 0 || mesh.tets.is_empty() {
+            return Err(FemError::EmptyMesh);
+        }
+        for &(vertex, _, _) in boundary.prescribed().iter().chain(boundary.loads().iter()) {
+            if vertex as usize >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex,
+                    vertex_count,
+                });
+            }
+        }
+        let elements = build_elements(mesh)?;
+        let ops = Operators::new(elements, material, dynamics)?;
+        let ndof = vertex_count * 3;
+        let mut rest = Vec::with_capacity(ndof);
+        for v in &mesh.vertices {
+            rest.push(Fix128::from_f32(v[0]));
+            rest.push(Fix128::from_f32(v[1]));
+            rest.push(Fix128::from_f32(v[2]));
+        }
+        let mut prescribed_value = vec![Fix128::ZERO; ndof];
+        let mut is_free = vec![true; ndof];
+        for &(vertex, axis, value) in boundary.prescribed() {
+            let d = vertex as usize * 3 + axis.index();
+            is_free[d] = false;
+            prescribed_value[d] = value;
+        }
+        let mut load = vec![Fix128::ZERO; ndof];
+        for &(vertex, axis, force) in boundary.loads() {
+            let d = vertex as usize * 3 + axis.index();
+            if is_free[d] {
+                load[d] = load[d] + force;
+            }
+        }
+        let mass_diag = ops.mass_diagonal(ndof);
+        let mass_precond = build_preconditioner(&mass_diag, &is_free, config)?;
+        let diag = ops.effective_diagonal(ndof);
+        let precond = build_preconditioner(&diag, &is_free, config)?;
+        let mut solver = Self {
+            ops,
+            rest,
+            damping: None,
+            ground: None,
+            on_ground: vec![false; vertex_count],
+            dt: dynamics.dt,
+            inv_beta_dt2: dynamics.inv_beta_dt2,
+            half_dt: dynamics.dt.half(),
+            is_free,
+            prescribed_value: prescribed_value.clone(),
+            load,
+            precond,
+            mass_precond,
+            config: *config,
+            u: prescribed_value,
+            v: vec![Fix128::ZERO; ndof],
+            a: vec![Fix128::ZERO; ndof],
+        };
+        solver.a = solver.consistent_acceleration()?;
+        Ok(solver)
+    }
+
+    /// `a` from `Ṁ a / c₀ = f − fᵢₙₜ(u)` at the current displacement (`Ṁ = c₀ M`).
+    fn consistent_acceleration(&self) -> Result<Vec<Fix128>, FemError> {
+        let ndof = self.u.len();
+        let rotations = self.ops.rotations(&self.u)?;
+        let mut keff_u = vec![Fix128::ZERO; ndof];
+        self.ops
+            .apply_effective_rotated(&rotations, &self.u, &mut keff_u);
+        let mut mass_u = vec![Fix128::ZERO; ndof];
+        self.ops.apply_mass(&self.u, &mut mass_u);
+        let mut offset = vec![Fix128::ZERO; ndof];
+        self.ops
+            .rotation_offset(&rotations, &self.rest, &mut offset);
+        let mut rhs = vec![Fix128::ZERO; ndof];
+        for d in 0..ndof {
+            rhs[d] = if self.is_free[d] {
+                self.load[d] - (keff_u[d] - mass_u[d]) - offset[d]
+            } else {
+                Fix128::ZERO
+            };
+        }
+        let ops = &self.ops;
+        let (scaled, _) = conjugate_gradient(
+            &rhs,
+            &self.is_free,
+            &self.mass_precond,
+            &self.config,
+            |p, out| {
+                ops.apply_mass(p, out);
+            },
+        )?;
+        Ok(scaled.iter().map(|x| *x * self.inv_beta_dt2).collect())
+    }
+
+    /// Replace the displacement field (mm, three components per vertex in vertex order),
+    /// keeping the velocities and recomputing the accelerations: the initial state of a body
+    /// that starts rotated or deformed. The prescribed degrees of freedom keep their
+    /// prescribed values whatever `u` says.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::VertexOutOfRange`] when `u` is not three values per vertex,
+    /// [`FemError::RotationFailed`] when an element of the new state has no polar factor, and
+    /// the conjugate gradient errors of the acceleration solve.
+    pub fn set_displacements(&mut self, u: &[Fix128]) -> Result<(), FemError> {
+        let ndof = self.u.len();
+        if u.len() != ndof {
+            return Err(FemError::VertexOutOfRange {
+                vertex: (u.len() / 3) as u32,
+                vertex_count: ndof / 3,
+            });
+        }
+        let previous = core::mem::replace(&mut self.u, u.to_vec());
+        for d in 0..ndof {
+            if !self.is_free[d] {
+                self.u[d] = self.prescribed_value[d];
+            }
+        }
+        match self.consistent_acceleration() {
+            Ok(a) => {
+                self.a = a;
+                Ok(())
+            }
+            Err(e) => {
+                self.u = previous;
+                Err(e)
+            }
+        }
+    }
+
+    /// A ground plane `y = ground` (mm, outward normal `+y`), or none. Contact is a per-step
+    /// active set: a vertex whose Newmark predictor would cross the plane is held on it for
+    /// that step (its `y` degree of freedom prescribed to the plane, velocity and
+    /// acceleration in `y` zero), stays held while the reaction the hold provides pushes it
+    /// up, and is released within the step the reaction turns tensile. Frictionless: `x` and `z`
+    /// stay free. Exact non-penetration at the step's end, no penalty stiffness.
+    pub fn set_ground(&mut self, ground: Option<Fix128>) {
+        self.ground = ground;
+        if ground.is_none() {
+            self.on_ground.fill(false);
+        }
+    }
+
+    /// The vertices held on the ground after the last step.
+    #[must_use]
+    pub fn on_ground(&self) -> &[bool] {
+        &self.on_ground
+    }
+
+    /// External impulses `(vertex, J)` in N·s (`t·mm/s`), applied between steps: the velocity
+    /// changes by `Δv = M⁻¹ J` (the mass solve, so the consistent and the lumped mass both
+    /// conserve momentum: `Σ M Δv = J` exactly for the lumped one, to the solve's tolerance for
+    /// the consistent one); the displacement and the acceleration are untouched, the next step
+    /// carries the new velocity. Impulses on prescribed degrees of freedom are dropped (the
+    /// constraint takes them); on a vertex held by the ground the downward part is dropped
+    /// (the plane takes it) and the upward part releases it at the next step.
+    ///
+    /// # Errors
+    ///
+    /// [`FemError::VertexOutOfRange`] for a vertex index past the mesh, and the conjugate
+    /// gradient errors of the mass solve.
+    pub fn apply_impulses(&mut self, impulses: &[(u32, [Fix128; 3])]) -> Result<(), FemError> {
+        let ndof = self.u.len();
+        let vertex_count = ndof / 3;
+        let mut j = vec![Fix128::ZERO; ndof];
+        for &(vertex, impulse) in impulses {
+            if vertex as usize >= vertex_count {
+                return Err(FemError::VertexOutOfRange {
+                    vertex,
+                    vertex_count,
+                });
+            }
+            for (axis, value) in impulse.iter().enumerate() {
+                let d = vertex as usize * 3 + axis;
+                // a held vertex takes an upward impulse (the plane only pushes), the ground
+                // takes a downward one
+                let into_ground =
+                    axis == 1 && self.on_ground[vertex as usize] && *value < Fix128::ZERO;
+                if self.is_free[d] && !into_ground {
+                    j[d] = j[d] + *value;
+                }
+            }
+        }
+        // `Ṁ = c₀ M`, so solving `Ṁ y = J` gives `Δv = c₀ y`
+        let ops = &self.ops;
+        let (y, _) = conjugate_gradient(
+            &j,
+            &self.is_free,
+            &self.mass_precond,
+            &self.config,
+            |p, out| {
+                ops.apply_mass(p, out);
+            },
+        )?;
+        for ((v, &y), &free) in self.v.iter_mut().zip(&y).zip(&self.is_free) {
+            if free {
+                *v = *v + y * self.inv_beta_dt2;
+            }
+        }
+        Ok(())
+    }
+
+    /// `M v`, the momentum of the body (N·s, three components per vertex summed by the caller
+    /// or read per vertex): the mass product of the velocity, so `Σ` over all vertices is the
+    /// total momentum whatever the mass distribution.
+    #[must_use]
+    pub fn momentum(&self) -> Vec<Fix128> {
+        let ndof = self.u.len();
+        let mut out = vec![Fix128::ZERO; ndof];
+        self.ops.apply_mass(&self.v, &mut out);
+        // `apply_mass` applies `Ṁ = c₀ M`
+        for x in &mut out {
+            *x = *x / self.inv_beta_dt2;
+        }
+        out
+    }
+
+    /// Rayleigh damping `C = α M + β K'` with `K'` the warped stiffness: `α` in 1/s damps
+    /// the low modes, `β` in s the high ones, the modal ratio
+    /// `ζ(ω) = α/(2ω) + βω/2` ([`RayleighCoefficients::damping_ratio`]). `None` removes it.
+    pub fn set_damping(&mut self, damping: Option<RayleighCoefficients>) {
+        self.damping = damping;
+    }
+
+    /// Advance one Newmark step with the element rotations of the current state. Returns
+    /// the conjugate gradient iterations used.
+    ///
+    /// With damping the step solves
+    /// `(K' + (2/dt) C + Ṁ) u' = f + Ṁ ũ − C ṽ − Σₑ R Kₑ (Rᵀ x₀ − x₀)` with
+    /// `ṽ = v + (dt/2) a − (2/dt) ũ`, which is `v' = (2/dt) u' + ṽ` of the `γ = 1/2`
+    /// corrector substituted into `M a' + C v' + K' u' = f` (the trapezoidal rule on the
+    /// damped system; a prescribed degree of freedom has `v' = 0`, and its column of the
+    /// operator moved to the right-hand side cancels its share of `C ṽ` exactly).
+    ///
+    /// # Errors
+    ///
+    /// As [`TransientSolver::step`], plus [`FemError::RotationFailed`] when an element's
+    /// deformation gradient has no polar factor; the state is unchanged on an error.
+    pub fn step(&mut self) -> Result<u32, FemError> {
+        let ndof = self.u.len();
+        let rotations = self.ops.rotations(&self.u)?;
+        // the free predictor from the state as it is: a vertex held last step sits on the
+        // plane with zero velocity and acceleration, so its predictor is the plane exactly; an
+        // impulse that gave it an upward velocity lifts its predictor above the plane and it
+        // is not held this step
+        let mut free_predictor = vec![Fix128::ZERO; ndof];
+        for (d, slot) in free_predictor.iter_mut().enumerate() {
+            *slot = if self.is_free[d] {
+                newmark_predictor(self.u[d], self.v[d], self.a[d], self.dt, self.half_dt)
+            } else {
+                self.prescribed_value[d]
+            };
+        }
+        // the held set: every vertex whose predictor is at or below the plane; then the
+        // active-set iteration releases the held vertices whose reaction turns tensile (the
+        // plane can only push) and re-solves, until no held vertex pulls, and a released
+        // vertex that would end the step below the plane is held again for good
+        let mut held = vec![false; ndof / 3];
+        let mut locked = vec![false; ndof / 3];
+        if let Some(ground) = self.ground {
+            for (i, held_i) in held.iter_mut().enumerate() {
+                let d = 3 * i + 1;
+                if self.is_free[d] && free_predictor[d] <= ground - self.rest[d] {
+                    *held_i = true;
+                }
+            }
+        }
+        let two_over_dt = Fix128::ONE / self.half_dt;
+        let mut iteration = 0u32;
+        let (next_u, is_free, prescribed, predictor, rhs, iterations) = loop {
+            iteration += 1;
+            if iteration > CONTACT_ACTIVE_SET_CAP {
+                return Err(FemError::ContactUnsettled {
+                    iterations: iteration - 1,
+                });
+            }
+            // this trial's free set, prescribed field, predictor and state: the held vertices
+            // are prescribed to the plane with zero velocity and acceleration
+            let mut is_free = self.is_free.clone();
+            let mut prescribed = self.prescribed_value.clone();
+            let mut predictor = free_predictor.clone();
+            let mut v = self.v.clone();
+            let mut a = self.a.clone();
+            if let Some(ground) = self.ground {
+                for (i, &held_i) in held.iter().enumerate() {
+                    if held_i {
+                        let d = 3 * i + 1;
+                        let plane_u = ground - self.rest[d];
+                        is_free[d] = false;
+                        prescribed[d] = plane_u;
+                        predictor[d] = plane_u;
+                        v[d] = Fix128::ZERO;
+                        a[d] = Fix128::ZERO;
+                    }
+                }
+            }
+            let mut mass_predictor = vec![Fix128::ZERO; ndof];
+            self.ops.apply_mass(&predictor, &mut mass_predictor);
+            // the damped effective operator's scalars: (1 + 2β/dt) on K', (1 + α dt/2) on Ṁ
+            let (k_scale, m_scale, c_v) = match self.damping {
+                None => (Fix128::ONE, Fix128::ONE, None),
+                Some(c) => {
+                    // ṽ = v + (dt/2) a − (2/dt) ũ, then C ṽ = (α/c₀) Ṁ ṽ + β (K' ṽ), with K' ṽ the
+                    // rotated stiffness product alone
+                    let mut v_tilde = vec![Fix128::ZERO; ndof];
+                    for d in 0..ndof {
+                        v_tilde[d] = v[d] + self.half_dt * a[d] - two_over_dt * predictor[d];
+                    }
+                    let mut k_v = vec![Fix128::ZERO; ndof];
+                    self.ops.apply_scaled_rotated(
+                        &rotations,
+                        Fix128::ONE,
+                        Fix128::ZERO,
+                        &v_tilde,
+                        &mut k_v,
+                    );
+                    let mut m_v = vec![Fix128::ZERO; ndof];
+                    self.ops.apply_mass(&v_tilde, &mut m_v);
+                    let alpha_over_c0 = c.alpha / self.inv_beta_dt2;
+                    let c_v: Vec<Fix128> = k_v
+                        .iter()
+                        .zip(m_v.iter())
+                        .map(|(k, m)| c.beta * *k + alpha_over_c0 * *m)
+                        .collect();
+                    (
+                        Fix128::ONE + two_over_dt * c.beta,
+                        Fix128::ONE + self.half_dt * c.alpha,
+                        Some(c_v),
+                    )
+                }
+            };
+            let mut keff_prescribed = vec![Fix128::ZERO; ndof];
+            self.ops.apply_scaled_rotated(
+                &rotations,
+                k_scale,
+                m_scale,
+                &prescribed,
+                &mut keff_prescribed,
+            );
+            let mut offset = vec![Fix128::ZERO; ndof];
+            self.ops
+                .rotation_offset(&rotations, &self.rest, &mut offset);
+            // the right-hand side of the equation `A u' = rhs` on every degree of freedom (the
+            // held ones too: their residual after the solve is the reaction the hold provides);
+            // the free rows then move the prescribed columns over (`− A prescribed`)
+            let mut rhs = vec![Fix128::ZERO; ndof];
+            for d in 0..ndof {
+                let damping_term = c_v.as_ref().map_or(Fix128::ZERO, |c| c[d]);
+                rhs[d] = self.load[d] + mass_predictor[d] - offset[d] - damping_term;
+            }
+            let mut b_free = vec![Fix128::ZERO; ndof];
+            for d in 0..ndof {
+                if is_free[d] {
+                    b_free[d] = rhs[d] - keff_prescribed[d];
+                }
+            }
+            let ops = &self.ops;
+            let (mut next_u, iterations) =
+                conjugate_gradient(&b_free, &is_free, &self.precond, &self.config, |p, out| {
+                    ops.apply_scaled_rotated(&rotations, k_scale, m_scale, p, out);
+                })?;
+            for d in 0..ndof {
+                if !is_free[d] {
+                    next_u[d] = prescribed[d];
+                }
+            }
+            let Some(ground) = self.ground else {
+                break (next_u, is_free, prescribed, predictor, rhs, iterations);
+            };
+            // the reaction at a held vertex: `(A u' − rhs)_y` with the full `u'` (held values
+            // included), the force the plane had to add; a tensile one (negative, pulling
+            // down) releases the vertex and the step is solved again; a released vertex that
+            // ended below the plane is held again, for good
+            let mut a_u = vec![Fix128::ZERO; ndof];
+            self.ops
+                .apply_scaled_rotated(&rotations, k_scale, m_scale, &next_u, &mut a_u);
+            let mut changed = false;
+            for i in 0..ndof / 3 {
+                let d = 3 * i + 1;
+                if !self.is_free[d] {
+                    continue;
+                }
+                let plane_u = ground - self.rest[d];
+                if held[i] {
+                    if !locked[i] && a_u[d] - rhs[d] < Fix128::ZERO {
+                        held[i] = false;
+                        changed = true;
+                    }
+                } else if next_u[d] < plane_u {
+                    held[i] = true;
+                    locked[i] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break (next_u, is_free, prescribed, predictor, rhs, iterations);
+            }
+        };
+        // commit: the corrector on the free degrees of freedom from the state as it was, the
+        // held ones at the plane with zero velocity and acceleration
+        for d in 0..ndof {
+            if is_free[d] {
+                let (next_v, next_a) = newmark_corrector(
+                    next_u[d],
+                    predictor[d],
+                    self.v[d],
+                    self.a[d],
+                    self.inv_beta_dt2,
+                    self.half_dt,
+                );
+                self.v[d] = next_v;
+                self.a[d] = next_a;
+            } else if self.is_free[d] {
+                // held on the ground this step
+                self.v[d] = Fix128::ZERO;
+                self.a[d] = Fix128::ZERO;
+            }
+        }
+        let _ = (prescribed, rhs);
+        for (i, on) in self.on_ground.iter_mut().enumerate() {
+            *on = held[i];
+        }
+        self.u = next_u;
+        Ok(iterations)
+    }
+
+    /// Nodal displacements (mm), three components per vertex in vertex order.
+    #[must_use]
+    pub fn displacements(&self) -> &[Fix128] {
+        &self.u
+    }
+
+    /// Nodal velocities (mm/s), three components per vertex in vertex order.
+    #[must_use]
+    pub fn velocities(&self) -> &[Fix128] {
+        &self.v
+    }
+
+    /// Nodal accelerations (mm/s²), three components per vertex in vertex order.
+    #[must_use]
+    pub fn accelerations(&self) -> &[Fix128] {
+        &self.a
+    }
+
+    /// Domain separation of [`Self::state_digest`]: the SHA-256 of the text
+    /// `alice-physics/dynamic-fem-state-digest/v1`, computed once (the same bytes as
+    /// [`TransientSolver::STATE_DIGEST_DOMAIN`]; the two solvers' states differ in content, so
+    /// a digest of one is never a digest of the other).
+    pub const STATE_DIGEST_DOMAIN: [u8; 32] = TransientSolver::STATE_DIGEST_DOMAIN;
+
+    /// SHA-256 of the solver's state: `STATE_DIGEST_DOMAIN`, then the raw `Fix128` bits of
+    /// every displacement, velocity and acceleration (little-endian `i64` high, `u64` low,
+    /// degree of freedom by degree of freedom), then one byte per vertex for the ground hold
+    /// (`1` held, `0` free). Two runs agree exactly when their states are the same to the
+    /// bit, which is what a replay of the same inputs gives on every target. This digest
+    /// stands alone: the finite element state is not yet part of
+    /// [`crate::PhysicsWorld::state_digest`] or its snapshot.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(Self::STATE_DIGEST_DOMAIN);
+        for x in self.u.iter().chain(&self.v).chain(&self.a) {
+            h.update(x.hi.to_le_bytes());
+            h.update(x.lo.to_le_bytes());
+        }
+        for &held in &self.on_ground {
+            h.update([u8::from(held)]);
+        }
+        h.finalize().into()
+    }
 }
 
 #[cfg(test)]
@@ -1358,6 +2181,330 @@ mod tests {
             any_nonzero,
             "every scene conserved energy exactly, so this test is measuring nothing \
              and the bound above is vacuous"
+        );
+    }
+}
+
+/// Small, fast oracles of the co-rotational solver on a two-cube column (12 Kuhn
+/// tetrahedra, 10 mm cubes): the rigid rotation, the impulse and its momentum, the ground
+/// hold and its release, Rayleigh damping, the state digest and the refusals. The full
+/// sweeps with derived tolerances are in `tests/analytic_dynamic_fem_corotational.rs`;
+/// these run in the `--lib` suite in a fraction of a second.
+#[cfg(test)]
+mod corotational_tests {
+    use super::*;
+    use crate::damping_rayleigh::RayleighCoefficients;
+    use crate::linear_elastic_fem::{Axis, BoundaryConditions, ElasticMaterial, SolverConfig};
+    use crate::sdf_fem_mesh::Tetrahedron;
+
+    /// `1 × 1 × 2` cubes of 10 mm (x, y up, z), each split into the six Kuhn tetrahedra
+    fn column() -> SdfTetMesh {
+        let (nx, ny) = (1usize, 2usize);
+        let at = |i: usize, j: usize, k: usize| ((i * (ny + 1) + j) * (nx + 1) + k) as u32;
+        let mut mesh = SdfTetMesh::default();
+        for i in 0..=nx {
+            for j in 0..=ny {
+                for k in 0..=nx {
+                    mesh.vertices
+                        .push([10.0 * i as f32, 10.0 * j as f32, 10.0 * k as f32]);
+                }
+            }
+        }
+        let paths = [
+            [(1, 0, 0), (1, 1, 0)],
+            [(1, 0, 0), (1, 0, 1)],
+            [(0, 1, 0), (1, 1, 0)],
+            [(0, 1, 0), (0, 1, 1)],
+            [(0, 0, 1), (1, 0, 1)],
+            [(0, 0, 1), (0, 1, 1)],
+        ];
+        for j in 0..ny {
+            for [(a0, a1, a2), (b0, b1, b2)] in paths {
+                mesh.tets.push(Tetrahedron {
+                    vertices: [
+                        at(0, j, 0),
+                        at(a0, j + a1, a2),
+                        at(b0, j + b1, b2),
+                        at(1, j + 1, 1),
+                    ],
+                });
+            }
+        }
+        mesh
+    }
+
+    fn material() -> ElasticMaterial {
+        ElasticMaterial::new(Fix128::from_int(1), Fix128::from_ratio(3, 10))
+            .expect("E > 0, ν in range")
+    }
+
+    fn dynamics(lumping: MassLumping) -> DynamicsConfig {
+        DynamicsConfig::try_new(
+            Fix128::from_ratio(1, 1_000_000_000),
+            Fix128::from_ratio(1, 1024),
+            lumping,
+        )
+        .expect("density and dt positive")
+    }
+
+    fn config() -> SolverConfig {
+        SolverConfig::try_new(20_000, Fix128::from_ratio(1, 1 << 30)).expect("budget and tolerance")
+    }
+
+    fn solver(bc: &BoundaryConditions, lumping: MassLumping) -> CorotationalTransientSolver {
+        CorotationalTransientSolver::new(&column(), &material(), bc, &dynamics(lumping), &config())
+            .expect("the column solves")
+    }
+
+    fn largest(xs: &[Fix128]) -> Fix128 {
+        xs.iter()
+            .map(|x| x.abs())
+            .fold(Fix128::ZERO, |a, b| if b > a { b } else { a })
+    }
+
+    /// The 3-4-5 rotation about z (sine 3/5, cosine 4/5, exact), as displacements.
+    fn rotated(mesh: &SdfTetMesh) -> Vec<Fix128> {
+        let (s, c) = (Fix128::from_ratio(3, 5), Fix128::from_ratio(4, 5));
+        let mut u = Vec::with_capacity(3 * mesh.vertices.len());
+        for v in &mesh.vertices {
+            let (x, y) = (Fix128::from_f32(v[0]), Fix128::from_f32(v[1]));
+            u.push(c * x - s * y - x);
+            u.push(s * x + c * y - y);
+            u.push(Fix128::ZERO);
+        }
+        u
+    }
+
+    /// A free body turned as a whole and released at rest does not move: the co-rotated
+    /// element sees no strain, so there is no elastic force (the only change is the solve's
+    /// residual, below 1e-6 mm here).
+    #[test]
+    fn a_rigidly_rotated_free_body_stays_put() {
+        let mesh = column();
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let u0 = rotated(&mesh);
+        s.set_displacements(&u0)
+            .expect("the rotation has a polar factor");
+        for _ in 0..8 {
+            s.step().expect("the step converges");
+        }
+        let drift: Vec<Fix128> = s
+            .displacements()
+            .iter()
+            .zip(&u0)
+            .map(|(a, b)| *a - *b)
+            .collect();
+        assert!(
+            largest(&drift) < Fix128::from_ratio(1, 1_000_000),
+            "moved {:?}",
+            largest(&drift)
+        );
+    }
+
+    /// An impulse on a free lumped body is its momentum (one division per degree of
+    /// freedom), and the free steps keep it (no load, no fix).
+    #[test]
+    fn an_impulse_is_the_momentum_of_a_free_body_and_is_kept() {
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let j = Fix128::from_ratio(1, 1_000_000);
+        s.apply_impulses(&[(5, [Fix128::ZERO, j, Fix128::ZERO])])
+            .expect("the mass solve converges");
+        let total = |s: &CorotationalTransientSolver| {
+            let p = s.momentum();
+            let mut sum = [Fix128::ZERO; 3];
+            for (d, x) in p.iter().enumerate() {
+                sum[d % 3] = sum[d % 3] + *x;
+            }
+            sum
+        };
+        let p0 = total(&s);
+        assert!(
+            (p0[1] - j).abs() < Fix128::from_ratio(1, 1_000_000_000_000),
+            "{:?}",
+            p0[1]
+        );
+        for _ in 0..16 {
+            s.step().expect("the step converges");
+        }
+        let p1 = total(&s);
+        assert!(
+            (p1[1] - j).abs() < j / Fix128::from_int(1000),
+            "{:?} vs {:?}",
+            p1[1],
+            j
+        );
+        assert!(
+            p1[0].abs() < j / Fix128::from_int(1000) && p1[2].abs() < j / Fix128::from_int(1000)
+        );
+    }
+
+    /// An impulse on a vertex past the mesh is refused, and the state is unchanged.
+    #[test]
+    fn an_impulse_on_a_missing_vertex_is_refused() {
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Consistent);
+        let before = s.state_digest();
+        assert!(matches!(
+            s.apply_impulses(&[(99, [Fix128::ONE, Fix128::ZERO, Fix128::ZERO])]),
+            Err(FemError::VertexOutOfRange { vertex: 99, .. })
+        ));
+        assert_eq!(s.state_digest(), before);
+    }
+
+    /// Displacements of the wrong length, or that turn an element inside out, are refused
+    /// and leave the state as it was.
+    #[test]
+    fn bad_displacements_are_refused_without_change() {
+        let mesh = column();
+        let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+        let before = s.state_digest();
+        assert!(s.set_displacements(&[Fix128::ZERO; 3]).is_err());
+        assert_eq!(s.state_digest(), before);
+        // mirror the top vertices through the base: every element of the top cube inverts
+        let mut u = vec![Fix128::ZERO; 3 * mesh.vertices.len()];
+        for (i, v) in mesh.vertices.iter().enumerate() {
+            if v[1] > 15.0 {
+                u[3 * i + 1] = Fix128::from_int(-50);
+            }
+        }
+        assert!(matches!(
+            s.set_displacements(&u),
+            Err(FemError::RotationFailed { .. })
+        ));
+        assert_eq!(s.state_digest(), before);
+    }
+
+    /// A column under its weight standing on the plane is held on it (no vertex ends a step
+    /// below it), and a kick upward on the top releases every bottom vertex.
+    #[test]
+    fn the_ground_holds_a_falling_column_and_lets_a_kicked_one_go() {
+        let mesh = column();
+        let mut bc = BoundaryConditions::new();
+        // 1e-6 N a vertex, downward: 1000 mm/s² on 1e-9 t (a fall of 1 mm in about 45 ms)
+        for i in 0..mesh.vertices.len() {
+            bc.add_load(i as u32, Axis::Y, Fix128::from_ratio(-1, 1_000_000));
+        }
+        let mut s = solver(&bc, MassLumping::Lumped);
+        s.set_damping(Some(RayleighCoefficients {
+            alpha: Fix128::ZERO,
+            beta: Fix128::from_ratio(1, 1000),
+        }));
+        // the plane at the column's bottom: it stands on it from the first step
+        let ground = Fix128::ZERO;
+        s.set_ground(Some(ground));
+        let bottom: Vec<usize> = (0..mesh.vertices.len())
+            .filter(|&i| mesh.vertices[i][1] == 0.0)
+            .collect();
+        let top: Vec<usize> = (0..mesh.vertices.len())
+            .filter(|&i| mesh.vertices[i][1] == 20.0)
+            .collect();
+        for _ in 0..200 {
+            s.step().expect("the step converges");
+            for &i in &bottom {
+                assert!(
+                    s.displacements()[3 * i + 1] >= ground,
+                    "a bottom vertex went below the plane"
+                );
+            }
+        }
+        assert!(
+            bottom.iter().all(|&i| s.on_ground()[i]),
+            "the bottom is held"
+        );
+        let kick = Fix128::from_ratio(1, 10_000_000);
+        let impulses: Vec<(u32, [Fix128; 3])> = top
+            .iter()
+            .map(|&i| (i as u32, [Fix128::ZERO, kick, Fix128::ZERO]))
+            .collect();
+        s.apply_impulses(&impulses)
+            .expect("the mass solve converges");
+        let mut released = false;
+        for _ in 0..200 {
+            s.step().expect("the step converges");
+            if bottom.iter().all(|&i| !s.on_ground()[i]) {
+                released = true;
+                break;
+            }
+        }
+        assert!(released, "a kicked column stayed held");
+    }
+
+    /// Rayleigh damping takes energy out: the same stretched start rings on undamped and
+    /// decays damped (the largest displacement after 400 steps is smaller with damping). The
+    /// decay rate itself is not checked here: at this step the column's modes have
+    /// `ω dt > 1`, where the trapezoidal rule damps them less than the continuous `α/2`
+    /// (its root `|z|` against the closed form is checked at resolved steps in
+    /// `tests/analytic_dynamic_fem_corotational.rs`).
+    #[test]
+    fn rayleigh_damping_takes_the_ringing_out() {
+        let mesh = column();
+        let mut bc = BoundaryConditions::new();
+        for i in 0..mesh.vertices.len() {
+            if mesh.vertices[i][1] == 0.0 {
+                bc.fix(i as u32);
+            }
+        }
+        let run = |damping: Option<RayleighCoefficients>| {
+            let mut s = solver(&bc, MassLumping::Lumped);
+            s.set_damping(damping);
+            let mut u = vec![Fix128::ZERO; 3 * mesh.vertices.len()];
+            for (i, v) in mesh.vertices.iter().enumerate() {
+                if v[1] > 15.0 {
+                    u[3 * i + 1] = Fix128::from_ratio(1, 10);
+                }
+            }
+            s.set_displacements(&u).expect("a small stretch");
+            for _ in 0..400 {
+                s.step().expect("the step converges");
+            }
+            largest(s.displacements())
+        };
+        let undamped = run(None);
+        let damped = run(Some(RayleighCoefficients {
+            alpha: Fix128::from_int(200),
+            beta: Fix128::ZERO,
+        }));
+        assert!(
+            damped < undamped,
+            "damped {damped:?} vs undamped {undamped:?}"
+        );
+    }
+
+    /// The digest names the state: two runs of the same inputs agree, another input moves it,
+    /// and the linear solver's digest is defined the same way.
+    #[test]
+    fn the_state_digest_replays_and_moves_with_the_state() {
+        let run = |kick: Fix128| {
+            let mut s = solver(&BoundaryConditions::new(), MassLumping::Lumped);
+            s.apply_impulses(&[(3, [kick, Fix128::ZERO, Fix128::ZERO])])
+                .expect("the mass solve converges");
+            for _ in 0..4 {
+                s.step().expect("the step converges");
+            }
+            s.state_digest()
+        };
+        let small = Fix128::from_ratio(1, 1000);
+        assert_eq!(run(small), run(small));
+        assert_ne!(run(small), run(small + small));
+        let mut bc = BoundaryConditions::new();
+        bc.fix(0).fix(1).fix(2).fix(3);
+        let mut linear = TransientSolver::new(
+            &column(),
+            &material(),
+            &bc,
+            &dynamics(MassLumping::Lumped),
+            &config(),
+        )
+        .expect("the column solves");
+        let d0 = linear.state_digest();
+        linear.step().expect("the step converges");
+        assert_eq!(
+            d0,
+            linear.state_digest(),
+            "a fixed column at rest under no load stays at rest"
+        );
+        assert_eq!(
+            TransientSolver::STATE_DIGEST_DOMAIN,
+            CorotationalTransientSolver::STATE_DIGEST_DOMAIN
         );
     }
 }
