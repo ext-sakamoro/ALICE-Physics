@@ -1765,6 +1765,8 @@ pub struct PhysicsWorld {
     /// overlap the compliant contact holds at rest, and only a point new this
     /// substep has its overlap pre-projected (`pre_project_overlap`).
     static_touch: Vec<(usize, usize, u32)>,
+    /// As `static_touch`, for the SDF colliders' contact points.
+    sdf_touch: Vec<(usize, usize, u32)>,
     /// Free rotation of each body in the current substep, written by
     /// `integrate_positions` and read by `update_velocities` (indexed like
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
@@ -2014,6 +2016,7 @@ impl PhysicsWorld {
             contact_turn: Vec::new(),
             contact_block: Vec::new(),
             static_touch: Vec::new(),
+            sdf_touch: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
@@ -4715,7 +4718,7 @@ impl PhysicsWorld {
         // `dt`, same as every other per-tick (not per-substep) phase here.
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
 
         // Phase 2.6: the static colliders' contacts join the tick's contact set
@@ -5148,7 +5151,7 @@ impl PhysicsWorld {
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -5196,7 +5199,7 @@ impl PhysicsWorld {
         // the rest
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -6671,7 +6674,7 @@ impl PhysicsWorld {
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -7073,7 +7076,9 @@ impl PhysicsWorld {
     ///
     /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
     #[cfg(feature = "std")]
-    fn resolve_sdf_collisions(&mut self) {
+    fn resolve_sdf_collisions(&mut self, h: Fix128) {
+        let previous = core::mem::take(&mut self.sdf_touch);
+        let mut touch: Vec<(usize, usize, u32)> = Vec::new();
         let first = self.sdf_contact_log.len();
         self.detect_sdf_contacts();
         // Every contact found joins the substep's contact constraints: against
@@ -7089,18 +7094,62 @@ impl PhysicsWorld {
             } else {
                 owner
             };
-            let mut contact = [Contact {
-                depth: c.depth,
-                normal: c.normal,
-                point_a: c.point - c.normal * c.depth,
-                point_b: c.point,
-            }];
-            // As before the pre-projection, a field attached to a moving body is
-            // treated as immovable for the start-of-substep overlap.
-            let _ = target;
-            self.pre_project_overlap(c.body_index, &mut contact, Fix128::ZERO);
-            self.add_contact_with_material(c.body_index, target, contact[0]);
+            // A body with flat faces rests on the field by a face: its manifold
+            // (`BodyCollider::sdf_manifold`, each corner tested against the
+            // field), solved as a block like a static collider's.
+            let shaped = self
+                .body_colliders
+                .get(c.body_index)
+                .and_then(Option::as_ref);
+            let manifold = shaped
+                .map(|col| {
+                    let body = &self.bodies[c.body_index];
+                    col.sdf_manifold(
+                        body.position,
+                        body.rotation,
+                        &self.sdf_colliders[c.collider_index],
+                    )
+                })
+                .filter(|m| m.len() > 1);
+            let points: Vec<(Contact, u32)> = manifold.unwrap_or_else(|| {
+                vec![(
+                    Contact {
+                        depth: c.depth,
+                        normal: c.normal,
+                        point_a: c.point - c.normal * c.depth,
+                        point_b: c.point,
+                    },
+                    0,
+                )]
+            });
+            // Only the points new this substep are pre-projected (a point found
+            // again holds the compliant contact's resting overlap), as for the
+            // static colliders; a field attached to a moving body is treated as
+            // immovable for the start-of-substep overlap, as before.
+            let fresh: Vec<usize> = (0..points.len())
+                .filter(|&k| {
+                    previous
+                        .binary_search(&(c.body_index, c.collider_index, points[k].1))
+                        .is_err()
+                })
+                .collect();
+            let mut contacts: Vec<Contact> = points.iter().map(|(p, _)| *p).collect();
+            if fresh.len() == contacts.len() {
+                self.pre_project_overlap(c.body_index, &mut contacts, h);
+            } else if !fresh.is_empty() {
+                let mut new_points: Vec<Contact> = fresh.iter().map(|&k| contacts[k]).collect();
+                self.pre_project_overlap(c.body_index, &mut new_points, h);
+                for (n, &k) in fresh.iter().enumerate() {
+                    contacts[k] = new_points[n];
+                }
+            }
+            for (contact, (_, feature)) in contacts.into_iter().zip(points) {
+                touch.push((c.body_index, c.collider_index, feature));
+                self.add_manifold_point(c.body_index, target, contact, feature);
+            }
         }
+        touch.sort_unstable();
+        self.sdf_touch = touch;
     }
 
     /// Find every body's contacts with the SDF colliders and record them in

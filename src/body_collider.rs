@@ -340,6 +340,62 @@ impl BodyCollider {
             }
         }
     }
+
+    /// The contact manifold of this collider against an SDF: each touching
+    /// piece's deepest point (as [`Self::sdf_contact`] finds it), widened for a
+    /// piece with flat faces to the corners of the face it rests on: the support
+    /// points along the four directions of [`face_manifold`] about the deepest
+    /// point's normal, each tested against the field itself (its own depth and
+    /// normal; kept when it reaches into the field). Feature numbers are
+    /// `4 · piece + direction`.
+    #[cfg(feature = "std")]
+    pub(crate) fn sdf_manifold(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        sdf: &SdfCollider,
+    ) -> Vec<(Contact, u32)> {
+        let own = self.world_aabb(position, rotation);
+        let mut out = Vec::new();
+        for (index, (piece, _)) in self
+            .pieces(position, rotation, &own)
+            .into_iter()
+            .enumerate()
+        {
+            let deepest = match &piece {
+                Piece::Shape(posed) => posed_sdf_contact(posed, sdf),
+                Piece::Child { child, .. } => child_sdf_contact(child, position, rotation, sdf),
+            };
+            let Some(deepest) = deepest else {
+                continue;
+            };
+            let base = 4 * index as u32;
+            if !piece.has_flat_faces() {
+                out.push((deepest, base));
+                continue;
+            }
+            let n = deepest.normal;
+            let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+            let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
+            let mut points: Vec<(Contact, u32)> = Vec::with_capacity(4);
+            for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
+                let p = piece
+                    .support(-n + (t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2)) * lean);
+                if points.iter().any(|(c, _)| c.point_a == p) {
+                    continue;
+                }
+                if let Some(c) = collide_point_sdf(p, sdf) {
+                    points.push((c, base + k as u32));
+                }
+            }
+            if points.is_empty() {
+                out.push((deepest, base));
+            } else {
+                out.extend(points);
+            }
+        }
+        out
+    }
 }
 
 /// The deepest contact between two colliders, or `None`: GJK/EPA on every pair of

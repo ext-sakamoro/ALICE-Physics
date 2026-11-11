@@ -171,7 +171,6 @@ fn check(backend: SolverBackend, floors: &[Floor]) {
 
 /// The plane-like floors (plane, triangle mesh, height field, a static box).
 #[test]
-#[ignore = "known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from corner to corner (0.12 m/s at 240 Hz, halving with the step); needs a contact manifold"]
 fn a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs() {
     check(
         SolverBackend::Tgs,
@@ -186,7 +185,6 @@ fn a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs() {
 
 /// The SDF floor (the half-space `y ≤ 0`).
 #[test]
-#[ignore = "known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from corner to corner (0.12 m/s at 240 Hz, halving with the step); needs a contact manifold"]
 fn a_box_set_down_flat_rests_flat_on_an_sdf_floor_under_tgs() {
     check(SolverBackend::Tgs, &[Floor::Sdf]);
 }

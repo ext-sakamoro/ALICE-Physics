@@ -191,7 +191,6 @@ fn bounce_height(backend: SolverBackend, floor: Floor, e: f64, h: f64) -> f64 {
 /// off by at most `g h_s` and the rise by `2 e² v g h_s / g`, which for `h = 1`
 /// is `≤ 2 e² √(2 g) h_s` < 0.01 h. 0.02 h covers it with margin.
 #[test]
-#[ignore = "known defect: static colliders and SDF colliders only push out (no restitution), TGS static contacts too; body-body TGS overshoots at 240 Hz"]
 fn a_ball_bounces_to_e_squared_h_on_every_floor_and_backend() {
     let h = 1.0;
     let mut wrong = Vec::new();
@@ -229,7 +228,6 @@ fn a_ball_bounces_to_e_squared_h_on_every_floor_and_backend() {
 /// friction that is wrong rather than coarse keeps its error as `DT` shrinks
 /// (the XPBD static plane stopped at 1.261 m at all three rates).
 #[test]
-#[ignore = "known defect: static colliders and SDF colliders apply no friction (the box slides on at v0)"]
 fn a_sliding_box_stops_after_v0_squared_over_two_mu_g() {
     let (v0, mu) = (3.0, 0.4);
     let want = v0 * v0 / (2.0 * mu * G);
@@ -278,7 +276,6 @@ fn a_sliding_box_stops_after_v0_squared_over_two_mu_g() {
 ///   nothing is left moving. The detection-time depth read every
 ///   substep left the box rattling on its edges at 0.19 m/s.
 #[test]
-#[ignore = "known defect: a box touches the floor at one point per tick (the deepest corner), so under TGS it rocks from corner to corner and never comes to rest (0.19 m/s at 240 Hz); needs a contact manifold"]
 fn a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs() {
     let (v0, mu) = (3.0, 0.4);
     let want = v0 * v0 / (2.0 * mu * G);
@@ -337,7 +334,6 @@ fn a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs() {
 /// the friction impulse of one substep changes v by at most μ g h_s
 /// (= 0.0016 m/s) past the switch to rolling; 0.01 of 5 v0 / 7 covers it.
 #[test]
-#[ignore = "known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball slides, or stops without spinning)"]
 fn a_sliding_ball_rolls_at_five_sevenths_of_v0() {
     let mut wrong = Vec::new();
     let mut compared = 0;

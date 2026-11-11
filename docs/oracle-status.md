@@ -6,29 +6,23 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6035 |
-| 🔴 Red by design | 77 |
+| 🟢 Not ignored (run by CI) | 6042 |
+| 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6138** |
+| **Total** | **6139** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (77)
+## 🔴 Red by design (71)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
-- `a_ball_bounces_to_e_squared_h_on_every_floor_and_backend` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders only push out (no restitution), TGS static contacts too; body…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
-- `a_box_set_down_flat_rests_flat_on_an_sdf_floor_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
-- `a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
 - `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
-- `a_sliding_ball_rolls_at_five_sevenths_of_v0` (analytic_static_contact_response.rs) — known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball sl…
-- `a_sliding_box_stops_after_v0_squared_over_two_mu_g` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders apply no friction (the box slides on at v0)
-- `a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs` (analytic_static_contact_response.rs) — known defect: a box touches the floor at one point per tick (the deepest corner), so under TGS it rocks from c…
 - `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
@@ -116,20 +110,14 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (12)
+## ⚠️ Known defects without an id (6)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
-- `a_box_set_down_flat_rests_flat_on_an_sdf_floor_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
-- `a_box_set_down_flat_rests_flat_on_plane_like_floors_under_tgs` (analytic_resting_box_manifold.rs) — known defect: the floor touches the box at one point per tick (its deepest corner), so under TGS it rocks from…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
-- `a_ball_bounces_to_e_squared_h_on_every_floor_and_backend` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders only push out (no restitution), TGS static contacts too; body…
 - `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
-- `a_sliding_ball_rolls_at_five_sevenths_of_v0` (analytic_static_contact_response.rs) — known defect: no friction torque on static colliders, SDF colliders or the XPBD body-body contact (the ball sl…
-- `a_sliding_box_stops_after_v0_squared_over_two_mu_g` (analytic_static_contact_response.rs) — known defect: static colliders and SDF colliders apply no friction (the box slides on at v0)
-- `a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs` (analytic_static_contact_response.rs) — known defect: a box touches the floor at one point per tick (the deepest corner), so under TGS it rocks from c…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
@@ -166,7 +154,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6035)
+## 🟢 Not ignored (6042)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -455,6 +443,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_hyperelastic.rs` | 9 |
 | `analytic_ragdoll_wiring.rs` | 9 |
 | `analytic_rans_wall_function.rs` | 9 |
+| `analytic_static_contact_response.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
 | `analytic_world_query_precision.rs` | 9 |
@@ -549,7 +538,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
-| `analytic_static_contact_response.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
 | `analytic_xpbd_velocity.rs` | 5 |
@@ -609,6 +597,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_joint_break_bridge.rs` | 3 |
 | `analytic_joint_compliance_xpbd.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
+| `analytic_resting_box_manifold.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
 | `analytic_sphere_inertia.rs` | 3 |
@@ -667,8 +656,8 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_flat_landing.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
+| `analytic_no_ghost_contact.rs` | 1 |
 | `analytic_pd_step_response.rs` | 1 |
-| `analytic_resting_box_manifold.rs` | 1 |
 | `analytic_restitution_threshold.rs` | 1 |
 | `analytic_rope_catenary.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
