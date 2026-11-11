@@ -3,7 +3,7 @@
 //! the fixture tests that recompute a header `law_id` under an earlier writer's rules.
 //!
 //! Row 11 (the sleep rule) is folded as the writer encoded it: a `u32` step count up to the
-//! semantics identifier `e90000da…` (`frames_to_sleep`), a `Fix128` time since `f32dabf3…`
+//! semantics identifier `e90000da…` (`frames_to_sleep`), a `Fix128` time since `aa8c72e9…`
 //! (`time_to_sleep`); [`Laws::legacy_sleep_steps`] selects the former.
 
 #![allow(

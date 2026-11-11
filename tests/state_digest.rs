@@ -235,19 +235,22 @@ fn hex(b: &[u8]) -> String {
 /// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
 /// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
 /// named in the CHANGELOG with both values.
-// re-pinned for world snapshot version 8: the scene has no cloth, so its snapshot is the
-// version 7 one with the version, the length, an empty cloth section (12 bytes) and the
-// checksum changed, and the law_id below did not move
+// re-pinned under aa8c72e9… (world snapshot version 9): the scene has no lock and no cloth, so
+// its snapshot holds a lock count of 0 and an empty cloth section after the continuous collision
+// section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
+// sleep rule and idle times as frames, no recurrence count and no lock or cloth section
 const GOLDEN_STATE_DIGEST: &str =
-    "9a3caf0925b128ccfc9097b83136b76260f64c7e56f6c612158f512efd8be760";
-const GOLDEN_LAW_ID: &str = "6abdea576fa803574e831b3b6903a8222642ecab90bb15b3d6be1cd1087dadc6";
+    "b580736a347541597ec3aa5945c35ffda2a647539b42fc601304656f63dc4d52";
+// the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
+const GOLDEN_LAW_ID: &str = "c2851cee915786cad135866f2f04925356903c953ff6f6a0bf47c0355615edbb";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
-/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged.
+/// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
+/// as `GOLDEN_STATE_DIGEST`, so it moves with it).
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "410500a7469c94f68ddeb12a20b446f2f04569b7c565d1ed566b20870a00452b";
+    "e4b0067aa0df78691fd5779e448fa1ac478a84027c1e402f0f24d75ebf0f822b";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

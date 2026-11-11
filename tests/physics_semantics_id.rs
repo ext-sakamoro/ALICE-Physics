@@ -53,7 +53,7 @@ use sha2::{Digest, Sha256};
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, a peer moved, or an
 /// alice-det-math function this crate calls changed).
-const PINNED_ID_HEX: &str = "f32dabf301924f3148fa944200e06b902cb633b27b7544bd4411aba4fcbb2c2b";
+const PINNED_ID_HEX: &str = "aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52";
 
 const DET_MATH: &str = "alice-det-math";
 

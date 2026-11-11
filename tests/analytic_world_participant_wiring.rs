@@ -573,18 +573,19 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
 /// than kept: from version 6 damping is stored as a rate per second, so the
 /// world damping slot holds −ln(0.99)/(1/60) where the version 1 payload held
 /// the retention 0.99 per step, and each body slot holds rate 0 where it held
-/// retention 1 (no damping in both forms); from version 7 the sleep rule and
+/// retention 1 (no damping in both forms); from version 8 the sleep rule and
 /// the idle counts are time (`frames × step`, 16 bytes each where the version 1
 /// payload held 4). Every other byte of the version 1 payload is kept, and the
-/// sections added after version 1 follow it (from version 8 the empty cloth
-/// section ends them: a u64 count of 0 and a u32 next grab id of 0).
+/// sections added after version 1 follow it (from version 8 the axis-lock
+/// count, 0 here, and from version 9 the empty cloth section end them: a u64
+/// count of 0 and a u32 next grab id of 0).
 #[test]
-fn a_version_8_blob_extends_the_version_1_payload() {
+fn a_version_9_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = legacy_snapshot(v1);
     let v7 = w.snapshot_world();
     assert_eq!(&v7[0..4], &v1[0..4]);
-    assert_eq!(&v7[4..6], &8u16.to_le_bytes());
+    assert_eq!(&v7[4..6], &9u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l7) = (len(v1), len(&v7));
     let expected = as_version_7_payload(
@@ -597,6 +598,7 @@ fn a_version_8_blob_extends_the_version_1_payload() {
     tail.push(0); // continuous collision off
     tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
     tail.extend_from_slice(&0u64.to_le_bytes()); // lo
+    tail.extend_from_slice(&0u64.to_le_bytes()); // no axis lock
     tail.extend_from_slice(&0u64.to_le_bytes()); // no cloth
     tail.extend_from_slice(&0u32.to_le_bytes()); // next grab id
     assert_eq!(l7, expected.len() + tail.len());
@@ -967,9 +969,10 @@ fn an_unknown_fault_code_is_refused() {
     w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     let mut blob = w.snapshot_world();
     // the fault code sits before the empty fields section (8 bytes), the
-    // continuous collision section (17 bytes, version 3), the empty cloth
-    // section (12 bytes, version 8) and the checksum (8 bytes)
-    let at = blob.len() - 8 - 12 - 17 - 8 - 1;
+    // continuous collision section (17 bytes, version 3), the axis-lock count
+    // (8 bytes, version 8), the empty cloth section (12 bytes, version 9) and
+    // the checksum (8 bytes)
+    let at = blob.len() - 8 - 12 - 8 - 17 - 8 - 1;
     assert_eq!(blob[at], 0);
     blob[at] = 9;
     let body_end = blob.len() - 8;
