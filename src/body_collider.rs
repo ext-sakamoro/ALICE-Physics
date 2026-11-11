@@ -75,6 +75,7 @@ impl Piece<'_> {
                     | Shape::Wedge { .. }
                     | Shape::Cylinder { .. }
                     | Shape::Cone { .. }
+                    | Shape::Torus { .. }
             ),
             Self::Child { child, .. } => {
                 matches!(child.shape, ShapeRef::Box(_) | ShapeRef::ConvexHull(_))
@@ -376,12 +377,14 @@ impl BodyCollider {
             }
             let n = deepest.normal;
             let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
-            let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
             let mut points: Vec<(Contact, u32)> = Vec::with_capacity(4);
             for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
-                let p = piece
-                    .support(-n + (t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2)) * lean);
-                if points.iter().any(|(c, _)| c.point_a == p) {
+                let p = lean_support(
+                    &piece,
+                    -n,
+                    t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2),
+                );
+                if near_any(points.iter().map(|(c, _)| c.point_a), p) {
                     continue;
                 }
                 if let Some(c) = collide_point_sdf(p, sdf) {
@@ -910,6 +913,40 @@ impl BodyCollider {
 /// meet the same points (kept once).
 const FACE_LEAN: (i64, i64) = (1, 4);
 
+/// The lean (`2⁻¹⁶`) a curved support set is sampled at, and the distance
+/// (`2⁻¹⁴` m) under which two of its points are one.
+const CURVED_LEAN: Fix128 = Fix128 { hi: 0, lo: 1 << 48 };
+const SAME_POINT: Fix128 = Fix128 { hi: 0, lo: 1 << 50 };
+/// How far (`2⁻³²` m) a support point may move when its lean doubles and still
+/// be a vertex.
+const VERTEX_SLACK: Fix128 = Fix128 { hi: 0, lo: 1 << 32 };
+
+/// The support point of `piece` for the direction `dir` leaning towards
+/// `lean_dir`: at the lean `FACE_LEAN` when that point is a vertex (it does
+/// not move when the lean doubles: a face's corner, a line's end, a rim point
+/// at its azimuth), so a face tilted less than `FACE_LEAN` gives its corners;
+/// otherwise the surface is curved across the lean (a ball, a cylinder's side
+/// across its axis, a torus's tube) and the point is taken at the lean
+/// `CURVED_LEAN`, which is the support set's own point in that direction (a
+/// ball's lowest point, a cylinder's line end, a torus's ring point), at most
+/// `CURVED_LEAN · R` from it, instead of a point `atan(FACE_LEAN)` around the
+/// curve that is no part of the contact.
+fn lean_support(piece: &impl Support, dir: Vec3Fix, lean_dir: Vec3Fix) -> Vec3Fix {
+    let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
+    let p = piece.support(dir + lean_dir * lean);
+    let q = piece.support(dir + lean_dir * (lean + lean));
+    if (p - q).length() <= VERTEX_SLACK {
+        p
+    } else {
+        piece.support(dir + lean_dir * CURVED_LEAN)
+    }
+}
+
+/// Whether `p` is within `SAME_POINT` of one of `points`.
+fn near_any(points: impl IntoIterator<Item = Vec3Fix>, p: Vec3Fix) -> bool {
+    points.into_iter().any(|q| (q - p).length() <= SAME_POINT)
+}
+
 /// The points of a flat-faced piece on a floor, from its deepest contact
 /// `deepest` (normal out of the floor, `point_b` on the floor surface).
 ///
@@ -926,12 +963,11 @@ const FACE_LEAN: (i64, i64) = (1, 4);
 fn face_manifold(piece: &impl Support, deepest: Contact, margin: Fix128) -> Vec<(Contact, u32)> {
     let n = deepest.normal;
     let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
-    let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
     let mut out: Vec<(Contact, u32)> = Vec::with_capacity(4);
     for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
         let lean_dir = t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2);
-        let p = piece.support(-n + lean_dir * lean);
-        if out.iter().any(|(c, _)| c.point_a == p) {
+        let p = lean_support(piece, -n, lean_dir);
+        if near_any(out.iter().map(|(c, _)| c.point_a), p) {
             continue;
         }
         let height = n.dot(p - deepest.point_b);
@@ -958,12 +994,11 @@ fn face_manifold(piece: &impl Support, deepest: Contact, margin: Fix128) -> Vec<
 /// dropped, in their fixed order (a face gives 4 corners, an edge 2, a
 /// vertex or a smooth point 1).
 fn support_polygon(piece: &impl Support, dir: Vec3Fix, t1: Vec3Fix, t2: Vec3Fix) -> Vec<Vec3Fix> {
-    let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
     let mut out: Vec<Vec3Fix> = Vec::with_capacity(4);
     for (s1, s2) in [(1, 1), (-1, 1), (-1, -1), (1, -1)] {
         let lean_dir = t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2);
-        let p = piece.support(dir + lean_dir * lean);
-        if !out.contains(&p) {
+        let p = lean_support(piece, dir, lean_dir);
+        if !near_any(out.iter().copied(), p) {
             out.push(p);
         }
     }
@@ -1468,6 +1503,35 @@ mod tests {
             );
         }
         BodyCollider::Compound(c)
+    }
+
+    /// A ball apart from a box's top by a gap under the margin is a contact of
+    /// depth `−gap` with its points on the two surfaces, whichever side the
+    /// box is on: the box's top `(0, 1, 0)` and the ball's bottom `(0, 1 +
+    /// gap, 0)` (ball radius 1/4, box half-height 1, gap 1/100, margin 1/20).
+    #[test]
+    fn a_ball_within_the_margin_of_a_box_has_its_gap_and_surface_points() {
+        let c = BodyCollider::Shape(Shape::Box {
+            half_extents: Vec3Fix::from_int(4, 1, 4),
+        });
+        let pose = (Vec3Fix::ZERO, QuatFix::IDENTITY);
+        let ball = Sphere::new(v(Fix128::ZERO, fx(126, 100), Fix128::ZERO), fx(1, 4));
+        for collider_is_a in [true, false] {
+            let hit = contact_with_sphere_within(&c, pose, ball, collider_is_a, fx(1, 20))
+                .expect("within the margin");
+            assert_near(hit.depth, -0.01, 1e-12, "depth");
+            let (on_box, on_ball) = if collider_is_a {
+                (hit.point_a, hit.point_b)
+            } else {
+                (hit.point_b, hit.point_a)
+            };
+            assert_vec_near(on_box, [0.0, 1.0, 0.0], 1e-12, "box point");
+            assert_vec_near(on_ball, [0.0, 1.01, 0.0], 1e-12, "ball point");
+        }
+        assert!(
+            contact_with_sphere_within(&c, pose, ball, true, fx(1, 200)).is_none(),
+            "beyond a margin of 1/200"
+        );
     }
 
     /// The bounding radius of a box collider is the length of its half-extent

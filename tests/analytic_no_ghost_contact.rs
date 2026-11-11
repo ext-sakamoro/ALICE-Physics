@@ -12,13 +12,14 @@
 //! friction (its normal multiplier is zero), and is inactive in the position
 //! solve; a body moving parallel to the surface has `vn = 0 ≥ −gap / h`.
 //!
-//! Teeth: speculative points are kept against planes and height fields only,
-//! whose gap is measured exactly, so even a margin of 10 m cannot stop a body
-//! that does not reach the surface (measured: this oracle, the rocking block, the
-//! compliant rest and the flat landing all stay green with it). An oversized
-//! margin becomes able to stop a body once speculative points reach finite
-//! features (box edges, mesh triangles), whose gap is an estimate; the mutant
-//! gets its teeth with that step.
+//! A third case slides the box past a resting dynamic box, a body pair whose
+//! gap is measured between the two shapes (nearest points, then the clipped
+//! faces); the resting box must not move either.
+//!
+//! Teeth: against planes and height fields the gap is measured exactly, so a
+//! margin of any size cannot stop a body there; between two bodies the
+//! speculative points are a finite feature's (the faces' corners), and a margin
+//! far over the bound keeps points of the faces that cannot meet this substep.
 
 use alice_physics_core::material::{PhysicsMaterial, DEFAULT_MATERIAL};
 use alice_physics_core::math::{Fix128, Vec3Fix};
@@ -116,6 +117,50 @@ fn roll_past_box(backend: SolverBackend, hz: f64) -> (f64, f64) {
     (v.x.to_f64(), v.z.to_f64())
 }
 
+/// A box sliding along `+x` at 3 m/s on a frictionless floor past a resting
+/// dynamic box (a body pair, so the gap is measured between two shapes by
+/// their nearest points and kept as a speculative contact) whose side is `gap`
+/// from the slider's path, for 0.5 s: the slider's velocity `(x, z)` and the
+/// resting box's speed.
+fn slide_past_body(backend: SolverBackend, hz: f64, gap: f64) -> (f64, f64, f64) {
+    let mut w = PhysicsWorld::new(SolverConfig {
+        gravity: Vec3Fix::new(Fix128::ZERO, fx(-10.0), Fix128::ZERO),
+        solver_backend: backend,
+        ..SolverConfig::default()
+    });
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO),
+        Fix128::ZERO,
+    )));
+    let m = frictionless(&mut w);
+    let slab = Shape::Box {
+        half_extents: Vec3Fix::new(fx(0.45), fx(0.06), fx(0.3)),
+    };
+    let b = w
+        .add_shaped_body(
+            &slab,
+            fx(500.0),
+            Vec3Fix::new(Fix128::ZERO, fx(0.06), Fix128::ZERO),
+        )
+        .expect("slider");
+    let k = w
+        .add_shaped_body(
+            &slab,
+            fx(500.0),
+            Vec3Fix::new(fx(1.5), fx(0.06), fx(0.6 + gap)),
+        )
+        .expect("resting box");
+    w.set_body_material(b, m);
+    w.set_body_material(k, m);
+    w.get_body_mut(b).expect("slider").velocity = Vec3Fix::new(fx(3.0), Fix128::ZERO, Fix128::ZERO);
+    for _ in 0..(0.5 * hz) as usize {
+        w.step(fx(1.0 / hz));
+    }
+    let v = w.get_body(b).expect("slider").velocity;
+    let rest = w.get_body(k).expect("resting box").velocity.length();
+    (v.x.to_f64(), v.z.to_f64(), rest.to_f64())
+}
+
 #[test]
 fn a_body_passing_close_to_a_surface_is_not_stopped_by_it() {
     let mut wrong = Vec::new();
@@ -125,6 +170,12 @@ fn a_body_passing_close_to_a_surface_is_not_stopped_by_it() {
             if (vx - 3.0).abs() > 1e-9 || vz.abs() > 1e-9 {
                 wrong.push(format!(
                     "{backend:?} {hz} Hz box by the wall: v = ({vx}, {vz}), want (3, 0)"
+                ));
+            }
+            let (vx, vz, rest) = slide_past_body(backend, hz, 1e-3);
+            if (vx - 3.0).abs() > 1e-9 || vz.abs() > 1e-9 || rest > 1e-9 {
+                wrong.push(format!(
+                    "{backend:?} {hz} Hz box past a box: v = ({vx}, {vz}), want (3, 0); the other moves at {rest}"
                 ));
             }
             let (vx, vz) = roll_past_box(backend, hz);

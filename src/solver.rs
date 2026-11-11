@@ -3178,11 +3178,24 @@ impl PhysicsWorld {
                 self.contact_turn_of(c.body_b),
             );
             let gap = gap.max(Fix128::ZERO);
-            return if h.is_zero() {
-                Fix128::ZERO
-            } else {
-                -(gap / h)
-            };
+            if h.is_zero() {
+                return Fix128::ZERO;
+            }
+            let closing = -(gap / h);
+            // A point whose approach closes the gap within this substep hits
+            // in it: it takes its restitution from the approach it had before
+            // the solve, `max(−e v̄ₙ, −gap / h)` (as Box2D v3 does for its
+            // speculative points; clamping it to `−gap / h` alone would slow
+            // the body to `gap / h` before the touch and lose the bounce of the
+            // speed it really hit with). It bounces from at most `gap` short of
+            // the surface.
+            let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
+            // (With `e = 0` the point arrives and stops: `−gap / h`.)
+            if pre_vn < closing && pre_vn < -threshold && c.restitution > Fix128::ZERO {
+                let bounce = -c.restitution * pre_vn;
+                return if bounce > closing { bounce } else { closing };
+            }
+            return closing;
         }
         let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
         let e = if pre_vn < -threshold {
@@ -3204,7 +3217,14 @@ impl PhysicsWorld {
     /// ([`crate::xpbd_contact::block_lcp`], `d_k = target_k − vn_k`). One point
     /// after another, the first corner's impulse turned the body and the others
     /// only partly undid it (a box falling flat left the floor spinning).
-    fn block_restitution(&mut self, first: usize, len: usize, threshold: Fix128, h: Fix128) {
+    fn block_restitution(
+        &mut self,
+        first: usize,
+        len: usize,
+        targets: &[Fix128],
+        accumulated: &mut [Fix128],
+        h: Fix128,
+    ) {
         use crate::xpbd_contact::BLOCK_MAX;
         let c0 = self.contact_constraints[first];
         let (a, b) = (self.contact_body(c0.body_a), self.contact_body(c0.body_b));
@@ -3214,24 +3234,38 @@ impl PhysicsWorld {
         let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
         let mut rb = [Vec3Fix::ZERO; BLOCK_MAX];
         let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
-        let mut d = [Fix128::ZERO; BLOCK_MAX];
+        let mut gap = [Fix128::ZERO; BLOCK_MAX];
+        let mut old = [Fix128::ZERO; BLOCK_MAX];
         for k in 0..len {
             let (r_a, r_b) = self.contact_arms(first + k);
             ra[k] = r_a;
             rb[k] = r_b;
             n[k] = self.contact_constraints[first + k].contact.normal;
             let vn = crate::xpbd_contact::point_velocity(&a, &b, r_a, r_b).dot(n[k]);
-            d[k] = self.restitution_target(first + k, vn, threshold, h) - vn;
+            gap[k] = targets[first + k] - vn;
+            old[k] = accumulated[first + k];
         }
-        if d[..len].iter().all(|x| *x <= Fix128::ZERO) {
+        if (0..len).all(|k| gap[k] <= Fix128::ZERO && old[k].is_zero()) {
             return;
         }
         let mut big_a = crate::xpbd_contact::coupling(&a, &b, &ra, &rb, &n, len);
-        // The contact compliance at the substep keeps the block regular (a
-        // face's corners constrain three motions, so `A` alone is singular and
-        // its impulses are not unique): the impulse a point takes gives way by
-        // `α̃` per unit, as the position solve does. Solved in the bodies'
-        // coordinates (`body_lcp`), so a symmetric face gets equal impulses.
+        // The totals: `(A + α̃ I) J = (target − vn) + A J_old`, `J ≥ 0` with
+        // the sign conditions, so the block's accumulated impulses are solved
+        // again with what the other contacts did since (sequential impulse,
+        // Catto 2005). The contact compliance at the substep keeps the block
+        // regular (a face's corners constrain three motions, so `A` alone is
+        // singular and its impulses are not unique): the impulse a point takes
+        // gives way by `α̃` per unit, as the position solve does. Solved in the
+        // bodies' coordinates (`body_lcp`), so a symmetric face gets equal
+        // impulses.
+        let mut d = [Fix128::ZERO; BLOCK_MAX];
+        for k in 0..len {
+            let mut acc = gap[k];
+            for (m, o) in old.iter().enumerate().take(len) {
+                acc = acc + crate::xpbd_contact::mul_odd(big_a[k][m], *o);
+            }
+            d[k] = acc;
+        }
         let mut alphas = [Fix128::ZERO; BLOCK_MAX];
         for (k, row) in big_a.iter_mut().enumerate().take(len) {
             alphas[k] = crate::xpbd_contact::compliance_over_h2(
@@ -3246,8 +3280,10 @@ impl PhysicsWorld {
             return;
         };
         for k in 0..len {
-            if j[k] > Fix128::ZERO {
-                self.contact_velocity_impulse(first + k, ra[k], rb[k], n[k], j[k]);
+            let change = j[k] - old[k];
+            accumulated[first + k] = j[k];
+            if !change.is_zero() {
+                self.contact_velocity_impulse(first + k, ra[k], rb[k], n[k], change);
             }
         }
     }
@@ -5507,70 +5543,105 @@ impl PhysicsWorld {
         // held at both sides by, tests/analytic_restitution_threshold.rs.
         let restitution_threshold = self.config.gravity.length() * dt * Fix128::from_int(2);
         let num_contacts = self.contact_constraints.len();
+        // Which contacts take part: not a sensor's, not discarded by the
+        // substep's hook / modifier pre-pass (the position pass skipped it), and
+        // with a body that can move. Kept contacts read the friction /
+        // restitution the pre-pass wrote back.
+        let live: Vec<bool> = (0..num_contacts)
+            .map(|i| {
+                let constraint = self.contact_constraints[i];
+                let (body_a, body_b) = (
+                    self.contact_body(constraint.body_a),
+                    self.contact_body(constraint.body_b),
+                );
+                #[cfg(feature = "std")]
+                if self.contact_discarded.get(i).copied().unwrap_or(false) {
+                    return false;
+                }
+                !(body_a.is_sensor || body_b.is_sensor)
+                    && body_a.inv_mass + body_b.inv_mass >= W_SUM_EPSILON
+            })
+            .collect();
+        // Restitution (Müller, Macklin, Chentanez, Jeschke, Kim, "Detailed
+        // Rigid Body Simulation with Extended Position Based Dynamics", SCA
+        // 2020, eq. (34)): the target normal velocity of the contact point is
+        // `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal velocity (the
+        // post-solve `vn` only reflects how far into the substep the bodies
+        // first touched, `vn = −gap / h`); a speculative point's target is
+        // `−gap / h` (`restitution_target`). The targets are fixed here, before
+        // any impulse.
+        let targets: Vec<Fix128> = (0..num_contacts)
+            .map(|i| {
+                if !live[i] {
+                    return Fix128::ZERO;
+                }
+                let constraint = self.contact_constraints[i];
+                let (r_a, r_b) = self.contact_arms(i);
+                let vn = crate::xpbd_contact::point_velocity(
+                    &self.contact_body(constraint.body_a),
+                    &self.contact_body(constraint.body_b),
+                    r_a,
+                    r_b,
+                )
+                .dot(constraint.contact.normal);
+                self.restitution_target(i, vn, restitution_threshold, dt)
+            })
+            .collect();
+        // The normal impulses that reach the targets, as a sequential impulse
+        // (Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005): each
+        // contact's accumulated impulse `J ≥ 0` is solved again on every pass
+        // with what the other contacts did since (`J ← max(J + (target − vn) /
+        // w, 0)`, a manifold as one block, `block_restitution`), `iterations`
+        // passes. One pass is the one-sided raise of the earlier solver; more
+        // passes converge on the coupled problem (a stack: the upper contact's
+        // impulse into the lower body is answered by the lower contact).
+        let mut accumulated = vec![Fix128::ZERO; num_contacts];
+        for _ in 0..self.config.iterations.max(1) {
+            for i in 0..num_contacts {
+                if !live[i] {
+                    continue;
+                }
+                let (first, len) = self.contact_block.get(i).copied().unwrap_or((i, 1));
+                if len > 1 {
+                    if first == i {
+                        self.block_restitution(first, len, &targets, &mut accumulated, dt);
+                    }
+                    continue;
+                }
+                let constraint = self.contact_constraints[i];
+                let (body_a, body_b) = (
+                    self.contact_body(constraint.body_a),
+                    self.contact_body(constraint.body_b),
+                );
+                let n = constraint.contact.normal;
+                let (r_a, r_b) = self.contact_arms(i);
+                let w_n = crate::xpbd_contact::point_w(&body_a, &body_b, r_a, r_b, n);
+                if w_n <= Fix128::ZERO {
+                    continue;
+                }
+                let vn = crate::xpbd_contact::point_velocity(&body_a, &body_b, r_a, r_b).dot(n);
+                let total = (accumulated[i] + (targets[i] - vn) / w_n).max(Fix128::ZERO);
+                let change = total - accumulated[i];
+                accumulated[i] = total;
+                if !change.is_zero() {
+                    self.contact_velocity_impulse(i, r_a, r_b, n, change);
+                }
+            }
+        }
+        // Friction: reduce the tangential velocity of the contact point
+        // (Coulomb, Müller et al. 2020 eq. (30)): the tangential impulse is
+        // capped by `h μ |f_n| = μ λ_n / h`, with `λ_n` (`cached_lambda`) this
+        // substep's normal multiplier from the position solve (`f_n = λ_n /
+        // h²`). The normal velocity after the solve is not the normal force: it
+        // is about 0 for a resting contact, which removed the friction of
+        // sliding and resting bodies.
         for i in 0..num_contacts {
+            if !live[i] {
+                continue;
+            }
             let constraint = self.contact_constraints[i];
-            let body_a = self.contact_body(constraint.body_a);
-            let body_b = self.contact_body(constraint.body_b);
-
-            if body_a.is_sensor || body_b.is_sensor {
-                continue;
-            }
-
-            // A contact the substep's hook / modifier pre-pass discarded gets
-            // no velocity response either (the position pass skipped it).
-            // Kept contacts read the friction / restitution the pre-pass
-            // wrote back, so a modifier's values apply here too.
-            #[cfg(feature = "std")]
-            if self.contact_discarded.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-
-            let w_sum = body_a.inv_mass + body_b.inv_mass;
-            if w_sum < W_SUM_EPSILON {
-                continue;
-            }
-
-            // A manifold's restitution is solved as one block at its first
-            // point (`block_restitution`); its points then each get friction.
-            let (first, len) = self.contact_block.get(i).copied().unwrap_or((i, 1));
-            if len > 1 && first == i {
-                self.block_restitution(first, len, restitution_threshold, dt);
-            }
-            let (body_a, body_b) = (
-                self.contact_body(constraint.body_a),
-                self.contact_body(constraint.body_b),
-            );
-
-            let n = constraint.contact.normal;
             let (r_a, r_b) = self.contact_arms(i);
-            let w_n = crate::xpbd_contact::point_w(&body_a, &body_b, r_a, r_b, n);
-            if w_n <= Fix128::ZERO {
-                continue;
-            }
-            let vn = crate::xpbd_contact::point_velocity(&body_a, &body_b, r_a, r_b).dot(n);
-
-            // Restitution (Müller, Macklin, Chentanez, Jeschke, Kim,
-            // "Detailed Rigid Body Simulation with Extended Position Based
-            // Dynamics", SCA 2020, eq. (34)): the target normal velocity of the
-            // contact point is `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal
-            // velocity. The post-solve `vn` only reflects how far into the
-            // substep the bodies first touched (`vn = −gap / h`), so reversing
-            // `vn` itself made the bounce depend on that phase. The correction
-            // is one-sided (only raises `vn` to the target), as in the 2D
-            // solver. An impulse `j` along `n` at the arms changes the point's
-            // normal velocity by `w_n j`.
-            let target = self.restitution_target(i, vn, restitution_threshold, dt);
-            if len <= 1 && vn < target {
-                self.contact_velocity_impulse(i, r_a, r_b, n, (target - vn) / w_n);
-            }
-
-            // Friction: reduce the tangential velocity of the contact point
-            // (Coulomb, Müller et al. 2020 eq. (30)): the tangential impulse is
-            // capped by `h μ |f_n| = μ λ_n / h`, with `λ_n` (`cached_lambda`) this
-            // substep's normal multiplier from the position solve (`f_n = λ_n /
-            // h²`). The normal velocity after the solve (`vn2`) is not the normal
-            // force: it is about 0 for a resting contact, which removed the
-            // friction of sliding and resting bodies.
+            let n = constraint.contact.normal;
             let (a2, b2) = (
                 self.contact_body(constraint.body_a),
                 self.contact_body(constraint.body_b),
@@ -5905,9 +5976,9 @@ impl PhysicsWorld {
         if a.is_sensor || b.is_sensor {
             return;
         }
-        if constraint.contact.depth <= Fix128::ZERO {
-            return;
-        }
+        // A speculative point (a gap at detection) acts once the solve has
+        // moved the bodies into each other: the correction reads the depth at
+        // the present poses (`normal_correction` does nothing for a gap).
         if a.inv_mass + b.inv_mass < W_SUM_EPSILON {
             return;
         }
@@ -6015,7 +6086,7 @@ impl PhysicsWorld {
             }
         }
         for (k, c) in group.iter().enumerate() {
-            if c.contact.depth <= Fix128::ZERO {
+            if c.cached_lambda <= Fix128::ZERO {
                 continue;
             }
             let (a, b) = (*body_a.get(), *body_b.get());
@@ -6159,13 +6230,10 @@ impl PhysicsWorld {
             }
 
             // The modifiers' result was written back to the constraint by the
-            // pre-pass, so this is the value every iteration sees.
-            let contact = constraint.contact;
-
-            // Only resolve if penetrating
-            if contact.depth <= Fix128::ZERO {
-                continue;
-            }
+            // pre-pass, so this is the value every iteration sees. A
+            // speculative point (a gap at detection) acts once the solve has
+            // moved the bodies into each other: the correction reads the depth
+            // at the present poses (`normal_correction` does nothing for a gap).
 
             let w_sum = body_a.inv_mass + body_b.inv_mass;
             if w_sum < W_SUM_EPSILON {
@@ -7407,9 +7475,27 @@ impl PhysicsWorld {
                 if after.position == before.position && after.rotation == before.rotation {
                     break;
                 }
-                if rounds == 1 {
+                // Only a turn changes which parts meet: after a pure
+                // translation the pushed points' depths are already exact (and
+                // a body held by overlaps from every side, which no pose clears,
+                // is not pushed again into the opposite ones).
+                if rounds == 1 || after.rotation == before.rotation {
                     for (n, &(slot, k)) in fresh.iter().enumerate() {
                         per_collider[slot].1[k].0 = new_points[n];
+                    }
+                    // The points not pushed move with the body.
+                    let spin = after.rotation.mul(before.rotation.conjugate());
+                    for (slot, (_, points)) in per_collider.iter_mut().enumerate() {
+                        for (k, (c, _)) in points.iter_mut().enumerate() {
+                            if fresh.contains(&(slot, k)) {
+                                continue;
+                            }
+                            let r = c.point_a - before.position;
+                            let moved =
+                                (after.position - before.position) + (spin.rotate_vec(r) - r);
+                            c.depth = c.depth - c.normal.dot(moved);
+                            c.point_a = c.point_a + moved;
+                        }
                     }
                     break;
                 }
@@ -7641,8 +7727,24 @@ impl PhysicsWorld {
                     .get(i)
                     .and_then(|r| *r)
                     .unwrap_or(Fix128::ZERO);
-                (body.velocity.length() + body.angular_velocity.length() * radius) * h
-                    + gravity_reach
+                // A body the continuous collision sweeps this substep (it moves
+                // more than `motion_threshold · r`, `world_ccd`) has its
+                // translation met at the time of impact, with the impact's
+                // normal; a speculative point for it would be met at the
+                // present pose, with that pose's normal, which is not the
+                // impact's for an oblique approach. Its margin then covers
+                // only its turn and gravity.
+                let swept = self.ccd.is_enabled()
+                    && (body.position - body.prev_position)
+                        .checked_length_scaled()
+                        .zip(self.ccd.motion_threshold().checked_mul(radius))
+                        .is_some_and(|(travel, limit)| travel > limit);
+                let linear = if swept {
+                    Fix128::ZERO
+                } else {
+                    body.velocity.length()
+                };
+                (linear + body.angular_velocity.length() * radius) * h + gravity_reach
             })
             .collect();
         let grow = |bx: AABB, m: Fix128| AABB {
@@ -8025,9 +8127,8 @@ impl PhysicsWorld {
                     let (before_a, before_b) = (self.bodies[a], self.bodies[b]);
                     self.pre_project_pair(a, b, &mut new_points);
                     let (after_a, after_b) = (self.bodies[a], self.bodies[b]);
-                    let unmoved = after_a.position == before_a.position
-                        && after_a.rotation == before_a.rotation
-                        && after_b.position == before_b.position
+                    // Met again only after a turn (see the static colliders).
+                    let unmoved = after_a.rotation == before_a.rotation
                         && after_b.rotation == before_b.rotation;
                     match (
                         unmoved,
@@ -8059,7 +8160,7 @@ impl PhysicsWorld {
                                 let mb = moved(&before_b, &after_b, c.point_b);
                                 c.depth = c.depth - c.normal.dot(ma - mb);
                                 c.point_a = c.point_a + ma;
-                                c.point_b = c.point_a - c.normal * c.depth;
+                                c.point_b = c.point_a + c.normal * c.depth;
                             }
                             break;
                         }
@@ -8167,6 +8268,34 @@ impl PhysicsWorld {
     /// `2⁻⁵⁰` m (`PUSH_PASSES`). More than `BLOCK_MAX` points are pushed one at a
     /// time within each pass. Each point's depth then drops, and its points
     /// move, by what the push moved them apart.
+    /// Move the points of body `j`'s contacts in `contact_constraints` by the
+    /// motion it made since `before` (a push-out of its start-of-substep
+    /// overlap), and change their depths by what that moved the two sides
+    /// apart: a contact found earlier in the substep stays on the surfaces.
+    fn move_contacts_with(&mut self, j: usize, before: &RigidBody) {
+        let after = self.bodies[j];
+        if after.position == before.position && after.rotation == before.rotation {
+            return;
+        }
+        let spin = after.rotation.mul(before.rotation.conjugate());
+        let moved = |p: Vec3Fix| {
+            let r = p - before.position;
+            (after.position - before.position) + (spin.rotate_vec(r) - r)
+        };
+        for c in &mut self.contact_constraints {
+            if c.body_a == j {
+                let m = moved(c.contact.point_a);
+                c.contact.depth = c.contact.depth - c.contact.normal.dot(m);
+                c.contact.point_a = c.contact.point_a + m;
+            }
+            if c.body_b == j {
+                let m = moved(c.contact.point_b);
+                c.contact.depth = c.contact.depth + c.contact.normal.dot(m);
+                c.contact.point_b = c.contact.point_b + m;
+            }
+        }
+    }
+
     fn push_apart(&mut self, a: usize, b: Option<usize>, points: &mut [Contact]) {
         use crate::xpbd_contact::{rigid_push_out, BodyDelta, BLOCK_MAX, RIGID_REGULARIZATION};
         const PUSH_PASSES: usize = 6;
@@ -8320,6 +8449,12 @@ impl PhysicsWorld {
                 }
             }
         }
+        // The contacts the bodies already have this substep (other pairs',
+        // the continuous collision's) move with them.
+        self.move_contacts_with(a, &a0);
+        if let (Some(j), true) = (b, moves_b) {
+            self.move_contacts_with(j, &b0);
+        }
         // A point stays one place on the two surfaces: against a body,
         // `point_b` is kept across the normal from `point_a` (the bodies'
         // points a tangential distance apart would carry the equal and
@@ -8333,7 +8468,7 @@ impl PhysicsWorld {
             c.depth = c.depth - c.normal.dot(ma - mb);
             c.point_a = c.point_a + ma;
             if b.is_some() {
-                c.point_b = c.point_a - c.normal * c.depth;
+                c.point_b = c.point_a + c.normal * c.depth;
             }
         }
     }
