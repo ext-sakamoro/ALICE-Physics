@@ -4060,15 +4060,6 @@ impl PhysicsWorld {
             }
         }
     }
-    /// Static colliders for the TGS path, with their positional correction
-    /// carried into the velocities (see `step_tgs` Phase 3.2): a static
-    /// contact pushes the body out and removes the velocity into the surface.
-    #[cfg(feature = "std")]
-    fn tgs_static_corrections(&mut self) {
-        if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions(true);
-        }
-    }
 
     /// The bodies the world's joints refer to, ascending and without
     /// repeats (indices past the body list are left out).
@@ -4185,8 +4176,9 @@ impl PhysicsWorld {
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
     /// projection. Joints, static colliders, contact filters, kinematic
     /// targets and SDF colliders are all handled — see [`SolverBackend`]'s
-    /// notes for the joint solve and filter handling, Phase 3.2 below for the
-    /// static colliders, and
+    /// notes for the joint solve and filter handling, Phase 2.6 below for the
+    /// static colliders (contacts against `STATIC_BODY` in the tick's contact
+    /// set), and
     /// [`Self::advance_kinematic_targets_for_tgs`] /
     /// [`Self::resolve_sdf_collisions`] for the last two.
     #[cfg(feature = "std")]
@@ -4249,6 +4241,12 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
 
+        // Phase 2.6: the static colliders' contacts join the tick's contact set
+        // as constraints against `STATIC_BODY` (solved with the rest below)
+        if !self.static_colliders.is_empty() {
+            self.add_static_contacts();
+        }
+
         // Phase 2.7: Pre-solve hooks and contact modifiers, once over the
         // tick's contact set (the same pre-pass `substep` runs over each
         // substep's set). A modifier's result is written back to the
@@ -4272,7 +4270,15 @@ impl PhysicsWorld {
         let ids = &self.body_stable_ids;
         // An out-of-range index (a hand-built constraint) gets a sentinel;
         // `build_islands` below rejects it before anything is solved.
-        let id_of = |i: usize| ids.get(i).copied().unwrap_or(u64::MAX);
+        // `STATIC_BODY` has an id of its own (no body has it), so its contacts
+        // keep stable warm-start keys too
+        let id_of = |i: usize| {
+            if i == STATIC_BODY {
+                u64::MAX - 1
+            } else {
+                ids.get(i).copied().unwrap_or(u64::MAX)
+            }
+        };
         let mut contact_ordinals = std::collections::BTreeMap::new();
         // Contacts vetoed by a hook or a modifier (`apply_contact_filters`
         // above) are not solved, as in the XPBD contact solve. The key is
@@ -4322,6 +4328,21 @@ impl PhysicsWorld {
                 Some(contact_to_tgs(c, &self.bodies, key))
             })
             .collect();
+        // A static target is one more static body after the world's bodies, in
+        // the TGS engine's arrays only: never written back, never in the world.
+        let static_slot = tgs_bodies.len();
+        let mut uses_static = false;
+        for c in &mut tgs_contacts {
+            for b in [&mut c.body_a, &mut c.body_b] {
+                if *b == STATIC_BODY {
+                    *b = static_slot;
+                    uses_static = true;
+                }
+            }
+        }
+        if uses_static {
+            tgs_bodies.push(body_to_tgs(&STATIC_TARGET, u64::MAX - 1));
+        }
         let joint_refs: Vec<DistanceRef<'_>> = self
             .distance_constraints
             .iter()
@@ -4484,23 +4505,6 @@ impl PhysicsWorld {
         // 戻す時に world の sticky flag へ畳み込む
         if tgs_bodies.iter().any(|s| s.overflow) {
             self.note_rigid_overflow();
-        }
-
-        // Phase 3.2: The world's static colliders. A static contact is a
-        // position-level correction (the call `substep` makes); TGS owns
-        // velocities, so it also removes the velocity into the surface.
-        // Without that a body resting on a plane keeps the velocity gravity
-        // gave it and sinks again next tick. (The joints were solved inside
-        // the substep loop above.)
-        // A locked body keeps its locked coordinates through the static
-        // corrections as through the substeps.
-        if with_locks {
-            self.axis_lock_begin();
-        }
-        self.tgs_static_corrections();
-        if with_locks {
-            self.axis_lock_end_pose();
-            self.axis_lock_end_velocity();
         }
 
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
@@ -4669,7 +4673,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions(false);
+            self.add_static_contacts();
         }
 
         // 2. Solve constraints (sequential). Hooks and modifiers run once per
@@ -4709,16 +4713,16 @@ impl PhysicsWorld {
         if !ccd_hits.is_empty() {
             self.ccd_add_contacts(&ccd_hits);
         }
-        self.rebuild_batches();
-
-        // 1.5. Resolve SDF collisions
+        // SDF and static contacts are constraints too, so they are colored with
+        // the rest
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions(false);
+            self.add_static_contacts();
         }
+        self.rebuild_batches();
 
         // 2. Solve constraints (batched). Hooks and modifiers run once per
         //    substep, ahead of the iteration loop, as in `substep`.
@@ -5829,9 +5833,14 @@ impl PhysicsWorld {
             let friction = constraint.friction;
             let restitution = constraint.restitution;
 
+            // the bridge indexes the body state it is sent: a static target is
+            // sent as one extra static body after the world's bodies (scratch of
+            // this pass only, never written back)
+            let static_slot = self.bodies.len();
+            let slot = |b: usize| if b == STATIC_BODY { static_slot } else { b };
             filtered.push(ContactConstraint {
-                body_a: constraint.body_a,
-                body_b: constraint.body_b,
+                body_a: slot(constraint.body_a),
+                body_b: slot(constraint.body_b),
                 contact,
                 friction,
                 restitution,
@@ -5845,11 +5854,19 @@ impl PhysicsWorld {
         }
 
         // ---- Extract per-body state ----
-        let mut positions: Vec<[Fix128; 3]> = Vec::with_capacity(self.bodies.len());
-        let mut inv_masses: Vec<Fix128> = Vec::with_capacity(self.bodies.len());
+        let mut positions: Vec<[Fix128; 3]> = Vec::with_capacity(self.bodies.len() + 1);
+        let mut inv_masses: Vec<Fix128> = Vec::with_capacity(self.bodies.len() + 1);
         for body in &self.bodies {
             positions.push([body.position.x, body.position.y, body.position.z]);
             inv_masses.push(body.inv_mass);
+        }
+        let n_world = self.bodies.len();
+        if filtered
+            .iter()
+            .any(|c| c.body_a == n_world || c.body_b == n_world)
+        {
+            positions.push([Fix128::ZERO; 3]);
+            inv_masses.push(Fix128::ZERO);
         }
 
         // ---- Stage B: route through bridge ----
@@ -5867,7 +5884,7 @@ impl PhysicsWorld {
             self.contact_constraints[*orig_slot].cached_lambda =
                 updated_constraints[filtered_idx].cached_lambda;
         }
-        for (i, pos) in updated_positions.iter().enumerate() {
+        for (i, pos) in updated_positions.iter().enumerate().take(n_world) {
             self.bodies[i].position = Vec3Fix::new(pos[0], pos[1], pos[2]);
         }
 
@@ -6019,7 +6036,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions(false);
+            self.add_static_contacts();
         }
 
         // 2. Solve constraints (sequential). Distance stays CPU;
@@ -6417,6 +6434,45 @@ impl PhysicsWorld {
     /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
     #[cfg(feature = "std")]
     fn resolve_sdf_collisions(&mut self) {
+        let first = self.sdf_contact_log.len();
+        self.detect_sdf_contacts();
+        // Every contact found joins the substep's contact constraints: against
+        // `STATIC_BODY` for a static field, against the owner for a field
+        // attached to a body. As for the static colliders, the overlap a body
+        // started the substep with moves its previous pose with it and is not
+        // turned into velocity.
+        for k in first..self.sdf_contact_log.len() {
+            let c = self.sdf_contact_log[k];
+            let owner = self.sdf_colliders[c.collider_index].body_index;
+            let target = if owner == crate::sdf_collider::SDF_STATIC {
+                STATIC_BODY
+            } else {
+                owner
+            };
+            let body = &mut self.bodies[c.body_index];
+            let approach = -(body.position - body.prev_position).dot(c.normal);
+            let moved = approach.max(Fix128::ZERO).min(c.depth);
+            let overlap = c.depth - moved;
+            if overlap > Fix128::ZERO {
+                let shift = c.normal * overlap;
+                body.prev_position = body.prev_position + shift;
+                if let Some(Some((x, _))) = self.predicted_pose.get_mut(c.body_index) {
+                    *x = *x + shift;
+                }
+            }
+            let contact = Contact {
+                depth: c.depth,
+                normal: c.normal,
+                point_a: c.point - c.normal * c.depth,
+                point_b: c.point,
+            };
+            self.add_contact_with_material(c.body_index, target, contact);
+        }
+    }
+
+    /// Find every body's contacts with the SDF colliders and record them in
+    /// `sdf_contact_log` (nothing is moved).
+    fn detect_sdf_contacts(&mut self) {
         // A collider attached to a body is resolved at that body's current
         // (predicted) pose.
         self.sync_sdf_colliders();
@@ -6451,7 +6507,6 @@ impl PhysicsWorld {
                             collider_rotation: sdf.rotation,
                             collider_scale: sdf.scale,
                         });
-                        body.position = body.position + contact.normal * contact.depth;
                     }
                 }
             };
@@ -6641,21 +6696,19 @@ impl PhysicsWorld {
         self.static_colliders.len()
     }
 
-    /// Resolve every non-static, non-sensor body's collision sphere against the
-    /// static colliders, in order, pushing it out along each contact normal.
+    /// Every non-static, non-sensor body's contacts with the static colliders as
+    /// contact constraints against [`STATIC_BODY`], so the substep's contact
+    /// solve, restitution and friction treat them as body–body contacts with an
+    /// immovable partner (the pair's material is the body's against
+    /// [`crate::material::DEFAULT_MATERIAL`]).
     ///
-    /// The sphere is the body's collision radius, or the world's default
-    /// ([`Self::set_sdf_collision_radius`]) for a body without one.
-    ///
-    /// `remove_approach`: also drop the part of the body's velocity that
-    /// points into the surface (an inelastic contact). The XPBD substep
-    /// passes `false` — its `update_velocities` turns the push into velocity
-    /// — and the TGS path passes `true`, because TGS keeps the velocity it
-    /// integrated and a pushed-out body would otherwise keep falling into
-    /// the surface.
-    fn resolve_static_collisions(&mut self, remove_approach: bool) {
+    /// The overlap a body starts the substep with is not turned into velocity:
+    /// its previous (and predicted) position moves with it, as the push-out
+    /// did; only the part that cancels this substep's approach is velocity.
+    fn add_static_contacts(&mut self) {
         let default_radius = self.sdf_collision_radius;
         let count = self.stage_count();
+        let mut found: Vec<(usize, Contact)> = Vec::new();
         for k in 0..count {
             let i = self.stage_body(k);
             self.stage_work.resolution_bodies += 1;
@@ -6682,34 +6735,22 @@ impl PhysicsWorld {
                         point: contact.point_a,
                         speed: (-body.velocity.dot(contact.normal)).max(Fix128::ZERO),
                     });
-                    // How far the body moved into the surface this substep: the
-                    // part of the push-out that cancels it is the body's motion
-                    // and becomes velocity; the rest is overlap it started the
-                    // substep with, and moving `prev_position` with it keeps that
-                    // part from becoming velocity.
                     let approach = -(body.position - body.prev_position).dot(contact.normal);
-                    body.position = body.position + contact.normal * contact.depth;
-                    if remove_approach {
-                        let vn = body.velocity.dot(contact.normal);
-                        if vn < Fix128::ZERO {
-                            body.velocity = body.velocity - contact.normal * vn;
-                        }
-                    } else {
-                        let moved = approach.max(Fix128::ZERO).min(contact.depth);
-                        let overlap = contact.depth - moved;
-                        if overlap > Fix128::ZERO {
-                            // the velocity is derived from the change against the
-                            // predicted position when there is one, else against
-                            // `prev_position`: both move with the overlap
-                            let shift = contact.normal * overlap;
-                            body.prev_position = body.prev_position + shift;
-                            if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
-                                *x = *x + shift;
-                            }
+                    let moved = approach.max(Fix128::ZERO).min(contact.depth);
+                    let overlap = contact.depth - moved;
+                    if overlap > Fix128::ZERO {
+                        let shift = contact.normal * overlap;
+                        body.prev_position = body.prev_position + shift;
+                        if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                            *x = *x + shift;
                         }
                     }
+                    found.push((i, contact));
                 }
             }
+        }
+        for (i, contact) in found {
+            self.add_contact_with_material(i, STATIC_BODY, contact);
         }
     }
 

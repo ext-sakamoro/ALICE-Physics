@@ -446,6 +446,15 @@ impl W {
     fn usize(&mut self, v: usize) {
         self.u64(v as u64);
     }
+    /// A contact constraint's body: its index, or the tag `u64::MAX` for
+    /// [`crate::solver::STATIC_BODY`] (the same on 32- and 64-bit targets).
+    fn contact_body(&mut self, v: usize) {
+        if v == crate::solver::STATIC_BODY {
+            self.u64(u64::MAX);
+        } else {
+            self.u64(v as u64);
+        }
+    }
     fn f32(&mut self, v: f32) {
         self.u32(v.to_bits());
     }
@@ -528,6 +537,14 @@ impl<'a> R<'a> {
     }
     fn usize(&mut self, section: &'static str) -> Res<usize> {
         usize::try_from(self.u64()?).map_err(|_| WorldSnapshotError::InvalidValue { section })
+    }
+    /// See `W::contact_body`: the tag is read only from a blob of version 8 on.
+    fn contact_body(&mut self, section: &'static str, version: u16) -> Res<usize> {
+        let v = self.u64()?;
+        if v == u64::MAX && version >= 8 {
+            return Ok(crate::solver::STATIC_BODY);
+        }
+        usize::try_from(v).map_err(|_| WorldSnapshotError::InvalidValue { section })
     }
     /// A element count: each element takes at least `min_size` bytes, so a
     /// count larger than the rest of the blob allows is truncation (and is
@@ -1756,7 +1773,17 @@ impl PhysicsWorld {
     /// ([`Self::set_body_axis_lock`]): the writer uses it only when a body has a
     /// lock, so a world without locks writes the version 6 blob it wrote before
     /// locks existed, and a version 1 to 6 blob reads as a world without locks.
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 7;
+    /// Version 8 has the layout of version 7 (the lock section always written,
+    /// empty when no body has a lock) and may name [`crate::solver::STATIC_BODY`]
+    /// as the partner of a contact constraint (a contact against a static or SDF
+    /// collider), written as the tag `u64::MAX`; the writer uses it only when such
+    /// a contact is held, so a reader of version 7 refuses the blob by its version
+    /// instead of reading the tag as a body index.
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 8;
+
+    /// The version [`Self::snapshot_world`] writes for a world with axis locks and
+    /// no contact against a static target.
+    const WORLD_SNAPSHOT_VERSION_WITH_LOCKS: u16 = 7;
 
     /// The version [`Self::snapshot_world`] writes for a world without axis
     /// locks.
@@ -1892,13 +1919,19 @@ impl PhysicsWorld {
     #[must_use]
     pub fn snapshot_world(&self) -> Vec<u8> {
         let locks = self.axis_locks_in_use();
-        let mut w = W(Vec::new());
-        w.0.extend_from_slice(&Self::WORLD_SNAPSHOT_MAGIC);
-        w.u16(if locks.is_some() {
+        let static_target = self.contact_constraints.iter().any(|c| {
+            c.body_a == crate::solver::STATIC_BODY || c.body_b == crate::solver::STATIC_BODY
+        });
+        let version = if static_target {
             Self::WORLD_SNAPSHOT_VERSION
+        } else if locks.is_some() {
+            Self::WORLD_SNAPSHOT_VERSION_WITH_LOCKS
         } else {
             Self::WORLD_SNAPSHOT_VERSION_WITHOUT_LOCKS
-        });
+        };
+        let mut w = W(Vec::new());
+        w.0.extend_from_slice(&Self::WORLD_SNAPSHOT_MAGIC);
+        w.u16(version);
         w.u16(0);
         w.u64(0); // payload length, patched below
         w.0.extend_from_slice(&PHYSICS_SEMANTICS_ID);
@@ -1924,8 +1957,8 @@ impl PhysicsWorld {
 
         w.usize(self.contact_constraints.len());
         for c in &self.contact_constraints {
-            w.usize(c.body_a);
-            w.usize(c.body_b);
+            w.contact_body(c.body_a);
+            w.contact_body(c.body_b);
             w_contact(&mut w, &c.contact);
             w.fix(c.friction);
             w.fix(c.restitution);
@@ -2099,6 +2132,9 @@ impl PhysicsWorld {
             for l in locks {
                 w.u8(l.bits());
             }
+        } else if version >= 7 {
+            // a version 8 blob always has the lock section; empty: no lock
+            w.usize(0);
         }
 
         let mut data = w.0;
@@ -2627,8 +2663,8 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     for _ in 0..n {
         const S: &str = "contact_constraints";
         contact_constraints.push(ContactConstraint {
-            body_a: r.usize(S)?,
-            body_b: r.usize(S)?,
+            body_a: r.contact_body(S, version)?,
+            body_b: r.contact_body(S, version)?,
             contact: r_contact(r)?,
             friction: r.fix()?,
             restitution: r.fix()?,
@@ -2983,8 +3019,12 @@ fn validate(d: &Decoded) -> Res<()> {
         check("distance_constraints", c.body_b, n)?;
     }
     for c in &d.contact_constraints {
-        check("contact_constraints", c.body_a, n)?;
-        check("contact_constraints", c.body_b, n)?;
+        if c.body_a != crate::solver::STATIC_BODY {
+            check("contact_constraints", c.body_a, n)?;
+        }
+        if c.body_b != crate::solver::STATIC_BODY {
+            check("contact_constraints", c.body_b, n)?;
+        }
     }
     for p in &d.sdf_poses {
         if p.3 != crate::sdf_collider::SDF_STATIC {
