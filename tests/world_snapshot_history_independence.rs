@@ -259,12 +259,18 @@ fn resting_scene(kind: Broadphase) -> PhysicsWorld {
         angular_threshold: Fix128::from_ratio(1, 10),
         frames_to_sleep: 3,
     });
-    let big_radius = fx(10.0);
     let small_radius = fx(0.5);
-    // Center the big sphere 10 below ground (its radius) so its surface
-    // sits at y=0; the four dynamic spheres rest along the x axis, far
-    // enough apart not to touch each other.
-    w.add_body_with_radius(RigidBody::new_static(v3(0.0, -10.0, 0.0)), big_radius);
+    // A static flat box whose top face is at y=0 (a static body, as the
+    // removal tests need); the four dynamic spheres rest on it along the x
+    // axis, far enough apart not to touch each other. (On a big static
+    // sphere they sit off its apex and roll off, so they never sleep.)
+    let floor = w.add_body(RigidBody::new_static(v3(0.0, -1.0, 0.0)));
+    assert!(w.set_body_shape(
+        floor,
+        &alice_physics_core::shape::Shape::Box {
+            half_extents: v3(10.0, 1.0, 10.0),
+        },
+    ));
     for i in 0..4 {
         let x = f64::from(i) * 2.0 - 3.0; // -3, -1, 1, 3
         w.add_body_with_radius(

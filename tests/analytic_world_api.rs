@@ -88,10 +88,12 @@ fn overlapping_pair(world: &mut PhysicsWorld) -> (usize, usize) {
     (a, b)
 }
 
-/// After one frame the pair is at `-substeps * depth / 2` and
-/// `3 + substeps * depth / 2` = `-4` and `7`.
+/// After one frame the pair is at `-depth / 2` and `3 + depth / 2` =
+/// `-1/2` and `7/2`, at rest: the overlap the bodies start a substep with is
+/// not motion they made in it, so it is pushed out (equal masses, half each)
+/// without creating a velocity, and nothing moves them afterwards.
 fn separated_x() -> (Fix128, Fix128) {
-    let half = r(substeps(), 2);
+    let half = r(1, 2);
     (-half, Fix128::from_int(3) + half)
 }
 
@@ -558,7 +560,7 @@ fn static_body_leaves_active_body_count_after_the_first_step() {
 /// follows whichever order the broad phase reports the pair in — the
 /// `ContactEvent::normal` doc says "A to B", `Contact::normal` says "B to
 /// A", so the oracle pins magnitude and axis only), both bodies end the
-/// frame at `-4` / `7`, a second drain is empty, and the next frame reports
+/// frame at `-1/2` / `7/2` at rest, a second drain is empty, and the next frame reports
 /// exactly one `End` event with the zeroed geometry `end_frame` documents.
 #[test]
 fn drain_contact_events_returns_the_begin_event_once_then_the_end_event() {
@@ -697,7 +699,7 @@ fn set_body_filter_prevents_the_contact() {
 /// pair never separates and the solver asks again in every substep
 /// (`substeps * iterations = 8` calls per frame); an approving hook is
 /// asked once per frame because the first substep already separates the
-/// pair. `clear_pre_solve_hooks` restores the plain `-4` / `7` frame.
+/// pair. `clear_pre_solve_hooks` restores the plain `-1/2` / `7/2` frame.
 #[test]
 fn add_pre_solve_hook_veto_freezes_the_pair_and_clear_restores_it() {
     let iterations = i64::try_from(PhysicsConfig::default().iterations).expect("small");
@@ -750,16 +752,22 @@ fn add_pre_solve_hook_veto_freezes_the_pair_and_clear_restores_it() {
     );
 }
 
-/// Oracle: a modifier that halves the depth halves the separation
-/// (`-2` / `5` instead of `-4` / `7`) and is consulted once; a vetoing
-/// modifier freezes the pair and is consulted 8 times; after
-/// `clear_contact_modifiers` a reset pair separates to `-4` / `7` again.
+/// Oracle: in one substep (the push-out of the start overlap and the solve
+/// see the modified contact), a modifier that halves the depth halves the
+/// push (`-1/4` / `13/4` instead of `-1/2` / `7/2`) and is consulted once;
+/// a vetoing modifier freezes the pair and is consulted once per substep (8
+/// in a frame of the default 8); after `clear_contact_modifiers` a reset
+/// pair separates to `-1/2` / `7/2` again.
 #[test]
 fn add_contact_modifier_halves_or_vetoes_and_clear_restores() {
     let (xa, xb) = separated_x();
-    let half = r(substeps(), 4);
+    let half = r(1, 4);
+    let one_substep = PhysicsConfig {
+        substeps: 1,
+        ..weightless()
+    };
 
-    let mut world = PhysicsWorld::new(weightless());
+    let mut world = PhysicsWorld::new(one_substep);
     let (a, b) = overlapping_pair(&mut world);
     let calls = Arc::new(AtomicUsize::new(0));
     world.add_contact_modifier(Box::new(CountingModifier {
@@ -768,19 +776,39 @@ fn add_contact_modifier_halves_or_vetoes_and_clear_restores() {
         approve: true,
     }));
     world.step(dt());
-    assert_eq!(world.bodies[a].position.x, -half);
-    assert_eq!(world.bodies[b].position.x, Fix128::from_int(3) + half);
+    // The normal from the centres' difference is unit to its rounding
+    // (`-1 + 2⁻⁶⁴` here), so the push along it is exact to a few `2⁻⁶⁴`.
+    let ulps = |x: Fix128, want: Fix128| (x - want).abs() <= Fix128::from_raw(0, 4);
+    assert!(
+        ulps(world.bodies[a].position.x, -half),
+        "{:?}",
+        world.bodies[a].position.x
+    );
+    assert!(
+        ulps(world.bodies[b].position.x, Fix128::from_int(3) + half),
+        "{:?}",
+        world.bodies[b].position.x
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 
+    // After clearing, a new overlapping pair (away from the first, which
+    // keeps the half overlap the modifier hid as a held contact) separates as
+    // with no modifier, and the cleared modifier is not consulted. (A pair
+    // teleported back into a contact it is still recorded in is treated as
+    // held; that is not what this checks.)
     world.clear_contact_modifiers();
-    for (idx, x) in [(a, 0), (b, 3)] {
-        let body = world.get_body_mut(idx).expect("present");
-        body.set_position(Vec3Fix::from_int(x, 0, 0));
-        body.set_velocity(Vec3Fix::ZERO);
-    }
+    let radius = Fix128::from_int(2);
+    let c = world.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(0, 20, 0), Fix128::ONE),
+        radius,
+    );
+    let d = world.add_body_with_radius(
+        RigidBody::new_dynamic(Vec3Fix::from_int(3, 20, 0), Fix128::ONE),
+        radius,
+    );
     world.step(dt());
-    assert_eq!(world.bodies[a].position.x, xa);
-    assert_eq!(world.bodies[b].position.x, xb);
+    assert_eq!(world.bodies[c].position.x, xa);
+    assert_eq!(world.bodies[d].position.x, xb);
     assert_eq!(
         calls.load(Ordering::SeqCst),
         1,
@@ -898,15 +926,15 @@ fn add_force_field_accelerates_and_remove_force_field_stops_it() {
 // SDF colliders
 // ---------------------------------------------------------------------------
 
-/// Oracle: a unit-mass body resting at `y_0 = 1/4` over the plane `φ = y`
-/// with query radius `r` penetrates by `r - y_0`; the push-out in the
-/// first substep becomes the derived velocity `(r - y_0) / h`, which carries
-/// it `r - y_0` further in each of the remaining substeps:
-/// `y = y_0 + 8 (r - y_0)` = `2.25` for the default `r = 1/2` and `4.25`
-/// after `set_sdf_collision_radius(3/4)`. All values are dyadic, so the
-/// `f32` field evaluation is exact.
+/// Oracle: a unit-mass body set at `y_0 = 1/4` over the plane `φ = y` with
+/// query radius `r` starts the step `r - y_0` into it. That overlap is not
+/// motion it made in the substep, so it is pushed out without creating a
+/// velocity: the body ends the frame at `y = r` (`1/2` for the default
+/// radius, `3/4` after `set_sdf_collision_radius(3/4)`), at rest, and
+/// nothing moves it afterwards. All values are dyadic, so the `f32` field
+/// evaluation is exact.
 #[test]
-fn add_sdf_collider_pushes_out_by_substeps_times_penetration() {
+fn add_sdf_collider_pushes_the_start_overlap_out_without_velocity() {
     let y0 = r(1, 4);
     for (radius, set_radius) in [(r(1, 2), false), (r(3, 4), true)] {
         let mut world = PhysicsWorld::new(weightless());
@@ -919,17 +947,13 @@ fn add_sdf_collider_pushes_out_by_substeps_times_penetration() {
             world.set_sdf_collision_radius(radius);
         }
         world.step(dt());
-        let expect = y0 + (radius - y0) * Fix128::from_int(substeps());
         assert_eq!(
             world.bodies[ball].position.y,
-            expect,
+            radius,
             "radius {}",
             radius.to_f64()
         );
-        assert_eq!(
-            world.bodies[ball].velocity.y,
-            damped((radius - y0) * Fix128::from_int(512))
-        );
+        assert_eq!(world.bodies[ball].velocity.y, Fix128::ZERO);
         assert_eq!(world.bodies[ball].position.x, Fix128::ZERO);
     }
 }

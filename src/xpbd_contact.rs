@@ -381,6 +381,7 @@ pub(crate) const RIGID_REGULARIZATION: Fix128 = Fix128 { hi: 0, lo: 1 << 14 };
     clippy::too_many_arguments,
     reason = "the two bodies, the points' arms and normals, the overlaps and the point count are the push-out's whole input"
 )]
+#[cfg(test)]
 pub(crate) fn rigid_push_out(
     a: &RigidBody,
     b: &RigidBody,
@@ -391,21 +392,59 @@ pub(crate) fn rigid_push_out(
     m: usize,
     scale: Fix128,
 ) -> Option<(BodyDelta, BodyDelta)> {
+    rigid_push_out_from(a, b, ra, rb, n, d, m, scale, &[Fix128::ZERO; BLOCK_MAX])
+        .map(|(da, db, _)| (da, db))
+}
+
+/// [`rigid_push_out`] continuing a push whose multipliers so far are `old`:
+/// the totals `λ ≥ 0` are solved again, `(A + ε I) λ = d + (A + ε I) λ_old`
+/// with the sign conditions, so a later pass may take back part of an earlier
+/// one (a turn lifts a corner by more than its linearisation, `O(|Δθ|² r)`).
+/// Returns the motions of the change `λ − λ_old` and the new totals.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the push-out's whole input and the multipliers it continues from"
+)]
+pub(crate) fn rigid_push_out_from(
+    a: &RigidBody,
+    b: &RigidBody,
+    ra: &[Vec3Fix; BLOCK_MAX],
+    rb: &[Vec3Fix; BLOCK_MAX],
+    n: &[Vec3Fix; BLOCK_MAX],
+    d: &[Fix128; BLOCK_MAX],
+    m: usize,
+    scale: Fix128,
+    old: &[Fix128; BLOCK_MAX],
+) -> Option<(BodyDelta, BodyDelta, [Fix128; BLOCK_MAX])> {
     let mut big_a = coupling(a, b, ra, rb, n, m);
     let mut top = Fix128::ZERO;
     for (k, row) in big_a.iter().enumerate().take(m) {
         top = top.max(row[k]);
     }
-    let eps = mul_odd(top, scale);
+    // One point needs no regularisation (`A` is its positive `w`): the push
+    // is then exactly `d / w`.
+    let eps = if m > 1 {
+        mul_odd(top, scale)
+    } else {
+        Fix128::ZERO
+    };
     for (k, row) in big_a.iter_mut().enumerate().take(m) {
         row[k] = row[k] + eps;
     }
-    // `λ` is linear in `d`: a small push is solved scaled up by an exact power
-    // of two (to `|d| ≥ 1/2`) and scaled back, so the block keeps its
-    // precision (`Fix128` resolves `2⁻⁶⁴` absolutely, and a face's block is
-    // regularised only by `2⁻⁵⁰` of its scale).
+    let mut rhs = [Fix128::ZERO; BLOCK_MAX];
+    for k in 0..m {
+        let mut acc = d[k];
+        for (j, o) in old.iter().enumerate().take(m) {
+            acc = acc + mul_odd(big_a[k][j], *o);
+        }
+        rhs[k] = acc;
+    }
+    // `λ` is linear in the right-hand side: a small push is solved scaled up
+    // by an exact power of two (to `|rhs| ≥ 1/2`) and scaled back, so the
+    // block keeps its precision (`Fix128` resolves `2⁻⁶⁴` absolutely, and a
+    // face's block is regularised only by `2⁻⁵⁰` of its scale).
     let mut biggest = Fix128::ZERO;
-    for x in d.iter().take(m) {
+    for x in rhs.iter().take(m) {
         biggest = biggest.max(x.abs());
     }
     let mut shift = 0u32;
@@ -416,7 +455,7 @@ pub(crate) fn rigid_push_out(
     let up = Fix128::from_int(1i64 << shift);
     let mut scaled = [Fix128::ZERO; BLOCK_MAX];
     for k in 0..m {
-        scaled[k] = d[k] * up;
+        scaled[k] = rhs[k] * up;
     }
     let mut lambda = block_lcp(&big_a, &scaled, m)?;
     for x in lambda.iter_mut().take(m) {
@@ -424,16 +463,17 @@ pub(crate) fn rigid_push_out(
     }
     let (mut da, mut db) = (BodyDelta::ZERO, BodyDelta::ZERO);
     for k in 0..m {
+        let change = lambda[k] - old[k];
         let (pa, pb) = (
-            share(a, ra[k], n[k], lambda[k]),
-            share(b, rb[k], n[k], -lambda[k]),
+            share(a, ra[k], n[k], change),
+            share(b, rb[k], n[k], -change),
         );
         da.dx = da.dx + pa.dx;
         da.dtheta = da.dtheta + pa.dtheta;
         db.dx = db.dx + pb.dx;
         db.dtheta = db.dtheta + pb.dtheta;
     }
-    Some((da, db))
+    Some((da, db, lambda))
 }
 
 pub(crate) const BLOCK_MAX: usize = 4;

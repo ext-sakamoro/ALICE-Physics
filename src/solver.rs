@@ -5716,11 +5716,13 @@ impl PhysicsWorld {
         }
         // Friction: reduce the tangential velocity of the contact point
         // (Coulomb, Müller et al. 2020 eq. (30)): the tangential impulse is
-        // capped by `h μ |f_n| = μ λ_n / h`, with `λ_n` (`cached_lambda`) this
-        // substep's normal multiplier from the position solve (`f_n = λ_n /
-        // h²`). The normal velocity after the solve is not the normal force: it
-        // is about 0 for a resting contact, which removed the friction of
-        // sliding and resting bodies.
+        // capped by `μ` times the substep's whole normal impulse, the position
+        // solve's `λ_n / h` (`cached_lambda`, `f_n = λ_n / h²`) and the normal
+        // impulse `J` the velocity stage gave the contact (its restitution or
+        // its speculative bound; an impact met at a speculative point has no
+        // `λ_n` at all, only `J`). The normal velocity after the solve is not
+        // the normal force: it is about 0 for a resting contact, which removed
+        // the friction of sliding and resting bodies.
         for i in 0..num_contacts {
             if !live[i] {
                 continue;
@@ -5742,7 +5744,8 @@ impl PhysicsWorld {
                 let w_t = crate::xpbd_contact::point_w(&a2, &b2, r_a, r_b, t);
                 if w_t > Fix128::ZERO {
                     let stop = tangent_speed / w_t;
-                    let cap = constraint.friction * constraint.cached_lambda * inv_dt;
+                    let cap =
+                        constraint.friction * (constraint.cached_lambda * inv_dt + accumulated[i]);
                     let j = if stop < cap { stop } else { cap };
                     self.contact_velocity_impulse(i, r_a, r_b, t, -j);
                 }
@@ -8194,6 +8197,26 @@ impl PhysicsWorld {
                 ContactSource::Static(_) | ContactSource::Sdf(_) => Some((c.body_a, None)),
             }
         };
+        // A point the hooks or modifiers discarded is not held by the contact
+        // (no compliant overlap carries a load there): it does not count as
+        // found again in the next substep, so its overlap is pushed out then
+        // if it is kept.
+        #[cfg(feature = "std")]
+        for k in 0..n {
+            if !self.contact_discarded.get(k).copied().unwrap_or(false) {
+                continue;
+            }
+            let c = self.contact_constraints[k];
+            let (set, entry) = match self.contact_source[k].0 {
+                ContactSource::Pair => (&mut self.body_touch, (c.body_a, c.body_b, c.feature)),
+                ContactSource::Static(ci) => (&mut self.static_touch, (c.body_a, ci, c.feature)),
+                ContactSource::Sdf(ci) => (&mut self.sdf_touch, (c.body_a, ci, c.feature)),
+                ContactSource::Other => continue,
+            };
+            if let Ok(at) = set.binary_search(&entry) {
+                set.remove(at);
+            }
+        }
         let mut groups: Vec<(usize, Option<usize>)> = Vec::new();
         for k in 0..n {
             if !self.contact_source[k].1 || !kept(self, k) {
@@ -8434,7 +8457,9 @@ impl PhysicsWorld {
     }
 
     fn push_apart(&mut self, a: usize, b: Option<usize>, points: &mut [Contact]) {
-        use crate::xpbd_contact::{rigid_push_out, BodyDelta, BLOCK_MAX, RIGID_REGULARIZATION};
+        use crate::xpbd_contact::{
+            rigid_push_out_from, BodyDelta, BLOCK_MAX, RIGID_REGULARIZATION,
+        };
         const PUSH_PASSES: usize = 6;
         let tiny = Fix128 { hi: 0, lo: 1 << 14 };
         let still = RigidBody::new_static(Vec3Fix::ZERO);
@@ -8502,6 +8527,9 @@ impl PhysicsWorld {
                 *q = turn(*q);
             }
         };
+        // The multipliers so far (the push is solved in its totals, `λ ≥ 0`,
+        // so a pass may take back part of an earlier one).
+        let mut totals = vec![Fix128::ZERO; points.len()];
         for _ in 0..PUSH_PASSES {
             let left: Vec<Fix128> = points
                 .iter()
@@ -8511,7 +8539,12 @@ impl PhysicsWorld {
                     overlaps[k] - c.normal.dot(ma - mb)
                 })
                 .collect();
-            if left.iter().all(|l| *l <= tiny) {
+            // Done when nothing overlaps and no pushed point stands off.
+            if left
+                .iter()
+                .zip(&totals)
+                .all(|(l, t)| *l <= tiny && (t.is_zero() || *l >= -tiny))
+            {
                 break;
             }
             let (now_a, now_b) = (pose(self, Some(a)), pose(self, b));
@@ -8529,7 +8562,9 @@ impl PhysicsWorld {
                 }
                 let partner = if moves_b { now_b } else { still };
                 let own = if moves_a { now_a } else { still };
-                rigid_push_out(
+                let mut old = [Fix128::ZERO; BLOCK_MAX];
+                old[..points.len()].copy_from_slice(&totals);
+                rigid_push_out_from(
                     &own,
                     &partner,
                     &ra,
@@ -8538,12 +8573,14 @@ impl PhysicsWorld {
                     &d,
                     points.len(),
                     RIGID_REGULARIZATION,
+                    &old,
                 )
             } else {
                 None
             };
             match pushed {
-                Some((da, db)) => {
+                Some((da, db, now)) => {
+                    totals.copy_from_slice(&now[..points.len()]);
                     if moves_a {
                         apply(self, a, da);
                     }
@@ -8556,7 +8593,7 @@ impl PhysicsWorld {
                     for (k, c) in points.iter().enumerate() {
                         let (ma, mb) = apart(self, k);
                         let l = overlaps[k] - c.normal.dot(ma - mb);
-                        if l <= Fix128::ZERO {
+                        if l <= Fix128::ZERO && totals[k].is_zero() {
                             continue;
                         }
                         let (now_a, now_b) = (pose(self, Some(a)), pose(self, b));
@@ -8574,7 +8611,9 @@ impl PhysicsWorld {
                         d[0] = l;
                         let partner = if moves_b { now_b } else { still };
                         let own = if moves_a { now_a } else { still };
-                        if let Some((da, db)) = rigid_push_out(
+                        let mut old = [Fix128::ZERO; BLOCK_MAX];
+                        old[0] = totals[k];
+                        if let Some((da, db, now)) = rigid_push_out_from(
                             &own,
                             &partner,
                             &ra,
@@ -8583,7 +8622,9 @@ impl PhysicsWorld {
                             &d,
                             1,
                             RIGID_REGULARIZATION,
+                            &old,
                         ) {
+                            totals[k] = now[0];
                             if moves_a {
                                 apply(self, a, da);
                             }
@@ -9507,6 +9548,11 @@ mod tests {
         };
         world.add_contact(ContactConstraint::new(0, 1, contact));
 
+        // As a substep does: the anchors the current depth is measured from
+        // are taken once, before the iterations, so a second iteration sees
+        // the depth the first left (the compliant give `α̃ λ`, about 1e-7 m
+        // here) and adds nothing (the XPBD fixed point).
+        world.begin_contact_solve();
         let dt = Fix128::from_ratio(1, 60);
         for _ in 0..world.config.iterations {
             world.solve_contact_constraints(dt);
@@ -11098,6 +11144,10 @@ mod tests {
 
     // ---- solve_contact_constraints ------------------------------------
 
+    /// Two bodies at `x = 0` and `x = 1` with one contact along `+x` at the
+    /// first body's centre (both arms along the normal, so no turn enters),
+    /// rigid (compliance 0): the closed forms are the rigid ones, `λ = d / w`
+    /// moving each body by `wᵢ λ`.
     fn contact_world(inv_a: Fix128, inv_b: Fix128, depth: Fix128) -> PhysicsWorld {
         let mut world = quiet_world();
         let a = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -11110,15 +11160,16 @@ mod tests {
             point_a: Vec3Fix::ZERO,
             point_b: Vec3Fix::ZERO,
         };
-        world
-            .contact_constraints
-            .push(ContactConstraint::new(a, b, contact));
+        let mut constraint = ContactConstraint::new(a, b, contact);
+        constraint.compliance = Fix128::ZERO;
+        world.contact_constraints.push(constraint);
         world
     }
 
     #[test]
     fn solve_contact_constraints_pushes_apart_by_depth_weighted_by_inverse_mass() {
-        // inv 1 / inv 3、depth 1 → λ = 1、inv_w = 1/4 → A += n * 1/4、B -= n * 3/4
+        // inv 1 / inv 3、depth 1、w = 4 → λ = d / w = 1/4 (the XPBD multiplier)
+        // → A += n · 1 · 1/4、B −= n · 3 · 1/4
         let mut world = contact_world(Fix128::ONE, Fix128::from_int(3), Fix128::ONE);
         world.solve_contact_constraints(r(1, 4));
         assert_eq!(
@@ -11129,7 +11180,7 @@ mod tests {
             world.bodies[1].position,
             Vec3Fix::new(r(1, 4), Fix128::ZERO, Fix128::ZERO)
         );
-        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ONE);
+        assert_eq!(world.contact_constraints[0].cached_lambda, r(1, 4));
     }
 
     #[test]
@@ -11160,33 +11211,45 @@ mod tests {
         assert_eq!(both.contact_constraints[0].cached_lambda, Fix128::ZERO);
     }
 
+    /// The XPBD contact's fixed point (Macklin et al. 2016 eq. (18)): with
+    /// compliance `α`, `α̃ = α / h²`, the first iteration takes `Δλ = d / (w +
+    /// α̃)` and leaves the overlap `α̃ λ` (the compliant contact's give); every
+    /// later iteration then has `d − α̃ λ = 0` and adds nothing, so iterating
+    /// pushes the depth once. Depth 1/2, `w = 2`, `h = 1/4`, `α = 1/64` (`α̃ =
+    /// 1/4`): `λ = 2/9`, each body moved `2/9` (to the rounding of `2/9`), the
+    /// same after 1 and after 4 iterations. Rigid (`α = 0`) four iterations push
+    /// the depth once too, `1/4` each.
     #[test]
     fn solve_contact_constraints_accumulates_lambda_and_pushes_depth_once() {
-        // depth 1/2、λ 累積済 1 (≥ depth) → dλ ≤ 0 → 動かない、λ 不変
-        let mut world = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        world.contact_constraints[0].cached_lambda = Fix128::ONE;
-        world.solve_contact_constraints(r(1, 4));
-        assert_eq!(world.bodies[0].position, Vec3Fix::ZERO);
-        assert_eq!(world.contact_constraints[0].cached_lambda, Fix128::ONE);
+        let near = |x: Fix128, want: Fix128| (x - want).abs() <= Fix128::from_raw(0, 64);
+        for iterations in [1, 4] {
+            let mut world = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+            world.contact_constraints[0].compliance = r(1, 64);
+            // As a substep does: the anchors the current depth is measured
+            // from are taken once, before the iterations.
+            world.begin_contact_solve();
+            for _ in 0..iterations {
+                world.solve_contact_constraints(r(1, 4));
+            }
+            let lambda = world.contact_constraints[0].cached_lambda;
+            assert!(
+                near(lambda, r(2, 9)),
+                "{iterations} iterations: λ {lambda:?}"
+            );
+            assert!(
+                near(world.bodies[0].position.x, r(2, 9)),
+                "{iterations} iterations: A at {:?}",
+                world.bodies[0].position
+            );
+            assert!(
+                near(world.bodies[1].position.x, Fix128::ONE - r(2, 9)),
+                "{iterations} iterations: B at {:?}",
+                world.bodies[1].position
+            );
+        }
 
-        // λ == depth ちょうど → dλ = 0 → 動かない
-        let mut edge = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        edge.contact_constraints[0].cached_lambda = r(1, 2);
-        edge.solve_contact_constraints(r(1, 4));
-        assert_eq!(edge.bodies[0].position, Vec3Fix::ZERO);
-
-        // λ 1/4 → dλ = 1/2 - 1/4 = 1/4 → A += 1/8 (w_a / w_sum = 1/2)、λ = 1/2
-        let mut partial = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
-        partial.contact_constraints[0].cached_lambda = r(1, 4);
-        partial.solve_contact_constraints(r(1, 4));
-        assert_eq!(
-            partial.bodies[0].position,
-            Vec3Fix::new(r(1, 8), Fix128::ZERO, Fix128::ZERO)
-        );
-        assert_eq!(partial.contact_constraints[0].cached_lambda, r(1, 2));
-
-        // 4 iteration 回しても総押し出し量は depth 1 回分 (1.2.0 以前は iteration 毎に再 push)
         let mut iters = contact_world(Fix128::ONE, Fix128::ONE, r(1, 2));
+        iters.begin_contact_solve();
         for _ in 0..4 {
             iters.solve_contact_constraints(r(1, 4));
         }
@@ -12466,11 +12529,13 @@ mod tests {
     /// (friction split): both bodies dynamic (inv 1 / inv 3 → inv_w = 1/4),
     /// contact normal +y (B → A), vA = (3, -4, 0), vB = (1, -2, 0), e = 1/2,
     /// μ = 1/2.
-    /// Restitution: vn = (2, -2, 0)·n = -2 → Δvn = 3 → A += 3/4, B -= 9/4 →
-    /// A (3, -13/4, 0), B (1, -17/4, 0). Friction: rel = (2, 1, 0), vn2 = 1,
-    /// tangent (2, 0, 0) speed 2, limit μ·|vn2| = 1/2 → impulse (1/2, 0, 0);
-    /// A -= 1/2 · 1/4, B += 1/2 · 3/4 → A (23/8, -13/4, 0), B (11/8, -17/4, 0).
-    /// (`inv_w = w_sum` would give A.x = 1 / B.x = 7, `+` → `-` on B gives 5/8.)
+    /// The contact points are the bodies' centres (no arm, so no turn enters).
+    /// Restitution: vn = (2, -2, 0)·n = -2 → target e·2 = 1, Δvn = 3, impulse
+    /// 3/4 → A += 3/4, B -= 9/4 → A (3, -13/4, 0), B (1, -17/4, 0). Friction
+    /// (Müller et al. 2020 eq. (30)): rel = (2, 1, 0), tangent (1, 0, 0) speed
+    /// 2, the impulse that stops it 2 / w_t = 1/2 (w_t = 4), the Coulomb cap
+    /// μ λ / h = 1/2 · 1/4 · 4 = 1/2 → impulse 1/2: A -= 1/2, B += 3/2 → A
+    /// (5/2, -13/4, 0), B (5/2, -17/4, 0), the sliding just stopped.
     #[test]
     fn update_velocities_friction_and_restitution_split_between_two_dynamic_bodies() {
         let mut world = quiet_world();
@@ -12480,7 +12545,7 @@ mod tests {
         let contact = Contact {
             depth: r(1, 100),
             normal: v3(0, 1, 0),
-            point_a: Vec3Fix::ZERO,
+            point_a: v3(0, 1, 0),
             point_b: Vec3Fix::ZERO,
         };
         let mut c = ContactConstraint::new(a, b, contact);
@@ -12497,12 +12562,12 @@ mod tests {
 
         assert_near_vec(
             world.bodies[a].velocity,
-            Vec3Fix::new(r(23, 8), r(-13, 4), Fix128::ZERO),
+            Vec3Fix::new(r(5, 2), r(-13, 4), Fix128::ZERO),
             "A",
         );
         assert_near_vec(
             world.bodies[b].velocity,
-            Vec3Fix::new(r(11, 8), r(-17, 4), Fix128::ZERO),
+            Vec3Fix::new(r(5, 2), r(-17, 4), Fix128::ZERO),
             "B",
         );
     }

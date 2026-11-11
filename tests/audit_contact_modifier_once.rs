@@ -76,12 +76,16 @@ fn scale_friction(factor: Fix128) -> (ScaleFriction, Arc<AtomicUsize>, Arc<Mutex
 }
 
 /// Two unit spheres closing head-on at 20 m/s each (overlap 0.1 at the first
-/// substep), the first also moving 5 m/s along y, restitution 1, friction `mu`
-/// on both materials. Returns the two velocities after one step.
+/// substep), the first also moving 50 m/s along y, restitution 1, friction
+/// `mu` on both materials. The contact slides: the tangential impulse that
+/// would stop the slip of the contact points (about `50 / w_t ≈ 7`, `w_t =
+/// 2 (1/m + r²/I)`) is above the Coulomb cap (`μ` times the normal impulse)
+/// for `μ = 0.1` and `0.2`, so the result depends on `μ`. (At 5 m/s both grip
+/// and roll.) Returns the two velocities after one step.
 fn collision(iterations: usize, mu: f64, modifier: Option<ScaleFriction>) -> (Vec3Fix, Vec3Fix) {
     let mut w = PhysicsWorld::new(config(1, iterations));
     let a = w.add_body_with_radius(
-        RigidBody::new(v3(0.0, 0.0, 0.0), Fix128::ONE).with_velocity(v3(20.0, 5.0, 0.0)),
+        RigidBody::new(v3(0.0, 0.0, 0.0), Fix128::ONE).with_velocity(v3(20.0, 50.0, 0.0)),
         Fix128::ONE,
     );
     let b = w.add_body_with_radius(

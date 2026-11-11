@@ -566,6 +566,19 @@ impl ContactModifier for SetMaterial {
 /// Two unit spheres (m = 1) closing head-on at 20 m/s each (overlap 0.1 at the first
 /// substep), the first also moving 5 m/s along y, with the given material on both.
 fn collision(friction: f64, restitution: f64, modifier: Option<SetMaterial>) -> (Vec3Fix, Vec3Fix) {
+    let (w, a, b) = collided(friction, restitution, modifier);
+    (
+        w.get_body(a).unwrap().velocity,
+        w.get_body(b).unwrap().velocity,
+    )
+}
+
+/// [`collision`]'s world after the step, with the two bodies.
+fn collided(
+    friction: f64,
+    restitution: f64,
+    modifier: Option<SetMaterial>,
+) -> (PhysicsWorld, usize, usize) {
     let mut w = PhysicsWorld::new(weightless());
     let a = w.add_body_with_radius(
         RigidBody::new(v3(0.0, 0.0, 0.0), Fix128::ONE).with_velocity(v3(20.0, 5.0, 0.0)),
@@ -588,10 +601,20 @@ fn collision(friction: f64, restitution: f64, modifier: Option<SetMaterial>) -> 
         w.add_contact_modifier(Box::new(m));
     }
     w.step(dt());
-    (
-        w.get_body(a).unwrap().velocity,
-        w.get_body(b).unwrap().velocity,
-    )
+    (w, a, b)
+}
+
+/// The tangential slip of the two spheres' surface points facing each other
+/// (`v + ω × r` on each, `r` the radius along the line of centres), after
+/// [`collision`].
+fn contact_slip(friction: f64, restitution: f64) -> f64 {
+    let (w, a, b) = collided(friction, restitution, None);
+    let (ba, bb) = (w.get_body(a).unwrap(), w.get_body(b).unwrap());
+    let n = (bb.position - ba.position).normalize();
+    let pa = ba.velocity + ba.angular_velocity.cross(n);
+    let pb = bb.velocity + bb.angular_velocity.cross(-n);
+    let rel = pa - pb;
+    (rel - n * rel.dot(n)).length().to_f64()
 }
 
 /// Sanity of the scene (no modifier): restitution 0 makes the bodies stick along the
@@ -608,15 +631,17 @@ fn collision_scene_responds_to_the_material_restitution() {
     );
 }
 
-/// Sanity: the material friction does change the tangential relative velocity
-/// (friction 0 keeps it, friction 9 removes it).
+/// Sanity: the material friction does change the tangential slip of the
+/// contact (friction 0 keeps it, friction 9 removes it). Grip stops the
+/// surface points slipping, not the centres' relative motion: the spheres
+/// then roll on each other, so the slip is measured at the contact points
+/// (`v + ω × r`).
 #[test]
 fn collision_scene_responds_to_the_material_friction() {
-    let (a_free, b_free) = collision(0.0, 1.0, None);
-    let (a_grip, b_grip) = collision(9.0, 1.0, None);
-    let rel = |a: Vec3Fix, b: Vec3Fix| (a.y - b.y).to_f64().abs();
-    assert!(rel(a_free, b_free) > 4.0, "free {}", rel(a_free, b_free));
-    assert!(rel(a_grip, b_grip) < 1.0, "grip {}", rel(a_grip, b_grip));
+    let free = contact_slip(0.0, 1.0);
+    let grip = contact_slip(9.0, 1.0);
+    assert!(free > 4.0, "free {free}");
+    assert!(grip < 1.0, "grip {grip}");
 }
 
 #[test]
