@@ -577,7 +577,9 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
         // contact in one sub-step: below `2 |g| h` the target is 0 (the rule the
         // XPBD and 2D solvers use). Without it a resting body was given
         // `e |g| h` upward every sub-step and crept off the surface.
-        let threshold = v_dot(self.cfg.gravity, self.cfg.gravity).sqrt() * sub_dt * Fix128::from_int(2);
+        // The factor 2 is derived in tests/analytic_restitution_threshold.rs.
+        let threshold =
+            v_dot(self.cfg.gravity, self.cfg.gravity).sqrt() * sub_dt * Fix128::from_int(2);
         for i in 0..self.contacts.len() {
             let rel_v = self.contact_rel_velocity(i);
             let vn = v_dot(rel_v, self.contacts[i].normal);

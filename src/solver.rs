@@ -5100,7 +5100,8 @@ impl PhysicsWorld {
         // Restitution threshold of Müller et al. 2020 (below): an approach
         // slower than `2 |g| h` is a resting contact and gets `e = 0`, so
         // resting bodies do not bounce on the gravity of one substep
-        // (the same rule as the 2D solver).
+        // (the same rule as the 2D solver). The factor 2 is derived in, and
+        // held at both sides by, tests/analytic_restitution_threshold.rs.
         let restitution_threshold = self.config.gravity.length() * dt * Fix128::from_int(2);
         let num_contacts = self.contact_constraints.len();
         for i in 0..num_contacts {
