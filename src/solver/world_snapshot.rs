@@ -5190,3 +5190,18 @@ mod tests {
         assert_eq!(c.snapshot_world(), blob);
     }
 }
+
+// The snapshot format oracles (v2 / v4, history independence, the sleep skip)
+// compile as lib tests too, so the format paths count in the `--lib` coverage.
+#[cfg(test)]
+#[path = "../../tests/sleep_skip_snapshot.rs"]
+mod sleep_skip_snapshot_oracle;
+#[cfg(test)]
+#[path = "../../tests/world_snapshot_history_independence.rs"]
+mod world_snapshot_history_independence_oracle;
+#[cfg(test)]
+#[path = "../../tests/world_snapshot_v2.rs"]
+mod world_snapshot_v2_oracle;
+#[cfg(test)]
+#[path = "../../tests/world_snapshot_v4.rs"]
+mod world_snapshot_v4_oracle;

@@ -645,3 +645,12 @@ mod tests {
         assert_eq!(mgr.sleeping_count(), 3);
     }
 }
+
+// The sleep oracles (sleep by time, the spring creep) compile as lib tests too, so the
+// island sleep paths count in the `--lib` coverage.
+#[cfg(test)]
+#[path = "../tests/analytic_sleep_by_time.rs"]
+mod analytic_sleep_by_time_oracle;
+#[cfg(test)]
+#[path = "../tests/analytic_sleep_spring_creep.rs"]
+mod analytic_sleep_spring_creep_oracle;
