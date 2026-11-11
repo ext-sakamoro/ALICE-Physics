@@ -196,6 +196,9 @@ function wide(a) {
   const version = a.free("alicePhysicsVersion");
   if (typeof version !== "string") throw new Error(`alicePhysicsVersion gave ${version}`);
   out.version = new TextEncoder().encode(version);
+  const sid = a.free("semanticsId");
+  if (!(sid instanceof Uint8Array) || sid.length !== 32) throw new Error(`semanticsId gave ${sid}`);
+  out.semanticsId = sid;
   const fresh = a.fresh();
   out.freshCount = val(a.call(fresh, "bodyCount"), "bodyCount");
   return out;

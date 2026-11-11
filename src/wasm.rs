@@ -1073,6 +1073,16 @@ pub fn alice_physics_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// The semantics identifier of this build ([`crate::PHYSICS_SEMANTICS_ID`], 32 bytes): two builds
+/// with the same value compute every pinned scenario to the same bits, so a caller can tell whether
+/// a replay recorded with another build still reproduces (the package's content hash changes on any
+/// rebuild, this only when results can change).
+#[wasm_bindgen(js_name = "semanticsId")]
+#[must_use]
+pub fn semantics_id() -> Vec<u8> {
+    crate::PHYSICS_SEMANTICS_ID.to_vec()
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -1096,6 +1106,12 @@ fn hit_array(hit: Option<binding_api::QueryHit>) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantics_id_is_the_physics_semantics_id() {
+        assert_eq!(semantics_id(), crate::PHYSICS_SEMANTICS_ID.to_vec());
+        assert_eq!(semantics_id().len(), 32);
+    }
 
     /// A world with a magnet at the origin and a steel-mass ball of material 1 above it, no
     /// gravity; returns (world, ball)

@@ -421,12 +421,14 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return true;"
         return "return undefined;"
     methods = "\n".join(f"  {rename(n)}(...a) {{ {body(n)} }}" for n in names
-                         if n not in ("withConfig", "alicePhysicsVersion", "WasmPhysicsWorld"))
+                         if n not in ("withConfig", "alicePhysicsVersion", "semanticsId", "WasmPhysicsWorld"))
     return (f"export function initSync() {{}}\n"
             f"export class {rename('WasmPhysicsWorld')} {{\n  constructor() {{ this.ids = 0; }}\n"
             f"  static {rename('withConfig')}() {{ return new this(); }}\n{methods}\n{extra}\n  free() {{}}\n}}\n"
             + (f"export function {rename('alicePhysicsVersion')}() {{ return \"0.0.0\"; }}\n"
-               if "alicePhysicsVersion" in names else "") + module_extra)
+               if "alicePhysicsVersion" in names else "")
+            + (f"export function {rename('semanticsId')}() {{ return new Uint8Array(32).fill(5); }}\n"
+               if "semanticsId" in names else "") + module_extra)
 
 
 class Equivalence(unittest.TestCase):
@@ -465,6 +467,7 @@ class Equivalence(unittest.TestCase):
     def test_a_missing_name_stops(self):
         self.assertEqual(self.run_pair(drop="castCapsule"), 2, self.last)
         self.assertEqual(self.run_pair(drop="alicePhysicsVersion"), 2, self.last)
+        self.assertEqual(self.run_pair(drop="semanticsId"), 2, self.last)
         self.assertEqual(self.run_pair(drop="setFriction"), 2, self.last)  # a setter returns nothing
 
     def test_an_export_no_scene_calls_stops(self):

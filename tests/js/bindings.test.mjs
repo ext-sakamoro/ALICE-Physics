@@ -15,7 +15,7 @@ import path from "node:path";
 
 const pkgDir = process.env.ALICE_JS_PKG;
 if (!pkgDir) throw new Error("set ALICE_JS_PKG to the wasm-pack output directory");
-const { WasmPhysicsWorld } = createRequire(import.meta.url)(path.resolve(pkgDir, "alice_physics.js"));
+const { WasmPhysicsWorld, semanticsId } = createRequire(import.meta.url)(path.resolve(pkgDir, "alice_physics.js"));
 
 const DT = 1 / 60;
 const world = () => WasmPhysicsWorld.withConfig(0, -10, 0, 8, 4);
@@ -422,4 +422,15 @@ test("an axis-locked body keeps its locked coordinates", () => {
   assert.equal(z, 0);
   assert.equal(vel(w, b)[2], 0);
   assert.ok(x > 0.4 && y < 10, `${x} ${y}`);
+});
+
+// the semantics identifier is the one the world snapshot's header carries (the snapshot is written
+// under this build's semantics), 32 bytes, and the same on every call
+test("semanticsId is the semantics identifier the snapshot header carries", () => {
+  const id = Array.from(semanticsId());
+  assert.equal(id.length, 32);
+  assert.deepEqual(Array.from(semanticsId()), id);
+  const snap = Array.from(world().snapshotWorld());
+  const at = snap.findIndex((_, i) => id.every((b, j) => snap[i + j] === b));
+  assert.ok(at >= 0, "the snapshot holds the semantics identifier");
 });
