@@ -48,7 +48,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `linear_solver` | general Krylov solvers on `Fix128`: restarted GMRES(m) and BiCGStab, Jacobi / block Jacobi preconditioning, mandatory block equilibration for coupled systems |  | [`linear_solver_krylov`](../examples/linear_solver_krylov.rs) | standalone |
 | `det_math` | re-export of `alice-det-math`: deterministic `sin`, `exp`, `ln`, `powf`, … for `f32` / `f64` |  |  | — |
 | `metric` | the norm a distance is measured in (`‖·‖₁`, `‖·‖₂`, `‖·‖∞` mixes) and conversion to Euclidean bounds |  | [`metric_clearance_bounds`](../examples/metric_clearance_bounds.rs) | step |
-| `rng` | PCG-XSH-RR deterministic random number generator |  | [`rng_streams_and_bounded`](../examples/rng_streams_and_bounded.rs) | world API |
+| `rng` | PCG-XSH-RR deterministic random number generator |  | [`rng_streams_and_bounded`](../examples/rng_streams_and_bounded.rs) | standalone (world API 6 of 13 items) |
 | `error` | the crate-wide `PhysicsError` type |  |  | step |
 | `prelude` | commonly used types in one import |  |  | — |
 
