@@ -443,9 +443,16 @@ pub(crate) fn contact_manifold_between(
     (position_a, rotation_a): (Vec3Fix, QuatFix),
     b: &BodyCollider,
     (position_b, rotation_b): (Vec3Fix, QuatFix),
+    margin: Fix128,
 ) -> Vec<(Contact, u32)> {
+    let grow = |bx: AABB| {
+        AABB::new(
+            bx.min - Vec3Fix::new(margin, margin, margin),
+            bx.max + Vec3Fix::new(margin, margin, margin),
+        )
+    };
     let (box_a, box_b) = (
-        a.world_aabb(position_a, rotation_a),
+        grow(a.world_aabb(position_a, rotation_a)),
         b.world_aabb(position_b, rotation_b),
     );
     if !box_a.intersects(&box_b) {
@@ -462,11 +469,32 @@ pub(crate) fn contact_manifold_between(
             if !box_a.intersects(box_b) {
                 continue;
             }
-            let Some(deepest) = contact(pa, pb) else {
-                continue;
+            // Overlapping: EPA's deepest point. Apart by less than `margin`: the
+            // nearest points (a speculative contact with a gap, depth `−dist`).
+            let deepest = match contact(pa, pb) {
+                Some(c) => c,
+                None if margin > Fix128::ZERO => {
+                    let Some((dist, wa, wb)) = crate::world_shape_query::gjk_distance(pa, pb)
+                    else {
+                        continue;
+                    };
+                    if dist >= margin || dist.is_zero() {
+                        continue;
+                    }
+                    Contact {
+                        depth: -dist,
+                        normal: (wa - wb) / dist,
+                        point_a: wa,
+                        point_b: wb,
+                    }
+                }
+                None => continue,
             };
             let points = match (placed_box(pa), placed_box(pb)) {
-                (Some(ba), Some(bb)) => box_box_manifold(&ba, &bb, deepest.normal),
+                (Some(ba), Some(bb)) => box_box_manifold(&ba, &bb, deepest.normal, margin),
+                _ if pa.has_flat_faces() || pb.has_flat_faces() => {
+                    support_face_manifold(pa, pb, deepest, margin)
+                }
                 _ => Vec::new(),
             };
             if points.is_empty() {
@@ -508,6 +536,38 @@ pub(crate) fn colliders_meet(
 /// `collider_is_a` the collider is body A and the normal points from the sphere to
 /// the collider; otherwise the sphere is body A and the normal points from the
 /// collider to the sphere (B to A either way, the [`Contact`] contract).
+/// [`contact_with_sphere`] within `margin`: the sphere grown by `margin`, the
+/// contact then moved back to the sphere's own surface (depth `−gap` for a
+/// sphere apart by `gap < margin`).
+pub(crate) fn contact_with_sphere_within(
+    collider: &BodyCollider,
+    pose: (Vec3Fix, QuatFix),
+    sphere: Sphere,
+    collider_is_a: bool,
+    margin: Fix128,
+) -> Option<Contact> {
+    if margin.is_zero() {
+        return contact_with_sphere(collider, pose, sphere, collider_is_a);
+    }
+    let grown = Sphere::new(sphere.center, sphere.radius + margin);
+    let c = contact_with_sphere(collider, pose, grown, collider_is_a)?;
+    let depth = c.depth - margin;
+    // The sphere's point moves back across the normal by the margin.
+    Some(if collider_is_a {
+        Contact {
+            depth,
+            point_b: c.point_b - c.normal * margin,
+            ..c
+        }
+    } else {
+        Contact {
+            depth,
+            point_a: c.point_a + c.normal * margin,
+            ..c
+        }
+    })
+}
+
 pub(crate) fn contact_with_sphere(
     collider: &BodyCollider,
     (position, rotation): (Vec3Fix, QuatFix),
@@ -891,6 +951,143 @@ fn face_manifold(piece: &impl Support, deepest: Contact, margin: Fix128) -> Vec<
         out.push((deepest, 0));
     }
     out
+}
+
+/// The support polygon of `piece` in direction `dir`: the supports of the four
+/// directions leaning `FACE_LEAN` off it (as [`face_manifold`]), duplicates
+/// dropped, in their fixed order (a face gives 4 corners, an edge 2, a
+/// vertex or a smooth point 1).
+fn support_polygon(piece: &impl Support, dir: Vec3Fix, t1: Vec3Fix, t2: Vec3Fix) -> Vec<Vec3Fix> {
+    let lean = Fix128::from_ratio(FACE_LEAN.0, FACE_LEAN.1);
+    let mut out: Vec<Vec3Fix> = Vec::with_capacity(4);
+    for (s1, s2) in [(1, 1), (-1, 1), (-1, -1), (1, -1)] {
+        let lean_dir = t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2);
+        let p = piece.support(dir + lean_dir * lean);
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// The contact manifold of two convex pieces by clipping their support
+/// polygons (Sutherland–Hodgman, as [`box_box_manifold`] does for two boxes):
+/// `a`'s polygon facing `b` (`−n`) and `b`'s facing `a` (`+n`), projected on
+/// the plane across `n`. The polygon with at least three corners clips the
+/// other (`a`'s when both have); each surviving point of the clipped polygon
+/// is a point of its body, and its depth is its distance past the other's
+/// face (the plane through the deepest point across `n`). A face resting on
+/// a face gives the corners of their overlap; an edge on a face the edge's
+/// part over the face; a point the deepest point alone. At most four points
+/// (`reduce_to_four`); the feature is the point's origin (a corner `k` of
+/// the clipped polygon, or the crossing of its edge `i` with clip edge `j`).
+fn support_face_manifold(
+    a: &Piece<'_>,
+    b: &Piece<'_>,
+    deepest: Contact,
+    margin: Fix128,
+) -> Vec<(Contact, u32)> {
+    let n = deepest.normal;
+    let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+    let poly_a = support_polygon(a, -n, t1, t2);
+    let poly_b = support_polygon(b, n, t1, t2);
+    // The clipped polygon (its points stay on its body) and the clip.
+    let (subject, clip, subject_is_a) = if poly_b.len() >= 3 {
+        (poly_a, poly_b, true)
+    } else if poly_a.len() >= 3 {
+        (poly_b, poly_a, false)
+    } else {
+        return Vec::new();
+    };
+    let flat = |p: Vec3Fix| (t1.dot(p), t2.dot(p));
+    // The clip's orientation, so "inside" is on the same side of every edge.
+    let c: Vec<(Fix128, Fix128)> = clip.iter().map(|p| flat(*p)).collect();
+    let mut area = Fix128::ZERO;
+    for i in 0..c.len() {
+        let (p, q) = (c[i], c[(i + 1) % c.len()]);
+        area = area + (p.0 * q.1 - q.0 * p.1);
+    }
+    if area.is_zero() {
+        return Vec::new();
+    }
+    let side = |p: (Fix128, Fix128), e0: (Fix128, Fix128), e1: (Fix128, Fix128)| {
+        let s = (e1.0 - e0.0) * (p.1 - e0.1) - (e1.1 - e0.1) * (p.0 - e0.0);
+        if area < Fix128::ZERO {
+            -s
+        } else {
+            s
+        }
+    };
+    // (3D point on its body, feature).
+    let mut poly: Vec<(Vec3Fix, u32)> = subject
+        .iter()
+        .enumerate()
+        .map(|(k, p)| (*p, k as u32))
+        .collect();
+    for j in 0..c.len() {
+        let (e0, e1) = (c[j], c[(j + 1) % c.len()]);
+        let input = core::mem::take(&mut poly);
+        let m = input.len();
+        if m == 0 {
+            break;
+        }
+        let closed = m >= 3;
+        for i in 0..m {
+            let (p, fp) = input[i];
+            let sp = side(flat(p), e0, e1);
+            if sp >= Fix128::ZERO {
+                poly.push((p, fp));
+            }
+            if !closed && i + 1 == m {
+                break;
+            }
+            let (q, _) = input[(i + 1) % m];
+            let sq = side(flat(q), e0, e1);
+            if (sp < Fix128::ZERO) != (sq < Fix128::ZERO) {
+                let t = sp / (sp - sq);
+                poly.push((p + (q - p) * t, 8 + 4 * (i as u32 % 4) + j as u32 % 4));
+            }
+        }
+    }
+    let points: Vec<(Vec3Fix, Fix128, u32)> = poly
+        .into_iter()
+        .map(|(p, f)| {
+            let depth = if subject_is_a {
+                n.dot(deepest.point_b - p)
+            } else {
+                n.dot(p - deepest.point_a)
+            };
+            (p, depth, f)
+        })
+        .filter(|(_, d, _)| *d > -margin && !(margin.is_zero() && d.is_zero()))
+        .collect();
+    if points.len() < 2 {
+        return Vec::new();
+    }
+    let points = if points.len() > 4 {
+        reduce_to_four(points, n)
+    } else {
+        points
+    };
+    points
+        .into_iter()
+        .map(|(p, depth, f)| {
+            let (point_a, point_b) = if subject_is_a {
+                (p, p + n * depth)
+            } else {
+                (p - n * depth, p)
+            };
+            (
+                Contact {
+                    depth,
+                    normal: n,
+                    point_a,
+                    point_b,
+                },
+                f,
+            )
+        })
+        .collect()
 }
 
 /// A convex piece against a two-sided plane: the side is the one `reference` (the
@@ -2222,7 +2419,12 @@ fn face_towards(b: &PlacedBox, dir: Vec3Fix) -> (usize, Fix128, Fix128) {
 /// names where it came from (an incident vertex `0..4`, or an incident edge cut
 /// by a side plane `32 + 4·plane + edge`), so it keeps its number while the
 /// boxes rest. Empty when no clipped point is below the plane.
-fn box_box_manifold(a: &PlacedBox, b: &PlacedBox, n: Vec3Fix) -> Vec<(Contact, u32)> {
+fn box_box_manifold(
+    a: &PlacedBox,
+    b: &PlacedBox,
+    n: Vec3Fix,
+    margin: Fix128,
+) -> Vec<(Contact, u32)> {
     let (ia, sa, va) = face_towards(a, -n);
     let (ib, sb, vb) = face_towards(b, n);
     // Reference: B (normal along +n) unless A's face is strictly better aligned.
@@ -2284,7 +2486,7 @@ fn box_box_manifold(a: &PlacedBox, b: &PlacedBox, n: Vec3Fix) -> Vec<(Contact, u
         .into_iter()
         .filter_map(|(p, f)| {
             let s = ref_n.dot(p - ref_c);
-            (s < Fix128::ZERO).then_some((p, -s, f))
+            (s < margin && !(margin.is_zero() && s.is_zero())).then_some((p, -s, f))
         })
         .collect();
     if points.len() > 4 {

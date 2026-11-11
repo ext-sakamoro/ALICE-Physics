@@ -364,6 +364,57 @@ pub(crate) fn velocity_share(
 }
 
 /// The most points one block solve takes ([`block_normal_correction`]).
+/// The regularisation of a rigid push-out block, `2⁻⁵⁰` of its largest
+/// diagonal entry: it only makes the multipliers unique (a face's corners
+/// constrain three motions); the bodies' motion does not depend on it (see
+/// the unit test `the_rigid_push_out_does_not_depend_on_the_regularisation`).
+pub(crate) const RIGID_REGULARIZATION: Fix128 = Fix128 { hi: 0, lo: 1 << 14 };
+
+/// The rigid push-out of points `0..m` (arms `ra` on `a`, `rb` on `b`,
+/// normals `n` from `b` to `a`) by the overlaps `d`: the least-constraint
+/// motion that leaves no point overlapping (Gauss's principle in the bodies'
+/// mass metric), `λ` from the point-space block `(A + ε I) λ = d` with the
+/// sign conditions (`block_lcp`), `ε = RIGID_REGULARIZATION · max Aₖₖ`, and
+/// the motions `W Jᵀ λ`: equal and opposite impulses on the two bodies. `None`
+/// when no active set is feasible.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the two bodies, the points' arms and normals, the overlaps and the point count are the push-out's whole input"
+)]
+pub(crate) fn rigid_push_out(
+    a: &RigidBody,
+    b: &RigidBody,
+    ra: &[Vec3Fix; BLOCK_MAX],
+    rb: &[Vec3Fix; BLOCK_MAX],
+    n: &[Vec3Fix; BLOCK_MAX],
+    d: &[Fix128; BLOCK_MAX],
+    m: usize,
+    scale: Fix128,
+) -> Option<(BodyDelta, BodyDelta)> {
+    let mut big_a = coupling(a, b, ra, rb, n, m);
+    let mut top = Fix128::ZERO;
+    for (k, row) in big_a.iter().enumerate().take(m) {
+        top = top.max(row[k]);
+    }
+    let eps = mul_odd(top, scale);
+    for (k, row) in big_a.iter_mut().enumerate().take(m) {
+        row[k] = row[k] + eps;
+    }
+    let lambda = block_lcp(&big_a, d, m)?;
+    let (mut da, mut db) = (BodyDelta::ZERO, BodyDelta::ZERO);
+    for k in 0..m {
+        let (pa, pb) = (
+            share(a, ra[k], n[k], lambda[k]),
+            share(b, rb[k], n[k], -lambda[k]),
+        );
+        da.dx = da.dx + pa.dx;
+        da.dtheta = da.dtheta + pa.dtheta;
+        db.dx = db.dx + pb.dx;
+        db.dtheta = db.dtheta + pb.dtheta;
+    }
+    Some((da, db))
+}
+
 pub(crate) const BLOCK_MAX: usize = 4;
 
 /// The normal corrections of up to [`BLOCK_MAX`] contacts between the same two
@@ -734,4 +785,107 @@ pub(crate) fn body_lcp(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    /// The motion `(Δx, Δθ)` a rigid push-out gives a 0.9 × 0.12 × 0.6 m box
+    /// (500 kg/m³) whose bottom face's four corners overlap a floor by
+    /// different depths, with the block regularised by `alpha` (relative to
+    /// its largest diagonal entry).
+    fn push_out(alpha: Fix128) -> (Vec3Fix, Vec3Fix) {
+        let (hx, hy, hz) = (0.45, 0.06, 0.3);
+        let m = 500.0 * 8.0 * hx * hy * hz;
+        let i = |a: f64, b: f64| m * (4.0 * a * a + 4.0 * b * b) / 12.0;
+        let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, fx(m));
+        body.inv_inertia = Vec3Fix::new(
+            fx(1.0 / i(hy, hz)),
+            fx(1.0 / i(hx, hz)),
+            fx(1.0 / i(hx, hy)),
+        );
+        let still = RigidBody::new_static(Vec3Fix::ZERO);
+        let up = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
+        let mut d = [Fix128::ZERO; BLOCK_MAX];
+        for (k, (sx, sz, depth)) in [
+            (1.0, 1.0, 3e-3),
+            (-1.0, 1.0, 2e-3),
+            (-1.0, -1.0, 1e-3),
+            (1.0, -1.0, 2e-3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ra[k] = Vec3Fix::new(fx(sx * hx), fx(-hy), fx(sz * hz));
+            d[k] = fx(depth);
+        }
+        let (da, _) = rigid_push_out(
+            &body,
+            &still,
+            &ra,
+            &[Vec3Fix::ZERO; BLOCK_MAX],
+            &[up; BLOCK_MAX],
+            &d,
+            BLOCK_MAX,
+            alpha,
+        )
+        .expect("the block is solvable");
+        (da.dx, da.dtheta)
+    }
+
+    /// oracle (rigid statics of a face): the four overlaps lie on a plane
+    /// (`3 + 1 = 2 + 2` mm), so the rigid push-out that leaves every corner
+    /// just touching is the plane's lift and tilt, unique although the four
+    /// multipliers are not (four points, three motions). The regulariser only
+    /// picks the multipliers; over `2⁻⁵⁵, 2⁻⁵⁰, 2⁻⁴⁵` (three orders of
+    /// magnitude about the stated one) the motion agrees to `1e-12` m / rad
+    /// and every corner is out to `1e-12` m.
+    #[test]
+    fn the_rigid_push_out_does_not_depend_on_the_regularisation() {
+        let at = |shift: u32| Fix128 {
+            hi: 0,
+            lo: 1u64 << shift,
+        };
+        let reference = push_out(RIGID_REGULARIZATION);
+        for alpha in [at(9), at(14), at(19)] {
+            let (dx, dth) = push_out(alpha);
+            let gap = (dx - reference.0)
+                .length()
+                .to_f64()
+                .max((dth - reference.1).length().to_f64());
+            assert!(
+                gap < 1e-12,
+                "motion moves by {gap:.3e} with the regulariser"
+            );
+            for (sx, sz, depth) in [
+                (1.0, 1.0, 3e-3),
+                (-1.0, 1.0, 2e-3),
+                (-1.0, -1.0, 1e-3),
+                (1.0, -1.0, 2e-3),
+            ] {
+                let r = Vec3Fix::new(fx(sx * 0.45), fx(-0.06), fx(sz * 0.3));
+                let lift = (dx + dth.cross(r)).y.to_f64();
+                assert!(
+                    (lift - depth).abs() < 1e-12,
+                    "corner ({sx},{sz}) lifted {lift:.6e}, want {depth}"
+                );
+            }
+        }
+        // The material compliance (1e-10 m/N over a 1/240 s substep squared)
+        // is not a rigid push-out: it leaves a measurable share of the overlap.
+        // relative to the block's largest entry (`1/m + …`, about 0.04 1/kg)
+        let h = fx(1.0 / 240.0);
+        let soft = compliance_over_h2(fx(1e-10), h) / fx(0.04);
+        let (dx, _) = push_out(soft);
+        assert!(
+            (dx.y.to_f64() - 2e-3).abs() > 1e-9,
+            "the material compliance pushes out the whole overlap"
+        );
+    }
 }

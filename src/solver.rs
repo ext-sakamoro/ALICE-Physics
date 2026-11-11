@@ -1674,6 +1674,14 @@ pub struct BodyAttachments {
 /// [`PhysicsWorld::contact_body`], so this index never reaches `bodies[..]`.
 pub const STATIC_BODY: usize = usize::MAX;
 
+/// How many times a start-of-substep overlap is pushed out and met again
+/// (the push turns bodies, which changes which parts meet): the push is the
+/// projection onto the poses that overlap nothing, to `PROJECTION_TOLERANCE`.
+const PROJECTION_ROUNDS: usize = 4;
+
+/// The overlap (m) a new point may keep after its push-out, `2⁻⁵⁰`.
+const PROJECTION_TOLERANCE: Fix128 = Fix128 { hi: 0, lo: 1 << 14 };
+
 /// [`PhysicsWorld::contact_body`] over a slice of bodies (the TGS conversion
 /// reads the world's bodies this way).
 #[inline]
@@ -1767,6 +1775,9 @@ pub struct PhysicsWorld {
     static_touch: Vec<(usize, usize, u32)>,
     /// As `static_touch`, for the SDF colliders' contact points.
     sdf_touch: Vec<(usize, usize, u32)>,
+    /// As `static_touch`, for the body pairs' contact points, as
+    /// `(body_a, body_b, feature)`.
+    body_touch: Vec<(usize, usize, u32)>,
     /// Free rotation of each body in the current substep, written by
     /// `integrate_positions` and read by `update_velocities` (indexed like
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
@@ -2017,6 +2028,7 @@ impl PhysicsWorld {
             contact_block: Vec::new(),
             static_touch: Vec::new(),
             sdf_touch: Vec::new(),
+            body_touch: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
@@ -3119,8 +3131,7 @@ impl PhysicsWorld {
     /// times; the body moves by `Δx` and turns by `Δθ` (their sums). Each
     /// point's depth then drops, and its `point_a` moves, by what the push moved
     /// that point (`Δx + Δθ × r`), so the solve sees only the rest.
-    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact], h: Fix128) {
-        const PRE_PROJECTION_PASSES: usize = 4;
+    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact]) {
         let body = self.bodies[i];
         if body.inv_mass.is_zero() || body.is_sensor {
             return;
@@ -3144,111 +3155,7 @@ impl PhysicsWorld {
             }
             return;
         }
-        let travel = body.position - body.prev_position;
-        let arms: Vec<Vec3Fix> = points.iter().map(|c| c.point_a - body.position).collect();
-        let overlaps: Vec<Fix128> = points
-            .iter()
-            .map(|c| {
-                let approach = -travel.dot(c.normal);
-                c.depth - approach.max(Fix128::ZERO).min(c.depth)
-            })
-            .collect();
-        if overlaps.iter().all(|o| *o <= Fix128::ZERO) {
-            return;
-        }
-        let (mut dx, mut dtheta) = (Vec3Fix::ZERO, Vec3Fix::ZERO);
-        let moved_at = |dx: Vec3Fix, dtheta: Vec3Fix, r: Vec3Fix| dx + dtheta.cross(r);
-        // A manifold (up to `BLOCK_MAX` points) is pushed out as one block
-        // (the corrections that leave no point overlapping, solved together,
-        // `crate::xpbd_contact::block_lcp`); one point at a time otherwise.
-        let mut solved = false;
-        if points.len() > 1 && points.len() <= crate::xpbd_contact::BLOCK_MAX {
-            use crate::xpbd_contact::BLOCK_MAX;
-            let still = RigidBody::new_static(Vec3Fix::ZERO);
-            let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
-            let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
-            let mut d = [Fix128::ZERO; BLOCK_MAX];
-            for (k, c) in points.iter().enumerate() {
-                ra[k] = arms[k];
-                n[k] = c.normal;
-                d[k] = overlaps[k];
-            }
-            let mut big_a = crate::xpbd_contact::coupling(
-                &body,
-                &still,
-                &ra,
-                &[Vec3Fix::ZERO; BLOCK_MAX],
-                &n,
-                points.len(),
-            );
-            // The pair's contact compliance keeps the block regular (a face's
-            // corners constrain three motions), as in the solve.
-            let alpha = crate::xpbd_contact::compliance_over_h2(
-                self.combined_material(i, STATIC_BODY).compliance,
-                h,
-            );
-            for (k, row) in big_a.iter_mut().enumerate().take(points.len()) {
-                row[k] = row[k] + alpha;
-            }
-            let alphas = [alpha; BLOCK_MAX];
-            let block = crate::xpbd_contact::body_lcp(
-                &body,
-                &still,
-                &ra,
-                &[Vec3Fix::ZERO; BLOCK_MAX],
-                &n,
-                &alphas,
-                &d,
-                points.len(),
-            )
-            .or_else(|| crate::xpbd_contact::block_lcp(&big_a, &d, points.len()));
-            if let Some(lambda) = block {
-                for k in 0..points.len() {
-                    dx = dx + n[k] * (lambda[k] * body.inv_mass);
-                    dtheta = dtheta + body.world_inv_inertia_apply(ra[k].cross(n[k])) * lambda[k];
-                }
-                solved = true;
-            }
-        }
-        for _ in 0..if solved { 0 } else { PRE_PROJECTION_PASSES } {
-            for (k, c) in points.iter().enumerate() {
-                let n = c.normal;
-                let left = overlaps[k] - n.dot(moved_at(dx, dtheta, arms[k]));
-                if left <= Fix128::ZERO {
-                    continue;
-                }
-                let r = crate::xpbd_contact::arm(arms[k], dtheta);
-                let w = body.inv_mass + crate::xpbd_contact::angular_w(&body, r, n);
-                if w <= Fix128::ZERO {
-                    continue;
-                }
-                let lambda = left / w;
-                dx = dx + n * (lambda * body.inv_mass);
-                dtheta = dtheta + body.world_inv_inertia_apply(r.cross(n)) * lambda;
-            }
-        }
-        for (k, c) in points.iter_mut().enumerate() {
-            let moved = moved_at(dx, dtheta, arms[k]);
-            c.depth = c.depth - c.normal.dot(moved);
-            c.point_a = c.point_a + moved;
-        }
-        let (axis, angle) = dtheta.normalize_with_length();
-        let turn = |q: QuatFix| {
-            if angle.is_zero() {
-                q
-            } else {
-                crate::joint::rotate_by_angle(q, axis, angle)
-            }
-        };
-        let b = &mut self.bodies[i];
-        b.position = b.position + dx;
-        b.prev_position = b.prev_position + dx;
-        b.rotation = turn(b.rotation);
-        b.prev_rotation = turn(b.prev_rotation);
-        if let Some(Some((x, q))) = self.predicted_pose.get_mut(i) {
-            *x = *x + dx;
-            *q = turn(*q);
-        }
+        self.push_apart(i, None, points);
     }
 
     /// The restitution target of contact `i` (Müller et al. 2020 eq. (34)):
@@ -4706,7 +4613,7 @@ impl PhysicsWorld {
         // Phase 2: Collision detection once for the whole tick (not
         // re-detected per sub-step — see the method doc).
         self.clear_contacts();
-        self.detect_collisions();
+        self.detect_collisions(Fix128::ZERO);
 
         // Phase 2.5: Resolve SDF collisions (implicit surface contacts),
         // mirroring `substep`'s Phase 1.5. `resolve_sdf_collisions` pushes
@@ -4720,7 +4627,7 @@ impl PhysicsWorld {
         // `dt`, same as every other per-tick (not per-substep) phase here.
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions(dt);
+            self.resolve_sdf_collisions();
         }
 
         // Phase 2.6: the static colliders' contacts join the tick's contact set
@@ -5145,7 +5052,7 @@ impl PhysicsWorld {
         // 1.2. Collision detection on the predicted positions (Small Steps).
         //      Contacts live for exactly one substep.
         self.clear_contacts();
-        self.detect_collisions();
+        self.detect_collisions(dt);
         if !ccd_hits.is_empty() {
             self.ccd_add_contacts(&ccd_hits);
         }
@@ -5153,7 +5060,7 @@ impl PhysicsWorld {
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions(dt);
+            self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -5193,7 +5100,7 @@ impl PhysicsWorld {
 
         // 1.2. Collision detection on the predicted positions (Small Steps).
         self.clear_contacts();
-        self.detect_collisions();
+        self.detect_collisions(dt);
         if !ccd_hits.is_empty() {
             self.ccd_add_contacts(&ccd_hits);
         }
@@ -5201,7 +5108,7 @@ impl PhysicsWorld {
         // the rest
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions(dt);
+            self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -6672,11 +6579,11 @@ impl PhysicsWorld {
 
         // 1.2. Collision detection on the predicted positions (Small Steps).
         self.clear_contacts();
-        self.detect_collisions();
+        self.detect_collisions(dt);
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions(dt);
+            self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -7078,7 +6985,7 @@ impl PhysicsWorld {
     ///
     /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
     #[cfg(feature = "std")]
-    fn resolve_sdf_collisions(&mut self, h: Fix128) {
+    fn resolve_sdf_collisions(&mut self) {
         let previous = core::mem::take(&mut self.sdf_touch);
         let mut touch: Vec<(usize, usize, u32)> = Vec::new();
         let first = self.sdf_contact_log.len();
@@ -7137,10 +7044,10 @@ impl PhysicsWorld {
                 .collect();
             let mut contacts: Vec<Contact> = points.iter().map(|(p, _)| *p).collect();
             if fresh.len() == contacts.len() {
-                self.pre_project_overlap(c.body_index, &mut contacts, h);
+                self.pre_project_overlap(c.body_index, &mut contacts);
             } else if !fresh.is_empty() {
                 let mut new_points: Vec<Contact> = fresh.iter().map(|&k| contacts[k]).collect();
-                self.pre_project_overlap(c.body_index, &mut new_points, h);
+                self.pre_project_overlap(c.body_index, &mut new_points);
                 for (n, &k) in fresh.iter().enumerate() {
                     contacts[k] = new_points[n];
                 }
@@ -7387,6 +7294,33 @@ impl PhysicsWorld {
     /// The overlap a body starts the substep with is not turned into velocity:
     /// its previous (and predicted) position moves with it, as the push-out
     /// did; only the part that cancels this substep's approach is velocity.
+    /// Body `i`'s contact points with each static collider at its present
+    /// pose, within `margin` (`(collider, points)` for the colliders it meets).
+    fn static_points(
+        &self,
+        i: usize,
+        radius: Fix128,
+        margin: Fix128,
+    ) -> Vec<(usize, Vec<(Contact, u32)>)> {
+        let body = &self.bodies[i];
+        let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
+        let mut out = Vec::new();
+        for (collider_index, collider) in self.static_colliders.iter().enumerate() {
+            let points = match shaped {
+                Some(c) => c.static_manifold(body.position, body.rotation, collider, margin),
+                None => collider
+                    .collide_sphere(body.position, radius)
+                    .map(|c| (c, 0))
+                    .into_iter()
+                    .collect(),
+            };
+            if !points.is_empty() {
+                out.push((collider_index, points));
+            }
+        }
+        out
+    }
+
     fn add_static_contacts(&mut self, h: Fix128) {
         let default_radius = self.sdf_collision_radius;
         let count = self.stage_count();
@@ -7401,7 +7335,6 @@ impl PhysicsWorld {
                 continue;
             }
             let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
-            let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
             // Speculative margin (Catto, "Continuous Collision", GDC 2013): a
             // point within `(|v| + |ω| R) h + |g| h²` of the floor is kept as a
             // contact with a gap. No point of the body moves faster than
@@ -7412,22 +7345,9 @@ impl PhysicsWorld {
             let margin = (body.velocity.length() + body.angular_velocity.length() * radius) * h
                 + self.config.gravity.length() * h * h;
             // Every collider is met at the pose the body was predicted at.
-            let mut per_collider: Vec<(usize, Vec<(Contact, u32)>)> = Vec::new();
-            for (collider_index, collider) in self.static_colliders.iter().enumerate() {
-                let points = match shaped {
-                    Some(c) => c.static_manifold(body.position, body.rotation, collider, margin),
-                    None => collider
-                        .collide_sphere(body.position, radius)
-                        .map(|c| (c, 0))
-                        .into_iter()
-                        .collect(),
-                };
-                if !points.is_empty() {
-                    per_collider.push((collider_index, points));
-                }
-            }
-            for (collider_index, points) in per_collider {
-                // The deepest point stands for the collider in the event.
+            let mut per_collider = self.static_points(i, radius, margin);
+            // The deepest point stands for each collider in the event.
+            for (collider_index, points) in &per_collider {
                 let Some(&(deepest, _)) = points.iter().max_by(|x, y| x.0.depth.cmp(&y.0.depth))
                 else {
                     continue;
@@ -7435,47 +7355,68 @@ impl PhysicsWorld {
                 if deepest.depth > Fix128::ZERO {
                     self.events.report_static_hit(crate::event::StaticHit {
                         body: i,
-                        collider: collider_index,
+                        collider: *collider_index,
                         normal: deepest.normal,
                         point: deepest.point_a,
                         speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
                     });
                 }
-                // Only the points new this substep are pre-projected: a point
-                // found again holds the overlap the compliant contact keeps at
-                // rest (`α F`), which the solve needs to carry the load.
-                let fresh: Vec<usize> = (0..points.len())
-                    .filter(|&k| {
-                        previous
-                            .binary_search(&(i, collider_index, points[k].1))
-                            .is_err()
+            }
+            // Only the points new this substep are pre-projected: a point found
+            // again holds the overlap the compliant contact keeps at rest
+            // (`α F`), which the solve needs to carry the load. The new points
+            // of every collider are pushed out together (a body in a corner
+            // meets both walls at the pose it was predicted at). A push that
+            // turns the body changes which parts meet (a face tilts off the
+            // floor's plane), so the colliders are met again at the pushed pose
+            // and what is still overlapping at a new point is pushed again: the
+            // push is the projection onto the poses that overlap nothing
+            // (`PROJECTION_ROUNDS`). The temporal Gauss–Seidel backend shifts
+            // only its previous pose, once.
+            let rounds = if self.config.solver_backend == SolverBackend::Tgs {
+                1
+            } else {
+                PROJECTION_ROUNDS
+            };
+            for round in 0..rounds {
+                let fresh: Vec<(usize, usize)> = per_collider
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(slot, (collider_index, points))| {
+                        let previous = &previous;
+                        (0..points.len())
+                            .filter(move |&k| {
+                                (round == 0 || points[k].0.depth > PROJECTION_TOLERANCE)
+                                    && previous
+                                        .binary_search(&(i, *collider_index, points[k].1))
+                                        .is_err()
+                            })
+                            .map(move |k| (slot, k))
                     })
                     .collect();
-                let mut contacts: Vec<Contact> = points.iter().map(|(c, _)| *c).collect();
-                if !fresh.is_empty() {
-                    let mut new_points: Vec<Contact> = fresh.iter().map(|&k| contacts[k]).collect();
-                    let before = self.bodies[i];
-                    self.pre_project_overlap(i, &mut new_points, h);
-                    let after = self.bodies[i];
-                    for (n, &k) in fresh.iter().enumerate() {
-                        contacts[k] = new_points[n];
-                    }
-                    // The persisting points move with the body too.
-                    if after.position != before.position || after.rotation != before.rotation {
-                        let dx = after.position - before.position;
-                        for k in (0..contacts.len()).filter(|k| !fresh.contains(k)) {
-                            let r = contacts[k].point_a - before.position;
-                            let r_new = after
-                                .rotation
-                                .mul(before.rotation.conjugate())
-                                .rotate_vec(r);
-                            let moved = dx + (r_new - r);
-                            contacts[k].depth = contacts[k].depth - contacts[k].normal.dot(moved);
-                            contacts[k].point_a = contacts[k].point_a + moved;
-                        }
-                    }
+                if fresh.is_empty() {
+                    break;
                 }
-                for (contact, (_, feature)) in contacts.into_iter().zip(points) {
+                let mut new_points: Vec<Contact> = fresh
+                    .iter()
+                    .map(|&(slot, k)| per_collider[slot].1[k].0)
+                    .collect();
+                let before = self.bodies[i];
+                self.pre_project_overlap(i, &mut new_points);
+                let after = self.bodies[i];
+                if after.position == before.position && after.rotation == before.rotation {
+                    break;
+                }
+                if rounds == 1 {
+                    for (n, &(slot, k)) in fresh.iter().enumerate() {
+                        per_collider[slot].1[k].0 = new_points[n];
+                    }
+                    break;
+                }
+                per_collider = self.static_points(i, radius, margin);
+            }
+            for (collider_index, points) in per_collider {
+                for (contact, feature) in points {
                     touch.push((i, collider_index, feature));
                     found.push((i, contact, feature));
                 }
@@ -7676,11 +7617,38 @@ impl PhysicsWorld {
     /// pair involving a collider (the plain side as its sphere).
     /// Generates contact constraints and events automatically.
     /// Bodies without a collision radius are skipped.
-    fn detect_collisions(&mut self) {
+    fn detect_collisions(&mut self, h: Fix128) {
         let n = self.bodies.len();
         if n < 2 {
             return;
         }
+        // Speculative margin of each body (Catto, "Continuous Collision", GDC
+        // 2013), as for the static colliders: no point of body `i` moves more
+        // than `(|v| + |ω| R) h` in a substep (`R` its collision radius) and
+        // gravity adds at most `|g| h²`, so a pair apart by more than the sum of
+        // their margins cannot meet in this substep; a pair nearer than that is
+        // kept as a contact with a gap. Zero for `h = 0` (the temporal
+        // Gauss–Seidel backend detects once per tick, without gaps).
+        let gravity_reach = self.config.gravity.length() * h * h;
+        let margins: Vec<Fix128> = (0..n)
+            .map(|i| {
+                if h.is_zero() {
+                    return Fix128::ZERO;
+                }
+                let body = &self.bodies[i];
+                let radius = self
+                    .body_collision_radii
+                    .get(i)
+                    .and_then(|r| *r)
+                    .unwrap_or(Fix128::ZERO);
+                (body.velocity.length() + body.angular_velocity.length() * radius) * h
+                    + gravity_reach
+            })
+            .collect();
+        let grow = |bx: AABB, m: Fix128| AABB {
+            min: bx.min - Vec3Fix::new(m, m, m),
+            max: bx.max + Vec3Fix::new(m, m, m),
+        };
 
         // Build BVH from bodies that have collision radii (the unparked ones while
         // parking is in effect: parked bodies sit in `park.tree`)
@@ -7694,7 +7662,7 @@ impl PhysicsWorld {
                     self.note_rigid_overflow();
                 }
                 primitives.push(BvhPrimitive {
-                    aabb,
+                    aabb: grow(aabb, margins[i]),
                     index: i as u32,
                     morton: 0,
                 });
@@ -7792,6 +7760,11 @@ impl PhysicsWorld {
                 radius_overflow = true;
                 continue;
             };
+            let pair_margin = margins[a] + margins[b];
+            let Some(reach) = combined_radius.checked_add(pair_margin) else {
+                radius_overflow = true;
+                continue;
+            };
             // Squared-distance early out *first*: the BVH candidate set is a
             // superset of the overlapping pairs (49k candidates for 2.7k contacts
             // on the 1000-sphere grid) and the quantised leaf AABBs cannot be
@@ -7815,9 +7788,7 @@ impl PhysicsWorld {
             let collider_a = self.body_colliders.get(a).and_then(Option::as_ref);
             let collider_b = self.body_colliders.get(b).and_then(Option::as_ref);
             if collider_a.is_none() && collider_b.is_none() {
-                let squares = delta
-                    .checked_length_squared()
-                    .zip(combined_radius.checked_mul(combined_radius));
+                let squares = delta.checked_length_squared().zip(reach.checked_mul(reach));
                 match squares {
                     Some((d2, r2)) => {
                         if d2 >= r2 || d2.is_zero() {
@@ -7830,7 +7801,7 @@ impl PhysicsWorld {
                         let Some(dist) = delta.checked_length_scaled() else {
                             continue;
                         };
-                        if dist >= combined_radius || dist.is_zero() {
+                        if dist >= reach || dist.is_zero() {
                             continue;
                         }
                         let Some(normal) = delta.try_normalize_scaled() else {
@@ -7839,9 +7810,8 @@ impl PhysicsWorld {
                         scaled = Some((normal, dist));
                     }
                 }
-            } else if !self
-                .broadphase_box(a, radius_a)
-                .intersects(&self.broadphase_box(b, radius_b))
+            } else if !grow(self.broadphase_box(a, radius_a), margins[a])
+                .intersects(&grow(self.broadphase_box(b, radius_b), margins[b]))
             {
                 continue;
             }
@@ -7877,23 +7847,29 @@ impl PhysicsWorld {
                 let pose_a = (self.bodies[a].position, self.bodies[a].rotation);
                 let pose_b = (self.bodies[b].position, self.bodies[b].rotation);
                 let points: Vec<(Contact, u32)> = match (collider_a, collider_b) {
-                    (Some(ca), Some(cb)) => {
-                        crate::body_collider::contact_manifold_between(ca, pose_a, cb, pose_b)
-                    }
-                    (Some(ca), None) => crate::body_collider::contact_with_sphere(
+                    (Some(ca), Some(cb)) => crate::body_collider::contact_manifold_between(
+                        ca,
+                        pose_a,
+                        cb,
+                        pose_b,
+                        pair_margin,
+                    ),
+                    (Some(ca), None) => crate::body_collider::contact_with_sphere_within(
                         ca,
                         pose_a,
                         crate::collider::Sphere::new(pose_b.0, radius_b),
                         true,
+                        pair_margin,
                     )
                     .map(|c| (c, 0))
                     .into_iter()
                     .collect(),
-                    (None, Some(cb)) => crate::body_collider::contact_with_sphere(
+                    (None, Some(cb)) => crate::body_collider::contact_with_sphere_within(
                         cb,
                         pose_b,
                         crate::collider::Sphere::new(pose_a.0, radius_a),
                         false,
+                        pair_margin,
                     )
                     .map(|c| (c, 0))
                     .into_iter()
@@ -7906,8 +7882,16 @@ impl PhysicsWorld {
                     .filter(|(_, (c, _))| c.depth > Fix128::ZERO)
                     .max_by(|x, y| x.1 .0.depth.cmp(&y.1 .0.depth))
                     .map(|(k, _)| k);
+                let is_sensor = self.bodies[a].is_sensor || self.bodies[b].is_sensor;
                 for (k, (contact, feature)) in points.into_iter().enumerate() {
-                    if contact.depth > Fix128::ZERO {
+                    // A sensor reports overlaps only; a gap within the margin
+                    // is a speculative contact (depth `−gap`).
+                    let kept = if is_sensor || pair_margin.is_zero() {
+                        contact.depth > Fix128::ZERO
+                    } else {
+                        contact.depth > -pair_margin
+                    };
+                    if kept {
                         let rel_vel = (velocity_of(a) - velocity_of(b)).dot(contact.normal);
                         results.push(ContactInfo {
                             body_a: a,
@@ -7928,7 +7912,9 @@ impl PhysicsWorld {
 
             let (normal, dist) = scaled.unwrap_or_else(|| delta.normalize_with_length());
 
-            if dist < combined_radius && !dist.is_zero() {
+            let is_sensor = self.bodies[a].is_sensor || self.bodies[b].is_sensor;
+            let limit = if is_sensor { combined_radius } else { reach };
+            if dist < limit && !dist.is_zero() {
                 let depth = combined_radius - dist;
                 let point_a = self.bodies[a].position - normal * radius_a;
                 let point_b = self.bodies[b].position + normal * radius_b;
@@ -7953,7 +7939,8 @@ impl PhysicsWorld {
                     rel_vel,
                     is_sensor,
                     feature: 0,
-                    report: true,
+                    // a speculative contact (a gap) is no hit yet
+                    report: depth > Fix128::ZERO,
                 });
             }
         }
@@ -7963,6 +7950,7 @@ impl PhysicsWorld {
         }
 
         // Apply results
+        let mut pair_points: Vec<ContactInfo> = Vec::new();
         for info in results {
             // Report contact event (once per pair, for its deepest point)
             if info.report {
@@ -8001,7 +7989,351 @@ impl PhysicsWorld {
                     self.events.report_trigger(info.body_a, info.body_b);
                 }
             } else {
-                self.add_manifold_point(info.body_a, info.body_b, info.contact, info.feature);
+                pair_points.push(info);
+            }
+        }
+        // A pair's points are consecutive. Only the points new this substep are
+        // pre-projected (`pre_project_pair`), as for the static colliders.
+        let previous = core::mem::take(&mut self.body_touch);
+        let mut touch: Vec<(usize, usize, u32)> = Vec::with_capacity(pair_points.len());
+        let mut first = 0;
+        while first < pair_points.len() {
+            let (a, b) = (pair_points[first].body_a, pair_points[first].body_b);
+            let mut end = first + 1;
+            while end < pair_points.len()
+                && pair_points[end].body_a == a
+                && pair_points[end].body_b == b
+            {
+                end += 1;
+            }
+            let group = &pair_points[first..end];
+            let fresh: Vec<usize> = (0..group.len())
+                .filter(|&k| previous.binary_search(&(a, b, group[k].feature)).is_err())
+                .collect();
+            let mut pts: Vec<(Contact, u32)> =
+                group.iter().map(|g| (g.contact, g.feature)).collect();
+            if !fresh.is_empty() && self.config.solver_backend != SolverBackend::Tgs {
+                // As for the static colliders: the new points pushed out, the
+                // pair met again at the pushed poses, what still overlaps at a
+                // new point pushed again (`PROJECTION_ROUNDS`).
+                let mut fresh = fresh;
+                for round in 0..PROJECTION_ROUNDS {
+                    if fresh.is_empty() {
+                        break;
+                    }
+                    let mut new_points: Vec<Contact> = fresh.iter().map(|&k| pts[k].0).collect();
+                    let (before_a, before_b) = (self.bodies[a], self.bodies[b]);
+                    self.pre_project_pair(a, b, &mut new_points);
+                    let (after_a, after_b) = (self.bodies[a], self.bodies[b]);
+                    let unmoved = after_a.position == before_a.position
+                        && after_a.rotation == before_a.rotation
+                        && after_b.position == before_b.position
+                        && after_b.rotation == before_b.rotation;
+                    match (
+                        unmoved,
+                        self.shaped_pair_points(a, b, margins[a] + margins[b]),
+                    ) {
+                        (false, Some(again)) if round + 1 < PROJECTION_ROUNDS => {
+                            pts = again;
+                            fresh = (0..pts.len())
+                                .filter(|&k| {
+                                    pts[k].0.depth > PROJECTION_TOLERANCE
+                                        && previous.binary_search(&(a, b, pts[k].1)).is_err()
+                                })
+                                .collect();
+                        }
+                        _ => {
+                            for (n, &k) in fresh.iter().enumerate() {
+                                pts[k].0 = new_points[n];
+                            }
+                            let moved = |before: &RigidBody, after: &RigidBody, p: Vec3Fix| {
+                                let r = p - before.position;
+                                let spin = after.rotation.mul(before.rotation.conjugate());
+                                (after.position - before.position) + (spin.rotate_vec(r) - r)
+                            };
+                            for (k, (c, _)) in pts.iter_mut().enumerate() {
+                                if fresh.contains(&k) {
+                                    continue;
+                                }
+                                let ma = moved(&before_a, &after_a, c.point_a);
+                                let mb = moved(&before_b, &after_b, c.point_b);
+                                c.depth = c.depth - c.normal.dot(ma - mb);
+                                c.point_a = c.point_a + ma;
+                                c.point_b = c.point_a - c.normal * c.depth;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            for (contact, feature) in pts {
+                touch.push((a, b, feature));
+                self.add_manifold_point(a, b, contact, feature);
+            }
+            first = end;
+        }
+        touch.sort_unstable();
+        self.body_touch = touch;
+    }
+
+    /// The contact points of bodies `a` and `b` at their present poses when
+    /// either has a shape (`None` for two plain spheres, whose one point does
+    /// not change with a turn).
+    fn shaped_pair_points(
+        &self,
+        a: usize,
+        b: usize,
+        margin: Fix128,
+    ) -> Option<Vec<(Contact, u32)>> {
+        let collider_a = self.body_colliders.get(a).and_then(Option::as_ref);
+        let collider_b = self.body_colliders.get(b).and_then(Option::as_ref);
+        let radius = |j: usize| {
+            self.body_collision_radii
+                .get(j)
+                .and_then(|r| *r)
+                .unwrap_or(Fix128::ZERO)
+        };
+        let pose_a = (self.bodies[a].position, self.bodies[a].rotation);
+        let pose_b = (self.bodies[b].position, self.bodies[b].rotation);
+        let points = match (collider_a, collider_b) {
+            (Some(ca), Some(cb)) => {
+                crate::body_collider::contact_manifold_between(ca, pose_a, cb, pose_b, margin)
+            }
+            (Some(ca), None) => crate::body_collider::contact_with_sphere_within(
+                ca,
+                pose_a,
+                crate::collider::Sphere::new(pose_b.0, radius(b)),
+                true,
+                margin,
+            )
+            .map(|c| (c, 0))
+            .into_iter()
+            .collect(),
+            (None, Some(cb)) => crate::body_collider::contact_with_sphere_within(
+                cb,
+                pose_b,
+                crate::collider::Sphere::new(pose_a.0, radius(a)),
+                false,
+                margin,
+            )
+            .map(|c| (c, 0))
+            .into_iter()
+            .collect(),
+            (None, None) => return None,
+        };
+        Some(
+            points
+                .into_iter()
+                .filter(|(c, _)| {
+                    if margin.is_zero() {
+                        c.depth > Fix128::ZERO
+                    } else {
+                        c.depth > -margin
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    /// Push the bodies `a` and `b` out of the overlap they started the substep
+    /// with at `points` (their contacts, `normal` from `b` to `a`), moving each
+    /// body's present, previous and predicted poses together so the push
+    /// creates no velocity; as [`Self::pre_project_overlap`], with both bodies
+    /// moving when both can.
+    ///
+    /// The push is the rigid least-constraint one
+    /// (`crate::xpbd_contact::rigid_push_out`): impulses `±Σ Jₖᵀ λₖ`, equal
+    /// and opposite on the two bodies, so their mass-weighted centre does not
+    /// move (no momentum is made). Each point's depth then drops by what the
+    /// push moved it apart.
+    fn pre_project_pair(&mut self, a: usize, b: usize, points: &mut [Contact]) {
+        self.push_apart(a, Some(b), points);
+    }
+
+    /// The rigid push-out of `a` (and `b`, when given and it can move) out of
+    /// the overlap they started the substep with at `points` (normals from
+    /// `b` to `a`; `point_a` on `a`, `point_b` on `b` or on the immovable
+    /// partner when `b` is `None`). Each body's present, previous and predicted
+    /// poses move together, so the push makes no velocity.
+    ///
+    /// The overlap of a point is its depth minus the part the bodies' approach
+    /// this substep (`−n · Δ(x_a − x_b)`) explains. The push is a projection on
+    /// the non-penetration set, nonlinear in the turn: each pass solves the
+    /// linearised rigid push-out (`crate::xpbd_contact::rigid_push_out`, the
+    /// least-constraint motion, equal and opposite impulses) for what is left
+    /// at the poses the bodies now have, measuring each point as the body's
+    /// material point (`x + R r_local`), and moves the bodies by it; the
+    /// linearisation leaves `O(|Δθ|² r)`, so a few passes leave it below
+    /// `2⁻⁵⁰` m (`PUSH_PASSES`). More than `BLOCK_MAX` points are pushed one at a
+    /// time within each pass. Each point's depth then drops, and its points
+    /// move, by what the push moved them apart.
+    fn push_apart(&mut self, a: usize, b: Option<usize>, points: &mut [Contact]) {
+        use crate::xpbd_contact::{rigid_push_out, BodyDelta, BLOCK_MAX, RIGID_REGULARIZATION};
+        const PUSH_PASSES: usize = 6;
+        let tiny = Fix128 { hi: 0, lo: 1 << 14 };
+        let still = RigidBody::new_static(Vec3Fix::ZERO);
+        let movable = |body: &RigidBody| !body.inv_mass.is_zero() && !body.is_sensor;
+        let a0 = self.bodies[a];
+        let b0 = b.map_or(still, |j| self.bodies[j]);
+        let (moves_a, moves_b) = (movable(&a0), b.is_some() && movable(&b0));
+        if !moves_a && !moves_b {
+            return;
+        }
+        let travel = (a0.position - a0.prev_position) - (b0.position - b0.prev_position);
+        let overlaps: Vec<Fix128> = points
+            .iter()
+            .map(|c| {
+                let approach = -travel.dot(c.normal);
+                c.depth - approach.max(Fix128::ZERO).min(c.depth)
+            })
+            .collect();
+        if overlaps.iter().all(|o| *o <= Fix128::ZERO) {
+            return;
+        }
+        // The material points, in each body's frame.
+        let local =
+            |body: &RigidBody, p: Vec3Fix| body.rotation.conjugate().rotate_vec(p - body.position);
+        let la: Vec<Vec3Fix> = points.iter().map(|c| local(&a0, c.point_a)).collect();
+        let lb: Vec<Vec3Fix> = points.iter().map(|c| local(&b0, c.point_b)).collect();
+        let world = |body: &RigidBody, l: Vec3Fix| body.position + body.rotation.rotate_vec(l);
+        let pose = |w: &Self, j: Option<usize>| j.map_or(still, |j| w.bodies[j]);
+        // What the push has moved point `k` apart so far.
+        let apart = |w: &Self, k: usize, c: &Contact| {
+            let (now_a, now_b) = (pose(w, Some(a)), pose(w, b));
+            let ma = world(&now_a, la[k]) - c.point_a;
+            let mb = if b.is_some() {
+                world(&now_b, lb[k]) - c.point_b
+            } else {
+                Vec3Fix::ZERO
+            };
+            (ma, mb)
+        };
+        let apply = |w: &mut Self, j: usize, d: BodyDelta| {
+            let (axis, angle) = d.dtheta.normalize_with_length();
+            let turn = |q: QuatFix| {
+                if angle.is_zero() {
+                    q
+                } else {
+                    crate::joint::rotate_by_angle(q, axis, angle)
+                }
+            };
+            let body = &mut w.bodies[j];
+            body.position = body.position + d.dx;
+            body.prev_position = body.prev_position + d.dx;
+            body.rotation = turn(body.rotation);
+            body.prev_rotation = turn(body.prev_rotation);
+            if let Some(Some((x, q))) = w.predicted_pose.get_mut(j) {
+                *x = *x + d.dx;
+                *q = turn(*q);
+            }
+        };
+        for _ in 0..PUSH_PASSES {
+            let left: Vec<Fix128> = points
+                .iter()
+                .enumerate()
+                .map(|(k, c)| {
+                    let (ma, mb) = apart(self, k, c);
+                    overlaps[k] - c.normal.dot(ma - mb)
+                })
+                .collect();
+            if left.iter().all(|l| *l <= tiny) {
+                break;
+            }
+            let (now_a, now_b) = (pose(self, Some(a)), pose(self, b));
+            let arm_a = |k: usize| now_a.rotation.rotate_vec(la[k]);
+            let arm_b = |k: usize| now_b.rotation.rotate_vec(lb[k]);
+            let pushed = if points.len() <= BLOCK_MAX {
+                let (mut ra, mut rb) = ([Vec3Fix::ZERO; BLOCK_MAX], [Vec3Fix::ZERO; BLOCK_MAX]);
+                let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
+                let mut d = [Fix128::ZERO; BLOCK_MAX];
+                for (k, c) in points.iter().enumerate() {
+                    ra[k] = arm_a(k);
+                    rb[k] = if b.is_some() { arm_b(k) } else { Vec3Fix::ZERO };
+                    n[k] = c.normal;
+                    d[k] = left[k];
+                }
+                let partner = if moves_b { now_b } else { still };
+                let own = if moves_a { now_a } else { still };
+                rigid_push_out(
+                    &own,
+                    &partner,
+                    &ra,
+                    &rb,
+                    &n,
+                    &d,
+                    points.len(),
+                    RIGID_REGULARIZATION,
+                )
+            } else {
+                None
+            };
+            match pushed {
+                Some((da, db)) => {
+                    if moves_a {
+                        apply(self, a, da);
+                    }
+                    if let (Some(j), true) = (b, moves_b) {
+                        apply(self, j, db);
+                    }
+                }
+                None => {
+                    // One point at a time (the same linearised push per point).
+                    for (k, c) in points.iter().enumerate() {
+                        let (ma, mb) = apart(self, k, c);
+                        let l = overlaps[k] - c.normal.dot(ma - mb);
+                        if l <= Fix128::ZERO {
+                            continue;
+                        }
+                        let (now_a, now_b) = (pose(self, Some(a)), pose(self, b));
+                        let mut ra = [Vec3Fix::ZERO; BLOCK_MAX];
+                        let mut rb = [Vec3Fix::ZERO; BLOCK_MAX];
+                        let mut n = [Vec3Fix::ZERO; BLOCK_MAX];
+                        let mut d = [Fix128::ZERO; BLOCK_MAX];
+                        ra[0] = now_a.rotation.rotate_vec(la[k]);
+                        rb[0] = if b.is_some() {
+                            now_b.rotation.rotate_vec(lb[k])
+                        } else {
+                            Vec3Fix::ZERO
+                        };
+                        n[0] = c.normal;
+                        d[0] = l;
+                        let partner = if moves_b { now_b } else { still };
+                        let own = if moves_a { now_a } else { still };
+                        if let Some((da, db)) = rigid_push_out(
+                            &own,
+                            &partner,
+                            &ra,
+                            &rb,
+                            &n,
+                            &d,
+                            1,
+                            RIGID_REGULARIZATION,
+                        ) {
+                            if moves_a {
+                                apply(self, a, da);
+                            }
+                            if let (Some(j), true) = (b, moves_b) {
+                                apply(self, j, db);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // A point stays one place on the two surfaces: against a body,
+        // `point_b` is kept across the normal from `point_a` (the bodies'
+        // points a tangential distance apart would carry the equal and
+        // opposite impulses on different lines and make a torque).
+        let moved: Vec<(Vec3Fix, Vec3Fix)> = points
+            .iter()
+            .enumerate()
+            .map(|(k, c)| apart(self, k, c))
+            .collect();
+        for (c, (ma, mb)) in points.iter_mut().zip(moved) {
+            c.depth = c.depth - c.normal.dot(ma - mb);
+            c.point_a = c.point_a + ma;
+            if b.is_some() {
+                c.point_b = c.point_a - c.normal * c.depth;
             }
         }
     }
@@ -10084,7 +10416,7 @@ mod tests {
         // point_a = pos_a - n·r_a = (1,0,0)、point_b = pos_b + n·r_b = (0.5,0,0)
         // (1.2.0 以前は a → b で pin していた = 押し込み方向の bug を test が固定していた)
         let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert_eq!(world.contact_constraints.len(), 1);
         let c = &world.contact_constraints[0];
         assert_eq!((c.body_a, c.body_b), (0, 1));
@@ -10109,7 +10441,7 @@ mod tests {
     fn detect_collisions_asymmetric_radii_split_points_correctly() {
         // r_a = 2, r_b = 1/2、距離 2 → combined 2.5、depth 0.5
         let mut world = two_spheres(2, 1, Fix128::from_int(2), r(1, 2));
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert_eq!(world.contact_constraints.len(), 1);
         let c = world.contact_constraints[0].contact;
         assert!(near(c.depth, r(1, 2)), "depth {:?}", c.depth);
@@ -10125,12 +10457,12 @@ mod tests {
     fn detect_collisions_touching_exactly_is_not_a_contact() {
         // dist == combined (2 == 1+1): `<` は false → 接触なし (`<=` 変異はここで死ぬ)
         let mut world = two_spheres(2, 1, Fix128::ONE, Fix128::ONE);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert!(world.contact_constraints.is_empty());
         assert!(world.contact_events().is_empty());
         // 少しでも近ければ接触
         let mut world2 = two_spheres(199, 100, Fix128::ONE, Fix128::ONE);
-        world2.detect_collisions();
+        world2.detect_collisions(Fix128::ZERO);
         assert_eq!(world2.contact_constraints.len(), 1);
     }
 
@@ -10138,7 +10470,7 @@ mod tests {
     fn detect_collisions_coincident_centers_are_skipped() {
         // dist == 0 → normal 不定なので skip (`!dist.is_zero()`)
         let mut world = two_spheres(0, 1, Fix128::ONE, Fix128::ONE);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert!(world.contact_constraints.is_empty());
     }
 
@@ -10147,7 +10479,7 @@ mod tests {
         let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
         world.bodies[0].velocity = v3(2, 7, 0); // a → b 方向 +2 (y 成分は normal 直交で無視)
         world.bodies[1].velocity = v3(-1, 0, 0);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         let ev = &world.contact_events()[0];
         // rel_vel = (v_a - v_b) · n = (3, 7, 0) · (-1,0,0) = -3 (接近中は負、B → A normal)
         assert!(
@@ -10163,7 +10495,7 @@ mod tests {
         for sensor_side in 0..2 {
             let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
             world.bodies[sensor_side].is_sensor = true;
-            world.detect_collisions();
+            world.detect_collisions(Fix128::ZERO);
             assert!(world.contact_constraints.is_empty(), "side {sensor_side}");
             assert_eq!(world.trigger_events().len(), 1, "side {sensor_side}");
             assert_eq!(world.contact_events().len(), 1, "side {sensor_side}");
@@ -10178,7 +10510,7 @@ mod tests {
             RigidBody::new_static(Vec3Fix::new(r(3, 2), Fix128::ZERO, Fix128::ZERO)),
             Fix128::ONE,
         );
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert!(world.contact_constraints.is_empty());
 
         let mut mixed = quiet_world();
@@ -10190,7 +10522,7 @@ mod tests {
             ),
             Fix128::ONE,
         );
-        mixed.detect_collisions();
+        mixed.detect_collisions(Fix128::ZERO);
         assert_eq!(mixed.contact_constraints.len(), 1);
     }
 
@@ -10205,7 +10537,7 @@ mod tests {
         };
         same_group.set_body_filter(0, g);
         same_group.set_body_filter(1, g);
-        same_group.detect_collisions();
+        same_group.detect_collisions(Fix128::ZERO);
         assert!(same_group.contact_constraints.is_empty());
 
         // 片方向 mask 不一致 (a.layer & b.mask == 0) → 衝突しない (`&&` の右側も検査)
@@ -10227,7 +10559,7 @@ mod tests {
                     group: 0,
                 },
             );
-            masked.detect_collisions();
+            masked.detect_collisions(Fix128::ZERO);
             assert!(masked.contact_constraints.is_empty(), "side {side}");
         }
 
@@ -10249,7 +10581,7 @@ mod tests {
                 group: 2,
             },
         );
-        ok.detect_collisions();
+        ok.detect_collisions(Fix128::ZERO);
         assert_eq!(ok.contact_constraints.len(), 1);
     }
 
@@ -10258,12 +10590,12 @@ mod tests {
         let mut both = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
         both.islands.sleep_data[0].state = crate::sleeping::SleepState::Sleeping;
         both.islands.sleep_data[1].state = crate::sleeping::SleepState::Sleeping;
-        both.detect_collisions();
+        both.detect_collisions(Fix128::ZERO);
         assert!(both.contact_constraints.is_empty());
 
         let mut one = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
         one.islands.sleep_data[0].state = crate::sleeping::SleepState::Sleeping;
-        one.detect_collisions();
+        one.detect_collisions(Fix128::ZERO);
         assert_eq!(one.contact_constraints.len(), 1);
         // 接触で起こされる
         assert!(!one.islands.is_sleeping(0));
@@ -10277,7 +10609,7 @@ mod tests {
             RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE),
             Fix128::ONE,
         );
-        single.detect_collisions();
+        single.detect_collisions(Fix128::ZERO);
         assert!(single.contact_constraints.is_empty());
 
         let mut one_radius = quiet_world();
@@ -10289,14 +10621,14 @@ mod tests {
             Vec3Fix::new(r(1, 2), Fix128::ZERO, Fix128::ZERO),
             Fix128::ONE,
         ));
-        one_radius.detect_collisions();
+        one_radius.detect_collisions(Fix128::ZERO);
         assert!(one_radius.contact_constraints.is_empty());
     }
 
     #[test]
     fn detect_collisions_uses_combined_material_of_pair() {
         let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         let c = world.contact_constraints[0];
         let combined = world.combined_material(0, 1);
         assert_eq!(c.friction, combined.friction);
@@ -11405,7 +11737,7 @@ mod tests {
             ),
             Fix128::ONE,
         );
-        auto.detect_collisions();
+        auto.detect_collisions(Fix128::ZERO);
         assert!(auto.contact_constraints.is_empty());
         assert_eq!(auto.trigger_events().len(), 1);
     }
@@ -11753,7 +12085,7 @@ mod tests {
     #[test]
     fn drain_events_return_the_events_and_empty_the_collector() {
         let mut world = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert_eq!(world.contact_events().len(), 1);
         let drained = world.drain_contact_events();
         assert_eq!(drained.len(), 1);
@@ -11764,7 +12096,7 @@ mod tests {
 
         let mut sensor = two_spheres(3, 2, Fix128::ONE, Fix128::ONE);
         sensor.bodies[1].is_sensor = true;
-        sensor.detect_collisions();
+        sensor.detect_collisions(Fix128::ZERO);
         let triggers = sensor.drain_trigger_events();
         assert_eq!(triggers.len(), 1);
         assert!(triggers[0].entered);
@@ -12018,7 +12350,7 @@ mod tests {
         world.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), radius);
         world.add_body_with_radius(RigidBody::new_dynamic(v3(2, 1, 1), Fix128::ONE), radius);
         world.add_body_with_radius(RigidBody::new_dynamic(v3(50, 50, 50), Fix128::ONE), radius);
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert_eq!(world.contact_constraints.len(), 1);
         let c = world.contact_constraints[0];
         assert_eq!((c.body_a, c.body_b), (0, 1));
@@ -12763,7 +13095,7 @@ mod loom_tests {
         }
         let _ = floor;
         world.clear_contacts();
-        world.detect_collisions();
+        world.detect_collisions(Fix128::ZERO);
         assert!(
             !world.contact_constraints.is_empty(),
             "spheres must touch the floor"
