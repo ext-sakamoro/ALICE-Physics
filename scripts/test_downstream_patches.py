@@ -4,6 +4,8 @@
 A crates.io package gets `patch.crates-io`, a git package `patch."<url>"` (the URL without `git+`,
 the query and the fragment); a path package and other names get none; a registry other than crates.io,
 an unknown source, no lock, a lock that does not parse and a lock with none of the packages fail.
+With --path-ok a lock that takes the packages only by path prints nothing and passes; a lock with
+none of them still fails.
 The resolve guard on both kinds against cargo is in scripts/test_downstream_resolve.py.
 """
 
@@ -90,6 +92,28 @@ class Main(unittest.TestCase):
                 rc, out = self.run_main(text, *args)
                 self.assertEqual(rc, 1, out)
                 self.assertIn(why, out)
+
+    def test_path_ok_passes_a_path_only_lock_with_no_output(self):
+        rc, out = self.run_main(lock(("alice-physics", None), ("alice-physics-core", None)),
+                                "--path-ok", "--package", "alice-physics=/f", "--package", "alice-physics-core=/c")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.strip(), "")
+
+    def test_path_ok_still_patches_a_git_lock(self):
+        rc, out = self.run_main(lock(("alice-physics", GIT)), "--path-ok", "--package", "alice-physics=/f")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.strip().splitlines(),
+                         ['patch."https://github.com/ext-sakamoro/ALICE-Physics".alice-physics.path="/f"'])
+
+    def test_a_path_only_lock_without_path_ok_and_a_lock_without_the_packages_fail(self):
+        for text, args in [
+            (lock(("alice-physics", None)), ["--package", "alice-physics=/f"]),
+            (lock(("serde", CRATES)), ["--path-ok", "--package", "alice-physics=/f"]),
+        ]:
+            with self.subTest(args=args):
+                rc, out = self.run_main(text, *args)
+                self.assertEqual(rc, 1, out)
+                self.assertIn("compared nothing", out)
 
 
 if __name__ == "__main__":

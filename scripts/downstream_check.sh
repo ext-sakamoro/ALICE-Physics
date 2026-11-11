@@ -13,8 +13,9 @@
 #              ALICE-LLM, ALICE-Zip and ALICE-Sign next to it, so all of them are
 #              fetched into one directory with this checkout linked in as
 #              ALICE-Physics.
-#   ALICE-TRT  depends on it by path (`../ALICE-Physics`, no version; feature
-#              `physics-solver`) and implements `gpu_bridge::GpuSolverBridge`.
+#   ALICE-TRT  depends on it by path (`../ALICE-Physics`) or by git (the
+#              ALICE-Physics repository, `branch = "main"`; patched as for
+#              ALICE-SDF), feature `physics-solver`, and implements `gpu_bridge::GpuSolverBridge`.
 #              Its manifest also needs ALICE-ML, and ALICE-DB with ALICE-Crypto
 #              behind optional features (cargo reads every path dependency),
 #              placed at main: none of them is required with a version.
@@ -297,25 +298,29 @@ physics_version() {
     sed -n 's/^version *= *"\(.*\)"/\1/p' "$PHYSICS_DIR/Cargo.toml" | head -n 1
 }
 
-# the patches of a downstream that takes alice-physics from crates.io or from a git
-# source: one per source and package its Cargo.lock names (scripts/downstream_patches.py),
-# because cargo applies a patch only to the source it names; none found fails
-patch_args() {
+# the patches of a downstream: one per source and package its Cargo.lock takes
+# alice-physics from (crates.io or a git source, scripts/downstream_patches.py),
+# because cargo applies a patch only to the source it names. Every downstream goes
+# through this one function, so a consumer that moves from path to git (or to
+# crates.io) is patched without a change here; a lock that takes the packages only
+# by path needs none (--path-ok), and a lock with none of them fails. check_resolved
+# then requires `cargo tree` to show this checkout whatever the source was
+lock_patches() {
     local label=$1 dir=$2 lines line
     PATCHES=()
-    if ! lines=$(python3 "$PHYSICS_DIR/scripts/downstream_patches.py" "$dir" \
+    if ! lines=$(python3 "$PHYSICS_DIR/scripts/downstream_patches.py" "$dir" --path-ok \
             --package "alice-physics=$FACADE_DIR" --package "alice-physics-core=$PHYSICS_DIR"); then
         failed+=("$label (patch)")
         return 1
     fi
     while IFS= read -r line; do
-        PATCHES+=(--config "$line")
+        [ -n "$line" ] && PATCHES+=(--config "$line")
     done <<<"$lines"
     echo "$label: ${#PATCHES[@]} patch argument(s): ${PATCHES[*]}"
 }
 
 export CARGO_TARGET_DIR="$TARGET/sdf"
-if requirements_ok sdf "$SDF" && patch_args sdf "$SDF"; then
+if requirements_ok sdf "$SDF" && lock_patches sdf "$SDF"; then
     compared=$((compared + 1))
     relock sdf "$SDF" "${PATCHES[@]}"
     check_resolved sdf "$SDF" --features physics "${PATCHES[@]}"
@@ -325,18 +330,8 @@ if requirements_ok sdf "$SDF" && patch_args sdf "$SDF"; then
     build sdf-example "$SDF" cargo build --features physics "${PATCHES[@]}" --example sim_bridge
 fi
 
-# ALICE-LOL takes alice-physics by path or by git (`branch = "main"`); a git source is
-# pointed at this checkout with the same `--config patch."<url>"` arguments as ALICE-SDF,
-# and check_resolved then requires `cargo tree` to show this checkout, not the git commit
-lol_patches() {
-    PATCHES=()
-    if grep -q 'source = "git+https://github.com/ext-sakamoro/ALICE-Physics' "$LOL/Cargo.lock" 2>/dev/null; then
-        patch_args lol "$LOL" || return 1
-    fi
-}
-
 export CARGO_TARGET_DIR="$TARGET/lol"
-if requirements_ok lol "$LOL" && lol_patches; then
+if requirements_ok lol "$LOL" && lock_patches lol "$LOL"; then
     compared=$((compared + 1))
     relock lol-world-auditor "$LOL" "${PATCHES[@]}"
     check_resolved lol-world-auditor "$LOL" -p alice-world-auditor --features physics "${PATCHES[@]}"
@@ -355,11 +350,12 @@ fi
 . "$PHYSICS_DIR/scripts/downstream_trt_probe.sh"
 
 export CARGO_TARGET_DIR="$TARGET/trt"
-if requirements_ok trt "$TRT"; then
+if requirements_ok trt "$TRT" && lock_patches trt "$TRT"; then
     compared=$((compared + 1))
-    check_resolved trt "$TRT" --features physics-solver
+    relock trt "$TRT" "${PATCHES[@]}"
+    check_resolved trt "$TRT" --features physics-solver "${PATCHES[@]}"
     trt_gpu_probe
-    run trt-lib "$TRT" cargo test --features physics-solver --lib -- physics_bridge:: fix128:: --test-threads=1
+    run trt-lib "$TRT" cargo test --features physics-solver "${PATCHES[@]}" --lib -- physics_bridge:: fix128:: --test-threads=1
 fi
 
 if [ "$compared" -eq 0 ]; then

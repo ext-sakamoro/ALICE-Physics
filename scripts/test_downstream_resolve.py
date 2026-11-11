@@ -215,5 +215,64 @@ class Order(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^\s*(relock|check_resolved)\s*\(\)")
 
 
+def layout_wiring(text: str) -> list[tuple[str, bool, list[int]]]:
+    """(label, lock_patches on its `if`, lines of its cargo steps without the patches) per layout.
+
+    A layout is an `if requirements_ok <label> "$DIR"` block up to its `fi`; its cargo steps are the
+    check_resolved / relock / run / build lines. A consumer may take alice-physics by path, from git
+    or from crates.io, and only the lock knows which, so every layout derives its patches from the
+    lock (lock_patches) and passes them to every cargo step: a layout that does not is one whose
+    `cargo tree` can resolve the git or registry package instead of this checkout.
+    """
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        m = re.match(r'\s*if requirements_ok (\S+) ("\$\w+")(.*); then\s*$', lines[i])
+        if not m:
+            i += 1
+            continue
+        label, directory, rest = m.groups()
+        patched = bool(re.search(rf'&& lock_patches {re.escape(label)} {re.escape(directory)}(?!\S)', rest))
+        bare = []
+        j = i + 1
+        while j < len(lines) and not re.match(r"\s*fi\s*$", lines[j]):
+            if re.match(r"\s*(check_resolved|relock|run|build)\s", lines[j]) and '"${PATCHES[@]}"' not in lines[j]:
+                bare.append(j + 1)
+            j += 1
+        out.append((label, patched, bare))
+        i = j
+    return out
+
+
+class Layouts(unittest.TestCase):
+    def read(self) -> str:
+        with open(CHECK, encoding="utf-8") as f:
+            return f.read()
+
+    def test_every_layout_patches_from_its_lock_and_passes_the_patches_to_every_cargo_step(self):
+        text = self.read()
+        layouts = re.search(r"(?m)^LAYOUTS=\((.*)\)\s*$", text).group(1).split()
+        wiring = layout_wiring(text)
+        self.assertEqual(sorted(w[0] for w in wiring), sorted(layouts),
+                         "every layout must have one requirements_ok block (compared nothing otherwise)")
+        for label, patched, bare in wiring:
+            with self.subTest(label=label):
+                self.assertTrue(patched, f"{label}: the block does not call lock_patches on its own directory")
+                self.assertEqual(bare, [], f"{label}: cargo steps without the patches at downstream_check.sh:{bare}")
+
+    def test_mutant_a_layout_without_lock_patches_is_caught(self):
+        text = self.read().replace(' && lock_patches trt "$TRT"', "")
+        self.assertIn(("trt", False), [(w[0], w[1]) for w in layout_wiring(text)])
+
+    def test_mutant_a_resolve_check_without_the_patches_is_caught(self):
+        text = self.read().replace('check_resolved trt "$TRT" --features physics-solver "${PATCHES[@]}"',
+                                   'check_resolved trt "$TRT" --features physics-solver')
+        self.assertTrue(any(w[0] == "trt" and w[2] for w in layout_wiring(text)))
+
+    def test_no_layout_is_found_in_an_empty_script(self):
+        self.assertEqual(layout_wiring(""), [])
+
+
 if __name__ == "__main__":
     unittest.main()

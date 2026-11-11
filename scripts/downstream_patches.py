@@ -13,9 +13,11 @@ the given names, per source, gets one line
 
 (the git key is the source's URL without `git+`, the query and the fragment). A source that is
 neither a registry nor git, no Cargo.lock, a lock that does not parse, or no package of the given
-names at all (compared nothing) fails with exit 1.
+names at all (compared nothing) fails with exit 1. With `--path-ok` a lock whose packages of the
+given names are all path packages (a consumer that takes alice-physics by path, already placed next
+to this checkout) prints nothing and exits 0; a lock with none of the names still fails.
 
-usage: downstream_patches.py <downstream dir> --package <name>=<dir> [--package <name>=<dir> ...]
+usage: downstream_patches.py <downstream dir> [--path-ok] --package <name>=<dir> [--package <name>=<dir> ...]
 """
 
 from __future__ import annotations
@@ -41,6 +43,12 @@ def source_key(source: str) -> str:
     raise ValueError(f"neither a registry nor a git source: {source}")
 
 
+def path_packages(lock_text: str, packages: dict[str, str]) -> int:
+    """How many packages of the given names the lock takes by path (no `source`)"""
+    lock = tomllib.loads(lock_text)
+    return sum(1 for pkg in lock.get("package", []) if pkg.get("name") in packages and "source" not in pkg)
+
+
 def patches(lock_text: str, packages: dict[str, str]) -> list[str]:
     lock = tomllib.loads(lock_text)
     out: list[str] = []
@@ -58,6 +66,8 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("dir")
     ap.add_argument("--package", action="append", default=[], metavar="NAME=DIR")
+    ap.add_argument("--path-ok", action="store_true",
+                    help="a lock that takes the packages only by path needs no patch (exit 0, no output)")
     a = ap.parse_args(argv)
     packages = {}
     for spec in a.package:
@@ -71,10 +81,14 @@ def main(argv: list[str]) -> int:
         return 1
     lock = Path(a.dir) / "Cargo.lock"
     try:
-        found = patches(lock.read_text(encoding="utf-8"), packages)
+        text = lock.read_text(encoding="utf-8")
+        found = patches(text, packages)
+        by_path = path_packages(text, packages)
     except (OSError, tomllib.TOMLDecodeError, ValueError) as e:
         print(f"downstream_patches: {lock}: {e}", file=sys.stderr)
         return 1
+    if not found and a.path_ok and by_path:
+        return 0
     if not found:
         print(f"downstream_patches: {lock} takes none of {sorted(packages)} from a registry or git "
               "(compared nothing)", file=sys.stderr)
