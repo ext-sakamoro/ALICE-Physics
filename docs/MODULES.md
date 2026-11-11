@@ -145,6 +145,9 @@ this file or listed twice, or when a linked example or test does not exist.
 | `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | world API |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) |  | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) | standalone |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag, also as a world participant |  | [`participant_buoyancy_zone`](../examples/participant_buoyancy_zone.rs) | standalone (binding 8 of 17 items) |
+| `holds` | a blow from a point, and holding bodies at places by critically damped springs |  | [`analytic_holds`](../tests/analytic_holds.rs) |  |
+| `input_log` | the inputs of a run by step, replayed to the same state digest and carried as a short code |  | [`input_log`](../tests/input_log.rs) |  |
+| `touch` | a visitor's touch on a body (grab a point, drag it, let go) as log inputs on a 2⁻¹⁶ grid; a cloth's point is a particle, held pinned, returned with its mass |  | [`analytic_touch`](../tests/analytic_touch.rs) |  |
 | `wind_zone` | bounded wind volume applying drag, also as a world participant |  | [`participant_wind_zone`](../examples/participant_wind_zone.rs) | standalone (binding 5 of 14 items) |
 | `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |
