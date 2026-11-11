@@ -573,10 +573,15 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
                 }
             }
         }
+        // Restitution answers an impact, not the approach gravity gives a resting
+        // contact in one sub-step: below `2 |g| h` the target is 0 (the rule the
+        // XPBD and 2D solvers use). Without it a resting body was given
+        // `e |g| h` upward every sub-step and crept off the surface.
+        let threshold = v_dot(self.cfg.gravity, self.cfg.gravity).sqrt() * sub_dt * Fix128::from_int(2);
         for i in 0..self.contacts.len() {
             let rel_v = self.contact_rel_velocity(i);
             let vn = v_dot(rel_v, self.contacts[i].normal);
-            self.restitution_bias[i] = if vn < Fix128::ZERO {
+            self.restitution_bias[i] = if vn < -threshold {
                 -(self.contacts[i].restitution * vn)
             } else {
                 Fix128::ZERO
