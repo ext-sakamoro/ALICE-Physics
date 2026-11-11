@@ -433,11 +433,12 @@ if [[ $fast -eq 1 ]]; then
   echo; echo "preflight --fast OK (static gates + affected tests; the full suites run in CI)"; exit 0
 fi
 
-step "cargo test (default features, all targets)"
-cargo test --no-fail-fast
+step "cargo test (default features, all targets, profile ci-test)"
+cargo test --no-fail-fast --profile ci-test
+scripts/run_tests.sh test_profile_checks=2 -- cargo test --profile ci-test --test test_profile_checks
 
 step "ci.yml / test: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)"
-scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4
+scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
 
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"
@@ -445,8 +446,8 @@ cargo test --lib --features privacy-crypto privacy
 
 # same commands as ci.yml: the integration tests gated on `parallel` (in 29 test
 # files) and the SIMD paths with simd alone
-step "cargo test (parallel, all targets)"
-cargo test --no-fail-fast --features "parallel"
+step "cargo test (parallel, all targets, profile ci-test)"
+cargo test --no-fail-fast --profile ci-test --features "parallel"
 
 step "cargo test --lib (simd)"
 cargo test --lib --features "simd"

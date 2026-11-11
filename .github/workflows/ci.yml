@@ -357,14 +357,22 @@ jobs:
       - name: Build (core — default features)
         run: cargo build --lib
 
-      - name: Test (unit + integration + doc)
-        run: cargo test
+      # the whole suite at opt-level 2 with debug assertions and overflow checks on
+      # (Cargo.toml [profile.ci-test]); the steps below it stay at opt-level 0
+      - name: Test (unit + integration + doc, profile ci-test)
+        run: cargo test --profile ci-test
+
+      # the profile keeps its checks: one test per check, each red or not built when it is off
+      - name: Test (profile ci-test keeps debug assertions and overflow checks, zero executed is red)
+        shell: bash
+        run: scripts/run_tests.sh test_profile_checks=2 -- cargo test --profile ci-test --test test_profile_checks
 
       # ALICE-Law G4 / G8 (G11's compared-nothing test): the f32 goldens and the snapshot form by name,
       # run_tests.sh failing unless each binary ran that many tests
+      # at opt-level 0 (the test profile), the same goldens the ci-test run compares at opt-level 2
       - name: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)
         shell: bash
-        run: scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4
+        run: scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
 
       # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
       # cdylib / staticlib — assert both are actually produced, not just the rlib.
@@ -399,8 +407,8 @@ jobs:
       - name: Build (parallel)
         run: cargo build --lib --features "parallel"
 
-      - name: Test (parallel — unit + integration)
-        run: cargo test --features "parallel"
+      - name: Test (parallel — unit + integration, profile ci-test)
+        run: cargo test --profile ci-test --features "parallel"
 
       # full native feature set: the gpu-solver-bridge tests were only linted
       # (clippy), never run, before 1.2.0 — the quality-deep mutants job found
