@@ -84,7 +84,10 @@ fn world(substeps: usize, backend: SolverBackend) -> PhysicsWorld {
     w.config.solver_backend = backend;
     // Kept awake: the floating body approaches its height slowly (most slowly
     // under the temporal Gauss-Seidel backend), and the velocity threshold
-    // would put it to sleep, held still, short of the height Archimedes gives.
+    // would put it to sleep, held still, short of the height Archimedes gives
+    // (3.4 mm short: the sleep rule reads speed only, not the unbalanced
+    // force). Open defect "sleep under unbalanced force": once sleep also
+    // requires a balanced net force, this override goes.
     w.set_sleep_config(alice_physics_core::SleepConfig {
         time_to_sleep: Fix128::from_int(1_000_000),
         ..alice_physics_core::SleepConfig::default()

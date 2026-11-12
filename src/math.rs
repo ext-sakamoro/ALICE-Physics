@@ -1285,6 +1285,9 @@ const fn compute_cordic_angles() -> [Fix128; 64] {
 }
 
 /// CORDIC sine and cosine (deterministic, 48 iterations)
+/// Below this angle (`2⁻¹⁰` rad) [`cordic_sin_cos`] uses the Taylor series.
+const SMALL_ANGLE: Fix128 = Fix128 { hi: 0, lo: 1 << 54 };
+
 fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
     // Step 1: O(1) modular reduction to [-π, π]
     let mut theta = angle;
@@ -1313,6 +1316,22 @@ fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
     } else {
         false
     };
+
+    // Step 3: a small angle (|θ| < 2⁻¹⁰) from the Taylor series, because 48
+    // CORDIC iterations resolve sin θ only to about 1e-14 absolute (a relative
+    // error of 7e-5 at 1e-11 rad, 6% at 1e-13): sin θ = θ − θ³/6 + θ⁵/120 and
+    // cos θ = 1 − θ²/2 + θ⁴/24 − θ⁶/720, whose first omitted terms, θ⁷/5040 <
+    // 2⁻⁸² and θ⁸/40320 < 2⁻⁹⁵, are below the 2⁻⁶⁴ resolution. At the switch
+    // the two forms agree to the CORDIC's own error there.
+    if theta.abs() < SMALL_ANGLE {
+        let t2 = theta * theta;
+        let t3 = t2 * theta;
+        let t4 = t2 * t2;
+        let sin = theta - t3 / Fix128::from_int(6) + t3 * t2 / Fix128::from_int(120);
+        let cos =
+            Fix128::ONE - t2.half() + t4 / Fix128::from_int(24) - t4 * t2 / Fix128::from_int(720);
+        return (sin, if negate_cos { -cos } else { cos });
+    }
 
     // Initialize: start at (K, 0) and rotate by theta
     let mut x = CORDIC_K;
@@ -1532,7 +1551,25 @@ impl Vec3Fix {
     #[inline(always)]
     #[must_use]
     pub fn length(self) -> Fix128 {
-        self.length_squared().sqrt()
+        match self.small_scaled() {
+            Some((s, k)) => s.length_squared().sqrt().shr_bits((-k) as u32),
+            None => self.length_squared().sqrt(),
+        }
+    }
+
+    /// A vector shorter than 1 (largest component below 1) scaled up exactly by
+    /// a power of two (largest component in `[2²⁹, 2³⁰)`, `self = scaled ·
+    /// 2ᵏ`): its length squared, taken directly, keeps only `2⁻⁶⁴ / |v|²` of
+    /// relative precision (a vector of length `1e-9` came out `1.5%` short, one
+    /// of `1e-11` as zero). `None` for the zero vector and for a vector whose
+    /// largest component is 1 or more.
+    #[inline]
+    fn small_scaled(self) -> Option<(Self, i32)> {
+        let small = |f: Fix128| f.hi == 0 || (f.hi == -1 && f.lo != 0);
+        if self == Self::ZERO || !(small(self.x) && small(self.y) && small(self.z)) {
+            return None;
+        }
+        Some(self.split_pow2())
     }
 
     /// The same direction with its largest component brought into `[2^-24, 2^24]`,
@@ -1629,6 +1666,9 @@ impl Vec3Fix {
     #[inline(always)]
     #[must_use]
     pub fn normalize(self) -> Self {
+        if let Some((s, _)) = self.small_scaled() {
+            return s / s.length_squared().sqrt();
+        }
         let len = self.length();
         if len.is_zero() {
             Self::ZERO
@@ -1656,6 +1696,10 @@ impl Vec3Fix {
     #[inline(always)]
     #[must_use]
     pub fn normalize_with_length(self) -> (Self, Fix128) {
+        if let Some((s, k)) = self.small_scaled() {
+            let ls = s.length_squared().sqrt();
+            return (s / ls, ls.shr_bits((-k) as u32));
+        }
         let len = self.length();
         if len.is_zero() {
             (Self::ZERO, Fix128::ZERO)
