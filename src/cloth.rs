@@ -202,6 +202,7 @@ struct BendConstraint {
 // ============================================================================
 
 /// Cloth simulation
+#[derive(Clone)]
 #[repr(C, align(64))]
 pub struct Cloth {
     /// Particle positions

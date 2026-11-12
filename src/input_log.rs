@@ -9,6 +9,10 @@ use alloc::vec::Vec;
 
 use crate::math::Fix128;
 use crate::solver::PhysicsWorld;
+use crate::touch::Touch;
+
+/// The largest byte form of a touch log [`InputLog::from_bytes_bounded`] reads (1 MiB)
+pub const TOUCH_LOG_MAX_BYTES: usize = 1 << 20;
 
 /// An input that can be written into a log
 pub trait LogInput: Sized {
@@ -61,6 +65,51 @@ pub enum LogError {
     Backwards,
     /// The text is not a code
     NotACode,
+}
+
+/// Why the byte form of a touch log was refused
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogDecodeError {
+    /// The bytes end before the log does
+    Truncated,
+    /// Bytes are left after the log
+    Trailing,
+    /// A step at or after the bound
+    StepOutOfRange,
+    /// A grab of a body at or after the bound
+    BodyOutOfRange,
+    /// A step or a count that does not fit in 64 bits
+    Overflow,
+    /// More bytes than [`TOUCH_LOG_MAX_BYTES`]
+    TooLarge,
+    /// Bytes that are not a touch, or not in the one form [`InputLog::to_bytes`] writes
+    Malformed,
+}
+
+fn write_varint(mut n: u64, out: &mut Vec<u8>) {
+    while n >= 0x80 {
+        out.push(n.to_le_bytes()[0] | 0x80);
+        n >>= 7;
+    }
+    out.push(n.to_le_bytes()[0]);
+}
+
+/// A LEB128 number from the front of `bytes`: `Truncated` when they end inside it, `Overflow` past 64 bits
+fn read_varint(bytes: &mut &[u8]) -> Result<u64, LogDecodeError> {
+    let mut n = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let (&b, after) = bytes.split_first().ok_or(LogDecodeError::Truncated)?;
+        *bytes = after;
+        if shift > 63 || (shift == 63 && b & 0x7e != 0) {
+            return Err(LogDecodeError::Overflow);
+        }
+        n |= u64::from(b & 0x7f) << shift;
+        shift += 7;
+        if b & 0x80 == 0 {
+            return Ok(n);
+        }
+    }
 }
 
 /// Steps and inputs, in order
@@ -119,6 +168,21 @@ impl<I: LogInput> InputLog<I> {
         for (_, input) in &self.entries[next..] {
             apply(world, input);
         }
+    }
+
+    /// The log as bytes: `[count varint][(step delta varint, input)…]`, the deltas from the step before (the first
+    /// from 0)
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        write_varint(self.entries.len() as u64, &mut out);
+        let mut last = 0u64;
+        for (step, input) in &self.entries {
+            write_varint(step - last, &mut out);
+            last = *step;
+            input.write(&mut out);
+        }
+        out
     }
 
     /// The log as a code that survives a link: the digest's first four bytes, then the inputs
@@ -223,5 +287,56 @@ fn letter_value(c: u8) -> Option<u32> {
         b'-' => Some(62),
         b'_' => Some(63),
         _ => None,
+    }
+}
+
+impl InputLog<Touch> {
+    /// A touch log from the bytes [`Self::to_bytes`] writes, read only in that exact form: every step below
+    /// `max_step`, every grab of a body below `max_body`, no bytes left over, at most [`TOUCH_LOG_MAX_BYTES`].
+    ///
+    /// # Errors
+    ///
+    /// The [`LogDecodeError`] that applies (the first one met, reading from the front).
+    pub fn from_bytes_bounded(
+        bytes: &[u8],
+        max_step: u64,
+        max_body: u32,
+    ) -> Result<Self, LogDecodeError> {
+        if bytes.len() > TOUCH_LOG_MAX_BYTES {
+            return Err(LogDecodeError::TooLarge);
+        }
+        let mut rest = bytes;
+        let count = read_varint(&mut rest)?;
+        // every entry takes at least two bytes (a delta and a tag), so a larger count is cut short
+        if count > (rest.len() / 2) as u64 {
+            return Err(LogDecodeError::Truncated);
+        }
+        let mut log = Self::new();
+        let mut step = 0u64;
+        for _ in 0..count {
+            let delta = read_varint(&mut rest)?;
+            step = step.checked_add(delta).ok_or(LogDecodeError::Overflow)?;
+            if step >= max_step {
+                return Err(LogDecodeError::StepOutOfRange);
+            }
+            if rest.is_empty() {
+                return Err(LogDecodeError::Truncated);
+            }
+            let touch = Touch::read(&mut rest).ok_or(LogDecodeError::Malformed)?;
+            if let Touch::Grab { body, .. } = touch {
+                if body >= max_body {
+                    return Err(LogDecodeError::BodyOutOfRange);
+                }
+            }
+            log.entries.push((step, touch));
+        }
+        if !rest.is_empty() {
+            return Err(LogDecodeError::Trailing);
+        }
+        // one form only: a longer spelling of the same numbers (a padded varint) reads as the same log
+        if log.to_bytes() != bytes {
+            return Err(LogDecodeError::Malformed);
+        }
+        Ok(log)
     }
 }
