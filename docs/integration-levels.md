@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 23 |
 | world API | used through another `PhysicsWorld` method | 16 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 125 |
+| standalone | a Rust API that only examples call | 127 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -61,7 +61,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `world_shape_query` | world API (step 1 of 9 items) | 1 / 8 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `holds` | binding (world API 1 of 10 items) | 0 / 1 / 8 / 1 / 0 | WebAssembly |
-| `input_log` | binding | 0 / 0 / 7 / 2 / 0 | WebAssembly |
+| `input_log` | binding | 0 / 0 / 7 / 6 / 0 | WebAssembly |
 | `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
 | `rope_participant` | binding | 0 / 0 / 6 / 1 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -181,6 +181,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `touch` | standalone | 0 / 0 / 0 / 12 / 0 | — |
+| `touch_layers` | standalone | 0 / 0 / 0 / 25 / 0 | — |
+| `touch_limits` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `turbulence` | standalone | 0 / 0 / 0 / 34 / 0 | — |
 | `vehicle` | standalone | 0 / 0 / 0 / 28 / 0 | — |
