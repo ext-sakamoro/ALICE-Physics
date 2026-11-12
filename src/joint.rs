@@ -2949,11 +2949,15 @@ mod tests {
             DT,
         );
         assert!(near_v(f[1].position, want_pos), "fixed {:?}", f[1].position);
-        assert_eq!(
-            f[1].rotation,
-            QuatFix::IDENTITY,
-            "fixed rotation {:?}",
-            f[1].rotation
+        // The two rotations cancel in exact arithmetic; each goes through rounded
+        // products of the non-dyadic 8/5, so the cancellation holds to within rounding
+        // (measured: 1 raw unit in z and w), the same `near` the positions use. It was
+        // bit-exact only by coincidence while the product floored.
+        let q = f[1].rotation;
+        assert!(
+            near(q.x, Fix128::ZERO) && near(q.y, Fix128::ZERO) && near(q.z, Fix128::ZERO)
+                && near(q.w, Fix128::ONE),
+            "fixed rotation {q:?}"
         );
 
         // cone-twist's cone/twist steps are no-ops here too: world_axis_a == world_axis_b
