@@ -3367,7 +3367,7 @@ impl PhysicsWorld {
         for k in 0..len {
             let mut acc = gap[k];
             for (m, o) in old.iter().enumerate().take(len) {
-                acc = acc + crate::xpbd_contact::mul_odd(big_a[k][m], *o);
+                acc = acc + (big_a[k][m] * *o);
             }
             d[k] = acc;
         }
@@ -5133,11 +5133,23 @@ impl PhysicsWorld {
         // Phase 3: Convert to the TGS body/contact representation, solve
         // every island, convert back.
         let n = self.bodies.len();
+        // A sleeping body is not moved by the step: in the temporal
+        // Gauss–Seidel solve it is held still (no gravity, no inverse mass), as
+        // the position-based backend holds it by deriving its velocity from its
+        // unmoved pose. (A contact that wakes it does so in detection, above.)
         let mut tgs_bodies: Vec<_> = self
             .bodies
             .iter()
             .enumerate()
-            .map(|(i, b)| body_to_tgs(b, i as u64))
+            .map(|(i, b)| {
+                let mut state = body_to_tgs(b, i as u64);
+                if b.is_dynamic() && self.islands.is_sleeping(i) {
+                    state.is_dynamic = false;
+                    state.inv_mass = Fix128::ZERO;
+                    state.inv_inertia_local = [Fix128::ZERO; 3];
+                }
+                state
+            })
             .collect();
         // Warm-start keys name a contact / constraint by what it joins, not
         // by its position in a vector: the stable ids of its two bodies and
@@ -7851,17 +7863,6 @@ impl PhysicsWorld {
             if body.is_static() || body.is_sensor {
                 continue;
             }
-            // A sleeping body meets no static collider (as two sleeping bodies
-            // do not meet each other): it is not moved by the step, and the
-            // overlap its compliant contact held at rest carries no load while
-            // gravity does not act on it. Its points carry over, so the
-            // contact it wakes into is the held one, not a new overlap.
-            if self.islands.is_sleeping(i) {
-                let lo = previous.partition_point(|e| e.0 < i);
-                let hi = previous.partition_point(|e| e.0 <= i);
-                touch.extend_from_slice(&previous[lo..hi]);
-                continue;
-            }
             let radius = body_sphere_radius(&self.body_collision_radii, i, default_radius);
             // Speculative margin (Catto, "Continuous Collision", GDC 2013): a
             // point within `(|v| + |ω| R) h + |g| h²` of the floor is kept as a
@@ -7878,6 +7879,32 @@ impl PhysicsWorld {
             };
             // Every collider is met at the pose the body was predicted at.
             let per_collider = self.static_points(i, radius, margin);
+            // Under the position-based backend a sleeping body whose points are
+            // all found again holds the contact it fell asleep in: it is not
+            // moved by the step and its velocity is derived from its unmoved
+            // pose, so the overlap that contact holds at rest carries no load
+            // while gravity does not act on it, and solving it would move the
+            // sleeper and wake it. Its points carry over and nothing is added.
+            // A point new this substep that overlaps (a collider added under
+            // it, a moved collider) wakes it and is met as for any body. The
+            // temporal Gauss–Seidel backend integrates every body's velocity
+            // and needs the contact to hold a sleeper still.
+            if self.config.solver_backend == SolverBackend::Xpbd && self.islands.is_sleeping(i) {
+                let new_overlap = per_collider.iter().any(|(ci, points)| {
+                    points.iter().any(|(c, f)| {
+                        c.depth > Fix128::ZERO && previous.binary_search(&(i, *ci, *f)).is_err()
+                    })
+                });
+                if !new_overlap {
+                    for (ci, points) in &per_collider {
+                        for (_, f) in points {
+                            touch.push((i, *ci, *f));
+                        }
+                    }
+                    continue;
+                }
+                self.islands.wake_island(i);
+            }
             // The deepest point stands for each collider in the event.
             for (collider_index, points) in &per_collider {
                 let Some(&(deepest, _)) = points.iter().max_by(|x, y| x.0.depth.cmp(&y.0.depth))

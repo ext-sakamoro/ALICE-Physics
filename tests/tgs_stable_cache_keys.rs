@@ -155,6 +155,12 @@ fn removing_a_distance_constraint_keeps_the_others_on_their_own_impulse() {
 fn a_pair_whose_index_order_flips_still_hits_its_cached_impulse() {
     let dt = r(1, 60);
     let mut w = tgs_world();
+    // Kept awake: a sleeping body is held still and its contact not solved,
+    // and the warm start is what this checks.
+    w.set_sleep_config(alice_physics_core::SleepConfig {
+        time_to_sleep: Fix128::from_int(1_000_000),
+        ..alice_physics_core::SleepConfig::default()
+    });
     let float = w.add_body(RigidBody::new_static(Vec3Fix::from_int(-1000, 500, 0)));
     w.set_body_collision_radius(float, Fix128::ONE);
     let ground = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
