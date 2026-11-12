@@ -2974,6 +2974,38 @@ impl core::ops::Mul<Self> for Mat3Fix {
     }
 }
 
+/// Builds an orthonormal tangent basis `(t1, t2)` perpendicular to a unit
+/// `normal`: the TGS contact's friction axes and the directions a contact
+/// manifold samples a face along.
+///
+/// Picks the world axis least aligned with `normal` to cross against, which
+/// avoids the degenerate (near-zero-length) cross product that choosing a
+/// fixed axis (e.g. always `+Y`) would hit when `normal` is close to that
+/// axis. Degenerate input (`normal` not unit length, e.g. `ZERO`) is the
+/// caller's responsibility to avoid; see `tests/analytic_tgs_wiring.rs` for
+/// the behavior at exactly `ZERO` (does not panic, returns a defined but
+/// unspecified-magnitude basis — never fed a zero normal in practice since
+/// [`crate::collider`] only emits unit normals for real contacts).
+#[must_use]
+pub(crate) fn tangent_basis(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
+    // The axis whose |component along `normal`| is smallest is the safest
+    // to cross against (crossing against an axis nearly parallel to
+    // `normal` produces a near-zero-length vector before normalization).
+    let ax = normal.x.to_f32().abs();
+    let ay = normal.y.to_f32().abs();
+    let az = normal.z.to_f32().abs();
+    let helper = if ax <= ay && ax <= az {
+        Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO)
+    } else if ay <= az {
+        Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+    } else {
+        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE)
+    };
+    let t1 = normal.cross(helper).normalize();
+    let t2 = normal.cross(t1).normalize();
+    (t1, t2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

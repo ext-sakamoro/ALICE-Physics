@@ -34,10 +34,25 @@ fn f64_of(v: Fix128) -> f64 {
 
 fn bound(x: f64, reference: f64) -> f64 {
     if x.abs() < SWITCH {
-        reference.abs() * f64::EPSILON + 8.0 * 2f64.powi(-64)
+        reference.abs() * f64::EPSILON + 8.0 * p2(-64)
     } else {
-        2f64.powi(-46)
+        p2(-46)
     }
+}
+
+/// `2^e`, exact (built from the bits; the platform `powi` is not allowed).
+fn p2(e: i32) -> f64 {
+    f64::from_bits(((1023 + e) as u64) << 52)
+}
+
+/// `10^(12 k / 240)` as repeated products of `10^(12 / 240)` (a fixed
+/// sequence, the same on every platform; the sweep needs no exact decades).
+fn ratio_pow(k: u32) -> f64 {
+    let mut m = 1.0;
+    for _ in 0..k {
+        m *= 1.122_018_454_301_963_3;
+    }
+    m
 }
 
 #[test]
@@ -45,7 +60,7 @@ fn sin_and_cos_near_zero_match_the_closed_forms() {
     let mut worst = (0.0f64, 0.0f64);
     let mut compared = 0;
     for k in 0..=240 {
-        let magnitude = 10f64.powf(-15.0 + 12.0 * f64::from(k) / 240.0);
+        let magnitude = 1e-15 * ratio_pow(k);
         for sign in [1.0, -1.0] {
             let fx = Fix128::from_f64(sign * magnitude);
             let x = f64_of(fx);
@@ -84,12 +99,6 @@ fn the_two_forms_meet_at_the_switch() {
     // across one 2⁻⁶⁴ step the functions move by about 2⁻⁶⁴ (sin) and 0 (cos)
     let step_s = f64_of(at_s - below_s).abs();
     let step_c = f64_of(at_c - below_c).abs();
-    assert!(
-        step_s <= 2f64.powi(-46),
-        "sin steps by {step_s:e} at the switch"
-    );
-    assert!(
-        step_c <= 2f64.powi(-46),
-        "cos steps by {step_c:e} at the switch"
-    );
+    assert!(step_s <= p2(-46), "sin steps by {step_s:e} at the switch");
+    assert!(step_c <= p2(-46), "cos steps by {step_c:e} at the switch");
 }

@@ -1,5 +1,5 @@
 //! Material registry presets: concrete / ice / metal / rubber / wood, pairwise
-//! combine rules, the per-pair override, and the two `PhysicsMaterial`
+//! combine rules, the per-pair override, and the three `PhysicsMaterial`
 //! builder methods.
 //!
 //! `register_concrete` / `register_ice` / `register_metal` / `register_rubber`
@@ -245,6 +245,21 @@ fn main() {
         "[material] custom(Min,Max) x wood -> friction={:.4} restitution={:.4} (closed form: avg(0.9,0.5)=0.7, max(0.9,0.3)=0.9)",
         cw.friction.to_f64(),
         cw.restitution.to_f64()
+    );
+
+    // with_contact_compliance: two contact springs in series, so the pair's
+    // compliance is the sum (1e-6 + 1e-10 m/N), and a resting contact carrying
+    // load F sinks by alpha * F (Mueller et al. 2020, eq. 2-5).
+    let soft =
+        PhysicsMaterial::new(0, r(5, 10), r(1, 10)).with_contact_compliance(Fix128::from_f64(1e-6));
+    let soft_id = table.register(soft);
+    let sw = table.combine(soft_id, wood);
+    let want = Fix128::from_f64(1e-6) + table.get(wood).contact_compliance;
+    assert_eq!(sw.compliance, want, "series springs add {sw:?}");
+    println!(
+        "[material] soft(1e-6 m/N) x wood -> compliance={:.3e} m/N, a 9.8 N load sinks {:.3e} m",
+        sw.compliance.to_f64(),
+        (sw.compliance * Fix128::from_f64(9.8)).to_f64()
     );
 
     println!("[material] all closed-form checks passed");

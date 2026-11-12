@@ -497,7 +497,7 @@ fn domino_rocking(backend: SolverBackend, floor: Floor, theta: f64) -> (f64, boo
 /// (6.947° from 9°). The earlier "9° ends upright, tilt < 1° by 2 s" encoded the
 /// dissipation of the rigid point-by-point contact the solver had then.
 #[test]
-#[ignore = "known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bound (7.005° and 7.514° against 6.947°: energy gained at the landing)"]
+#[ignore = "known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bound (7.012° and 7.017° against 6.947°: energy gained at the landing)"]
 fn a_domino_falls_over_only_past_atan_w_over_h() {
     let critical = (0.1f64 / 0.5).atan().to_degrees();
     assert!((critical - 11.31).abs() < 0.01);
