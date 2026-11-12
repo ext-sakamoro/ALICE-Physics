@@ -413,6 +413,7 @@ cargo test --test determinism_from_f64 --target wasm32-wasip1 --no-run
 cargo test --test analytic_wind_zone_participant --target wasm32-wasip1 --no-run
 cargo test --test analytic_buoyancy_zone_participant --target wasm32-wasip1 --no-run
 cargo test --test overflow_flag_previous_bits --target wasm32-wasip1 --no-run
+cargo test --test analytic_touch_layers --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
 grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
