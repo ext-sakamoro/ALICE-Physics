@@ -10,7 +10,8 @@
 //! ([`TouchBodies::input`](crate::touch_layers::TouchBodies::input), [`TouchBodies::step`](crate::touch_layers::TouchBodies::step)). The override rule ([`LayeredPlayback::advance`](crate::touch_layers::LayeredPlayback::advance),
 //! `LayeredPlayback::apply`): each step's touches are given from the highest layer down, then the bodies step; a
 //! grab of body `b` by layer `L` at step `s` makes every lower hand holding `b` let go at `s`, and every later span
-//! (grab … release) of a lower layer on `b` is skipped, the skipped grab still letting go of what that hand held.
+//! (grab … release) of a lower layer on `b` is skipped, the skipped grab still letting go of what that hand held;
+//! the later spans are skipped only when `L`'s hand took `b` (a grab the budget refuses or that misses owns nothing).
 //! The active-body budget ([`TouchBodies::input`](crate::touch_layers::TouchBodies::input)): only active bodies are stepped; a grab of an inactive body,
 //! after the hand lets go of what it held, makes it active; when `max_active` bodies are already active, the active
 //! body that started moving earliest and that no hand holds is first put exactly at rest (`TouchBodies::settle`:
@@ -446,7 +447,13 @@ impl LayeredPlayback {
                             self.skipping[below] = true;
                         }
                     }
-                    self.owner[b] = self.owner[b].max(layer + 1);
+                    self.skipping[layer] = false;
+                    // the layer owns the body only when its hand took it: a grab the budget refuses (every
+                    // moving body held) or that misses leaves the lower layers' later spans on the body as they are
+                    if self.bodies.input(layer, touch) {
+                        self.owner[b] = self.owner[b].max(layer + 1);
+                    }
+                    return;
                 }
                 self.skipping[layer] = false;
                 self.bodies.input(layer, touch);
