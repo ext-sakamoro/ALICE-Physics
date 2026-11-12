@@ -371,7 +371,7 @@ fn period_and_sleep(rate: i64, frames: u64) -> (Option<usize>, Option<u64>) {
 
 /// The recurrence window is 256 steps: an orbit of period 257 (the spring's late orbit at
 /// 257 steps per second) is never recognised, so the island never sleeps; the same spring at
-/// 100 steps per second (period 100) falls asleep on its orbit.
+/// 100 steps per second (a period within the window) falls asleep on its orbit.
 #[test]
 fn an_orbit_longer_than_the_window_never_sleeps() {
     let (period, asleep) = period_and_sleep(257, 20_000);
@@ -381,8 +381,16 @@ fn an_orbit_longer_than_the_window_never_sleeps() {
         "the premise: the late orbit's period at 1/257 s"
     );
     assert_eq!(asleep, None, "a period beyond the window is not recognised");
+    // The late orbit is a cycle of a few 2⁻⁶⁴ m about the rest point (the spring is
+    // critically damped: it has no physical oscillation), so its period is set by the
+    // rounding of the product, not by the spring: 100 steps with the product floored,
+    // 50 with it rounded to nearest (measured). What the test needs is that it fits the
+    // window.
     let (period, asleep) = period_and_sleep(100, 20_000);
-    assert_eq!(period, Some(100), "the premise at 1/100 s");
+    assert!(
+        period.is_some_and(|p| p <= 256),
+        "the premise at 1/100 s: a late orbit within the window ({period:?})"
+    );
     assert!(asleep.is_some(), "a period within the window is recognised");
 }
 
@@ -423,14 +431,19 @@ fn run_on(w: &mut PhysicsWorld, body: usize, from: u64, to: u64) -> (Option<u64>
 /// is met, before the recurrence) restores the record: the restored world falls asleep at the
 /// same frame, at the same place, as the original. Without the record it would sleep up to a
 /// window later, elsewhere on the orbit.
+///
+/// The snapshot is taken at frame 400: the body meets the velocity rule from frame 94 and its
+/// late orbit recurs at frame 470 (measured). With the product floored (before 4.0) every
+/// product near rest was biased by −2⁻⁶⁴, the body reached its orbit later and the snapshot
+/// was taken at 520; rounded to nearest, the bias is gone and it settles earlier.
 #[test]
 fn a_restored_world_snapshot_falls_asleep_with_the_original() {
     let (mut a, body) = held_world();
-    let (early, _) = run_on(&mut a, body, 0, 520);
-    assert_eq!(early, None, "the premise: not yet asleep at frame 520");
+    let (early, _) = run_on(&mut a, body, 0, 400);
+    assert_eq!(early, None, "the premise: not yet asleep at frame 400");
     let mut b = PhysicsWorld::from_world_snapshot(&a.snapshot_world()).expect("restores");
-    let (sa, pa) = run_on(&mut a, body, 520, 700);
-    let (sb, pb) = run_on(&mut b, body, 520, 700);
+    let (sa, pa) = run_on(&mut a, body, 400, 700);
+    let (sb, pb) = run_on(&mut b, body, 400, 700);
     assert!(
         sa.is_some(),
         "the premise: the original falls asleep by frame 700"
