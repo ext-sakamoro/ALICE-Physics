@@ -355,42 +355,47 @@ fn the_reported_force_is_the_sum_of_all_three_terms() {
 #[test]
 fn each_force_term_keeps_its_own_multiplication_by_the_step() {
     // The doc claims the applied update is byte-for-byte unchanged, and the
-    // reason is that `Fix128` multiplication truncates, so three separate
-    // products do not equal one product of the sum. Asserted here rather than
-    // left as prose. Not every scene distinguishes the two orders (the
-    // truncations can coincide), so the set must contain one that does.
-    let (coupling, _, _, _, dt) = one_on_one();
+    // reason is that `Fix128` multiplication rounds, so three separate products
+    // do not equal one product of the sum. Asserted here rather than left as
+    // prose. Buoyancy and tension do not depend on the scene's velocities, so
+    // whether `b·dt + t·dt` and `(b + t)·dt` differ is decided by `dt` alone:
+    // the steps below include non-dyadic ones, and at least one of them must
+    // tell the two orders apart (with the product rounding to nearest, 1/60 does
+    // not: the two roundings coincide there; until 2026-11-12, flooring, it did).
+    let (coupling, _, _, _, _) = one_on_one();
     let mut distinguishing_scenes = 0u32;
 
-    for (cloth_velocity, fluid_velocity, fluid_density) in scene_set() {
-        let (_, buoyancy, tension) =
-            expected_terms(&coupling, cloth_velocity, fluid_velocity, fluid_density);
-        // Drag is one implicit Euler step on the relative velocity, so its
-        // applied fraction is x / (1 + x) with x = C_d rho N dt (N = 1 here);
-        // buoyancy and tension keep one product each.
-        let x = coupling.drag_coefficient * fluid_density * dt;
-        let relative = cloth_velocity - fluid_velocity;
-        let drag_delta = relative * (x / (Fix128::ONE + x));
-        let term_by_term = cloth_velocity - drag_delta + buoyancy * dt + tension * dt;
-        let folded = cloth_velocity + (buoyancy + tension) * dt - drag_delta;
-        if term_by_term != folded {
-            distinguishing_scenes += 1;
-        }
+    for dt in [3i64, 7, 11, 13, 60].map(|d| Fix128::from_ratio(1, d)) {
+        for (cloth_velocity, fluid_velocity, fluid_density) in scene_set() {
+            let (_, buoyancy, tension) =
+                expected_terms(&coupling, cloth_velocity, fluid_velocity, fluid_density);
+            // Drag is one implicit Euler step on the relative velocity, so its
+            // applied fraction is x / (1 + x) with x = C_d rho N dt (N = 1 here);
+            // buoyancy and tension keep one product each.
+            let x = coupling.drag_coefficient * fluid_density * dt;
+            let relative = cloth_velocity - fluid_velocity;
+            let drag_delta = relative * (x / (Fix128::ONE + x));
+            let term_by_term = cloth_velocity - drag_delta + buoyancy * dt + tension * dt;
+            let folded = cloth_velocity + (buoyancy + tension) * dt - drag_delta;
+            if term_by_term != folded {
+                distinguishing_scenes += 1;
+            }
 
-        let mut state = vec![cloth_velocity];
-        let _ = apply_fluid_forces_to_cloth_with_residual(
-            &coupling,
-            &[Vec3Fix::ZERO],
-            &mut state,
-            &[fluid_at()],
-            &[fluid_velocity],
-            fluid_density,
-            dt,
-        );
-        assert_eq!(
+            let mut state = vec![cloth_velocity];
+            let _ = apply_fluid_forces_to_cloth_with_residual(
+                &coupling,
+                &[Vec3Fix::ZERO],
+                &mut state,
+                &[fluid_at()],
+                &[fluid_velocity],
+                fluid_density,
+                dt,
+            );
+            assert_eq!(
             state[0], term_by_term,
-            "the applied update must keep one multiplication per force term              (scene cloth={cloth_velocity:?})"
+            "the applied update must keep one multiplication per force term              (scene cloth={cloth_velocity:?}, dt={dt:?})"
         );
+        }
     }
 
     assert!(
