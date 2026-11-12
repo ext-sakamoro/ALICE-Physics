@@ -8975,7 +8975,7 @@ impl PhysicsWorld {
             (ma, mb)
         };
         let apply = |w: &mut Self, j: usize, d: BodyDelta| {
-            let (axis, angle) = d.dtheta.normalize_with_length();
+            let (axis, angle) = d.dtheta.normalize_with_length_scaled();
             let turn = |q: QuatFix| {
                 if angle.is_zero() {
                     q
