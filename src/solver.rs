@@ -1701,33 +1701,6 @@ enum ContactSource {
     Sdf(usize),
 }
 
-/// `q` turned by `angle` about the unit `axis` (world frame). A small turn
-/// (below `2⁻¹⁰` rad, as a push-out's last passes give) is built from the
-/// series `sin(θ/2) = θ/2 − θ³/48`, `cos(θ/2) = 1 − θ²/8 + θ⁴/384` (the next
-/// terms are below `2⁻⁶⁰` relative), because `Fix128::sin_cos` resolves a
-/// tiny angle only to about `1e-14` absolute and the push would stall on the
-/// turns it cannot apply.
-fn small_turn(q: QuatFix, axis: Vec3Fix, angle: Fix128) -> QuatFix {
-    if angle.is_zero() {
-        return q;
-    }
-    let small = Fix128 { hi: 0, lo: 1 << 54 };
-    if angle.abs() >= small {
-        return crate::joint::rotate_by_angle(q, axis, angle);
-    }
-    let half = angle.half();
-    let h2 = half * half;
-    let s = half - half * h2 / Fix128::from_int(6);
-    let c = Fix128::ONE - h2.half() + h2 * h2 / Fix128::from_int(24);
-    let dq = QuatFix {
-        x: axis.x * s,
-        y: axis.y * s,
-        z: axis.z * s,
-        w: c,
-    };
-    dq.mul(q).normalize()
-}
-
 /// How many times a start-of-substep overlap is pushed out and met again
 /// (the push turns bodies, which changes which parts meet): the push is the
 /// projection onto the poses that overlap nothing, to `PROJECTION_TOLERANCE`.
@@ -8970,7 +8943,13 @@ impl PhysicsWorld {
         };
         let apply = |w: &mut Self, j: usize, d: BodyDelta| {
             let (axis, angle) = d.dtheta.normalize_with_length();
-            let turn = |q: QuatFix| small_turn(q, axis, angle);
+            let turn = |q: QuatFix| {
+                if angle.is_zero() {
+                    q
+                } else {
+                    crate::joint::rotate_by_angle(q, axis, angle)
+                }
+            };
             let body = &mut w.bodies[j];
             body.position = body.position + d.dx;
             body.prev_position = body.prev_position + d.dx;
