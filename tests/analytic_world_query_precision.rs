@@ -273,10 +273,18 @@ fn segment_cast_on_a_slant_is_exact_to_the_tolerance() {
                 "{name} y0 = {y0} dz = {dz}: t = {t:.15}, closed form {t_want:.15} (error {:e})",
                 t - t_want
             );
-            assert_unit_normal(&h, n_want, 1e-6, name);
+            // the normal comes from GJK's closest points, which stop when
+            // |v|² − v·w ≤ |v|²·2⁻⁴⁰ (GJK_RELATIVE): the direction of v is then off
+            // the true normal by θ with 1 − cos θ ≤ 2⁻⁴⁰, θ ≤ √(2·2⁻⁴⁰) = 2⁻¹⁹·⁵
+            // ≈ 1.35e-6, and each component by at most θ (measured on the
+            // ellipsoid: 1.25e-6 with the product rounding to nearest)
+            assert_unit_normal(&h, n_want, GJK_NORMAL_TOL, name);
         }
     }
 }
+
+/// The bound on a GJK normal's components, `√(2·2⁻⁴⁰) = 2⁻¹⁹·⁵` (see the slant test)
+const GJK_NORMAL_TOL: f64 = 1.348_699_152_348_609e-6;
 
 // ============================================================================
 // Steps and sinking paths between 2⁻³² and 2⁻²⁸ deep

@@ -628,7 +628,7 @@ fn bending_stiffness_excess_by_elements_through_thickness() {
 ///
 /// | mechanism | what it is | moves with |
 /// |---|---|---|
-/// | **relative-residual floor** | `‖r‖` cannot go below about `2⁻³²`, so the smallest reachable `‖r‖/‖b‖` is `2⁻³²/‖b‖` | the **load** (raising it lowers the floor) |
+/// | **residual floor** | `‖r‖` cannot go below about `2⁻³²`; the target is never set below `RESIDUAL_NORM_FLOOR`, so this stagnates only when the rounding holds `‖r‖` above that (it did here while the product floored; with it rounding to nearest this mesh converges at every load) | the **load** | |
 /// | **saturation** | `pᵀKp` turns non-positive and `solve` takes the explicit early exit | the **load** (lowering it) |
 /// | **window shorter than the transient** | the residual has not yet beaten `‖b‖`, so `best_residual` is still the starting value | the **stagnation window** |
 ///
@@ -702,23 +702,20 @@ fn stagnated_covers_three_mechanisms_that_the_return_value_cannot_separate() {
         }
     };
 
-    // (1) floor: load 4 stagnates just above the 2⁻³⁰ tolerance, and a larger
-    // window buys more iterations and the same residual. Not a window problem.
-    let floor_small = seen(0.49, 4.0, 500).expect("load 4 stagnates at the floor");
-    let floor_large = seen(0.49, 4.0, 2_000).expect("load 4 stagnates at the floor");
-    assert!(
-        (floor_small.1 - floor_large.1).abs() < 1.0e-12,
-        "the floor is a property of ‖b‖, so widening the window must not move it: \
-         {:.6e} then {:.6e}",
-        floor_small.1,
-        floor_large.1
-    );
-    assert!(
-        floor_large.0 > floor_small.0,
-        "a wider window must at least buy more iterations before giving up: {} then {}",
-        floor_small.0,
-        floor_large.0
-    );
+    // (1) floor: the target is max(2⁻³⁰·‖b‖, RESIDUAL_NORM_FLOOR = 4·2⁻³²). While
+    // the product floored toward −∞ its bias held ‖r‖ above 4·2⁻³² on this mesh
+    // and load 4 stagnated there (a wider window bought iterations, not residual).
+    // With the product rounding to nearest, ties to even, the rounding has no
+    // bias and ‖r‖ reaches the target at every load: measured converged for loads
+    // 0.01 to 40 000 (349–389 iterations). On this mesh the floor mechanism was
+    // the floor's artefact, so the case is asserted as converged across loads;
+    // the two mechanisms below remain.
+    for load in [0.05, 0.5, 4.0, 40.0, 4_000.0] {
+        assert!(
+            seen(0.49, load, 500).is_none(),
+            "load {load}: with unbiased rounding the residual reaches the target"
+        );
+    }
 
     // (2) saturation: load 4e6 exits through the `pᵀKp <= 0` branch, so
     // `without_improvement` is below the window and widening it changes nothing
