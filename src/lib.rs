@@ -981,6 +981,8 @@ pub mod vehicle_dynamics;
 #[cfg(feature = "wasm")]
 mod wasm;
 pub mod wedge;
+/// The position-based contact as a point constraint (Müller et al. 2020).
+pub(crate) mod xpbd_contact;
 
 // Re-export commonly used types
 pub use animation_blend::{AnimationBlender, AnimationClip, BlendMode, SkeletonPose};

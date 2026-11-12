@@ -200,6 +200,10 @@ python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
 python3 scripts/test_model_section_check.py
 python3 scripts/model_section_check.py
+python3 scripts/test_contact_law_matrix.py
+python3 scripts/contact_law_matrix.py
+python3 scripts/test_contact_body_access.py
+python3 scripts/contact_body_access.py
 python3 scripts/test_entropy_guard.py
 python3 scripts/entropy_guard.py
 python3 scripts/test_no_private_minmax.py

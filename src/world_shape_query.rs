@@ -969,7 +969,10 @@ fn weighted(s: &(Vec<Vertex>, Vec<Fix128>)) -> Vec3Fix {
 /// [`cell_dist`] (height-field cells) and the box overlaps of
 /// [`Piece::meets_aabb`] (a capsule's against its radius, the others only
 /// `None`, an intersection).
-fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix, Vec3Fix)> {
+pub(crate) fn gjk_distance<A: Support, B: Support>(
+    a: &A,
+    b: &B,
+) -> Option<(Fix128, Vec3Fix, Vec3Fix)> {
     gjk_bounds(a, b).map(|g| (g.dist, g.pa, g.pb))
 }
 

@@ -116,6 +116,7 @@ const NOT_STEP: &[&str] = &[
     "apply_radial_impulse",
     "add_body_with_attachments",
     "add_body_with_radius",
+    "add_body_with_radius_keeping_inertia",
     "add_compound_body",
     "add_contact",
     "add_contact_modifier",

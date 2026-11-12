@@ -289,9 +289,17 @@ fn the_undamped_pendulum_keeps_its_amplitude() {
 /// A ball of radius 0.5 dropped on a static plane tilted by 0.3 rad (normal
 /// `(−sin θ, cos θ, 0)` through the origin) stays at distance `r` from it
 /// (within `2e-2` below, `5e-3` above) and moves along it, at substeps 1, 4
-/// and 8 under TGS, while it slides down the slope as on a frictionless plane
-/// (the static-collider response removes the approaching normal velocity
-/// only): downhill speed `g sin θ t` after 2 s within `1e-3` m/s.
+/// and 8 under TGS, while it rolls down the slope without slipping (the static
+/// plane is a contact constraint with friction, as a body–body contact).
+///
+/// oracle: rolling without slip on a slope, `v = g sin θ t / (1 + k)` with
+/// `k = I / (m r²)` read from the body (`RigidBody::new_dynamic` gives the
+/// unit-sphere inertia `2/5 m · 1²`, so `k = 1.6` for `r = 0.5`), and `ω r = v`.
+/// The drop onto the slope does not change it: through the impact the angular
+/// momentum about the contact point is kept, so the ball leaves the impact at the
+/// speed it would have had rolling from the start. Friction suffices: rolling
+/// needs `μ ≥ k tan θ / (1 + k) = 0.19`, the default pair gives 0.5. Both after
+/// 2 s within `1e-3` m/s.
 #[test]
 fn a_ball_on_a_tilted_static_plane_stays_at_its_radius_under_tgs() {
     let theta: f64 = 0.3;
@@ -322,20 +330,23 @@ fn a_ball_on_a_tilted_static_plane_stays_at_its_radius_under_tgs() {
         let vn = body.velocity.x.to_f64() * n[0] + body.velocity.y.to_f64() * n[1];
         let along =
             -(body.velocity.x.to_f64() * theta.cos() + body.velocity.y.to_f64() * theta.sin());
+        let k = 1.0 / (body.inv_inertia.z.to_f64() * body.mass().to_f64() * r * r);
+        let spin = body.angular_velocity.z.to_f64() * r;
         eprintln!(
-            "s={substeps}: distance [{lo:.5}, {hi:.5}], v_n {vn:.2e}, downhill speed {along:.4} \
-             (frictionless g sin θ t = {:.4})",
-            g() * theta.sin() * 2.0
+            "s={substeps}: distance [{lo:.5}, {hi:.5}], v_n {vn:.2e}, downhill speed {along:.4}, \
+             ω r {spin:.4} (rolling g sin θ t / (1 + k) = {:.4})",
+            g() * theta.sin() * 2.0 / (1.0 + k)
         );
-        let free = g() * theta.sin() * 2.0;
+        let rolling = g() * theta.sin() * 2.0 / (1.0 + k);
         if lo < r - 2e-2
             || hi > r + 5e-3
             || vn.abs() > 5e-2 * g() * DT
-            || (along - free).abs() > 1e-3
+            || (along - rolling).abs() > 1e-3
+            || (spin - rolling).abs() > 1e-3
         {
             failures.push(format!(
                 "s={substeps}: distance [{lo:.5}, {hi:.5}], normal velocity {vn:.3e}, \
-                 downhill speed {along} (want {free})"
+                 downhill speed {along}, ω r {spin} (want {rolling})"
             ));
         }
     }

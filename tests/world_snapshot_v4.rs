@@ -157,6 +157,13 @@ fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
         let frames = u32::try_from(frames.hi).expect("fits u32");
         payload.splice(at..at + 16, frames.to_le_bytes());
     }
+    // version 10 appends its contact section and the section's length (u64):
+    // drop both
+    let n = payload.len();
+    let mut len = [0u8; 8];
+    len.copy_from_slice(&payload[n - 8..]);
+    let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+    payload.truncate(n - 8 - section);
     // version 8 always carries the axis-lock section (count u64) and version 9
     // appends the soft-body section (count u64 + next grab id u32): a scene
     // without locks or soft bodies ends in 20 zero bytes that version 3 does not have
@@ -196,16 +203,17 @@ fn checked(
     r
 }
 
-/// Version 9 keeps the layout of version 4 (version 5 added the panic fault
+/// Version 10 keeps the layout of version 4 (version 5 added the panic fault
 /// codes, version 6 stores damping as rates per second, version 7 the body axis
 /// locks when a body had one, version 8 the sleep rule and idle times as seconds
-/// and always the axis-lock section, version 9 appends the soft-body section).
+/// and always the axis-lock section, version 9 appends the soft-body section,
+/// version 10 the contact section and its length).
 #[test]
-fn the_writer_emits_version_9() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 9);
+fn the_writer_emits_version_10() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &9u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &10u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's

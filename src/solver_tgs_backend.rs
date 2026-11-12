@@ -44,6 +44,7 @@ pub(crate) fn body_to_tgs(body: &RigidBody, stable_id: u64) -> Body6DofOrientedS
         is_dynamic: body.is_dynamic(),
         stable_id,
         overflow: false,
+        turn: crate::math::QuatFix::IDENTITY,
     }
 }
 
@@ -118,8 +119,8 @@ pub(crate) fn contact_to_tgs(
 ) -> ContactOriented {
     let normal_a_to_b = -c.contact.normal;
     let (t1, t2) = tangent_basis(normal_a_to_b);
-    let r_a = c.contact.point_a - bodies[c.body_a].position;
-    let r_b = c.contact.point_b - bodies[c.body_b].position;
+    let r_a = c.contact.point_a - crate::solver::contact_body_in(bodies, c.body_a).position;
+    let r_b = c.contact.point_b - crate::solver::contact_body_in(bodies, c.body_b).position;
     ContactOriented {
         body_a: c.body_a,
         body_b: c.body_b,
@@ -135,6 +136,7 @@ pub(crate) fn contact_to_tgs(
         accum_normal: Fix128::ZERO,
         accum_tangent1: Fix128::ZERO,
         accum_tangent2: Fix128::ZERO,
+        anchors: None,
     }
 }
 
