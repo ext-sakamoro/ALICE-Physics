@@ -4,55 +4,65 @@
 //!
 //! Müller, Macklin, Chentanez, Jeschke, Kim, "Detailed Rigid Body Simulation
 //! with Extended Position Based Dynamics", SCA 2020, §3.5 (contacts and static
-//! friction) and §3.6 (velocity level).
+//! friction) and §3.6 (velocity level); speculative contacts after Catto,
+//! "Continuous Collision", GDC 2013.
 //!
-//! - **Anchors.** A contact is detected once per substep with the point `p_a`
-//!   on body A, `p_b` on B, normal `n` (from B towards A, so moving A along `n`
-//!   relieves it) and depth `d₀ = n · (p_b − p_a)`. Its arms are taken at the
-//!   poses of detection, `r = p − x` (`x` the centre of mass).
-//! - **Current depth.** Each body has turned by `Δθ` since detection (the sum
-//!   of the rotation vectors the contact corrections of this substep gave it);
-//!   its arm is `r + Δθ × r` (first order in the turn of one substep) and its
-//!   point `x + r + Δθ × r`. The depth now is
-//!   `d = d₀ − n · ((p_a' − p_a) − (p_b' − p_b))`, so a correction that
-//!   another contact (or a joint) made to the same body is seen. The turn is
-//!   built from the corrections, which do not depend on the orientation the body
-//!   had, so an isotropic body's motion does not either.
-//! - **Normal correction** (eq. 2–5 with zero compliance): for `d > 0`,
-//!   `Δλ = d / w` with the generalised inverse mass
+//! - **Equations.** A contact point has `p_a` on body A, `p_b` on B, normal `n`
+//!   (from B towards A) and depth `d₀ = n · (p_b − p_a)` at detection, with arms
+//!   `r = p − x` at the poses of detection. After the turns `Δθ` this substep's
+//!   corrections gave the bodies, the arm is `r + Δθ × r` and the depth
+//!   `d = d₀ − n · ((p_a' − p_a) − (p_b' − p_b))`. The normal correction (eq.
+//!   2–5) is `Δλ = (d − α̃ λ) / (w + α̃)` with `α̃ = α / h²` (`α` the contact
+//!   compliance, 0 for a rigid contact) and the generalised inverse mass
 //!   `w = m_a⁻¹ + m_b⁻¹ + (r_a × n)ᵀ I_a⁻¹ (r_a × n) + (r_b × n)ᵀ I_b⁻¹ (r_b × n)`;
-//!   A moves by `+n Δλ / m_a` and turns by `+I_a⁻¹ (r_a × n) Δλ`, B by the
-//!   negatives. The contact point moves apart by exactly `d`; the separation
-//!   applied (`d` summed over iterations) is the contact's `cached_lambda`.
-//! - **Static friction** (eq. 26–27): the relative displacement of the contact
-//!   points over the substep, `Δp = Δp_a − Δp_b` with
-//!   `Δp_body = (x − x_prev) + (ω h + Δθ) × r` (`ω` the substep's predicted
-//!   angular velocity, which the position solve does not change), has a
-//!   tangential part `Δp_t`; while `|Δp_t| < μ λ_n` it is cancelled the same
-//!   way with `w` along `Δp_t / |Δp_t|`.
-//! - **Velocity level** (eq. 29–34): restitution and dynamic friction act on the
-//!   relative velocity of the contact points `v + ω × r`, through the same `w`
-//!   (an impulse `j` changes the point's relative velocity by `w j`).
-//!
-//! Units: metres, seconds, kilograms (as the rest of the solver). Conserved: the
-//! corrections are equal and opposite at the contact point (linear and angular
-//! momentum of the pair about it). Valid for rigid bodies with diagonal inertia
-//! in the body frame; the turn is first order in one substep's rotation.
-//!
-//! Verified by `tests/analytic_static_contact_response.rs`
-//! (`a_sliding_ball_rolls_at_five_sevenths_of_v0_under_xpbd`,
-//! `a_domino_falls_over_only_past_atan_w_over_h_under_xpbd`) and
-//! `tests/analytic_resting_box_manifold.rs`.
+//!   A moves by `+n Δλ / m_a` and turns by `I_a⁻¹ (r_a × n) Δλ`, B by the
+//!   negatives. The normal force is `F = λ / h²`. Static friction (eq. 26–27)
+//!   cancels the tangential relative displacement `Δp_t` of the points while
+//!   `|Δp_t| < μ λ`. The overlap a point starts the substep with is removed as
+//!   the least-constraint projection: the points of a body pair solve the block
+//!   `(A + εI) Δλ = d` (`A_kl = n_k · W n_l`, `ε = 2⁻⁵⁰ max A_kk`, no `ε` for
+//!   one point), with `Δλ ≥ 0` kept by solving the equality set and falling
+//!   back to the push-only complementarity problem. The velocity level (eq.
+//!   29–34) is a sequential impulse on `v + ω × r` through the same `w`:
+//!   accumulated normal impulse `J ≥ 0`, restitution target `max(−e v̄, −gap/h)`
+//!   at a closing point when `e > 0`, dynamic friction capped at `μ (λ/h + J)`.
+//!   A speculative point (gap within `(|v_rel| + |ω| R) h + |g| h²`) is a
+//!   contact whose target allows the gap to close in one step.
+//! - **Units.** metres, seconds, kilograms; `λ` in kg·m (a displacement times
+//!   a mass), `α` in m/N, `J` in N·s, `F` in N.
+//! - **Conservation.** The corrections and impulses are equal and opposite at
+//!   the contact point, so the pair's linear momentum and its angular momentum
+//!   about the point are kept (the push-out of start-of-substep overlap adds
+//!   no velocity). Energy: a rigid contact with `e = 0` removes the normal
+//!   approach speed; `e` keeps `e²` of the normal kinetic energy; friction
+//!   dissipates.
+//! - **Range.** rigid bodies with diagonal inertia in the body frame; the turn
+//!   is first order in one substep's rotation, so a substep should turn a body
+//!   by much less than a radian; no error is raised outside it. Fixed point
+//!   `Fix128`: depths and lengths below `2⁻⁶⁴` m are below resolution.
+//! - **Approximations.** contact points come from the manifold of the shapes
+//!   (a face samples four points), not a continuous pressure; Coulomb friction
+//!   is isotropic; the push-out projection is solved to `PROJECTION_TOLERANCE`
+//!   with a bounded number of re-detections after a turn.
+//! - **Validation.** `tests/analytic_static_contact_response.rs::a_sliding_ball_rolls_at_five_sevenths_of_v0_under_xpbd::a_domino_falls_over_only_past_atan_w_over_h_under_xpbd::a_ball_bounces_to_e_squared_h_on_every_floor_and_backend::a_sliding_box_stops_after_v0_squared_over_two_mu_g`,
+//!   `tests/analytic_resting_box_manifold.rs`, `tests/analytic_resting_box_mirror.rs`,
+//!   `tests/analytic_compliant_rest.rs`, `tests/analytic_pair_pre_projection.rs`,
+//!   `tests/analytic_stack_force.rs`, `tests/analytic_no_ghost_contact.rs`.
+//! - **Tiers.** L0 only.
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
+
 use crate::solver::{ContactConstraint, RigidBody};
+#[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 // ---------------------------------------------------------------------------
-// Odd arithmetic: `Fix128`'s product floors toward −∞, so `(−a)·b` is one unit
-// below `−(a·b)`. The shares of mirror-image contact points (a face's corners)
-// must cancel exactly when summed, or the remainder (a few units) spins a body
-// that should rest, and a stiff contact turns that tilt into uneven loads. The
-// contact math therefore uses products that are odd by construction.
+// Mirror symmetry: `Fix128`'s product rounds to nearest (ties to even), so
+// `(−a)·b == −(a·b)` and the shares of mirror-image contact points (a face's
+// corners) cancel exactly when summed; a remainder would spin a body that
+// should rest (`tests/analytic_resting_box_mirror.rs`).
 // ---------------------------------------------------------------------------
 
 /// The arms of a contact at the poses it was detected at.
@@ -236,7 +246,9 @@ pub(crate) fn compliance_over_h2(alpha: Fix128, h: Fix128) -> Fix128 {
 
 /// The static friction correction of contact `c` over a substep of width `h`
 /// (see the module MODEL), or `None` when the contact slides (or does not move
-/// tangentially, or carries no normal separation).
+/// tangentially, or carries no normal separation). The combined material
+/// carries one coefficient, so the static and the kinetic coefficients are equal.
+// LIMITATION(COV-RIGID-080): the combined material carries one coefficient, so the static and the kinetic coefficients are equal.
 pub(crate) fn static_friction(
     c: &ContactConstraint,
     anchor: ContactAnchor,

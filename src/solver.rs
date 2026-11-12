@@ -1079,6 +1079,7 @@ fn tgs_cache_key(
 /// pair *and feature*, so a corner keeps its key when another corner lifts off.
 /// Feature 0 hashes the words [`tgs_cache_key`] always hashed (its keys are
 /// unchanged); a nonzero feature is one more word.
+#[cfg(feature = "std")]
 fn tgs_feature_key(
     tag: u64,
     a: u64,
@@ -1698,6 +1699,13 @@ enum ContactSource {
     /// Against static collider `k` (`add_static_contacts`).
     Static(usize),
     /// Against static SDF collider `k` (`resolve_sdf_collisions`).
+    #[cfg_attr(
+        not(feature = "std"),
+        expect(
+            dead_code,
+            reason = "built only by the SDF contact detection, which needs std (the field query does)"
+        )
+    )]
     Sdf(usize),
 }
 
@@ -1969,9 +1977,6 @@ fn fnv1a_fold(hash: &mut u64, bytes: &[u8]) {
     }
 }
 
-/// The contact of one body with one SDF collider: as its shape or compound when it
-/// has one, otherwise as a sphere of `radius` at its position.
-#[cfg(feature = "std")]
 /// The sphere a body without a shape is tested as against a static collider or an
 /// SDF collider: its own collision radius (`add_body_with_radius`,
 /// `set_body_collision_radius`), else the world's default
@@ -1980,6 +1985,9 @@ fn body_sphere_radius(radii: &[Option<Fix128>], i: usize, default: Fix128) -> Fi
     radii.get(i).copied().flatten().unwrap_or(default)
 }
 
+/// The contact of one body with one SDF collider: as its shape or compound when it
+/// has one, otherwise as a sphere of `radius` at its position.
+#[cfg(feature = "std")]
 fn sdf_contact_of(
     collider: Option<&crate::body_collider::BodyCollider>,
     body: &RigidBody,
@@ -7593,6 +7601,7 @@ impl PhysicsWorld {
 
     /// Find every body's contacts with the SDF colliders and record them in
     /// `sdf_contact_log` (nothing is moved).
+    #[cfg(feature = "std")]
     fn detect_sdf_contacts(&mut self) {
         // A collider attached to a body is resolved at that body's current
         // (predicted) pose.

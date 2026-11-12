@@ -23,12 +23,27 @@ fn f64_of(v: Fix128) -> f64 {
     }
 }
 
+/// `2^e`, exact (built from the bits; the platform `powi` is not allowed).
+fn p2(e: i32) -> f64 {
+    f64::from_bits(((1023 + e) as u64) << 52)
+}
+
+/// `10^(12 k / 120)` as repeated products of `10^(12 / 120)` (a fixed
+/// sequence, the same on every platform; the sweep needs no exact decades).
+fn ratio_pow(k: u32) -> f64 {
+    let mut m = 1.0;
+    for _ in 0..k {
+        m *= 1.258_925_411_794_167_3;
+    }
+    m
+}
+
 #[test]
 fn small_vectors_have_their_length_and_direction() {
     let dir = [0.3f64, -0.4, 0.866];
     let mut compared = 0;
     for k in 0..=120 {
-        let m = 10f64.powf(-15.0 + 12.0 * f64::from(k) / 120.0);
+        let m = 1e-15 * ratio_pow(k);
         let v = Vec3Fix::new(
             Fix128::from_f64(dir[0] * m),
             Fix128::from_f64(dir[1] * m),
@@ -38,7 +53,7 @@ fn small_vectors_have_their_length_and_direction() {
         let want = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
         let len = f64_of(v.length());
         assert!(
-            (len - want).abs() <= 2f64.powi(-60) + want * 1e-15,
+            (len - want).abs() <= p2(-60) + want * 1e-15,
             "|v| = {len:e} for {want:e}"
         );
         let (u, len2) = v.normalize_with_length();
@@ -47,7 +62,7 @@ fn small_vectors_have_their_length_and_direction() {
         for (i, ci) in c.iter().enumerate() {
             let ui = f64_of([u.x, u.y, u.z][i]);
             assert!(
-                (ui - ci / want).abs() <= 2f64.powi(-40),
+                (ui - ci / want).abs() <= p2(-40),
                 "component {i} of the direction at {want:e}: {ui} vs {}",
                 ci / want
             );
@@ -64,8 +79,5 @@ fn the_length_is_continuous_at_the_switch() {
     let below = Vec3Fix::new(edge - ulp, Fix128::ZERO, Fix128::ZERO).length();
     let at = Vec3Fix::new(edge, Fix128::ZERO, Fix128::ZERO).length();
     let step = f64_of(at - below);
-    assert!(
-        step >= 0.0 && step <= 4.0 * 2f64.powi(-64),
-        "steps by {step:e}"
-    );
+    assert!(step >= 0.0 && step <= 4.0 * p2(-64), "steps by {step:e}");
 }
