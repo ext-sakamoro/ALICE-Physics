@@ -1348,9 +1348,13 @@ mod tests {
     /// never hits. With the direction normalised, its rounding (2^-64 against
     /// edges of 1e-9) tilts it out of the plane by a sine near 5e-11, far above
     /// [`MT_PARALLEL_LOG2`]: it crosses the plane, and the answer is the exact
-    /// test's (the filtered test equals the unfiltered exact one on every ray;
-    /// 308 of the 2000 cross the triangle). Before the exact test such rays were
-    /// ruled parallel by a floor on the rounded `det`.
+    /// test's (the filtered test equals the unfiltered exact one on every ray).
+    /// Whether a ray crosses the triangle is decided by that rounding alone, so
+    /// the number that do is set by the product's rounding rule (308 of the 2000
+    /// with the product floored, 356 with it rounded to nearest, measured); the
+    /// test asks that both outcomes occur, so neither branch goes unchecked.
+    /// Before the exact test such rays were ruled parallel by a floor on the
+    /// rounded `det`.
     #[test]
     fn a_ray_in_the_plane_of_a_tiny_triangle() {
         let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -1389,7 +1393,7 @@ mod tests {
             );
             hits += usize::from(got.is_some());
         }
-        assert_eq!(hits, 308);
+        assert!(hits > 0 && hits < 2000, "{hits} of 2000 cross");
     }
 
     /// Whether a grazing ray counts as parallel depends on the angle alone: the
