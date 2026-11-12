@@ -318,7 +318,7 @@ impl ContactSensor {
         let mut count = 0usize;
         let mut sum = Fix128::ZERO;
         let mut net = Vec3Fix::ZERO;
-        for c in &world.contact_constraints {
+        for (i, c) in world.contact_constraints.iter().enumerate() {
             // The normal points from B to A and the force acts on A.
             let sign = if c.body_a == self.body {
                 Fix128::ONE
@@ -328,7 +328,7 @@ impl ContactSensor {
                 continue;
             };
             count += 1;
-            if let Some(force) = world.contact_constraint_force(c, dt) {
+            if let Some(force) = world.contact_constraint_force(i, dt) {
                 sum = sum + force;
                 net = net + c.contact.normal * (force * sign);
             }

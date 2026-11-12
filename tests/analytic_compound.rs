@@ -715,11 +715,16 @@ fn a_compound_collides_as_its_children_not_as_its_hull() {
     );
 }
 
-/// A probe that meets two children at different depths is moved by the deeper one.
-/// Children span `[2, 4]` and `[3.5, 5.5]` along x after centring (boxes at −2 and 0
-/// relative to a COM at... here: placed so the numbers are plain).
+/// A probe that meets two children from opposite sides is held by both: every child
+/// is a contact (a compound collides as its children), and here they push opposite
+/// ways (1.0 to the right out of the first, 0.5 to the left out of the second) with
+/// no pose near it that clears both, so neither alone decides. The deeper child
+/// alone would put the probe at `x = 5` (still 0.5 into the second), the other
+/// alone at `x = 3.5` (still 1.5 into the first); held by both, it stays strictly
+/// between, and it is not launched (its speed after the step stays below the
+/// smaller overlap over the step, `0.5 / dt`).
 #[test]
-fn the_deepest_child_contact_decides() {
+fn both_children_hold_a_probe_between_them() {
     // Child boxes at x = 3 and x = 5.5 (half-extent 1, and 1): spans [2, 4] and
     // [4.5, 6.5]. Their centre of mass is at 4.25, so the body is put at 4.25 and the
     // children keep their authored x.
@@ -747,11 +752,13 @@ fn the_deepest_child_contact_decides() {
         .expect("valid");
     w.step(fx(1.0 / 60.0));
     let p = arr(w.get_body(probe).expect("probe").position);
+    let v = w.get_body(probe).expect("probe").velocity.length().to_f64();
     assert!(
-        (p[0] - 5.0).abs() < 1e-6,
-        "pushed to x = {} instead of 5",
+        p[0] > 3.5 + 1e-3 && p[0] < 5.0 - 1e-3,
+        "x = {} is one child's answer, not both",
         p[0]
     );
+    assert!(v < 0.5 * 60.0, "launched at {v} m/s");
 }
 
 /// A rotated child with an offset centre: the child's own centre is turned by the

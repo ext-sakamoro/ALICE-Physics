@@ -303,10 +303,17 @@ fn diverges(blob: &[u8], reference: &[(Vec<u8>, Vec<u8>, Vec<u8>)]) -> bool {
 }
 
 /// Each piece of participant-side state matters: a blob whose medium
-/// momentum or field differs by one raw unit, or whose tracker counter
-/// differs by one, continues differently (so the bit-identical continuation
-/// above is not a property of a scene that ignores them). The unedited blob
-/// continues identically through the same helper.
+/// momentum differs by `2⁻⁸` or whose field differs by one raw unit, or whose
+/// tracker counter differs by one, continues differently (so the bit-identical
+/// continuation above is not a property of a scene that ignores them). The
+/// unedited blob continues identically through the same helper.
+///
+/// The momentum is moved by `2⁻⁸` (bit 56 of the fraction word), not by one raw
+/// unit: the drag the medium gives back is computed from `u = P / M`, so a
+/// `2⁻⁶⁴` difference in `P` can move `u` by one rounding unit whose returned drag
+/// cancels it exactly (measured: with the solid-sphere inertia of the balls both
+/// momenta are bit identical after the first step), so whether one raw unit
+/// survives depends on the values, not on whether the state is read.
 #[test]
 fn every_piece_of_state_changes_the_continuation() {
     let mut w = scene(SolverBackend::Xpbd);
@@ -317,11 +324,12 @@ fn every_piece_of_state_changes_the_continuation() {
     let reference = record(&mut w, Path::Step);
     assert!(!diverges(&blob, &reference), "unedited blob diverged");
 
-    // Medium momentum P.x: payload offset 12 (version u32, digest u64), lo
-    // word first.
+    // Medium momentum P.x: payload offset 12 (version u32, digest u64), the
+    // hi word (bytes 12..20) then the lo word (20..28); bit 0 of the lo word's
+    // byte 7 (offset 27) is `2⁻⁸`.
     let at = payload_at(&blob, b"MEDM", 60);
     let mut b = blob.clone();
-    b[at + 12 + 8] ^= 1;
+    b[at + 12 + 15] ^= 1;
     assert!(diverges(&reseal(b), &reference), "medium momentum ignored");
 
     // Tracker counter.

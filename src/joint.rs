@@ -1622,7 +1622,7 @@ fn apply_angular_correction(
 /// whose error is a true angle is satisfied in a single solve. (The
 /// first-order `(n θ/2, 1)` update used before 1.2.0 rotates by
 /// `2·atan(θ/2)`, 2 % short at 0.3 rad.)
-fn rotate_by_angle(q: QuatFix, axis: Vec3Fix, theta: Fix128) -> QuatFix {
+pub(crate) fn rotate_by_angle(q: QuatFix, axis: Vec3Fix, theta: Fix128) -> QuatFix {
     if theta.is_zero() {
         return q;
     }

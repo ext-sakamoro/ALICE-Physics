@@ -144,23 +144,49 @@ fn overlapping_substeps(d: f64, substeps: usize, n: usize) -> usize {
         .count()
 }
 
+/// Number of substeps in the first `n` steps in which the free pair is a
+/// contact of the speculative detection: apart by less than the pair's
+/// margin, each body's `|v| h` (no gravity, no turn), `2 V0 dᵏ h` in frame `k`
+/// (overlapping counts too, a negative gap).
+fn speculative_substeps(d: f64, substeps: usize, n: usize) -> usize {
+    let h = DT / substeps as f64;
+    (0..n)
+        .flat_map(|k| (1..=substeps).map(move |s| (k, s)))
+        .filter(|&(k, s)| free_gap(d, substeps, k, s) < 2.0 * V0 * d.powi(k as i32) * h)
+        .count()
+}
+
 /// A hook runs once per contact per substep in both paths, whatever the
-/// iteration count: with a rejecting hook the pair moves freely, so the call
-/// count is the number of substeps in which the free pair overlaps. Runs at
-/// damping rate 0 (default) and at the old 0.99-per-step loss as a rate.
+/// iteration count, and every point the detection reports is a contact: an
+/// overlapping one, and (speculative contacts on) one apart by less than the
+/// margin, so a hook can veto an approaching pair before the speculative
+/// bound slows it. With a rejecting hook the pair moves freely, so the call
+/// count is the number of substeps in which the free pair overlaps
+/// (speculative contacts off) or is within its margin `2 V0 dᵏ h` (on, no
+/// gravity, so the margin is the closed form). Runs at damping rate 0
+/// (default) and at the old 0.99-per-step loss as a rate.
 #[test]
 fn a_hook_runs_once_per_substep_in_both_paths() {
     for rate in both_rates() {
-        for iterations in [1usize, 4] {
+        for (speculative, iterations) in [(false, 1usize), (false, 4), (true, 1), (true, 4)] {
             let config = PhysicsConfig {
                 iterations,
                 damping_rate: rate,
+                gravity: Vec3Fix::ZERO,
+                speculative_contacts: speculative,
                 ..PhysicsConfig::default()
             };
             let d = engine_retention(rate, fx(DT)).to_f64();
             let n = 120;
-            let want = overlapping_substeps(d, config.substeps, n);
+            let want = if speculative {
+                speculative_substeps(d, config.substeps, n)
+            } else {
+                overlapping_substeps(d, config.substeps, n)
+            };
             assert!(want > 0);
+            if speculative {
+                assert!(want > overlapping_substeps(d, config.substeps, n));
+            }
             for path in paths() {
                 let calls = Arc::new(AtomicUsize::new(0));
                 let (mut w, _, _) = head_on(config, Some((false, Arc::clone(&calls))));
@@ -168,7 +194,7 @@ fn a_hook_runs_once_per_substep_in_both_paths() {
                 assert_eq!(
                     calls.load(Ordering::SeqCst),
                     want,
-                    "{path:?}, rate {rate:?}, iterations {iterations}: hook calls"
+                    "{path:?}, rate {rate:?}, speculative {speculative}, iterations {iterations}: hook calls"
                 );
             }
         }
@@ -176,13 +202,16 @@ fn a_hook_runs_once_per_substep_in_both_paths() {
 }
 
 /// An accepting hook leaves the bounce unchanged (bit-identical to no hook)
-/// in both paths and is called once per overlapping substep: the pair
-/// overlaps only in the impact substep, so once.
+/// in both paths, speculative contacts on or off. Off, it is called once per
+/// overlapping substep: the pair overlaps only in the impact substep, so
+/// once. On, it also sees the substeps in which the pair is within its margin
+/// before and after the impact, so more than once.
 #[test]
 fn an_accepting_hook_changes_nothing() {
-    for iterations in [1usize, 4] {
+    for (speculative, iterations) in [(false, 1usize), (false, 4), (true, 1), (true, 4)] {
         let config = PhysicsConfig {
             iterations,
+            speculative_contacts: speculative,
             ..PhysicsConfig::default()
         };
         for path in paths() {
@@ -196,11 +225,15 @@ fn an_accepting_hook_changes_nothing() {
                 plain.get_body(a).expect("a").velocity,
                 "{path:?}, iterations {iterations}"
             );
-            assert_eq!(
-                calls.load(Ordering::SeqCst),
-                1,
-                "{path:?}, iterations {iterations}"
-            );
+            let calls = calls.load(Ordering::SeqCst);
+            if speculative {
+                assert!(
+                    calls > 1,
+                    "{path:?}, iterations {iterations}: {calls} calls"
+                );
+            } else {
+                assert_eq!(calls, 1, "{path:?}, iterations {iterations}");
+            }
         }
     }
 }
