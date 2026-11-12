@@ -1823,6 +1823,10 @@ pub struct PhysicsWorld {
     fields: crate::world_participant::FieldBoard,
     /// Continuous collision of the step ([`Self::set_continuous_collision`]).
     ccd: WorldCcdConfig,
+    /// The sweep of continuous collision, set where the setting can turn it on
+    /// ([`Self::set_continuous_collision`], `restore_world`): a world that never does
+    /// holds `None`, so the sweep and the shape casts it runs are not linked into it.
+    ccd_sweep: Option<fn(&mut PhysicsWorld) -> Vec<world_ccd::CcdHit>>,
 }
 
 /// Fold `bytes` into `hash` with FNV-1a (64-bit).
@@ -1969,6 +1973,7 @@ impl PhysicsWorld {
             fault: None,
             fields: crate::world_participant::FieldBoard::new(),
             ccd: WorldCcdConfig::new(),
+            ccd_sweep: None,
         }
     }
 
@@ -3750,10 +3755,11 @@ impl PhysicsWorld {
         self.events.end_frame();
     }
 
-    /// Step every cloth with the world's `dt` (grabbed particles placed first).
+    /// Step every cloth with the world's `dt` (grabbed particles placed first), each through
+    /// the step its constructor set (so a world that never makes a cloth links no cloth step).
     fn step_cloths(&mut self, dt: Fix128) {
         for c in &mut self.cloths {
-            c.step(dt);
+            c.step_by_its_own(dt);
         }
     }
 
@@ -4955,10 +4961,15 @@ impl PhysicsWorld {
 
         // 1.1. Continuous collision of fast bodies (`world_ccd`, off by
         //      default: nothing runs while it is off).
-        let ccd_hits = if self.ccd.is_enabled() {
-            self.ccd_sweep()
-        } else {
-            Vec::new()
+        // the setting is private and its only writers (`set_continuous_collision`, `restore_world`)
+        // set the sweep with it, so `on` without a sweep would be a write path that forgot it
+        debug_assert!(
+            self.ccd_sweep.is_some() || !self.ccd.is_enabled(),
+            "continuous collision is on but no sweep was set with it"
+        );
+        let ccd_hits = match self.ccd_sweep {
+            Some(sweep) if self.ccd.is_enabled() => sweep(self),
+            _ => Vec::new(),
         };
 
         // 1.2. Collision detection on the predicted positions (Small Steps).
@@ -5003,10 +5014,15 @@ impl PhysicsWorld {
         self.reset_lambdas();
 
         // 1.1. Continuous collision of fast bodies, as in `substep`.
-        let ccd_hits = if self.ccd.is_enabled() {
-            self.ccd_sweep()
-        } else {
-            Vec::new()
+        // the setting is private and its only writers (`set_continuous_collision`, `restore_world`)
+        // set the sweep with it, so `on` without a sweep would be a write path that forgot it
+        debug_assert!(
+            self.ccd_sweep.is_some() || !self.ccd.is_enabled(),
+            "continuous collision is on but no sweep was set with it"
+        );
+        let ccd_hits = match self.ccd_sweep {
+            Some(sweep) if self.ccd.is_enabled() => sweep(self),
+            _ => Vec::new(),
         };
 
         // 1.2. Collision detection on the predicted positions (Small Steps).
@@ -8012,6 +8028,56 @@ impl core::fmt::Debug for PhysicsWorld {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    /// Every way a cloth reaches the world steps it: added with `add_cloth`, pushed straight onto the
+    /// public `cloths`, and made by either constructor (`new_grid`, `from_mesh`). Each ends where the
+    /// same cloth stepped by hand ends, and each has moved (it falls under gravity)
+    #[test]
+    fn every_way_a_cloth_enters_the_world_is_stepped() {
+        use crate::cloth::Cloth;
+        let dt = Fix128::from_ratio(1, 60);
+        let made: [fn() -> Cloth; 2] = [
+            || Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 3, 3, Fix128::ONE),
+            || {
+                let p = |x: i64, z: i64| {
+                    Vec3Fix::new(Fix128::from_int(x), Fix128::ZERO, Fix128::from_int(z))
+                };
+                Cloth::from_mesh(
+                    vec![p(0, 0), p(1, 0), p(0, 1)],
+                    vec![[0, 1, 2]],
+                    Fix128::ONE,
+                )
+            },
+        ];
+        let mut compared = 0;
+        for make in made {
+            let mut by_hand = make();
+            let start = by_hand.positions.clone();
+            for _ in 0..4 {
+                by_hand.step(dt);
+            }
+            assert_ne!(by_hand.positions, start, "the cloth falls");
+            for pushed in [false, true] {
+                let mut w = PhysicsWorld::new(PhysicsConfig::default());
+                let i = if pushed {
+                    w.cloths.push(make());
+                    w.cloths.len() - 1
+                } else {
+                    w.add_cloth(make())
+                };
+                for _ in 0..4 {
+                    w.step(dt);
+                }
+                assert_eq!(
+                    w.cloths[i].state_digest(),
+                    by_hand.state_digest(),
+                    "pushed {pushed}"
+                );
+                compared += 1;
+            }
+        }
+        assert_eq!(compared, 4);
+    }
 
     /// oracle: [`RigidBody::world_inv_inertia_apply`] (unchecked). On inputs
     /// in range the checked form gives the same bits, for rotations about

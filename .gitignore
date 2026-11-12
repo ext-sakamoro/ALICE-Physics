@@ -28,3 +28,4 @@ __pycache__/
 # the no_std dependent of scripts/no_std_consumer.py resolves on each run
 /consumers/no_std/Cargo.lock
 /tools/no-outer-fneg-of-fma/target/
+/scripts/lazy-link-probe/target/

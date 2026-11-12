@@ -182,6 +182,9 @@ pub struct Cloth {
     pub config: ClothConfig,
     /// Rest tether: per-particle spring-damper toward `rest_positions` (`None` = off)
     rest_tether: Option<RestTether>,
+    /// The step this cloth was made with ([`Self::step`]): the world steps its cloths through it,
+    /// so the cloth step is linked only into programs that make a cloth.
+    step_fn: fn(&mut Cloth, Fix128),
     /// Rest positions the tether pulls toward (empty until set)
     rest_positions: Vec<Vec3Fix>,
     /// Inverse masses `pin` replaced, restored by `unpin`
@@ -519,6 +522,7 @@ impl Cloth {
         }
 
         let mut cloth = Self {
+            step_fn: Self::step,
             prev_positions: positions.clone(),
             velocities: vec![Vec3Fix::ZERO; n],
             positions,
@@ -554,6 +558,7 @@ impl Cloth {
     ) -> Self {
         let n = positions.len();
         let mut cloth = Self {
+            step_fn: Self::step,
             prev_positions: positions.clone(),
             velocities: vec![Vec3Fix::ZERO; n],
             positions,
@@ -799,6 +804,12 @@ impl Cloth {
     #[must_use]
     pub fn rest_positions(&self) -> &[Vec3Fix] {
         &self.rest_positions
+    }
+
+    /// Step through the step this cloth was made with (the world's cloth step uses it)
+    pub(crate) fn step_by_its_own(&mut self, dt: Fix128) {
+        let step = self.step_fn;
+        step(self, dt);
     }
 
     /// Step cloth simulation

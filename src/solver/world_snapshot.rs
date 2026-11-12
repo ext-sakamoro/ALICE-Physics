@@ -2722,6 +2722,9 @@ impl PhysicsWorld {
         self.set_fault(d.fault);
         self.fields_mut().read_values(&d.fields);
         self.ccd = d.ccd;
+        if self.ccd.is_enabled() {
+            self.ccd_sweep = Some(Self::ccd_sweep);
+        }
         self.set_axis_locks(d.axis_locks);
         self.cloths = d.cloths;
         self.next_grab_id = d.next_grab_id;

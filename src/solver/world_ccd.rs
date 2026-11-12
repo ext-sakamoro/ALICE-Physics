@@ -197,6 +197,7 @@ impl PhysicsWorld {
     /// Set continuous collision for the world step. Off by default.
     pub fn set_continuous_collision(&mut self, config: WorldCcdConfig) {
         self.ccd = config;
+        self.ccd_sweep = Some(Self::ccd_sweep);
     }
 
     /// The continuous collision setting of the world step.
@@ -827,6 +828,53 @@ mod tests {
         assert_eq!(w.bodies[s].position, v3(8.0, 0.0, 0.0));
         assert_eq!(w.bodies[s].velocity, v3(512.0, 0.0, 0.0));
         assert!(w.contact_events().is_empty());
+    }
+
+    // ── Every way to turn it on ─────────────────────────────────────────────
+
+    /// Turned on by the setter, the step stops a sphere thrown 8 m through the
+    /// plate at the plate (`x = 4.734375`); off, it passes to `x = 8`.
+    #[test]
+    fn on_by_the_setter_stops_a_sphere_that_would_pass_the_plate() {
+        let run = |config: WorldCcdConfig| {
+            let mut w = bare(config);
+            plate(&mut w);
+            let s = sphere(&mut w, Vec3Fix::ZERO, 1, 0.25, v3(512.0, 0.0, 0.0));
+            w.step(h());
+            w.bodies[s].position.x
+        };
+        assert_eq!(run(WorldCcdConfig::on()), stop_x());
+        assert_eq!(run(WorldCcdConfig::new()), Fix128::from_int(8));
+    }
+
+    /// Turned on by restoring a snapshot taken with it on, into a world that
+    /// never called the setter: the step stops the sphere at the plate as the
+    /// original does; a snapshot taken with it off restores a world the sphere
+    /// passes through.
+    #[test]
+    fn on_by_restore_world_stops_a_sphere_that_would_pass_the_plate() {
+        for (config, want) in [
+            (WorldCcdConfig::on(), stop_x()),
+            (WorldCcdConfig::new(), Fix128::from_int(8)),
+        ] {
+            let mut original = bare(config);
+            plate(&mut original);
+            let s = sphere(&mut original, Vec3Fix::ZERO, 1, 0.25, v3(512.0, 0.0, 0.0));
+            let blob = original.snapshot_world();
+            let mut restored = PhysicsWorld::new(PhysicsConfig {
+                substeps: 1,
+                gravity: Vec3Fix::ZERO,
+                damping_rate: Fix128::ZERO,
+                ..PhysicsConfig::default()
+            });
+            restored.restore_world(&blob).expect("restores");
+            assert_eq!(restored.continuous_collision(), config);
+            original.step(h());
+            restored.step(h());
+            assert_eq!(original.bodies[s].position.x, want);
+            assert_eq!(restored.bodies[s].position.x, want);
+            assert_eq!(restored.state_digest(), original.state_digest());
+        }
     }
 
     // ── Which bodies ────────────────────────────────────────────────────────

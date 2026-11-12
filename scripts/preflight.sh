@@ -413,6 +413,10 @@ cargo build --lib --target wasm32-unknown-unknown --no-default-features --featur
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
+step "a world without continuous collision or cloth links neither (CI job js-binding)"
+python3 scripts/test_lazy_link_check.py
+python3 scripts/lazy_link_check.py
+
 step "rustdoc -D warnings (default + docs.rs feature set)"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$NATIVE"

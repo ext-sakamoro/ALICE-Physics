@@ -650,6 +650,12 @@ jobs:
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
       - name: Build for wasm32-unknown-unknown (privacy-crypto, entropy from the browser)
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
+      # a world that never turns on continuous collision nor makes a cloth links neither (what a page
+      # stepping rigid bodies ships); the probe with both on is the control (scripts/lazy_link_check.py)
+      - name: Lazy linking of continuous collision and cloth (tests)
+        run: python3 scripts/test_lazy_link_check.py
+      - name: Lazy linking of continuous collision and cloth (wasm32 probe)
+        run: python3 scripts/lazy_link_check.py
 
   wasm-test:
     if: github.event_name != 'schedule'

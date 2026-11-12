@@ -1,0 +1,30 @@
+[workspace]
+# own workspace: a probe built for wasm32 by scripts/lazy_link_check.py, not a member of the crate's build
+
+[package]
+name = "lazy-link-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "LicenseRef-Proprietary"
+description = "Two minimal programs on PhysicsWorld, built for wasm32 by scripts/lazy_link_check.py: which code a world links when it never turns on continuous collision nor makes a cloth"
+
+[[bin]]
+name = "bare"
+path = "src/bin/bare.rs"
+
+[[bin]]
+name = "full"
+path = "src/bin/full.rs"
+
+[dependencies]
+alice-physics-core = { path = "../..", default-features = false, features = ["std"] }
+
+# what a page ships: size-optimised, whole-program, one unit, with the function names kept so the
+# check can read them (the name section; a shipped build strips it)
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = false
+debug = false

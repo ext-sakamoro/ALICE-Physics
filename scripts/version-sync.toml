@@ -12,6 +12,10 @@ file = "unreal-plugin/AlicePhysics.uplugin"
 file = "crates/alice-physics/Cargo.toml"
 
 [[independent]]
+file = "scripts/lazy-link-probe/Cargo.toml"
+reason = "wasm32 probe of scripts/lazy_link_check.py, not published (version 0.0.0)"
+
+[[independent]]
 file = "fuzz/Cargo.toml"
 reason = "cargo-fuzz harness, not published (version 0.0.0)"
 
