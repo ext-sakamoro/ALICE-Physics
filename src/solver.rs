@@ -8036,13 +8036,20 @@ impl PhysicsWorld {
                 else {
                     continue;
                 };
-                if deepest.depth > Fix128::ZERO {
+                // A hit is a point that overlaps, or a speculative point whose
+                // approach closes its gap within this substep (it is met in it:
+                // the solve bounces it from at most its gap short of the
+                // collider, so it may never overlap).
+                let approach = -body.velocity.dot(deepest.normal);
+                let hits = deepest.depth > Fix128::ZERO
+                    || (approach > Fix128::ZERO && approach * h >= -deepest.depth);
+                if hits {
                     self.events.report_static_hit(crate::event::StaticHit {
                         body: i,
                         collider: *collider_index,
                         normal: deepest.normal,
                         point: deepest.point_a,
-                        speed: (-body.velocity.dot(deepest.normal)).max(Fix128::ZERO),
+                        speed: approach.max(Fix128::ZERO),
                     });
                 }
             }
