@@ -16,6 +16,13 @@
 //! to first order in the turn `θ`, whose second-order part `r θ²` is the
 //! tolerance.
 //!
+//! The overlap is put on a contact that persists: a first tick finds the
+//! contact (the body set `1e-4` m into the plane, which that tick pushes out
+//! as an overlap it started with), then the body is moved `d₀` into the plane
+//! and the next tick finds the same contact points again. An overlap at a point
+//! found again is the contact's own (a compliant contact at rest holds one), so
+//! it is not pushed out but corrected by the position iterations.
+//!
 //! What it catches: reading the detection-time depth in every iteration pushes
 //! `N β (d₀ − slop)` in total (the ball pops far above the plane); moving the
 //! centre of mass only (no turn) moves a corner by `λ / m < β (d − slop)`, so it
@@ -60,6 +67,18 @@ fn world(substeps: usize) -> PhysicsWorld {
     w
 }
 
+/// Put body `b` at rest at `position`, `rotation` (the pose of the next tick's
+/// start), keeping the contacts the last tick found.
+fn sink_to(w: &mut PhysicsWorld, b: usize, position: Vec3Fix, rotation: QuatFix) {
+    let body = w.get_body_mut(b).expect("body");
+    body.position = position;
+    body.prev_position = position;
+    body.rotation = rotation;
+    body.prev_rotation = rotation;
+    body.velocity = Vec3Fix::ZERO;
+    body.angular_velocity = Vec3Fix::ZERO;
+}
+
 fn decayed(d0: f64, n: usize) -> f64 {
     SLOP + (d0 - SLOP) * (1.0 - BETA).powi(n as i32)
 }
@@ -75,9 +94,11 @@ fn an_overlapping_ball_comes_out_by_the_geometric_decay_in_one_tick() {
     for substeps in [1, 4, 8] {
         let mut w = world(substeps);
         let b = w.add_body_with_radius(
-            RigidBody::new_dynamic(v3(0.0, r - d0, 0.0), Fix128::ONE),
+            RigidBody::new_dynamic(v3(0.0, r - 1e-4, 0.0), Fix128::ONE),
             fx(r),
         );
+        w.step(fx(1.0 / 60.0));
+        sink_to(&mut w, b, v3(0.0, r - d0, 0.0), QuatFix::IDENTITY);
         w.step(fx(1.0 / 60.0));
         let depth = r - w.get_body(b).expect("ball").position.y.to_f64();
         let want = decayed(d0, substeps * POSITION_ITERS);
@@ -142,10 +163,12 @@ fn a_tilted_box_brings_its_corner_out_by_the_geometric_decay_turning() {
         let mut w = world(substeps);
         let y0 = -height(q0, low) - d0;
         let b = w
-            .add_shaped_body(&shape, fx(500.0), v3(0.0, y0, 0.0))
+            .add_shaped_body(&shape, fx(500.0), v3(0.0, y0 + d0 - 1e-4, 0.0))
             .expect("box");
         w.get_body_mut(b).expect("box").rotation = q0;
         w.get_body_mut(b).expect("box").prev_rotation = q0;
+        w.step(fx(1.0 / 60.0));
+        sink_to(&mut w, b, v3(0.0, y0, 0.0), q0);
         w.step(fx(1.0 / 60.0));
         let body = w.get_body(b).expect("box");
         let depth = -(body.position.y.to_f64() + height(body.rotation, low));
