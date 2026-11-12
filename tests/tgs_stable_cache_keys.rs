@@ -75,7 +75,12 @@ fn a_new_contact_ahead_in_the_list_does_not_shuffle_the_others() {
     for frame in 0..90 {
         x.step(dt);
         y.step(dt);
-        touched |= x.bodies[extra_ball].position.y < Fix128::from_int(11);
+        // The extra pair is in the contact set (it lands exactly at y = 11, the
+        // ground's top plus its radius, so the height alone cannot tell).
+        touched |= x.contact_constraints.iter().any(|c| {
+            (c.body_a, c.body_b) == (extra_ground, extra_ball)
+                || (c.body_a, c.body_b) == (extra_ball, extra_ground)
+        });
         assert_eq!(
             snapshot(&x)[2..],
             snapshot(&y)[..],
