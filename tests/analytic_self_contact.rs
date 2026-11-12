@@ -18,7 +18,7 @@
 //! | `self_collision_toggle_changes_nothing_in_a_scene_that_self_intersects` | `self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects` | 改名 + `panic!` を `assert!(..is_some())` に反転 + 前提を `crossings_off > 0` に |
 //! | `self_collision_moves_particles_without_improving_their_separation` | `self_collision_improves_the_vertex_face_separation_it_constrains` | 改名 + 測る量を頂点-頂点 → **頂点-面**に + 半径 0.5 → 0.05 (理由は下記) |
 //! | (無し) | `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` | 旧計器が何を測っていたかを pin (旧数値はここで生きる) |
-//! | (無し) | `a_thickness_far_above_the_local_edge_length_is_outside_the_model` | 使用条件 (厚 < 局所辺長の半分) を pin |
+//! | (無し) | `a_thickness_far_above_the_local_edge_length_is_outside_the_model` (2026-11-12 に反転・改名 `..._still_ends_every_frame_without_crossing`) | 使用条件 (厚 < 局所辺長の半分) を pin → impact zone で破綻域でも貫通 0 |
 //! | (無し) | `the_point_triangle_metric_matches_the_closed_form` | 新計器 (独立実装) 自身の契約 test |
 //!
 //! **2026-10-01 に辺-辺の自己接触も landing しました** (`src/cloth.rs`:
@@ -29,7 +29,7 @@
 //! |---|---|
 //! | `the_segment_segment_metric_matches_the_closed_form` | 線分-線分距離の独立実装の契約 test (5 配置、平行と距離 0 を含む) |
 //! | `the_vertex_face_metric_cannot_see_the_closed_form_edge_edge_crossing` | ⚠️ **構造的事実**: X 字交差では頂点-面の最小距離² が `65/64` で閾値の外、辺-辺は `1/64` で内側 (閉形式なので恒久に真) |
-//! | `self_collision_improves_the_edge_edge_separation_it_constrains` | 辺-辺の段が自分の拘束量を改善することの guard (⚠️ 目標 oracle は辺-辺の段を守りません) |
+//! | `self_collision_improves_the_edge_edge_separation_it_constrains` (2026-11-12 に `the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline` へ、段の比較は `src/cloth.rs` の unit test へ) | 辺-辺の段が自分の拘束量を改善することの guard (⚠️ 目標 oracle は辺-辺の段を守りません) |
 //!
 //! ⚠️ **辺-辺は近接斥力だけで、掃過 (CCD) はありません** frame 単位の復元
 //! (`resolve_self_contact_over_frame`) は頂点の掃過線分しか見ないので、1 frame の内側で
@@ -572,7 +572,7 @@ fn the_segment_segment_metric_matches_the_closed_form() {
 ///
 /// ⚠️ **これは「パラメータが小さいから見えない」ではありません** 検出半径を上げて
 /// `65/64` を超えさせると、同じ半径で**面内の普通の対が全部違反になる**ので使用条件の外に
-/// 出ます (`a_thickness_far_above_the_local_edge_length_is_outside_the_model` と同じ理由)
+/// 出ます (`a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_crossing` の旧版と同じ理由)
 /// 頂点-面の述語は**辺どうしの交差という事象そのものを持っていません**
 ///
 /// `particle_distance_spring_cannot_see_the_closed_form_crossing` (粒子-粒子 ⊂ 頂点-面) の
@@ -770,7 +770,7 @@ const CRUMPLE_STEPS: usize = 120;
 /// 時点の mesh 辺長は `shrink(59, 60) = 1 − (7/8)(59/60) = 0.1396` で、0.05 はその
 /// **36%** = `src/cloth.rs` が doc に書いた「接触厚は局所辺長の半分未満」の内側です
 /// 72% (0.1) と 360% (0.5) が破綻することは
-/// `a_thickness_far_above_the_local_edge_length_is_outside_the_model` が測っています
+/// `a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_crossing` の旧版が測っていました (impact zone 導入後は破綻域でも貫通 0、厚の確保は保証しない)
 fn default_radius() -> Fix128 {
     Fix128::from_ratio(5, 100)
 }
@@ -925,19 +925,40 @@ fn vertex_face_separation(
 /// (`0.05 → 7` / `0.25 → 5` / `0.5 → 4` / `1.0 → 5`)
 /// この構造的事実自体は `particle_distance_spring_cannot_see_the_closed_form_crossing`
 /// が閉形式で pin し続けています
+///
+/// # 場面を step 数で掃く (2026-11-12)
+///
+/// `run_crumple` の縮み方は step 数で決まるので、step 数ごとに別の crumple の場面になる
+/// 以前は 120 step の 1 場面だけで green だったが、20 / 40 / 60 / 80 / 100 / 120 step を
+/// 並べると自己接触 on でも多くの場面で自分を貫いていた (頂点-面の貫通回数、括弧は頂点-面 +
+/// 辺-辺の合算):
+///
+/// | 積の丸め | 20 | 40 | 60 | 80 | 100 | 120 |
+/// |---|---|---|---|---|---|---|
+/// | 床 (修正前) | 3 (44) | 6 (94) | 12 (92) | 0 (0) | 4 (64) | 0 (0) |
+/// | 最近接偶数 (修正前) | 6 (67) | 0 (8) | 3 (15) | 10 (122) | 16 (123) | 7 (44) |
+///
+/// 原因は frame 単位の復元 (Jacobi の射影) が、chord が辺の長さ程度になる frame で不動点に
+/// 届かないこと (残る frame はすべて 16 pass 目にも修正が残り、2000 pass でも循環した)
+/// `src/cloth.rs` の `resolve_impact_zones` (剛体の impact zone、並進のみ) を frame の最後に
+/// 置き、不変量を構成で成り立たせた 全場面 0
 #[test]
 fn a_crumpled_cloth_does_not_pass_through_itself() {
-    let (crossings, invariant, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
-    assert_eq!(
-        crossings, 0,
-        "自己交差する crumple scene で頂点が三角形を {crossings} 回貫いた"
-    );
-    // 1.5.x で追加 上の独立実装は頂点-面しか見ないので、辺-辺の貫通はここでしか出ません
-    // (実装前の実測: 同条件で頂点-面 0 件のまま辺-辺が 22 件残っていた)
-    assert_eq!(
-        invariant, 0,
-        "自己交差する crumple scene で自己貫通が {invariant} 件残った \
-         (頂点-面 / 辺-辺 の合算、頂点-面の独立計数は 0)"
+    let mut compared = 0;
+    let mut bad = Vec::new();
+    for steps in [20usize, 40, 60, 80, 100, CRUMPLE_STEPS] {
+        let (crossings, invariant, _) = run_crumple(true, steps, default_radius());
+        // 1.5.x で追加 独立実装 (頂点-面) は辺-辺を見ないので、辺-辺の貫通は invariant でしか出ない
+        // (実装前の実測: 同条件で頂点-面 0 件のまま辺-辺が 22 件残っていた)
+        if crossings != 0 || invariant != 0 {
+            bad.push((steps, crossings, invariant));
+        }
+        compared += 1;
+    }
+    assert_eq!(compared, 6);
+    assert!(
+        bad.is_empty(),
+        "自己交差する crumple scene が自分を貫いた (step 数, 頂点-面の貫通, 頂点-面 + 辺-辺): {bad:?}"
     );
 }
 
@@ -1014,7 +1035,7 @@ fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
 /// 2. ⚠️ **旧 radius 0.5 は破綻域でした** 60 step 時点の辺長 0.1396 の **360%** で、
 ///    「全ての非接続対を 0.5 離す」は 8x8 の材料を 1x1 の枠に収めた状態では幾何的に
 ///    充足できません 実測でも自己接触を入れると貫通が 1 → 651 に増えます
-///    (`a_thickness_far_above_the_local_edge_length_is_outside_the_model`)
+///    (`a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_crossing` の旧版)
 ///
 /// # ⚠️ この test を消すと近接斥力段が無防備になる (2026-10-01 破壊試験で実測)
 ///
@@ -1156,8 +1177,20 @@ fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
 /// ⚠️ **これは欠陥が続くことを assert する test です** rigid impact zone 等で破綻域まで
 /// 扱えるようになったら **red になるのが正しい挙動**で、その時は削除せず不等号を逆に
 /// 書き換えてください 旧実測 (ON 651 / OFF 1) は `# Before` として残すこと
+///
+/// # 2026-11-12: 反転した (impact zone で貫通しない不変量は破綻域でも成り立つ)
+///
+/// frame の最後の impact zone (`resolve_impact_zones`) が残った貫通を構成で消すので、
+/// 厚 0.5 (辺長の 360%) でも ON は貫通 0 (OFF 1) になった 指示どおり不等号を逆にし、名前を
+/// 変えた (旧名 `a_thickness_far_above_the_local_edge_length_is_outside_the_model`)
+/// ⚠️ 充足できない厚の拘束集合は依然として充足できない (厚の確保は保証しない): 成り立つように
+/// なったのは「自分を貫いたまま frame を終えない」だけ
+///
+/// # Before
+///
+/// ON 651 / OFF 1 (粒子-粒子だけの頃)、zone 導入直前は ON > OFF (破綻域)
 #[test]
-fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
+fn a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_crossing() {
     let out_of_range = Fix128::from_ratio(1, 2);
     let (crossings_on, _, _) = run_crumple(true, SEPARATION_STEPS, out_of_range);
     let (crossings_off, _, _) = run_crumple(false, SEPARATION_STEPS, out_of_range);
@@ -1167,11 +1200,107 @@ fn a_thickness_far_above_the_local_edge_length_is_outside_the_model() {
         crossings_off > 0,
         "自己接触 OFF でこの scene が自己交差しない 破綻域の比較にならない"
     );
-    assert!(
-        crossings_on > crossings_off,
-        "厚 0.5 (辺長の 360%) が破綻域でなくなった (ON {crossings_on} / OFF {crossings_off}) \
-         破綻域を扱えるようになったなら不等号を逆に書き換えること"
+    assert_eq!(
+        crossings_on, 0,
+        "厚 0.5 (辺長の 360%) で自己接触 ON が自分を {crossings_on} 回貫いた (OFF {crossings_off})"
     );
+    assert!(crossings_on < crossings_off);
+}
+
+/// **計器の歯 (1)** — 丸めの余裕は本物の不足を吸わない
+///
+/// 60 step の crumple で、ON と OFF の違反件数は余裕を 10⁶ 倍にしても変わらない = 本物の不足は
+/// 余裕より桁違いに大きい (実測: 切り捨ての積で ON の 3 件は不足 1.2e-4〜2.3e-3、OFF は
+/// 5.5e-4〜9.5e-4、余裕は 1e-11 前後) 丸めだけの対がどれだけ出るかは積の丸めで変わる (最近接偶数
+/// の積では ON に `t² − 8` raw 単位の対が 4 件) ので、ここでは数えない (余裕がそれを吸うことは
+/// 歯 (2) が組み立てた対で見る) 対ごとの余裕と不足を印字する
+#[test]
+fn noise_margin_holds_the_rounding_and_not_the_real_deficits() {
+    let radius = default_radius();
+    let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
+    let (_, _, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
+    let cloth = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::from_int(8),
+        Fix128::from_int(8),
+        9,
+        9,
+        Fix128::from_ratio(1, 100),
+    );
+    let pinned = |i: usize| {
+        let (r, c) = (i / 9, i % 9);
+        r == 0 || c == 0 || r == 8 || c == 8
+    };
+    let count = |pos: &[Vec3Fix], scale: f64| {
+        edge_edge_separation_scaled(pos, &cloth.triangles, radius, &pinned, false, scale).violations
+    };
+    let (on_margin, on_wide) = (count(&pos_on, 1.0), count(&pos_on, 1e6));
+    let (off_margin, off_wide) = (count(&pos_off, 1.0), count(&pos_off, 1e6));
+    // the pairs below the threshold, with their deficit and margin
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for t in &cloth.triangles {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            edges.push((a.min(b), a.max(b)));
+        }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    for (side, pos) in [("ON", &pos_on), ("OFF", &pos_off)] {
+        for (i, &(a0, a1)) in edges.iter().enumerate() {
+            for &(b0, b1) in &edges[i + 1..] {
+                if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
+                    continue;
+                }
+                let d2 = segment_segment_distance_squared(pos[a0], pos[a1], pos[b0], pos[b1]);
+                if d2 < radius * radius {
+                    let m = noise_margin_d2(pos[a0], pos[a1], pos[b0], pos[b1], d2, 100.0);
+                    eprintln!(
+                        "{side} ({a0},{a1})x({b0},{b1}): deficit {:.3e}, margin {m:.3e} (ratio {:.1e})",
+                        deficit(d2, radius),
+                        deficit(d2, radius) / m
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        on_wide, on_margin,
+        "a margin 10⁶ times the derived one hides a real ON deficit ({on_wide} of {on_margin} left)"
+    );
+    assert!(off_margin > 0, "OFF has no real deficit to keep");
+    assert_eq!(
+        off_wide, off_margin,
+        "a margin 10⁶ times the derived one hides a real deficit ({off_wide} of {off_margin} left)"
+    );
+}
+
+/// **計器の歯 (2)** — 閾値のちょうど数 raw 単位下の対は、余裕があれば数えず、余裕 0 なら数える
+///
+/// 線分 A `(0,0,0)→(1,0,0)` と、その上 `1/16` の高さで直交する線分 B の距離² は閉形式で
+/// `1/256` = 閾値 `1/16` の 2 乗ちょうど (dyadic なので厳密) B を y 方向に 8 raw 単位だけ下げると
+/// 距離² は閾値の 2 乗を数 raw 単位下回る: 余裕を引けば違反ではなく、余裕 0 なら違反
+#[test]
+fn the_noise_margin_absorbs_a_pair_a_few_units_under_the_threshold() {
+    let t = Fix128::from_ratio(1, 16);
+    let (p1, q1) = (
+        Vec3Fix::ZERO,
+        Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+    );
+    let below = t - Fix128::from_raw(0, 8);
+    let p2 = Vec3Fix::new(Fix128::from_ratio(1, 2), below, -Fix128::ONE);
+    let q2 = Vec3Fix::new(Fix128::from_ratio(1, 2), below, Fix128::ONE);
+    let d2 = segment_segment_distance_squared(p1, q1, p2, q2);
+    assert!(d2 < t * t, "the pair is under the threshold");
+    let m = noise_margin_d2(p1, q1, p2, q2, d2, 100.0);
+    let def = deficit(d2, t);
+    assert!(
+        def > 0.0 && def <= m,
+        "deficit {def:e} within the margin {m:e}"
+    );
+    // at the threshold exactly, the pair is not a violation at all
+    let at = Vec3Fix::new(Fix128::from_ratio(1, 2), t, -Fix128::ONE);
+    let at2 = Vec3Fix::new(Fix128::from_ratio(1, 2), t, Fix128::ONE);
+    assert_eq!(segment_segment_distance_squared(p1, q1, at, at2), t * t);
 }
 
 /// 頂点を共有しない mesh 辺対の最小距離² と、閾値を下回る対の数
@@ -1208,6 +1337,81 @@ struct EdgeEdgeSeparation {
 /// ⚠️ `free_only = true` は 4 頂点すべてが自由な対だけを残します 1 つでも pin された
 /// 頂点を含む対は、test 自身が毎 step 座標を代入する kinematic driver の影響下にあり、
 /// **solver の効果を測る母集団に混ぜてはいけません**
+/// How far below `threshold²` a measured edge-pair `d²` may fall from rounding alone, for a
+/// pair the solver placed exactly at `threshold`, in units of `d²` (f64; an error bound, not
+/// part of the simulation). A pair counts as a violation only below `threshold² − margin`.
+///
+/// Why: the proximity projection moves a pair to exactly `threshold`, so after rounding about
+/// half of the pairs it acted on land a few units below it (measured: 4 pairs at
+/// `d² = t² − 8` raw units with the product rounded to nearest, ties to even) and a strict
+/// count reports arithmetic noise as violations. The margin is derived, not picked; `u` is
+/// the raw unit `2⁻⁶⁴` and every `Fix128` multiplication rounds by at most `u/2` absolute,
+/// a division by less than `u` (fixed point: errors are absolute, not relative):
+///
+/// 1. **The projection's distance error `E_p`.** The pair ends at `d_true + (t − d)` with `d`
+///    the computed distance, so its error is that of `d = √(Σ diff²)`: the squared length
+///    carries `≤ 3·u/2`, and `√` is concave so a perturbation `δ` of its argument moves it by
+///    at most `√δ` (unconditionally, for any `d`), plus `u` for the root itself:
+///    `√(3u/2) + u`. The displacement `s·(Σ w)` adds the division `s = (t − d)/denom` (`< u`
+///    scaled by `denom ≤ 2·w_max`), and the products `s·w`, `·n`, `·w_k` (`≤ 2u` per moved
+///    vertex, 4 vertices): `E_p = √(3u/2) + u + 2·w_max·u + 8u`.
+/// 2. **The instrument's own error `E_i`** (`segment_segment_distance_squared`): each
+///    endpoint projection forms `t = (p−a)·ab / |ab|²` (dots `≤ 3u/2` each, the division
+///    `< u`), so `Δt ≤ u + 3u/L²` and the point `a + ab·t` is off by `L·Δt + u/2` per
+///    coordinate (`L = |ab|`, taken from the pair itself, so no floor on edge length is
+///    assumed); the interior solution divides by `den = a·e − b²`, whose numerator terms
+///    `b·f`, `c·e` carry `≤ 4·R·L_max²·(3u/2) + 2u` (`R` the largest coordinate magnitude),
+///    so `Δs ≤ that / den + u`, moving each point by `L_max·Δs`. `E_i` is the larger branch,
+///    times `√3` for three coordinates and 2 for the two points.
+///
+/// The margin on `d²` is `2·√d²·(E_p + E_i) + (E_p + E_i)² + 3u` (the last term the squares
+/// in `d²` itself). Measured beside the deficits it absorbs and the ones it must not:
+/// `noise_margin_holds_the_rounding_and_not_the_real_deficits`.
+fn noise_margin_d2(
+    p1: Vec3Fix,
+    q1: Vec3Fix,
+    p2: Vec3Fix,
+    q2: Vec3Fix,
+    d2: Fix128,
+    w_max: f64,
+) -> f64 {
+    // 2^-64, the unit of the fraction word
+    let u = 1.0 / 18_446_744_073_709_551_616.0_f64;
+    let f = |x: Fix128| x.to_f64();
+    let len = |v: Vec3Fix| f(v.length_squared()).sqrt();
+    let (l1, l2) = (len(q1 - p1), len(q2 - p2));
+    let r = [p1, q1, p2, q2]
+        .iter()
+        .flat_map(|v| [f(v.x).abs(), f(v.y).abs(), f(v.z).abs()])
+        .fold(1.0f64, f64::max);
+    let e_p = (1.5 * u).sqrt() + u + 2.0 * w_max * u + 8.0 * u;
+    let endpoint = |l: f64| {
+        if l == 0.0 {
+            u
+        } else {
+            l * (u + 3.0 * u / (l * l)) + u / 2.0
+        }
+    };
+    let mut e_point = endpoint(l1).max(endpoint(l2));
+    let (d1, d2v) = (q1 - p1, q2 - p2);
+    let cross = f(d1.dot(d2v));
+    let den = f(d1.dot(d1)) * f(d2v.dot(d2v)) - cross * cross;
+    if den > 0.0 {
+        let l_max = l1.max(l2);
+        let num_err = 4.0 * r * l_max * l_max * 1.5 * u + 2.0 * u;
+        e_point = e_point.max(l_max * (num_err / den + u));
+    }
+    let e_i = 2.0 * 3f64.sqrt() * e_point;
+    let e = e_p + e_i;
+    2.0 * f(d2).max(0.0).sqrt() * e + e * e + 3.0 * u
+}
+
+/// `threshold² − d²` in units of `d²`, the difference taken in `Fix128` (exact) and converted
+/// after (two `to_f64` values a few raw units apart subtract to 0)
+fn deficit(d2: Fix128, threshold: Fix128) -> f64 {
+    (threshold * threshold - d2).to_f64()
+}
+
 fn edge_edge_separation(
     positions: &[Vec3Fix],
     triangles: &[[usize; 3]],
@@ -1215,6 +1419,21 @@ fn edge_edge_separation(
     pinned: &dyn Fn(usize) -> bool,
     free_only: bool,
 ) -> EdgeEdgeSeparation {
+    edge_edge_separation_scaled(positions, triangles, threshold, pinned, free_only, 1.0)
+}
+
+/// `edge_edge_separation` with the noise margin scaled (1 = the derived margin; the teeth
+/// use 0 and 10⁶)
+fn edge_edge_separation_scaled(
+    positions: &[Vec3Fix],
+    triangles: &[[usize; 3]],
+    threshold: Fix128,
+    pinned: &dyn Fn(usize) -> bool,
+    free_only: bool,
+    margin_scale: f64,
+) -> EdgeEdgeSeparation {
+    // the crumple grid's particles all have mass 1/100
+    const W_MAX: f64 = 100.0;
     let mut edges: Vec<(usize, usize)> = Vec::new();
     for t in triangles {
         for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
@@ -1248,7 +1467,16 @@ fn edge_edge_separation(
                 min_d2 = d2;
                 argmin = (a0, a1, b0, b1);
             }
-            if d2 < t2 {
+            let margin = margin_scale
+                * noise_margin_d2(
+                    positions[a0],
+                    positions[a1],
+                    positions[b0],
+                    positions[b1],
+                    d2,
+                    W_MAX,
+                );
+            if d2 < t2 && deficit(d2, threshold) > margin {
                 violations += 1;
             }
         }
@@ -1266,6 +1494,22 @@ fn edge_edge_separation(
     }
 }
 
+/// **guard** — step 全体 (自己接触 + impact zone) の辺-辺違反件数を記録した基準線に固定する
+///
+/// # 2026-11-12: 段の比較は unit test へ、ここは step 全体の基準線へ
+///
+/// frame の最後に impact zone (`resolve_impact_zones`) が入り、ON は貫通 0 で終わるように
+/// なった 一方 OFF は貫通したまま終わるので、ON と OFF の違反件数の比較は貫通した面の上の
+/// 数を含む (下の旧 doc の警告と同じ) 段そのものの比較 (zone を切って自己接触 ON / OFF、
+/// 実測 2 / 3) は `src/cloth.rs` の
+/// `impact_zone_tests::the_self_contact_stages_alone_reduce_the_edge_edge_violations` に移した
+/// ここでは step 全体の ON の違反件数を基準線 `EDGE_EDGE_BASELINE_ON` と等しいことで固定する
+/// 増えたら red、減ったら同じ commit で基準線を下げる (旧名
+/// `self_collision_improves_the_edge_edge_separation_it_constrains`、旧 assert は ON < OFF で
+/// zone 導入後は ON 4 / OFF 2 (切り捨ての積の版では 3 / 3) ⚠️ 旧実測の ON 2 は貫通が残った状態の数)
+///
+/// # 以下は旧 doc (段の比較だった頃の記録)
+///
 /// **guard** — 辺-辺の段は、自分が拘束している量 (辺-辺距離) を実際に改善する
 ///
 /// `self_collision_improves_the_vertex_face_separation_it_constrains` の辺-辺版です
@@ -1323,8 +1567,17 @@ fn edge_edge_separation(
 /// 掃過修復が保証するのは **非貫通** (`gap ≥ 0`) であって `thickness` の確保ではなく、
 /// 貫通対を距離 0 に置くので**定義上 `thickness` 違反になります** `thickness` まで詰める
 /// には clamp しながら収束させる設計が要り、本 test の範囲外です (未対応)
+/// step 全体の ON の辺-辺違反件数 (60 step、半径 0.05、全辺対、丸めの余裕
+/// `noise_margin_d2` を引いた閾値で数える) の基準線 (2026-11-12 実測)
+///
+/// `Fix128` の積が −∞ への切り捨ての版で 3: 3 件とも pin された境界粒子 (71 / 79) を含む対で、
+/// test が毎 frame 座標を代入する driver の頂点なので solver は離せない (自由な対の違反は下の
+/// 絶対の assert が 0 を見る) 積を最近接偶数への丸めにした版では 0 になる (丸めの版に移る時に
+/// 基準線を下げる)
+const EDGE_EDGE_BASELINE_ON: usize = 3;
+
 #[test]
-fn self_collision_improves_the_edge_edge_separation_it_constrains() {
+fn the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline() {
     let radius = default_radius();
     let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
     let (_, _, pos_off) = run_crumple(false, SEPARATION_STEPS, radius);
@@ -1344,7 +1597,8 @@ fn self_collision_improves_the_edge_edge_separation_it_constrains() {
     let all_off = edge_edge_separation(&pos_off, &cloth.triangles, radius, &pinned, false);
     let free_on = edge_edge_separation(&pos_on, &cloth.triangles, radius, &pinned, true);
 
-    // 反 vacuous 1: 自己接触を切った側に違反が 1 件も無ければ、改善も何も言っていない
+    // 反 vacuous 1: 母集団が空なら基準線は何も見ていない、OFF に違反が無い scene は接触の場面でない
+    assert!(all_on.population > 0, "辺対が 0 件");
     assert!(
         all_off.violations > 0,
         "自己接触 OFF でも閾値未満の辺対が無い この guard は違反の起きない scene では無意味"
@@ -1355,10 +1609,10 @@ fn self_collision_improves_the_edge_edge_separation_it_constrains() {
         "自由頂点だけの辺対が 0 件 scene の pin 構成が変わっている"
     );
 
-    assert!(
-        all_on.violations < all_off.violations,
-        "辺-辺の段が違反件数を減らしていない (ON {} / OFF {}、実測は 2 / 3) \
-         ⚠️ 最小距離の比で測らないこと: 貫通し切った面は「遠い」と測られる (doc の表) \
+    assert_eq!(
+        all_on.violations, EDGE_EDGE_BASELINE_ON,
+        "step 全体の辺-辺違反件数が基準線から動いた (ON {} / 基準線 {EDGE_EDGE_BASELINE_ON}、OFF {}) \
+         増えたら原因を調べる、減ったら基準線を同じ commit で下げる \
          参考値 最小距離² ON {} / OFF {} (argmin ON {:?} pin {} / OFF {:?} pin {})",
         all_on.violations,
         all_off.violations,
@@ -1384,13 +1638,29 @@ fn self_collision_improves_the_edge_edge_separation_it_constrains() {
         free_on.argmin
     );
 
-    // ⚠️ ALL の argmin が driver 支配であることを記録として固定する これが崩れたら
-    // 上の表の読み方 (3.37 倍は pin された対の数字) が変わるので doc を見直すこと
-    assert!(
-        all_on.argmin_pinned > 0,
-        "ALL の argmin ({:?}) に pin された頂点が 1 つも無い 計器の母集団構成が変わった",
-        all_on.argmin
-    );
+    // ⚠️ 旧版は「ALL の argmin が driver 支配 (pin を含む)」を記録として固定していた (上の表の
+    // 3.37 倍は pin された対の数字、という読み方の根拠) 2026-11-12 に impact zone が入ると、
+    // 最近接偶数の積の版では最小が自由な対 (59,67)x(60,68) になった: 近接の射影がちょうど厚に
+    // 置いた対で、丸めで `t² − 8` raw 単位 = 旧い読み方の前提 (最小は solver が動かせない対) は
+    // もう成り立たない ⇒ 今の読み方を固定する: 最小が自由な対なら、それは射影が厚に保っている
+    // 対で、丸めの余裕を超えて厚を割っていない
+    if all_on.argmin_pinned == 0 {
+        let (a0, a1, b0, b1) = all_on.argmin;
+        let m = noise_margin_d2(
+            pos_on[a0],
+            pos_on[a1],
+            pos_on[b0],
+            pos_on[b1],
+            all_on.min_d2,
+            100.0,
+        );
+        assert!(
+            deficit(all_on.min_d2, radius) <= m,
+            "ALL の最小 ({:?}、pin 0) が厚を丸めの余裕より割っている (不足 {:.3e}、余裕 {m:.3e})",
+            all_on.argmin,
+            deficit(all_on.min_d2, radius)
+        );
+    }
 }
 
 /// 非連結対 (辺で繋がっていない粒子対) の最小距離²、閾値未満の対の数、**最小を取る対**

@@ -38,7 +38,8 @@ WATCHED: list[tuple[str, list[str]]] = [
     ("the sphere cast", ["world_shape_query", "cast_sphere"]),
     ("the sphere overlap", ["overlap_sphere"]),
     ("the cloth's own step (awake)", ["cloth", "step_awake"]),
-    ("the cloth's self contact over a frame", ["cloth", "resolve_self_contact_over_frame"]),
+    # the frame repair itself is inlined into the step; its impact zones (called twice) stay a function
+    ("the cloth's self contact over a frame (impact zones)", ["cloth", "resolve_impact_zones"]),
 ]
 
 
