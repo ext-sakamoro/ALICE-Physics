@@ -141,8 +141,8 @@ src/sdf_character.rs	step_on_sphere	r > 0.0	1	f32	predicate	an operand of && / |
 src/sdf_character.rs	step_resolved	into < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	step_resolved	len > self . skin_width	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_character.rs	up_unit	len > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/sdf_collider.rs	collide_point_sdf_field	world_dist >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/sdf_collider.rs	collide_sphere_sdf_field	penetration <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	collide_point_sdf_within	world_dist >= margin	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	collide_sphere_sdf_within	penetration <= - margin	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_collider.rs	fd_normal	len < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_collider.rs	new	s . abs () < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_collider.rs	normal	self . a . distance (x , y , z) <= self . b . distance (x , y , z)	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
