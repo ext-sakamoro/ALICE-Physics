@@ -88,3 +88,8 @@ members = ["."]
 name = "fuzz_step_parity"
 path = "fuzz_targets/fuzz_step_parity.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_touch_log_decode"
+path = "fuzz_targets/fuzz_touch_log_decode.rs"
+doc = false

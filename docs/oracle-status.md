@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6183 |
+| 🟢 Not ignored (run by CI) | 6184 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6285** |
+| **Total** | **6286** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -163,7 +163,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6183)
+## 🟢 Not ignored (6184)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -410,6 +410,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_ccd_borrowed_field.rs` | 11 |
 | `analytic_temperature_rise.rs` | 11 |
 | `analytic_tight_world_aabb.rs` | 11 |
+| `analytic_touch_layers.rs` | 11 |
 | `analytic_vibration_wall_wiring.rs` | 11 |
 | `audit_anisotropic_friction.rs` | 11 |
 | `audit_contact_cache.rs` | 11 |
@@ -438,7 +439,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `analytic_sleep_spring_creep.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
-| `analytic_touch_layers.rs` | 10 |
 | `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |

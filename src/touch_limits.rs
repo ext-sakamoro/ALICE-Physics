@@ -154,6 +154,11 @@ impl Swing {
     }
 }
 
+/// Whether a centre `d` from rest is farther than the reach (`|d|² > d_max²`; exactly `d_max` is within)
+fn beyond_reach(d: crate::math::Vec3Fix, reach_squared: Fix128) -> bool {
+    d.dot(d) > reach_squared
+}
+
 /// Every way the layered playback of `layers` (lowest first, the top last) on `cloths` goes beyond `limits`, body
 /// by body (empty when it is within them).
 ///
@@ -183,8 +188,7 @@ pub fn check(
             swings[b][0].feed(step, c.x, limits.min_swing);
             swings[b][1].feed(step, c.y, limits.min_swing);
             swings[b][2].feed(step, c.z, limits.min_swing);
-            let d = c - rest[b];
-            if d.dot(d) > reach_squared {
+            if beyond_reach(c - rest[b], reach_squared) {
                 far[b] = true;
             }
         }
@@ -272,4 +276,54 @@ pub fn within_limits(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    //! The two thresholds at their boundaries: a swing of exactly `min_swing` counts and one ulp less does not
+    //! (the first direction and a reversal alike); a centre exactly `d_max` from rest is within and one ulp farther
+    //! is beyond. Oracle: the MODEL section's `≥ min_swing` and `|c − c_rest|² > d_max²`, with values chosen so
+    //! every product is exact in `Fix128`.
+
+    use super::{beyond_reach, Swing};
+    use crate::math::{Fix128, Vec3Fix};
+
+    const ULP: Fix128 = Fix128::from_raw(0, 1);
+
+    /// The steps of the reversals of a centre going 0 → `up` → `up − back` with hysteresis `min_swing`
+    fn reversals(up: Fix128, back: Fix128, min_swing: Fix128) -> Vec<u64> {
+        let mut s = Swing::new(Fix128::ZERO);
+        s.feed(1, up, min_swing);
+        s.feed(2, up - back, min_swing);
+        s.reversals
+    }
+
+    #[test]
+    fn a_swing_of_exactly_min_swing_counts_and_one_ulp_less_does_not() {
+        let m = Fix128::from_ratio(1, 32);
+        // a reversal: out by m, back by exactly m / by m − ulp
+        assert_eq!(reversals(m, m, m), vec![2]);
+        assert_eq!(reversals(m, m - ULP, m), Vec::<u64>::new());
+        // the first direction: out by exactly m is taken (so the way back counts), by m − ulp is not
+        assert_eq!(reversals(m - ULP, m, m), Vec::<u64>::new());
+        let mut s = Swing::new(Fix128::ZERO);
+        s.feed(1, m, m);
+        assert_eq!(s.rising, Some(true));
+        let mut s = Swing::new(Fix128::ZERO);
+        s.feed(1, m - ULP, m);
+        assert_eq!(s.rising, None);
+    }
+
+    #[test]
+    fn a_centre_exactly_d_max_from_rest_is_within_and_one_ulp_farther_is_beyond() {
+        let d_max = Fix128::from_ratio(1, 2);
+        let reach_squared = d_max * d_max;
+        let at = |x: Fix128| Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO);
+        assert!(!beyond_reach(at(d_max), reach_squared));
+        assert!(!beyond_reach(at(-d_max), reach_squared));
+        assert!(beyond_reach(at(d_max + ULP), reach_squared));
+        assert!(!beyond_reach(Vec3Fix::ZERO, Fix128::ZERO));
+        // 2⁻³² squared is one ulp (2⁻⁶⁴), the least distance the square can tell from zero
+        assert!(beyond_reach(at(Fix128::from_raw(0, 1 << 32)), Fix128::ZERO));
+    }
 }
