@@ -303,6 +303,7 @@ fn determinism_contact_bounce() {
 /// * at `t = 1 s`: `v = 5/7 v0 = 15/7 m/s`,
 ///   `x = v0 t_r − μ g t_r² / 2 + 5/7 v0 (t − t_r)`;
 /// * at `t = 2 s`: still `v = 15/7 m/s` and rolling, `ω r = v`.
+///
 /// An earlier version asserted that the ball stops at `v0² / (2 μ g)`: that
 /// is a block, not a ball, and held only while the contact acted at the
 /// centre.
@@ -390,6 +391,7 @@ fn determinism_contact_slide() {
 /// * it rolls: `ω r = v` to one substep's slip `g sin θ h`;
 /// * its centre stays `1/2` above the ground surface, which falls by
 ///   `x² / (2 R)` from the top (`R = 1e6`), within `1e-6 m`.
+///
 /// An earlier version asserted that the ball stays put (`|x| < 1e-12`): that
 /// was true of a contact acting at the ball's centre, not of a ball.
 ///

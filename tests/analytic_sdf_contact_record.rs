@@ -1,11 +1,17 @@
 //! The SDF contacts a step records (`PhysicsWorld::last_step_sdf_contacts`,
 //! `SubstepCtx::sdf_contacts`) against closed-form values.
 //!
-//! Every expected value is derived here from the scene (positions, velocities,
-//! gravity, substep width) by the integration the XPBD substep performs:
-//! `v += g·h`, `x += v·h`, then the push-out `x += n·depth`, then
-//! `v = (x − x_prev) / h`. Nothing is computed by calling the solver. Each check
-//! counts the entries it compared and fails when that count is 0.
+//! A record is a contact as detection found it, at the predicted pose of the
+//! substep and before any correction: a point within the speculative margin
+//! `(|v| + |ω| R) h + |g| h²` of the field counts (Catto 2013), with a
+//! negative depth when it is still a gap. Every expected value is derived
+//! here from the scene (positions, velocities, gravity, substep width) by the
+//! integration the XPBD substep performs: `v += g·h`, `x += v·h`, detection,
+//! then the contact response (an overlap is corrected; a gap whose approach
+//! closes it within the substep bounces from the approach it had,
+//! `v ← max(−e v, −gap / h)` along the normal, Box2D v3's rule). Nothing is
+//! computed by calling the solver. Each check counts the entries it compared
+//! and fails when that count is 0.
 
 #![cfg(feature = "std")]
 
@@ -137,42 +143,50 @@ fn falling_sphere() -> PhysicsWorld {
     w
 }
 
-/// Closed form of the falling sphere over the first step.
+/// Closed form of the falling sphere over the first step (restitution 0.3,
+/// the default of the body and of the field).
 ///
-/// Before any contact, after substep `k` (0-based): `v = v0 + g·h·(k+1)`,
+/// After substep `k` (0-based), before any contact: `v = v0 + g·h·(k+1)`,
 /// `y = y0 + Σ_{j=1..k+1} (v0 + g·h·j)·h`. With `y0 = 0.8, v0 = −4, g = −8,
-/// h = 1/32`: `y = 0.6671875, 0.5265625, 0.378125` — the first overlap is in
-/// substep 2, depth `0.5 − 0.378125`, approach `−(v0 + 3·g·h) = 4.75`. The
-/// push-out sets `y = 0.5`, so the velocity leaving substep 2 is
-/// `(0.5 − 0.5265625)/h = −0.85`; substep 3 gives `v = −0.85 + g·h = −1.1`,
-/// `y = 0.5 − 1.1·h = 0.465625`: depth `0.034375`, approach `1.1`.
+/// h = 1/32`: substep 0 ends at `y = 0.6671875` (gap `0.1671875`, beyond the
+/// margin `4.25 h + 8 h² = 0.140625`: no record); substep 1 at `y = 0.5265625`,
+/// `v = −4.5` (gap `0.0265625`, inside the margin `0.1484375`): recorded with
+/// depth `−0.0265625`, approach `4.5`. Its approach closes the gap within the
+/// substep (`4.5 > gap / h = 0.85`), so it bounces: `v = 0.3 · 4.5 = 1.35`.
+/// Substeps 2 and 3 rise (`v = 1.1, 0.85`) to gaps `0.0609` and `0.0875`,
+/// beyond their margins (`0.0422`, `0.0344`): no more records.
 fn falling_sphere_want() -> Vec<Want> {
-    let (y0, v0, g, h, rad) = (0.8f64, -4.0f64, -8.0f64, 1.0f64 / 32.0, 0.5f64);
+    let (y0, v0, g, h, rad, e) = (0.8f64, -4.0f64, -8.0f64, 1.0f64 / 32.0, 0.5f64, 0.3f64);
     let mut y = y0;
     let mut v = v0;
     let mut out = Vec::new();
     for k in 0..4 {
-        let prev = y;
         v += g * h;
         y += v * h;
-        if y < rad {
+        let gap = y - rad;
+        let margin = v.abs() * h + g.abs() * h * h;
+        if gap < margin {
             out.push(Want {
                 body: 0,
                 collider: 0,
                 point: [FALL_X, 0.0, FALL_Z],
                 normal: [0.0, 1.0, 0.0],
-                depth: rad - y,
+                depth: -gap,
                 approach: -v,
                 substep: k,
             });
-            y = rad;
+            // This scene never overlaps: the gap's response.
+            assert!(gap > 0.0, "the derivation covers a gap only");
+            let closing = -gap / h;
+            if v < closing {
+                v = (-e * v).max(closing);
+            }
         }
-        v = (y - prev) / h;
     }
     // The derivation in the doc comment, as numbers.
-    assert_eq!(out.len(), 2);
-    assert!((out[0].depth - 0.121_875).abs() < 1e-12 && (out[0].approach - 4.75).abs() < 1e-12);
-    assert!((out[1].depth - 0.034_375).abs() < 1e-12 && (out[1].approach - 1.1).abs() < 1e-12);
+    assert_eq!(out.len(), 1);
+    assert!((out[0].depth + 0.026_562_5).abs() < 1e-12 && (out[0].approach - 4.5).abs() < 1e-12);
+    assert_eq!(out[0].substep, 1);
     out
 }
 
@@ -204,10 +218,10 @@ fn two_colliders() -> PhysicsWorld {
 }
 
 /// After `h = 1/8`: body 0 at `(0.35, 0.4)`, floor depth `0.1` (approach 1.6,
-/// point `(0.35, 0, 0)`), pushed to `y = 0.5`; then the wall, evaluated at the
-/// pushed position: depth `0.15` (approach 0.8, point `(0, 0.5, 0)`). Body 1
-/// at `y = 0.45`: floor depth `0.05` (approach 0.8). Order: body, then
-/// collider.
+/// point `(0.35, 0, 0)`) and wall depth `0.15` (approach 0.8, point
+/// `(0, 0.4, 0)`), both found at the predicted pose, before either is
+/// corrected. Body 1 at `y = 0.45`: floor depth `0.05` (approach 0.8). Order:
+/// body, then collider.
 fn two_colliders_want() -> Vec<Want> {
     let h = 1.0 / 8.0;
     let (ax, ay) = (0.45 - 0.8 * h, 0.6 - 1.6 * h);
@@ -225,7 +239,7 @@ fn two_colliders_want() -> Vec<Want> {
         Want {
             body: 0,
             collider: 1,
-            point: [0.0, 0.5, 0.0],
+            point: [0.0, ay, 0.0],
             normal: [1.0, 0.0, 0.0],
             depth: 0.5 - ax,
             approach: 0.8,
@@ -472,7 +486,11 @@ fn no_overlap_records_nothing_and_each_step_starts_empty() {
         // records nothing (the record does not carry over).
         let mut w = falling_sphere();
         step(&mut w, r(1, 8));
-        assert_eq!(w.last_step_sdf_contacts().len(), 2, "{name}: first step");
+        assert_eq!(
+            w.last_step_sdf_contacts().len(),
+            falling_sphere_want().len(),
+            "{name}: first step"
+        );
         w.bodies[0].position = v3(0.0, 50.0, 0.0);
         w.bodies[0].velocity = Vec3Fix::ZERO;
         step(&mut w, r(1, 8));
@@ -542,8 +560,8 @@ fn watched(mut w: PhysicsWorld) -> (PhysicsWorld, SeenLog) {
 }
 
 /// Substep `i` of an XPBD step sees the contacts of substeps `0..i` of the
-/// same step: the falling sphere's first contact is in substep 2, so
-/// substeps 0..=2 see none and substep 3 sees that one; the next step's
+/// same step: the falling sphere's contact is in substep 1, so substeps 0
+/// and 1 see none and substeps 2 and 3 see that one; the next step's
 /// substep 0 sees none again.
 #[test]
 fn participants_read_the_contacts_of_the_earlier_substeps_of_the_step() {
@@ -557,16 +575,15 @@ fn participants_read_the_contacts_of_the_earlier_substeps_of_the_step() {
         assert_eq!(seen.len(), 8, "{name}: 2 steps × 4 substeps");
         for (k, (index, contacts)) in seen.iter().enumerate() {
             assert_eq!(*index, k % 4, "{name}: substep index");
-            let expected: &[Want] = match k {
-                3 => &want[..1],
-                _ if k < 4 => &[],
-                4 => &[],
+            let expected: Vec<Want> = match k {
+                _ if k < 4 => want.iter().copied().filter(|x| x.substep < k).collect(),
+                4 => Vec::new(),
                 _ => {
                     // Later substeps of step 2: only what step 2 recorded so far.
                     continue;
                 }
             };
-            compared += check(&format!("{name} ctx {k}"), contacts, expected);
+            compared += check(&format!("{name} ctx {k}"), contacts, &expected);
         }
         // At the end of the step the world record holds the whole step.
         assert!(
@@ -713,8 +730,9 @@ const FRAME_BOUND: f64 = 1.0 / 65536.0;
 /// `−x`: the solid is `x > wall`), carrier moving along `x` at `carrier_v`,
 /// collider scale 2, a sphere of radius 1/2 at `x = 4.5` moving at `+24`; no gravity,
 /// 8 substeps of `h = 1/64`. In substep `k` the world moves the carrier
-/// (and so the collider) to `x = 5 + carrier_v·h·(k + 1)` before it pushes
-/// the sphere out.
+/// (and so the collider) to `x = 5 + carrier_v·h·(k + 1)` before it detects
+/// the sphere's contact; once the sphere is pushed, the push reacts on the
+/// carrier (a field on a dynamic body is a contact between the two bodies).
 fn moving_carrier(carrier_v: f64) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(config(8, 0));
     w.set_sdf_collision_radius(r(1, 2));
@@ -750,8 +768,9 @@ fn into_frame(point: Vec3Fix, position: Vec3Fix, rotation: QuatFix, scale: Fix12
 /// position `5 + v·h·(k + 1)` (dyadic, compared bit for bit), the carrier's
 /// rotation and the collider's scale 2; the recorded point is on the plane in that frame
 /// (`|local y| ≤ FRAME_BOUND`). The frame the collider holds after the step
-/// (substep 7) puts the points of the earlier substeps off the plane by
-/// `v·h·(7 − k)`, which is what a conversion after the step got.
+/// puts the points of the earlier substeps off the plane by the distance the
+/// carrier moved since (in the field's units), which is what a conversion
+/// after the step got; it is not zero for a record before the last substep.
 #[test]
 fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
     let half = core::f64::consts::FRAC_1_SQRT_2;
@@ -763,22 +782,36 @@ fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
             step(&mut w, r(1, 8));
             let h = 1.0 / 64.0;
             let after = w.sdf_colliders[0].position;
+            let after_rotation = w.sdf_colliders[0].rotation;
+            // Up to the first contact the carrier moves freely; after it the
+            // push has reacted on it, so its pose has no closed form here and
+            // only the frame's consistency is checked.
+            let first = w
+                .last_step_sdf_contacts()
+                .iter()
+                .map(|c| c.substep)
+                .min()
+                .unwrap_or(0);
             for c in w.last_step_sdf_contacts() {
                 let label = format!("v {carrier_v} {path} substep {}", c.substep);
-                let want_x = 5.0 + carrier_v * h * (c.substep as f64 + 1.0);
-                assert_eq!(
-                    c.collider_position,
-                    v3(want_x, 0.0, 0.0),
-                    "{label}: collider position"
-                );
+                if c.substep == first {
+                    let want_x = 5.0 + carrier_v * h * (c.substep as f64 + 1.0);
+                    assert_eq!(
+                        c.collider_position,
+                        v3(want_x, 0.0, 0.0),
+                        "{label}: collider position"
+                    );
+                }
                 let q = c.collider_rotation;
-                for (got, want) in [
-                    (q.x.to_f64(), 0.0),
-                    (q.y.to_f64(), 0.0),
-                    (q.z.to_f64(), half),
-                    (q.w.to_f64(), half),
-                ] {
-                    assert!(close(got, want), "{label}: rotation {q:?}");
+                if c.substep == first {
+                    for (got, want) in [
+                        (q.x.to_f64(), 0.0),
+                        (q.y.to_f64(), 0.0),
+                        (q.z.to_f64(), half),
+                        (q.w.to_f64(), half),
+                    ] {
+                        assert!(close(got, want), "{label}: rotation {q:?}");
+                    }
                 }
                 assert_eq!(c.collider_scale, r(2, 1), "{label}: scale");
                 let local = into_frame(c.point, c.collider_position, q, c.collider_scale);
@@ -787,16 +820,16 @@ fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
                     "{label}: point off the plane in the recorded frame by {}",
                     local[1]
                 );
-                // The pose after the step is the pose of the last substep.
-                let late = into_frame(c.point, after, q, c.collider_scale);
-                // In the field's units (÷ scale 2).
-                let off = carrier_v * h * (7.0 - c.substep as f64) / 2.0;
-                assert!(
-                    (late[1].abs() - off.abs()).abs() <= FRAME_BOUND,
-                    "{label}: the frame after the step is off by {}, closed form {off}",
-                    late[1]
-                );
+                // The frame after the step (the pose of the last substep) puts
+                // a point recorded earlier off the plane: the carrier moved
+                // since (by `|v| h` per substep at least before the push).
+                let late = into_frame(c.point, after, after_rotation, c.collider_scale);
                 if c.substep < 7 {
+                    assert!(
+                        late[1].abs() > 1e3 * FRAME_BOUND,
+                        "{label}: the frame after the step agrees ({})",
+                        late[1]
+                    );
                     early += 1;
                 }
                 compared += 1;

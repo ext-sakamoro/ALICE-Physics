@@ -8316,8 +8316,10 @@ impl PhysicsWorld {
                 // normal; a speculative point for it would be met at the
                 // present pose, with that pose's normal, which is not the
                 // impact's for an oblique approach. Its margin then covers
-                // only its turn and gravity.
+                // only its turn and gravity. (The temporal Gauss–Seidel step
+                // sweeps nothing, so every body keeps its whole margin there.)
                 let swept = self.ccd.is_enabled()
+                    && self.config.solver_backend == SolverBackend::Xpbd
                     && (body.position - body.prev_position)
                         .checked_length_scaled()
                         .zip(self.ccd.motion_threshold().checked_mul(radius))
@@ -13192,9 +13194,9 @@ mod tests {
     /// Same closed form as the `integrate_positions` test immediately above,
     /// but through the `Tgs`-path helper instead: velocity is
     /// (target - position) / dt = ((5, 2, 3) - (1, 2, 3)) · 4 = (16, 0, 0),
-    /// the body lands exactly on the target, and `prev_position` keeps the
-    /// pre-advance position (mirrors `integrate_positions`' `Kinematic`
-    /// branch bit-for-bit; this is the oracle for
+    /// the body stays at the pose the tick starts with (the substep loop of
+    /// `step_tgs` moves it, `tests/analytic_kinematic_impact.rs`), and it is
+    /// returned with its target (this is the oracle for
     /// `advance_kinematic_targets_for_tgs` itself, not for `step_tgs`).
     #[cfg(feature = "std")]
     #[test]
@@ -13202,10 +13204,14 @@ mod tests {
         let mut world = quiet_world();
         let k = world.add_body(RigidBody::new_kinematic(v3(1, 2, 3)));
         world.bodies[k].set_kinematic_target(v3(5, 2, 3), QuatFix::IDENTITY);
-        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        let moving = world.advance_kinematic_targets_for_tgs(r(1, 4));
+        // The velocity that carries it to the target over dt; the pose stays
+        // where the tick starts (the substep loop moves it).
         assert_eq!(world.bodies[k].velocity, v3(16, 0, 0));
-        assert_eq!(world.bodies[k].position, v3(5, 2, 3));
+        assert_eq!(world.bodies[k].angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(world.bodies[k].position, v3(1, 2, 3));
         assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
+        assert_eq!(moving, vec![(k, v3(5, 2, 3), QuatFix::IDENTITY)]);
     }
 
     /// A dynamic body with no target is untouched by the `Tgs`-path helper
@@ -13216,7 +13222,7 @@ mod tests {
         let mut world = quiet_world();
         let d = world.add_body(RigidBody::new_dynamic(v3(1, 2, 3), Fix128::ONE));
         world.bodies[d].velocity = v3(7, 8, 9);
-        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        assert!(world.advance_kinematic_targets_for_tgs(r(1, 4)).is_empty());
         assert_eq!(world.bodies[d].position, v3(1, 2, 3));
         assert_eq!(world.bodies[d].velocity, v3(7, 8, 9));
     }
@@ -13230,7 +13236,7 @@ mod tests {
     fn advance_kinematic_targets_for_tgs_without_a_target_stays_at_rest() {
         let mut world = quiet_world();
         let k = world.add_body(RigidBody::new_kinematic(v3(1, 2, 3)));
-        world.advance_kinematic_targets_for_tgs(r(1, 4));
+        assert!(world.advance_kinematic_targets_for_tgs(r(1, 4)).is_empty());
         assert_eq!(world.bodies[k].position, v3(1, 2, 3));
         assert_eq!(world.bodies[k].velocity, Vec3Fix::ZERO);
         assert_eq!(world.bodies[k].prev_position, v3(1, 2, 3));
