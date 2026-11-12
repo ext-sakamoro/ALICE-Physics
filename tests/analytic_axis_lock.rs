@@ -262,7 +262,7 @@ fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
     let blob = plain.snapshot_world();
     assert_eq!(
         u16::from_le_bytes([blob[4], blob[5]]),
-        9,
+        10,
         "a lock-free world writes the current version"
     );
 
@@ -277,7 +277,7 @@ fn the_snapshot_and_law_id_carry_locks_only_when_there_are_some() {
     assert_ne!(moved.law_id(&sem), locked.law_id(&sem));
 
     let lblob = locked.snapshot_world();
-    assert_eq!(u16::from_le_bytes([lblob[4], lblob[5]]), 9);
+    assert_eq!(u16::from_le_bytes([lblob[4], lblob[5]]), 10);
     assert_ne!(lblob, blob);
     assert_ne!(locked.state_digest(), plain.state_digest());
     let mut back = build();

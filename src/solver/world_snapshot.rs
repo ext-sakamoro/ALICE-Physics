@@ -2392,12 +2392,33 @@ impl PhysicsWorld {
         w.u32(self.next_grab_id);
         // Version 10's section, then its length: an older form is the blob
         // without it.
+        // Only the values an older reader would not assume are listed: a
+        // contact's point number (0 assumed) and compliance (the default
+        // pair's assumed), a material's contact compliance (the default).
         let mut t = W(Vec::new());
-        for c in &self.contact_constraints {
+        let default_pair = crate::material::DEFAULT_CONTACT_COMPLIANCE
+            + crate::material::DEFAULT_CONTACT_COMPLIANCE;
+        let contacts: Vec<(usize, &ContactConstraint)> = self
+            .contact_constraints
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.feature != 0 || c.compliance != default_pair)
+            .collect();
+        t.usize(contacts.len());
+        for (k, c) in contacts {
+            t.usize(k);
             t.u32(c.feature);
             t.fix(c.compliance);
         }
-        for m in &self.material_table.materials {
+        let materials: Vec<&crate::material::PhysicsMaterial> = self
+            .material_table
+            .materials
+            .iter()
+            .filter(|m| m.contact_compliance != crate::material::DEFAULT_CONTACT_COMPLIANCE)
+            .collect();
+        t.usize(materials.len());
+        for m in materials {
+            t.u16(m.id);
             t.fix(m.contact_compliance);
         }
         for set in [&self.static_touch, &self.sdf_touch, &self.body_touch] {
@@ -3317,12 +3338,31 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         // setting (written as "off"), then the section's length.
         const S: &str = "contact_section";
         let start = r.pos;
-        for c in &mut contact_constraints {
-            c.feature = r.u32()?;
-            c.compliance = r.fix()?;
+        // ascending, each naming a contact / material that is there
+        let n = r.len(S, 8 + 4 + 16)?;
+        let mut last: Option<usize> = None;
+        for _ in 0..n {
+            let k = r.usize(S)?;
+            if k >= contact_constraints.len() || last.is_some_and(|l| l >= k) {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            last = Some(k);
+            contact_constraints[k].feature = r.u32()?;
+            contact_constraints[k].compliance = r.fix()?;
         }
-        for m in &mut material_table.materials {
-            m.contact_compliance = r.fix()?;
+        let n = r.len(S, 2 + 16)?;
+        let mut last: Option<u16> = None;
+        for _ in 0..n {
+            let id = r.u16()?;
+            if last.is_some_and(|l| l >= id) {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            last = Some(id);
+            let compliance = r.fix()?;
+            let Some(m) = material_table.materials.iter_mut().find(|m| m.id == id) else {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            };
+            m.contact_compliance = compliance;
         }
         for (k, set) in touches.iter_mut().enumerate() {
             let section = ["static_touch", "sdf_touch", "body_touch"][k];
