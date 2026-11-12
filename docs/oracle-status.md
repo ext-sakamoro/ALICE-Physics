@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6165 |
+| 🟢 Not ignored (run by CI) | 6166 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6267** |
+| **Total** | **6268** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -163,7 +163,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6165)
+## 🟢 Not ignored (6166)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -303,6 +303,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_privacy_wiring.rs` | 16 |
 | `analytic_profiling_wiring.rs` | 16 |
 | `analytic_rope_participant.rs` | 16 |
+| `analytic_self_contact.rs` | 16 |
 | `analytic_shape.rs` | 16 |
 | `analytic_structural_solver_wiring.rs` | 16 |
 | `analytic_vehicle_wiring.rs` | 16 |
@@ -322,7 +323,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rope_attach_wiring.rs` | 15 |
 | `analytic_sdf_body_collider.rs` | 15 |
 | `analytic_sdf_fem_mesh_wiring.rs` | 15 |
-| `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
 | `analytic_wind_zone_participant.rs` | 15 |
 | `audit_fsi_advanced.rs` | 15 |

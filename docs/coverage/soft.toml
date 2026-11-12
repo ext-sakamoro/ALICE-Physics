@@ -902,7 +902,7 @@ axis = "benchmark"
 item = "crumpled cloth does not pass through itself"
 source = "Bridson et al. 2002 (crumpling scenes)"
 status = "implemented+oracle"
-evidence = "tests/analytic_self_contact.rs::a_crumpled_cloth_does_not_pass_through_itself tests/analytic_self_contact.rs::self_collision_improves_the_edge_edge_separation_it_constrains"
+evidence = "tests/analytic_self_contact.rs::a_crumpled_cloth_does_not_pass_through_itself tests/analytic_self_contact.rs::the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline src/cloth.rs::impact_zone_tests::the_self_contact_stages_alone_reduce_the_edge_edge_violations"
 oracle_candidate = ""
 limitation = ""
 

@@ -47,7 +47,37 @@
 //! position projection to `thickness` outside the surface (field evaluated in `f32`); the
 //! normal velocity is dropped and the tangential one scaled by `1 − sdf_friction`: no
 //! Coulomb friction, no restitution, no reaction on the collider's body; self-contact
-//! likewise. A grab ([`Cloth::grab`]) is a kinematic pin (infinite mass while held, no
+//! likewise. Self-contact ends every frame with a fail-safe (rigid impact zones,
+//! translation only): particles still crossing after the repair passes are merged into
+//! zones that move by one common translation from their frame-start positions and take the
+//! mass-weighted mean velocity; then the proximity passes run once more and the zones once
+//! more. Linear momentum is kept and the end-of-frame no-crossing invariant holds by
+//! construction, at any thickness (a thickness far above the local edge length cannot be
+//! met by every pair, but the cloth still does not end a frame crossed), but **a zone does
+//! not turn: its angular momentum about its centre and its relative kinetic energy are
+//! removed** (an exact rotation is not available in `Fix128`; a zone with a pinned particle
+//! stops). Measured on the 9x9 crumple sweep (`impact_zone_report_on_the_crumple_sweep`,
+//! with the product floored toward −∞; zone calls that fired (a frame calls the zones at most
+//! twice), largest zone in free particles of 49, and the kinetic energy and angular momentum
+//! removed by the zones over the frames they fire in, out of what those frames had):
+//!
+//! | frames | zone calls that fired | largest zone | KE removed | angular momentum removed |
+//! |---|---|---|---|---|
+//! | 20 | 4 / 20 | 19 (39 %) | 1.3e3 of 3.2e3 J | 63 of 224 kg·m²/s |
+//! | 40 | 7 / 40 | 15 (31 %) | 7.9e2 of 3.8e3 J | 64 of 316 kg·m²/s |
+//! | 60 | 12 / 60 | 18 (37 %) | 5.9e3 of 1.4e4 J | 272 of 838 kg·m²/s |
+//! | 80 | 0 / 80 | — | — | — |
+//! | 100 | 2 / 100 | 4 (8 %) | 8.9e2 of 3.7e3 J | 23 of 104 kg·m²/s |
+//! | 120 | 0 / 120 | — | — | — |
+//!
+//! So at coarse frame counts (frame chords of about an edge length) the zones fire on 0–20 %
+//! of frame calls and remove a fifth to two fifths of the kinetic energy of those frames (no
+//! zone took the whole cloth; with the product rounded to nearest, ties to even, the same sweep
+//! fires on 12–30 % of calls); where the repair passes converge they are the identity
+//! (`impact_zones_are_the_identity_where_the_repair_converges`). The zones guarantee no
+//! crossing, not the contact thickness: pairs held against a particle the caller moves (a pinned
+//! one) can end the frame inside the thickness.
+//! A grabA grab ([`Cloth::grab`]) is a kinematic pin (infinite mass while held, no
 //! reaction on the pointer; the throw velocity is the pointer's velocity over the last step).
 //! An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass (mass
 //! per particle, not per area) and the sheet has no thickness. A cloth held by a world does
@@ -58,7 +88,15 @@
 //! input change, bit identity with sleep off), `tests/soft_letters_oracle.rs` (rest is
 //! still, local stretch, throw velocity bit identity, recovery to rest within 600 frames,
 //! digest coverage, frozen replay digest), `tests/cloth_state_digest.rs` (replay bit
-//! identity, every state field moves the digest), `tests/determinism_cloth_step_digest.rs`.
+//! identity, every state field moves the digest), `tests/determinism_cloth_step_digest.rs`,
+//! `tests/analytic_self_contact.rs` (vertex-face and edge-edge closed forms, the crumple
+//! sweep at 20–120 frames crossing-free, `noise_margin_holds_the_rounding_and_not_the_real_deficits`),
+//! and in this file `impact_zones_are_the_identity_where_the_repair_converges`,
+//! `two_patches_driven_together_merge_into_one_zone_with_the_closed_form_motion` (closed-form
+//! translation, velocity and exact linear momentum),
+//! `a_zone_whose_translation_the_chord_test_flags_is_frozen`,
+//! `the_self_contact_stages_alone_reduce_the_edge_edge_violations` and
+//! `impact_zone_report_on_the_crumple_sweep` (the per-scene cost).
 //!
 //! **Tiers.** L0 only: no lighter tier yet (a coarser lattice would be one, with its error
 //! against this lattice measured on the same outline).
@@ -106,9 +144,15 @@ pub struct ClothConfig {
     /// **completed crossing** (`gap < 0`); a pair that met and separated again on its own
     /// side is left to the proximity pass. Two parallel (or, in `Fix128`, numerically
     /// parallel) edges are left to the vertex-face pass — see `closest_points_on_segments`.
-    /// `remaining_self_contact_crossings` counts the same two kinds of event.
+    /// `remaining_self_contact_crossings` counts the same two kinds of event. Whatever the
+    /// repair leaves is resolved by rigid impact zones (`resolve_impact_zones`), so a step
+    /// ends with that count at 0 (see the module's MODEL section for what the zones cost).
     pub self_collision: bool,
-    /// Contact thickness: a vertex is kept at least this far from every non-incident triangle
+    /// Contact thickness: the proximity passes push a vertex this far from every
+    /// non-incident triangle (and an edge from every non-adjacent edge). The end-of-frame
+    /// guarantee is no crossing, not this distance: a thickness above about half the local
+    /// edge length cannot be satisfied by all pairs at once (the projections conflict), but
+    /// the cloth still ends every frame without passing through itself.
     pub self_collision_distance: Fix128,
 }
 
@@ -1884,6 +1928,207 @@ impl Cloth {
             }
             self.velocities[i] = self.velocities[i] + *moved * inv_dt;
         }
+
+        if self.resolve_impact_zones(start) {
+            // the zones left particles at their frame-start spacing; separate them again
+            // with the proximity passes, then let the zones restore the invariant if the
+            // passes broke it
+            let before = self.positions.clone();
+            let margin = thickness.double();
+            let vf = self.collect_vertex_face_candidates(margin);
+            let ee = self.collect_edge_edge_candidates(margin);
+            for _ in 0..self.config.iterations {
+                self.solve_self_collision(&vf, &ee);
+            }
+            for i in 0..n {
+                if !self.inv_masses[i].is_zero() {
+                    self.velocities[i] =
+                        self.velocities[i] + (self.positions[i] - before[i]) * inv_dt;
+                }
+            }
+            self.resolve_impact_zones(start);
+        }
+    }
+
+    /// Fail-safe of the frame repair: rigid impact zones, translation only.
+    ///
+    /// The repair passes above are Jacobi projections; with frame chords as long as a mesh
+    /// edge they need not reach a fixed point (measured on the 9x9 crumple scene: every frame
+    /// that left a crossing still had 8–22 corrections on its last pass, and 2000 passes
+    /// still cycled). This stage makes the end-of-frame invariant hold by construction, after
+    /// Bridson, Fedkiw and Anderson (2002) and Harmon et al. (2008):
+    ///
+    /// 1. every surviving offender — a chord piercing a non-incident triangle, or an edge pair
+    ///    that met and ended on the far side (`self_contact_offenders`, the same predicates
+    ///    as `remaining_self_contact_crossings`) — merges its vertices into one zone;
+    /// 2. a zone moves as one rigid body from its frame-start positions: every member ends at
+    ///    `start[i] + d` with one translation `d`, the mass-weighted mean of the members'
+    ///    displacements, and takes the mass-weighted mean velocity (linear momentum kept);
+    /// 3. a zone is **frozen** (`d = 0`, at rest relative to its start) when it contains a
+    ///    pinned particle, or when an offender lies wholly inside a zone that already
+    ///    existed (a translation the chord test still flags);
+    /// 4. repeat until no offender survives.
+    ///
+    /// A common translation is exact in `Fix128` (the same vector is added to every member,
+    /// so the members' differences are the frame-start differences bit for bit); a rotation
+    /// is not, which is why the zone does not turn and its angular momentum is not kept.
+    ///
+    /// Termination: zones only merge or freeze. A frozen zone is at its frame start, so its
+    /// chords are empty and its edges do not move, and the worst case — every free particle
+    /// in one frozen zone — is the frame start itself, which has no offender.
+    fn resolve_impact_zones(&mut self, start: &[Vec3Fix]) -> bool {
+        #[cfg(all(test, feature = "std"))]
+        if zone_probe::off() {
+            return false;
+        }
+        let n = self.particle_count().min(start.len());
+        let mut offenders = self.self_contact_offenders(start);
+        if offenders.is_empty() {
+            return false;
+        }
+        #[cfg(all(test, feature = "std"))]
+        let before = zone_probe::energy_and_momentum(self);
+        // union-find over particle indices; `frozen` is kept on the root
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut frozen = vec![false; n];
+        let mut in_zone = vec![false; n];
+        fn root(parent: &mut [usize], mut i: usize) -> usize {
+            while parent[i] != i {
+                parent[i] = parent[parent[i]];
+                i = parent[i];
+            }
+            i
+        }
+        // a bound, not a budget: each round merges at least two zones or freezes one
+        for _ in 0..2 * n + 2 {
+            if offenders.is_empty() {
+                return true;
+            }
+            // An offender wholly inside one zone as it stood at the start of this round: that
+            // zone's translation is what the chord test flags, so it stops. Judged on the
+            // zones before this round's merges, which only join what was apart.
+            let zone_at_start: Vec<Option<usize>> = (0..n)
+                .map(|v| in_zone[v].then(|| root(&mut parent, v)))
+                .collect();
+            for set in &offenders {
+                if let Some(z) = zone_at_start[set[0]] {
+                    if set.iter().all(|&v| zone_at_start[v] == Some(z)) {
+                        let r = root(&mut parent, z);
+                        frozen[r] = true;
+                    }
+                }
+            }
+            for set in &offenders {
+                for &v in set {
+                    in_zone[v] = true;
+                }
+                for &v in &set[1..] {
+                    let (a, b) = (root(&mut parent, set[0]), root(&mut parent, v));
+                    if a != b {
+                        // the smaller index stays the root, so the zones do not depend on the
+                        // order the offenders came in
+                        let (keep, gone) = if a < b { (a, b) } else { (b, a) };
+                        parent[gone] = keep;
+                        frozen[keep] = frozen[keep] || frozen[gone];
+                    }
+                }
+            }
+            // per zone: Σm, Σm·Δ, Σm·v, and whether a pinned particle is a member
+            let mut mass = vec![Fix128::ZERO; n];
+            let mut moment = vec![Vec3Fix::ZERO; n];
+            let mut momentum = vec![Vec3Fix::ZERO; n];
+            for i in 0..n {
+                if !in_zone[i] {
+                    continue;
+                }
+                let r = root(&mut parent, i);
+                if self.inv_masses[i].is_zero() {
+                    frozen[r] = true;
+                    continue;
+                }
+                let m = Fix128::ONE / self.inv_masses[i];
+                mass[r] = mass[r] + m;
+                moment[r] = moment[r] + (self.positions[i] - start[i]) * m;
+                momentum[r] = momentum[r] + self.velocities[i] * m;
+            }
+            for i in 0..n {
+                if !in_zone[i] || self.inv_masses[i].is_zero() {
+                    continue;
+                }
+                let r = root(&mut parent, i);
+                if frozen[r] || mass[r].is_zero() {
+                    self.positions[i] = start[i];
+                    self.velocities[i] = Vec3Fix::ZERO;
+                } else {
+                    let inv_m = Fix128::ONE / mass[r];
+                    self.positions[i] = start[i] + moment[r] * inv_m;
+                    self.velocities[i] = momentum[r] * inv_m;
+                }
+            }
+            offenders = self.self_contact_offenders(start);
+            #[cfg(all(test, feature = "std"))]
+            if offenders.is_empty() {
+                let mut size = vec![0usize; n];
+                for i in 0..n {
+                    if in_zone[i] && !self.inv_masses[i].is_zero() {
+                        let r = root(&mut parent, i);
+                        size[r] += 1;
+                    }
+                }
+                let max_zone = size.iter().copied().max().unwrap_or(0);
+                zone_probe::record(before, zone_probe::energy_and_momentum(self), max_zone);
+            }
+        }
+        debug_assert!(
+            offenders.is_empty(),
+            "impact zones did not terminate within their bound"
+        );
+        true
+    }
+
+    /// The surviving self-intersection events over the frame `start → positions`, each as the
+    /// vertices it involves: a pierced triangle as `[vertex, a, b, c]`, a crossed edge pair as
+    /// `[p, q, r, s]`. `remaining_self_contact_crossings` is the length of this list.
+    fn self_contact_offenders(&self, start: &[Vec3Fix]) -> Vec<[usize; 4]> {
+        let n = self.particle_count().min(start.len());
+        let mut out = Vec::new();
+        for tri in &self.triangles {
+            let (a, b, c) = (
+                self.positions[tri[0]],
+                self.positions[tri[1]],
+                self.positions[tri[2]],
+            );
+            for (i, from) in start.iter().enumerate().take(n) {
+                if i == tri[0] || i == tri[1] || i == tri[2] {
+                    continue;
+                }
+                if segment_pierces_triangle(*from, self.positions[i], a, b, c).is_some() {
+                    out.push([i, tri[0], tri[1], tri[2]]);
+                }
+            }
+        }
+
+        let thickness = self.config.self_collision_distance;
+        for [i0, i1, j0, j1] in self.collect_swept_edge_edge_candidates(start, thickness) {
+            let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
+            let Some(contact) = edge_pair_frame_contact(
+                (start[i0], self.positions[i0]),
+                (start[i1], self.positions[i1]),
+                (start[j0], self.positions[j0]),
+                (start[j1], self.positions[j1]),
+                thickness,
+            ) else {
+                continue;
+            };
+            // Met **and** ended on the far side. A pair that met and separated again on the
+            // side it started on is not interpenetrating at the end of the frame, which is
+            // the property this function reports on; the repair still acts on it, because
+            // its threshold is `thickness` rather than zero.
+            if contact.gap < Fix128::ZERO {
+                out.push([i0, i1, j0, j1]);
+            }
+        }
+        out
     }
 
     /// Number of surviving self-intersection events over the frame `start → positions`.
@@ -1952,45 +2197,7 @@ impl Cloth {
     /// completed crossing is always counted.
     #[must_use]
     pub fn remaining_self_contact_crossings(&self, start: &[Vec3Fix]) -> usize {
-        let n = self.particle_count().min(start.len());
-        let mut count = 0usize;
-        for tri in &self.triangles {
-            let (a, b, c) = (
-                self.positions[tri[0]],
-                self.positions[tri[1]],
-                self.positions[tri[2]],
-            );
-            for (i, from) in start.iter().enumerate().take(n) {
-                if i == tri[0] || i == tri[1] || i == tri[2] {
-                    continue;
-                }
-                if segment_pierces_triangle(*from, self.positions[i], a, b, c).is_some() {
-                    count += 1;
-                }
-            }
-        }
-
-        let thickness = self.config.self_collision_distance;
-        for [i0, i1, j0, j1] in self.collect_swept_edge_edge_candidates(start, thickness) {
-            let (i0, i1, j0, j1) = (i0 as usize, i1 as usize, j0 as usize, j1 as usize);
-            let Some(contact) = edge_pair_frame_contact(
-                (start[i0], self.positions[i0]),
-                (start[i1], self.positions[i1]),
-                (start[j0], self.positions[j0]),
-                (start[j1], self.positions[j1]),
-                thickness,
-            ) else {
-                continue;
-            };
-            // Met **and** ended on the far side. A pair that met and separated again on the
-            // side it started on is not interpenetrating at the end of the frame, which is
-            // the property this function reports on; the repair still acts on it, because
-            // its threshold is `thickness` rather than zero.
-            if contact.gap < Fix128::ZERO {
-                count += 1;
-            }
-        }
-        count
+        self.self_contact_offenders(start).len()
     }
 
     /// Resolve SDF collisions for all particles
@@ -3196,6 +3403,73 @@ fn find_shared_edge(
 // ============================================================================
 // Tests
 // ============================================================================
+
+/// Test-only view of the impact-zone stage: a switch to turn it off (to compare against the
+/// repair passes alone) and a log of the frames it fired in, with the kinetic energy and the
+/// angular momentum about the origin before and after it, and the largest zone.
+#[cfg(all(test, feature = "std"))]
+pub(crate) mod zone_probe {
+    use super::{Cloth, Fix128};
+    use std::cell::{Cell, RefCell};
+    use std::vec::Vec;
+
+    /// (kinetic energy, angular momentum about the origin), as f64 for reporting
+    pub(crate) type Measure = (f64, [f64; 3]);
+
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct Fired {
+        pub before: Measure,
+        pub after: Measure,
+        /// free (not pinned) particles in the largest zone
+        pub max_zone: usize,
+    }
+
+    std::thread_local! {
+        static OFF: Cell<bool> = const { Cell::new(false) };
+        static LOG: RefCell<Vec<Fired>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(crate) fn off() -> bool {
+        OFF.with(Cell::get)
+    }
+    pub(crate) fn set_off(v: bool) {
+        OFF.with(|c| c.set(v));
+    }
+    pub(crate) fn count() -> usize {
+        LOG.with(|l| l.borrow().len())
+    }
+    pub(crate) fn take() -> Vec<Fired> {
+        LOG.with(|l| core::mem::take(&mut *l.borrow_mut()))
+    }
+    pub(crate) fn record(before: Measure, after: Measure, max_zone: usize) {
+        LOG.with(|l| {
+            l.borrow_mut().push(Fired {
+                before,
+                after,
+                max_zone,
+            })
+        });
+    }
+    pub(crate) fn energy_and_momentum(c: &Cloth) -> Measure {
+        let mut ke = 0.0;
+        let mut am = [0.0f64; 3];
+        for i in 0..c.particle_count() {
+            if c.inv_masses[i].is_zero() {
+                continue;
+            }
+            let m = (Fix128::ONE / c.inv_masses[i]).to_f64();
+            let v = c.velocities[i];
+            let x = c.positions[i];
+            let (vx, vy, vz) = (v.x.to_f64(), v.y.to_f64(), v.z.to_f64());
+            let (px, py, pz) = (x.x.to_f64(), x.y.to_f64(), x.z.to_f64());
+            ke += 0.5 * m * (vx * vx + vy * vy + vz * vz);
+            am[0] += m * (py * vz - pz * vy);
+            am[1] += m * (pz * vx - px * vz);
+            am[2] += m * (px * vy - py * vx);
+        }
+        (ke, am)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -5726,5 +6000,444 @@ mod soft_letters_lib_tests {
         w.step(dt());
         t.step(dt());
         assert_eq!(t.cloths[i].state_digest(), w.cloths[i].state_digest());
+    }
+}
+
+/// The impact-zone fail-safe (`resolve_impact_zones`): where it fires, what it costs, and
+/// that it is the identity where the repair passes already converge.
+#[cfg(all(test, feature = "std"))]
+mod impact_zone_tests {
+    use super::*;
+    use std::eprintln;
+
+    /// The 9x9 crumple of `tests/analytic_self_contact.rs` (`run_crumple`): the boundary is
+    /// pinned and pulled toward the centre over `steps` frames, the centre lifted by 1/8 to
+    /// break the symmetry. Returns the per-frame state and the crossings left.
+    fn crumple(steps: usize) -> (Vec<(Vec<Vec3Fix>, Vec<Vec3Fix>)>, usize) {
+        crumple_with(steps, true)
+    }
+
+    fn crumple_with(
+        steps: usize,
+        self_collision: bool,
+    ) -> (Vec<(Vec<Vec3Fix>, Vec<Vec3Fix>)>, usize) {
+        const RES: usize = 9;
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(8),
+            Fix128::from_int(8),
+            RES,
+            RES,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.config.self_collision = self_collision;
+        cloth.config.self_collision_distance = Fix128::from_ratio(5, 100);
+        let bump = Fix128::from_ratio(1, 8);
+        cloth.positions[4 * RES + 4].y = bump;
+        cloth.prev_positions[4 * RES + 4].y = bump;
+        let is_boundary = |i: usize| {
+            let (r, c) = (i / RES, i % RES);
+            r == 0 || c == 0 || r == RES - 1 || c == RES - 1
+        };
+        let rest = cloth.positions.clone();
+        for i in 0..RES * RES {
+            if is_boundary(i) {
+                cloth.inv_masses[i] = Fix128::ZERO;
+            }
+        }
+        FIRST_FIRE.with(|f| f.set(None));
+        let dt = Fix128::from_ratio(1, 60);
+        let center = Fix128::from_int(4);
+        let total = Fix128::from_int(steps as i64);
+        let mut frames = Vec::with_capacity(steps);
+        let mut left = 0usize;
+        for s in 0..steps {
+            let shrink =
+                Fix128::ONE - Fix128::from_ratio(7, 8) * Fix128::from_int(s as i64) / total;
+            for (i, r) in rest.iter().enumerate() {
+                if is_boundary(i) {
+                    cloth.positions[i].x = center + (r.x - center) * shrink;
+                    cloth.positions[i].z = center + (r.z - center) * shrink;
+                }
+            }
+            let before = cloth.positions.clone();
+            cloth.step(dt);
+            left += cloth.remaining_self_contact_crossings(&before);
+            frames.push((cloth.positions.clone(), cloth.velocities.clone()));
+            if zone_probe::count() > 0 && FIRST_FIRE.with(|f| f.get().is_none()) {
+                FIRST_FIRE.with(|f| f.set(Some(s)));
+            }
+        }
+        (frames, left)
+    }
+
+    std::thread_local! {
+        /// the first frame of the last `crumple_with` run in which the zones fired
+        static FIRST_FIRE: core::cell::Cell<Option<usize>> = const { core::cell::Cell::new(None) };
+    }
+
+    /// A 9x9 cloth pinned along its top row, swinging in a side wind, self-contact on.
+    fn hanging(steps: usize) -> Vec<(Vec<Vec3Fix>, Vec<Vec3Fix>)> {
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(2),
+            9,
+            9,
+            Fix128::from_ratio(1, 10),
+        );
+        cloth.pin_top_row(9);
+        cloth.config.self_collision = true;
+        cloth.wind = Vec3Fix::new(Fix128::from_int(3), Fix128::ZERO, Fix128::ONE);
+        let dt = Fix128::from_ratio(1, 60);
+        (0..steps)
+            .map(|_| {
+                cloth.step(dt);
+                (cloth.positions.clone(), cloth.velocities.clone())
+            })
+            .collect()
+    }
+
+    fn with_zones<T>(on: bool, f: impl FnOnce() -> T) -> (T, Vec<zone_probe::Fired>) {
+        zone_probe::set_off(!on);
+        zone_probe::take();
+        let out = f();
+        zone_probe::set_off(false);
+        (out, zone_probe::take())
+    }
+
+    /// Where the repair passes converge the stage returns before touching anything, so
+    /// every frame is bit-identical to a run without it and the existing goldens stand.
+    /// Two forms, frame by frame on positions and velocities:
+    /// - whole runs the stage never fires in (asserted: the log is empty): the hanging cloth
+    ///   at 120 and 240 frames;
+    /// - the crumple at 60 and 120 frames up to the first frame the stage fires (asserted to
+    ///   be after some frames of contact, so the prefix is not empty), compared with the run
+    ///   without the stage: the frames where self-contact works but converges.
+    #[test]
+    fn impact_zones_are_the_identity_where_the_repair_converges() {
+        let mut compared = 0usize;
+        let scenes: [(&str, fn() -> Vec<(Vec<Vec3Fix>, Vec<Vec3Fix>)>); 2] = [
+            ("hanging 120", || hanging(120)),
+            ("hanging 240", || hanging(240)),
+        ];
+        for (name, scene) in scenes {
+            let (on, fired) = with_zones(true, scene);
+            assert!(
+                fired.is_empty(),
+                "{name}: the stage fired {} times",
+                fired.len()
+            );
+            let (off, _) = with_zones(false, scene);
+            assert_eq!(on.len(), off.len());
+            for (k, (a, b)) in on.iter().zip(&off).enumerate() {
+                assert!(a == b, "{name}: frame {k} differs with the stage on");
+                compared += 1;
+            }
+        }
+        for steps in [60usize, 120] {
+            let ((on, _), fired) = with_zones(true, || crumple(steps));
+            let first = FIRST_FIRE.with(core::cell::Cell::get).unwrap_or(steps);
+            assert!(!fired.is_empty() || first == steps);
+            assert!(
+                first >= 5,
+                "crumple {steps}: the stage fired in frame {first}, no prefix to compare"
+            );
+            let ((off, _), _) = with_zones(false, || crumple(steps));
+            for k in 0..first {
+                assert!(
+                    on[k] == off[k],
+                    "crumple {steps}: frame {k} differs before the stage fired"
+                );
+                compared += 1;
+            }
+            // the frame the stage fired in is where the runs part
+            if first < steps {
+                assert!(
+                    on[first] != off[first],
+                    "crumple {steps}: the stage fired in frame {first} but changed nothing"
+                );
+            }
+        }
+        assert!(compared > 360, "compared {compared} frames");
+    }
+
+    /// Per crumple scene: how often the stage fires, its largest zone, and what it costs in
+    /// kinetic energy and angular momentum in the frames it fires (the stage's own change,
+    /// measured before and after it in that frame). A whole-cloth freeze would show as a zone
+    /// of every free particle. Also: with the stage the scenes end crossing-free, without it
+    /// they do not (the stage is what makes the invariant hold).
+    #[test]
+    fn impact_zone_report_on_the_crumple_sweep() {
+        const FREE: usize = 7 * 7;
+        let mut fired_somewhere = 0usize;
+        let mut left_without = 0usize;
+        for steps in [20usize, 40, 60, 80, 100, 120] {
+            let ((_, left), fired) = with_zones(true, || crumple(steps));
+            let ((_, left_off), _) = with_zones(false, || crumple(steps));
+            let max_zone = fired.iter().map(|f| f.max_zone).max().unwrap_or(0);
+            let ke_lost: f64 = fired.iter().map(|f| f.before.0 - f.after.0).sum();
+            let ke_in: f64 = fired.iter().map(|f| f.before.0).sum();
+            let am = |m: [f64; 3]| (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt();
+            let am_lost: f64 = fired
+                .iter()
+                .map(|f| {
+                    let d = [
+                        f.before.1[0] - f.after.1[0],
+                        f.before.1[1] - f.after.1[1],
+                        f.before.1[2] - f.after.1[2],
+                    ];
+                    am(d)
+                })
+                .sum();
+            let am_in: f64 = fired.iter().map(|f| am(f.before.1)).sum();
+            eprintln!(
+                "crumple {steps:>3}: zone calls that fired {:>3} in {steps} frames ({:.0}%), max zone {max_zone} \
+                 particles ({:.0}% of {FREE} free), KE lost {ke_lost:.3e} of {ke_in:.3e} J, \
+                 |ΔL| {am_lost:.3e} of {am_in:.3e} kg·m²/s, crossings with {left} / without {left_off}",
+                fired.len(),
+                100.0 * fired.len() as f64 / steps as f64,
+                100.0 * max_zone as f64 / FREE as f64,
+            );
+            assert_eq!(left, 0, "crumple {steps}: crossings left with the stage");
+            assert!(
+                max_zone < FREE,
+                "crumple {steps}: a zone took every free particle (whole-cloth freeze)"
+            );
+            fired_somewhere += usize::from(!fired.is_empty());
+            left_without += left_off;
+        }
+        assert!(
+            fired_somewhere > 0,
+            "the stage never fired: the sweep tests nothing"
+        );
+        assert!(
+            left_without > 0,
+            "without the stage the sweep is already clean"
+        );
+    }
+
+    /// Two separate patches (two squares, two triangles each) driven into each other: patch
+    /// A (four particles of 1 kg) at rest at y = 0, patch B (4, 4, 2, 2 kg) a quarter above it,
+    /// moving down by 1/2 over the frame at −32 m/s so every vertex of B ends below A. The
+    /// stage merges both patches into one zone and moves it by the mass-weighted mean
+    /// displacement, closed form (total mass 16 kg): `d = (12·(−1/2)) / 16 = −3/8` in y; each
+    /// particle ends at `start + d`, takes the mean velocity `12·(−32) / 16 = −24` m/s, and
+    /// the total momentum `−384` kg·m/s is unchanged to the bit. The masses are unequal so
+    /// an unweighted mean (`−1/4`, `−16`) is a different answer.
+    #[test]
+    fn two_patches_driven_together_merge_into_one_zone_with_the_closed_form_motion() {
+        let mut cloth = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        cloth.config.self_collision = true;
+        // patch B: a smaller square inside A's footprint, a quarter above it
+        let q = Fix128::from_ratio(1, 4);
+        for (x, z) in [(1i64, 3i64), (3, 3), (1, 6), (3, 6)] {
+            let p = Vec3Fix::new(Fix128::from_ratio(x, 8), q, Fix128::from_ratio(z, 8));
+            cloth.positions.push(p);
+            cloth.prev_positions.push(p);
+            cloth.velocities.push(Vec3Fix::ZERO);
+            cloth.inv_masses.push(Fix128::ONE);
+        }
+        cloth.triangles.push([4, 5, 6]);
+        cloth.triangles.push([5, 7, 6]);
+        // A: 1 kg each; B: 4, 4, 2, 2 kg (inverse masses exact in Fix128)
+        let inv = [1i64, 1, 1, 1, 4, 4, 2, 2];
+        for (w, m) in cloth.inv_masses.iter_mut().zip(inv) {
+            *w = Fix128::from_ratio(1, m);
+        }
+        assert_eq!((cloth.positions.len(), cloth.triangles.len()), (8, 4));
+        let start = cloth.positions.clone();
+        let fall = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-1, 2), Fix128::ZERO);
+        let v_b = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-32), Fix128::ZERO);
+        for i in 4..8 {
+            cloth.positions[i] = start[i] + fall;
+            cloth.velocities[i] = v_b;
+        }
+        let momentum = |c: &Cloth| {
+            c.velocities
+                .iter()
+                .zip(&c.inv_masses)
+                .fold(Vec3Fix::ZERO, |s, (v, w)| s + *v * (Fix128::ONE / *w))
+        };
+        let p_before = momentum(&cloth);
+        assert!(
+            cloth.remaining_self_contact_crossings(&start) > 0,
+            "the patches must cross for the case to test the stage"
+        );
+
+        let (_, fired) = with_zones(true, || {
+            cloth.resolve_impact_zones(&start);
+        });
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].max_zone, 8, "both patches in one zone");
+        let d = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-3, 8), Fix128::ZERO);
+        let v = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-24), Fix128::ZERO);
+        for i in 0..8 {
+            assert_eq!(cloth.positions[i], start[i] + d, "particle {i} position");
+            assert_eq!(cloth.velocities[i], v, "particle {i} velocity");
+        }
+        assert_eq!(momentum(&cloth), p_before, "total linear momentum");
+        assert_eq!(
+            p_before,
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-384), Fix128::ZERO)
+        );
+        assert_eq!(cloth.remaining_self_contact_crossings(&start), 0);
+    }
+
+    /// Segment-segment distance², written here independently of the crate's
+    /// `closest_points_on_segments` (the four endpoint projections, then the interior solution
+    /// of the normal equations when it falls inside both open intervals; parallel pairs are
+    /// measured, not skipped). Same construction as `tests/analytic_self_contact.rs`.
+    fn segment_d2(p1: Vec3Fix, q1: Vec3Fix, p2: Vec3Fix, q2: Vec3Fix) -> Fix128 {
+        fn point_seg(p: Vec3Fix, a: Vec3Fix, b: Vec3Fix) -> Fix128 {
+            let ab = b - a;
+            let den = ab.length_squared();
+            if den.is_zero() {
+                return (p - a).length_squared();
+            }
+            let t = ((p - a).dot(ab) / den).max(Fix128::ZERO).min(Fix128::ONE);
+            (p - (a + ab * t)).length_squared()
+        }
+        let mut best = point_seg(p1, p2, q2)
+            .min(point_seg(q1, p2, q2))
+            .min(point_seg(p2, p1, q1))
+            .min(point_seg(q2, p1, q1));
+        let (d1, d2) = (q1 - p1, q2 - p2);
+        let r = p1 - p2;
+        let (a, e, b) = (d1.dot(d1), d2.dot(d2), d1.dot(d2));
+        let den = a * e - b * b;
+        if !den.is_zero() {
+            let (c, f) = (d1.dot(r), d2.dot(r));
+            let s = (b * f - c * e) / den;
+            let t = (a * f - b * c) / den;
+            if s > Fix128::ZERO && s < Fix128::ONE && t > Fix128::ZERO && t < Fix128::ONE {
+                best = best.min(((p1 + d1 * s) - (p2 + d2 * t)).length_squared());
+            }
+        }
+        best
+    }
+
+    /// Non-adjacent mesh edge pairs closer than `threshold` (every pair, pinned or not)
+    fn edge_edge_violations(positions: &[Vec3Fix], threshold: Fix128) -> (usize, usize) {
+        let grid = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(8),
+            Fix128::from_int(8),
+            9,
+            9,
+            Fix128::from_ratio(1, 100),
+        );
+        let mut edges: Vec<(usize, usize)> = Vec::new();
+        for t in &grid.triangles {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                edges.push((a.min(b), a.max(b)));
+            }
+        }
+        edges.sort_unstable();
+        edges.dedup();
+        let t2 = threshold * threshold;
+        let (mut violations, mut population) = (0usize, 0usize);
+        for (i, &(a0, a1)) in edges.iter().enumerate() {
+            for &(b0, b1) in &edges[i + 1..] {
+                if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
+                    continue;
+                }
+                population += 1;
+                let d2 = segment_d2(positions[a0], positions[a1], positions[b0], positions[b1]);
+                if d2 < t2 {
+                    violations += 1;
+                }
+            }
+        }
+        (violations, population)
+    }
+
+    /// The self-contact stages on their own (zones off) reduce the edge-edge violations they
+    /// constrain: the 60-frame crumple ends with fewer non-adjacent edge pairs inside the
+    /// 0.05 thickness with self-contact on than off. Moved here from
+    /// `tests/analytic_self_contact.rs` (`self_collision_improves_the_edge_edge_separation_it_constrains`),
+    /// where it compared the whole step with self-contact on and off: with the zones in the
+    /// step the comparison mixed two stages, and the off side ends with the surface crossed,
+    /// so its count is taken on a crossed surface. Measured with the floored product: on 2 /
+    /// off 3 (with the product rounded to nearest, ties to even, on < off also holds).
+    ///
+    /// The count is strict (`d² < t²`), without the rounding margin that
+    /// `tests/analytic_self_contact.rs` (`noise_margin_d2`) subtracts: a pair the projection
+    /// left a few units under the threshold can only add to the **on** side, which is the
+    /// side the assertion requires to be smaller, so the strict count cannot pass it falsely.
+    #[test]
+    fn the_self_contact_stages_alone_reduce_the_edge_edge_violations() {
+        let r = Fix128::from_ratio(5, 100);
+        let ((on, _), _) = with_zones(false, || crumple_with(60, true));
+        let ((off, _), _) = with_zones(false, || crumple_with(60, false));
+        let (v_on, pop) = edge_edge_violations(&on.last().expect("frames").0, r);
+        let (v_off, _) = edge_edge_violations(&off.last().expect("frames").0, r);
+        assert!(pop > 0, "no edge pair measured");
+        assert!(
+            v_off > 0,
+            "the scene has no edge-edge violation with self-contact off"
+        );
+        assert!(
+            v_on < v_off,
+            "the self-contact stages did not reduce the edge-edge violations (on {v_on} / off {v_off}, measured 2 / 3)"
+        );
+    }
+
+    /// A zone whose own translation the chord test flags is frozen. The chord test compares
+    /// a vertex's frame chord with the triangle at the end of the frame, so a vertex above a
+    /// triangle that moves up with it by more than their gap is reported as a crossing even
+    /// though nothing moved relative to anything. Here patch A (the unit square) rises by
+    /// 3/4 under patch B (a smaller square 1/4 above it, at rest, straddling A's diagonal):
+    /// A's diagonal crosses B's edges, the zone merges them, and the zone's common
+    /// translation `d = 3/8` upward (equal masses: four particles of A moved 3/4, four of B
+    /// none) leaves B's vertices chord-crossing A's translated triangles, which nothing can
+    /// translate away. The zone must stop: its members end where they started, at rest, and
+    /// the frame ends with no crossing.
+    #[test]
+    fn a_zone_whose_translation_the_chord_test_flags_is_frozen() {
+        let mut cloth = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        cloth.config.self_collision = true;
+        let q = Fix128::from_ratio(1, 4);
+        for (x, z) in [(2i64, 3i64), (4, 3), (2, 5), (4, 5)] {
+            let p = Vec3Fix::new(Fix128::from_ratio(x, 8), q, Fix128::from_ratio(z, 8));
+            cloth.positions.push(p);
+            cloth.prev_positions.push(p);
+            cloth.velocities.push(Vec3Fix::ZERO);
+            cloth.inv_masses.push(Fix128::ONE);
+        }
+        cloth.triangles.push([4, 5, 6]);
+        cloth.triangles.push([5, 7, 6]);
+        for w in &mut cloth.inv_masses {
+            *w = Fix128::ONE;
+        }
+        let start = cloth.positions.clone();
+        let rise = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 4), Fix128::ZERO);
+        for i in 0..4 {
+            cloth.positions[i] = start[i] + rise;
+            cloth.velocities[i] = rise * Fix128::from_int(60);
+        }
+        assert!(
+            !cloth.self_contact_offenders(&start).is_empty(),
+            "the patches must cross for the case to test the stage"
+        );
+
+        let (_, fired) = with_zones(true, || {
+            cloth.resolve_impact_zones(&start);
+        });
+
+        assert_eq!(fired.len(), 1);
+        for i in 0..8 {
+            assert_eq!(
+                cloth.positions[i], start[i],
+                "particle {i} is not back at its start"
+            );
+            assert_eq!(
+                cloth.velocities[i],
+                Vec3Fix::ZERO,
+                "particle {i} is not at rest"
+            );
+        }
+        assert_eq!(cloth.remaining_self_contact_crossings(&start), 0);
     }
 }
