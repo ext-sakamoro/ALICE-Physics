@@ -464,6 +464,15 @@ impl W {
     fn usize(&mut self, v: usize) {
         self.u64(v as u64);
     }
+    /// A contact constraint's body: its index, or the tag `u64::MAX` for
+    /// [`crate::solver::STATIC_BODY`] (the same on 32- and 64-bit targets).
+    fn contact_body(&mut self, v: usize) {
+        if v == crate::solver::STATIC_BODY {
+            self.u64(u64::MAX);
+        } else {
+            self.u64(v as u64);
+        }
+    }
     fn f32(&mut self, v: f32) {
         self.u32(v.to_bits());
     }
@@ -546,6 +555,14 @@ impl<'a> R<'a> {
     }
     fn usize(&mut self, section: &'static str) -> Res<usize> {
         usize::try_from(self.u64()?).map_err(|_| WorldSnapshotError::InvalidValue { section })
+    }
+    /// See `W::contact_body`: the tag is read only from a blob of version 8 on.
+    fn contact_body(&mut self, section: &'static str, version: u16) -> Res<usize> {
+        let v = self.u64()?;
+        if v == u64::MAX && version >= 8 {
+            return Ok(crate::solver::STATIC_BODY);
+        }
+        usize::try_from(v).map_err(|_| WorldSnapshotError::InvalidValue { section })
     }
     /// A element count: each element takes at least `min_size` bytes, so a
     /// count larger than the rest of the blob allows is truncation (and is
@@ -646,6 +663,10 @@ fn r_config(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> Res<Sol
             1 => SolverBackend::Tgs,
             _ => return Err(invalid(S)),
         },
+        // Version 9 writes the setting in its tail when it is off; every
+        // older blob had speculative contacts' absence written as nothing
+        // and reads them as on (the default).
+        speculative_contacts: true,
     })
 }
 
@@ -1519,6 +1540,8 @@ fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
             restitution: r.fix()?,
             friction_combine: r_combine(r)?,
             restitution_combine: r_combine(r)?,
+            // version 10 gives it in its section (`r_v10_section`)
+            contact_compliance: crate::material::DEFAULT_CONTACT_COMPLIANCE,
         });
     }
     let n = r.len(S, 36)?;
@@ -1972,6 +1995,11 @@ struct Decoded {
     /// The cloths and the next grab id (version 9; none before)
     cloths: Vec<crate::cloth::Cloth>,
     next_grab_id: u32,
+    /// The contact points of the last substep (`static_touch`, `sdf_touch`,
+    /// `body_touch`) and the speculative setting (version 9; none and on
+    /// before)
+    touches: [Vec<(usize, usize, u32)>; 3],
+    speculative_contacts: bool,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -2012,7 +2040,13 @@ impl PhysicsWorld {
     /// held step counts, and always carries the axis-lock section (a count of
     /// 0 for a world without locks).
     /// Version 9 appends the cloths ([`crate::cloth::Cloth`]).
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 9;
+    /// Version 10 follows each contact constraint with its manifold point
+    /// number ([`ContactConstraint::feature`], u32) and its compliance
+    /// ([`ContactConstraint::compliance`]), each material with its contact
+    /// compliance, and appends the contact points of the last substep (the
+    /// static, SDF and body-pair touch sets: which points the next substep
+    /// finds again) and [`crate::solver::SolverConfig::speculative_contacts`].
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 10;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -2174,8 +2208,8 @@ impl PhysicsWorld {
 
         w.usize(self.contact_constraints.len());
         for c in &self.contact_constraints {
-            w.usize(c.body_a);
-            w.usize(c.body_b);
+            w.contact_body(c.body_a);
+            w.contact_body(c.body_b);
             w_contact(&mut w, &c.contact);
             w.fix(c.friction);
             w.fix(c.restitution);
@@ -2356,6 +2390,28 @@ impl PhysicsWorld {
             w_cloth(&mut w, c);
         }
         w.u32(self.next_grab_id);
+        // Version 10's section, then its length: an older form is the blob
+        // without it.
+        let mut t = W(Vec::new());
+        for c in &self.contact_constraints {
+            t.u32(c.feature);
+            t.fix(c.compliance);
+        }
+        for m in &self.material_table.materials {
+            t.fix(m.contact_compliance);
+        }
+        for set in [&self.static_touch, &self.sdf_touch, &self.body_touch] {
+            t.usize(set.len());
+            for &(x, y, f) in set.iter() {
+                t.usize(x);
+                t.usize(y);
+                t.u32(f);
+            }
+        }
+        t.bool(!self.config.speculative_contacts);
+        let section = t.0.len();
+        w.0.extend_from_slice(&t.0);
+        w.usize(section);
 
         let mut data = w.0;
         let payload_len = (data.len() - HEADER_LEN_V4) as u64;
@@ -2728,6 +2784,11 @@ impl PhysicsWorld {
         self.set_axis_locks(d.axis_locks);
         self.cloths = d.cloths;
         self.next_grab_id = d.next_grab_id;
+        let [static_touch, sdf_touch, body_touch] = d.touches;
+        self.static_touch = static_touch;
+        self.sdf_touch = sdf_touch;
+        self.body_touch = body_touch;
+        self.config.speculative_contacts = d.speculative_contacts;
     }
 }
 
@@ -3011,12 +3072,16 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     for _ in 0..n {
         const S: &str = "contact_constraints";
         contact_constraints.push(ContactConstraint {
-            body_a: r.usize(S)?,
-            body_b: r.usize(S)?,
+            body_a: r.contact_body(S, version)?,
+            body_b: r.contact_body(S, version)?,
             contact: r_contact(r)?,
             friction: r.fix()?,
             restitution: r.fix()?,
             cached_lambda: r.fix()?,
+            // version 10 gives both in its section (`r_v10_section`)
+            feature: 0,
+            compliance: crate::material::DEFAULT_CONTACT_COMPLIANCE
+                + crate::material::DEFAULT_CONTACT_COMPLIANCE,
         });
     }
 
@@ -3080,7 +3145,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     }
 
     let contact_cache = r_contact_cache(r)?;
-    let material_table = r_material_table(r)?;
+    let mut material_table = r_material_table(r)?;
     let n = r.len("body_materials", 2)?;
     let mut body_materials = Vec::with_capacity(n);
     for _ in 0..n {
@@ -3247,6 +3312,39 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     } else {
         (Vec::new(), 0)
     };
+    let mut touches: [Vec<(usize, usize, u32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut speculative_contacts = true;
+    if version >= 10 {
+        // The section: each contact's point number and compliance, each
+        // material's contact compliance, the touch sets, the speculative
+        // setting (written as "off"), then the section's length.
+        const S: &str = "contact_section";
+        let start = r.pos;
+        for c in &mut contact_constraints {
+            c.feature = r.u32()?;
+            c.compliance = r.fix()?;
+        }
+        for m in &mut material_table.materials {
+            m.contact_compliance = r.fix()?;
+        }
+        for (k, set) in touches.iter_mut().enumerate() {
+            let section = ["static_touch", "sdf_touch", "body_touch"][k];
+            let n = r.len(section, 2 * 8 + 4)?;
+            for _ in 0..n {
+                let entry = (r.usize(section)?, r.usize(section)?, r.u32()?);
+                // Sorted, as the solver keeps them (it searches them).
+                if set.last().is_some_and(|last| *last >= entry) {
+                    return Err(WorldSnapshotError::InvalidValue { section });
+                }
+                set.push(entry);
+            }
+        }
+        speculative_contacts = !r.bool(S)?;
+        let length = r.pos - start;
+        if r.usize(S)? != length {
+            return Err(WorldSnapshotError::InvalidValue { section: S });
+        }
+    }
 
     Ok(Decoded {
         config,
@@ -3286,6 +3384,8 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         axis_locks,
         cloths,
         next_grab_id,
+        touches,
+        speculative_contacts,
         ids: None,
     })
 }
@@ -3404,8 +3504,12 @@ fn validate(d: &Decoded) -> Res<()> {
         check("distance_constraints", c.body_b, n)?;
     }
     for c in &d.contact_constraints {
-        check("contact_constraints", c.body_a, n)?;
-        check("contact_constraints", c.body_b, n)?;
+        if c.body_a != crate::solver::STATIC_BODY {
+            check("contact_constraints", c.body_a, n)?;
+        }
+        if c.body_b != crate::solver::STATIC_BODY {
+            check("contact_constraints", c.body_b, n)?;
+        }
     }
     for p in &d.sdf_poses {
         if p.3 != crate::sdf_collider::SDF_STATIC {
@@ -3838,7 +3942,8 @@ mod tests {
             .with_scale(fx(3, 2)),
         );
 
-        // 0: rests on the plane and falls asleep
+        // 0: rests on the plane and falls asleep (no force field acts on it: a
+        // ball under a steady sideways force rolls on and never rests)
         w.add_body_with_radius(
             RigidBody::new_dynamic(
                 Vec3Fix::new(Fix128::ZERO, fx(1, 2), Fix128::ZERO),
@@ -3970,12 +4075,15 @@ mod tests {
         w.add_force_field(ForceFieldInstance::new(ForceField::Drag {
             coefficient: fx(1, 10),
         }));
-        w.add_force_field(ForceFieldInstance::new(ForceField::Vortex {
-            center: v(3, 5, 0),
-            axis: up,
-            strength: fx(1, 2),
-            falloff_radius: fx(20, 1),
-        }));
+        w.add_force_field(
+            ForceFieldInstance::new(ForceField::Vortex {
+                center: v(3, 5, 0),
+                axis: up,
+                strength: fx(1, 2),
+                falloff_radius: fx(20, 1),
+            })
+            .with_affected_bodies(ids.clone()),
+        );
         let mut blast = ForceFieldInstance::new(ForceField::Explosion {
             center: v(0, 0, 0),
             strength: fx(500, 1),
@@ -4526,9 +4634,9 @@ mod tests {
     /// new version to do so.
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
-        // 7 came with the axis locks, 8 with the sleep rule as time, 9 with soft bodies;
-        // none for a magnet
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 9);
+        // 7 came with the axis locks, 8 with the sleep rule as time, 9 with soft bodies,
+        // 10 with the contact section; none for a magnet
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4662,6 +4770,92 @@ mod tests {
         b
     }
 
+    /// A world holding a cloth (version 9's section) and, after a few
+    /// frames, contacts and touch sets (version 10's section).
+    fn sectioned_world() -> PhysicsWorld {
+        let mut w = variant_world();
+        let rest = vec![v(20, 3, 0), v(21, 3, 0), v(20, 3, 1)];
+        let mut cloth = crate::cloth::Cloth::from_mesh(rest.clone(), vec![[0, 1, 2]], Fix128::ONE);
+        cloth.set_rest_positions(&rest).expect("the rest shape");
+        w.add_cloth(cloth);
+        w
+    }
+
+    /// `blob` as the version 9 writer wrote it: without version 10's contact
+    /// section and its length, labelled 9.
+    fn as_version_9(blob: &[u8]) -> Vec<u8> {
+        let n = blob.len() - super::CHECKSUM_LEN;
+        let mut len = [0u8; 8];
+        len.copy_from_slice(&blob[n - 8..n]);
+        let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+        let mut b = blob[..n - 8 - section].to_vec();
+        b.extend_from_slice(&[0u8; 8]);
+        b[4..6].copy_from_slice(&9u16.to_le_bytes());
+        let payload = (b.len() - super::HEADER_LEN_V4 - super::CHECKSUM_LEN) as u64;
+        b[8..16].copy_from_slice(&payload.to_le_bytes());
+        reseal(b)
+    }
+
+    /// A version 9 blob (a world with a cloth, before any contact: no point
+    /// numbers, compliances at their defaults, no touch sets, speculative on)
+    /// restores to the world it came from: written again it is the version 10
+    /// blob of that world, bit for bit, and both step on identically.
+    #[test]
+    fn a_version_9_blob_restores_and_round_trips() {
+        let w = sectioned_world();
+        let current = w.snapshot_world();
+        let v9 = as_version_9(&current);
+        assert_eq!(&v9[4..6], &9u16.to_le_bytes());
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&v9).expect("a version 9 blob restores");
+        assert_eq!(
+            t.snapshot_world(),
+            current,
+            "written again: the version 10 blob"
+        );
+        let mut a = sectioned_world();
+        for _ in 0..30 {
+            a.step(fx(1, 60));
+            t.step(fx(1, 60));
+        }
+        assert_eq!(
+            a.snapshot_world(),
+            t.snapshot_world(),
+            "they step on identically"
+        );
+    }
+
+    /// A version 10 blob whose contact section is cut short, or whose recorded
+    /// section length is not the section's, is refused (after the world held
+    /// contacts and touch sets, so the section has content).
+    #[test]
+    fn a_damaged_contact_section_is_refused() {
+        let mut w = sectioned_world();
+        for _ in 0..20 {
+            w.step(fx(1, 60));
+        }
+        let blob = w.snapshot_world();
+        let n = blob.len() - super::CHECKSUM_LEN;
+        let mut len = [0u8; 8];
+        len.copy_from_slice(&blob[n - 8..n]);
+        assert!(u64::from_le_bytes(len) > 1, "the section has content");
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("the intact blob restores");
+        // the recorded length off by one
+        let mut wrong = blob.clone();
+        wrong[n - 8] ^= 1;
+        assert!(
+            t.restore_world(&reseal(wrong)).is_err(),
+            "a wrong section length"
+        );
+        // the section cut by 4 bytes (the payload length kept consistent)
+        let mut cut = blob[..n - 12].to_vec();
+        cut.extend_from_slice(&blob[n - 8..]);
+        let payload = (cut.len() - super::HEADER_LEN_V4) as u64;
+        cut[8..16].copy_from_slice(&payload.to_le_bytes());
+        assert!(t.restore_world(&reseal(cut)).is_err(), "a cut section");
+    }
+
     fn header_id(b: &[u8], at: usize) -> [u8; 32] {
         b[at..at + 32].try_into().expect("32 bytes")
     }
@@ -4678,11 +4872,12 @@ mod tests {
         assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &9u16.to_le_bytes());
+        assert_eq!(&b[4..6], &10u16.to_le_bytes());
         assert_eq!(super::header_len(7), 80);
         assert_eq!(super::header_len(8), 80);
         assert_eq!(super::header_len(9), 80);
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 9);
+        assert_eq!(super::header_len(10), 80);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -4880,6 +5075,13 @@ mod tests {
             );
             payload[at..at + 16].copy_from_slice(&with);
         }
+        // version 10 appends its contact section and the section's length (u64)
+        // before the checksum: drop both
+        let n = payload.len();
+        let mut len = [0u8; 8];
+        len.copy_from_slice(&payload[n - 16..n - 8]);
+        let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+        payload.drain(n - 16 - section..n - 8);
         // version 8 always writes the axis-lock count (u64) and version 9 appends
         // the cloth section (count u64 + next grab id u32) before the checksum: a
         // world without locks or cloths ends in 20 zero bytes that versions 1 to 6
@@ -5034,9 +5236,13 @@ mod tests {
             b.angular_damping_rate = fx(2 * i + 2, 11);
         }
         let blob = src.snapshot_world();
-        assert_eq!(&blob[4..6], &9u16.to_le_bytes());
+        assert_eq!(
+            &blob[4..6],
+            &PhysicsWorld::WORLD_SNAPSHOT_VERSION.to_le_bytes()
+        );
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        t.restore_world(&blob).expect("version 9 restores");
+        t.restore_world(&blob)
+            .expect("the current version restores");
         assert_eq!(t.config.damping_rate, fx(3, 10));
         for (i, b) in t.bodies.iter().enumerate() {
             let i = i as i64;
