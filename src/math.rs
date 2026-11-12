@@ -784,13 +784,12 @@ fn floored_product(a: Fix128, b: Fix128) -> (i64, u64, u64) {
 
     let (lo, carry_a) = hl_lo.overflowing_add(lh_lo);
     let (lo, carry_b) = lo.overflowing_add(ll_hi);
-    let hi = a
-        .hi
-        .wrapping_mul(b.hi)
-        .wrapping_add(hl_hi as i64)
-        .wrapping_add(lh_hi as i64)
-        .wrapping_add(i64::from(carry_a))
-        .wrapping_add(i64::from(carry_b));
+    let hi =
+        a.hi.wrapping_mul(b.hi)
+            .wrapping_add(hl_hi as i64)
+            .wrapping_add(lh_hi as i64)
+            .wrapping_add(i64::from(carry_a))
+            .wrapping_add(i64::from(carry_b));
     (hi, lo, dropped)
 }
 

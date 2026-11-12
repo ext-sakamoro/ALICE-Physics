@@ -2842,7 +2842,9 @@ mod tests {
         // bit-exact only by coincidence while the product floored.
         let q = f[1].rotation;
         assert!(
-            near(q.x, Fix128::ZERO) && near(q.y, Fix128::ZERO) && near(q.z, Fix128::ZERO)
+            near(q.x, Fix128::ZERO)
+                && near(q.y, Fix128::ZERO)
+                && near(q.z, Fix128::ZERO)
                 && near(q.w, Fix128::ONE),
             "fixed rotation {q:?}"
         );
