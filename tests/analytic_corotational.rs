@@ -1255,7 +1255,7 @@ fn the_material_law_moves_the_answer_and_the_answer_is_equilibrium() {
 ///
 /// - `iterations == budget`: the frame iteration on the final increment ran out
 ///   of steps. The residual is not what refused — at `a = 3/2` it is `0.217`,
-///   i.e. 4.6× inside tolerance. Raising the budget fixes it (threshold 47).
+///   i.e. 4.6× inside tolerance. Raising the budget fixes it (threshold 47 while the product floored, 46 with it rounding to nearest; the test finds it by bisection).
 /// - `iterations < budget`: the frames settled and the fixed point they settled
 ///   on does not satisfy equilibrium (`relative_residual` 1.03…1.7). Raising the
 ///   budget changes nothing — at `a = 5/4` six budgets from 32 to 4096 return the
@@ -1355,14 +1355,42 @@ fn characterises_which_stretches_the_corotational_solve_reaches() {
         }
         other => panic!("a = 3/2 must refuse at the house budget of 32; got {other:?}"),
     }
-    attempt(ISOCHORIC_U, 46).expect_err("46 frame-settling steps are not enough at a = 3/2");
-    attempt(ISOCHORIC_U, 47).expect("47 is the measured threshold at a = 3/2");
     attempt(ISOCHORIC_U, STRETCH_NEWTON_BUDGET)
         .expect("the budget the twin oracles above use must converge");
+    // The threshold itself is a measurement of the frame iteration, not something the
+    // physics fixes (47 while the product floored toward −∞, 46 with it rounding to
+    // nearest): found here by bisection between the refusing 32 and the converging
+    // STRETCH_NEWTON_BUDGET. What the case claims is that one exists and that every
+    // budget below it refuses only for want of steps.
+    let (mut refuses, mut converges) = (32_u32, STRETCH_NEWTON_BUDGET);
+    while converges - refuses > 1 {
+        let mid = (refuses + converges) / 2;
+        if attempt(ISOCHORIC_U, mid).is_ok() {
+            converges = mid;
+        } else {
+            refuses = mid;
+        }
+    }
+    let threshold = converges;
+    assert!(
+        threshold > 32,
+        "a = 3/2 must need more than the house budget"
+    );
+    match attempt(ISOCHORIC_U, threshold - 1) {
+        Err(FemError::NotConverged {
+            iterations,
+            relative_residual,
+        }) => assert!(
+            iterations == threshold - 1 && relative_residual < Fix128::ONE,
+            "just below the threshold the budget fires with the residual inside tolerance; \
+             got {iterations} iterations, {relative_residual} × the target"
+        ),
+        other => panic!("a = 3/2 must refuse just below its threshold {threshold}; got {other:?}"),
+    }
     eprintln!(
         "  a = 5/4 refuses at every budget (iterations {hole_iterations}, \
          residual {hole_residual} × target) while a = 4/3 and a = 7/5 converge; \
-         a = 3/2 needs 47 frame-settling steps"
+         a = 3/2 needs {threshold} frame-settling steps"
     );
 }
 

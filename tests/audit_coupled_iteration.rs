@@ -63,11 +63,25 @@ fn inf_norm_is_faithful_over_the_whole_representable_range() {
 fn l2_floor_is_exactly_the_square_root_of_one_ulp() {
     assert_eq!(raw(L2_TERM_FLOOR), 1_i128 << 32);
     assert_eq!(raw(L2_TERM_FLOOR * L2_TERM_FLOOR), 1);
+    // the product rounds to nearest: a square is zero exactly when below half a unit,
+    // raw r with r^2 < 2^63 (largest 3 037 000 499); just below the floor squares to one unit
     let below = L2_TERM_FLOOR - ulp();
     assert_eq!(
         raw(below * below),
+        1,
+        "just below the floor squares to one unit"
+    );
+    let last_zero = Fix128::from_raw(0, 3_037_000_499);
+    assert_eq!(
+        raw(last_zero * last_zero),
         0,
-        "just below the floor squares to zero"
+        "below half a unit squares to zero"
+    );
+    let first_unit = Fix128::from_raw(0, 3_037_000_500);
+    assert_eq!(
+        raw(first_unit * first_unit),
+        1,
+        "from half a unit up it rounds to one"
     );
     assert!((L2_TERM_FLOOR.to_f64() - 2.328_306_436_538_696e-10).abs() < 1e-22);
 }

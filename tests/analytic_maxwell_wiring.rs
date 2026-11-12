@@ -459,12 +459,21 @@ fn a_consistent_charge_keeps_gauss_exact_and_an_inconsistent_one_is_carried() {
     );
 }
 
-/// `∇·B` is the zero bit pattern under the update while the arithmetic is
-/// exact, and the same lattice at a non-dyadic `S` shows the truncation
-/// residual — which is what makes the zero a statement and not a vacuity.
+/// `∇·B` is the zero bit pattern under the update, both while the arithmetic is
+/// exact (`S = 1/2`, integer seed) and at an `S` whose products round
+/// (`S = 1/3`, not representable).
 ///
-/// Measured 2026-10-03 on this seed: `S = 1/2` gives 0 ULP over 40 steps,
-/// `S = 9/16` gives a worst of 26 ULP over the same 40 steps.
+/// Why the second holds: each rounded product `S·E` enters the curl of two
+/// neighbouring faces with opposite signs, and `∇·B` sums those faces, so the
+/// rounded products cancel pairwise exactly when the product is an odd function
+/// of its operands (`(−a)·b = −(a·b)`). `Fix128`'s product rounds to nearest,
+/// ties to even, which is odd. (Until 2026-11-12 it floored toward −∞, which is
+/// not odd, and `S = 9/16` showed a residual of 26 ULP worst over 40 steps; that
+/// residual was the floor's, not the update's, and is gone.)
+///
+/// What keeps the zero from being vacuous: the H field is non-zero, and the
+/// divergence measure reads a non-zero value on a field that is not
+/// divergence-free (one face of H set by hand).
 #[test]
 fn div_b_is_bit_exactly_zero_while_the_arithmetic_is_exact() {
     let mut exact = YeeGrid::new(4, 4, 4, q(1, 2));
@@ -483,20 +492,27 @@ fn div_b_is_bit_exactly_zero_while_the_arithmetic_is_exact() {
         "H is non-zero, so the zero divergence is not vacuous"
     );
 
-    let mut truncating = YeeGrid::new(4, 4, 4, COURANT_3D);
-    seed_integer_mode(&mut truncating);
-    let mut worst = 0i128;
-    for _ in 0..40 {
-        truncating.step();
-        worst = worst.max(raw(truncating.max_abs_div_b()));
+    let mut rounding = YeeGrid::new(4, 4, 4, q(1, 3));
+    seed_integer_mode(&mut rounding);
+    for n in 1..=40 {
+        rounding.step();
+        assert_eq!(
+            rounding.max_abs_div_b(),
+            Fix128::ZERO,
+            "step {n}: with S = 1/3 the rounded products cancel pairwise, div B stays zero"
+        );
     }
     assert!(
-        worst > 0,
-        "S = 9/16 must show a truncation residual, or the exact run above proves nothing"
+        max_abs_h(&rounding) > Fix128::ZERO,
+        "H is non-zero at S = 1/3 too"
     );
+
+    // the measure is live: one face of H set by hand is a source of divergence
+    let mut source = YeeGrid::new(4, 4, 4, q(1, 2));
+    source.set(Component::Hx, 1, 1, 1, Fix128::ONE);
     assert!(
-        worst <= 2 * 40 + 16,
-        "and it stays within the documented linear budget (got {worst} ULP)"
+        source.max_abs_div_b() > Fix128::ZERO,
+        "a hand-set H face must read as divergence, or the zeros above prove nothing"
     );
 }
 

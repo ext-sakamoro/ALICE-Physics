@@ -5444,22 +5444,27 @@ mod tests {
     /// `B = h − γh²/2 + …`; and the step tends to free flight as `k, c → 0`.
     #[test]
     fn oscillator_step_small_arguments() {
-        // 4 units of 2⁻⁶⁴: the grid of Fix128 (h = 1/1000 itself is rounded to it)
+        // 4 units of 2⁻⁶⁴: the grid of Fix128 (h = 1/1000 itself is rounded to it),
+        // plus one f64 spacing of the reference: the comparison goes through
+        // `to_f64()`, whose spacing at the compared value (6.9e-18 near e⁻³, 2.2e-16
+        // near 1) is far wider than 4 units, so without it the test only passes when
+        // both sides happen to round to the same f64
         const ULP4: f64 = 2.2e-19;
+        let tol = |want: f64| ULP4 + want.abs() * f64::EPSILON;
         let h = Fix128::from_ratio(1, 1000);
         // ω² h² = 1e-6, γ h = 2e-4 (near critical branch, series for C)
         let s = OscillatorStep::new(Fix128::ONE, Fix128::from_ratio(1, 5), h);
         let (a, b, c, bd) = oscillator_ref(1.0, 0.2, 1e-3);
-        assert!((s.pos_e.to_f64() - a).abs() < ULP4);
-        assert!((s.pos_v.to_f64() - b).abs() < ULP4);
-        assert!((s.vel_v.to_f64() - bd).abs() < ULP4);
+        assert!((s.pos_e.to_f64() - a).abs() < tol(a));
+        assert!((s.pos_v.to_f64() - b).abs() < tol(b));
+        assert!((s.vel_v.to_f64() - bd).abs() < tol(bd));
         // the f64 reference's (1 − A)/ω² cancels here; compare with the series directly
         // Taylor of C to h⁵: b₂ = −γ/2, b₃ = (γ² − ω²)/6, b₄ = −(3γ b₃ + ω² b₂)/12
         let want_c = 1e-6 / 2.0 - 0.2 * 1e-9 / 6.0
             + (0.04 - 1.0) * 1e-12 / 24.0
             + (0.096 + 0.1) / 12.0 * 1e-15 / 5.0;
         assert!(
-            (s.pos_a.to_f64() - want_c).abs() < ULP4,
+            (s.pos_a.to_f64() - want_c).abs() < tol(want_c),
             "{} vs {want_c} ({c})",
             s.pos_a.to_f64()
         );
@@ -5467,12 +5472,12 @@ mod tests {
         let g = Fix128::from_int(3000);
         let s = OscillatorStep::new(Fix128::ZERO, g, h);
         let e = crate::det_math::exp64(-3.0);
-        assert!((s.pos_e.to_f64() - 1.0).abs() < ULP4);
-        assert!((s.vel_v.to_f64() - e).abs() < ULP4);
-        assert!((s.pos_v.to_f64() - (1.0 - e) / 3000.0).abs() < ULP4);
+        assert!((s.pos_e.to_f64() - 1.0).abs() < tol(1.0));
+        assert!((s.vel_v.to_f64() - e).abs() < tol(e));
+        assert!((s.pos_v.to_f64() - (1.0 - e) / 3000.0).abs() < tol((1.0 - e) / 3000.0));
         let want_c = (1e-3 - (1.0 - e) / 3000.0) / 3000.0;
         assert!(
-            (s.pos_a.to_f64() - want_c).abs() < ULP4,
+            (s.pos_a.to_f64() - want_c).abs() < tol(want_c),
             "{} vs {want_c}",
             s.pos_a.to_f64()
         );
@@ -5485,7 +5490,7 @@ mod tests {
         assert_eq!(s.pos_e, Fix128::ONE);
         assert_eq!(s.vel_v, Fix128::ONE);
         assert!((s.pos_v - h).abs().to_f64() < ULP4);
-        assert!((s.pos_a.to_f64() - 0.5e-6).abs() < ULP4);
+        assert!((s.pos_a.to_f64() - 0.5e-6).abs() < tol(0.5e-6));
     }
 
     /// `sinc_cos` for large `q` (many doublings): cos √q against the reduced reference; the

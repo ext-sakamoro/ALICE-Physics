@@ -5,7 +5,7 @@
 //! 本 file は次を固定する
 //!
 //! - 仕様: 余因子・`det`・`1/det`・各成分の積のどれかが Q64.64 に収まらなければ `None`
-//!   (`det` と余因子は「積の floor の和」を厳密に計算して収まるかを見る 途中の積が
+//!   (`det` と余因子は「丸めた積の和」を厳密に計算して収まるかを見る 途中の積が
 //!   単独で範囲を超えても和が収まれば旧実装の結果は正しいので、そこは `Some` のまま)
 //! - 範囲内は旧実装と bit 一致 (旧式を本 file に写して `assert_eq!`)
 //! - 範囲内の可逆な行列は `M·M⁻¹ ≈ I` (旧式とは独立の検算)
@@ -43,7 +43,7 @@ fn w_neg(a: W) -> W {
     w_add([!a[0], !a[1], !a[2], !a[3]], [1, 0, 0, 0])
 }
 
-/// `floor(a·b / 2⁶⁴)` (raw 単位、つまり `Fix128` の積の真値の floor)
+/// `a·b / 2⁶⁴` を最近接偶数に丸めた値 (raw 単位、つまり `Fix128` の積)
 fn w_prod(a: Fix128, b: Fix128) -> W {
     let (ra, rb) = (raw(a), raw(b));
     let neg = (ra < 0) != (rb < 0);
@@ -73,9 +73,14 @@ fn w_prod(a: Fix128, b: Fix128) -> W {
     if neg {
         p = w_neg(p);
     }
-    // 算術右 shift 64 = floor
-    let s = if (p[3] as i64) < 0 { u64::MAX } else { 0 };
-    [p[1], p[2], p[3], s]
+    // 下位 64 bit を最近接偶数に丸めて (2 の補数の上で対称) 算術右 shift 64
+    const HALF: u64 = 1 << 63;
+    let up = p[0] > HALF || (p[0] == HALF && p[1] & 1 == 1);
+    let (l1, c1) = p[1].overflowing_add(u64::from(up));
+    let (l2, c2) = p[2].overflowing_add(u64::from(c1));
+    let l3 = p[3].wrapping_add(u64::from(c2));
+    let s = if (l3 as i64) < 0 { u64::MAX } else { 0 };
+    [l1, l2, l3, s]
 }
 
 fn w_fit(a: W) -> Option<Fix128> {
@@ -83,7 +88,7 @@ fn w_fit(a: W) -> Option<Fix128> {
     (a[2] == s && a[3] == s).then(|| from_raw(((a[1] as u128) << 64 | a[0] as u128) as i128))
 }
 
-/// `floor(p) - floor(q)` が収まるか (余因子 1 つ)
+/// `round(p) - round(q)` が収まるか (余因子 1 つ、各積は最近接偶数)
 fn cof(a: Fix128, b: Fix128, c: Fix128, d: Fix128) -> Option<Fix128> {
     w_fit(w_add(w_prod(a, b), w_neg(w_prod(c, d))))
 }
@@ -469,7 +474,7 @@ fn intermediate_products_that_cancel_stay_in_range() {
     assert_eq!(Some(inv), old_inverse(m));
 }
 
-/// `Fix128::checked_mul` は厳密な積と一致する: 収まれば `Some(floor)`、収まらなければ `None`
+/// `Fix128::checked_mul` は厳密な積と一致する: 収まれば `Some(最近接偶数に丸めた積)`、収まらなければ `None`
 ///
 /// oracle: `w_prod` の 256 bit の積 (32 bit の語の筆算) 値は端 (2^k とその前後、符号両方) の総当たりと
 /// 乱数 2^18 組 (大きさは一様でなく全桁に振る、`hl + lh` が i128 を越える組を含む)

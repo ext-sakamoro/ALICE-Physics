@@ -216,11 +216,13 @@
 //!
 //! In exact arithmetic the trapezoidal rule conserves `E = ½vᵀMv + ½uᵀKu`
 //! identically, and the single-degree-of-freedom amplification matrix has
-//! modulus exactly one. Neither survives truncation. Measured on a
+//! modulus exactly one. Neither survives rounding. Measured on a
 //! single-degree-of-freedom oscillator over 4096 steps, `E` wanders by up to
 //! `9.3e5` raw units of `2⁻⁶⁴` — about `1e-16` relative — and the amplitude
-//! ends slightly *below* where it started, never above, because [`Fix128`]
-//! multiplication truncates toward zero. **An `assert_eq!` on conserved energy
+//! ends slightly *below* where it started, never above (measured while the
+//! [`Fix128`] product floored toward −∞; it rounds to nearest, ties to even,
+//! since 2026-11-12, and the same bound and the same no-growth assertion hold;
+//! the division in the effective stiffness truncates toward zero). **An `assert_eq!` on conserved energy
 //! is therefore not available.** One case escapes: when `ω·dt = 2` the discrete
 //! orbit is the four-cycle `x₀, 0, −x₀, 0` through integers, and that one is
 //! bit-exact for as long as it is run. `tests/analytic_dynamic_fem.rs` pins
@@ -2163,8 +2165,9 @@ mod tests {
     /// | 1 | 1 | 2⁻⁴ | −1 740 |
     /// | 5 | 1000 | 2⁻⁷ | 925 109 |
     ///
-    /// Relative to `E₀` that is about `1e-16` in every row. The amplitude never
-    /// grows, because the truncation is toward zero.
+    /// Relative to `E₀` that is about `1e-16` in every row (measured while the
+    /// product floored toward −∞; the bound below holds with it rounding to
+    /// nearest). The amplitude does not grow in any of the four scenes.
     #[test]
     fn a_general_step_drifts_in_energy_within_the_measured_bound() {
         const WORST_MEASURED: i128 = 925_109;
@@ -2194,8 +2197,7 @@ mod tests {
             );
             assert!(
                 peak <= Fix128::ONE,
-                "m={mi} k={ki} dt=2^-{shift}: amplitude grew to {} > 1, \
-                 so the truncation is no longer toward zero",
+                "m={mi} k={ki} dt=2^-{shift}: amplitude grew to {} > 1",
                 peak.to_f64()
             );
         }

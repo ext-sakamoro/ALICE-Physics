@@ -308,8 +308,9 @@ pub fn residual_norm_inf(residual: &[Fix128]) -> Fix128 {
 /// Smallest magnitude whose square survives `Fix128` truncation.
 ///
 /// `√(2⁻⁶⁴) = 2.328306…e-10`, written as its exact `Q64.64` encoding
-/// `2⁻³² = 2³² · 2⁻⁶⁴`. A component below this squares to zero, which is
-/// truncation working as designed rather than a fault.
+/// `2⁻³² = 2³² · 2⁻⁶⁴`. A component below this squares to at most one unit
+/// of `2⁻⁶⁴` (to zero below `2⁻³²·⁵`, the product rounding to nearest), below
+/// the resolution of the sum, so it is skipped by design rather than a fault.
 pub const L2_TERM_FLOOR: Fix128 = Fix128::from_raw(0, 1 << 32);
 
 /// L2 norm `√(Σ rᵢ²)`, or an error if the accumulation stopped being faithful.
@@ -338,9 +339,9 @@ pub fn residual_norm_l2_checked(residual: &[Fix128]) -> Result<Fix128, CoupledIt
     let mut sum = Fix128::ZERO;
     for (index, &component) in residual.iter().enumerate() {
         let magnitude = component.abs();
-        // Components below `L2_TERM_FLOOR` square to zero by design (their
-        // product is below the 2⁻⁶⁴ resolution) and so add nothing to the
-        // sum: accept them without going through the overflow check. The
+        // Components below `L2_TERM_FLOOR` square to at most one unit (their
+        // product is at the 2⁻⁶⁴ resolution) and are skipped: accept them
+        // without going through the overflow check. The
         // `is_negative` guard is load-bearing — `abs()` of the most
         // negative value stays negative, and that component must still
         // reach the check below, which refuses it.
@@ -1011,12 +1012,19 @@ mod tests {
 
     #[test]
     fn l2_floor_is_the_square_root_of_the_truncation_floor() {
-        // 2^-32 squared is 2^-64, the smallest representable positive value,
-        // and anything below it squares to zero.
+        // 2^-32 squared is 2^-64, the smallest representable positive value.
+        // The product rounds to nearest, so a square rounds to zero exactly when
+        // it is below half a unit, x < 2^-32.5: raw r with r^2 < 2^63, the
+        // largest being 3 037 000 499 (3 037 000 500^2 > 2^63). Every component
+        // below the floor squares to zero or to one unit.
         assert_eq!(L2_TERM_FLOOR * L2_TERM_FLOOR, Fix128::from_raw(0, 1));
+        let last_zero = Fix128::from_raw(0, 3_037_000_499);
+        let first_unit = Fix128::from_raw(0, 3_037_000_500);
+        assert!(first_unit < L2_TERM_FLOOR);
+        assert!((last_zero * last_zero).is_zero());
+        assert_eq!(first_unit * first_unit, Fix128::from_raw(0, 1));
         let below = Fix128::from_raw(0, (1u64 << 32) - 1);
-        assert!(below < L2_TERM_FLOOR);
-        assert!((below * below).is_zero());
+        assert_eq!(below * below, Fix128::from_raw(0, 1));
     }
 
     #[test]
