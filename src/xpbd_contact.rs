@@ -382,20 +382,19 @@ pub(crate) fn rigid_push_out_from(
     for (k, row) in big_a.iter_mut().enumerate().take(m) {
         row[k] = row[k] + eps;
     }
-    let mut rhs = [Fix128::ZERO; BLOCK_MAX];
-    for k in 0..m {
-        let mut acc = d[k];
-        for (j, o) in old.iter().enumerate().take(m) {
-            acc = acc + (big_a[k][j] * *o);
-        }
-        rhs[k] = acc;
-    }
-    // `λ` is linear in the right-hand side: a small push is solved scaled up
-    // by an exact power of two (to `|rhs| ≥ 1/2`) and scaled back, so the
-    // block keeps its precision (`Fix128` resolves `2⁻⁶⁴` absolutely, and a
-    // face's block is regularised only by `2⁻⁵⁰` of its scale).
+    // The change `Δ` is solved directly (adding `A λ_old` to the right-hand
+    // side and solving for the totals would lose the change to rounding: the
+    // totals are far larger than what is left). The points to bring to zero
+    // are those still overlapping and those pushed past zero that still have
+    // a push to take back; solved as equalities, the change is kept when no
+    // total goes negative and no other point is left overlapping. Otherwise
+    // the push only adds (`Δ ≥ 0` with the sign conditions, `block_lcp`).
+    // `Δ` is linear in `d`: a small one is solved scaled up by an exact power
+    // of two (to `|d| ≥ 1/2`) and scaled back, so the block keeps its
+    // precision (`Fix128` resolves `2⁻⁶⁴` absolutely, and a face's block is
+    // regularised only by `2⁻⁵⁰` of its scale).
     let mut biggest = Fix128::ZERO;
-    for x in rhs.iter().take(m) {
+    for x in d.iter().take(m) {
         biggest = biggest.max(x.abs());
     }
     let mut shift = 0u32;
@@ -406,11 +405,46 @@ pub(crate) fn rigid_push_out_from(
     let up = Fix128::from_int(1i64 << shift);
     let mut scaled = [Fix128::ZERO; BLOCK_MAX];
     for k in 0..m {
-        scaled[k] = rhs[k] * up;
+        scaled[k] = d[k] * up;
     }
-    let mut lambda = block_lcp(&big_a, &scaled, m)?;
-    for x in lambda.iter_mut().take(m) {
-        *x = *x / up;
+    let set: Vec<usize> = (0..m)
+        .filter(|&k| d[k] > Fix128::ZERO || (d[k] < Fix128::ZERO && old[k] > Fix128::ZERO))
+        .collect();
+    let mixed = (!set.is_empty())
+        .then(|| solve_small(&big_a, &scaled, &set))
+        .flatten()
+        .and_then(|sol| {
+            let mut change = [Fix128::ZERO; BLOCK_MAX];
+            for (j, &k) in set.iter().enumerate() {
+                change[k] = sol[j] / up;
+                if old[k] + change[k] < Fix128::ZERO {
+                    return None;
+                }
+            }
+            for k in (0..m).filter(|k| !set.contains(k)) {
+                let mut moved = Fix128::ZERO;
+                for &j in &set {
+                    moved = moved + big_a[k][j] * change[j];
+                }
+                if d[k] - moved > Fix128::ZERO {
+                    return None;
+                }
+            }
+            Some(change)
+        });
+    let change = match mixed {
+        Some(c) => c,
+        None => {
+            let mut c = block_lcp(&big_a, &scaled, m)?;
+            for x in c.iter_mut().take(m) {
+                *x = *x / up;
+            }
+            c
+        }
+    };
+    let mut lambda = [Fix128::ZERO; BLOCK_MAX];
+    for k in 0..m {
+        lambda[k] = old[k] + change[k];
     }
     let (mut da, mut db) = (BodyDelta::ZERO, BodyDelta::ZERO);
     for k in 0..m {
