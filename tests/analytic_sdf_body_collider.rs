@@ -420,12 +420,21 @@ fn a_turned_box_on_a_ball_is_within_the_sampling_error() {
     );
 }
 
-/// The correction moves a body along the field's normal by the depth: after a step
-/// a turned box rests with its lowest corner exactly on the floor.
+/// A turned box set with its lowest corner 0.25 into the floor is pushed out by
+/// the rigid least-constraint push (the motion of least kinetic metric that leaves
+/// no point overlapping: a lift `n λ / m` and a turn `I⁻¹ (r × n) λ` at the corner,
+/// met again after the turn until nothing overlaps). Invariants after the step (no
+/// gravity, one substep): its lowest corner is on the floor (no overlap, no gap, to
+/// `1e-9` m); the push made no velocity or spin (the overlap was there before the
+/// substep); the centre rose by less than the depth (part of the corner's lift is
+/// the turn) and by more than nothing; and it turned the way `r × n` at that corner
+/// points: the corner is at `r = (−0.54, −0.98)` from the centre, `(r × n)_z = r_x <
+/// 0`, so the box turns back toward flat (its angle drops below `θ`).
 #[test]
 fn a_step_leaves_a_turned_box_resting_on_the_floor() {
     let (hx, hy, hz, theta) = (1.0, 0.5, 0.75, 0.6);
     let reach = f64::sin(theta) * hx + f64::cos(theta) * hy;
+    let start = reach - 0.25;
     let mut w = world_with(plane(0.0));
     let b = w
         .add_shaped_body(
@@ -433,17 +442,41 @@ fn a_step_leaves_a_turned_box_resting_on_the_floor() {
                 half_extents: v3(hx, hy, hz),
             },
             Fix128::from_int(1000),
-            v3(0.0, reach - 0.25, 0.0),
+            v3(0.0, start, 0.0),
         )
         .expect("a valid solid");
     w.get_body_mut(b).expect("body").rotation = rot_z(theta);
     w.step(Fix128::from_ratio(1, 60));
-    let y = w.get_body(b).expect("body").position.y.to_f64();
+    let body = w.get_body(b).expect("body");
+    let mut lowest = f64::INFINITY;
+    for sx in [-1.0, 1.0] {
+        for sy in [-1.0, 1.0] {
+            for sz in [-1.0, 1.0] {
+                let corner = body.rotation.rotate_vec(v3(sx * hx, sy * hy, sz * hz));
+                lowest = lowest.min((body.position + corner).y.to_f64());
+            }
+        }
+    }
+    let y = body.position.y.to_f64();
+    let turned = 2.0 * body.rotation.z.to_f64().atan2(body.rotation.w.to_f64());
     assert!(
-        (y - reach).abs() < 2e-5,
-        "the centre rests at the half-height {reach}, not at {y}"
+        lowest.abs() < 1e-9,
+        "the lowest corner is at {lowest}, not on the floor"
     );
-    assert!(contact_of(&w).is_none() || contact_of(&w).is_some_and(|(d, _)| d < 2e-5));
+    assert!(
+        body.velocity.length().to_f64() < 1e-9 && body.angular_velocity.length().to_f64() < 1e-9,
+        "the push made motion: v {:?} ω {:?}",
+        body.velocity,
+        body.angular_velocity
+    );
+    assert!(
+        y > start && y < reach,
+        "the centre rose from {start} to {y}, not by less than the depth"
+    );
+    assert!(
+        turned < theta && turned > 0.0,
+        "turned from {theta} to {turned}, not back toward flat"
+    );
 }
 
 /// An SDF scaled by `s` is the plane `y = s·offset`: closed form for the depth.

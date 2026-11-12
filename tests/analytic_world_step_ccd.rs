@@ -208,13 +208,30 @@ fn on_a_fast_sphere_stops_on_a_thin_plate_and_bounces() {
 
 /// The default configuration (8 substeps, gravity, damping, default
 /// materials) over a second at 552 m/s (1.15 m per substep, so the substep
-/// poses 4.6 and 5.75 straddle the plate without touching it): off, the
-/// sphere ends past the plate; on, it never crosses the plate's near face.
+/// poses 4.6 and 5.75 straddle the plate without touching it), with each of
+/// the two mechanisms that stop a fast body on or off:
+///
+/// - neither: the sphere ends past the plate (the control: no substep pose
+///   touches it);
+/// - continuous collision only: it never crosses the plate's near face (the
+///   sweep finds the time of impact);
+/// - speculative contacts only: it never crosses either. Its margin
+///   `|v| h + |g| h²` covers the whole travel of the substep, so the plate is a
+///   contact with a gap in the substep before the crossing and the approach
+///   is bounded by `gap / h` (Catto 2013); the bound holds at any speed, the
+///   limit being the `Fix128` range of the grown broad-phase box (a reach near
+///   `2⁶²` m per substep), not a physical speed;
+/// - both: it never crosses.
+///
+/// Stopped, it bounces back (the restitution of the default materials).
 // covers: COV-RIGID-074
 #[test]
 fn default_config_never_crosses_the_plate_when_on() {
-    for ccd in [false, true] {
-        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    for (ccd, speculative) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            speculative_contacts: speculative,
+            ..PhysicsConfig::default()
+        });
         if ccd {
             w.set_continuous_collision(WorldCcdConfig::on());
         }
@@ -225,19 +242,20 @@ fn default_config_never_crosses_the_plate_when_on() {
             w.step(Fix128::from_ratio(1, 60));
             max_x = max_x.max(w.bodies[s].position.x.to_f64());
         }
-        if ccd {
+        let what = format!("ccd {ccd}, speculative {speculative}");
+        if ccd || speculative {
             assert!(
                 max_x <= 5.0 - 1.0 / 64.0 - 0.25 + 1e-9,
-                "on: reached x = {max_x}"
+                "{what}: reached x = {max_x}"
             );
             assert!(
                 w.bodies[s].velocity.x.to_f64() < 0.0,
-                "on: did not bounce back"
+                "{what}: did not bounce back"
             );
         } else {
             assert!(
                 w.bodies[s].position.x.to_f64() > 5.0 + 1.0 / 64.0 + 0.25,
-                "off: did not pass"
+                "{what}: did not pass"
             );
         }
     }

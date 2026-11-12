@@ -22,6 +22,19 @@ pub type MaterialId = u16;
 /// Default material ID
 pub const DEFAULT_MATERIAL: MaterialId = 0;
 
+/// Default [`PhysicsMaterial::contact_compliance`]: `1e-10` m/N (`Fix128`'s
+/// `1 / 10¹⁰`, a stiffness of `10¹⁰` N/m). A pair of default materials
+/// (`2e-10` m/N) sinks `2e-9` m under a 1 kg body's weight, and its `α̃ = α / h²`
+/// stays well below the inverse mass of the bodies it holds at the usual
+/// substeps (`7.4e-4` kg⁻¹ at 1920 substeps a second), so the contact is stiff;
+/// it keeps the coupling of a face's corners regular (the corners of a flat
+/// face constrain only three motions, so without compliance the block solve of
+/// their multipliers is singular).
+pub const DEFAULT_CONTACT_COMPLIANCE: Fix128 = Fix128 {
+    hi: 0,
+    lo: 1_844_674_407,
+};
+
 /// Number of distinct `MaterialId` values (`u16::MAX as usize + 1`).
 pub(crate) const MATERIAL_ID_CAPACITY: usize = MaterialId::MAX as usize + 1;
 
@@ -80,6 +93,11 @@ pub struct PhysicsMaterial {
     pub friction_combine: CombineRule,
     /// Restitution combine rule
     pub restitution_combine: CombineRule,
+    /// Contact compliance `α` (m/N, the inverse of the contact stiffness) of the
+    /// XPBD contact (Macklin, Müller, Chentanez 2016): two materials in contact
+    /// act as springs in series, so the pair's compliance is the sum of theirs
+    /// ([`CombinedMaterial::compliance`]). Default [`DEFAULT_CONTACT_COMPLIANCE`].
+    pub contact_compliance: Fix128,
 }
 
 impl PhysicsMaterial {
@@ -93,7 +111,15 @@ impl PhysicsMaterial {
             restitution,
             friction_combine: CombineRule::Average,
             restitution_combine: CombineRule::Average,
+            contact_compliance: DEFAULT_CONTACT_COMPLIANCE,
         }
+    }
+
+    /// Set the contact compliance (m/N, see [`Self::contact_compliance`]).
+    #[must_use]
+    pub const fn with_contact_compliance(mut self, compliance: Fix128) -> Self {
+        self.contact_compliance = compliance;
+        self
     }
 
     /// Set combine rules
@@ -142,6 +168,9 @@ pub struct CombinedMaterial {
     pub friction: Fix128,
     /// Combined restitution
     pub restitution: Fix128,
+    /// Combined contact compliance: the sum of the two materials' (springs in
+    /// series; a pair override sets friction and restitution, not this).
+    pub compliance: Fix128,
 }
 
 /// Material pair lookup table
@@ -289,6 +318,8 @@ impl MaterialTable {
             (mat_b, mat_a, surface_b, surface_a)
         };
 
+        let compliance = self.get(a).contact_compliance + self.get(b).contact_compliance;
+
         // Check pair overrides first
         if let Some(p) = self
             .pair_overrides
@@ -298,6 +329,7 @@ impl MaterialTable {
             return CombinedMaterial {
                 friction: p.friction,
                 restitution: p.restitution,
+                compliance,
             };
         }
 
@@ -315,6 +347,7 @@ impl MaterialTable {
         CombinedMaterial {
             friction: friction_rule.apply(fa, fb),
             restitution: restitution_rule.apply(ra, rb),
+            compliance,
         }
     }
 
@@ -550,6 +583,20 @@ mod tests {
         assert!(
             near(sticky_pair.friction, Fix128::from_ratio(4, 10)),
             "{sticky_pair:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod default_compliance_tests {
+    use super::*;
+
+    /// The default compliance's bits are `1 / 10¹⁰` as `Fix128::from_ratio` gives it.
+    #[test]
+    fn the_default_compliance_is_one_over_ten_to_the_ten() {
+        assert_eq!(
+            DEFAULT_CONTACT_COMPLIANCE,
+            Fix128::from_ratio(1, 10_000_000_000)
         );
     }
 }

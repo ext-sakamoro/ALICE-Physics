@@ -109,6 +109,7 @@ impl Laws {
             damping_rate: fx(3, 2),
             solver_backend: SolverBackend::Tgs,
             warm_start_factor: fx(1, 3),
+            speculative_contacts: false,
         };
         let mut limited = ForceFieldInstance::new(ForceField::Drag {
             coefficient: fx(3, 10),
@@ -142,6 +143,7 @@ impl Laws {
                     restitution: fx(2, 10),
                     friction_combine: CombineRule::Min,
                     restitution_combine: CombineRule::Max,
+                    contact_compliance: fx(1, 1_000_000_000),
                 },
                 PhysicsMaterial {
                     id: 0,
@@ -150,6 +152,7 @@ impl Laws {
                     restitution: fx(7, 10),
                     friction_combine: CombineRule::Multiply,
                     restitution_combine: CombineRule::Average,
+                    contact_compliance: alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE,
                 },
             ],
             // set out of order and with the second pair given as (2, 1)
@@ -283,6 +286,7 @@ impl Spec {
         self.fix(m.restitution);
         self.rule(m.friction_combine);
         self.rule(m.restitution_combine);
+        self.fix(m.contact_compliance);
     }
 }
 
@@ -308,6 +312,7 @@ pub fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
         other => panic!("no documented encoding for {other:?}"),
     });
     s.fix(c.warm_start_factor);
+    s.bool(c.speculative_contacts);
     s.fix(laws.contact_warm_start);
     s.u32(laws.contact_stale_frames);
     s.fix(laws.sdf_radius);

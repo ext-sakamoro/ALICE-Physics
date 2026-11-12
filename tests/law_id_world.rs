@@ -18,7 +18,7 @@
 
 use alice_physics_core::coupling_medium::DragMedium;
 use alice_physics_core::force::{ForceField, ForceFieldInstance};
-use alice_physics_core::material::{CombineRule, MaterialId};
+use alice_physics_core::material::{CombineRule, MaterialId, PhysicsMaterial};
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::semantics::PHYSICS_SEMANTICS_ID;
 use alice_physics_core::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
@@ -85,7 +85,7 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
     r.skip(8 + 8); // 4 substeps, iterations
     r.skip(VEC3 + FIX); // 5 gravity, damping
     r.bytes(); // 6 backend
-    r.skip(FIX); // 7 warm start
+    r.skip(FIX + 1); // 7 warm start, speculative contacts
     r.skip(FIX + 4); // 8 contact cache
     r.skip(FIX); // 9 sdf radius
     r.skip(1 + FIX); // 10 continuous collision
@@ -93,10 +93,11 @@ fn rows_1_to_16_end(b: &[u8]) -> usize {
     r.bytes(); // 12 friction combine
     r.bytes(); //    restitution combine
     for _ in 0..r.len() {
-        // 13 material: id, three Fix128, two tags
+        // 13 material: id, three Fix128, two tags, contact compliance
         r.skip(8 + 3 * FIX);
         r.bytes();
         r.bytes();
+        r.skip(FIX);
     }
     for _ in 0..r.len() {
         r.skip(8 + 8 + FIX + FIX); // 14 pair override
@@ -237,6 +238,19 @@ fn every_covered_field_moves_the_law_id() {
         (
             "config warm start",
             Box::new(|w| w.config.warm_start_factor = Fix128::ZERO),
+        ),
+        (
+            "speculative contacts",
+            Box::new(|w| w.config.speculative_contacts = false),
+        ),
+        (
+            "material contact compliance",
+            Box::new(|w| {
+                w.material_table.register(PhysicsMaterial {
+                    contact_compliance: fx(1, 1_000_000_000),
+                    ..PhysicsMaterial::default()
+                });
+            }),
         ),
         (
             "contact warm start",
