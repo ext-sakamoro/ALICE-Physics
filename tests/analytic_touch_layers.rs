@@ -21,7 +21,7 @@ use alice_physics_core::cloth::Cloth;
 use alice_physics_core::input_log::{InputLog, LogDecodeError, TOUCH_LOG_MAX_BYTES};
 use alice_physics_core::touch::{Hand, Touch};
 use alice_physics_core::touch_layers::{
-    history_digest, replay, LayerError, LayeredPlayback, PlaybackConfig, TouchBodies,
+    history_digest, replay, replay_with, LayerError, LayeredPlayback, PlaybackConfig, TouchBodies,
 };
 use alice_physics_core::{Fix128, Vec3Fix};
 
@@ -367,6 +367,66 @@ fn a_skipped_grab_still_lets_go_of_what_the_lower_hand_held() {
         real[STEPS as usize - 1][0],
         rest[0].rest_positions(),
         "body 0 was never let go"
+    );
+}
+
+/// A higher-layer grab that the budget refuses (one moving body, and the lower hand holds it) takes nothing, so it
+/// owns nothing: the lower layer's later grab of that body is played, and every frame is bit-equal to the lower
+/// layer alone (the reference has no top layer, so it does not run the override code)
+#[test]
+fn a_refused_higher_grab_does_not_take_the_body_from_the_lower_layers() {
+    let n = 2;
+    let budget = 1;
+    let mut lower = InputLog::new();
+    lower
+        .record(10, Touch::grab(0, at(0, 0, 0)))
+        .expect("in order");
+    for s in 11..30u64 {
+        lower
+            .record(s, Touch::drag(at(0, (s - 10) as i64, 0)))
+            .expect("in order");
+    }
+    lower.record(30, Touch::Release).expect("in order");
+    lower
+        .record(40, Touch::grab(1, at(1, 0, 0)))
+        .expect("in order");
+    for s in 41..80u64 {
+        lower
+            .record(s, Touch::drag(at(1, 0, (s - 40) as i64)))
+            .expect("in order");
+    }
+    lower.record(80, Touch::Release).expect("in order");
+    let top = |s: u64| -> Vec<Touch> {
+        match s {
+            20 => vec![Touch::grab(1, at(1, 10, 10))],
+            21..=24 => vec![Touch::drag(at(1, 10, 10 + (s as i64 - 20)))],
+            25 => vec![Touch::Release],
+            _ => Vec::new(),
+        }
+    };
+    let (_, real, actives) = record(n, vec![lower.clone()], config(STEPS, budget), top);
+    assert_eq!(actives[22], vec![0], "the refused grab made body 1 move");
+    let mut reference = Vec::new();
+    replay_with(
+        &sheets(n),
+        &hand(),
+        &[lower],
+        config(STEPS, budget),
+        |_, b| {
+            reference.push(snapshot(b));
+        },
+    )
+    .expect("replay");
+    for f in 0..STEPS as usize {
+        for g in 0..n {
+            assert_eq!(real[f][g], reference[f][g], "body {g} at frame {f}");
+        }
+    }
+    let rest = sheets(n);
+    assert_ne!(
+        real[60][1],
+        rest[1].rest_positions(),
+        "the lower layer's grab of body 1 was skipped"
     );
 }
 
