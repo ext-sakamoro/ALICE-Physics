@@ -377,7 +377,7 @@ impl BodyCollider {
                 continue;
             }
             let n = deepest.normal;
-            let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+            let (t1, t2) = crate::math::tangent_basis(n);
             let mut points: Vec<(Contact, u32)> = Vec::with_capacity(4);
             for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
                 let p = lean_support(
@@ -963,7 +963,7 @@ fn near_any(points: impl IntoIterator<Item = Vec3Fix>, p: Vec3Fix) -> bool {
 /// point below the plane (not flat-faced at the contact) keeps `deepest`.
 fn face_manifold(piece: &impl Support, deepest: Contact, margin: Fix128) -> Vec<(Contact, u32)> {
     let n = deepest.normal;
-    let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+    let (t1, t2) = crate::math::tangent_basis(n);
     let mut out: Vec<(Contact, u32)> = Vec::with_capacity(4);
     for (k, (s1, s2)) in [(1, 1), (-1, 1), (-1, -1), (1, -1)].into_iter().enumerate() {
         let lean_dir = t1 * Fix128::from_int(s1) + t2 * Fix128::from_int(s2);
@@ -1024,7 +1024,7 @@ fn support_face_manifold(
     margin: Fix128,
 ) -> Vec<(Contact, u32)> {
     let n = deepest.normal;
-    let (t1, t2) = crate::solver_tgs_backend::tangent_basis(n);
+    let (t1, t2) = crate::math::tangent_basis(n);
     let poly_a = support_polygon(a, -n, t1, t2);
     let poly_b = support_polygon(b, n, t1, t2);
     // The clipped polygon (its points stay on its body) and the clip.
