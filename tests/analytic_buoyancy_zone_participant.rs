@@ -82,6 +82,13 @@ fn world(substeps: usize, backend: SolverBackend) -> PhysicsWorld {
         ..PhysicsConfig::default()
     });
     w.config.solver_backend = backend;
+    // Kept awake: the floating body approaches its height slowly (most slowly
+    // under the temporal Gauss-Seidel backend), and the velocity threshold
+    // would put it to sleep, held still, short of the height Archimedes gives.
+    w.set_sleep_config(alice_physics_core::SleepConfig {
+        time_to_sleep: Fix128::from_int(1_000_000),
+        ..alice_physics_core::SleepConfig::default()
+    });
     w
 }
 
