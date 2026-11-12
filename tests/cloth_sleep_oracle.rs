@@ -22,7 +22,14 @@ use alice_physics_core::math::{Fix128, Vec3Fix};
 const RES: usize = 7;
 /// First frame (0-based, counted from the start of the script) whose `step` changes no bit
 /// of the state; the cloth must report asleep right after that step and not before.
-const FIRST_IDENTITY_STEP: u32 = 480;
+///
+/// It is the step in which every particle's correction rounds to zero, so it is set by the
+/// rounding of `Fix128`'s product: with the product floored (before 4.0), a correction in
+/// `(−2⁻⁶⁴, 0)` became `−2⁻⁶⁴` and never vanished, and the sheet's first identity step was
+/// frame 480; with the product rounded to nearest, every correction within `±2⁻⁶⁵` is zero,
+/// and the sheet reaches it at frame 485 (measured; the change of the product alone gives
+/// the same frame, the contact solve plays no part in a free sheet).
+const FIRST_IDENTITY_STEP: u32 = 485;
 
 fn sheet() -> Cloth {
     let mut c = Cloth::new_grid(
@@ -146,7 +153,8 @@ fn falls_asleep_right_after_the_first_identity_step() {
 #[test]
 fn a_woken_cloth_follows_the_never_slept_trajectory_bit_for_bit() {
     let mut compared = 0;
-    for wake in [100, 479, 480, 481, 482, 700] {
+    let n = FIRST_IDENTITY_STEP;
+    for wake in [100, n - 1, n, n + 1, n + 2, 700] {
         let frames = wake + 120;
         let (never, slept0) = run(frames, Some(wake), false);
         let (woken, slept) = run(frames, Some(wake), true);
@@ -269,7 +277,8 @@ fn unpin_restores_the_mass_pin_took() {
 #[test]
 fn trajectory_digest_with_sleep_is_pinned() {
     use sha2::{Digest, Sha256};
-    let (states, slept) = run(FIRST_IDENTITY_STEP + 60, None, true);
+    // 540 frames, the reference's length (it does not follow FIRST_IDENTITY_STEP)
+    let (states, slept) = run(540, None, true);
     assert!(slept > 0);
     let mut h = Sha256::new();
     for s in &states {
