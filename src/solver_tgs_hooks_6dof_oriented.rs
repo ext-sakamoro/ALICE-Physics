@@ -437,6 +437,10 @@ pub(crate) struct Pgs6DofOrientedHooks<'a> {
     /// Tunable projected Gauss-Seidel parameters for the oriented solve.
     pub(crate) cfg: Pgs6DofOrientedConfig,
     restitution_bias: Vec<Fix128>,
+    /// Per contact, the restitution of a speculative contact whose gap closes
+    /// in the current sub-step: the normal velocity it leaves with, applied
+    /// after the sub-step's positions advance (zero: none).
+    bounce_after: Vec<Fix128>,
     /// Per body, the free rotation of the current sub-step computed in
     /// `begin_substep` (`None`: no gyroscopic response, old path).
     free_rotation: Vec<Option<FreeRotation>>,
@@ -472,6 +476,7 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
             cache,
             cfg,
             restitution_bias: vec![Fix128::ZERO; n],
+            bounce_after: vec![Fix128::ZERO; n],
             free_rotation: vec![None; nb],
         }
     }
@@ -690,14 +695,35 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
         // The factor 2 is derived in tests/analytic_restitution_threshold.rs.
         let threshold =
             v_dot(self.cfg.gravity, self.cfg.gravity).sqrt() * sub_dt * Fix128::from_int(2);
+        // A speculative contact (a gap at the bodies' present poses) is solved
+        // to close its gap and no further; when the gap closes in this sub-step
+        // (`−gap / h ≥ vn`) the impact's restitution is applied to the velocity
+        // after the positions advance (the restitution pass of Box2D v3's soft
+        // step), so the bounce does not also move the bodies through the time
+        // before the impact. A gap that stays open is no impact yet.
         for i in 0..self.contacts.len() {
             let rel_v = self.contact_rel_velocity(i);
             let vn = v_dot(rel_v, self.contacts[i].normal);
-            self.restitution_bias[i] = if vn < -threshold {
+            let separation = self.current_penetration(i);
+            let speculative = self.contacts[i].penetration < Fix128::ZERO
+                && separation < Fix128::ZERO
+                && !sub_dt.is_zero();
+            let bounce = if vn < -threshold {
                 -(self.contacts[i].restitution * vn)
             } else {
                 Fix128::ZERO
             };
+            if speculative {
+                self.restitution_bias[i] = Fix128::ZERO;
+                self.bounce_after[i] = if separation / sub_dt >= vn {
+                    bounce
+                } else {
+                    Fix128::ZERO
+                };
+            } else {
+                self.restitution_bias[i] = bounce;
+                self.bounce_after[i] = Fix128::ZERO;
+            }
             if self.cfg.warmstart {
                 let cached = self.cache.take(self.contacts[i].stable_id);
                 self.contacts[i].accum_normal = cached.normal;
@@ -946,6 +972,22 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
             match free {
                 Some(f) => body.advance_split(sub_dt, *f),
                 None => body.advance(sub_dt),
+            }
+        }
+        // The restitution of the speculative contacts that closed in this
+        // sub-step: the normal velocity is raised to the bounce, never lowered.
+        for i in 0..self.contacts.len() {
+            let bounce = self.bounce_after[i];
+            if bounce <= Fix128::ZERO {
+                continue;
+            }
+            let contact = self.contacts[i];
+            let vn = v_dot(self.contact_rel_velocity(i), contact.normal);
+            let eff_m_n = self.effective_mass(i, contact.normal);
+            if vn < bounce && eff_m_n > Fix128::ZERO {
+                let applied = (bounce - vn) * eff_m_n;
+                self.apply_impulse(i, v_scale(contact.normal, applied));
+                self.contacts[i].accum_normal = contact.accum_normal + applied;
             }
         }
         for contact in self.contacts.iter() {
