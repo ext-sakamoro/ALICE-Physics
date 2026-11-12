@@ -22,9 +22,9 @@ src/anomaly.rs	is_anomaly	z_score > self . threshold_k	1	f64	predicate	a bool re
 src/anomaly.rs	non_negative	k < 0.0	1	f64	select	expr shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as equivalent: f64 threshold multiplier: -0 stays -0 and NaN stays NaN on purpose (documented), the value only scales a threshold compared with >, where -0 and +0 give the same result
 src/anomaly.rs	z_score	(value - self . mean) . abs () > 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/anomaly.rs	z_score	std_dev < 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/binding_api.rs	unit_quat	c > largest	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as equivalent: the operands are absolute values, so no -0 is chosen
 src/binding_api.rs	non_negative	x >= 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/binding_api.rs	positive	x > 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/binding_api.rs	unit_quat	c > largest	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as equivalent: the operands are absolute values, so no -0 is chosen
 src/character.rs	check_sdf_clear	dist < self . config . radius . to_f32 ()	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/character.rs	detect_ground	dist < probe . to_f32 () + self . config . radius . to_f32 ()	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/character.rs	resolve_sdf	dist < threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
@@ -65,6 +65,9 @@ src/lib.rs	raw_clamp64	y > hi	1	f64	select	assign shape of the rewrite scan; rev
 src/math.rs	from_f64	f < - TOP	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/math.rs	from_f64	f >= TOP	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/math.rs	from_f64	f < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/math.rs	tangent_basis	ax <= ay	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/math.rs	tangent_basis	ax <= az	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/math.rs	tangent_basis	ay <= az	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/particle.rs	probe	d >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/phase_change.rs	accumulate_offsets	liquid_flow > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/phase_change.rs	accumulate_offsets	phase_val >= 0.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
@@ -199,9 +202,7 @@ src/sketch.rs	cardinality	raw_estimate <= 2.5 * m	1	f64	predicate	an operand of 
 src/sketch.rs	insert	value < 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sketch.rs	insert	value > 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/solver.rs	add_compound_body	estimate < (1u64 << 61) as f64	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/solver_tgs_backend.rs	tangent_basis	ax <= ay	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/solver_tgs_backend.rs	tangent_basis	ax <= az	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/solver_tgs_backend.rs	tangent_basis	ay <= az	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/solver.rs	solid_sphere_inv_inertia	estimate < (1u64 << 61) as f64	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/spherical_terrain.rs	central_gravity	r > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/spherical_terrain.rs	new	radius > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
 src/spherical_terrain.rs	normal	r > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison

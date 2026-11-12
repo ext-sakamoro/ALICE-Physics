@@ -70,38 +70,7 @@ pub(crate) fn tgs_to_body(state: &Body6DofOrientedState, body: &mut RigidBody) {
     );
 }
 
-/// Builds an orthonormal tangent basis `(t1, t2)` perpendicular to a unit
-/// `normal`, used for the TGS contact's friction axes (XPBD's own contact
-/// solver has no tangent basis — it only ever applies impulses along
-/// `normal` — so there is nothing to port here; this is new, minimal code).
-///
-/// Picks the world axis least aligned with `normal` to cross against, which
-/// avoids the degenerate (near-zero-length) cross product that choosing a
-/// fixed axis (e.g. always `+Y`) would hit when `normal` is close to that
-/// axis. Degenerate input (`normal` not unit length, e.g. `ZERO`) is the
-/// caller's responsibility to avoid; see `tests/analytic_tgs_wiring.rs` for
-/// the behavior at exactly `ZERO` (does not panic, returns a defined but
-/// unspecified-magnitude basis — never fed a zero normal in practice since
-/// [`crate::collider`] only emits unit normals for real contacts).
-#[must_use]
-pub(crate) fn tangent_basis(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
-    // The axis whose |component along `normal`| is smallest is the safest
-    // to cross against (crossing against an axis nearly parallel to
-    // `normal` produces a near-zero-length vector before normalization).
-    let ax = normal.x.to_f32().abs();
-    let ay = normal.y.to_f32().abs();
-    let az = normal.z.to_f32().abs();
-    let helper = if ax <= ay && ax <= az {
-        Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO)
-    } else if ay <= az {
-        Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
-    } else {
-        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE)
-    };
-    let t1 = normal.cross(helper).normalize();
-    let t2 = normal.cross(t1).normalize();
-    (t1, t2)
-}
+pub(crate) use crate::math::tangent_basis;
 
 /// Converts a [`ContactConstraint`] (XPBD's `Contact::normal` points from B
 /// into A, see `src/collider.rs` doc) into the TGS engine's
