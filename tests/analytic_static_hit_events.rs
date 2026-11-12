@@ -26,11 +26,14 @@ fn world(height: f64) -> PhysicsWorld {
     w
 }
 
-/// The contact is found at the end of the step that crosses the plane, so the body has
-/// fallen up to one step past the height: its speed then exceeds `sqrt(2 g h)` by at most
-/// `g dt` from that last step, and the stepping of the fall (velocity first, then position)
-/// moves the moment the height is crossed by at most one more step, another `g dt`. The
-/// bound is `2 g dt`, checked at three steps so that it shrinks with the step.
+/// The hit is the substep whose approach closes the gap to the plane (a speculative
+/// contact met in it, or an overlap), so the body has fallen up to one step past the
+/// height: its speed then exceeds `sqrt(2 g h)` by at most `g dt` from that last step, and
+/// the stepping of the fall (velocity first, then position) moves the moment the height is
+/// crossed by at most one more step, another `g dt`. The bound is `2 g dt`, checked at three
+/// steps so that it shrinks with the step. (Reporting only overlaps missed the impact: the
+/// solve stops a body at the plane before it overlaps, and the first overlap was the body
+/// at rest.)
 #[test]
 fn the_first_hit_carries_the_speed_of_the_fall() {
     for steps_per_second in [60_i64, 120, 240] {
