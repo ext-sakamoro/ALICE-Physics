@@ -6321,14 +6321,8 @@ impl PhysicsWorld {
         // 3. Solve joint constraints — route through the same bridge, then
         //    remove the joints whose reaction force in that solve exceeded
         //    their break force (the same check `solve_joints_dispatch` runs).
-        let forces = if self.joints.is_empty() {
-            None
-        } else {
-            self.bridge_joint_reaction_forces(dt)
-        };
-        self.solve_joints_with_bridge(bridge, dt);
-        if let Some(forces) = forces {
-            self.break_overloaded_joints(&forces);
+        if !self.joints.is_empty() {
+            self.solve_joints_via_bridge_breaking(bridge, dt);
         }
 
         self.update_velocities(dt);
@@ -6479,40 +6473,57 @@ impl PhysicsWorld {
         }
         #[cfg(feature = "gpu-solver-bridge")]
         if let Some(mut bridge) = self.gpu_solver_bridge.take() {
-            let forces = self.bridge_joint_reaction_forces(dt);
-            self.solve_joints_with_bridge(bridge.as_mut(), dt);
+            self.solve_joints_via_bridge_breaking(bridge.as_mut(), dt);
             self.gpu_solver_bridge = Some(bridge);
-            if let Some(forces) = forces {
-                self.break_overloaded_joints(&forces);
-            }
             return;
         }
         if self.joints.iter().any(|j| j.break_force().is_some()) {
-            let forces =
-                crate::joint::solve_joints_with_reaction_forces(&self.joints, &mut self.bodies, dt);
+            let forces = crate::joint::solve_joints_breaking_before_transmitting(
+                &self.joints,
+                &mut self.bodies,
+                dt,
+            );
             self.break_overloaded_joints(&forces);
         } else {
             solve_joints(&self.joints, &mut self.bodies, dt);
         }
     }
 
-    /// The reaction forces the bridge's joint solve will transmit, when any
-    /// joint can break: the trait returns only positions, so the CPU solve
-    /// ([`crate::joint::solve_joints_with_reaction_forces`]) runs on a copy of
-    /// the bodies. A bridge matches the CPU solve bit for bit
-    /// ([`crate::gpu_bridge::GpuSolverBridge::assert_bit_exact_vs_cpu`]), so the
-    /// copy sees the same multipliers. `None` when no joint has a break force.
+    /// Solve the world's joints through `bridge`, breaking overloaded joints.
+    ///
+    /// The trait returns only positions, so when any joint has a break force the
+    /// CPU solve ([`crate::joint::solve_joints_breaking_before_transmitting`]) runs
+    /// on a copy of the bodies first. A bridge matches the CPU solve bit for bit
+    /// ([`crate::gpu_bridge::GpuSolverBridge::assert_bit_exact_vs_cpu`]), so when no
+    /// joint breaks the bridge's result is the copy's and the bridge solves as
+    /// before. When a joint breaks, the copy holds the result in which the breaking
+    /// joints transmitted nothing, which the bridge (solving every joint) cannot
+    /// produce, so the copy's bodies are taken for this substep and the bridge is
+    /// not dispatched.
     #[cfg(feature = "gpu-solver-bridge")]
-    fn bridge_joint_reaction_forces(&self, dt: Fix128) -> Option<Vec<Fix128>> {
+    fn solve_joints_via_bridge_breaking<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) {
         if !self.joints.iter().any(|j| j.break_force().is_some()) {
-            return None;
+            self.solve_joints_with_bridge(bridge, dt);
+            return;
         }
         let mut copy = self.bodies.clone();
-        Some(crate::joint::solve_joints_with_reaction_forces(
-            &self.joints,
-            &mut copy,
-            dt,
-        ))
+        let forces =
+            crate::joint::solve_joints_breaking_before_transmitting(&self.joints, &mut copy, dt);
+        let breaks = self
+            .joints
+            .iter()
+            .zip(&forces)
+            .any(|(joint, force)| joint.break_force().is_some_and(|max| *force > max));
+        if breaks {
+            self.bodies = copy;
+        } else {
+            self.solve_joints_with_bridge(bridge, dt);
+        }
+        self.break_overloaded_joints(&forces);
     }
 
     /// Remove every joint whose reaction force in this substep's joint solve
@@ -6525,13 +6536,16 @@ impl PhysicsWorld {
     /// joints: the XPBD substeps, the TGS joint projection and a bridge set with
     /// [`Self::set_gpu_solver_bridge`] go through [`Self::solve_joints_dispatch`],
     /// and [`Self::substep_with_bridge`] (so [`Self::step_with_bridge`]) calls it
-    /// after its bridge joint solve. A broken joint's correction from this
-    /// substep has been applied; it no longer acts from the next solve on.
+    /// after its bridge joint solve. A broken joint transmitted nothing in this
+    /// substep's solve ([`crate::joint::solve_joints_breaking_before_transmitting`])
+    /// and no longer acts from the next solve on.
     /// Joints are removed from the highest index down with the swap-remove of
-    /// [`Self::remove_joint`] (motors follow it). No wake is needed: a joint
-    /// transmits force only while its island is awake (a sleeping island's
-    /// bodies do not move, so its joints carry no multiplier), so a joint that
-    /// breaks always belongs to an awake island. The island unions are then rebuilt
+    /// [`Self::remove_joint`] (motors follow it). The island a broken joint
+    /// belonged to is woken before the joint is removed: the bodies lost a
+    /// support, and the breaking joint moved nothing in this substep (it
+    /// transmits nothing in the substep it breaks in), so no motion of the solve
+    /// would wake them (a body pulled off its anchor by a write to the pub fields
+    /// while its island sleeps would otherwise stay asleep in the air). The island unions are then rebuilt
     /// from the remaining joints, as at the start of every step, so the rest of
     /// the step (and a snapshot taken after it) no longer joins the two bodies.
     ///
@@ -6548,6 +6562,16 @@ impl PhysicsWorld {
             .filter(|(_, (joint, force))| joint.break_force().is_some_and(|max| **force > max))
             .map(|(i, (_, force))| (i, *force))
             .collect();
+        if !overloaded.is_empty() {
+            let held: Vec<usize> = overloaded
+                .iter()
+                .flat_map(|&(i, _)| {
+                    let (a, b) = self.joints[i].bodies();
+                    [a, b]
+                })
+                .collect();
+            self.islands.wake_islands(&held);
+        }
         for &(index, force) in overloaded.iter().rev() {
             if let Some(joint) = self.remove_joint(index) {
                 self.events

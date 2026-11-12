@@ -980,9 +980,18 @@ fn breaking_on_force_returns_descending_indices_skips_them_and_uses_strict_great
     ];
     let broken = solve_joints_breaking_on_force(&joints, &mut bodies, dt());
     assert_eq!(broken, vec![3, 0]);
-    // judged after the solve: the broken joints were solved in this call too
-    near(p(&bodies[1]).0, 0.0, 1e-12, "joint 0 solved, then reported");
-    near(p(&bodies[4]).0, 0.0, 1e-12, "joint 3 solved, then reported");
+    // a breaking joint transmits nothing in the solve it breaks in: its bodies stay
+    // where they were before its solve
+    assert_eq!(
+        bodies[1].position,
+        v3(1.0, 0.0, 0.0),
+        "joint 0 broke, moved nothing"
+    );
+    assert_eq!(
+        bodies[4].position,
+        v3(4.0, 0.0, 0.0),
+        "joint 3 broke, moved nothing"
+    );
     // surviving joints were solved
     near(p(&bodies[2]).0, 0.0, 1e-12, "joint 1 solved");
     near(

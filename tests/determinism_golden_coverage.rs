@@ -298,6 +298,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "joint break",
+        "determinism_golden.rs",
+        "determinism_joint_break",
+        "",
+    ),
+    (
         "cloth",
         "determinism_golden.rs",
         "determinism_cloth_drape",
@@ -393,6 +399,8 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("contacts", &["add_body_with_radius("], 2),
     ("distance constraint", &["add_distance_constraint("], 1),
     ("joint", &["add_joint("], 1),
+    // a joint that breaks: it carries nothing in the substep it breaks in and is removed
+    ("joint break", &["add_joint(", "with_break_force("], 1),
     ("continuous collision", &["set_continuous_collision("], 1),
     ("sleeping", &["is_sleeping("], 1),
     ("participant", &["add_participant("], 1),

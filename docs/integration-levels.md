@@ -116,7 +116,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ik_physics_bridge` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `interface_capture` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `interpolation` | standalone (step 1 of 19 items) | 1 / 0 / 0 / 18 / 0 | C ABI, Python, WebAssembly |
-| `joint` | standalone (step 14, binding 5 of 42 items) | 14 / 0 / 5 / 23 / 0 | C ABI, Python, WebAssembly |
+| `joint` | standalone (step 14, binding 5 of 43 items) | 14 / 0 / 5 / 24 / 0 | C ABI, Python, WebAssembly |
 | `joint_extra` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `kepler` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `kinematic_loop` | standalone | 0 / 0 / 0 / 7 / 0 | — |

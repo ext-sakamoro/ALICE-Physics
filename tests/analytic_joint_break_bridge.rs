@@ -99,12 +99,15 @@ fn step_with_bridge_breaks_a_joint_below_its_load() {
     let events = w.events.joint_break_events();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].force, Fix128::from_int(16), "m g exactly");
-    // judged after the bridge solve: the bridge solved it in this substep, and
-    // is sent no joint from the next one on
-    assert_eq!((bridge.sends, bridge.joints.len()), (1, 1));
+    // judged on a CPU copy before the bridge solve: a joint that breaks transmits
+    // nothing in the substep it breaks in, so the substep takes the copy's result and
+    // the bridge is not dispatched (2026-11-12; before, the bridge solved the breaking
+    // joint in full and it was removed afterwards), and no joint is sent from the next
+    // substep on
+    assert_eq!((bridge.sends, bridge.joints.len()), (0, 0));
     w.step_with_bridge(&mut bridge, h())
         .expect("the bridge computes under this build's semantics");
-    assert_eq!(bridge.sends, 1, "the broken joint is not sent again");
+    assert_eq!(bridge.sends, 0, "the broken joint is not sent");
 }
 
 #[test]
@@ -129,4 +132,48 @@ fn an_installed_bridge_breaks_through_plain_step() {
     w.step(h());
     assert!(w.joints.is_empty());
     assert_eq!(w.events.joint_break_events()[0].force, Fix128::from_int(16));
+}
+
+/// On both bridge paths a joint that breaks in a substep transmits nothing in it: the
+/// body after the step is bit for bit the body of the same world without the joint
+/// (free fall), not the body pulled back by the joint's correction.
+#[test]
+fn a_joint_breaking_on_the_bridge_paths_transmits_nothing() {
+    let free = || {
+        let mut w = hung(15);
+        w.joints.clear();
+        w
+    };
+    let mut via_step_with_bridge = hung(15);
+    let mut reference = free();
+    let mut bridge = JointReference::default();
+    via_step_with_bridge
+        .step_with_bridge(&mut bridge, h())
+        .expect("the bridge computes under this build's semantics");
+    let mut bridge_free = JointReference::default();
+    reference
+        .step_with_bridge(&mut bridge_free, h())
+        .expect("the bridge computes under this build's semantics");
+    assert!(via_step_with_bridge.joints.is_empty());
+    assert_eq!(
+        via_step_with_bridge.bodies[1].position,
+        reference.bodies[1].position
+    );
+    assert_eq!(
+        via_step_with_bridge.bodies[1].velocity,
+        reference.bodies[1].velocity
+    );
+
+    let mut installed = hung(15);
+    installed
+        .set_gpu_solver_bridge(Some(Box::new(JointReference::default())))
+        .expect("the bridge computes under this build's semantics");
+    installed.step(h());
+    let mut plain = free();
+    plain.step(h());
+    assert!(installed.joints.is_empty());
+    assert_eq!(installed.bodies[1].position, plain.bodies[1].position);
+    assert_eq!(installed.bodies[1].velocity, plain.bodies[1].velocity);
+    // and the body did fall: the joint would have held it at the anchor
+    assert!(plain.bodies[1].position.y < Fix128::ZERO);
 }

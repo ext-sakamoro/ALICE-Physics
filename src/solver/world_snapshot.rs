@@ -3846,14 +3846,29 @@ mod tests {
             ),
             fx(1, 2),
         );
-        // 1: anchor, 2..=8: one joint of each kind to the anchor
+        // 1: anchor, 2..=8: one joint of each kind to the anchor. Each jointed body
+        // starts at its joint's rest pose (rotation the identity), so no joint starts
+        // violated: a violated start is closed in one substep and the XPBD velocity
+        // update turns the gap into velocity `gap / h` (before 2026-11-12 the bodies
+        // stood at (3 + k, 5, 2k) and the slider's 6.08 m gap left its body at
+        // 2919.7 m/s). Ball (anchor (−1, 1, 0) on the body) at (4, 5, 0), hinge
+        // ((−1, 0, 0)) at (4, 6, 0), fixed ((0, 1, 0)) at (3, 5, 0), slider on the
+        // anchor's x line at (5, 6, 0), spring at its rest length 3/2 below the
+        // anchor's level, (3, 6, −3/2); the D6 (only x limited) and the cone-twist
+        // constrain no position here and keep their old places.
         let anchor = w.add_body(RigidBody::new_static(v(3, 6, 0)));
+        let rest = [
+            v(4, 5, 0),
+            v(4, 6, 0),
+            v(3, 5, 0),
+            v(5, 6, 0),
+            Vec3Fix::new(fx(3, 1), fx(6, 1), fx(-3, 2)),
+            v(8, 5, 10),
+            v(9, 5, 12),
+        ];
         let mut ids = Vec::new();
-        for k in 0..7 {
-            let id = w.add_body_with_radius(
-                RigidBody::new_dynamic(v(3 + k, 5, 2 * k), Fix128::ONE),
-                fx(1, 4),
-            );
+        for p in rest {
+            let id = w.add_body_with_radius(RigidBody::new_dynamic(p, Fix128::ONE), fx(1, 4));
             ids.push(id);
         }
         let up = v(0, 1, 0);
@@ -3894,7 +3909,8 @@ mod tests {
             body_b: ids[1],
             local_anchor_a: z,
             local_anchor_b: z,
-            target_distance: fx(3, 2),
+            // the ball and hinge bodies' distance at their rest poses
+            target_distance: Fix128::ONE,
             compliance: fx(1, 1000),
             cached_lambda: Fix128::ZERO,
         });
@@ -4080,6 +4096,39 @@ mod tests {
         assert!(t.tgs_impulse_cache.hits + t.tgs_impulse_cache.misses > 0);
         // the live set is empty between steps, which is why it is rebuilt empty
         assert!(t.tgs_impulse_cache.live.is_empty());
+    }
+
+    /// The round-trip scene stays physical: every jointed body's speed stays within what
+    /// the forces acting on it can give it. Each jointed body has mass 1 and starts at rest at
+    /// its joint's rest pose, so its joint (whose reaction does no work) adds nothing; the
+    /// accelerations it can feel are gravity 10, the vortex's strength 1/2 and the motor's
+    /// force limit 50 N, and the character can push it by at most 1/2 m/s per frame
+    /// (`compute_push_impulses(.., 1/2)`); the blast is disabled. So after `n` frames of
+    /// `1/60` s, `|v| ≤ 60.5·n/60 + 1/2·n`. Before 2026-11-12 the slider's body reached
+    /// 2919.7 m/s in frame 0 (its joint started 6.08 m from its rest pose and kept the snap
+    /// while breaking), the hinge's 137, the fixed joint's 292. Measured now: the largest is
+    /// 9.4 m/s (the D6 body falling for 1 s).
+    #[test]
+    fn the_jointed_bodies_stay_within_the_speed_their_forces_allow() {
+        let mut a = scene(SolverBackend::Xpbd, Broadphase::DynamicTree);
+        let jointed: Vec<usize> = (2..=8).collect();
+        let mut drv = Driver::new();
+        let mut compared = 0usize;
+        for n in 1..=60u32 {
+            drv.frame(&mut a, dt());
+            let t = f64::from(n) / 60.0;
+            let bound = 60.5 * t + 0.5 * f64::from(n);
+            for &i in &jointed {
+                let speed = a.bodies[i].velocity.length().to_f64();
+                assert!(
+                    speed <= bound,
+                    "frame {n}: body {i} at {speed} m/s, above the {bound} m/s its forces allow"
+                );
+                compared += 1;
+            }
+        }
+        assert_eq!(a.joints.len(), 7, "a joint broke");
+        assert_eq!(compared, 60 * 7);
     }
 
     #[test]

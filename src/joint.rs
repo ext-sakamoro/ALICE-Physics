@@ -11,6 +11,62 @@
 //! - **`SpringJoint`**: Distance spring with damping
 //! - **`D6Joint`**: 6-DOF configurable joint with per-axis locking
 //! - **`ConeTwistJoint`**: Cone-twist constraint for ragdoll shoulders/hips
+//!
+//! # MODEL
+//!
+//! **Equations.** Every joint is a set of XPBD constraint rows solved once per substep `h`
+//! (Macklin, Müller, Chentanez, MIG 2016): a row with constraint value `C`, generalized inverse
+//! mass `w` and compliance `α` moves its bodies by `Δλ = −C / (w + α / h²)` along its gradient,
+//! in proportion to their inverse masses (and inverse inertias for the rotational part). Ball:
+//! the two anchors coincide; hinge: anchors coincide, axes aligned, optional angle limits;
+//! fixed: anchors coincide and the relative orientation is held; slider: the anchor offset has
+//! no component off the axis, the orientation is held, optional limits along the axis; spring:
+//! a damped distance spring (`k`, `c`, rest length); D6: per axis locked / free / limited;
+//! cone-twist: swing within a cone and twist within limits. The reaction force of a joint is
+//! `|Σ λ · n| / h²` over its positional rows. A joint with a `break_force` breaks when that
+//! force in a substep's solve exceeds it, and then **transmits nothing in that substep**: its
+//! bodies are put back to where they were before its solve
+//! ([`solve_joints_breaking_before_transmitting`]) and it is removed.
+//!
+//! **Units.** SI: positions and anchors m, masses kg, time s, forces (`break_force`, motor
+//! limits) N, angles rad, compliance m/N, spring stiffness N/m and damping N·s/m.
+//!
+//! **Conservation.** Each row moves the two bodies in opposite directions in proportion to
+//! their inverse masses, so a joint's correction keeps the pair's linear momentum. Energy is
+//! not conserved: the position projection dissipates it at first order in `h` (a physical
+//! pendulum from horizontal loses 3.64 / 1.13 / 0.29 J over 20 s at 8 / 32 / 128 substeps, and
+//! its total energy never rises above the start). A joint that starts violated is closed in
+//! one substep and the velocity update turns the gap into velocity `gap / h`, which adds
+//! energy `½·m·(gap / h)²`. A breaking joint transmits no impulse in the substep it breaks
+//! in, so against an ideal brittle joint (which would transmit `break_force · h` while
+//! failing) the error is at most `break_force · h` of impulse; the more physical form, the
+//! transmitted impulse clamped to exactly `break_force · h`, is not taken (multi-row joints
+//! solve their rows in sequence, so scaling each row's multiplier is not exact). Before
+//! 2026-11-12 a breaking joint applied its whole correction and was then removed, which kept
+//! an unbounded snap: a slider started 6.08 m off its axis left its body at 2919.7 m/s.
+//!
+//! **Valid range.** Any substep `h > 0`; the error terms above shrink with `h`. Joints should
+//! start at their rest pose (a violated start becomes velocity, see above). The reaction force
+//! used for breaking includes the start-up transient of the sequential sweep (a chain from rest
+//! overshoots its static load, see [`solve_joints_with_reaction_forces`]), so a `break_force`
+//! between the static load and that peak breaks during start-up. Positions and multipliers
+//! stay inside `Fix128` (|value| < 2^63); out of range the arithmetic wraps.
+//!
+//! **Approximations.** The rows of all joints are solved in one Gauss–Seidel sweep per substep,
+//! not simultaneously; angular rows produce torques that are not counted in the reaction force;
+//! joints have no friction or play; the spring joint is linear; a breaking joint transmits
+//! nothing rather than exactly `break_force · h` (above).
+//!
+//! **Validation.** `tests/analytic_physical_pendulum.rs` (period against
+//! `4·√(I_p / (m·g·L))·K(sin(θ₀/2))`, energy non-increasing, first-order loss),
+//! `tests/analytic_joint_break_transmits_nothing.rs` (a breaking joint leaves the frame as a
+//! world without it, a holding joint with a break force is bit-identical to one without),
+//! `tests/analytic_joint_break_world.rs` (breaking at the reaction force `m·g`), and
+//! `the_jointed_bodies_stay_within_the_speed_their_forces_allow` (the snapshot scene's jointed
+//! bodies stay within the speed their forces allow).
+//!
+//! **Tiers.** L0 only (the GPU solver bridge reproduces the CPU solve bit for bit; it is not a
+//! lighter tier).
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
@@ -893,22 +949,83 @@ pub fn solve_joints_with_reaction_forces(
         .collect()
 }
 
+/// Solve every joint once, in order, as [`solve_joints_with_reaction_forces`],
+/// except that a joint whose reaction force in this solve would exceed its
+/// `break_force` **transmits nothing**: its two bodies are put back to where
+/// they were before that joint's solve. Returns each joint's reaction force
+/// (N, `|Σ λ · n| / dt²`): for a breaking joint the force its solve needed,
+/// which is what exceeded the threshold.
+///
+/// A joint that breaks in a substep therefore moves nothing in that substep,
+/// and the caller removes it. The impulse a joint transmits is bounded: a
+/// joint that holds transmits its solve's impulse (at most `break_force · dt`
+/// if it has a break force), a joint that breaks transmits none, so the error
+/// against an ideal brittle joint (which would transmit exactly
+/// `break_force · dt` in the substep it fails) is at most `break_force · dt` of
+/// impulse. Before this the breaking joint's full correction was applied and
+/// then the joint removed: a joint started far from its rest pose snapped the
+/// body across the whole gap in one substep and the joint was gone before any
+/// later substep could take the velocity of that snap back (measured: a slider
+/// started 6.08 m off its axis left the body at 2919.7 m/s = 6.08 m / (1/480 s)).
+/// The alternative of transmitting exactly `break_force · dt` (scaling the
+/// positional rows' multipliers) is not taken: multi-row joints solve their rows
+/// in sequence, so a per-row scaling is not exact.
+///
+/// A joint that does not break goes through exactly the operations of
+/// [`solve_joints_with_reaction_forces`], so a run in which no joint breaks is
+/// bit-identical to it.
+pub fn solve_joints_breaking_before_transmitting(
+    joints: &[Joint],
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec<Fix128> {
+    let h2 = dt * dt;
+    joints
+        .iter()
+        .map(|joint| {
+            let Some(max) = joint.break_force() else {
+                let impulse = solve_one(joint, bodies, dt);
+                return if h2.is_zero() {
+                    Fix128::ZERO
+                } else {
+                    impulse.length() / h2
+                };
+            };
+            let (a, b) = joint.bodies();
+            let saved = (bodies[a], bodies[b]);
+            let impulse = solve_one(joint, bodies, dt);
+            let force = if h2.is_zero() {
+                Fix128::ZERO
+            } else {
+                impulse.length() / h2
+            };
+            if force > max {
+                // breaks: it transmits nothing in this substep
+                bodies[a] = saved.0;
+                bodies[b] = saved.1;
+            }
+            force
+        })
+        .collect()
+}
+
 /// Solve joints once and return the indices of those whose reaction force
 /// exceeded their `break_force` (N), in descending order (safe for sequential
 /// `swap_remove`).
 ///
-/// Every joint is solved first ([`solve_joints_with_reaction_forces`]); a
-/// joint is broken when its reaction force from that solve is strictly
-/// greater than its `break_force`. The broken joint's correction from this
-/// solve has been applied: the caller removes it so that it no longer acts on
-/// later solves. This is the check [`crate::solver::PhysicsWorld::step`]
-/// applies to the world's joints after each substep's joint solve.
+/// The joints are solved by [`solve_joints_breaking_before_transmitting`]: a
+/// joint is broken when its reaction force in this solve is strictly greater
+/// than its `break_force`, and a broken joint transmits nothing in this solve
+/// (its two bodies are left as they were before its solve). The caller removes
+/// it so that it no longer acts on later solves. This is the check
+/// [`crate::solver::PhysicsWorld::step`] applies to the world's joints in each
+/// substep's joint solve.
 pub fn solve_joints_breaking_on_force(
     joints: &[Joint],
     bodies: &mut [crate::solver::RigidBody],
     dt: Fix128,
 ) -> Vec<usize> {
-    let forces = solve_joints_with_reaction_forces(joints, bodies, dt);
+    let forces = solve_joints_breaking_before_transmitting(joints, bodies, dt);
     let mut broken: Vec<usize> = joints
         .iter()
         .zip(&forces)
@@ -2627,14 +2744,10 @@ mod tests {
         let mut snap = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
         let broken2 = solve_joints_breaking_on_force(&[mk(64)], &mut snap, DT);
         assert_eq!(broken2, vec![0]);
-        // 判定は solve の後: 壊れた joint もこの呼び出しで解かれている
-        assert!(
-            near_v(snap[1].position, Vec3Fix::ZERO),
-            "{:?}",
-            snap[1].position
-        );
-        // 同じ 2 body の joint を 3 本: 1 本目が gap を閉じる (80 N) ので後の 2 本は
-        // gap 0 で反力 0 (Gauss-Seidel の順で荷重を受ける) ⇒ 壊れるのは 1 本目だけ
+        // 壊れる joint はその solve で何も渡さない: body は解く前の位置のまま
+        assert_eq!(snap[1].position, v3i(3, 4, 0));
+        // 同じ 2 body の joint を 3 本: 1 本目は 80 N > 64 N で壊れて何も渡さず、2 本目
+        // (1600 N) が gap を閉じる (80 N) ので 3 本目は gap 0 で反力 0 ⇒ 壊れるのは 1 本目だけ
         let mut multi = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
         let js = [mk(64), mk(1600), mk(16)];
         let broken3 = solve_joints_breaking_on_force(&js, &mut multi, DT);

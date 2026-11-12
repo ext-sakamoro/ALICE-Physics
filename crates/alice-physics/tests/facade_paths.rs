@@ -529,6 +529,7 @@ use alice_physics::interpolation::WorldSnapshot as _;
 use alice_physics::joint as _;
 use alice_physics::joint::solve_joints as _;
 use alice_physics::joint::solve_joints_breakable as _;
+use alice_physics::joint::solve_joints_breaking_before_transmitting as _;
 use alice_physics::joint::solve_joints_breaking_on_force as _;
 use alice_physics::joint::solve_joints_with_reaction_forces as _;
 use alice_physics::joint::BallJoint as _;
@@ -1916,7 +1917,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1898 paths, checked at compile time
+    // 1899 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
