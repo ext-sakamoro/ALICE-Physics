@@ -512,8 +512,10 @@ use alice_physics::ik_physics_bridge::IkTarget as _;
 use alice_physics::ik_physics_bridge::IkTargetSet as _;
 use alice_physics::input_log as _;
 use alice_physics::input_log::InputLog as _;
+use alice_physics::input_log::LogDecodeError as _;
 use alice_physics::input_log::LogError as _;
 use alice_physics::input_log::LogInput as _;
+use alice_physics::input_log::TOUCH_LOG_MAX_BYTES as _;
 use alice_physics::interface_capture as _;
 use alice_physics::interface_capture::fast_sweeping_reinit as _;
 use alice_physics::interface_capture::plic_normal as _;
@@ -1517,6 +1519,20 @@ use alice_physics::touch::Grabbable as _;
 use alice_physics::touch::Grip as _;
 use alice_physics::touch::Hand as _;
 use alice_physics::touch::Touch as _;
+use alice_physics::touch_layers as _;
+use alice_physics::touch_layers::history_digest as _;
+use alice_physics::touch_layers::replay as _;
+use alice_physics::touch_layers::replay_with as _;
+use alice_physics::touch_layers::LayerError as _;
+use alice_physics::touch_layers::LayeredPlayback as _;
+use alice_physics::touch_layers::PlaybackConfig as _;
+use alice_physics::touch_layers::Recording as _;
+use alice_physics::touch_layers::TouchBodies as _;
+use alice_physics::touch_limits as _;
+use alice_physics::touch_limits::check as _;
+use alice_physics::touch_limits::within_limits as _;
+use alice_physics::touch_limits::TouchLimits as _;
+use alice_physics::touch_limits::Violation as _;
 use alice_physics::transient_thermal as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d as _;
 use alice_physics::transient_thermal::crank_nicolson_step_1d_nonlinear as _;
@@ -1919,7 +1935,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1901 paths, checked at compile time
+    // 1917 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

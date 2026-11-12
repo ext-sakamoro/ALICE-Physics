@@ -11,7 +11,8 @@
 //! `LayeredPlayback::apply`): each step's touches are given from the highest layer down, then the bodies step; a
 //! grab of body `b` by layer `L` at step `s` makes every lower hand holding `b` let go at `s`, and every later span
 //! (grab … release) of a lower layer on `b` is skipped, the skipped grab still letting go of what that hand held;
-//! the later spans are skipped only when `L`'s hand took `b` (a grab the budget refuses or that misses owns nothing).
+//! the lower hands let go and the later spans are skipped only when `L`'s hand takes `b` (a grab that misses or that the
+//! budget refuses takes nothing, so the lower hands keep `b` and their spans on it go on).
 //! The active-body budget ([`TouchBodies::input`](crate::touch_layers::TouchBodies::input)): only active bodies are stepped; a grab of an inactive body,
 //! after the hand lets go of what it held, makes it active; when `max_active` bodies are already active, the active
 //! body that started moving earliest and that no hand holds is first put exactly at rest (`TouchBodies::settle`:
@@ -203,6 +204,17 @@ impl TouchBodies {
             .get(layer)
             .and_then(Hand::held)
             .and_then(|(b, _)| usize::try_from(b).ok())
+    }
+
+    /// Whether `layer`'s grab `touch` of body `b` would take a point, without touching anything (the budget aside)
+    fn would_take(&self, layer: usize, b: usize, touch: &Touch) -> bool {
+        let Touch::Grab { at, .. } = *touch else {
+            return false;
+        };
+        match (self.hands.get(layer), self.cloths.get(b)) {
+            (Some(hand), Some(cloth)) => hand.would_take(cloth, at),
+            _ => false,
+        }
     }
 
     fn is_held(&self, b: usize) -> bool {
@@ -441,8 +453,11 @@ impl LayeredPlayback {
                         self.bodies.input(layer, &Touch::Release);
                         return;
                     }
+                    // a grab that misses takes nothing, so the lower hands keep the body (whether it misses is
+                    // known before anyone lets go: letting go does not move a point)
+                    let takes = self.bodies.would_take(layer, b, touch);
                     for below in 0..layer {
-                        if self.bodies.held_by(below) == Some(b) {
+                        if takes && self.bodies.held_by(below) == Some(b) {
                             self.bodies.input(below, &Touch::Release);
                             self.skipping[below] = true;
                         }

@@ -430,6 +430,53 @@ fn a_refused_higher_grab_does_not_take_the_body_from_the_lower_layers() {
     );
 }
 
+/// A higher-layer grab that misses a body a lower hand holds (the point touched is 2 m from it, the reach 0.4 m)
+/// takes nothing: the lower hand keeps the body and goes on dragging it, and every frame is bit-equal to the lower
+/// layer alone (the reference has no top layer)
+#[test]
+fn a_higher_grab_that_misses_leaves_the_lower_hand_holding_the_body() {
+    let n = 1;
+    let mut lower = InputLog::new();
+    lower
+        .record(10, Touch::grab(0, at(0, 0, 0)))
+        .expect("in order");
+    for s in 11..90u64 {
+        lower
+            .record(s, Touch::drag(at(0, (s - 10).min(40) as i64, 0)))
+            .expect("in order");
+    }
+    lower.record(90, Touch::Release).expect("in order");
+    let top = |s: u64| -> Vec<Touch> {
+        match s {
+            30 => vec![Touch::grab(0, at(0, 0, 200))],
+            31..=39 => vec![Touch::drag(at(0, 0, 200 + (s as i64 - 30)))],
+            40 => vec![Touch::Release],
+            _ => Vec::new(),
+        }
+    };
+    let (_, real, _) = record(n, vec![lower.clone()], config(STEPS, BUDGET), top);
+    let mut reference = Vec::new();
+    replay_with(
+        &sheets(n),
+        &hand(),
+        &[lower],
+        config(STEPS, BUDGET),
+        |_, b| {
+            reference.push(snapshot(b));
+        },
+    )
+    .expect("replay");
+    for f in 0..STEPS as usize {
+        assert_eq!(real[f][0], reference[f][0], "body 0 at frame {f}");
+    }
+    let rest = sheets(n);
+    assert_ne!(
+        real[60][0],
+        rest[0].rest_positions(),
+        "the lower hand let go"
+    );
+}
+
 /// A sixth body grabbed while five move: the one that started first (and is not held) is put exactly at rest at
 /// that grab, the sixth moves, and the recording replays to the same frames
 #[test]

@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2629 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2664 |
 | live | reached without examples (crate-internal roots or a binding) | 897 |
-| | **total** | **3557** |
+| | **total** | **3592** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2629)
+## L1 — example-only (2664)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -180,7 +180,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/holds.rs`: `Holds::holds`
 - `src/hyperelastic.rs`: `HyperelasticModel`, `HyperelasticModel::natural_rubber`, `HyperelasticModel::silicone_soft`, `HyperelasticModel::tpu_soft`, `Stretch`, `Stretch::UNITY`, `Stretch::equibiaxial`, `Stretch::i1`, `Stretch::i2`, `Stretch::uniaxial`, `Stretch::volume_ratio`, `cauchy_stress`, `small_strain_moduli`, `small_strain_shear_modulus`, `strain_energy_density`, `tangent_constants`, `uniaxial_cauchy_stress`, `volumetric_modulus`
 - `src/ik_physics_bridge.rs`: `IkTarget`, `IkTarget::blended`, `IkTarget::snap`, `IkTargetSet`, `IkTargetSet::apply`, `IkTargetSet::new`, `IkTargetSet::push`
-- `src/input_log.rs`: `InputLog::replay`, `LogInput`
+- `src/input_log.rs`: `InputLog::from_bytes_bounded`, `InputLog::replay`, `InputLog::to_bytes`, `LogDecodeError`, `LogInput`, `TOUCH_LOG_MAX_BYTES`
 - `src/interface_capture.rs`: `fast_sweeping_reinit`, `plic_normal`, `plic_plane_offset`, `truncated_cube_volume`
 - `src/interpolation.rs`: `BodySnapshot`, `BodySnapshot::from_body`, `InterpolationState`, `InterpolationState::body_count`, `InterpolationState::capture_and_push`, `InterpolationState::empty`, `InterpolationState::interpolate`, `InterpolationState::interpolate_all`, `InterpolationState::interpolate_position`, `InterpolationState::interpolate_rotation`, `InterpolationState::new`, `InterpolationState::push`, `WorldSnapshot`, `WorldSnapshot::capture`, `WorldSnapshot::is_empty`, `WorldSnapshot::len`, `lerp_fix128`, `lerp_vec3`
 - `src/joint.rs`: `BallJoint::with_break_force`, `BallJoint::with_compliance`, `ConeTwistJoint::new`, `ConeTwistJoint::with_break_force`, `ConeTwistJoint::with_limits`, `D6Joint::new`, `D6Joint::with_angular_limits`, `D6Joint::with_angular_motion`, `D6Joint::with_break_force`, `D6Joint::with_linear_limits`, `D6Joint::with_linear_motion`, `FixedJoint::with_break_force`, `HingeJoint::with_break_force`, `HingeJoint::with_compliance`, `HingeJoint::with_limits`, `Joint::compute_force`, `Joint::joint_type`, `JointType`, `SliderJoint::with_break_force`, `SliderJoint::with_limits`, `SpringJoint::with_break_force`, `solve_joints_breakable`, `solve_joints_breaking_on_force`, `solve_joints_with_reaction_forces`
@@ -273,7 +273,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/thermal_stress.rs`: `ThermalStressReport`, `analyze_thermal_stress`, `yield_temperature_c`
 - `src/thin_wall.rs`: `ThinRegion`, `ThinWallConfig`, `ThinWallConfig::for_nozzle`, `ThinWallReport`, `ThinWallReport::has_thin_walls`, `ThinWallReport::thin_fraction`, `analyze_thickness`, `analyze_thickness_grid`, `measure_thickness_at`, `sample_surface_points`
 - `src/torus.rs`: `Torus::surface_area`
-- `src/touch.rs`: `Grabbable`, `Grip`, `Hand`, `Hand::apply`, `Hand::held`, `Hand::new`, `Hand::pull`, `Hand::state_bytes`, `Hand::with_grip`, `Touch`, `Touch::drag`, `Touch::grab`
+- `src/touch.rs`: `Grabbable`, `Grip`, `Hand`, `Hand::apply`, `Hand::held`, `Hand::new`, `Hand::pull`, `Hand::state_bytes`, `Hand::with_grip`, `Hand::would_take`, `Touch`, `Touch::drag`, `Touch::grab`
+- `src/touch_layers.rs`: `LayerError`, `LayeredPlayback`, `LayeredPlayback::advance`, `LayeredPlayback::bodies`, `LayeredPlayback::finish`, `LayeredPlayback::new`, `LayeredPlayback::step_now`, `LayeredPlayback::touch`, `PlaybackConfig`, `PlaybackConfig::new`, `Recording`, `TouchBodies`, `TouchBodies::active`, `TouchBodies::centre`, `TouchBodies::cloth`, `TouchBodies::digest`, `TouchBodies::input`, `TouchBodies::is_empty`, `TouchBodies::len`, `TouchBodies::new`, `TouchBodies::step`, `history_digest`, `mean`, `replay`, `replay_with`
+- `src/touch_limits.rs`: `TouchLimits`, `TouchLimits::new`, `Violation`, `check`, `within_limits`
 - `src/transient_thermal.rs`: `TemperatureDependence`, `TemperatureDependence::evaluate`, `ThermalMaterial`, `ThermalMaterial::aluminum_6061`, `ThermalMaterial::conductivity_at`, `ThermalMaterial::density_at`, `ThermalMaterial::diffusivity_at`, `ThermalMaterial::heat_capacity_at`, `ThermalMaterial::pla_polymer`, `ThermalMaterial::specific_heat_at`, `ThermalMaterial::steel_1018`, `ThermalMaterial::titanium_ti6al4v`, `crank_nicolson_step_1d`, `crank_nicolson_step_1d_nonlinear`, `stable_dt_1d`, `stable_dt_3d`, `transient_step_1d`, `transient_step_3d`
 - `src/trimesh.rs`: `TriMesh::closest_point`, `TriMesh::collide_aabb`, `TriMesh::collide_capsule`, `TriMesh::occluded`, `TriMesh::triangle_count`
 - `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KEpsilonState::advance`, `KEpsilonState::advance_epsilon`, `KEpsilonState::advance_k`, `KEpsilonState::eddy_viscosity`, `KOmegaState`, `KOmegaState::advance`, `KOmegaState::eddy_viscosity`, `KOmegaState::from_k_epsilon`, `KOmegaState::to_k_epsilon`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `dynamic_smagorinsky_cs`, `friction_velocity`, `friction_velocity_checked`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `u_plus`, `wall_k_epsilon`, `y_plus`

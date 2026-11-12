@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6236 |
+| 🟢 Not ignored (run by CI) | 6256 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6339** |
+| **Total** | **6359** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -165,7 +165,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6236)
+## 🟢 Not ignored (6256)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -386,6 +386,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `analytic_sweep_sphere_inside.rs` | 12 |
 | `analytic_touch.rs` | 12 |
+| `analytic_touch_layers.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_buckling.rs` | 12 |
 | `audit_fillet_stress.rs` | 12 |
@@ -492,6 +493,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_step_multigrid.rs` | 8 |
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
+| `analytic_touch_limits.rs` | 8 |
 | `analytic_wall_model.rs` | 8 |
 | `audit_c_cfd_solver.rs` | 8 |
 | `audit_damping_rayleigh.rs` | 8 |
