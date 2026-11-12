@@ -4,9 +4,9 @@
 //!
 //! A body at rest under gravity carries its weight: the normal force at its contact
 //! is `m·g`, and in a stack each contact carries the weight of everything above it
-//! (`F = Σ mᵢ·g`). The solver's own quantity is the separation applied in the last
-//! substep (`cached_lambda`); `contact_forces` divides it by `(wₐ + w_b)·h²` to get a
-//! force. Friction arrows have magnitude `μ·F` along two tangents that are unit,
+//! (`F = Σ mᵢ·g`). The solver's own quantity is the XPBD multiplier of the last
+//! substep (`cached_lambda`, the correction is `w λ`); `contact_forces` divides it by
+//! `h²` to get a force. Friction arrows have magnitude `μ·F` along two tangents that are unit,
 //! orthogonal to each other and to the normal; a friction cone has half-angle
 //! `atan μ` (`π/4` for `μ = 1`) and height `F`.
 //!
@@ -260,9 +260,11 @@ fn a_hand_made_contact_of_two_immovable_bodies_has_no_force() {
 
 /// The substep length is the frame step over the number of substeps, and a world
 /// with zero substeps counts as one (no division by zero): a hand-made contact with
-/// a known multiplier gives `λ / (w·dt²)`.
+/// a known multiplier gives `λ / h²`. The multiplier is the XPBD one (Macklin et
+/// al. 2016): the position correction is `w λ` and the constraint force `λ /
+/// h²`, whatever the bodies' masses.
 #[test]
-fn the_force_is_the_multiplier_over_w_times_the_substep_squared() {
+fn the_force_is_the_multiplier_over_the_substep_squared() {
     use alice_physics_core::collider::Contact;
     use alice_physics_core::solver::ContactConstraint;
     for (substeps, h) in [(0usize, 1.0 / 60.0), (1, 1.0 / 60.0), (4, 1.0 / 240.0)] {
@@ -286,7 +288,7 @@ fn the_force_is_the_multiplier_over_w_times_the_substep_squared() {
         c.cached_lambda = fx(0.002);
         w.add_contact(c);
         let force = w.contact_forces(dt())[0].2.to_f64();
-        let want = 0.002 / (0.5 * h * h);
+        let want = 0.002 / (h * h);
         assert!(
             (force - want).abs() < 1e-6 * want,
             "{substeps} substeps: force {force}, closed form {want}"

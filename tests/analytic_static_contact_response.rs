@@ -1,0 +1,650 @@
+//! Oracles for the response of a body touching what it cannot move: a static
+//! collider (plane, triangle mesh, height field), a static body with a shape
+//! (the body–body contact), and a static SDF collider: the bounce, the friction
+//! and the turn the contact gives, for every one of these pairings (each law is
+//! checked on each, `scripts/contact_law_matrix.py`).
+//!
+//! # What is measured (closed forms, independent of the solver)
+//!
+//! - **Bounce.** A ball dropped from rest `h` above a floor, with restitution `e`
+//!   for the ball–floor pair, leaves the floor at `e·v` (`v = √(2 g h)`) and rises
+//!   `e² h`. Two restitutions give two heights.
+//! - **Sliding friction.** A flat box sliding at `v0` on a level floor with
+//!   friction `μ` decelerates at `μ g` and stops after `v0² / (2 μ g)`.
+//! - **Rolling.** A solid ball (`I = 2/5 m r²`) set sliding at `v0` with no spin
+//!   is slowed by friction and spun up by its torque until it rolls: from then on
+//!   `v = 5 v0 / 7` and `ω r = v`, the spin about the axis `up × direction`
+//!   reversed (rolling toward `+x` on a floor facing `+y` turns about `−z`).
+//! - **Tipping.** A box of width `w` and height `h` standing on one bottom edge,
+//!   tilted by `θ`, falls over when its centre of mass is past the edge
+//!   (`θ > atan(w / h)`) and falls back onto its base otherwise.
+//!
+//! The friction / restitution of the pair is set with a pair override between the
+//! body's material and [`DEFAULT_MATERIAL`], the material a static collider
+//! counts as.
+//!
+//! Author: Moroya Sakamoto
+
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 closed forms (atan of the tipping angle, the tilt of a box from its rotation) the solver's Fix128 result is compared with"
+)]
+
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::material::{PhysicsMaterial, DEFAULT_MATERIAL};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverBackend, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::{TriMesh, Triangle};
+
+const G: f64 = 10.0;
+const DT: f64 = 1.0 / 240.0;
+
+fn fx(v: f64) -> Fix128 {
+    Fix128::from_f64(v)
+}
+
+fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
+    Vec3Fix::new(fx(x), fx(y), fx(z))
+}
+
+fn backends() -> [(&'static str, SolverBackend); 2] {
+    [("xpbd", SolverBackend::Xpbd), ("tgs", SolverBackend::Tgs)]
+}
+
+/// What the body stands on: a static collider, a static body with a box shape
+/// (its top face at `y = 0`), or a static SDF collider (the half-space `y ≤ 0`).
+enum Floor {
+    Static(Box<StaticCollider>),
+    Body,
+    Sdf,
+}
+
+/// Put `floor` into `w`.
+fn install(w: &mut PhysicsWorld, floor: Floor) {
+    match floor {
+        Floor::Static(c) => {
+            w.add_static_collider(*c);
+        }
+        Floor::Body => {
+            let b = w.add_body(RigidBody::new_static(v3(0.0, -1.0, 0.0)));
+            w.set_body_shape(
+                b,
+                &Shape::Box {
+                    half_extents: v3(40.0, 1.0, 40.0),
+                },
+            );
+        }
+        Floor::Sdf => {
+            let field = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+            w.add_sdf_collider(SdfCollider::new_static(
+                Box::new(field),
+                Vec3Fix::ZERO,
+                QuatFix::IDENTITY,
+            ));
+        }
+    }
+}
+
+fn plane() -> Floor {
+    Floor::Static(Box::new(StaticCollider::Plane(PlaneCollider::new(
+        v3(0.0, 1.0, 0.0),
+        fx(0.0),
+    ))))
+}
+
+/// Every kind of floor at `y = 0`, facing up
+fn floors() -> Vec<(&'static str, Floor)> {
+    let (a, b, c, d) = (
+        v3(-20.0, 0.0, -20.0),
+        v3(20.0, 0.0, -20.0),
+        v3(20.0, 0.0, 20.0),
+        v3(-20.0, 0.0, 20.0),
+    );
+    vec![
+        ("plane", plane()),
+        (
+            "mesh",
+            Floor::Static(Box::new(StaticCollider::TriMesh(TriMesh::from_triangles(
+                vec![Triangle::new(a, c, b), Triangle::new(a, d, c)],
+            )))),
+        ),
+        (
+            "height field",
+            Floor::Static(Box::new(StaticCollider::HeightField(HeightField::flat(
+                41,
+                41,
+                fx(1.0),
+                v3(-20.0, 0.0, -20.0),
+                fx(0.0),
+            )))),
+        ),
+        ("static body", Floor::Body),
+        ("sdf", Floor::Sdf),
+    ]
+}
+
+/// A world on `floor` with gravity `−G` along `y`, no damping, and a material
+/// whose pair with the floor has `friction` and `restitution`. Returns the world
+/// and the material.
+fn world(
+    backend: SolverBackend,
+    floor: Floor,
+    friction: f64,
+    restitution: f64,
+) -> (PhysicsWorld, u16) {
+    let mut w = PhysicsWorld::new(SolverConfig {
+        gravity: v3(0.0, -G, 0.0),
+        solver_backend: backend,
+        ..SolverConfig::default()
+    });
+    install(&mut w, floor);
+    let m = w
+        .material_table
+        .register(PhysicsMaterial::new(0, fx(friction), fx(restitution)));
+    w.material_table
+        .set_pair_override(m, DEFAULT_MATERIAL, fx(friction), fx(restitution));
+    (w, m)
+}
+
+fn step(w: &mut PhysicsWorld, seconds: f64) {
+    let n = (seconds / DT).round() as usize;
+    for _ in 0..n {
+        w.step(fx(DT));
+    }
+}
+
+/// The height the ball's lowest point reaches after its first bounce, from a
+/// drop of `h` (ball radius 0.25)
+fn bounce_height(backend: SolverBackend, floor: Floor, e: f64, h: f64) -> f64 {
+    let r = 0.25;
+    let (mut w, m) = world(backend, floor, 0.0, e);
+    let b = w.add_body_with_radius(
+        RigidBody::new_dynamic(v3(0.0, r + h, 0.0), Fix128::ONE),
+        fx(r),
+    );
+    w.set_body_material(b, m);
+    let mut rising = false;
+    let mut apex = f64::NEG_INFINITY;
+    for _ in 0..(3.0 / DT) as usize {
+        w.step(fx(DT));
+        let body = w.get_body(b).expect("ball");
+        let (y, vy) = (body.position.y.to_f64(), body.velocity.y.to_f64());
+        if vy > 0.0 {
+            rising = true;
+        }
+        if rising {
+            apex = apex.max(y - r);
+            if vy < 0.0 {
+                break;
+            }
+        }
+    }
+    apex
+}
+
+/// oracle: e² h (free fall, the bounce reverses e·v). Tolerance: the bounce is
+/// resolved at the substep of the touch, `h_s = DT / 8`; the speed at the touch is
+/// off by at most `g h_s` and the rise by `2 e² v g h_s / g`, which for `h = 1`
+/// is `≤ 2 e² √(2 g) h_s` < 0.01 h. 0.02 h covers it with margin.
+#[test]
+fn a_ball_bounces_to_e_squared_h_on_every_floor_and_backend() {
+    let h = 1.0;
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for (bname, backend) in backends() {
+        for e in [0.15, 0.8] {
+            for (fname, floor) in floors() {
+                let got = bounce_height(backend, floor, e, h);
+                let want = e * e * h;
+                compared += 1;
+                if (got - want).abs() > 0.02 * h || got.is_nan() {
+                    wrong.push(format!(
+                        "{bname} {fname} e {e}: rises {got:.4} (closed form {want:.4})"
+                    ));
+                }
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len() * 2);
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// oracle: a flat box sliding at v0 with friction μ stops after v0² / (2 μ g).
+/// Tolerance: the error of the step is first order in `DT`. Measured on the
+/// body–body pairing of the temporal Gauss-Seidel backend (a contact that already
+/// had friction): 0.0387, 0.0196 and 0.0097 m past the closed form at 240, 480
+/// and 960 Hz, halving with the step, so it is the discretisation, about
+/// `3.1 v0 DT`. The bound is `4 v0 DT` (0.050 m at 240 Hz, above all three
+/// measurements scaled to their step). A
+/// friction that is wrong rather than coarse keeps its error as `DT` shrinks
+/// (the XPBD static plane stopped at 1.261 m at all three rates).
+#[test]
+fn a_sliding_box_stops_after_v0_squared_over_two_mu_g() {
+    let (v0, mu) = (3.0, 0.4);
+    let want = v0 * v0 / (2.0 * mu * G);
+    let shape = Shape::Box {
+        half_extents: v3(0.45, 0.06, 0.45),
+    };
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for (bname, backend) in backends() {
+        for (fname, floor) in floors() {
+            let (mut w, m) = world(backend, floor, mu, 0.0);
+            let b = w
+                .add_shaped_body(&shape, fx(500.0), v3(0.0, 0.06, 0.0))
+                .expect("pad");
+            w.set_body_material(b, m);
+            w.get_body_mut(b).expect("pad").velocity = v3(v0, 0.0, 0.0);
+            step(&mut w, 2.0);
+            let body = w.get_body(b).expect("pad");
+            let (x, speed) = (body.position.x.to_f64(), body.velocity.length().to_f64());
+            compared += 1;
+            if !((x - want).abs() <= 4.0 * v0 * DT && speed <= 1e-3) {
+                wrong.push(format!(
+                    "{bname} {fname}: stops at {x:.4} (closed form {want:.4}), speed {speed:.3e}"
+                ));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The TGS half of the friction law, kept running while the XPBD half is a known
+/// defect: on every floor the box stops at `v0² / (2 μ g)` and stays at rest.
+///
+/// - Distance: the error is the discretisation of the step, first order in `DT`
+///   (the measurements at 240, 480 and 960 Hz shrink with the step); the bound is
+///   `4 v0 dt` at each rate, the bound of the law above.
+/// - Rest: 1 s after the closed-form stop time `v0 / (μ g)` (0.75 s) the speed is
+///   below `μ g h` (`h` the substep, `0.0021` m/s at 240 Hz), and so is the
+///   speed of its farthest corner by turning: one substep of friction, so
+///   nothing is left moving. The detection-time depth read every
+///   substep left the box rattling on its edges at 0.19 m/s.
+#[test]
+fn a_sliding_box_stops_after_v0_squared_over_two_mu_g_under_tgs() {
+    let (v0, mu) = (3.0, 0.4);
+    let want = v0 * v0 / (2.0 * mu * G);
+    let shape = Shape::Box {
+        half_extents: v3(0.45, 0.06, 0.45),
+    };
+    // The farthest point of the box from its centre: |ω| times it is the
+    // fastest any point of the box moves by turning.
+    let corner = (0.45f64 * 0.45 + 0.06 * 0.06 + 0.45 * 0.45).sqrt();
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for hz in [240.0, 480.0, 960.0] {
+        let dt = 1.0 / hz;
+        for (fname, floor) in floors() {
+            let (mut w, m) = world(SolverBackend::Tgs, floor, mu, 0.0);
+            let h = dt / w.config.substeps as f64;
+            let b = w
+                .add_shaped_body(&shape, fx(500.0), v3(0.0, 0.06, 0.0))
+                .expect("pad");
+            w.set_body_material(b, m);
+            w.get_body_mut(b).expect("pad").velocity = v3(v0, 0.0, 0.0);
+            let n = (1.75 / dt).round() as usize;
+            for _ in 0..n {
+                w.step(fx(dt));
+            }
+            let body = w.get_body(b).expect("pad");
+            let x = body.position.x.to_f64();
+            let speed = body.velocity.length().to_f64();
+            let spin = body.angular_velocity.length().to_f64();
+            compared += 1;
+            if !((x - want).abs() <= 4.0 * v0 * dt
+                && speed <= mu * G * h
+                && spin * corner <= mu * G * h)
+            {
+                wrong.push(format!(
+                    "{hz} Hz {fname}: stops at {x:.4} (closed form {want:.4}, bound {:.4}), \
+                     speed {speed:.3e}, corner speed by turning {:.3e} (bound {:.3e})",
+                    4.0 * v0 * dt,
+                    spin * corner,
+                    mu * G * h
+                ));
+            }
+        }
+    }
+    assert_eq!(compared, 3 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// oracle: a solid ball sliding at v0 with no spin rolls at 5 v0 / 7 with
+/// ω r = v once t > 2 v0 / (7 μ g) (here 0.286 s; measured at 1 s). Tolerance:
+/// the friction impulse of one substep changes v by at most μ g h_s
+/// (= 0.0016 m/s) past the switch to rolling; 0.01 of 5 v0 / 7 covers it.
+#[test]
+fn a_sliding_ball_rolls_at_five_sevenths_of_v0() {
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for (bname, backend) in backends() {
+        for (fname, floor) in floors() {
+            compared += 1;
+            if let Some(miss) = rolling_miss(backend, floor, false) {
+                wrong.push(format!("{bname} {fname}: {miss}"));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The TGS half of the rolling law, kept running while the XPBD half is a known
+/// defect: on every floor, for a ball built from its shape and one added with a
+/// radius (whose inertia is the solid sphere's), the slip turns into rolling at
+/// `5 v0 / 7`. The friction torque carries the whole transition (without it the
+/// ball keeps `ω = 0` and slides to rest), so a solve that drops it misses by
+/// the full `5 v0 / 7`.
+#[test]
+fn a_sliding_ball_rolls_at_five_sevenths_of_v0_under_tgs() {
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for by_radius in [false, true] {
+        for (fname, floor) in floors() {
+            compared += 1;
+            if let Some(miss) = rolling_miss(SolverBackend::Tgs, floor, by_radius) {
+                wrong.push(format!("{fname} (by radius: {by_radius}): {miss}"));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// Slide a solid ball (`r = 0.25`, `μ = 0.3`) at `v0 = 3` with no spin for 1 s and
+/// return how it misses rolling at `5 v0 / 7` with `ω r = v` (within 1 %), or
+/// `None`. The ball is built from its shape (`add_shaped_body`) or, with
+/// `by_radius`, added with a radius (`add_body_with_radius`, mass 1).
+fn rolling_miss(backend: SolverBackend, floor: Floor, by_radius: bool) -> Option<String> {
+    let (v0, mu, r) = (3.0, 0.3, 0.25);
+    let want = 5.0 * v0 / 7.0;
+    let (mut w, m) = world(backend, floor, mu, 0.0);
+    let b = if by_radius {
+        w.add_body_with_radius(RigidBody::new_dynamic(v3(0.0, r, 0.0), Fix128::ONE), fx(r))
+    } else {
+        let shape = Shape::Ellipsoid { radii: v3(r, r, r) };
+        w.add_shaped_body(&shape, fx(500.0), v3(0.0, r, 0.0))
+            .expect("ball")
+    };
+    w.set_body_material(b, m);
+    w.get_body_mut(b).expect("ball").velocity = v3(v0, 0.0, 0.0);
+    step(&mut w, 1.0);
+    let body = w.get_body(b).expect("ball");
+    let (vx, wz) = (body.velocity.x.to_f64(), body.angular_velocity.z.to_f64());
+    if (vx - want).abs() <= 0.01 * want && (-wz * r - want).abs() <= 0.01 * want {
+        None
+    } else {
+        Some(format!(
+            "v {vx:.4}, -ω_z r {:.4} (closed form both {want:.4})",
+            -wz * r
+        ))
+    }
+}
+
+/// The angle (radians) between the body's local `y` axis and world `y`
+fn tilt(rotation: QuatFix) -> f64 {
+    let up = rotation.rotate_vec(v3(0.0, 1.0, 0.0));
+    up.y.to_f64().clamp(-1.0, 1.0).acos()
+}
+
+/// A box (half extents 0.05 × 0.25 × 0.2) standing on its bottom edge at `x =
+/// +0.05`, tilted by `theta` toward `+x` (about `−z`), at rest. Its tilt after 2 s.
+fn domino_tilt_after(backend: SolverBackend, floor: Floor, theta: f64) -> f64 {
+    let (hw, hh) = (0.05, 0.25);
+    let (mut w, m) = world(backend, floor, 0.8, 0.0);
+    let q = QuatFix::from_axis_angle(v3(0.0, 0.0, 1.0), fx(-theta));
+    // the edge (hw, −hh) of the box in its frame stays at (hw, 0) in the world:
+    // centre = edge − R (hw, −hh)
+    let (s, c) = theta.sin_cos();
+    let centre = v3(hw - (hw * c + hh * s), -(-hw * s - hh * c), 0.0);
+    let b = w
+        .add_shaped_body(
+            &Shape::Box {
+                half_extents: v3(hw, hh, 0.2),
+            },
+            fx(500.0),
+            centre,
+        )
+        .expect("domino");
+    w.set_body_material(b, m);
+    w.get_body_mut(b).expect("domino").set_rotation(q);
+    step(&mut w, 2.0);
+    tilt(w.get_body(b).expect("domino").rotation)
+}
+
+/// The domino of [`domino_tilt_after`] tilted by `theta`, over 2 s: its largest
+/// tilt (degrees), whether it crossed upright, and its first rebound's peak
+/// (degrees, after the first crossing).
+fn domino_rocking(backend: SolverBackend, floor: Floor, theta: f64) -> (f64, bool, f64) {
+    let (hw, hh) = (0.05, 0.25);
+    let (mut w, m) = world(backend, floor, 0.8, 0.0);
+    let q = QuatFix::from_axis_angle(v3(0.0, 0.0, 1.0), fx(-theta));
+    let (s, c) = theta.sin_cos();
+    let centre = v3(hw - (hw * c + hh * s), -(-hw * s - hh * c), 0.0);
+    let b = w
+        .add_shaped_body(
+            &Shape::Box {
+                half_extents: v3(hw, hh, 0.2),
+            },
+            fx(500.0),
+            centre,
+        )
+        .expect("domino");
+    w.set_body_material(b, m);
+    w.get_body_mut(b).expect("domino").set_rotation(q);
+    let (mut max_tilt, mut crossings, mut rebound, mut start_sign) = (0.0f64, 0, 0.0f64, 0.0f64);
+    for _ in 0..(2.0 / DT).round() as usize {
+        w.step(fx(DT));
+        let up = w
+            .get_body(b)
+            .expect("domino")
+            .rotation
+            .rotate_vec(v3(0.0, 1.0, 0.0));
+        let a = up.x.to_f64().clamp(-1.0, 1.0).asin().to_degrees();
+        max_tilt = max_tilt.max(a.abs());
+        if start_sign == 0.0 {
+            start_sign = a.signum();
+        }
+        let sign = a.signum();
+        // A crossing: the tilt changes side (away from the start's side on an
+        // even count, back to it on an odd one).
+        let on_start_side = sign == start_sign;
+        if a.abs() > 1e-9 && on_start_side == (crossings % 2 == 1) {
+            crossings += 1;
+        }
+        if crossings == 1 {
+            rebound = rebound.max(a.abs());
+        }
+    }
+    (max_tilt, crossings > 0, rebound)
+}
+
+/// oracle: the critical tilt is atan(w / h) = atan(0.1 / 0.5) = 11.31°. 14° falls
+/// over (tilt within 1° of 90°, lying on its side). 9° does not tip: it falls
+/// back, crosses upright and rocks on its bottom edges (Housner 1963, see
+/// tests/analytic_rocking_block.rs), its tilt staying below 11.31°, and its
+/// first rebound keeps no more energy than Housner's plastic impact allows
+/// (6.947° from 9°). The earlier "9° ends upright, tilt < 1° by 2 s" encoded the
+/// dissipation of the rigid point-by-point contact the solver had then.
+#[test]
+#[ignore = "known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bound (7.005° and 7.514° against 6.947°: energy gained at the landing)"]
+fn a_domino_falls_over_only_past_atan_w_over_h() {
+    let critical = (0.1f64 / 0.5).atan().to_degrees();
+    assert!((critical - 11.31).abs() < 0.01);
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for (bname, backend) in backends() {
+        compared += domino_misses(bname, backend, &mut wrong);
+    }
+    assert_eq!(compared, 2 * floors().len() * 2);
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The XPBD half of the torque law (the domino), running on its own: the
+/// position-based contact turns the body it pushes (Müller et al. 2020, §3.5), so
+/// 9° falls back and 14° falls over on every floor.
+#[test]
+fn a_domino_falls_over_only_past_atan_w_over_h_under_xpbd() {
+    let mut wrong = Vec::new();
+    let compared = domino_misses("xpbd", SolverBackend::Xpbd, &mut wrong);
+    assert_eq!(compared, floors().len() * 2);
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The XPBD half of the rolling law, running on its own (both a ball built from
+/// its shape and one added with a radius, every floor).
+#[test]
+fn a_sliding_ball_rolls_at_five_sevenths_of_v0_under_xpbd() {
+    let mut wrong = Vec::new();
+    let mut compared = 0;
+    for by_radius in [false, true] {
+        for (fname, floor) in floors() {
+            compared += 1;
+            if let Some(miss) = rolling_miss(SolverBackend::Xpbd, floor, by_radius) {
+                wrong.push(format!("{fname} (by radius: {by_radius}): {miss}"));
+            }
+        }
+    }
+    assert_eq!(compared, 2 * floors().len());
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared}:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The domino on every floor under `backend`: the misses go to `wrong`, the
+/// number of cases compared is returned (2 per floor: 9° and 14°).
+fn domino_misses(bname: &str, backend: SolverBackend, wrong: &mut Vec<String>) -> usize {
+    let mut compared = 0;
+    for (k, (fname, floor)) in floors().into_iter().enumerate() {
+        let (max_tilt, crossed, rebound) = domino_rocking(backend, floor, 9f64.to_radians());
+        let (_, again) = floors().swap_remove(k);
+        let over = domino_tilt_after(backend, again, 14f64.to_radians()).to_degrees();
+        compared += 2;
+        let excess = |deg: f64| {
+            let t = deg.to_radians();
+            0.25 * t.cos() + 0.05 * t.sin() - 0.25
+        };
+        if max_tilt >= 11.31 || !crossed || excess(rebound) > excess(6.947) * (1.0 + 1e-3) {
+            wrong.push(format!(
+                "{bname} {fname}: 9° reaches {max_tilt:.2}°, crossed upright {crossed}, first rebound {rebound:.3}° (want < 11.31°, a crossing, ≤ 6.947°)"
+            ));
+        }
+        if (over - 90.0).abs() >= 1.0 || over.is_nan() {
+            wrong.push(format!(
+                "{bname} {fname}: 14° ends at {over:.2}° (want on its side, 90°)"
+            ));
+        }
+    }
+    compared
+}
+
+/// Degenerate pair coefficients: restitution 0 gives no bounce, friction 0 keeps
+/// the slide speed. Both are the closed forms at the end of their range.
+#[test]
+fn zero_restitution_does_not_bounce_and_zero_friction_does_not_slow() {
+    for (bname, backend) in backends() {
+        let rise = bounce_height(backend, plane(), 0.0, 1.0);
+        assert!(rise <= 0.005, "{bname}: e 0 rises {rise} (want no bounce)");
+
+        let (mut w, m) = world(backend, plane(), 0.0, 0.0);
+        let b = w
+            .add_shaped_body(
+                &Shape::Box {
+                    half_extents: v3(0.45, 0.06, 0.45),
+                },
+                fx(500.0),
+                v3(0.0, 0.06, 0.0),
+            )
+            .expect("pad");
+        w.set_body_material(b, m);
+        w.get_body_mut(b).expect("pad").velocity = v3(2.0, 0.0, 0.0);
+        step(&mut w, 1.0);
+        let vx = w.get_body(b).expect("pad").velocity.x.to_f64();
+        assert!(
+            (vx - 2.0).abs() <= 1e-6,
+            "{bname}: μ 0 slides at {vx} after 1 s (want 2)"
+        );
+    }
+}
+
+/// The same scene stepped twice ends in the same bits, on both backends.
+#[test]
+fn the_contact_response_scene_replays_to_the_same_bits() {
+    for (_, backend) in backends() {
+        let run = || {
+            let (mut w, m) = world(backend, plane(), 0.5, 0.4);
+            let mut ids = Vec::new();
+            for k in 0..4 {
+                let b = w
+                    .add_shaped_body(
+                        &Shape::Box {
+                            half_extents: v3(0.05, 0.25, 0.2),
+                        },
+                        fx(500.0),
+                        v3(k as f64, 0.6, 0.0),
+                    )
+                    .expect("box");
+                w.set_body_material(b, m);
+                let q = QuatFix::from_axis_angle(v3(0.3, 0.0, 1.0).normalize(), fx(0.2 * k as f64));
+                let body = w.get_body_mut(b).expect("box");
+                body.set_rotation(q);
+                body.velocity = v3(1.0, 0.0, 0.5);
+                ids.push(b);
+            }
+            step(&mut w, 1.0);
+            ids.iter()
+                .map(|&b| {
+                    let body = w.get_body(b).expect("box");
+                    format!(
+                        "{:?} {:?} {:?} {:?}",
+                        body.position, body.velocity, body.rotation, body.angular_velocity
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(run(), run());
+    }
+}

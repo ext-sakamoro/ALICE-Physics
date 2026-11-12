@@ -985,6 +985,18 @@ jobs:
         run: python3 scripts/test_model_section_check.py
       - name: model-section-check (物理 module の MODEL 節と検証 test の実在)
         run: python3 scripts/model_section_check.py
+      # 接触の組 (StaticCollider の各 variant、静的な体、SDF collider) ごとに 4 法則 (反発・摩擦・転がり・回転)
+      # の oracle が有る (比較 0 件で fail)
+      - name: contact-law-matrix oracle (検査器自身の試験)
+        run: python3 scripts/test_contact_law_matrix.py
+      - name: contact-law-matrix (接触の組ごとに反発・摩擦・転がり・回転の oracle)
+        run: python3 scripts/contact_law_matrix.py
+      # 拘束の body は accessor 経由でのみ読む (静的な target の番兵 STATIC_BODY を bodies[..] に通さない、
+      # 直接の index 0 件、accessor の使用 0 件で fail)
+      - name: contact-body-access oracle (検査器自身の試験)
+        run: python3 scripts/test_contact_body_access.py
+      - name: contact-body-access (拘束の body の直接 index が無い)
+        run: python3 scripts/contact_body_access.py
       # 決定論: production の code は OS の entropy も時計も使わない
       - name: Entropy guard (test first)
         run: python3 scripts/test_entropy_guard.py
