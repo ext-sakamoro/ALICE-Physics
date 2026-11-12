@@ -1220,6 +1220,12 @@ fn closest_points_segment_triangle(
     seg_b: Vec3Fix,
     tri: &Triangle,
 ) -> (Vec3Fix, Vec3Fix) {
+    // a segment of zero length is the point itself: answer with the point query
+    // (the one a sphere uses), not through the edge candidates, which reach the
+    // same point only to within rounding
+    if seg_a == seg_b {
+        return (seg_a, tri.closest_point(seg_a));
+    }
     if let Some(p) = segment_crosses_triangle(seg_a, seg_b, tri) {
         return (p, p);
     }

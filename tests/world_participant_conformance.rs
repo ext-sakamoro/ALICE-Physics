@@ -1559,11 +1559,13 @@ fn sleep_cfg(t: Fix128) -> SleepConfig {
 /// Oracle (exact in binary): a participant force wakes a parked body when the
 /// change the world applies, `Δv = (F·inv_mass)·h` or `Δω = (I⁻¹τ)·h`, is
 /// non-zero in any component, whatever the sleep thresholds. With mass 1,
-/// `I⁻¹ = 1` and `h = 1/4`: a force of 4 raw units gives `Δv` = one raw unit
-/// and wakes; 1 or 3 raw units give `Δv = 0` (the product rounds down) and do
-/// not; −1 raw unit gives `Δv` = −1 raw unit (rounded toward −∞) and wakes.
-/// The former boundary `Δv = t = 2⁻⁷` wakes under every threshold. The same
-/// for torque.
+/// `I⁻¹ = 1` and `h = 1/4` the product `k·(1/4)` raw rounds to nearest, ties to
+/// even: a force of ±1 raw unit gives ±0.25 → `Δv = 0` and does not wake; ±3
+/// raw units give ±0.75 → ±1 raw unit and wake; ±4 give ±1 and wake; ±2 give
+/// ±0.5, a tie, → 0 (even) and do not wake. The rule is symmetric in the sign of
+/// the force: until the product rounded to nearest, it floored, and −1 raw
+/// woke (−0.25 → −1) while +1 did not. The former boundary `Δv = t = 2⁻⁷` wakes
+/// under every threshold. The same for torque.
 #[test]
 fn a_parked_body_wakes_on_any_non_zero_applied_change() {
     let h = Fix128::from_ratio(1, 4);
@@ -1580,29 +1582,38 @@ fn a_parked_body_wakes_on_any_non_zero_applied_change() {
         SleepConfig::default(),
         sleep_cfg(Fix128::from_int(1000)),
     ] {
-        assert!(
-            wakes_parked_body(&body, x(raw(4)), z, h, &cfg),
-            "Δv = 1 raw"
-        );
-        assert!(
-            !wakes_parked_body(&body, x(raw(1)), z, h, &cfg),
-            "Δv rounds to 0"
-        );
-        assert!(
-            !wakes_parked_body(&body, x(raw(3)), z, h, &cfg),
-            "Δv rounds to 0"
-        );
-        assert!(
+        // (force raw units, wakes): k/4 raw rounded to nearest, ties to even;
+        // 2/4 = 0.5 ties to 0, 6/4 = 1.5 and 10/4 = 2.5 tie to 2 (non-zero)
+        for (k, wakes) in [
+            (1i64, false),
+            (2, false),
+            (3, true),
+            (4, true),
+            (6, true),
+            (10, true),
+        ] {
+            for sign in [1i64, -1] {
+                let f = raw(sign * k);
+                assert_eq!(
+                    wakes_parked_body(&body, x(f), z, h, &cfg),
+                    wakes,
+                    "force {} raw: Δv = {}/4 raw",
+                    sign * k,
+                    sign * k
+                );
+                assert_eq!(
+                    wakes_parked_body(&body, z, x(f), h, &cfg),
+                    wakes,
+                    "torque {} raw: Δω = {}/4 raw",
+                    sign * k,
+                    sign * k
+                );
+            }
+        }
+        // the floor's artefact is gone: −1 and +1 raw behave the same (neither wakes)
+        assert_eq!(
             wakes_parked_body(&body, x(raw(-1)), z, h, &cfg),
-            "Δv = −1 raw"
-        );
-        assert!(
-            wakes_parked_body(&body, z, x(raw(4)), h, &cfg),
-            "Δω = 1 raw"
-        );
-        assert!(
-            !wakes_parked_body(&body, z, x(raw(3)), h, &cfg),
-            "Δω rounds to 0"
+            wakes_parked_body(&body, x(raw(1)), z, h, &cfg)
         );
         let former = Fix128::from_ratio(1, 32);
         assert!(wakes_parked_body(&body, x(former), z, h, &cfg));

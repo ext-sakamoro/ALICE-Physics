@@ -93,7 +93,10 @@ pub fn reaction_rate_kg_per_m3_s(
         reaction.pre_exponential_a,
         reaction.activation_energy_j_per_mol / denom,
     );
-    k_arrh * density_fuel * density_oxidizer
+    // the densities multiplied first: a single product commutes exactly, so the
+    // rate is symmetric in fuel and oxidizer by construction ((k·a)·b ≠ (k·b)·a
+    // once the products round)
+    k_arrh * (density_fuel * density_oxidizer)
 }
 
 /// `a · exp(−x)`, computed without the cut-off of `exp_fix`.

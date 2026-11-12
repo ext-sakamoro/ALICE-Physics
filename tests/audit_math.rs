@@ -103,17 +103,28 @@ fn mul256(a: i128, b: i128) -> [u64; 4] {
     }
     p
 }
-/// Reference `Mul`: bits [192:64] of the 256-bit product (floor, wrapping).
-fn mul_ref(a: Fix128, b: Fix128) -> Fix128 {
+/// The 256-bit product rounded to nearest, ties to even, on its 64 lowest bits: the limbs
+/// [192:64] of the rounded value and the limb above them (two's complement)
+fn mul_rounded(a: Fix128, b: Fix128) -> (u64, u64, u64) {
     let p = mul256(raw(a), raw(b));
-    from_raw((((p[2] as u128) << 64) | p[1] as u128) as i128)
+    const HALF: u64 = 1 << 63;
+    let up = p[0] > HALF || (p[0] == HALF && p[1] & 1 == 1);
+    let (l1, c1) = p[1].overflowing_add(u64::from(up));
+    let (l2, c2) = p[2].overflowing_add(u64::from(c1));
+    let l3 = p[3].wrapping_add(u64::from(c2));
+    (l1, l2, l3)
 }
-/// Does the exact product fit the Fix128 range? (bits above 192 are a sign extension)
+/// Reference `Mul`: bits [192:64] of the 256-bit product rounded to nearest, ties to even
+/// (on the two's-complement pattern, which is symmetric about zero), wrapping.
+fn mul_ref(a: Fix128, b: Fix128) -> Fix128 {
+    let (l1, l2, _) = mul_rounded(a, b);
+    from_raw((((l2 as u128) << 64) | l1 as u128) as i128)
+}
+/// Does the rounded product fit the Fix128 range? (bits above 192 are a sign extension)
 fn mul_fits(a: Fix128, b: Fix128) -> bool {
-    let p = mul256(raw(a), raw(b));
-    let top = p[3];
-    let sign_ext = if (p[2] as i64) < 0 { u64::MAX } else { 0 };
-    top == sign_ext
+    let (_, l2, l3) = mul_rounded(a, b);
+    let sign_ext = if (l2 as i64) < 0 { u64::MAX } else { 0 };
+    l3 == sign_ext
 }
 /// Reference `Div`: truncation toward zero of (|a| << 64) / |b|, wrapping to 128 bits.
 fn div_ref(a: Fix128, b: Fix128) -> Fix128 {
@@ -388,9 +399,10 @@ fn mul_matches_256_bit_reference() {
     // documented examples
     assert_eq!(
         from_raw(-1) * f(0.5),
-        from_raw(-1),
-        "-2^-64 * 0.5 floors to -2^-64"
+        Fix128::ZERO,
+        "-2^-64 * 0.5 is half a unit: the tie goes to the even neighbour 0 (documented)"
     );
+    assert_eq!(from_raw(-3) * f(0.5), from_raw(-2), "-1.5 units ties to -2");
     let two40 = Fix128::from_int(1 << 40);
     assert_eq!(
         (two40 * two40).hi,

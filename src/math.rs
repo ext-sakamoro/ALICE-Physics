@@ -746,9 +746,14 @@ fn isqrt_shifted(n: u128) -> u128 {
 ///   beforehand; the engine's own hot paths keep magnitudes far below the
 // LIMITATION(COV-NUM-076): There is no saturation and no panic, in debug builds too
 ///   limit.
-/// - **Truncation**: fractional bits below 2^-64 are dropped, which is a
-///   floor toward −∞ on the two's-complement bit pattern (e.g.
-///   `-2^-64 * 0.5 == -2^-64`, not `0`).
+/// - **Rounding**: the exact product has 128 fractional bits; the 64 below
+///   2^-64 are rounded to the nearest representable value, ties to even
+///   (`2^-64 * 0.5 == 0`, `3·2^-64 * 0.5 == 2·2^-64`). The rounding is an odd
+///   function of the operands: `(-a) * b == -(a * b)` exactly, so the
+///   shares of mirror-image terms cancel to the bit (a face's corners summed
+///   about its centre give exactly zero). Products that are exact (no bits
+///   below 2^-64) are unchanged by the rounding. Until 4.x the product
+///   floored toward −∞, which made `(-a) * b` one unit below `-(a * b)`.
 ///
 /// Both properties are part of the determinism contract: the same
 /// operands yield the same bits on every platform.
@@ -756,32 +761,51 @@ impl Mul for Fix128 {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        // 128x128 -> 256 bit multiplication, take middle 128 bits
-        //
-        // self = (hi_a << 64) + lo_a
-        // rhs  = (hi_b << 64) + lo_b
-        //
-        // product = hi_a*hi_b << 128 + (hi_a*lo_b + lo_a*hi_b) << 64 + lo_a*lo_b
-        //
-        // We want bits [192:64] of the 256-bit result (middle 128 bits)
+        let (hi, lo, dropped) = floored_product(self, rhs);
+        round_nearest_even(hi, lo, dropped)
+    }
+}
 
-        let (ll_hi, _) = widening_mul(self.lo, rhs.lo);
-        // the mixed products: multiply as unsigned, then take off 2^64 * the other word when negative
-        let (hl_hi, hl_lo) = widening_mul(self.hi as u64, rhs.lo);
-        let hl_hi = hl_hi.wrapping_sub(if self.hi < 0 { rhs.lo } else { 0 });
-        let (lh_hi, lh_lo) = widening_mul(self.lo, rhs.hi as u64);
-        let lh_hi = lh_hi.wrapping_sub(if rhs.hi < 0 { self.lo } else { 0 });
+/// The middle 128 bits of the 256-bit two's-complement product (the product
+/// floored toward −∞, wrapping) and the 64 bits below them (the low word of
+/// `lo·lo`, the only partial product that reaches below 2^-64).
+///
+/// self = (hi_a << 64) + lo_a, rhs = (hi_b << 64) + lo_b,
+/// product = hi_a*hi_b << 128 + (hi_a*lo_b + lo_a*hi_b) << 64 + lo_a*lo_b,
+/// of which bits [192:64] are kept.
+#[inline]
+fn floored_product(a: Fix128, b: Fix128) -> (i64, u64, u64) {
+    let (ll_hi, dropped) = widening_mul(a.lo, b.lo);
+    // the mixed products: multiply as unsigned, then take off 2^64 * the other word when negative
+    let (hl_hi, hl_lo) = widening_mul(a.hi as u64, b.lo);
+    let hl_hi = hl_hi.wrapping_sub(if a.hi < 0 { b.lo } else { 0 });
+    let (lh_hi, lh_lo) = widening_mul(a.lo, b.hi as u64);
+    let lh_hi = lh_hi.wrapping_sub(if b.hi < 0 { a.lo } else { 0 });
 
-        let (lo, carry_a) = hl_lo.overflowing_add(lh_lo);
-        let (lo, carry_b) = lo.overflowing_add(ll_hi);
-        let hi = self
-            .hi
-            .wrapping_mul(rhs.hi)
-            .wrapping_add(hl_hi as i64)
-            .wrapping_add(lh_hi as i64)
-            .wrapping_add(i64::from(carry_a))
-            .wrapping_add(i64::from(carry_b));
-        Self { hi, lo }
+    let (lo, carry_a) = hl_lo.overflowing_add(lh_lo);
+    let (lo, carry_b) = lo.overflowing_add(ll_hi);
+    let hi = a
+        .hi
+        .wrapping_mul(b.hi)
+        .wrapping_add(hl_hi as i64)
+        .wrapping_add(lh_hi as i64)
+        .wrapping_add(i64::from(carry_a))
+        .wrapping_add(i64::from(carry_b));
+    (hi, lo, dropped)
+}
+
+/// The floored value `(hi, lo)` with `dropped / 2^64` of a unit above it,
+/// rounded to the nearest unit, ties to even. On the two's-complement
+/// pattern the floored value is always the lower neighbour, so one rule
+/// serves both signs, and round-half-even is symmetric about zero.
+#[inline]
+fn round_nearest_even(hi: i64, lo: u64, dropped: u64) -> Fix128 {
+    const HALF: u64 = 1 << 63;
+    let up = dropped > HALF || (dropped == HALF && lo & 1 == 1);
+    let (lo, carry) = lo.overflowing_add(u64::from(up));
+    Fix128 {
+        hi: hi.wrapping_add(i64::from(carry)),
+        lo,
     }
 }
 
@@ -852,8 +876,14 @@ impl Fix128 {
         // floor なので `hh` が i64 を越えても後ろの項が打ち消すことがある)
         // |hh| ≤ 2¹²⁶、|mid >> 64| ≤ 2⁶³、|carry·2⁶⁴| ≤ 2⁶⁵ なので i128 で溢れない
         let hi = i64::try_from(hh + (mid >> 64) + (carry << 64)).ok()?;
-
-        Some(Self { hi, lo: mid_lo })
+        // the rounding of `Mul` on the 64 dropped bits; rounding up may carry the
+        // integer part past the range (only at the very top)
+        let dropped = a_lo.wrapping_mul(b_lo) as u64;
+        let rounded = round_nearest_even(hi, mid_lo, dropped);
+        if rounded.hi < hi {
+            return None;
+        }
+        Some(rounded)
     }
 
     /// [`Add`] と同じ和を計算し、**範囲外 (`|a + b| ≥ 2⁶³`) なら `None`** を返す
@@ -2279,9 +2309,10 @@ pub enum PolarError {
 /// [`Mat3Fix::inverse`] to sum products exactly.
 type Wide = (i128, u128);
 
-/// `floor(a·b / 2⁶⁴)` in raw units, exact: the full product of the two Q64.64
-/// values, of which [`Mul`] keeps the low 128 bits.
-fn wide_mul_floor(a: Fix128, b: Fix128) -> Wide {
+/// `a·b / 2⁶⁴` in raw units, rounded as [`Mul`] rounds it (to nearest, ties to
+/// even) but not wrapped: the full product of the two Q64.64 values, kept wide
+/// so that sums of products can be checked for range before narrowing.
+fn wide_mul_round(a: Fix128, b: Fix128) -> Wide {
     const LOW: u128 = u64::MAX as u128;
     let ra = ((a.hi as i128) << 64) | a.lo as i128;
     let rb = ((b.hi as i128) << 64) | b.lo as i128;
@@ -2297,8 +2328,13 @@ fn wide_mul_floor(a: Fix128, b: Fix128) -> Wide {
     } else {
         (hi as i128, lo)
     };
-    // Arithmetic shift right by 64 bits: floor on the two's-complement value
-    (p.0 >> 64, ((p.0 as u128) << 64) | (p.1 >> 64))
+    // Arithmetic shift right by 64 bits (the floor on the two's-complement
+    // value), then the 64 dropped bits rounded to nearest, ties to even
+    let floor = (p.0 >> 64, ((p.0 as u128) << 64) | (p.1 >> 64));
+    let dropped = p.1 as u64;
+    const HALF: u64 = 1 << 63;
+    let up = dropped > HALF || (dropped == HALF && floor.1 & 1 == 1);
+    wide_add(floor, (0, u128::from(up)))
 }
 
 fn wide_add(x: Wide, y: Wide) -> Wide {
@@ -2319,8 +2355,8 @@ fn wide_fit(x: Wide) -> Option<Fix128> {
 /// does not fit. Bit-identical to `p * q - r * s` whenever it fits.
 fn wide_cofactor(p: Fix128, q: Fix128, r: Fix128, s: Fix128) -> Option<Fix128> {
     wide_fit(wide_add(
-        wide_mul_floor(p, q),
-        wide_neg(wide_mul_floor(r, s)),
+        wide_mul_round(p, q),
+        wide_neg(wide_mul_round(r, s)),
     ))
 }
 
@@ -2500,10 +2536,10 @@ impl Mat3Fix {
         let minor = wide_cofactor(a.y, c.z, a.z, c.y)?;
         let det = wide_fit(wide_add(
             wide_add(
-                wide_mul_floor(a.x, c00),
-                wide_neg(wide_mul_floor(b.x, minor)),
+                wide_mul_round(a.x, c00),
+                wide_neg(wide_mul_round(b.x, minor)),
             ),
-            wide_mul_floor(c.x, c02),
+            wide_mul_round(c.x, c02),
         ))?;
         if det.is_zero() {
             return None;
@@ -2515,7 +2551,7 @@ impl Mat3Fix {
             return None;
         }
         let inv_det = Fix128::ONE / det;
-        let e = |x: Fix128| wide_fit(wide_mul_floor(x, inv_det));
+        let e = |x: Fix128| wide_fit(wide_mul_round(x, inv_det));
 
         Some((
             Self {
@@ -3109,15 +3145,18 @@ mod tests {
     }
 
     #[test]
-    fn fix128_mul_truncates_toward_negative_infinity() {
+    fn fix128_mul_rounds_to_nearest_ties_to_even_on_both_signs() {
         // -2^-64 is the raw pattern {hi: -1, lo: u64::MAX}.
         let tiny_neg = Fix128::from_raw(-1, u64::MAX);
         let half = Fix128::from_ratio(1, 2);
-        // Exact value -2^-65 is not representable; floor gives -2^-64.
-        assert_eq!(tiny_neg * half, tiny_neg);
-        // Positive counterpart truncates to 0.
+        // ±2^-65 is half a unit: the tie goes to the even neighbour, 0, on both signs
+        assert_eq!(tiny_neg * half, Fix128::ZERO);
         let tiny_pos = Fix128::from_raw(0, 1);
         assert_eq!(tiny_pos * half, Fix128::ZERO);
+        // ±3·2^-65 is 1.5 units: the even neighbour is ±2 units
+        let three = Fix128::from_raw(0, 3);
+        assert_eq!(three * half, Fix128::from_raw(0, 2));
+        assert_eq!((-three) * half, -Fix128::from_raw(0, 2));
     }
 
     #[test]

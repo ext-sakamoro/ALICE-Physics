@@ -994,12 +994,17 @@ fn loss_coefficients_are_the_closed_form() {
 /// `2c − b²λ = −1 − 4/64 = −17/16` and `c² = 1/4` — every one of them dyadic,
 /// so the reference has no rounding in it.
 ///
-/// ⚠️ 16 steps, and that limit is arithmetic rather than physical: `b = 1/8`
-/// adds three fractional bits per step, so around step 17 the values stop being
-/// exactly representable and the residual becomes a few ULP (measured: 0 ULP
-/// through step 16, then within ±4 ULP out to step 40, 2026-09-30). A budget
-/// that covered the whole run would hide the thing this oracle exists to see,
-/// so the exact window is asserted exactly and the tail is left out.
+/// ⚠️ 15 steps, and that limit is arithmetic rather than physical: the recurrence
+/// coefficient `−17/16` carries four fractional bits, so `qⁿ` needs `4n − 2` of
+/// them (asserted below from its trailing zeros), and the H half-step multiplies
+/// by `b = 1/8`, three more: the update is exact while `4n + 1 ≤ 64`, through
+/// step 15. From step 16 the grid rounds and the residual is a few ULP. (Until
+/// 2026-11-12 the window was 16 steps, measured while the product floored: at
+/// step 16 the grid and the reference rounded the same way. With the product
+/// rounding to nearest they differ by 4 ULP there, which is what the bit count
+/// predicts.) A budget that covered the whole run would hide the thing this
+/// oracle exists to see, so the exact window is asserted exactly and the tail is
+/// left out.
 ///
 /// ⚠️ All three orientations, for the reason the header gives: one orientation
 /// leaves three of the twelve split updates running on nothing but zeros.
@@ -1025,9 +1030,16 @@ fn lossy_update_follows_the_exact_three_term_recurrence() {
         let mut q_prev = project(&grid, o, &M4_2, &M4_2);
         grid.step();
         let mut q_now = project(&grid, o, &M4_2, &M4_2);
-        for n in 2..=16 {
+        for n in 2..=15 {
             grid.step();
             let q_next = project(&grid, o, &M4_2, &M4_2);
+            // the premise of the window: qⁿ uses exactly 4n − 2 fractional bits
+            let raw = ((q_next.hi as i128) << 64) | (q_next.lo as i128);
+            assert_eq!(
+                64 - raw.trailing_zeros() as i64,
+                4 * n as i64 - 2,
+                "{o:?} step {n}: fractional bits of qⁿ"
+            );
             let expected = coefficient * q_now - c_squared * q_prev;
             assert_eq!(
                 q_next, expected,

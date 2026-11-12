@@ -100,7 +100,15 @@ fn mul_ref(a: Fix128, b: Fix128) -> Fix128 {
     let mid_lo = mid as u64;
     let mid_hi = (mid >> 64) as i64;
     let hi = (hh as i64).wrapping_add(mid_hi);
-    Fix128 { hi, lo: mid_lo }
+    // the 64 dropped bits (the low word of lo·lo) rounded to nearest, ties to even
+    let dropped = ll as u64;
+    const HALF: u64 = 1 << 63;
+    let up = dropped > HALF || (dropped == HALF && mid_lo & 1 == 1);
+    let (lo, carry) = mid_lo.overflowing_add(u64::from(up));
+    Fix128 {
+        hi: hi.wrapping_add(i64::from(carry)),
+        lo,
+    }
 }
 
 /// A fixed sequence (splitmix64), so every run and every platform compares the same inputs.

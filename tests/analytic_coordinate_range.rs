@@ -93,7 +93,8 @@ fn mul_wide(a: u128, b: u128) -> (u128, u128) {
     (hi, lo)
 }
 
-/// Q64.64 積の参照値: 厳密な `floor(a·b / 2⁶⁴)` を絶対値の 256 bit 積から作る
+/// Q64.64 積の参照値: 厳密な `a·b / 2⁶⁴` を最近接偶数に丸めた値を絶対値の 256 bit 積から作る
+/// (丸めは大きさに掛けてから符号を付けるので両符号で対称)
 /// (`Fix128::mul` の符号付き 4 分割とは別の算法)
 ///
 /// 戻り値: (`2¹²⁸` を法とした raw, 真の値が i128 に収まるか)
@@ -101,18 +102,21 @@ fn mul_ref(a: Fix128, b: Fix128) -> (i128, bool) {
     let (a, b) = (raw(a), raw(b));
     let neg = (a < 0) != (b < 0);
     let (hi, lo) = mul_wide(a.unsigned_abs(), b.unsigned_abs());
-    // |a·b| >> 64 = hi·2⁶⁴ + (lo >> 64)
-    let q_fits_u128 = hi >> 64 == 0;
+    // |a·b| >> 64 = hi·2⁶⁴ + (lo >> 64)、落とす 64 bit を最近接偶数で丸める
     let q = (hi << 64) | (lo >> 64);
-    let rem = lo & M64 != 0;
+    let dropped = (lo & M64) as u64;
+    const HALF: u64 = 1 << 63;
+    let up = dropped > HALF || (dropped == HALF && q & 1 == 1);
+    let (q, carried) = q.overflowing_add(u128::from(up));
+    let q_fits_u128 = hi >> 64 == 0 && !carried;
     let fits = q_fits_u128
         && if neg {
-            q + u128::from(rem) <= 1u128 << 127
+            q <= 1u128 << 127
         } else {
             q < 1u128 << 127
         };
     let r = if neg {
-        (q as i128).wrapping_neg().wrapping_sub(i128::from(rem))
+        (q as i128).wrapping_neg()
     } else {
         q as i128
     };
@@ -134,7 +138,7 @@ fn frame() -> Fix128 {
 // Fix128 の四則
 // ---------------------------------------------------------------------------
 
-/// 積が `2⁶³` 未満なら `*` は厳密な `floor(a·b)` と bit 一致する
+/// 積が `2⁶³` 未満なら `*` は厳密な `a·b` を最近接偶数に丸めた値と bit 一致する
 #[test]
 fn mul_matches_the_exact_product_while_it_fits() {
     let xs = [
@@ -151,7 +155,7 @@ fn mul_matches_the_exact_product_while_it_fits() {
         assert_eq!(raw(x * x), want, "{x:?}²");
         assert_eq!(x.checked_mul(x), Some(x * x));
     }
-    // 異符号 (floor が −∞ 側) も参照と一致する
+    // 異符号 (丸めは大きさで対称) も参照と一致する
     let (a, b) = (-(pow2(31) + eps()), pow2(31) - eps());
     assert_eq!(raw(a * b), mul_ref(a, b).0);
 }
@@ -1491,10 +1495,16 @@ fn world_step_is_translation_invariant_up_to_2_pow_61() {
 #[test]
 fn reference_product_is_correct_on_known_values() {
     assert_eq!(mul_ref(pow2(31), pow2(31)), (raw(pow2(62)), true));
+    // −2⁻⁶⁵ は半単位: 最近接偶数で 0 (両符号で対称)、3 単位の半分 1.5 は偶数の 2
     assert_eq!(
         mul_ref(Fix128::from_ratio(-1, 2), eps()),
-        (-1, true),
-        "floor は −∞ 側"
+        (0, true),
+        "半単位の tie は偶数の 0"
+    );
+    assert_eq!(mul_ref(Fix128::from_ratio(1, 2), from_raw128(3)), (2, true));
+    assert_eq!(
+        mul_ref(Fix128::from_ratio(-1, 2), from_raw128(3)),
+        (-2, true)
     );
     assert_eq!(mul_ref(pow2(32), pow2(32)), (0, false));
     assert_eq!(from_raw128(raw(Fix128::from_int(-5))), Fix128::from_int(-5));

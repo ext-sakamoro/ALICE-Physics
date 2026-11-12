@@ -257,28 +257,30 @@ fn free_floating_chain_center_of_mass_accelerates_at_gravity() {
     let mut solver = FeatherstoneSolver::new();
     solver.solve(&artic, &mut bodies, gravity(), dt());
 
-    // Mass-weighted mean velocity = centre of mass velocity.
-    let mut total_mass = Fix128::ZERO;
-    let mut weighted = Vec3Fix::ZERO;
-    for body in &bodies {
-        let m = Fix128::ONE / body.inv_mass;
-        total_mass = total_mass + m;
-        weighted = weighted + body.velocity * m;
-    }
-    let com_velocity = weighted / total_mass;
-
+    // Centre-of-mass momentum, measured exactly: the masses are the integers 1, 2, 3 of the
+    // construction and the velocities are raw Q64.64 integers, so Σ mᵢ·raw(vᵢ) is an exact
+    // integer and must equal M·raw(g·dt) (M = 6). Dividing by M in Fix128 would add its own
+    // rounding (g·dt = −1/6 is not dyadic) and test the measurement, not the solver.
+    let raw = |x: Fix128| -> i128 { ((x.hi as i128) << 64) | (x.lo as i128) };
+    let masses = [1i128, 2, 3];
     let expected = gravity() * dt();
-    assert_eq!(
-        com_velocity,
-        expected,
-        "free-floating chain: centre of mass must accelerate at exactly g \
-         (internal constraint forces cancel pairwise). \
-         expected v_com = g*dt = {:?} ({} m/s in y), got {:?} ({} m/s in y)",
-        expected,
-        expected.y.to_f64(),
-        com_velocity,
-        com_velocity.y.to_f64(),
-    );
+    let mut compared = 0;
+    for axis in 0..3 {
+        let pick = |v: Vec3Fix| [v.x, v.y, v.z][axis];
+        let momentum: i128 = bodies
+            .iter()
+            .zip(masses)
+            .map(|(b, m)| m * raw(pick(b.velocity)))
+            .sum();
+        assert_eq!(
+            momentum,
+            masses.iter().sum::<i128>() * raw(pick(expected)),
+            "free-floating chain, axis {axis}: the centre of mass must accelerate at exactly g \
+             (internal constraint forces cancel pairwise); expected v_com = g*dt = {expected:?}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 3);
 }
 
 // ---------------------------------------------------------------------------

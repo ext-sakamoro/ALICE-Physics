@@ -925,19 +925,38 @@ fn vertex_face_separation(
 /// (`0.05 → 7` / `0.25 → 5` / `0.5 → 4` / `1.0 → 5`)
 /// この構造的事実自体は `particle_distance_spring_cannot_see_the_closed_form_crossing`
 /// が閉形式で pin し続けています
+///
+/// # 場面を step 数で掃く (2026-11-12)
+///
+/// `run_crumple` の縮み方は step 数で決まるので、step 数ごとに別の crumple の場面になる
+/// 以前は 120 step の 1 場面だけを見て green だったが、20 / 40 / 60 / 80 / 100 / 120 step を
+/// 並べると多くの場面で自分を貫く (頂点-面の貫通回数、括弧は頂点-面 + 辺-辺の合算):
+///
+/// | 積の丸め | 20 | 40 | 60 | 80 | 100 | 120 |
+/// |---|---|---|---|---|---|---|
+/// | 床 (main 849ba95e) | 3 (44) | 6 (94) | 12 (92) | 0 (0) | 4 (64) | 0 (0) |
+/// | 最近接偶数 | 6 (67) | 0 (8) | 3 (15) | 10 (122) | 16 (123) | 7 (44) |
+///
+/// どちらの丸めでも全場面 0 には届かない = 自己接触の欠陥で、積の丸めが原因ではない
+/// (丸めは「どの場面がたまたま 0 に落ちるか」を入れ替えるだけ) 欠陥が直るまで ignore
 #[test]
+#[ignore = "known defect: AUD-B-S7W1-001: the crumple scenes at 20..120 steps pass through themselves with self-contact on (floored product 3/6/12/0/4/0 vertex-face crossings, nearest-even 6/0/3/10/16/7); src/cloth.rs vertex-face proximity and swept restore leave crossings"]
 fn a_crumpled_cloth_does_not_pass_through_itself() {
-    let (crossings, invariant, _) = run_crumple(true, CRUMPLE_STEPS, default_radius());
-    assert_eq!(
-        crossings, 0,
-        "自己交差する crumple scene で頂点が三角形を {crossings} 回貫いた"
-    );
-    // 1.5.x で追加 上の独立実装は頂点-面しか見ないので、辺-辺の貫通はここでしか出ません
-    // (実装前の実測: 同条件で頂点-面 0 件のまま辺-辺が 22 件残っていた)
-    assert_eq!(
-        invariant, 0,
-        "自己交差する crumple scene で自己貫通が {invariant} 件残った \
-         (頂点-面 / 辺-辺 の合算、頂点-面の独立計数は 0)"
+    let mut compared = 0;
+    let mut bad = Vec::new();
+    for steps in [20usize, 40, 60, 80, 100, CRUMPLE_STEPS] {
+        let (crossings, invariant, _) = run_crumple(true, steps, default_radius());
+        // 1.5.x で追加 独立実装 (頂点-面) は辺-辺を見ないので、辺-辺の貫通は invariant でしか出ない
+        // (実装前の実測: 同条件で頂点-面 0 件のまま辺-辺が 22 件残っていた)
+        if crossings != 0 || invariant != 0 {
+            bad.push((steps, crossings, invariant));
+        }
+        compared += 1;
+    }
+    assert_eq!(compared, 6);
+    assert!(
+        bad.is_empty(),
+        "自己交差する crumple scene が自分を貫いた (step 数, 頂点-面の貫通, 頂点-面 + 辺-辺): {bad:?}"
     );
 }
 

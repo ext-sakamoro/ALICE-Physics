@@ -32,11 +32,12 @@
 //! changes a verdict; all three are properties of the **instrument**.
 //!
 //! 1. **One lattice step above the critical mass ratio, a single-step
-//!    contraction ratio reads `1` at every even sweep count and above `1` at
-//!    every odd one.** The cause is not resolution. At `m_f/m = 1 + 2⁻⁶⁴` the
-//!    error magnitude grows in a strict **period-2** pattern — `+2, 0, +2, 0, …`
-//!    raw ulp — so a ratio of *successive* errors samples one phase of it and
-//!    which phase you land on is decided by where the sweep count stops:
+//!    contraction ratio reads `≤ 1` at one parity of the sweep count and above
+//!    `1` at the other.** The cause is not resolution. At `m_f/m = 1 + 2⁻⁶⁴` the
+//!    error magnitude grows in a strict **period-2** pattern (`+2, −1` raw ulp
+//!    with the product rounding to nearest; `+2, 0` while it floored, which is
+//!    the trace below), so a ratio of *successive* errors samples one phase of
+//!    it and which phase you land on is decided by where the sweep count stops:
 //!
 //!    ```text
 //!    |e|  …809 →  …808 →  …810 →  …810 →  …812 →  …812 →  …814 → …
@@ -50,11 +51,11 @@
 //!    a transient. The **two-sweep** ratio `|eʲ⁺²|/|eʲ|` reads above one at
 //!    *both* phases, and is therefore the reading that does not depend on where
 //!    the loop happened to stop.
-//!    ⚠️ One lattice step **below** the critical ratio, the reading of `1` is
-//!    **correct rather than blind**: truncation gives the iteration a genuine
-//!    fixed point there — `|e|` drops one ulp and is then exactly constant
-//!    forever — so the decay really has stopped, and "marginal" is the truth
-//!    about the implemented map. [`ContractionMonitor`] reports `Stagnated` for
+//!    ⚠️ One lattice step **below** the critical ratio: while the product
+//!    floored, the iteration had a genuine fixed point there (`|e|` dropped one
+//!    ulp and was then constant), so a reading of `1` was the truth about the
+//!    implemented map. With the product rounding to nearest the map follows the
+//!    exact decay, one ulp every two sweeps, and does not stall. [`ContractionMonitor`] reports `Stagnated` for
 //!    all three lattice points, which is safe but does not name the divergence
 //!    above the critical ratio.
 //!    `f64` sees none of this: `1 ± 2⁻⁶⁴` both round to `1.0` before the
@@ -80,7 +81,9 @@
 //! # The truncation directions these rest on (measured)
 //!
 //! ```text
-//! (+2⁻⁶⁴) * 0.5  ->  0        (-2⁻⁶⁴) * 0.5  ->  -2⁻⁶⁴     Mul: floor toward −∞
+//! (+2⁻⁶⁴) * 0.5  ->  0        (-2⁻⁶⁴) * 0.5  ->  0         Mul: nearest, ties to even
+//!                                                         (until 2026-11-12: floor
+//!                                                         toward −∞, −2⁻⁶⁴ on the right)
 //! (+1) / 3       ->  6148914691236517205
 //! (−1) / 3       -> −6148914691236517205                    Div: truncate toward zero
 //! ```
@@ -93,9 +96,9 @@
 //!
 //! | `m_f/m` | exact | measured | effect of the bias |
 //! |---|---|---|---|
-//! | `1 − 2⁻⁶⁴` | `−0.5` ulp/sweep | `−1` ulp once, then **exactly `0`** | the decay is arrested outright: the truncated map acquires a fixed point |
+//! | `1 − 2⁻⁶⁴` | `−0.5` ulp/sweep | `−1` ulp every two sweeps (floor: `−1` once, then **exactly `0`**) | with nearest the exact rate; the floor arrested the decay with a fixed point |
 //! | `1` | `0` | `0` (bit-identical forever) | none; `×ONE` is exact |
-//! | `1 + 2⁻⁶⁴` | `+0.5` ulp/sweep | `+1` ulp/sweep, as `+2, 0, +2, 0, …` | the growth roughly doubles, and arrives in alternate sweeps |
+//! | `1 + 2⁻⁶⁴` | `+0.5` ulp/sweep | `+0.5` ulp/sweep as `+2, −1, …` (floor: `+1` as `+2, 0, …`) | the growth arrives in alternate sweeps under both |
 //!
 //! ⚠️ The bias therefore acts on `|e|` in the **conservative** direction on both
 //! sides (it never makes a growing error look like a shrinking one). What is
@@ -324,9 +327,16 @@ fn optimal_constant_relaxation_still_collapses_the_error_in_one_sweep() {
 }
 
 /// The fixed-point-only finding: one lattice step above the critical mass
-/// ratio, a **single-step** contraction ratio reads `1` or `> 1` according to
+/// ratio, a **single-step** contraction ratio reads `≤ 1` or `> 1` according to
 /// the parity of the sweep count, because the error magnitude grows with
-/// period 2. A **two-sweep** ratio reads `> 1` at either parity.
+/// period 2 (one growth sweep, one sweep that does not grow). A **two-sweep**
+/// ratio reads `> 1` at either parity.
+///
+/// The exact steps depend on the product's rounding: while it floored toward
+/// −∞ they were `+2, 0` (the non-growth sweep read exactly one); with it
+/// rounding to nearest, ties to even, they are `+2, −1` (the non-growth sweep
+/// reads just below one). The finding itself, a single-step reading that flips
+/// with the parity while a two-sweep reading does not, is the same under both.
 ///
 /// ⚠️ This pins a defect of the single-step ratio, not of the arithmetic's
 /// resolution: the divergence *is* representable, and the odd-sweep reading
@@ -337,7 +347,7 @@ fn the_single_step_ratio_above_the_critical_mass_ratio_depends_on_sweep_parity()
     let one = Fix128::ONE;
     let above = critical_plus(1);
 
-    // The growth is period 2: `+2, 0, +2, 0, …` after the first sweep.
+    // The growth is period 2 after the first sweep: one sweep grows, the next does not.
     let trace = error_trace_fix(above, 13);
     let deltas: Vec<i128> = trace
         .windows(2)
@@ -348,10 +358,14 @@ fn the_single_step_ratio_above_the_critical_mass_ratio_depends_on_sweep_parity()
     // against a full one.
     assert_eq!(deltas[0], -1, "measured deltas {deltas:?}");
     let periodic = &deltas[1..];
+    let period = [periodic[0], periodic[1]];
     assert!(
-        periodic.chunks_exact(2).all(|c| c == [2, 0]),
-        "at m_f/m = 1 + 1 ulp the growth must arrive as +2, 0, +2, 0, …; \
-         measured deltas {deltas:?}"
+        periodic.chunks_exact(2).all(|c| c == period),
+        "at m_f/m = 1 + 1 ulp the steps must repeat with period 2; measured deltas {deltas:?}"
+    );
+    assert!(
+        period[0] > 0 && period[1] <= 0 && period[0] + period[1] > 0,
+        "one growth sweep, one that does not grow, net growth per period; measured {period:?}"
     );
     assert!(
         periodic.chunks_exact(2).count() >= 5,
@@ -366,22 +380,24 @@ fn the_single_step_ratio_above_the_critical_mass_ratio_depends_on_sweep_parity()
         trace[12]
     );
 
-    // Hence the single-step ratio alternates, and no sweep count washes it out.
-    for even in [40u32, 1000, 100_000] {
-        assert_eq!(
-            measured_ratio_fix(above, even),
-            one,
-            "at an even sweep count ({even}) the single-step ratio lands on the \
-             zero-growth phase and reads exactly ONE"
-        );
+    // Hence the single-step ratio alternates, and no sweep count washes it out: at
+    // even counts it lands on one phase, at odd counts on the other, so the even
+    // readings and the odd readings sit on opposite sides of one (the growth phase
+    // above it, the non-growth phase at or below it).
+    let even: Vec<Fix128> = [40u32, 1000, 100_000]
+        .iter()
+        .map(|&n| measured_ratio_fix(above, n))
+        .collect();
+    let odd: Vec<Fix128> = [39u32, 999, 99_999]
+        .iter()
+        .map(|&n| measured_ratio_fix(above, n))
+        .collect();
+    let even_grows = even[0] > one;
+    for (k, r) in even.iter().enumerate() {
+        assert_eq!(*r > one, even_grows, "even count #{k}: raw {}", raw(*r));
     }
-    for odd in [39u32, 999, 99_999] {
-        assert!(
-            measured_ratio_fix(above, odd) > one,
-            "at an odd sweep count ({odd}) the single-step ratio lands on the \
-             growth phase and must read above one; raw {}",
-            raw(measured_ratio_fix(above, odd))
-        );
+    for (k, r) in odd.iter().enumerate() {
+        assert_eq!(*r > one, !even_grows, "odd count #{k}: raw {}", raw(*r));
     }
 
     // ⚠️ The reading that does not depend on the parity: two sweeps per ratio.
@@ -395,23 +411,19 @@ fn the_single_step_ratio_above_the_critical_mass_ratio_depends_on_sweep_parity()
         );
     }
 
-    // ⚠️ One step *below* the critical ratio the reading of one is correct, not
-    // blind: truncation arrests the decay outright, so the sequence really is
-    // constant and the monitor's "no improvement" is the truth about the
-    // implemented map.
+    // One step *below* the critical ratio the exact map shrinks the error by
+    // e·(1 − r) per sweep, with e ≈ 2⁶³ raw units and 1 − r = 2⁻⁶⁴: half a unit
+    // per sweep, one unit every two sweeps. With the product rounding to nearest
+    // the implemented map follows that rate (the half units round alternately up
+    // and down), so the error keeps falling by exactly one unit per two sweeps.
+    // (While the product floored, the decay stopped after the first unit and the
+    // trace stayed constant, a fixed point of the truncated map.)
     let below = critical_plus(-1);
     let trace_below = error_trace_fix(below, 13);
     assert!(
-        trace_below[1] < trace_below[0],
-        "the first sweep below the critical ratio must still shed an ulp; \
-         {} -> {}",
-        trace_below[0],
-        trace_below[1]
-    );
-    assert!(
-        trace_below[1..].windows(2).all(|w| w[0] == w[1]),
-        "after that single ulp the truncated map must sit on an exact fixed \
-         point, so the trace is constant; measured {trace_below:?}"
+        trace_below.windows(3).all(|w| w[0] - w[2] == 1),
+        "below the critical ratio the error must fall one unit per two sweeps \
+         (half a unit per sweep, e·(1 − r)); measured {trace_below:?}"
     );
 
     // Exactly critical: `×ONE` is exact in `Fix128`, so the marginal case is
@@ -429,25 +441,22 @@ fn the_single_step_ratio_above_the_critical_mass_ratio_depends_on_sweep_parity()
         "and the measured ratio must be exactly ONE"
     );
 
-    // Two lattice steps out, the single-step ratio is correct at this parity on
-    // both sides, so the parity effect is confined to the first step above.
-    for ulps in [-4i64, -2] {
-        let ratio = measured_ratio_fix(critical_plus(ulps), LATTICE_SWEEPS);
-        assert!(
-            ratio <= one,
-            "m_f/m = 1 {ulps} ulp does not grow, so the ratio must not read \
-             above one; raw {}",
-            raw(ratio)
-        );
-    }
-    for ulps in [2i64, 4] {
-        let ratio = measured_ratio_fix(critical_plus(ulps), LATTICE_SWEEPS);
-        assert!(
-            ratio > one,
-            "m_f/m = 1 +{ulps} ulp diverges fast enough to show at either \
-             parity; raw {}",
-            raw(ratio)
-        );
+    // A few lattice steps out the exact change per sweep, e·|1 − r| with e ≈ 2⁶³
+    // raw units, is k/2 units for k ulps: the rounding still spreads it unevenly
+    // over the sweeps (at ±2 ulps the steps are measured as `+2, 0` and `−2, 0`),
+    // but the two-sweep reading is on the correct side at every k.
+    for ulps in [-4i64, -2, 2, 4] {
+        let t = error_trace_fix(critical_plus(ulps), 13);
+        for start in [8usize, 9] {
+            let (a, b) = (t[start], t[start + 2]);
+            assert_eq!(
+                b > a,
+                ulps > 0,
+                "m_f/m = 1 {ulps:+} ulp: the two-sweep reading at phase {start} must say \
+                 grows = {}; |e| went {a} -> {b}",
+                ulps > 0
+            );
+        }
     }
 
     // And none of this extends to the ordinary ratios the oracle sweeps, so it

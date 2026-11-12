@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6165 |
-| 🔴 Red by design | 71 |
+| 🟢 Not ignored (run by CI) | 6171 |
+| 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6267** |
+| **Total** | **6274** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (72)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -23,6 +23,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
+- `a_crumpled_cloth_does_not_pass_through_itself` (analytic_self_contact.rs) — known defect: AUD-B-S7W1-001: the crumple scenes at 20..120 steps pass through themselves with self-contact on…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
@@ -163,7 +164,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6165)
+## 🟢 Not ignored (6171)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -322,7 +323,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rope_attach_wiring.rs` | 15 |
 | `analytic_sdf_body_collider.rs` | 15 |
 | `analytic_sdf_fem_mesh_wiring.rs` | 15 |
-| `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
 | `analytic_wind_zone_participant.rs` | 15 |
 | `audit_fsi_advanced.rs` | 15 |
@@ -336,6 +336,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_scene_io_wiring.rs` | 14 |
 | `analytic_sdf_destruction_wiring.rs` | 14 |
 | `analytic_sdf_manifold_wiring.rs` | 14 |
+| `analytic_self_contact.rs` | 14 |
 | `analytic_sensors.rs` | 14 |
 | `analytic_smoke_fire_wiring.rs` | 14 |
 | `analytic_thermal_wiring.rs` | 14 |
@@ -573,6 +574,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
+| `fix128_product_rounding.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
@@ -660,6 +662,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_xpbd_angular_velocity.rs` | 2 |
 | `audit_c_fatigue.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
+| `fix128_one_product_definition.rs` | 2 |
 | `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |

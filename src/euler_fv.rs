@@ -117,13 +117,12 @@
 //!   bit for bit every step. Between reflecting walls the wall flux has zero
 //!   mass and energy components exactly, so `Σρ` and `ΣE` are conserved bit
 //!   for bit too.
-//! - **Mirror symmetry.** [`Fix128`] multiplication floors toward −∞, so
-//!   `(−a)·b` is one raw unit below `−(a·b)` whenever the product has a
-//!   remainder. Every product in this module goes through a sign-symmetric
-//!   product (`|a|·|b|` with the sign reapplied) and every halving through a
-//!   sign-symmetric shift; division is already symmetric. With that, the
-//!   mirrored initial value (cell `i → N−1−i`, `u → −u`) produces the mirrored
-//!   solution bit for bit.
+//! - **Mirror symmetry.** [`Fix128`] multiplication rounds to nearest, ties to
+//!   even, which is odd in its operands (`(−a)·b = −(a·b)` exactly), and
+//!   division truncates toward zero, also odd; every halving here goes through
+//!   a sign-symmetric shift (`Fix128::half` is an arithmetic shift, which
+//!   floors). With that, the mirrored initial value (cell `i → N−1−i`,
+//!   `u → −u`) produces the mirrored solution bit for bit.
 //! - **Transcendentals.** `x^e` in the exact solver is `exp(e ln x)` with a
 //!   range-reduced Taylor series for `exp` and an `atanh` series for `ln`,
 //!   both accurate to about `10⁻¹⁷` and integer-only (deterministic on every
@@ -217,18 +216,6 @@ impl std::error::Error for EulerError {}
 // Sign-symmetric arithmetic and transcendentals
 // ============================================================================
 
-/// `a·b` rounded toward zero: `|a|·|b|` with the sign reapplied, so that
-/// `mul(−a, b) = −mul(a, b)` exactly (the `Fix128` operator floors).
-#[inline]
-fn mul(a: Fix128, b: Fix128) -> Fix128 {
-    let r = a.abs() * b.abs();
-    if a.is_negative() != b.is_negative() {
-        -r
-    } else {
-        r
-    }
-}
-
 /// `x/2` rounded toward zero (`half(−x) = −half(x)` exactly).
 #[inline]
 fn half(x: Fix128) -> Fix128 {
@@ -280,12 +267,12 @@ fn ln_pos(x: Fix128) -> Fix128 {
         k -= 1;
     }
     let t = (m - Fix128::ONE) / (m + Fix128::ONE);
-    let t2 = mul(t, t);
+    let t2 = (t) * (t);
     let mut term = t;
     let mut sum = Fix128::ZERO;
     for n in 0..14i64 {
-        sum = sum + mul(term, Fix128::from_ratio(1, 2 * n + 1));
-        term = mul(term, t2);
+        sum = sum + ((term) * (Fix128::from_ratio(1, 2 * n + 1)));
+        term = (term) * (t2);
     }
     Fix128::from_int(k) * LN2 + sum.double()
 }
@@ -296,7 +283,7 @@ fn ln_pos(x: Fix128) -> Fix128 {
 fn exp_fix(x: Fix128) -> Fix128 {
     // 1/ln 2 = 1.442 695 040 888 963 4
     const INV_LN2: Fix128 = Fix128::from_raw(1, 8_166_282_121_979_092_992);
-    let q = mul(x, INV_LN2) + Fix128::ONE.half();
+    let q = ((x) * (INV_LN2)) + Fix128::ONE.half();
     let k = q.floor().hi;
     if k > 62 {
         return Fix128::from_raw(i64::MAX, u64::MAX);
@@ -308,7 +295,7 @@ fn exp_fix(x: Fix128) -> Fix128 {
     let mut sum = Fix128::ONE;
     let mut term = Fix128::ONE;
     for n in 1..=20i64 {
-        term = mul(mul(term, r), Fix128::from_ratio(1, n));
+        term = (((term) * (r))) * (Fix128::from_ratio(1, n));
         sum = sum + term;
     }
     if k >= 0 {
@@ -323,7 +310,7 @@ fn exp_fix(x: Fix128) -> Fix128 {
 
 /// `xᵉ` for `x > 0` (any sign of `e`), as `exp(e ln x)`.
 fn pow_pos(x: Fix128, e: Fix128) -> Fix128 {
-    exp_fix(mul(e, ln_pos(x)))
+    exp_fix((e) * (ln_pos(x)))
 }
 
 // ============================================================================
@@ -371,9 +358,9 @@ impl Conserved {
 
     fn scale(self, s: Fix128) -> Self {
         Self {
-            rho: mul(s, self.rho),
-            mom: mul(s, self.mom),
-            energy: mul(s, self.energy),
+            rho: ((s) * (self.rho)),
+            mom: ((s) * (self.mom)),
+            energy: ((s) * (self.energy)),
         }
     }
 
@@ -388,11 +375,11 @@ impl Conserved {
     /// Conserved variables of a primitive state (no validation).
     #[must_use]
     pub fn from_primitive(gamma: Fix128, w: &Primitive) -> Self {
-        let mom = mul(w.rho, w.u);
+        let mom = (w.rho) * (w.u);
         Self {
             rho: w.rho,
             mom,
-            energy: w.p / (gamma - Fix128::ONE) + half(mul(mom, w.u)),
+            energy: w.p / (gamma - Fix128::ONE) + half((mom) * (w.u)),
         }
     }
 
@@ -412,7 +399,7 @@ fn to_primitive_at(gamma: Fix128, c: &Conserved, cell: usize) -> Result<Primitiv
         return Err(EulerError::NonPositiveDensity { cell });
     }
     let u = c.mom / c.rho;
-    let p = mul(gamma - Fix128::ONE, c.energy - half(mul(c.mom, u)));
+    let p = (gamma - Fix128::ONE) * (c.energy - half((c.mom) * (u)));
     if p <= Fix128::ZERO {
         return Err(EulerError::NonPositivePressure { cell });
     }
@@ -443,8 +430,8 @@ pub fn physical_flux(gamma: Fix128, w: &Primitive) -> Conserved {
     let c = Conserved::from_primitive(gamma, w);
     Conserved {
         rho: c.mom,
-        mom: mul(c.mom, w.u) + w.p,
-        energy: mul(w.u, c.energy + w.p),
+        mom: ((c.mom) * (w.u)) + w.p,
+        energy: ((w.u) * (c.energy + w.p)),
     }
 }
 
@@ -488,7 +475,7 @@ impl GammaConsts {
     }
 
     fn sound(&self, w: &Primitive) -> Fix128 {
-        (mul(self.g, w.p) / w.rho).sqrt()
+        (((self.g) * (w.p)) / w.rho).sqrt()
     }
 }
 
@@ -509,16 +496,16 @@ fn prefun(c: &GammaConsts, p: Fix128, w: &Primitive, a: Fix128) -> (Fix128, Fix1
     if p <= w.p {
         // rarefaction
         let pr = p / w.p;
-        let f = mul(mul(c.g4, a), pow_pos(pr, c.g1) - Fix128::ONE);
-        let fd = pow_pos(pr, -c.g2) / mul(w.rho, a);
+        let f = (((c.g4) * (a))) * (pow_pos(pr, c.g1) - Fix128::ONE);
+        let fd = pow_pos(pr, -c.g2) / ((w.rho) * (a));
         (f, fd)
     } else {
         // shock
         let ak = c.g5 / w.rho;
-        let bk = mul(c.g6, w.p);
+        let bk = (c.g6) * (w.p);
         let q = (ak / (bk + p)).sqrt();
-        let f = mul(p - w.p, q);
-        let fd = mul(Fix128::ONE - half((p - w.p) / (bk + p)), q);
+        let f = (p - w.p) * (q);
+        let fd = (Fix128::ONE - half((p - w.p) / (bk + p))) * (q);
         (f, fd)
     }
 }
@@ -527,8 +514,8 @@ fn prefun(c: &GammaConsts, p: Fix128, w: &Primitive, a: Fix128) -> (Fix128, Fix1
 /// pressure ratio is small and PVRS lies between the data, two-rarefaction
 /// when PVRS is below both pressures, two-shock otherwise.
 fn guess_pressure(c: &GammaConsts, l: &Primitive, r: &Primitive, al: Fix128, ar: Fix128) -> Fix128 {
-    let cup = mul(mul(Fix128::ONE.half().half(), l.rho + r.rho), al + ar);
-    let ppv = max(Fix128::ZERO, half(l.p + r.p) + mul(half(l.u - r.u), cup));
+    let cup = (((Fix128::ONE.half().half()) * (l.rho + r.rho))) * (al + ar);
+    let ppv = max(Fix128::ZERO, half(l.p + r.p) + ((half(l.u - r.u)) * (cup)));
     let pmin = min(l.p, r.p);
     let pmax = max(l.p, r.p);
     let two = Fix128::from_int(2);
@@ -540,7 +527,7 @@ fn guess_pressure(c: &GammaConsts, l: &Primitive, r: &Primitive, al: Fix128, ar:
         // z = (γ−1)/(2γ) (Toro 3rd ed. §4.3.1); `GUESSP` evaluates the same
         // value through an intermediate velocity, which is not symmetric in
         // the last bit
-        let num = (al + ar) - mul(c.g7, r.u - l.u);
+        let num = (al + ar) - ((c.g7) * (r.u - l.u));
         if num <= Fix128::ZERO {
             return ppv;
         }
@@ -548,9 +535,9 @@ fn guess_pressure(c: &GammaConsts, l: &Primitive, r: &Primitive, al: Fix128, ar:
         pow_pos(num / den, c.g3)
     } else {
         // two-shock approximation
-        let gel = ((c.g5 / l.rho) / (mul(c.g6, l.p) + ppv)).sqrt();
-        let ger = ((c.g5 / r.rho) / (mul(c.g6, r.p) + ppv)).sqrt();
-        (mul(gel, l.p) + mul(ger, r.p) - (r.u - l.u)) / (gel + ger)
+        let gel = ((c.g5 / l.rho) / (((c.g6) * (l.p)) + ppv)).sqrt();
+        let ger = ((c.g5 / r.rho) / (((c.g6) * (r.p)) + ppv)).sqrt();
+        (((gel) * (l.p)) + ((ger) * (r.p)) - (r.u - l.u)) / (gel + ger)
     }
 }
 
@@ -581,7 +568,7 @@ fn star_state(c: &GammaConsts, l: &Primitive, r: &Primitive) -> Result<StarState
     let ar = c.sound(r);
     let du = r.u - l.u;
     // Pressure positivity condition (Toro 3rd ed. §4.6).
-    if mul(c.g4, al + ar) <= du {
+    if ((c.g4) * (al + ar)) <= du {
         return Err(EulerError::VacuumGenerated);
     }
     let mut p = max(guess_pressure(c, l, r, al, ar), GUESS_FLOOR);
@@ -642,30 +629,30 @@ fn sample(c: &GammaConsts, l: &Primitive, r: &Primitive, star: &StarState, s: Fi
                 return *l;
             }
             let ratio = pm / l.p;
-            let cml = mul(al, pow_pos(ratio, c.g1));
+            let cml = (al) * (pow_pos(ratio, c.g1));
             if s > um - cml {
                 return Primitive {
-                    rho: mul(l.rho, pow_pos(ratio, c.inv_g)),
+                    rho: ((l.rho) * (pow_pos(ratio, c.inv_g))),
                     u: um,
                     p: pm,
                 };
             }
-            let cc = mul(c.g5, al + mul(c.g7, l.u - s));
+            let cc = (c.g5) * (al + ((c.g7) * (l.u - s)));
             let ca = cc / al;
             Primitive {
-                rho: mul(l.rho, pow_pos(ca, c.g4)),
-                u: mul(c.g5, al + mul(c.g7, l.u) + s),
-                p: mul(l.p, pow_pos(ca, c.g3)),
+                rho: ((l.rho) * (pow_pos(ca, c.g4))),
+                u: ((c.g5) * (al + ((c.g7) * (l.u)) + s)),
+                p: ((l.p) * (pow_pos(ca, c.g3))),
             }
         } else {
             // left shock
             let pml = pm / l.p;
-            let sl = l.u - mul(al, (mul(c.g2, pml) + c.g1).sqrt());
+            let sl = l.u - ((al) * ((((c.g2) * (pml)) + c.g1).sqrt()));
             if s <= sl {
                 return *l;
             }
             Primitive {
-                rho: mul(l.rho, (pml + c.g6) / (mul(pml, c.g6) + Fix128::ONE)),
+                rho: ((l.rho) * ((pml + c.g6) / (((pml) * (c.g6)) + Fix128::ONE))),
                 u: um,
                 p: pm,
             }
@@ -675,12 +662,12 @@ fn sample(c: &GammaConsts, l: &Primitive, r: &Primitive, star: &StarState, s: Fi
         if pm > r.p {
             // right shock
             let pmr = pm / r.p;
-            let sr = r.u + mul(ar, (mul(c.g2, pmr) + c.g1).sqrt());
+            let sr = r.u + ((ar) * ((((c.g2) * (pmr)) + c.g1).sqrt()));
             if s >= sr {
                 return *r;
             }
             Primitive {
-                rho: mul(r.rho, (pmr + c.g6) / (mul(pmr, c.g6) + Fix128::ONE)),
+                rho: ((r.rho) * ((pmr + c.g6) / (((pmr) * (c.g6)) + Fix128::ONE))),
                 u: um,
                 p: pm,
             }
@@ -690,20 +677,20 @@ fn sample(c: &GammaConsts, l: &Primitive, r: &Primitive, star: &StarState, s: Fi
                 return *r;
             }
             let ratio = pm / r.p;
-            let cmr = mul(ar, pow_pos(ratio, c.g1));
+            let cmr = (ar) * (pow_pos(ratio, c.g1));
             if s < um + cmr {
                 return Primitive {
-                    rho: mul(r.rho, pow_pos(ratio, c.inv_g)),
+                    rho: ((r.rho) * (pow_pos(ratio, c.inv_g))),
                     u: um,
                     p: pm,
                 };
             }
-            let cc = mul(c.g5, ar - mul(c.g7, r.u - s));
+            let cc = (c.g5) * (ar - ((c.g7) * (r.u - s)));
             let ca = cc / ar;
             Primitive {
-                rho: mul(r.rho, pow_pos(ca, c.g4)),
-                u: mul(c.g5, -ar + mul(c.g7, r.u) + s),
-                p: mul(r.p, pow_pos(ca, c.g3)),
+                rho: ((r.rho) * (pow_pos(ca, c.g4))),
+                u: ((c.g5) * (-ar + ((c.g7) * (r.u)) + s)),
+                p: ((r.p) * (pow_pos(ca, c.g3))),
             }
         }
     }
@@ -764,11 +751,11 @@ fn hllc_flux(c: &GammaConsts, l: &Primitive, r: &Primitive) -> Conserved {
     let sql = l.rho.sqrt();
     let sqr = r.rho.sqrt();
     let den = sql + sqr;
-    let ut = (mul(sql, l.u) + mul(sqr, r.u)) / den;
+    let ut = (((sql) * (l.u)) + ((sqr) * (r.u))) / den;
     let hl = (ul.energy + l.p) / l.rho;
     let hr = (ur.energy + r.p) / r.rho;
-    let ht = (mul(sql, hl) + mul(sqr, hr)) / den;
-    let at = max(Fix128::ZERO, mul(c.g8, ht - half(mul(ut, ut)))).sqrt();
+    let ht = (((sql) * (hl)) + ((sqr) * (hr))) / den;
+    let at = max(Fix128::ZERO, (c.g8) * (ht - half((ut) * (ut)))).sqrt();
     let sl = min(l.u - al, ut - at);
     let sr = max(r.u + ar, ut + at);
     if Fix128::ZERO <= sl {
@@ -778,16 +765,24 @@ fn hllc_flux(c: &GammaConsts, l: &Primitive, r: &Primitive) -> Conserved {
         return physical_flux(c.g, r);
     }
     // Star speed and star fluxes (Toro 3rd ed. §10.4)
-    let dl = mul(l.rho, sl - l.u);
-    let dr = mul(r.rho, sr - r.u);
-    let s_star = ((r.p - l.p) + mul(l.u, dl) - mul(r.u, dr)) / (dl - dr);
+    let dl = (l.rho) * (sl - l.u);
+    let dr = (r.rho) * (sr - r.u);
+    let s_star = ((r.p - l.p) + ((l.u) * (dl)) - ((r.u) * (dr))) / (dl - dr);
     let star_flux = |w: &Primitive, u: &Conserved, s: Fix128, d: Fix128| -> Conserved {
+        // At `S* = u` the star state is the state itself, `U* = (ρ, ρu, E)` (Toro
+        // 3rd ed. eq. 10.39 with `S* = u`), so the star flux is the physical flux
+        // exactly; computing `k = ρ(S − u)/(S − S*)` through the rounded product and
+        // quotient would bring `ρ` back only to within rounding and leave a residual
+        // at an isolated contact.
+        if s_star == w.u {
+            return physical_flux(c.g, w);
+        }
         let k = d / (s - s_star);
-        let e = u.energy / w.rho + mul(s_star - w.u, s_star + w.p / d);
+        let e = u.energy / w.rho + ((s_star - w.u) * (s_star + w.p / d));
         let u_star = Conserved {
             rho: k,
-            mom: mul(k, s_star),
-            energy: mul(k, e),
+            mom: ((k) * (s_star)),
+            energy: ((k) * (e)),
         };
         physical_flux(c.g, w).add(u_star.sub(*u).scale(s))
     };
@@ -933,7 +928,7 @@ fn limit(limiter: Limiter, a: Fix128, b: Fix128) -> Fix128 {
             }
         }
         Limiter::VanLeer => {
-            let ab = mul(a, b);
+            let ab = (a) * (b);
             if ab > Fix128::ZERO {
                 ab.double() / (a + b)
             } else {
@@ -1027,7 +1022,7 @@ impl EulerFv1d {
         Primitive {
             rho: c.rho,
             u,
-            p: mul(self.consts.g8, c.energy - half(mul(c.mom, u))),
+            p: ((self.consts.g8) * (c.energy - half((c.mom) * (u)))),
         }
     }
 
@@ -1046,7 +1041,7 @@ impl EulerFv1d {
     ///
     /// [`EulerError::NonPositiveTimeStep`] when the result is not positive.
     pub fn cfl_time_step(&self) -> Result<Fix128, EulerError> {
-        let dt = mul(self.config.cfl, self.dx) / self.max_wave_speed();
+        let dt = ((self.config.cfl) * (self.dx)) / self.max_wave_speed();
         if dt <= Fix128::ZERO {
             return Err(EulerError::NonPositiveTimeStep);
         }
@@ -1225,7 +1220,7 @@ mod tests {
     fn symmetric_helpers() {
         let a = Fix128::from_ratio(1, 3);
         let b = Fix128::from_ratio(1, 7);
-        assert_eq!(mul(-a, b), -mul(a, b));
+        assert_eq!(((-a) * (b)), -((a) * (b)));
         assert_eq!(half(-a), -half(a));
     }
 
