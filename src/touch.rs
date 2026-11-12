@@ -298,6 +298,16 @@ pub struct Hand {
 }
 
 impl Hand {
+    /// Whether a grab of `cloth` at `at` by this hand would take a point, without touching anything: the grab of
+    /// [`Self::apply`] takes one exactly when its grip is usable and a particle lies within `reach` of `at`
+    /// (letting go of a point restores its mass and does not move it, so it does not change the answer)
+    pub(crate) fn would_take(&self, cloth: &Cloth, at: Vec3Fix) -> bool {
+        !self
+            .grip
+            .is_some_and(|(k, f)| k <= Fix128::ZERO || f <= Fix128::ZERO)
+            && cloth.nearest_within(at, self.reach).is_some()
+    }
+
     /// A rigid hand that takes a point at most `reach` from where it touches and holds it where the hand is
     #[must_use]
     pub fn new(reach: Fix128) -> Self {
