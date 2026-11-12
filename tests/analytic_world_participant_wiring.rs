@@ -580,12 +580,12 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
 /// count, 0 here, and from version 9 the empty cloth section end them: a u64
 /// count of 0 and a u32 next grab id of 0).
 #[test]
-fn a_version_9_blob_extends_the_version_1_payload() {
+fn a_version_10_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = legacy_snapshot(v1);
     let v7 = w.snapshot_world();
     assert_eq!(&v7[0..4], &v1[0..4]);
-    assert_eq!(&v7[4..6], &9u16.to_le_bytes());
+    assert_eq!(&v7[4..6], &10u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l7) = (len(v1), len(&v7));
     let expected = as_version_7_payload(
@@ -601,6 +601,12 @@ fn a_version_9_blob_extends_the_version_1_payload() {
     tail.extend_from_slice(&0u64.to_le_bytes()); // no axis lock
     tail.extend_from_slice(&0u64.to_le_bytes()); // no cloth
     tail.extend_from_slice(&0u32.to_le_bytes()); // next grab id
+                                                 // version 10's contact section with nothing to list (no point number or
+                                                 // compliance off its default, no touch set, speculative on), then its
+                                                 // length: two empty lists, three empty touch sets, the "off" flag 0
+    let section = 8 + 8 + 3 * 8 + 1;
+    tail.extend_from_slice(&vec![0u8; section]);
+    tail.extend_from_slice(&(section as u64).to_le_bytes());
     assert_eq!(l7, expected.len() + tail.len());
     assert_eq!(&v7[80..80 + expected.len()], &expected[..]);
     assert_converted_rate(w.config.damping_rate);
@@ -970,9 +976,13 @@ fn an_unknown_fault_code_is_refused() {
     let mut blob = w.snapshot_world();
     // the fault code sits before the empty fields section (8 bytes), the
     // continuous collision section (17 bytes, version 3), the axis-lock count
-    // (8 bytes, version 8), the empty cloth section (12 bytes, version 9) and
-    // the checksum (8 bytes)
-    let at = blob.len() - 8 - 12 - 8 - 17 - 8 - 1;
+    // (8 bytes, version 8), the empty cloth section (12 bytes, version 9), the
+    // contact section and its length (version 10) and the checksum (8 bytes)
+    let n = blob.len() - 8;
+    let mut len = [0u8; 8];
+    len.copy_from_slice(&blob[n - 8..n]);
+    let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+    let at = blob.len() - 8 - (section + 8) - 12 - 8 - 17 - 8 - 1;
     assert_eq!(blob[at], 0);
     blob[at] = 9;
     let body_end = blob.len() - 8;
