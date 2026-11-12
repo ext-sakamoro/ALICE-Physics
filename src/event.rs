@@ -13,7 +13,10 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::{BTreeMap, BTreeSet};
 
-/// A body meeting a static collider in the last step, with the speed it arrived at.
+/// A body meeting a static collider in the last step, with the speed it arrived at:
+/// a point that overlaps the collider, or a point short of it whose approach closes the
+/// gap within the substep (a speculative contact met in that substep, which the solve may
+/// stop before it overlaps).
 ///
 /// Static colliders are not bodies, so these are not [`ContactEvent`]s. A hit lasts
 /// for the step that reported it: it is not part of a snapshot, and a restored world
