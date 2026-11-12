@@ -26,8 +26,10 @@
 //!   29–34) is a sequential impulse on `v + ω × r` through the same `w`:
 //!   accumulated normal impulse `J ≥ 0`, restitution target `max(−e v̄, −gap/h)`
 //!   at a closing point when `e > 0`, dynamic friction capped at `μ (λ/h + J)`.
-//!   A speculative point (gap within `(|v_rel| + |ω| R) h + |g| h²`) is a
-//!   contact whose target allows the gap to close in one step.
+//!   A speculative point (gap within `(|v_rel| + |ω| R) h + |g| h²`, for static
+//!   colliders, SDF fields and body pairs) is a contact whose target allows the
+//!   gap to close in one step; one that closes within the substep bounces from
+//!   at most its gap short of the surface (as Box2D v3).
 //! - **Units.** metres, seconds, kilograms; `λ` in kg·m (a displacement times
 //!   a mass), `α` in m/N, `J` in N·s, `F` in N.
 //! - **Conservation.** The corrections and impulses are equal and opposite at
