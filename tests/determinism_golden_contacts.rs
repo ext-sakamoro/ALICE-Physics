@@ -27,10 +27,14 @@
 //!
 //! # Rotation
 //!
-//! The contact solve is translational (contact points at the body centres)
-//! and no scene applies a torque, so every body keeps the identity rotation
-//! and a zero angular velocity. The hashes therefore do not depend on how
-//! the angular velocity is derived from the rotation change.
+//! A contact acts at its contact point, so friction turns a ball (a ball
+//! added with a radius is a solid sphere, `I = 2/5 m r²`): a ball launched
+//! along the ground slips and then rolls, and a ball on a slope rolls down it.
+//! The scenes where no tangential force acts (a ball dropped on the top of the
+//! ground, a stack on it) keep the identity rotation and a zero angular
+//! velocity exactly. An earlier version of this suite asserted that no body
+//! ever turns: that was the contact solve's former simplification (contact
+//! points at the body centres), which a rolling ball contradicts.
 //!
 //! # How to regenerate a golden hash
 //!
@@ -290,10 +294,18 @@ fn determinism_contact_bounce() {
 /// **Slide**: a ball resting on the ground launched at `v0 = 3 m/s` along
 /// `x`, `μ = 1/5`, `e = 0`, gravity `(0, −10, 0)`, 120 frames.
 ///
-/// Invariants (kinetic friction decelerates at `μ g`):
-/// * at `t = 1 s`: `v = v0 − μ g t = 1 m/s`, `x = v0 t − μ g t² / 2 = 2 m`;
-/// * from `t_s = v0 / (μ g) = 1.5 s` on the ball is at rest at
-///   `x_s = v0² / (2 μ g) = 2.25 m`; at `t = 2 s`, `|v| < 1e-9`.
+/// Invariants (a sliding solid sphere): kinetic friction `μ m g` at the
+/// contact point decelerates the centre at `μ g` and spins the ball up at
+/// `5 μ g / (2 r)`; the contact point stops slipping, and the ball rolls on at
+/// a constant speed, from `t_r = 2 v0 / (7 μ g) = 3/7 s`, at `v = 5/7 v0`
+/// (the classic result: the friction impulse `m (v0 − v)` gives the spin
+/// `ω r = 5/2 (v0 − v)`, equal to `v` at `v = 5/7 v0`).
+/// * at `t = 1 s`: `v = 5/7 v0 = 15/7 m/s`,
+///   `x = v0 t_r − μ g t_r² / 2 + 5/7 v0 (t − t_r)`;
+/// * at `t = 2 s`: still `v = 15/7 m/s` and rolling, `ω r = v`.
+/// An earlier version asserted that the ball stops at `v0² / (2 μ g)`: that
+/// is a block, not a ball, and held only while the contact acted at the
+/// centre.
 ///
 /// Budget: the position of a substep advances with the velocity before the
 /// velocity-level friction removes `μ g h` from it, so the velocity lags the
@@ -328,7 +340,10 @@ fn determinism_contact_slide() {
             if frame == 60 {
                 let b = &w.bodies[ball];
                 let (x, v) = (b.position.x.to_f64(), b.velocity.x.to_f64());
-                let (x_want, v_want) = (v0 - mu * g / 2.0, v0 - mu * g);
+                let t_r = 2.0 * v0 / (7.0 * mu * g);
+                let v_roll = 5.0 / 7.0 * v0;
+                let x_want = v0 * t_r - mu * g * t_r * t_r / 2.0 + v_roll * (1.0 - t_r);
+                let v_want = v_roll;
                 println!("{path:?}: t=1 x {x:.6} ({x_want}), v {v:.6} ({v_want})");
                 assert!(
                     (v - v_want).abs() < 2.0 * mu * g * h() + 1e-4
@@ -339,15 +354,19 @@ fn determinism_contact_slide() {
         }
         assert!(contacts > 0, "{path:?}: no contact was generated");
         let b = &w.bodies[ball];
-        let (x, v) = (b.position.x.to_f64(), b.velocity.length().to_f64());
-        let x_want = v0 * v0 / (2.0 * mu * g);
-        let t_s = v0 / (mu * g);
-        println!("{path:?}: t=2 x {x:.6} ({x_want}), |v| {v:.3e}");
+        let (x, v) = (b.position.x.to_f64(), b.velocity.x.to_f64());
+        let t_r = 2.0 * v0 / (7.0 * mu * g);
+        let v_roll = 5.0 / 7.0 * v0;
+        let x_want = v0 * t_r - mu * g * t_r * t_r / 2.0 + v_roll * (2.0 - t_r);
+        // the ground tilt at x ≈ 4.5 (4.5e-6 rad) adds below 1e-4 m over the run
+        let spin = -b.angular_velocity.z.to_f64() / 2.0; // ω r with r = 1/2
+        println!("{path:?}: t=2 x {x:.6} ({x_want}), v {v:.6} ({v_roll}), ω r {spin:.6}");
         assert!(
-            (x - x_want).abs() < 2.0 * mu * g * h() * t_s + 1e-4 && v < 1e-9,
-            "{path:?}: t = 2 s: x {x:.6} / {x_want}, |v| {v:.3e}"
+            (x - x_want).abs() < 2.0 * mu * g * h() * 2.0 + 1e-4
+                && (v - v_roll).abs() < 2.0 * mu * g * h() + 1e-4
+                && (spin - v).abs() < 2.0 * mu * g * h(),
+            "{path:?}: t = 2 s: x {x:.6} / {x_want}, v {v:.6} / {v_roll}, ω r {spin:.6} (rolling)"
         );
-        assert_no_rotation("contact_slide", &w);
         assert_golden("contact_slide", path, &hash_world(&w), GOLDEN_CONTACT_SLIDE);
     }
 }
@@ -360,13 +379,19 @@ fn determinism_contact_slide() {
 /// with `sin θ = 3/5`, `cos θ = 4/5` (`g = (6, −8, 0)`, a slope of 36.9°),
 /// `μ = 1` (friction angle 45°), `e = 0`, 120 frames.
 ///
-/// Invariants (a contact inside the friction cone does not slip):
-/// * the ball keeps `x` within `1e-12 m` and `|v_x| < 1e-12 m/s`; a
-///   velocity-only friction leaves a creep of `g sin θ h²` per substep,
-///   `2.5e-2 m` over the run. The bound covers fixed-point rounding only:
-///   the ground tilt is zero at `x = 0`;
-/// * the ball keeps its height within `1e-6 m` of `1/2` (one substep of
-///   normal gravity `g cos θ h² = 3.5e-5 m` is resolved by the next solve).
+/// Invariants (a solid sphere rolling without slipping, `tan θ = 3/4` is
+/// below `7 μ / 2`): it rolls down at `a = 5/7 g sin θ = 30/7 m/s²` (the
+/// friction that keeps the contact point still takes `2/7` of the slope's
+/// pull and turns the ball), so after `t = 2 s`:
+/// * `v = a t` and `x = a t² / 2`; the position of the symplectic step
+///   runs ahead by `a h t / 2` (`x_n = a h² n (n + 1) / 2`), and the ground's
+///   tilt at `x` (`x · 1e-6 rad`) changes the pull by at most `g x · 1e-6`,
+///   `1.7e-4 m` over the run;
+/// * it rolls: `ω r = v` to one substep's slip `g sin θ h`;
+/// * its centre stays `1/2` above the ground surface, which falls by
+///   `x² / (2 R)` from the top (`R = 1e6`), within `1e-6 m`.
+/// An earlier version asserted that the ball stays put (`|x| < 1e-12`): that
+/// was true of a contact acting at the ball's centre, not of a ball.
 ///
 /// A stack of balls on the same slope is not pinned: with one iteration the
 /// static friction of the ground contact is solved before the ball-ball
@@ -401,13 +426,28 @@ fn determinism_contact_slope() {
             b.position.y.to_f64(),
             b.velocity.x.to_f64(),
         );
-        println!("{path:?}: x {x:.3e}, y {y:.9}, vx {vx:.3e}");
-        assert!(
-            x.abs() < 1e-12 && vx.abs() < 1e-12,
-            "{path:?}: the ball slipped: x {x:.3e}, vx {vx:.3e}"
+        let (a, t) = (30.0 / 7.0, 2.0);
+        let spin = -b.angular_velocity.z.to_f64() / 2.0; // ω r with r = 1/2
+        let surface = -x * x / (2.0 * GROUND_R as f64);
+        println!(
+            "{path:?}: x {x:.6} ({}), y {y:.9}, vx {vx:.6} ({}), ω r {spin:.6}",
+            a * t * t / 2.0,
+            a * t
         );
-        assert!((y - 0.5).abs() < 1e-6, "{path:?}: the ball at y {y:.9}");
-        assert_no_rotation("contact_slope", &w);
+        assert!(
+            (vx - a * t).abs() < 1e-4 && (x - a * t * t / 2.0).abs() < a * h() * t / 2.0 + 1.7e-4,
+            "{path:?}: rolling down: x {x:.6}, vx {vx:.6} (a t² / 2 = {}, a t = {})",
+            a * t * t / 2.0,
+            a * t
+        );
+        assert!(
+            (spin - vx).abs() < 6.0 * h(),
+            "{path:?}: slips: ω r {spin:.6} vs v {vx:.6}"
+        );
+        assert!(
+            (y - 0.5 - surface).abs() < 1e-6,
+            "{path:?}: the ball at y {y:.9}"
+        );
         assert_golden("contact_slope", path, &hash_world(&w), GOLDEN_CONTACT_SLOPE);
     }
 }
@@ -489,7 +529,11 @@ fn determinism_contact_stack() {
 /// * the other ball lands, bounces and rests on the ground:
 ///   `|y − 1/2| < 1e-3 m` and `|v| < 2 g h` after 2 s (bounce series ends at
 ///   `t_f (1 + e) / (1 − e) ≈ 1.3 s`), `x` within `1e-4` of `3` (the ground
-///   tilt `3e-6` at `x = 3`).
+///   tilt `3e-6` at `x = 3`);
+/// * the vetoed ball never turns (no contact acts on it); the kept ball,
+///   on the ground tilted by `3e-6 rad`, rolls at most `a t / r` with
+///   `a = 5/7 g · 3e-6`: `|ω| < 1e-4 rad/s` after 2 s (an earlier version
+///   asserted that no body turns at all).
 ///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
@@ -552,7 +596,17 @@ fn determinism_contact_veto() {
             (y - 0.5).abs() < 1e-3 && v < 2.0 * g * h() && (x - 3.0).abs() < 1e-4,
             "{path:?}: kept ball not at rest: ({x:.6}, {y:.6}), |v| {v:.3e}"
         );
-        assert_no_rotation("contact_veto", &w);
+        let free = &w.bodies[vetoed];
+        assert!(
+            free.rotation == alice_physics_core::math::QuatFix::IDENTITY
+                && free.angular_velocity == Vec3Fix::ZERO,
+            "{path:?}: the vetoed ball turned"
+        );
+        let omega = w.bodies[kept].angular_velocity.length().to_f64();
+        assert!(
+            omega < 1e-4,
+            "{path:?}: kept ball spins at {omega:.3e} rad/s"
+        );
         assert_golden("contact_veto", path, &hash_world(&w), GOLDEN_CONTACT_VETO);
     }
 }
