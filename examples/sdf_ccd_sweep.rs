@@ -27,8 +27,8 @@ use alice_physics_core::sdf_ccd::{
     ray_march_sdf, sphere_trace_sdf, sphere_trace_sdf_field, SdfCcdConfig,
 };
 use alice_physics_core::sdf_collider::{
-    collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf, ClosureSdfQuery,
-    DistanceSdfQuery, SdfCollider, SdfFrame,
+    collide_capsule_sdf, collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf,
+    ClosureSdfQuery, DistanceSdfQuery, SdfCollider, SdfFrame,
 };
 use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
@@ -144,4 +144,26 @@ fn main() {
         fd.t.to_f32()
     );
     assert!((nx + 1.0).abs() < 1e-3 && ny.abs() < 1e-3 && nz.abs() < 1e-3);
+
+    // A capsule against the floor y < 0: its axis from (0, 0.3, 0) to
+    // (1, 0.1, 0), radius 1/4. The deepest of its samples (the two ends and
+    // the middle) is the low end: depth 1/4 − 0.1 = 0.15, normal +y.
+    let floor = SdfCollider::new_static(
+        Box::new(ClosureSdf::new(|_x, y, _z| y, |_, _, _| (0.0, 1.0, 0.0))),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    );
+    let capsule = collide_capsule_sdf(
+        Vec3Fix::from_f32(0.0, 0.3, 0.0),
+        Vec3Fix::from_f32(1.0, 0.1, 0.0),
+        Fix128::from_ratio(1, 4),
+        &floor,
+    )
+    .expect("the capsule's low end reaches the floor");
+    println!(
+        "[sdf_ccd] capsule depth {:.4} (closed form 0.15)",
+        capsule.depth.to_f32()
+    );
+    assert!((capsule.depth.to_f32() - 0.15).abs() < 1e-4);
+    assert!((capsule.normal.y.to_f32() - 1.0).abs() < 1e-6);
 }
