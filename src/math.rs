@@ -1547,14 +1547,19 @@ impl Vec3Fix {
         self.dot(self)
     }
 
-    /// Length (magnitude)
+    /// Length (magnitude), `sqrt(x² + y² + z²)` taken directly.
+    ///
+    /// Below resolution it reads as zero, on purpose: the squared length
+    /// keeps `2⁻⁶⁴ / |v|²` of relative precision, so a vector shorter than
+    /// about `2⁻³²` has length 0 and one near it is a few percent short.
+    /// Callers rely on that (a joint error or a flow speed at the level of
+    /// rounding noise is no error and no flow; `tests/analytic_vec_small_length.rs`
+    /// pins it). [`Self::normalize_with_length_scaled`] keeps the digits for a
+    /// caller that needs the length of a genuinely small vector.
     #[inline(always)]
     #[must_use]
     pub fn length(self) -> Fix128 {
-        match self.small_scaled() {
-            Some((s, k)) => s.length_squared().sqrt().shr_bits((-k) as u32),
-            None => self.length_squared().sqrt(),
-        }
+        self.length_squared().sqrt()
     }
 
     /// A vector shorter than 1 (largest component below 1) scaled up exactly by
@@ -1661,14 +1666,14 @@ impl Vec3Fix {
 
     /// Normalize to unit length.
     ///
-    /// Returns `Self::ZERO` for zero-length vectors. Use [`Self::try_normalize`]
-    /// when you need to distinguish a zero-length input from a valid unit vector.
+    /// Returns `Self::ZERO` for zero-length vectors, and so for any vector below
+    /// the resolution of [`Self::length`] (about `2⁻³²`): noise has no direction.
+    /// Use [`Self::try_normalize`] when you need to distinguish a zero-length
+    /// input from a valid unit vector, [`Self::normalize_with_length_scaled`]
+    /// for the direction of a genuinely small vector.
     #[inline(always)]
     #[must_use]
     pub fn normalize(self) -> Self {
-        if let Some((s, _)) = self.small_scaled() {
-            return s / s.length_squared().sqrt();
-        }
         let len = self.length();
         if len.is_zero() {
             Self::ZERO
@@ -1692,20 +1697,36 @@ impl Vec3Fix {
     /// Normalize and return both the unit vector and the original length.
     ///
     /// Avoids double sqrt when both normalized direction and distance are needed.
-    /// Returns `(Self::ZERO, Fix128::ZERO)` if the vector is zero-length.
+    /// Returns `(Self::ZERO, Fix128::ZERO)` if the vector is zero-length, and so
+    /// below the resolution of [`Self::length`] (see there).
     #[inline(always)]
     #[must_use]
     pub fn normalize_with_length(self) -> (Self, Fix128) {
-        if let Some((s, k)) = self.small_scaled() {
-            let ls = s.length_squared().sqrt();
-            return (s / ls, ls.shr_bits((-k) as u32));
-        }
         let len = self.length();
         if len.is_zero() {
             (Self::ZERO, Fix128::ZERO)
         } else {
             let inv_len = Fix128::ONE / len;
             (self * inv_len, len)
+        }
+    }
+
+    /// The unit vector and the length of a short vector, both to full
+    /// precision: a vector shorter than 1 is scaled up by an exact power of two
+    /// first (see `small_scaled`), so the length is within `2⁻⁶⁰` of `|v|` and
+    /// the unit vector within `2⁻⁴⁰` per component down to the smallest nonzero
+    /// vector. `(ZERO, 0)` only for the zero vector; from a component of 1 up it
+    /// equals [`Self::normalize_with_length`] bit for bit. Unlike the plain
+    /// forms, rounding noise has a length and a direction here.
+    #[inline]
+    #[must_use]
+    pub fn normalize_with_length_scaled(self) -> (Self, Fix128) {
+        match self.small_scaled() {
+            Some((s, k)) => {
+                let ls = s.length_squared().sqrt();
+                (s / ls, ls.shr_bits((-k) as u32))
+            }
+            None => self.normalize_with_length(),
         }
     }
 
