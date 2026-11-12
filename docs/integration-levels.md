@@ -12,53 +12,53 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 26 |
-| world API | used through another `PhysicsWorld` method | 13 |
+| step | runs when `PhysicsWorld` steps | 23 |
+| world API | used through another `PhysicsWorld` method | 16 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
 | standalone | a Rust API that only examples call | 125 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
-| `bvh` | step | 23 / 1 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `collider` | step | 24 / 1 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
+| `bvh` | step | 22 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
+| `collider` | step | 23 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `convex_mesh_builder` | step | 3 / 0 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `dynamic_bvh` | step | 10 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 13 / 5 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 1 / 1 / 1 / 0 | C ABI, Python, WebAssembly |
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `heightfield` | step | 8 / 0 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
+| `heightfield` | step | 6 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 69 / 13 / 2 / 17 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 65 / 17 / 2 / 17 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 9 / 6 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
-| `shape_raycast` | step | 36 / 5 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 23 / 3 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `trimesh` | step | 14 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
+| `trimesh` | step | 7 / 7 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `world_participant` | step | 44 / 22 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
-| `world_shape_query` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
-| `cloth` | world API (step 6 of 48 items) | 6 / 25 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
+| `cloth` | world API (step 5 of 49 items) | 5 / 27 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
+| `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
 | `law_id` | world API | 0 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
-| `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `sdf_ccd` | world API | 0 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 63 of 228 items) | 63 / 134 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
+| `shape_raycast` | world API | 0 / 41 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 60 of 228 items) | 60 / 137 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
+| `world_shape_query` | world API (step 1 of 9 items) | 1 / 8 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `holds` | binding (world API 1 of 10 items) | 0 / 1 / 8 / 1 / 0 | WebAssembly |
 | `input_log` | binding | 0 / 0 / 7 / 2 / 0 | WebAssembly |
@@ -80,7 +80,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `buoyancy_zone` | standalone (binding 8 of 17 items) | 0 / 0 / 8 / 9 / 0 | C ABI, Python, WebAssembly |
-| `ccd` | standalone (step 2, world API 1 of 13 items) | 2 / 1 / 0 / 10 / 0 | C ABI, Python, WebAssembly |
+| `ccd` | standalone (world API 3 of 13 items) | 0 / 3 / 0 / 10 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -138,7 +138,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `physics2d` | standalone (step 1 of 60 items) | 1 / 0 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
+| `physics2d` | standalone (world API 1 of 60 items) | 0 / 1 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
@@ -150,7 +150,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `quadratic_elastic_fem` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `query` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `raycast` | standalone (step 4, binding 2 of 16 items) | 4 / 0 / 2 / 10 / 0 | C ABI, Python, WebAssembly |
+| `raycast` | standalone (world API 4, binding 2 of 16 items) | 0 / 4 / 2 / 10 / 0 | C ABI, Python, WebAssembly |
 | `rng` | standalone (world API 6 of 13 items) | 0 / 6 / 0 / 7 / 0 | — |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone (binding 6 of 13 items) | 0 / 0 / 6 / 7 / 0 | C ABI, Python, WebAssembly |
