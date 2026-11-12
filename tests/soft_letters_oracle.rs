@@ -608,19 +608,26 @@ fn reframe(blob: &[u8], version: u16, payload: &[u8]) -> Vec<u8> {
 
 /// oracle: a blob of the version before soft bodies (no section) restores with no
 /// letters; a blob cut inside the soft-body section is refused as truncated.
+/// `payload` without version 10's contact section and its length.
+fn without_contact_section(payload: &[u8]) -> Vec<u8> {
+    let n = payload.len();
+    let mut len = [0u8; 8];
+    len.copy_from_slice(&payload[n - 8..]);
+    let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+    payload[..n - 8 - section].to_vec()
+}
+
 #[test]
 fn previous_version_has_no_letters_and_a_cut_section_is_refused() {
     let w = world();
     let blob = w.snapshot_world();
     let payload = &blob[80..blob.len() - 8];
-    // the section of an empty world is its count (u64 = 0) and the next grab id
-    // (u32 = 0) at the payload's end
+    // version 10 ends the payload with its contact section and the section's
+    // length (u64); before it, the cloth section of an empty world is its count
+    // (u64 = 0) and the next grab id (u32 = 0)
+    let payload = without_contact_section(payload);
     assert_eq!(&payload[payload.len() - 12..], &[0u8; 12]);
-    let old = reframe(
-        &blob,
-        PhysicsWorld::WORLD_SNAPSHOT_VERSION - 1,
-        &payload[..payload.len() - 12],
-    );
+    let old = reframe(&blob, 8, &payload[..payload.len() - 12]);
     let mut t = two_letters();
     t.restore_world(&old).expect("previous version restores");
     assert!(
@@ -632,11 +639,9 @@ fn previous_version_has_no_letters_and_a_cut_section_is_refused() {
     let w = two_letters();
     let blob = w.snapshot_world();
     let payload = &blob[80..blob.len() - 8];
-    let cut = reframe(
-        &blob,
-        PhysicsWorld::WORLD_SNAPSHOT_VERSION,
-        &payload[..payload.len() - 16],
-    );
+    let cut = reframe(&blob, 9, &without_contact_section(payload)[..]);
+    let cut_payload = &cut[80..cut.len() - 8];
+    let cut = reframe(&blob, 9, &cut_payload[..cut_payload.len() - 16]);
     let mut t = world();
     assert_eq!(t.restore_world(&cut), Err(WorldSnapshotError::Truncated));
 }
