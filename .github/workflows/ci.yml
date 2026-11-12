@@ -716,6 +716,16 @@ jobs:
           echo "Executing: $WASM_BIN"
           wasmtime "$WASM_BIN"
 
+      # layered touch playback: the pinned history digest must be the same under wasm
+      - name: Build analytic_touch_layers test (wasm32-wasip1)
+        run: cargo test --test analytic_touch_layers --target wasm32-wasip1 --no-run
+
+      - name: Run analytic_touch_layers test via wasmtime
+        run: |
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'analytic_touch_layers-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN"
+
       - name: Build determinism_from_f64 test (wasm32-wasip1)
         run: cargo test --test determinism_from_f64 --target wasm32-wasip1 --no-run
 

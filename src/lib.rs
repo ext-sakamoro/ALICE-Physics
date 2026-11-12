@@ -891,6 +891,10 @@ pub mod rolling_contact;
 pub mod rope;
 /// A visitor's touch on a body (grab, drag, let go) as inputs a log carries
 pub mod touch;
+/// Layered touch playback on soft bodies: one hand per layer, the override rule, an active-body budget
+pub mod touch_layers;
+/// Limits on a layered touch playback (reversals per second, distance from rest) and weakening the top layer
+pub mod touch_limits;
 // 二次運動の鎖 (髪・尻尾・リボン・スカート): pose を慣性・重力・pose への引き戻しで追う粒子、
 // 長さ > 角度の制限 > capsule の衝突 の順に拘束 (Fix128、CORDIC の三角関数)
 pub mod rope_attach;

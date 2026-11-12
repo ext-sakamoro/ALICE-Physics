@@ -1963,6 +1963,8 @@ pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::to
 pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
 pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
 pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -5833,6 +5835,30 @@ impl core::marker::UnsafeUnpin for alice_physics_core::ik_physics_bridge::IkTarg
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::ik_physics_bridge::IkTargetSet
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::ik_physics_bridge::IkTargetSet
 pub mod alice_physics_core::input_log
+pub enum alice_physics_core::input_log::LogDecodeError
+pub alice_physics_core::input_log::LogDecodeError::BodyOutOfRange
+pub alice_physics_core::input_log::LogDecodeError::Malformed
+pub alice_physics_core::input_log::LogDecodeError::Overflow
+pub alice_physics_core::input_log::LogDecodeError::StepOutOfRange
+pub alice_physics_core::input_log::LogDecodeError::TooLarge
+pub alice_physics_core::input_log::LogDecodeError::Trailing
+pub alice_physics_core::input_log::LogDecodeError::Truncated
+impl core::clone::Clone for alice_physics_core::input_log::LogDecodeError
+pub fn alice_physics_core::input_log::LogDecodeError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::input_log::LogDecodeError
+impl core::cmp::PartialEq for alice_physics_core::input_log::LogDecodeError
+pub fn alice_physics_core::input_log::LogDecodeError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::input_log::LogDecodeError
+pub fn alice_physics_core::input_log::LogDecodeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::input_log::LogDecodeError
+impl core::marker::StructuralPartialEq for alice_physics_core::input_log::LogDecodeError
+impl core::marker::Freeze for alice_physics_core::input_log::LogDecodeError
+impl core::marker::Send for alice_physics_core::input_log::LogDecodeError
+impl core::marker::Sync for alice_physics_core::input_log::LogDecodeError
+impl core::marker::Unpin for alice_physics_core::input_log::LogDecodeError
+impl core::marker::UnsafeUnpin for alice_physics_core::input_log::LogDecodeError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::input_log::LogDecodeError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::LogDecodeError
 pub enum alice_physics_core::input_log::LogError
 pub alice_physics_core::input_log::LogError::Backwards
 pub alice_physics_core::input_log::LogError::NotACode
@@ -5853,12 +5879,15 @@ impl core::marker::UnsafeUnpin for alice_physics_core::input_log::LogError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::input_log::LogError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::LogError
 pub struct alice_physics_core::input_log::InputLog<I>
+impl alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>
+pub fn alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>::from_bytes_bounded(&[u8], u64, u32) -> core::result::Result<Self, alice_physics_core::input_log::LogDecodeError>
 impl<I: alice_physics_core::input_log::LogInput> alice_physics_core::input_log::InputLog<I>
 pub fn alice_physics_core::input_log::InputLog<I>::entries(&self) -> &[(u64, I)]
 pub fn alice_physics_core::input_log::InputLog<I>::from_code(&str) -> core::result::Result<([u8; 4], Self), alice_physics_core::input_log::LogError>
 pub fn alice_physics_core::input_log::InputLog<I>::new() -> Self
 pub fn alice_physics_core::input_log::InputLog<I>::record(&mut self, u64, I) -> core::result::Result<(), alice_physics_core::input_log::LogError>
 pub fn alice_physics_core::input_log::InputLog<I>::replay(&self, &mut alice_physics_core::solver::PhysicsWorld, u64, alice_physics_core::math::Fix128, impl core::ops::function::FnMut(&mut alice_physics_core::solver::PhysicsWorld, &I))
+pub fn alice_physics_core::input_log::InputLog<I>::to_bytes(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics_core::input_log::InputLog<I>::to_code(&self, &[u8; 32]) -> alloc::string::String
 impl<I: core::clone::Clone> core::clone::Clone for alice_physics_core::input_log::InputLog<I>
 pub fn alice_physics_core::input_log::InputLog<I>::clone(&self) -> Self
@@ -5877,6 +5906,7 @@ impl<I> core::marker::Unpin for alice_physics_core::input_log::InputLog<I> where
 impl<I> core::marker::UnsafeUnpin for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::marker::UnsafeUnpin
 impl<I> core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::panic::unwind_safe::RefUnwindSafe
 impl<I> core::panic::unwind_safe::UnwindSafe for alice_physics_core::input_log::InputLog<I> where alloc::vec::Vec<(u64, I)>: core::panic::unwind_safe::UnwindSafe
+pub const alice_physics_core::input_log::TOUCH_LOG_MAX_BYTES: usize
 pub trait alice_physics_core::input_log::LogInput: core::marker::Sized
 pub fn alice_physics_core::input_log::LogInput::read(&mut &[u8]) -> core::option::Option<Self>
 pub fn alice_physics_core::input_log::LogInput::write(&self, &mut alloc::vec::Vec<u8>)
@@ -11589,6 +11619,8 @@ pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::to
 pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
 pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
 pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
@@ -20044,6 +20076,151 @@ pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::to
 pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
 pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
 pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+pub mod alice_physics_core::touch_layers
+pub enum alice_physics_core::touch_layers::LayerError
+pub alice_physics_core::touch_layers::LayerError::BadLimits
+pub alice_physics_core::touch_layers::LayerError::BadStep
+pub alice_physics_core::touch_layers::LayerError::BadTolerance
+pub alice_physics_core::touch_layers::LayerError::HandHolds
+pub alice_physics_core::touch_layers::LayerError::NoRestShape(usize)
+pub alice_physics_core::touch_layers::LayerError::NoSuchBody
+pub alice_physics_core::touch_layers::LayerError::TooLong
+impl core::clone::Clone for alice_physics_core::touch_layers::LayerError
+pub fn alice_physics_core::touch_layers::LayerError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch_layers::LayerError
+impl core::cmp::PartialEq for alice_physics_core::touch_layers::LayerError
+pub fn alice_physics_core::touch_layers::LayerError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch_layers::LayerError
+pub fn alice_physics_core::touch_layers::LayerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch_layers::LayerError
+impl core::marker::StructuralPartialEq for alice_physics_core::touch_layers::LayerError
+impl core::marker::Freeze for alice_physics_core::touch_layers::LayerError
+impl core::marker::Send for alice_physics_core::touch_layers::LayerError
+impl core::marker::Sync for alice_physics_core::touch_layers::LayerError
+impl core::marker::Unpin for alice_physics_core::touch_layers::LayerError
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_layers::LayerError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_layers::LayerError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_layers::LayerError
+pub struct alice_physics_core::touch_layers::LayeredPlayback
+impl alice_physics_core::touch_layers::LayeredPlayback
+pub fn alice_physics_core::touch_layers::LayeredPlayback::advance(&mut self) -> core::result::Result<[u8; 32], alice_physics_core::touch_layers::LayerError>
+pub fn alice_physics_core::touch_layers::LayeredPlayback::bodies(&self) -> &alice_physics_core::touch_layers::TouchBodies
+pub fn alice_physics_core::touch_layers::LayeredPlayback::finish(self) -> (alice_physics_core::touch_layers::Recording, alice_physics_core::touch_layers::TouchBodies)
+pub fn alice_physics_core::touch_layers::LayeredPlayback::new(alloc::vec::Vec<alice_physics_core::cloth::Cloth>, &alice_physics_core::touch::Hand, alloc::vec::Vec<alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>>, alice_physics_core::touch_layers::PlaybackConfig) -> core::result::Result<Self, alice_physics_core::touch_layers::LayerError>
+pub fn alice_physics_core::touch_layers::LayeredPlayback::step_now(&self) -> u64
+pub fn alice_physics_core::touch_layers::LayeredPlayback::touch(&mut self, &alice_physics_core::touch::Touch) -> core::result::Result<(), alice_physics_core::touch_layers::LayerError>
+impl core::marker::Freeze for alice_physics_core::touch_layers::LayeredPlayback
+impl core::marker::Send for alice_physics_core::touch_layers::LayeredPlayback
+impl core::marker::Sync for alice_physics_core::touch_layers::LayeredPlayback
+impl core::marker::Unpin for alice_physics_core::touch_layers::LayeredPlayback
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_layers::LayeredPlayback
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_layers::LayeredPlayback
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_layers::LayeredPlayback
+pub struct alice_physics_core::touch_layers::PlaybackConfig
+impl alice_physics_core::touch_layers::PlaybackConfig
+pub fn alice_physics_core::touch_layers::PlaybackConfig::new(u64, alice_physics_core::math::Fix128, usize, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::touch_layers::LayerError>
+impl core::clone::Clone for alice_physics_core::touch_layers::PlaybackConfig
+pub fn alice_physics_core::touch_layers::PlaybackConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch_layers::PlaybackConfig
+impl core::cmp::PartialEq for alice_physics_core::touch_layers::PlaybackConfig
+pub fn alice_physics_core::touch_layers::PlaybackConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch_layers::PlaybackConfig
+pub fn alice_physics_core::touch_layers::PlaybackConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::StructuralPartialEq for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::Freeze for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::Send for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::Sync for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::Unpin for alice_physics_core::touch_layers::PlaybackConfig
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_layers::PlaybackConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_layers::PlaybackConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_layers::PlaybackConfig
+pub struct alice_physics_core::touch_layers::Recording
+pub alice_physics_core::touch_layers::Recording::frames: alloc::vec::Vec<[u8; 32]>
+pub alice_physics_core::touch_layers::Recording::history: [u8; 32]
+pub alice_physics_core::touch_layers::Recording::top: alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>
+impl core::clone::Clone for alice_physics_core::touch_layers::Recording
+pub fn alice_physics_core::touch_layers::Recording::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch_layers::Recording
+impl core::cmp::PartialEq for alice_physics_core::touch_layers::Recording
+pub fn alice_physics_core::touch_layers::Recording::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch_layers::Recording
+pub fn alice_physics_core::touch_layers::Recording::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::touch_layers::Recording
+impl core::marker::Freeze for alice_physics_core::touch_layers::Recording
+impl core::marker::Send for alice_physics_core::touch_layers::Recording
+impl core::marker::Sync for alice_physics_core::touch_layers::Recording
+impl core::marker::Unpin for alice_physics_core::touch_layers::Recording
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_layers::Recording
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_layers::Recording
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_layers::Recording
+pub struct alice_physics_core::touch_layers::TouchBodies
+impl alice_physics_core::touch_layers::TouchBodies
+pub fn alice_physics_core::touch_layers::TouchBodies::active(&self) -> &[usize]
+pub fn alice_physics_core::touch_layers::TouchBodies::centre(&self, usize) -> core::option::Option<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::touch_layers::TouchBodies::cloth(&self, usize) -> core::option::Option<&alice_physics_core::cloth::Cloth>
+pub fn alice_physics_core::touch_layers::TouchBodies::digest(&self) -> [u8; 32]
+pub fn alice_physics_core::touch_layers::TouchBodies::input(&mut self, usize, &alice_physics_core::touch::Touch) -> bool
+pub fn alice_physics_core::touch_layers::TouchBodies::is_empty(&self) -> bool
+pub fn alice_physics_core::touch_layers::TouchBodies::len(&self) -> usize
+pub fn alice_physics_core::touch_layers::TouchBodies::new(alloc::vec::Vec<alice_physics_core::cloth::Cloth>, &alice_physics_core::touch::Hand, usize, alice_physics_core::touch_layers::PlaybackConfig) -> core::result::Result<Self, alice_physics_core::touch_layers::LayerError>
+pub fn alice_physics_core::touch_layers::TouchBodies::step(&mut self)
+impl core::clone::Clone for alice_physics_core::touch_layers::TouchBodies
+pub fn alice_physics_core::touch_layers::TouchBodies::clone(&self) -> Self
+impl core::marker::Freeze for alice_physics_core::touch_layers::TouchBodies
+impl core::marker::Send for alice_physics_core::touch_layers::TouchBodies
+impl core::marker::Sync for alice_physics_core::touch_layers::TouchBodies
+impl core::marker::Unpin for alice_physics_core::touch_layers::TouchBodies
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_layers::TouchBodies
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_layers::TouchBodies
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_layers::TouchBodies
+pub fn alice_physics_core::touch_layers::history_digest(&[[u8; 32]]) -> [u8; 32]
+pub fn alice_physics_core::touch_layers::replay(&[alice_physics_core::cloth::Cloth], &alice_physics_core::touch::Hand, &[alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>], alice_physics_core::touch_layers::PlaybackConfig) -> core::result::Result<alice_physics_core::touch_layers::Recording, alice_physics_core::touch_layers::LayerError>
+pub fn alice_physics_core::touch_layers::replay_with(&[alice_physics_core::cloth::Cloth], &alice_physics_core::touch::Hand, &[alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>], alice_physics_core::touch_layers::PlaybackConfig, impl core::ops::function::FnMut(u64, &alice_physics_core::touch_layers::TouchBodies)) -> core::result::Result<alice_physics_core::touch_layers::Recording, alice_physics_core::touch_layers::LayerError>
+pub mod alice_physics_core::touch_limits
+pub enum alice_physics_core::touch_limits::Violation
+pub alice_physics_core::touch_limits::Violation::TooFar
+pub alice_physics_core::touch_limits::Violation::TooFar::body: usize
+pub alice_physics_core::touch_limits::Violation::TooFast
+pub alice_physics_core::touch_limits::Violation::TooFast::body: usize
+pub alice_physics_core::touch_limits::Violation::TooFast::reversals: usize
+impl core::clone::Clone for alice_physics_core::touch_limits::Violation
+pub fn alice_physics_core::touch_limits::Violation::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch_limits::Violation
+impl core::cmp::PartialEq for alice_physics_core::touch_limits::Violation
+pub fn alice_physics_core::touch_limits::Violation::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch_limits::Violation
+pub fn alice_physics_core::touch_limits::Violation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch_limits::Violation
+impl core::marker::StructuralPartialEq for alice_physics_core::touch_limits::Violation
+impl core::marker::Freeze for alice_physics_core::touch_limits::Violation
+impl core::marker::Send for alice_physics_core::touch_limits::Violation
+impl core::marker::Sync for alice_physics_core::touch_limits::Violation
+impl core::marker::Unpin for alice_physics_core::touch_limits::Violation
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_limits::Violation
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_limits::Violation
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_limits::Violation
+pub struct alice_physics_core::touch_limits::TouchLimits
+impl alice_physics_core::touch_limits::TouchLimits
+pub fn alice_physics_core::touch_limits::TouchLimits::new(usize, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, u64) -> core::result::Result<Self, alice_physics_core::touch_layers::LayerError>
+impl core::clone::Clone for alice_physics_core::touch_limits::TouchLimits
+pub fn alice_physics_core::touch_limits::TouchLimits::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::touch_limits::TouchLimits
+impl core::cmp::PartialEq for alice_physics_core::touch_limits::TouchLimits
+pub fn alice_physics_core::touch_limits::TouchLimits::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::touch_limits::TouchLimits
+pub fn alice_physics_core::touch_limits::TouchLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::StructuralPartialEq for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::Freeze for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::Send for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::Sync for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::Unpin for alice_physics_core::touch_limits::TouchLimits
+impl core::marker::UnsafeUnpin for alice_physics_core::touch_limits::TouchLimits
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::touch_limits::TouchLimits
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::touch_limits::TouchLimits
+pub fn alice_physics_core::touch_limits::check(&[alice_physics_core::cloth::Cloth], &alice_physics_core::touch::Hand, &[alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>], alice_physics_core::touch_layers::PlaybackConfig, &alice_physics_core::touch_limits::TouchLimits) -> core::result::Result<alloc::vec::Vec<alice_physics_core::touch_limits::Violation>, alice_physics_core::touch_layers::LayerError>
+pub fn alice_physics_core::touch_limits::within_limits(&[alice_physics_core::cloth::Cloth], &alice_physics_core::touch::Hand, &[alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>], alice_physics_core::touch_layers::PlaybackConfig, &alice_physics_core::touch_limits::TouchLimits) -> core::result::Result<core::option::Option<(alice_physics_core::input_log::InputLog<alice_physics_core::touch::Touch>, alice_physics_core::math::Fix128)>, alice_physics_core::touch_layers::LayerError>
 pub mod alice_physics_core::transient_thermal
 pub enum alice_physics_core::transient_thermal::TemperatureDependence
 pub alice_physics_core::transient_thermal::TemperatureDependence::Constant(f32)
@@ -23610,6 +23787,8 @@ pub fn alice_physics_core::cloth::Cloth::push(&mut self, &alice_physics_core::to
 pub fn alice_physics_core::cloth::Cloth::release(&mut self, alice_physics_core::touch::Grip)
 pub fn alice_physics_core::cloth::Cloth::take(&mut self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::touch::Grip>
 pub fn alice_physics_core::cloth::Cloth::velocity_at(&self, &alice_physics_core::touch::Grip) -> alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics_core::cloth::Cloth
