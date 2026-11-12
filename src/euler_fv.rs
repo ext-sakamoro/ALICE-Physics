@@ -295,7 +295,7 @@ fn exp_fix(x: Fix128) -> Fix128 {
     let mut sum = Fix128::ONE;
     let mut term = Fix128::ONE;
     for n in 1..=20i64 {
-        term = (((term) * (r))) * (Fix128::from_ratio(1, n));
+        term = ((term) * (r)) * (Fix128::from_ratio(1, n));
         sum = sum + term;
     }
     if k >= 0 {
@@ -496,7 +496,7 @@ fn prefun(c: &GammaConsts, p: Fix128, w: &Primitive, a: Fix128) -> (Fix128, Fix1
     if p <= w.p {
         // rarefaction
         let pr = p / w.p;
-        let f = (((c.g4) * (a))) * (pow_pos(pr, c.g1) - Fix128::ONE);
+        let f = ((c.g4) * (a)) * (pow_pos(pr, c.g1) - Fix128::ONE);
         let fd = pow_pos(pr, -c.g2) / ((w.rho) * (a));
         (f, fd)
     } else {
@@ -514,7 +514,7 @@ fn prefun(c: &GammaConsts, p: Fix128, w: &Primitive, a: Fix128) -> (Fix128, Fix1
 /// pressure ratio is small and PVRS lies between the data, two-rarefaction
 /// when PVRS is below both pressures, two-shock otherwise.
 fn guess_pressure(c: &GammaConsts, l: &Primitive, r: &Primitive, al: Fix128, ar: Fix128) -> Fix128 {
-    let cup = (((Fix128::ONE.half().half()) * (l.rho + r.rho))) * (al + ar);
+    let cup = ((Fix128::ONE.half().half()) * (l.rho + r.rho)) * (al + ar);
     let ppv = max(Fix128::ZERO, half(l.p + r.p) + ((half(l.u - r.u)) * (cup)));
     let pmin = min(l.p, r.p);
     let pmax = max(l.p, r.p);
