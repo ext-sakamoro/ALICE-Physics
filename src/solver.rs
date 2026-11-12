@@ -1691,8 +1691,7 @@ pub const STATIC_BODY: usize = usize::MAX;
 /// the overlap its points started the substep with (`push_out_new_points`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContactSource {
-    /// Added by hand, by the continuous collision, or against a field that
-    /// moves with a body: never pushed out.
+    /// Added by hand or by the continuous collision: never pushed out.
     Other,
     /// Between two bodies (`detect_collisions`).
     Pair,
@@ -1707,6 +1706,20 @@ enum ContactSource {
         )
     )]
     Sdf(usize),
+    /// Against SDF collider `k` attached to a body (`resolve_sdf_collisions`):
+    /// pushed out as an immovable partner by the temporal Gauss–Seidel step,
+    /// which detects at the poses the tick starts with, so an overlap it finds
+    /// is one the bodies started with; the position-based step detects after
+    /// the body carrying the field has moved, so an overlap it finds is the
+    /// field's motion and is met by the solve (never pushed out).
+    #[cfg_attr(
+        not(feature = "std"),
+        expect(
+            dead_code,
+            reason = "built only by the SDF contact detection, which needs std (the field query does)"
+        )
+    )]
+    Field(usize),
 }
 
 /// How many times a start-of-substep overlap is pushed out and met again
@@ -1806,7 +1819,7 @@ pub struct PhysicsWorld {
     /// The static-collider contact points of the previous substep, as
     /// `(body, collider, feature)` sorted: a point found again carries the
     /// overlap the compliant contact holds at rest, and only a point new this
-    /// substep has its overlap pre-projected (`pre_project_overlap`).
+    /// substep has its overlap pushed out (`push_out_new_points`).
     static_touch: Vec<(usize, usize, u32)>,
     /// As `static_touch`, for the SDF colliders' contact points.
     sdf_touch: Vec<(usize, usize, u32)>,
@@ -1998,6 +2011,58 @@ fn sdf_contact_of(
         Some(c) => c.sdf_contact(body.position, body.rotation, sdf),
         None => crate::sdf_collider::collide_sphere_sdf(body.position, radius, sdf),
     }
+}
+
+/// [`sdf_contact_of`] that also keeps a body short of the field by less than
+/// `margin` as a contact with a gap (a speculative contact).
+#[cfg(feature = "std")]
+fn sdf_contact_within(
+    collider: Option<&crate::body_collider::BodyCollider>,
+    body: &RigidBody,
+    radius: Fix128,
+    sdf: &crate::sdf_collider::SdfCollider,
+    margin: Fix128,
+) -> Option<crate::collider::Contact> {
+    if margin.is_zero() {
+        return sdf_contact_of(collider, body, radius, sdf);
+    }
+    let m = margin.to_f32();
+    match collider {
+        Some(c) => c.sdf_contact_within(body.position, body.rotation, sdf, m),
+        None => crate::sdf_collider::collide_sphere_sdf_within(
+            body.position,
+            radius,
+            &*sdf.field,
+            &sdf.frame(),
+            m,
+        ),
+    }
+}
+
+/// The speculative margin of a body against an SDF field (Catto, "Continuous
+/// Collision", GDC 2013), as for a static collider and a pair of bodies: no
+/// point of the body moves relative to the field faster than
+/// `|v − v_c| + |ω| R + |ω_c| (|x − x_c| + R)` (`R` the body's bounding radius,
+/// `v_c`, `ω_c`, `x_c` the motion and position of the body carrying the field,
+/// none for a static field), so a point the margin leaves out cannot reach the
+/// field within `h`; gravity adds at most `|g| h²`.
+#[cfg(feature = "std")]
+fn sdf_speculative_margin(
+    body: &RigidBody,
+    radius: Fix128,
+    carrier: Option<(Vec3Fix, Vec3Fix, Vec3Fix)>,
+    gravity: Vec3Fix,
+    h: Fix128,
+) -> Fix128 {
+    let (v_rel, carried) = match carrier {
+        Some((x_c, v_c, w_c)) => (
+            body.velocity - v_c,
+            w_c.length() * ((body.position - x_c).length() + radius),
+        ),
+        None => (body.velocity, Fix128::ZERO),
+    };
+    (v_rel.length() + body.angular_velocity.length() * radius + carried) * h
+        + gravity.length() * h * h
 }
 
 /// Pose of a kinematic body after one substep towards its target.
@@ -3229,46 +3294,6 @@ impl PhysicsWorld {
             );
         }
         crate::xpbd_contact::apply(&mut self.bodies[i], &mut self.contact_turn[i], delta);
-    }
-
-    /// Push body `i` out of the overlap it started the substep with against an
-    /// immovable partner, moving its present, previous and predicted poses
-    /// together so the push creates no velocity (the start-of-substep overlap is
-    /// not an approach of this substep).
-    ///
-    /// `points` are its contacts with one immovable partner (a manifold, or one
-    /// point). The overlap of a point is its depth minus the part the body's
-    /// approach this substep (`−n · (x − x_prev)`) explains. The push is the
-    /// point constraint of [`crate::xpbd_contact`] (generalised inverse mass with
-    /// the angular term), over the points in order, `PRE_PROJECTION_PASSES`
-    /// times; the body moves by `Δx` and turns by `Δθ` (their sums). Each
-    /// point's depth then drops, and its `point_a` moves, by what the push moved
-    /// that point (`Δx + Δθ × r`), so the solve sees only the rest.
-    fn pre_project_overlap(&mut self, i: usize, points: &mut [Contact]) {
-        let body = self.bodies[i];
-        if body.inv_mass.is_zero() || body.is_sensor {
-            return;
-        }
-        // The temporal Gauss–Seidel backend corrects penetration in its own
-        // position iteration (geometric decay, velocities kept apart); it only
-        // needs the start-of-substep overlap out of its previous pose, as it
-        // always had (translation of the deepest point's overlap).
-        if self.config.solver_backend == SolverBackend::Tgs {
-            let Some(deepest) = points.iter().max_by(|x, y| x.depth.cmp(&y.depth)) else {
-                return;
-            };
-            let approach = -(body.position - body.prev_position).dot(deepest.normal);
-            let overlap = deepest.depth - approach.max(Fix128::ZERO).min(deepest.depth);
-            if overlap > Fix128::ZERO {
-                let shift = deepest.normal * overlap;
-                self.bodies[i].prev_position = body.prev_position + shift;
-                if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
-                    *x = *x + shift;
-                }
-            }
-            return;
-        }
-        self.push_apart(i, None, points);
     }
 
     /// The restitution target of contact `i` (Müller et al. 2020 eq. (34)):
@@ -4925,30 +4950,34 @@ impl PhysicsWorld {
         self.stage_count() as u64
     }
 
-    /// Advances every [`BodyType::Kinematic`] body with a
-    /// [`RigidBody::kinematic_target`] set, mirroring [`Self::integrate_positions`]'s
-    /// `Kinematic` branch: velocity is derived from the position delta
-    /// (`(target - position) / dt`), then position/rotation are snapped to
-    /// the target. Runs once per full `dt` here (the `Tgs` path detects
-    /// contacts once per tick, not once per sub-step, so there is no
-    /// per-sub-step granularity to match) — called before collision
-    /// detection so a moving kinematic body's contacts use its new
-    /// position, same ordering as `step`'s per-sub-step kinematic advance
-    /// relative to its per-sub-step contact handling.
+    /// Starts the tick of every [`BodyType::Kinematic`] body for the temporal
+    /// Gauss–Seidel step: its pose stays where the tick starts (contacts are
+    /// detected once, at the poses every body starts the tick with) and, with
+    /// a [`RigidBody::kinematic_target`], it is given the velocity and the
+    /// angular velocity that carry it to the target over `dt`
+    /// (`(target − position) / dt`, the rotation's logarithm over `dt`). The
+    /// substep loop of [`Self::step_tgs`] then moves it there, the same way it
+    /// moves the dynamic bodies (by velocity, after each substep's solve), so
+    /// its motion during the tick is seen once: by the contacts' relative
+    /// velocity and speculative gap, not also by a contact detected at the
+    /// target. Returns the kinematic bodies with a target.
     #[cfg(feature = "std")]
-    fn advance_kinematic_targets_for_tgs(&mut self, dt: Fix128) {
-        for body in &mut self.bodies {
+    fn advance_kinematic_targets_for_tgs(&mut self, dt: Fix128) -> Vec<(usize, Vec3Fix, QuatFix)> {
+        let inv_dt = Fix128::ONE / dt;
+        let mut moving = Vec::new();
+        for (i, body) in self.bodies.iter_mut().enumerate() {
             if body.body_type != BodyType::Kinematic {
                 continue;
             }
             body.prev_position = body.position;
             body.prev_rotation = body.rotation;
             if let Some((target_pos, target_rot)) = body.kinematic_target {
-                body.velocity = (target_pos - body.position) * (Fix128::ONE / dt);
-                body.position = target_pos;
-                body.rotation = target_rot;
+                body.velocity = (target_pos - body.position) * inv_dt;
+                body.angular_velocity = angular_from_rotations(target_rot, body.rotation, inv_dt);
+                moving.push((i, target_pos, target_rot));
             }
         }
+        moving
     }
 
     /// The bodies the world's joints refer to, ascending and without
@@ -5102,26 +5131,22 @@ impl PhysicsWorld {
         // Joint motors: once per tick with the full `dt`, like the force
         // fields (TGS owns its sub-stepping, see the method doc).
         self.apply_joint_motors(dt);
-        self.advance_kinematic_targets_for_tgs(dt);
+        let kinematic_moves = self.advance_kinematic_targets_for_tgs(dt);
 
         // Phase 2: Collision detection once for the whole tick (not
-        // re-detected per sub-step — see the method doc).
+        // re-detected per sub-step — see the method doc), at the poses the
+        // tick starts with: a pair closing within the tick is kept as a
+        // speculative contact (its margin is over the whole tick, `h = dt`).
         self.clear_contacts();
-        self.detect_collisions(Fix128::ZERO);
+        self.detect_collisions(dt);
 
-        // Phase 2.5: Resolve SDF collisions (implicit surface contacts),
-        // mirroring `substep`'s Phase 1.5. `resolve_sdf_collisions` pushes
-        // bodies directly out of SDF overlap via `body.position +=
-        // normal*depth` — it does not go through the contact-constraint /
-        // impulse pipeline at all, so it is correct regardless of which
-        // `SolverBackend` subsequently integrates velocities, and is called
-        // once here (not once per TGS inner sub-step) for the same reason
-        // `detect_collisions` above is: TGS owns its own sub-stepping
-        // internally and this path only detects/resolves once per full
-        // `dt`, same as every other per-tick (not per-substep) phase here.
+        // Phase 2.5: the SDF colliders' contacts join the tick's contact set
+        // (`resolve_sdf_collisions`, as in `substep`'s Phase 1.5), detected once
+        // for the tick at the poses it starts with, a point within the
+        // speculative margin over the whole tick (`h = dt`) included.
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
 
         // Phase 2.6: the static colliders' contacts join the tick's contact set
@@ -5295,7 +5320,9 @@ impl PhysicsWorld {
         let with_participants = !frozen.is_empty();
         // Axis locks project every substep, so they need the loop too.
         let with_locks = self.axis_locks_in_use().is_some();
-        if self.joints.is_empty() && !with_participants && !with_locks {
+        // Kinematic bodies with a target are moved by the loop.
+        let with_kinematic = !kinematic_moves.is_empty();
+        if self.joints.is_empty() && !with_participants && !with_locks && !with_kinematic {
             solve_oriented_islands_serial(
                 &mut tgs_bodies,
                 &mut tgs_contacts,
@@ -5351,6 +5378,31 @@ impl PhysicsWorld {
                 } else {
                     false
                 };
+                // A kinematic body closes `1 / left` of what is left to its
+                // target in this substep (`kinematic_substep_pose`, the rule of
+                // the position-based step, which lands on the target at the last
+                // substep): the solve sees that motion as its velocity, and the
+                // pose follows after the solve, when the dynamic bodies advance.
+                let left = (tgs_cfg.substeps - s) as usize;
+                let inv_sub_dt = Fix128::ONE / sub_dt;
+                let mut kinematic_next: Vec<(usize, Vec3Fix, QuatFix)> =
+                    Vec::with_capacity(kinematic_moves.len());
+                for &(i, target_pos, target_rot) in &kinematic_moves {
+                    let st = &mut tgs_bodies[i];
+                    let position = Vec3Fix::new(st.position[0], st.position[1], st.position[2]);
+                    let (p, r) = kinematic_substep_pose(
+                        position,
+                        st.orientation,
+                        target_pos,
+                        target_rot,
+                        left,
+                    );
+                    let v = (p - position) * inv_sub_dt;
+                    let w = angular_from_rotations(r, st.orientation, inv_sub_dt);
+                    st.linear_velocity = [v.x, v.y, v.z];
+                    st.angular_velocity = [w.x, w.y, w.z];
+                    kinematic_next.push((i, p, r));
+                }
                 solve_oriented_islands_serial(
                     &mut tgs_bodies,
                     &mut tgs_contacts,
@@ -5361,6 +5413,12 @@ impl PhysicsWorld {
                     &one_substep,
                     sub_dt,
                 );
+                for (i, p, r) in kinematic_next {
+                    let st = &mut tgs_bodies[i];
+                    st.turn = r.mul(st.orientation.conjugate()).mul(st.turn);
+                    st.position = [p.x, p.y, p.z];
+                    st.orientation = r;
+                }
                 if !self.joints.is_empty() {
                     self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
                 }
@@ -5571,7 +5629,7 @@ impl PhysicsWorld {
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -5620,7 +5678,7 @@ impl PhysicsWorld {
         // the rest
         #[cfg(feature = "std")]
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -7129,7 +7187,7 @@ impl PhysicsWorld {
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         if !self.sdf_colliders.is_empty() {
-            self.resolve_sdf_collisions();
+            self.resolve_sdf_collisions(dt);
         }
         if !self.static_colliders.is_empty() {
             self.add_static_contacts(dt);
@@ -7532,11 +7590,11 @@ impl PhysicsWorld {
     ///
     /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
     #[cfg(feature = "std")]
-    fn resolve_sdf_collisions(&mut self) {
+    fn resolve_sdf_collisions(&mut self, h: Fix128) {
         let previous = core::mem::take(&mut self.sdf_touch);
         let mut touch: Vec<(usize, usize, u32)> = Vec::new();
         let first = self.sdf_contact_log.len();
-        self.detect_sdf_contacts();
+        self.detect_sdf_contacts(h);
         // Every contact found joins the substep's contact constraints: against
         // `STATIC_BODY` for a static field, against the owner for a field
         // attached to a body. As for the static colliders, the overlap a body
@@ -7560,10 +7618,25 @@ impl PhysicsWorld {
             let manifold = shaped
                 .map(|col| {
                     let body = &self.bodies[c.body_index];
+                    let margin = if self.config.speculative_contacts {
+                        let carrier = self
+                            .bodies
+                            .get(owner)
+                            .map(|b| (b.position, b.velocity, b.angular_velocity));
+                        let radius = body_sphere_radius(
+                            &self.body_collision_radii,
+                            c.body_index,
+                            self.sdf_collision_radius,
+                        );
+                        sdf_speculative_margin(body, radius, carrier, self.config.gravity, h)
+                    } else {
+                        Fix128::ZERO
+                    };
                     col.sdf_manifold(
                         body.position,
                         body.rotation,
                         &self.sdf_colliders[c.collider_index],
+                        margin.to_f32(),
                     )
                 })
                 .filter(|m| m.len() > 1);
@@ -7580,12 +7653,13 @@ impl PhysicsWorld {
             });
             // A point not found in the previous substep is new; its overlap is
             // pushed out after the hooks and modifiers (`push_out_new_points`),
-            // as for the static colliders. A field attached to a moving body is
-            // treated as immovable for the start-of-substep overlap.
+            // as for the static colliders. A field attached to a body is
+            // treated as immovable for the start-of-substep overlap
+            // (`ContactSource::Field`).
             let source = if owner == crate::sdf_collider::SDF_STATIC {
                 ContactSource::Sdf(c.collider_index)
             } else {
-                ContactSource::Other
+                ContactSource::Field(c.collider_index)
             };
             for (contact, feature) in points {
                 let fresh = previous
@@ -7602,7 +7676,7 @@ impl PhysicsWorld {
     /// Find every body's contacts with the SDF colliders and record them in
     /// `sdf_contact_log` (nothing is moved).
     #[cfg(feature = "std")]
-    fn detect_sdf_contacts(&mut self) {
+    fn detect_sdf_contacts(&mut self, h: Fix128) {
         // A collider attached to a body is resolved at that body's current
         // (predicted) pose.
         self.sync_sdf_colliders();
@@ -7611,6 +7685,19 @@ impl PhysicsWorld {
         let default_radius = self.sdf_collision_radius;
         let radii = &self.body_collision_radii;
         let substep = self.sdf_contact_substep;
+        // A point within the speculative margin is kept as a contact with a gap
+        // (`sdf_speculative_margin`, the rule of the static colliders).
+        let speculative = self.config.speculative_contacts;
+        let gravity = self.config.gravity;
+        let carriers: Vec<Option<(Vec3Fix, Vec3Fix, Vec3Fix)>> = sdf_colliders
+            .iter()
+            .map(|sdf| {
+                self.bodies
+                    .get(sdf.body_index)
+                    .map(|c| (c.position, c.velocity, c.angular_velocity))
+            })
+            .collect();
+        let carriers = &carriers;
 
         // Each push-out is recorded into `log` (observation only: the record
         // is built from values the push-out computes and never read back).
@@ -7626,7 +7713,12 @@ impl PhysicsWorld {
                         continue;
                     }
                     let radius = body_sphere_radius(radii, idx, default_radius);
-                    if let Some(contact) = sdf_contact_of(collider, body, radius, sdf) {
+                    let margin = if speculative {
+                        sdf_speculative_margin(body, radius, carriers[collider_index], gravity, h)
+                    } else {
+                        Fix128::ZERO
+                    };
+                    if let Some(contact) = sdf_contact_within(collider, body, radius, sdf, margin) {
                         log.push(crate::sdf_collider::SdfContact {
                             body_index: idx,
                             collider_index,
@@ -7847,9 +7939,16 @@ impl PhysicsWorld {
         for (collider_index, collider) in self.static_colliders.iter().enumerate() {
             let points = match shaped {
                 Some(c) => c.static_manifold(body.position, body.rotation, collider, margin),
+                // A sphere within `margin` of the collider: tested as one of
+                // radius `radius + margin`, then given back its own depth (a gap
+                // when negative) and its own surface point.
                 None => collider
-                    .collide_sphere(body.position, radius)
-                    .map(|c| (c, 0))
+                    .collide_sphere(body.position, radius + margin)
+                    .map(|mut c| {
+                        c.depth = c.depth - margin;
+                        c.point_a = c.point_a + c.normal * margin;
+                        (c, 0)
+                    })
                     .into_iter()
                     .collect(),
             };
@@ -8621,6 +8720,9 @@ impl PhysicsWorld {
                 ContactSource::Other => None,
                 ContactSource::Pair => Some((c.body_a, Some(c.body_b))),
                 ContactSource::Static(_) | ContactSource::Sdf(_) => Some((c.body_a, None)),
+                ContactSource::Field(_) => {
+                    (w.config.solver_backend == SolverBackend::Tgs).then_some((c.body_a, None))
+                }
             }
         };
         // A point the hooks or modifiers discarded is not held by the contact
@@ -8636,7 +8738,9 @@ impl PhysicsWorld {
             let (set, entry) = match self.contact_source[k].0 {
                 ContactSource::Pair => (&mut self.body_touch, (c.body_a, c.body_b, c.feature)),
                 ContactSource::Static(ci) => (&mut self.static_touch, (c.body_a, ci, c.feature)),
-                ContactSource::Sdf(ci) => (&mut self.sdf_touch, (c.body_a, ci, c.feature)),
+                ContactSource::Sdf(ci) | ContactSource::Field(ci) => {
+                    (&mut self.sdf_touch, (c.body_a, ci, c.feature))
+                }
                 ContactSource::Other => continue,
             };
             if let Ok(at) = set.binary_search(&entry) {
@@ -8654,22 +8758,11 @@ impl PhysicsWorld {
                 }
             }
         }
-        let tgs = self.config.solver_backend == SolverBackend::Tgs;
         for (a, b) in groups {
             let in_group = |w: &Self, k: usize| key(w, k) == Some((a, b));
             let mut active: Vec<usize> = (0..n)
                 .filter(|&k| in_group(self, k) && self.contact_source[k].1 && kept(self, k))
                 .collect();
-            if tgs {
-                if b.is_none() {
-                    let mut pts: Vec<Contact> = active
-                        .iter()
-                        .map(|&k| self.contact_constraints[k].contact)
-                        .collect();
-                    self.pre_project_overlap(a, &mut pts);
-                }
-                continue;
-            }
             for round in 0..PROJECTION_ROUNDS {
                 if active.is_empty() {
                     break;
@@ -8752,9 +8845,9 @@ impl PhysicsWorld {
                     }
                 }
                 #[cfg(feature = "std")]
-                Some(ContactSource::Sdf(ci)) => match shaped {
+                Some(ContactSource::Sdf(ci) | ContactSource::Field(ci)) => match shaped {
                     Some(col) => {
-                        col.sdf_manifold(body.position, body.rotation, &self.sdf_colliders[ci])
+                        col.sdf_manifold(body.position, body.rotation, &self.sdf_colliders[ci], 0.0)
                     }
                     None => Vec::new(),
                 },

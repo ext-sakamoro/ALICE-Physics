@@ -740,14 +740,30 @@ pub fn collide_point_sdf_field<F: SdfQuery + ?Sized>(
     field: &F,
     frame: &SdfFrame,
 ) -> Option<Contact> {
+    collide_point_sdf_within(point, field, frame, 0.0)
+}
+
+/// [`collide_point_sdf_field`] that also reports a point outside the field
+/// by less than `margin` (world units, `≥ 0`) as a contact with a gap: its
+/// `depth` is then `−distance` (negative), the speculative contact of Catto,
+/// "Continuous Collision", GDC 2013. With `margin = 0` it is
+/// [`collide_point_sdf_field`] bit for bit.
+#[cfg(feature = "std")]
+#[must_use]
+pub(crate) fn collide_point_sdf_within<F: SdfQuery + ?Sized>(
+    point: Vec3Fix,
+    field: &F,
+    frame: &SdfFrame,
+    margin: f32,
+) -> Option<Contact> {
     let (lx, ly, lz) = frame.world_to_local(point);
 
     // Early-out: distance only (1 eval instead of 5)
     let dist = field.query_distance(lx, ly, lz);
     let world_dist = dist * frame.scale_f32();
 
-    if world_dist >= 0.0 {
-        return None; // Outside or on surface
+    if world_dist >= margin {
+        return None; // Outside (beyond the margin) or on the surface
     }
 
     // Only compute normal for penetrating points (4 additional evals)
@@ -792,6 +808,22 @@ pub fn collide_sphere_sdf_field<F: SdfQuery + ?Sized>(
     field: &F,
     frame: &SdfFrame,
 ) -> Option<Contact> {
+    collide_sphere_sdf_within(center, radius, field, frame, 0.0)
+}
+
+/// [`collide_sphere_sdf_field`] that also reports a sphere short of the
+/// surface by less than `margin` (world units, `≥ 0`) as a contact with a
+/// gap (negative `depth`, a speculative contact). With `margin = 0` it is
+/// [`collide_sphere_sdf_field`] bit for bit.
+#[cfg(feature = "std")]
+#[must_use]
+pub(crate) fn collide_sphere_sdf_within<F: SdfQuery + ?Sized>(
+    center: Vec3Fix,
+    radius: Fix128,
+    field: &F,
+    frame: &SdfFrame,
+    margin: f32,
+) -> Option<Contact> {
     let (lx, ly, lz) = frame.world_to_local(center);
 
     // Early-out: distance only (1 eval)
@@ -802,8 +834,8 @@ pub fn collide_sphere_sdf_field<F: SdfQuery + ?Sized>(
     // Penetration = radius - distance_to_surface
     let penetration = radius_f32 - world_dist;
 
-    if penetration <= 0.0 {
-        return None; // Sphere doesn't reach the surface
+    if penetration <= -margin {
+        return None; // Sphere doesn't reach the surface (nor the margin)
     }
 
     // Only compute normal for penetrating spheres (4 additional evals)
@@ -837,13 +869,29 @@ pub fn collide_capsule_sdf(
     radius: Fix128,
     sdf: &SdfCollider,
 ) -> Option<Contact> {
+    collide_capsule_sdf_within(a, b, radius, sdf, 0.0)
+}
+
+/// [`collide_capsule_sdf`] with a speculative `margin` (see
+/// [`collide_sphere_sdf_within`]).
+#[cfg(feature = "std")]
+#[must_use]
+pub(crate) fn collide_capsule_sdf_within(
+    a: Vec3Fix,
+    b: Vec3Fix,
+    radius: Fix128,
+    sdf: &SdfCollider,
+    margin: f32,
+) -> Option<Contact> {
     let mid = Vec3Fix::new((a.x + b.x).half(), (a.y + b.y).half(), (a.z + b.z).half());
 
     let samples = [a, mid, b];
     let mut best: Option<Contact> = None;
 
     for &point in &samples {
-        if let Some(contact) = collide_sphere_sdf(point, radius, sdf) {
+        if let Some(contact) =
+            collide_sphere_sdf_within(point, radius, &*sdf.field, &sdf.frame(), margin)
+        {
             match &best {
                 Some(prev) if prev.depth >= contact.depth => {}
                 _ => best = Some(contact),
@@ -884,10 +932,15 @@ pub(crate) fn box_sample_points(
 /// The deepest contact of a set of points with an SDF.
 #[cfg(feature = "std")]
 #[must_use]
-pub(crate) fn collide_points_sdf(points: &[Vec3Fix], sdf: &SdfCollider) -> Option<Contact> {
+pub(crate) fn collide_points_sdf(
+    points: &[Vec3Fix],
+    sdf: &SdfCollider,
+    margin: f32,
+) -> Option<Contact> {
     let mut best: Option<Contact> = None;
+    let frame = sdf.frame();
     for &point in points {
-        if let Some(contact) = collide_point_sdf(point, sdf) {
+        if let Some(contact) = collide_point_sdf_within(point, &*sdf.field, &frame, margin) {
             match &best {
                 Some(prev) if prev.depth >= contact.depth => {}
                 _ => best = Some(contact),
@@ -916,7 +969,11 @@ pub fn collide_aabb_sdf(min: Vec3Fix, max: Vec3Fix, sdf: &SdfCollider) -> Option
         (max.y - min.y).half(),
         (max.z - min.z).half(),
     );
-    collide_points_sdf(&box_sample_points(center, half, QuatFix::IDENTITY), sdf)
+    collide_points_sdf(
+        &box_sample_points(center, half, QuatFix::IDENTITY),
+        sdf,
+        0.0,
+    )
 }
 
 /// Detect all SDF collisions for a set of bodies.

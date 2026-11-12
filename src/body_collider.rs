@@ -18,8 +18,8 @@ use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 use crate::plane_collider::PlaneCollider;
 #[cfg(feature = "std")]
 use crate::sdf_collider::{
-    box_sample_points, collide_aabb_sdf, collide_capsule_sdf, collide_point_sdf,
-    collide_points_sdf, collide_sphere_sdf, SdfCollider,
+    box_sample_points, collide_aabb_sdf, collide_capsule_sdf_within, collide_point_sdf_within,
+    collide_points_sdf, collide_sphere_sdf_within, SdfCollider,
 };
 use crate::shape::{PosedShape, Shape};
 use crate::static_collider::StaticCollider;
@@ -216,7 +216,12 @@ fn deeper(best: &mut Option<Contact>, candidate: Option<Contact>) {
 /// the first support point is the deepest) and follows the surface for a curved
 /// one, where it finds a point on the solid that is locally deepest.
 #[cfg(feature = "std")]
-fn convex_sdf_contact(solid: &impl Support, centre: Vec3Fix, sdf: &SdfCollider) -> Option<Contact> {
+fn convex_sdf_contact(
+    solid: &impl Support,
+    centre: Vec3Fix,
+    sdf: &SdfCollider,
+    margin: f32,
+) -> Option<Contact> {
     let outward = |at: Vec3Fix| {
         let (lx, ly, lz) = sdf.world_to_local(at);
         let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
@@ -224,9 +229,13 @@ fn convex_sdf_contact(solid: &impl Support, centre: Vec3Fix, sdf: &SdfCollider) 
     };
     let mut at = centre;
     let mut best = None;
+    let frame = sdf.frame();
     for _ in 0..SDF_SUPPORT_ITERATIONS {
         let point = solid.support(-outward(at));
-        deeper(&mut best, collide_point_sdf(point, sdf));
+        deeper(
+            &mut best,
+            collide_point_sdf_within(point, &*sdf.field, &frame, margin),
+        );
         if point == at {
             break;
         }
@@ -239,29 +248,33 @@ fn convex_sdf_contact(solid: &impl Support, centre: Vec3Fix, sdf: &SdfCollider) 
 /// `collide_aabb_sdf` samples (an axis-aligned box goes through it), turned with
 /// the box. Exact for a flat field, whose deepest point of a box is a corner.
 #[cfg(feature = "std")]
-fn box_sdf_contact(b: &OrientedBox, sdf: &SdfCollider) -> Option<Contact> {
+fn box_sdf_contact(b: &OrientedBox, sdf: &SdfCollider, margin: f32) -> Option<Contact> {
     if b.rotation == QuatFix::IDENTITY {
         let aabb = b.aabb();
-        return collide_aabb_sdf(aabb.min, aabb.max, sdf);
+        if margin == 0.0 {
+            return collide_aabb_sdf(aabb.min, aabb.max, sdf);
+        }
     }
     collide_points_sdf(
         &box_sample_points(b.center, b.half_extents, b.rotation),
         sdf,
+        margin,
     )
 }
 
 /// One shape, placed in the world, against an SDF.
 #[cfg(feature = "std")]
-fn posed_sdf_contact(posed: &PosedShape, sdf: &SdfCollider) -> Option<Contact> {
+fn posed_sdf_contact(posed: &PosedShape, sdf: &SdfCollider, margin: f32) -> Option<Contact> {
     match posed.shape {
         Shape::Box { half_extents } => box_sdf_contact(
             &OrientedBox::new(posed.position, half_extents, posed.rotation),
             sdf,
+            margin,
         ),
         Shape::Ellipsoid { radii } if radii.x == radii.y && radii.y == radii.z => {
-            collide_sphere_sdf(posed.position, radii.x, sdf)
+            collide_sphere_sdf_within(posed.position, radii.x, &*sdf.field, &sdf.frame(), margin)
         }
-        _ => convex_sdf_contact(posed, posed.position, sdf),
+        _ => convex_sdf_contact(posed, posed.position, sdf, margin),
     }
 }
 
@@ -272,19 +285,25 @@ fn child_sdf_contact(
     body_position: Vec3Fix,
     body_rotation: QuatFix,
     sdf: &SdfCollider,
+    margin: f32,
 ) -> Option<Contact> {
     let body_rotation = body_rotation.unit_rotation();
     let position = body_position + body_rotation.rotate_vec(child.local_position);
     let rotation = body_rotation.mul(child.local_rotation);
     match &child.shape {
-        ShapeRef::Sphere(s) => {
-            collide_sphere_sdf(position + rotation.rotate_vec(s.center), s.radius, sdf)
-        }
-        ShapeRef::Capsule(c) => collide_capsule_sdf(
+        ShapeRef::Sphere(s) => collide_sphere_sdf_within(
+            position + rotation.rotate_vec(s.center),
+            s.radius,
+            &*sdf.field,
+            &sdf.frame(),
+            margin,
+        ),
+        ShapeRef::Capsule(c) => collide_capsule_sdf_within(
             position + rotation.rotate_vec(c.a),
             position + rotation.rotate_vec(c.b),
             c.radius,
             sdf,
+            margin,
         ),
         ShapeRef::Box(b) => box_sdf_contact(
             &OrientedBox::new(
@@ -293,6 +312,7 @@ fn child_sdf_contact(
                 rotation.mul(b.rotation),
             ),
             sdf,
+            margin,
         ),
         ShapeRef::ConvexHull(hull) => {
             let world: Vec<Vec3Fix> = hull
@@ -300,7 +320,7 @@ fn child_sdf_contact(
                 .iter()
                 .map(|&v| position + rotation.rotate_vec(v))
                 .collect();
-            collide_points_sdf(&world, sdf)
+            collide_points_sdf(&world, sdf, margin)
         }
     }
 }
@@ -324,6 +344,19 @@ impl BodyCollider {
         rotation: QuatFix,
         sdf: &SdfCollider,
     ) -> Option<Contact> {
+        self.sdf_contact_within(position, rotation, sdf, 0.0)
+    }
+
+    /// [`Self::sdf_contact`] that also reports a piece short of the field by
+    /// less than `margin` (world units) as a contact with a gap (negative
+    /// `depth`, a speculative contact). `margin = 0` is `sdf_contact` itself.
+    pub(crate) fn sdf_contact_within(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        sdf: &SdfCollider,
+        margin: f32,
+    ) -> Option<Contact> {
         match self {
             Self::Shape(shape) => posed_sdf_contact(
                 &PosedShape {
@@ -332,11 +365,15 @@ impl BodyCollider {
                     rotation,
                 },
                 sdf,
+                margin,
             ),
             Self::Compound(compound) => {
                 let mut best = None;
                 for child in &compound.children {
-                    deeper(&mut best, child_sdf_contact(child, position, rotation, sdf));
+                    deeper(
+                        &mut best,
+                        child_sdf_contact(child, position, rotation, sdf, margin),
+                    );
                 }
                 best
             }
@@ -348,7 +385,8 @@ impl BodyCollider {
     /// piece with flat faces to the corners of the face it rests on: the support
     /// points along the four directions of [`face_manifold`] about the deepest
     /// point's normal, each tested against the field itself (its own depth and
-    /// normal; kept when it reaches into the field). Feature numbers are
+    /// normal; kept when it reaches into the field, or comes within `margin`
+    /// of it as a speculative point). Feature numbers are
     /// `4 · piece + direction`.
     #[cfg(feature = "std")]
     pub(crate) fn sdf_manifold(
@@ -356,6 +394,7 @@ impl BodyCollider {
         position: Vec3Fix,
         rotation: QuatFix,
         sdf: &SdfCollider,
+        margin: f32,
     ) -> Vec<(Contact, u32)> {
         let own = self.world_aabb(position, rotation);
         let mut out = Vec::new();
@@ -365,8 +404,10 @@ impl BodyCollider {
             .enumerate()
         {
             let deepest = match &piece {
-                Piece::Shape(posed) => posed_sdf_contact(posed, sdf),
-                Piece::Child { child, .. } => child_sdf_contact(child, position, rotation, sdf),
+                Piece::Shape(posed) => posed_sdf_contact(posed, sdf, margin),
+                Piece::Child { child, .. } => {
+                    child_sdf_contact(child, position, rotation, sdf, margin)
+                }
             };
             let Some(deepest) = deepest else {
                 continue;
@@ -388,7 +429,7 @@ impl BodyCollider {
                 if near_any(points.iter().map(|(c, _)| c.point_a), p) {
                     continue;
                 }
-                if let Some(c) = collide_point_sdf(p, sdf) {
+                if let Some(c) = collide_point_sdf_within(p, &*sdf.field, &sdf.frame(), margin) {
                     points.push((c, base + k as u32));
                 }
             }
@@ -1400,8 +1441,8 @@ mod tests {
             turn.z.double(),
             turn.w.double(),
         );
-        let unit = box_sdf_contact(&OrientedBox::new(center, half, turn), &plane());
-        let scaled = box_sdf_contact(&OrientedBox::new(center, half, doubled), &plane());
+        let unit = box_sdf_contact(&OrientedBox::new(center, half, turn), &plane(), 0.0);
+        let scaled = box_sdf_contact(&OrientedBox::new(center, half, doubled), &plane(), 0.0);
         let (u, s) = (unit.expect("touches"), scaled.expect("touches"));
         assert!(
             (u.depth - s.depth).abs() < Fix128::from_ratio(1, 1_000_000),
