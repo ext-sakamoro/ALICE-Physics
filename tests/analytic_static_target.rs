@@ -118,7 +118,9 @@ fn a_snapshot_with_static_contacts_restores_and_steps_on() {
         }
         assert!(held, "{backend:?}");
         let snap = a.snapshot_world();
-        assert_eq!(u16::from_le_bytes([snap[4], snap[5]]), 8, "{backend:?}");
+        // the format version: 10 since the contact section (per-contact and
+        // per-material compliance, the touch sets, the speculative switch)
+        assert_eq!(u16::from_le_bytes([snap[4], snap[5]]), 10, "{backend:?}");
         let mut b = world(backend, 0.0);
         b.add_body_with_radius(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), fx(0.5));
         b.restore_world(&snap).expect("restore");
