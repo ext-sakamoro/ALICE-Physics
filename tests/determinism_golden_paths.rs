@@ -286,7 +286,7 @@ fn run_substep_with_bridge(mut w: PhysicsWorld) -> PhysicsWorld {
 
 // ── XPBD ────────────────────────────────────────────────────────────────────
 
-const GOLDEN_XPBD_STEP: &str = "7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39";
+const GOLDEN_XPBD_STEP: &str = "32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b";
 
 #[test]
 fn golden_path_xpbd_step() {
@@ -315,7 +315,7 @@ fn golden_path_xpbd_try_step() {
 /// is its own golden (see `PhysicsWorld::step_parallel`).
 #[cfg(feature = "parallel")]
 const GOLDEN_XPBD_STEP_PARALLEL: &str =
-    "7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39";
+    "32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b";
 
 #[cfg(feature = "parallel")]
 #[test]
@@ -446,7 +446,7 @@ fn golden_path_tgs_substep_with_bridge_gives_the_xpbd_bits() {
 
 // ── TGS ─────────────────────────────────────────────────────────────────────
 
-const GOLDEN_TGS_STEP: &str = "cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe";
+const GOLDEN_TGS_STEP: &str = "e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e";
 
 #[test]
 fn golden_path_tgs_step() {
@@ -475,7 +475,7 @@ fn golden_path_tgs_try_step() {
 /// dynamic body is asleep, and the digest pins the state the sleep decision left.
 /// Re-recorded when damping became a rate per second: the scene's retention 0.9
 /// per step of 1/60 s is now the rate `-ln(0.9)·60`, applied in closed form.
-const GOLDEN_SLEEPING: &str = "3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229";
+const GOLDEN_SLEEPING: &str = "a55dc2e232a0498e143005288991ef51f78e393b0f76f1d9c20392b5da00a776";
 
 #[test]
 fn golden_sleeping() {
@@ -597,7 +597,7 @@ fn golden_broadphase_hybrid() {
 /// gravity, no damping, no contact: the total momentum of bodies and medium
 /// is conserved exactly (power-of-two masses), and the digest pins the
 /// exchange.
-const GOLDEN_PARTICIPANT: &str = "3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684";
+const GOLDEN_PARTICIPANT: &str = "9c7570924c57b15bd5a3d71cde6a0d9b67ef0b2b8f9ef4da09b827f9e2b8c30f";
 
 #[test]
 fn golden_participant() {
@@ -717,7 +717,7 @@ fn golden_installed_bridge() {
 }
 
 const GOLDEN_AXIS_LOCK_XPBD: &str =
-    "b0b46d86ef23cdee4061d68860981d5480539abf5d70e608f476f02aa75bb38d";
+    "133cd2a9adf2ca242a5a9e64446661bcaf57b73704373f075b75e099222eb1a5";
 const GOLDEN_AXIS_LOCK_TGS: &str =
     "d80455a72a5539984bea270e1b5e7b4b2fc4d56437bc032de7c47af007c75fee";
 

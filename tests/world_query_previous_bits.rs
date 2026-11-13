@@ -306,10 +306,10 @@ fn run(
 /// one's last bits moved (the digest was 10_044_748_902_636_547_745 on the
 /// rounded test).
 const PREVIOUS: [(&str, usize, usize, u64); 4] = [
-    ("box", 223, 123, 4_909_276_495_861_602_550),
-    ("wedge", 217, 75, 8_396_969_157_840_317_528),
-    ("mesh", 233, 172, 13_342_793_484_799_962_654),
-    ("plane", 231, 158, 10_948_560_710_893_612_363),
+    ("box", 223, 123, 9_051_903_827_425_138_261),
+    ("wedge", 217, 75, 13_186_901_299_020_445_947),
+    ("mesh", 233, 172, 9_417_318_711_790_994_928),
+    ("plane", 231, 158, 11_932_952_870_255_741_702),
 ];
 
 #[test]
@@ -338,10 +338,10 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 /// a cast ends on when its gap is bracketed (it is the clear end for a core of
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
 const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
-    ("cone", 1102, 513, 14_532_302_535_408_115_044),
-    ("cylinder", 1144, 624, 13_777_481_894_267_097_839),
-    ("field", 1145, 870, 3_373_970_361_301_922_804),
-    ("ellipsoid", 1122, 525, 12_777_141_043_576_937_521),
+    ("cone", 1102, 513, 17_661_728_302_335_508_163),
+    ("cylinder", 1144, 624, 9_898_768_193_131_372_081),
+    ("field", 1145, 870, 14_705_494_176_466_851_565),
+    ("ellipsoid", 1122, 525, 4_515_886_914_046_275_384),
 ];
 
 #[test]

@@ -42,11 +42,15 @@ use law_rows::{spec, Laws};
 
 /// The rules of `scene()` folded as the writing build encoded them: gravity (0, −7, 0), the
 /// damping rate 3/10, and the sleep rule as the count of 60 idle steps.
+///
+/// The writing build had no contact rows (the speculative switch and the materials' contact
+/// compliance arrived in 4.0), so they are left out of the fold.
 fn writer_laws() -> Laws {
     let mut laws = Laws::defaults();
     laws.config.gravity = Vec3Fix::from_int(0, -7, 0);
     laws.config.damping_rate = Fix128::from_ratio(3, 10);
     laws.legacy_sleep_steps = Some(60);
+    laws.legacy_without_contact_rows = true;
     laws
 }
 

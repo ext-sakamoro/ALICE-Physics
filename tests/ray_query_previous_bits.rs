@@ -306,18 +306,18 @@ fn run(
 
 /// Recorded on main `06b1e84b` (2026-11-07), before the range-safe query path.
 const EXPECTED: &[(&str, usize, usize, usize, u64)] = &[
-    ("sphere", 200, 101, 101, 0x134a99be389728c4),
-    ("box", 200, 141, 109, 0x24cf793256fb3533),
-    ("wedge", 200, 83, 42, 0x2a5ec3170cb7bc17),
-    ("cone", 200, 103, 63, 0xa071c88f1f50979f),
-    ("cylinder", 200, 115, 92, 0x05dff05247912d68),
-    ("ellipsoid", 200, 104, 45, 0x607532d92ac3520d),
-    ("torus", 200, 116, 82, 0x1a7e2043d230c44c),
-    ("compound", 200, 175, 74, 0x648bbb1b954f08f3),
-    ("plane", 200, 0, 152, 0x7012ead048c3a241),
-    ("field", 200, 0, 151, 0x39ff6508165dca0c),
-    ("mesh", 200, 0, 126, 0x1dcd799ad36396d3),
-    ("many", 200, 85, 66, 0x93e6a1589861a939),
+    ("sphere", 200, 101, 101, 0x6a703a7e2cf0ab9b),
+    ("box", 200, 141, 109, 0x54fd501b00a6759f),
+    ("wedge", 200, 83, 42, 0x5bb5f9c6fb0f4c06),
+    ("cone", 200, 103, 63, 0xfc1af673cfd9d084),
+    ("cylinder", 200, 115, 92, 0x03e724ed0fd5f248),
+    ("ellipsoid", 200, 104, 45, 0x56198af3d7f1fb3f),
+    ("torus", 200, 116, 82, 0xf4a8f03532b86db7),
+    ("compound", 200, 175, 74, 0x61a60ae38eed49d9),
+    ("plane", 200, 0, 152, 0x46cf9a9e117a113d),
+    ("field", 200, 0, 151, 0x4e96553c5aad0af2),
+    ("mesh", 200, 0, 126, 0x931e62495ca1fd31),
+    ("many", 200, 85, 66, 0xbf82005d8c186013),
 ];
 
 #[test]

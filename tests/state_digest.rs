@@ -240,7 +240,7 @@ fn hex(b: &[u8]) -> String {
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
 const GOLDEN_STATE_DIGEST: &str =
-    "1b86b104fb56281bd25588eaff948c7471c77d6195892c84dcac31e59eecf8d4";
+    "e4d7762952259ad96900e9c67c58a40cd2764379bc9a90115d28ef57510643fb";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
 const GOLDEN_LAW_ID: &str = "19810edc1ed26cabdfb7848b75a2245be0a0a9f097b47a395e656e337db221f7";
 
@@ -250,7 +250,7 @@ const GOLDEN_LAW_ID: &str = "19810edc1ed26cabdfb7848b75a2245be0a0a9f097b47a395e6
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "84f595a290f3714d4bbca69b05143857b332495448576a94b6e0964eee69ec2c";
+    "7a026513bc5c02e7017d81feabd142b9d551ff16b7576cd35fedf254020df0bf";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

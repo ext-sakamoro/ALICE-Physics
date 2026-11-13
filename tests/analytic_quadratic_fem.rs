@@ -951,7 +951,7 @@ fn quadratic_solve_is_deterministic_and_pinned() {
         "the same problem must give the same bits and the same iteration count"
     );
     assert!(
-        s1 == 0x93cf_96c2_be0f_f85f,
+        s1 == 0x151b_9add_8fdc_e239,
         "the quadratic solution moved: got {s1:#018x} after {i1} iterations. This is a \
          change in the element, the quadrature or `Fix128` — not a tolerance"
     );
