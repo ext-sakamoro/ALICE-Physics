@@ -318,6 +318,39 @@ pub(crate) fn add_magnet(
     w.try_add_force_field(ForceFieldInstance::new(field)).ok()
 }
 
+/// The pull (N) the world's magnets naming `material` would exert on a body of that material with
+/// collision radius `body_radius` (m) and mass `mass` (kg) centred at `position`:
+/// [`crate::force`]'s `magnet_force_at`, the same function a step applies, for drawing a magnet's
+/// reach from the law itself. `None` for a radius that is negative or not finite, a mass that is
+/// not finite and positive, a material id that does not fit `MaterialId`, or a material no magnet
+/// names.
+#[cfg(feature = "wasm")]
+pub(crate) fn magnet_force_at(
+    w: &PhysicsWorld,
+    material: u32,
+    position: Vec3Fix,
+    body_radius: f64,
+    mass: f64,
+) -> Option<Vec3Fix> {
+    let material = material_id(material)?;
+    let body_radius = non_negative(body_radius)?;
+    let mass = positive(mass).filter(|m| *m > Fix128::ZERO)?;
+    let named = w
+        .force_fields
+        .iter()
+        .any(|f| matches!(f.field, ForceField::InducedDipole { material: m, .. } if m == material));
+    if !named {
+        return None;
+    }
+    Some(crate::force::magnet_force_at(
+        &w.force_fields,
+        material,
+        body_radius,
+        mass,
+        position,
+    ))
+}
+
 /// The numbers of a box-shaped wind zone, in the units of [`WindZone`].
 #[cfg(feature = "std")]
 pub(crate) struct WindZoneArgs {
@@ -904,6 +937,99 @@ mod tests {
             arr(a.bodies[pulled].position)
         );
         assert_eq!(a.bodies[other].position, vf(0.0, -0.06, 0.0));
+    }
+
+    /// oracle: `magnet_force_at` is the pull a step applies. For each sampled point (on and off
+    /// the moment's axis, beside it, and one nearer than the contact distance, where the field
+    /// is taken at the contact distance) a resting body of the magnet's material is stepped once
+    /// with no gravity, no damping and one substep: its velocity equals
+    /// `magnet_force_at · inv_mass · dt` bit for bit (the step's own arithmetic). A body of
+    /// another material, or a material no magnet names, gets no answer.
+    #[test]
+    #[cfg(feature = "wasm")]
+    fn magnet_force_at_is_the_pull_a_step_applies() {
+        let m = steel();
+        let (mass, radius) = (0.00411, 0.005);
+        let dt = Fix128::from_ratio(1, 120);
+        let points = [
+            (0.0, 0.06),
+            (0.0, -0.08),
+            (0.05, 0.0),
+            (0.04, 0.04),
+            (-0.07, 0.03),
+            (0.12, -0.1),
+            (0.0, 0.012),
+        ];
+        let mut compared = 0;
+        for (x, y) in points {
+            let c = PhysicsConfig {
+                gravity: Vec3Fix::ZERO,
+                damping_rate: Fix128::ZERO,
+                substeps: 1,
+                ..PhysicsConfig::default()
+            };
+            let mut w = PhysicsWorld::new(c);
+            let body = w.add_body(RigidBody::new_dynamic(
+                vf(x, y, 0.0),
+                Fix128::from_f64(mass),
+            ));
+            assert!(set_collision_radius(&mut w, body, radius));
+            assert!(set_body_material(&mut w, body, 1));
+            add_magnet(&mut w, vf(0.0, 0.0, 0.0), vf(0.0, 0.5, 0.0), 0.01, &m).unwrap();
+            let f = magnet_force_at(&w, 1, vf(x, y, 0.0), radius, mass).unwrap();
+            assert!(f.length_squared() > Fix128::ZERO, "pull at ({x}, {y})");
+            let expected = f * w.bodies[body].inv_mass * dt;
+            w.step(dt);
+            assert_eq!(
+                w.bodies[body].velocity,
+                expected,
+                "({x}, {y}): {:?}",
+                arr(f)
+            );
+            compared += 1;
+            assert_eq!(magnet_force_at(&w, 0, vf(x, y, 0.0), radius, mass), None);
+        }
+        assert_eq!(compared, points.len());
+        assert!(compared > 0);
+    }
+
+    /// `magnet_force_at` refuses a bad radius, mass or material id, and answers nothing in a
+    /// world with no magnet
+    #[test]
+    #[cfg(feature = "wasm")]
+    fn magnet_force_at_refuses_bad_values() {
+        let (mut w, _, _) = magnet_scene();
+        assert_eq!(
+            magnet_force_at(&w, 1, vf(0.0, 0.1, 0.0), 0.005, 1.0),
+            None,
+            "no magnet"
+        );
+        add_magnet(&mut w, vf(0.0, 0.0, 0.0), vf(0.0, 0.5, 0.0), 0.01, &steel()).unwrap();
+        let p = vf(0.0, 0.1, 0.0);
+        assert!(magnet_force_at(&w, 1, p, 0.005, 1.0).is_some());
+        assert!(
+            magnet_force_at(&w, 1, p, 0.0, 1.0).is_some(),
+            "a point body"
+        );
+        for (r, mass) in [
+            (-0.1, 1.0),
+            (f64::NAN, 1.0),
+            (0.005, 0.0),
+            (0.005, -1.0),
+            (0.005, f64::INFINITY),
+            (0.005, 1e-300),
+        ] {
+            assert_eq!(
+                magnet_force_at(&w, 1, p, r, mass),
+                None,
+                "r {r} mass {mass}"
+            );
+        }
+        assert_eq!(
+            magnet_force_at(&w, 70_000, p, 0.005, 1.0),
+            None,
+            "id out of range"
+        );
     }
 
     /// A ball rolling into a resting ball with no gravity, once with its own friction and

@@ -471,3 +471,21 @@ test("a blow, a hold and a log through the bindings", () => {
   assert.deepEqual(Array.from(WasmInputLog.codeHead(code)), Array.from(digest.slice(0, 4)));
   assert.equal(WasmInputLog.fromCode("not a code"), undefined);
 });
+
+test("magnetForceAt is the closed-form pull of a dipole on its axis, and nothing for an unnamed material", () => {
+  const w = world();
+  const mat = w.registerMaterial(0.4, 0.3);
+  const [m, chi, ms, density, mass, r] = [400, 3, 1.7e6, 7850, 2, 0.8];
+  assert.equal(w.addMagnet(0, 0, 0, 0, m, 0, 0.1, mat, chi, ms, density), 0);
+  // on the axis, below saturation: |B| = mu0·m / (2π r³), F = (chi·V/mu0)·∇(|B|²/2)
+  // = 3·chi·V·mu0·m² / (4π² r⁷) toward the magnet, V = mass / density
+  const mu0 = 4e-7 * Math.PI;
+  const expected = (3 * chi * (mass / density) * mu0 * m * m) / (4 * Math.PI * Math.PI * r ** 7);
+  const f = Array.from(w.magnetForceAt(mat, 0, r, 0, 0.1, mass));
+  assert.equal(f.length, 3);
+  assert.ok(Math.abs(f[1] + expected) <= 1e-9 * expected, `fy ${f[1]}, expected ${-expected}`);
+  assert.ok(Math.abs(f[0]) <= 1e-12 * expected && Math.abs(f[2]) <= 1e-12 * expected, `off-axis ${f}`);
+  assert.equal(w.magnetForceAt(mat + 1, 0, r, 0, 0.1, mass), undefined, "no magnet names it");
+  assert.equal(w.magnetForceAt(mat, 0, r, 0, 0.1, 0), undefined, "zero mass");
+  assert.equal(w.magnetForceAt(mat, 0, r, 0, -1, mass), undefined, "negative radius");
+});
