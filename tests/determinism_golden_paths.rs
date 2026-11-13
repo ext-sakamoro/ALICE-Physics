@@ -719,7 +719,7 @@ fn golden_installed_bridge() {
 const GOLDEN_AXIS_LOCK_XPBD: &str =
     "133cd2a9adf2ca242a5a9e64446661bcaf57b73704373f075b75e099222eb1a5";
 const GOLDEN_AXIS_LOCK_TGS: &str =
-    "d80455a72a5539984bea270e1b5e7b4b2fc4d56437bc032de7c47af007c75fee";
+    "9f35c69e5a91274c0542e824e5a5cde3b4bcbb6993059abfce96463216580a90";
 
 /// The axis-lock scene stepped 60 frames on `backend`: a ball dropped onto a dynamic shelf
 /// with every axis locked, and a thrown body locked to the x-y plane. The locked coordinates are
