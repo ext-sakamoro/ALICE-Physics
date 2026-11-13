@@ -202,8 +202,8 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 <!-- integration-levels: summary -->
 | 使われ方 | モジュール数 |
 |----------|-------------:|
-| step: `PhysicsWorld` の step で実行される | 23 |
-| world API: `PhysicsWorld` の他のメソッドから使われる | 16 |
+| step: `PhysicsWorld` の step で実行される | 24 |
+| world API: `PhysicsWorld` の他のメソッドから使われる | 15 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 5 |
 | standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 125 |
 | unused: テスト以外に呼び出し元がない | 1 |
