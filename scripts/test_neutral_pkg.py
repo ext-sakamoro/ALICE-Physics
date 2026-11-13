@@ -419,6 +419,8 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return new Float64Array([this.ids, 0.5]);"
         if n == "bodyAxisLock":
             return "return 28;"
+        if n == "magnetForceAt":
+            return "return new Float64Array([0.25, -1.5, 0]);"
         # the cloth exports: a grab gives a handle, the readings arrays, the switches booleans
         if n == "clothGrab":
             return "return this.ids++;"

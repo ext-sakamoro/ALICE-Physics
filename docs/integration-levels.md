@@ -29,7 +29,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ellipsoid` | step | 5 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 13 / 5 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `force` | step | 6 / 1 / 1 / 1 / 0 | C ABI, Python, WebAssembly |
+| `force` | step | 6 / 1 / 2 / 1 / 0 | C ABI, Python, WebAssembly |
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 16 / 0 / 0 / 12 / 0 | C ABI, Python, WebAssembly |
