@@ -169,7 +169,7 @@ fn the_sleep_step_is_the_closed_form_at_every_step_size() {
 /// CI target agrees. Pinned in `PHYSICS_SEMANTICS_PINS` as "sleep by time": it moves only
 /// with the sleep rule or the solver, each an announced change.
 const SLEEP_BY_TIME_SHA256: &str =
-    "3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24";
+    "8dc7cac6e1349f31c707b9444ae2750ac1bd2766cb28e215e8d64c2be203f8e3";
 
 /// The pinned scene: four spheres dropped on a plane at `dt = 1/30` s with a 1/2 s rule,
 /// 400 steps (13.3 s): they land at different times and sleep at different steps.

@@ -659,7 +659,7 @@ fn drive_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const DRIVE_XPBD: &str = "2a07dceaaebeee3298a867f622741f4bd0542ae38976fb0dc634cf6e103d3530";
+const DRIVE_XPBD: &str = "39c11242a48479bce0d55470b51464070a2bc4c48b0fc40a5a87443dfa6c0d8e";
 const DRIVE_TGS: &str = "09dc2153608b50587fc1f2c93c91ab5f097a273f6573ff9ea478fad5bcb19297";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the

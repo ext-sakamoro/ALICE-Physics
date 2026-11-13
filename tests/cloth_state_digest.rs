@@ -216,7 +216,7 @@ fn sleep_is_invisible_to_the_digest() {
 
 /// Frozen digest of the script at frame 300; every CI target must agree. It moves only
 /// with an announced change to the cloth's law or to `state_bytes`.
-const SCRIPT_DIGEST_300: &str = "f72b6c695d1759943cc7aa96d661b64832203bd66e4ca936924315165f5bc98c";
+const SCRIPT_DIGEST_300: &str = "fd018b77918d2e78ddfe149b9ad141dd010e5e1dbeccee93efe7d819ac08d0b3";
 
 /// oracle: the script's digest at frame 300 is the frozen value on every target.
 #[test]

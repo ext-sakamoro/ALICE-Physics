@@ -340,7 +340,7 @@ fn anisotropic_hash(backend: SolverBackend, parallel: bool) -> String {
 // velocities from the position change (unrelated to the isotropic rule: the
 // anisotropic bodies of this scene never take it).
 const GOLDEN_ANISOTROPIC_XPBD: &str =
-    "8a452449c79b52f0cc3efe5be060e24a36b8da2970b3ff81b439d239b88fae28";
+    "cbe3ac75375000ab9d0ddb70c0fe5f9e48b3b7aa3d88997ca56889c25e98c25d";
 const GOLDEN_ANISOTROPIC_TGS: &str =
     "095f684372ceec9a468250679ad90119a010fdf225140d3adce059da0ccb0409";
 

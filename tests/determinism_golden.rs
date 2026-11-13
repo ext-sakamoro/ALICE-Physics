@@ -132,7 +132,7 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// (per body) per step of 1/60 s are now the rates `-ln(r)·60`, applied in
 /// closed form, which rounds differently from the per-step product.
 /// `tests/world_participant_conformance.rs` holds a copy.
-const GOLDEN_CASCADE: &str = "39f0e6fd03588f095f01fbd8fd912c51a5cc8107be89a75deaefdc4cb42baade";
+const GOLDEN_CASCADE: &str = "a57805dafeed2b5faa337bcc4fb5cefe9e5153af20dd283ef08c59ec22690ed0";
 
 #[test]
 fn determinism_cascade() {
@@ -185,7 +185,7 @@ fn determinism_cascade() {
 ///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
-const GOLDEN_FREEFALL: &str = "cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b";
+const GOLDEN_FREEFALL: &str = "a96d8e7e2c25bef0fe6775a6189346c3fee5d54f4b235d1858b9d70efe0a6a44";
 
 #[test]
 fn determinism_freefall() {
@@ -290,7 +290,7 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// when a sleeping body that a step moves (a constraint pulled it) began to wake its island
 /// and keep the move, where it had stayed asleep holding the moved pose.
 const GOLDEN_JOINT_PENDULUM: &str =
-    "6dcae0f3989e3ba3afd8e4056a98e774e093175ff2307d7fca8a7e8b3c204c37";
+    "d06737c90a67a3c6621f561610a53ac76e4f30a7411258d74ac7400f2062f29f";
 
 #[test]
 fn determinism_joint_pendulum() {
@@ -343,7 +343,7 @@ fn determinism_joint_pendulum() {
 /// upper one (1000 N, holds). 120 steps of 1/60 s, default config. Recorded 2026-11-12 when a
 /// breaking joint stopped applying its correction before being removed (before, the slider's
 /// body left at 2919.7 m/s); the first golden on a breaking path.
-const GOLDEN_JOINT_BREAK: &str = "f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9";
+const GOLDEN_JOINT_BREAK: &str = "beef7e0b695aff523f8e2d2f7464f109b65f21ff3bca9b28898e5223e5f92f81";
 
 #[test]
 fn determinism_joint_break() {
@@ -396,7 +396,7 @@ fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
 /// `0df965ee…` pinned a state where the bottom row had been pumped *above*
 /// the pinned top row (y = 6.92 with the top at 5); the cloth now hangs at
 /// y ≈ 3.02.
-const GOLDEN_CLOTH_DRAPE: &str = "ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556";
+const GOLDEN_CLOTH_DRAPE: &str = "e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb";
 
 #[test]
 fn determinism_cloth_drape() {
@@ -424,7 +424,7 @@ fn determinism_cloth_drape() {
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated
 /// frames turn with the anchor, so the limit axes move. 180 steps at 1/60 s, two passes.
 const GOLDEN_SECONDARY_CHAIN: &str =
-    "8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f";
+    "b38f368c90287484da417d12e2379b0b11820a4bb298e743209bb0699fdee9e0";
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -576,7 +576,7 @@ fn hash_mac_grid(grid: &MacGrid) -> [u8; 32] {
 /// now sweeps the boundary face layer too, so the rim cells are projected
 /// like every other cell. This grid has no walls marked, so the change here
 /// is the rim sweep alone — see `tests/analytic_cfd_wall_bc.rs`.
-const GOLDEN_FLUID_STEP: &str = "a85d2248fd3cb2d0d7fb276d3563ddf7602f13d191e8f9982b990a3d1153a98f";
+const GOLDEN_FLUID_STEP: &str = "278748933dc7f85a84b43c482fe7c844c6863d371b9737c98f9cfd42238ab06f";
 
 #[test]
 fn determinism_fluid_step() {
@@ -669,7 +669,7 @@ fn determinism_sdf_ccd_glance() {
 /// Hash a series of `TriMesh::collide_sphere` results at a lattice of
 /// sample positions. Deterministic collision detection sanity check.
 const GOLDEN_TRIMESH_PROBE: &str =
-    "85fbff506a4cd8492163697b0d9cdb2252786d5171b0ff0c125c24a84dec485a";
+    "53d0c26db6bbf13be0e015129ffa2e87d8e72640b93495232d94101953580136";
 
 #[test]
 fn determinism_trimesh_probe() {

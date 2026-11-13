@@ -62,10 +62,10 @@ const BLOB_3_1_0: &[u8] = include_bytes!("fixtures/world_snapshot_v4_semantics_7
 const WRITER_3_1_0_SEMANTICS: &str =
     "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108";
 const WRITER_3_1_0_LAW_ID: &str =
-    "bb5c15c7521b9d6ad268a5b261090a43032e11e7f75740eb5e504a90da2a7976";
+    "758b6524aa1a2e40ffc8ddf0340bc895eb587edf4cfdff008b14a32b67f89119";
 const WRITER_SEMANTICS: &str = "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469";
 /// `scene().law_id(&WRITER_SEMANTICS)`, as the writer printed it.
-const WRITER_LAW_ID: &str = "d7096844b0294b098af7f0ad5c1efa5793ceeb808cb86e2ab3aafb85b20008e8";
+const WRITER_LAW_ID: &str = "8c1e66c45ae8d6aabe649160ae5be1ec502681488b0c39d2d730a36346de8ae2";
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 60)

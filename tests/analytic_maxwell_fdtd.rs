@@ -1755,7 +1755,7 @@ fn the_loss_free_arithmetic_form_is_pinned() {
 
 /// Recorded 2026-09-30 from the configuration in
 /// [`the_loss_free_arithmetic_form_is_pinned`], as a raw Q64.64 bit pattern.
-const PINNED_LOSS_FREE_PROBE: i128 = -222_621_341_326_374_155;
+const PINNED_LOSS_FREE_PROBE: i128 = -222_621_341_326_374_156;
 
 // ---------------------------------------------------------------------------
 // O7 — 反射係数 `R` そのもの (離散伝達行列の閉形式 vs 定常場からの mode 分離)

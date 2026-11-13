@@ -969,7 +969,7 @@ fn crowd_hash(parallel: bool) -> String {
 /// 17 bytes a body where version 3 held a state byte and a `u32` step count). Re-recorded (from
 /// `a5f48863…`) when the elastic islands' recurrence record was appended to the blob (an 8-byte
 /// island count, 0 here); with the record not written the digest is the value before.
-const GOLDEN_CROWD: &str = "94d5dd7ff3ba04ea3856ebc0ec96a7ac102fec6b37665389c7f5d12926883247";
+const GOLDEN_CROWD: &str = "3cbd3017240d9b5e9f2b0d7abe6363b688cc84f9d6989ad2fd65b36ec20ac030";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -995,9 +995,14 @@ fn on_is_deterministic_and_independent_of_the_parallel_feature() {
 /// those values in the last bits; every other byte of the world is the same,
 /// so the world below is the recorded one whatever later changes the step.
 fn stacked() -> PhysicsWorld {
+    stacked_with(true)
+}
+
+fn stacked_with(speculative_contacts: bool) -> PhysicsWorld {
     let config = PhysicsConfig {
         substeps: 4,
         iterations: 4,
+        speculative_contacts,
         ..PhysicsConfig::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -1048,7 +1053,19 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
             WorldCcdConfig::new(),
             "{name}"
         );
-        let mut original = stacked();
+        // the writing build had no speculative contacts, so its step left the touching
+        // balls without contacts: step the rebuilt world the same way, then read the
+        // setting as a legacy blob reads it (on)
+        let mut original = stacked_with(false);
+        original.config.speculative_contacts = true;
+        // the writing build computed a unit sphere's inverse inertia as 1 / (2/5 m r²),
+        // which rounds 2 units of 2⁻⁶⁴ above 5/2; this build computes m⁻¹ · 5 / (2 r²),
+        // exactly 5/2: the world the blob came from carries the writer's value
+        let writer_inv_inertia = Fix128::from_raw(2, (1 << 63) + 2);
+        for body in original.bodies.iter_mut().skip(1) {
+            body.inv_inertia =
+                Vec3Fix::new(writer_inv_inertia, writer_inv_inertia, writer_inv_inertia);
+        }
         original.config.damping_rate = writer_rate();
         // the writer's rule was 60 idle steps: version 7 holds it as time, 60 × the
         // writer's step (not exactly 1 s, 1/60 is not a dyadic number)
@@ -1078,7 +1095,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 9 blob carries the setting (its section was added in version
+/// A version 10 blob carries the setting (its section was added in version
 /// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
@@ -1088,10 +1105,11 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    // version 9 (damping as rates per second from version 6, the sleep rule and
-    // the idle counts as time from version 8, the cloth section from version 9)
-    assert_eq!(&blob[4..6], &9u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v9 blob");
+    // version 10 (damping as rates per second from version 6, the sleep rule and
+    // the idle counts as time from version 8, the cloth section from version 9, the
+    // contact section from version 10)
+    assert_eq!(&blob[4..6], &10u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v10 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

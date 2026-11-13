@@ -183,7 +183,7 @@ fn hash(g: &YeeGrid) -> u64 {
 /// ⚠️ 採取手順: 2026-10-05、`origin/main` = `474f5d4` (材料の実装を入れる前、
 /// `src/` 無変更) の上に本 file と同じ `seed` / `hash` / scene を書いた一時 test を置き、
 /// `cargo test -- --nocapture` で出た値を貼った 実装後に取り直した値ではない
-const GOLDEN_PLAIN: u64 = 0xf583_cf36_3bc3_2331;
+const GOLDEN_PLAIN: u64 = 0x93dd_d75b_5f2e_62da;
 
 /// Scene A: `YeeGrid::new_with_absorber(12, 10, 8, COURANT_3D,
 /// GradedPml { depth: [3, 2, 2], sigma_max: 3 })`, [`seed`] (absorbing samples

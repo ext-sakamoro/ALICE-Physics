@@ -223,7 +223,7 @@ fn assert_no_rotation(scenario: &str, w: &PhysicsWorld) {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_BOUNCE: &str =
-    "90afe915e76856fcc40198c731e8df34594f7b455c0a39324ef5878c294fc7e0";
+    "fd0ca2935e44ee5c8f334ba523e6624cb934b14cee8faec5258edbae1fad6f95";
 
 #[test]
 fn determinism_contact_bounce() {
@@ -317,7 +317,7 @@ fn determinism_contact_bounce() {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_SLIDE: &str =
-    "82c881583c268069f3b7751ce6afa09353343620d4354028592e06363ce8a591";
+    "4fa5740224f9fa5c0fe86018e51049c650771c0bb86584d0c9ea180209990506";
 
 #[test]
 fn determinism_contact_slide() {
@@ -400,7 +400,7 @@ fn determinism_contact_slide() {
 /// contact pushes the bottom ball sideways, and a two-ball stack creeps
 /// `1.7e-2 m` in 2 s.
 const GOLDEN_CONTACT_SLOPE: &str =
-    "bfd18c81157e4af821687782b638f6bda05d8caf762eba605580da29d9424549";
+    "485d9d402ca5f4c96cf75601da163d9647108fd8a58a11fac230094b24c8ff22";
 
 #[test]
 fn determinism_contact_slope() {
@@ -470,7 +470,7 @@ fn determinism_contact_slope() {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_STACK: &str =
-    "532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad";
+    "9bbfa01ac96aab3ce7f720d7e15f273f2f2e8e8b3c8c606abafcc38b27a09df7";
 
 #[test]
 fn determinism_contact_stack() {
@@ -540,7 +540,7 @@ fn determinism_contact_stack() {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_VETO: &str =
-    "cf1a50cd1de2b13ddf8e8b067f44a878c73f327dd3788102831369776117fb0d";
+    "595ef213d7ebc6ede5b6227c8f8387d3efecadd60353db900323e23e565f8910";
 
 #[test]
 fn determinism_contact_veto() {
