@@ -1069,6 +1069,11 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
             time_to_sleep: Fix128::from_int(60) * writer_step(),
             ..alice_physics_core::SleepConfig::default()
         });
+        // the poses were written into the rebuilt world to reproduce the writer's
+        // state, not moved there from outside its step: a state round trip makes
+        // them the poses the dynamics left (a version 1 blob holds no such memory)
+        let state = original.serialize_state();
+        assert!(original.deserialize_state(&state));
         assert_eq!(
             restored.snapshot_world(),
             original.snapshot_world(),

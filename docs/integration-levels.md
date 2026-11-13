@@ -56,7 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 41 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 69 of 237 items) | 69 / 138 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 72 of 240 items) | 72 / 138 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 2 of 10 items) | 2 / 8 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |

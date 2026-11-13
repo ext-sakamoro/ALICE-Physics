@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6231 |
+| 🟢 Not ignored (run by CI) | 6234 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6334** |
+| **Total** | **6337** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -165,7 +165,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6231)
+## 🟢 Not ignored (6234)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -624,6 +624,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
+| `analytic_displaced_overlap.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
 | `analytic_joint_break_transmits_nothing.rs` | 3 |
 | `analytic_joint_compliance_xpbd.rs` | 3 |

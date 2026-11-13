@@ -2286,9 +2286,10 @@ mod tests {
     /// that stayed asleep would not move at all. A zero spin leaves it asleep, so a caller that
     /// stops a body every frame still lets it sleep.
     ///
-    /// Limit: a body set off its balance does not topple, asleep or awake, since a contact gives
-    /// it no turning moment. So `set_rotation` is held to being awake and to its closed-form height,
-    /// not to falling over.
+    /// A box set 30 degrees off its face is woken, the overlap the setter made is pushed out
+    /// without velocity, and the box topples back onto its face (its centre of mass is not over
+    /// the edge it is left on, 30 < 45 degrees): it comes to rest at height 1/2, sunk by the
+    /// compliant overlap of its four corners (`tests/analytic_displaced_overlap.rs`).
     #[test]
     fn a_setter_wakes_a_sleeping_body() {
         // SAFETY: the world pointers come from alice_physics_world_create and are destroyed here
@@ -2315,9 +2316,8 @@ mod tests {
             assert_ne!((&*c).bodies[0].rotation, before, "not turned");
             alice_physics_world_destroy(c);
 
-            // tilted 30 degrees about z: awake again, and the lowest edge is pushed out of the
-            // floor, so the centre ends at 1/2 (cos 30 + sin 30) above it. The contact gives this
-            // body no turning moment, so it stays at that angle, asleep or awake.
+            // tilted 30 degrees about z: awake again, the lowest edge is pushed out of the floor
+            // without velocity, and the box topples back onto its face and rests at height 1/2
             let c = box_asleep_on_a_floor();
             let (s, co) = (0.258_819_045_102_520_74, 0.965_925_826_289_068_3);
             let tilted = AliceQuat {
@@ -2328,12 +2328,27 @@ mod tests {
             };
             assert_eq!(alice_physics_body_set_rotation(c, 0, tilted), 1);
             assert!(!(&*c).is_sleeping(0));
-            for _ in 0..60 {
+            alice_physics_world_step(c, 1.0 / 60.0);
+            let v = (&*c).bodies[0].velocity;
+            let (vx, vy, vz) = (v.x.to_f64(), v.y.to_f64(), v.z.to_f64());
+            let speed = (vx * vx + vy * vy + vz * vz).sqrt();
+            assert!(
+                speed <= 10.0 / 60.0,
+                "pushed out with {speed} m/s, more than g dt"
+            );
+            for _ in 0..600 {
                 alice_physics_world_step(c, 1.0 / 60.0);
             }
+            // 1000 kg on four corners, each side's compliance alpha: (m g / 4) 2 alpha, to the
+            // resolution 2^-64 of each alpha
+            let alpha = crate::material::DEFAULT_CONTACT_COMPLIANCE.to_f64();
+            let resolution = 1.0 / 18_446_744_073_709_551_616.0;
+            let sink = 1000.0 * 10.0 / 4.0 * 2.0 * alpha * (1.0 + 2.0 * resolution / alpha);
             let y = (&*c).bodies[0].position.y.to_f64();
-            let edge = 0.5 * (3f64.sqrt() / 2.0 + 0.5);
-            assert!((y - edge).abs() < 0.01, "{y} against {edge}");
+            assert!(
+                (0.5 - y) >= -1e-12 && (0.5 - y) <= sink,
+                "{y} against 0.5 sunk by {sink}"
+            );
             alice_physics_world_destroy(c);
         }
     }

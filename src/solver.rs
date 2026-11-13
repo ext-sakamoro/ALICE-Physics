@@ -1826,6 +1826,18 @@ pub struct PhysicsWorld {
     /// As `static_touch`, for the body pairs' contact points, as
     /// `(body_a, body_b, feature)`.
     body_touch: Vec<(usize, usize, u32)>,
+    /// The pose each body was left at by the dynamics of the last substep
+    /// (`None` for a body added since). A dynamic body that starts a substep at
+    /// another pose was moved from outside the step (a pose setter, a write of
+    /// `bodies[..]`): its contact points forget the previous substep and count
+    /// as new, so the overlap that move made is pushed out by position and never
+    /// reaches the compliant solve (`forget_displaced_touches`).
+    substep_end_poses: Vec<Option<(Vec3Fix, QuatFix)>>,
+    /// The bodies `forget_displaced_touches` found moved from outside the step
+    /// at the head of this substep, ascending. In a pair where only one of the
+    /// two moved, the push-out moves that one alone (`push_apart`): the overlap
+    /// was made by its move, and the partner is where the dynamics left it.
+    moved_from_outside: Vec<usize>,
     /// For each contact constraint of the substep: where it came from and
     /// whether its point is new this substep (not found in the previous one).
     contact_source: Vec<(ContactSource, bool)>,
@@ -2148,6 +2160,8 @@ impl PhysicsWorld {
             static_touch: Vec::new(),
             sdf_touch: Vec::new(),
             body_touch: Vec::new(),
+            substep_end_poses: Vec::new(),
+            moved_from_outside: Vec::new(),
             contact_source: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
@@ -2729,6 +2743,10 @@ impl PhysicsWorld {
         }
         self.body_touch.retain(|&(a, b, _)| a < b);
         self.body_touch.sort_unstable();
+        if idx < self.substep_end_poses.len() {
+            self.substep_end_poses.swap_remove(idx);
+        }
+        self.substep_end_poses.truncate(self.bodies.len());
 
         // Rebuild IslandManager to match new body count and connectivity
         let new_len = self.bodies.len();
@@ -5143,6 +5161,7 @@ impl PhysicsWorld {
         // re-detected per sub-step — see the method doc), at the poses the
         // tick starts with: a pair closing within the tick is kept as a
         // speculative contact (its margin is over the whole tick, `h = dt`).
+        self.forget_displaced_touches();
         self.clear_contacts();
         self.detect_collisions(dt);
 
@@ -5469,6 +5488,8 @@ impl PhysicsWorld {
             self.note_rigid_overflow();
         }
 
+        self.record_substep_end_poses();
+
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
         // `damping` factor, so this still needs to run here).
@@ -5611,6 +5632,7 @@ impl PhysicsWorld {
 
     /// Single substep
     fn substep(&mut self, dt: Fix128) {
+        self.forget_displaced_touches();
         // 0. Joint motors act as external forces / torques of this substep.
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
@@ -5663,11 +5685,14 @@ impl PhysicsWorld {
         self.solve_joints_dispatch(dt);
 
         self.update_velocities(dt);
+
+        self.record_substep_end_poses();
     }
 
     /// Single substep with batched constraint solving
     #[cfg(feature = "parallel")]
     fn substep_batched(&mut self, dt: Fix128) {
+        self.forget_displaced_touches();
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
@@ -5717,6 +5742,8 @@ impl PhysicsWorld {
         self.solve_joints_dispatch(dt);
 
         self.update_velocities(dt);
+
+        self.record_substep_end_poses();
     }
 
     /// Integrate positions (shared between sequential and batched)
@@ -7193,6 +7220,7 @@ impl PhysicsWorld {
         // Callable on its own (outside `step_with_bridge`), so it is an entry
         // of its own for the rotations too.
         self.make_body_rotations_unit();
+        self.forget_displaced_touches();
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
@@ -7231,6 +7259,8 @@ impl PhysicsWorld {
         }
 
         self.update_velocities(dt);
+
+        self.record_substep_end_poses();
     }
 
     /// v0.10.0 opt-in: run one substep with the contact-solve stage
@@ -8731,6 +8761,46 @@ impl PhysicsWorld {
         self.body_touch = touch;
     }
 
+    /// Whether dynamic body `i` starts this substep away from the pose the
+    /// last substep's dynamics left it at (`substep_end_poses`). The rotation is
+    /// compared as stored and as made unit (`make_body_rotations_unit` at the
+    /// head of a step is not a move). A body with no recorded pose has not moved.
+    pub(crate) fn displaced_since_substep(&self, i: usize) -> bool {
+        let Some(Some((position, rotation))) = self.substep_end_poses.get(i).copied() else {
+            return false;
+        };
+        let b = &self.bodies[i];
+        b.is_dynamic()
+            && (b.position != position
+                || (b.rotation != rotation && b.rotation != rotation.unit_rotation()))
+    }
+
+    /// Forget the contact points of the previous substep for every body moved
+    /// from outside the step since it (`displaced_since_substep`): its points
+    /// are then new, and `push_out_new_points` pushes out the overlap the move
+    /// made by position, without velocity. The compliant solve acts only on the
+    /// overlap the previous substep's dynamics left.
+    pub(crate) fn forget_displaced_touches(&mut self) {
+        let moved: Vec<usize> = (0..self.bodies.len())
+            .filter(|&i| self.displaced_since_substep(i))
+            .collect();
+        self.moved_from_outside.clone_from(&moved);
+        if moved.is_empty() {
+            return;
+        }
+        let hit = |b: usize| moved.binary_search(&b).is_ok();
+        self.static_touch.retain(|&(b, _, _)| !hit(b));
+        self.sdf_touch.retain(|&(b, _, _)| !hit(b));
+        self.body_touch.retain(|&(a, b, _)| !hit(a) && !hit(b));
+    }
+
+    /// Record the pose every body ends this substep at (`substep_end_poses`).
+    pub(crate) fn record_substep_end_poses(&mut self) {
+        self.substep_end_poses.clear();
+        self.substep_end_poses
+            .extend(self.bodies.iter().map(|b| Some((b.position, b.rotation))));
+    }
+
     /// Push out the overlap the bodies started the substep with, at the
     /// contact points new this substep that the hooks and modifiers kept
     /// (`contact_source`; a vetoed or discarded point never moves a body).
@@ -9034,7 +9104,17 @@ impl PhysicsWorld {
         let movable = |body: &RigidBody| !body.inv_mass.is_zero() && !body.is_sensor;
         let a0 = self.bodies[a];
         let b0 = b.map_or(still, |j| self.bodies[j]);
-        let (moves_a, moves_b) = (movable(&a0), b.is_some() && movable(&b0));
+        // In a pair where one body moved from outside the step and the other did
+        // not, the moved one alone is pushed (the overlap is its move's).
+        let moved = |i: usize| self.moved_from_outside.binary_search(&i).is_ok();
+        let (held_a, held_b) = match b {
+            Some(j) if moved(a) != moved(j) => (!moved(a), moved(a)),
+            _ => (false, false),
+        };
+        let (moves_a, moves_b) = (
+            movable(&a0) && !held_a,
+            b.is_some() && movable(&b0) && !held_b,
+        );
         if !moves_a && !moves_b {
             return;
         }
@@ -9668,6 +9748,8 @@ impl PhysicsWorld {
             self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         }
         self.body_materials.truncate(n);
+        // a saved state is a state of the dynamics: every body was left there by it
+        self.record_substep_end_poses();
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
         // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_time 0) に
@@ -9752,6 +9834,152 @@ impl core::fmt::Debug for PhysicsWorld {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    // The start-of-substep push for the overlaps the dynamics did not make
+    // (`forget_displaced_touches`, `push_out_new_points`), against closed forms:
+    // after one step the velocity is at most what gravity gives in it (`g dt`),
+    // and no point stays deeper than the push's stopping tolerance.
+
+    fn dense_cube(w: &mut PhysicsWorld, half: Fix128, at: Vec3Fix) -> usize {
+        w.add_shaped_body(
+            &crate::shape::Shape::Box {
+                half_extents: Vec3Fix::new(half, half, half),
+            },
+            Fix128::from_int(1000),
+            at,
+        )
+        .expect("a cube")
+    }
+
+    fn eighth_turn_about(axis: Vec3Fix) -> QuatFix {
+        QuatFix::from_axis_angle(axis, Fix128::PI / Fix128::from_int(6))
+    }
+
+    fn speed_of(w: &PhysicsWorld, i: usize) -> Fix128 {
+        w.bodies[i].velocity.length()
+    }
+
+    fn g_dt() -> Fix128 {
+        Fix128::from_int(10) * Fix128::from_ratio(1, 60)
+    }
+
+    /// A cube turned 30 degrees into the SDF plane `y = 0` from outside the step:
+    /// pushed out by position (turning, so its points are measured again), and
+    /// it ends the step with no more than `g dt` of speed.
+    #[test]
+    fn a_cube_turned_into_an_sdf_floor_is_pushed_out_without_velocity() {
+        let mut w = PhysicsWorld::new(SolverConfig::default());
+        w.add_sdf_collider(crate::sdf_collider::SdfCollider::new_static(
+            Box::new(crate::sdf_collider::ClosureSdf::new(
+                |_x, y, _z| y,
+                |_x, _y, _z| (0.0, 1.0, 0.0),
+            )),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+        let half = Fix128::from_ratio(1, 2);
+        let c = dense_cube(&mut w, half, Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO));
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..30 {
+            w.step(dt);
+        }
+        w.bodies[c].set_rotation(eighth_turn_about(Vec3Fix::UNIT_Z));
+        w.wake_body(c);
+        assert!(w.displaced_since_substep(c));
+        w.step(dt);
+        assert!(speed_of(&w, c) <= g_dt(), "{:?}", w.bodies[c].velocity);
+    }
+
+    /// Two cubes stacked on the floor, the upper one turned 30 degrees into the
+    /// lower one from outside the step: the upper one alone is pushed out (the
+    /// overlap is its move's; its points are measured again after the turn), so
+    /// the lower one is not driven into the floor, and neither leaves with more
+    /// than `g dt`.
+    #[test]
+    fn two_cubes_moved_into_each_other_are_pushed_apart_without_velocity() {
+        let mut w = PhysicsWorld::new(SolverConfig::default());
+        w.add_static_collider(crate::static_collider::StaticCollider::Plane(
+            crate::plane_collider::PlaneCollider::new(Vec3Fix::UNIT_Y, Fix128::ZERO),
+        ));
+        let half = Fix128::from_ratio(1, 2);
+        let low = dense_cube(&mut w, half, Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO));
+        let high = dense_cube(
+            &mut w,
+            half,
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 2), Fix128::ZERO),
+        );
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..30 {
+            w.step(dt);
+        }
+        let floor_overlap = |w: &PhysicsWorld| half - w.bodies[low].position.y;
+        let before = floor_overlap(&w);
+        w.bodies[high].set_rotation(eighth_turn_about(Vec3Fix::UNIT_X));
+        w.wake_body(high);
+        w.step(dt);
+        for i in [low, high] {
+            assert!(
+                speed_of(&w, i) <= g_dt(),
+                "body {i}: {:?}",
+                w.bodies[i].velocity
+            );
+        }
+        // the lower cube is not pushed into the floor: its overlap stays the
+        // compliant one of the load it carries, at most both cubes' weight on
+        // four corners, (2 m g / 4) 2 alpha with m = 1000 kg (each alpha a Fix128,
+        // so to its resolution: two units of 2^-64)
+        let alpha = crate::material::DEFAULT_CONTACT_COMPLIANCE;
+        let most = Fix128::from_int(2 * 1000 * 10 / 4 * 2) * (alpha + Fix128::from_raw(0, 2));
+        assert!(before <= most, "{before:?}");
+        assert!(
+            floor_overlap(&w) <= most,
+            "{:?} after, {before:?} before",
+            floor_overlap(&w)
+        );
+    }
+
+    /// A plain sphere written 1/4 into the top face of a cube resting on the
+    /// floor: the sphere alone is pushed out by position, the cube stays, and
+    /// neither leaves with more than `g dt`.
+    #[test]
+    fn a_sphere_moved_into_a_cube_is_pushed_out_without_velocity() {
+        let mut w = PhysicsWorld::new(SolverConfig::default());
+        w.add_static_collider(crate::static_collider::StaticCollider::Plane(
+            crate::plane_collider::PlaneCollider::new(Vec3Fix::UNIT_Y, Fix128::ZERO),
+        ));
+        let half = Fix128::from_ratio(1, 2);
+        let cube = dense_cube(&mut w, half, Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO));
+        let ball = w.add_body_with_radius(
+            RigidBody::new_dynamic(
+                Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 2), Fix128::ZERO),
+                Fix128::from_int(100),
+            ),
+            half,
+        );
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..60 {
+            w.step(dt);
+        }
+        let y = w.bodies[ball].position.y - Fix128::from_ratio(1, 4);
+        w.bodies[ball].position.y = y;
+        w.wake_body(ball);
+        assert!(w.displaced_since_substep(ball));
+        let cube_at = w.bodies[cube].position;
+        w.step(dt);
+        for i in [cube, ball] {
+            assert!(
+                speed_of(&w, i) <= g_dt(),
+                "body {i}: {:?}",
+                w.bodies[i].velocity
+            );
+        }
+        // the cube stays: only the compliant sink of the ball's weight on it can
+        // move it, (m_ball g / 4) 2 alpha at most (each alpha to two units of 2^-64)
+        let alpha = crate::material::DEFAULT_CONTACT_COMPLIANCE;
+        let most = Fix128::from_int(100 * 10 / 4 * 2) * (alpha + Fix128::from_raw(0, 2));
+        let moved = (w.bodies[cube].position - cube_at).length();
+        assert!(moved <= most, "the cube moved {moved:?}");
+    }
 
     /// Every way a cloth reaches the world steps it: added with `add_cloth`, pushed straight onto the
     /// public `cloths`, and made by either constructor (`new_grid`, `from_mesh`). Each ends where the

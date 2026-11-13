@@ -2000,6 +2000,9 @@ struct Decoded {
     /// before)
     touches: [Vec<(usize, usize, u32)>; 3],
     speculative_contacts: bool,
+    /// The bodies moved from outside the step since the last substep, with the
+    /// pose the dynamics left each at (version 10 flag bit 1; none before)
+    displaced: Vec<(usize, Vec3Fix, QuatFix)>,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -2045,7 +2048,11 @@ impl PhysicsWorld {
     /// ([`ContactConstraint::compliance`]), each material with its contact
     /// compliance, and appends the contact points of the last substep (the
     /// static, SDF and body-pair touch sets: which points the next substep
-    /// finds again) and [`crate::solver::SolverConfig::speculative_contacts`].
+    /// finds again) and a flags byte: bit 0 [`crate::solver::SolverConfig::speculative_contacts`]
+    /// off, bit 1 a list follows of the bodies moved from outside the step since
+    /// the last substep (`u64` count, at least 1, then per body ascending its index
+    /// `u64` and the pose the dynamics left it at, `Vec3Fix` and `QuatFix`); another
+    /// bit is refused. A world with no such body writes the byte as before.
     pub const WORLD_SNAPSHOT_VERSION: u16 = 10;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
@@ -2429,7 +2436,23 @@ impl PhysicsWorld {
                 t.u32(f);
             }
         }
-        t.bool(!self.config.speculative_contacts);
+        // flags: bit 0 speculative contacts off; bit 1 the bodies moved from
+        // outside the step since the last substep follow, each with the pose
+        // the dynamics left it at (`substep_end_poses`); no other bit is set
+        let displaced: Vec<usize> = (0..self.bodies.len())
+            .filter(|&i| self.displaced_since_substep(i))
+            .collect();
+        t.u8(u8::from(!self.config.speculative_contacts) | if displaced.is_empty() { 0 } else { 2 });
+        if !displaced.is_empty() {
+            t.usize(displaced.len());
+            for i in displaced {
+                if let Some(Some((p, q))) = self.substep_end_poses.get(i).copied() {
+                    t.usize(i);
+                    t.vec3(p);
+                    t.quat(q);
+                }
+            }
+        }
         let section = t.0.len();
         w.0.extend_from_slice(&t.0);
         w.usize(section);
@@ -2810,6 +2833,12 @@ impl PhysicsWorld {
         self.sdf_touch = sdf_touch;
         self.body_touch = body_touch;
         self.config.speculative_contacts = d.speculative_contacts;
+        // every body was left by the dynamics where it is now, except the ones
+        // the snapshot names as moved since (none before version 10)
+        self.record_substep_end_poses();
+        for (i, p, q) in d.displaced {
+            self.substep_end_poses[i] = Some((p, q));
+        }
     }
 }
 
@@ -3335,10 +3364,12 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     };
     let mut touches: [Vec<(usize, usize, u32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     let mut speculative_contacts = true;
+    let mut displaced: Vec<(usize, Vec3Fix, QuatFix)> = Vec::new();
     if version >= 10 {
         // The section: each contact's point number and compliance, each
-        // material's contact compliance, the touch sets, the speculative
-        // setting (written as "off"), then the section's length.
+        // material's contact compliance, the touch sets, the flags (bit 0 the
+        // speculative setting written as "off", bit 1 the moved bodies follow),
+        // then the section's length.
         const S: &str = "contact_section";
         let start = r.pos;
         // ascending, each naming a contact / material that is there
@@ -3379,7 +3410,27 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
                 set.push(entry);
             }
         }
-        speculative_contacts = !r.bool(S)?;
+        let flags = r.u8()?;
+        if flags & !3 != 0 {
+            return Err(WorldSnapshotError::InvalidValue { section: S });
+        }
+        speculative_contacts = flags & 1 == 0;
+        if flags & 2 != 0 {
+            // ascending body indices, at least one (the bit says some follow)
+            let n = r.len(S, 8 + 3 * 16 + 4 * 16)?;
+            if n == 0 {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            for _ in 0..n {
+                let i = r.usize(S)?;
+                if i >= bodies.len() || displaced.last().is_some_and(|(l, _, _)| *l >= i) {
+                    return Err(WorldSnapshotError::InvalidValue { section: S });
+                }
+                let p = r.vec3()?;
+                let q = r.quat()?;
+                displaced.push((i, p, q));
+            }
+        }
         let length = r.pos - start;
         if r.usize(S)? != length {
             return Err(WorldSnapshotError::InvalidValue { section: S });
@@ -3426,6 +3477,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         next_grab_id,
         touches,
         speculative_contacts,
+        displaced,
         ids: None,
     })
 }
@@ -4894,6 +4946,142 @@ mod tests {
         let payload = (cut.len() - super::HEADER_LEN_V4) as u64;
         cut[8..16].copy_from_slice(&payload.to_le_bytes());
         assert!(t.restore_world(&reseal(cut)).is_err(), "a cut section");
+    }
+
+    /// A body moved from outside the step since the last substep (a raw write
+    /// of its position) is named in the version 10 flags with the pose the
+    /// dynamics left it at: the restored world finds it displaced as the source
+    /// world does, keeps the same recorded poses, and writes the same blob.
+    /// Without such a body the flags byte is the speculative bit alone (`0`).
+    #[test]
+    fn a_body_moved_from_outside_the_step_is_saved_as_moved() {
+        let mut w = sectioned_world();
+        for _ in 0..20 {
+            w.step(fx(1, 60));
+        }
+        let still = w.snapshot_world();
+        let n = still.len() - super::CHECKSUM_LEN;
+        assert_eq!(still[n - 9], 0, "no body moved: the flags byte as before");
+        let moved = w
+            .bodies
+            .iter()
+            .position(|b| b.is_dynamic())
+            .expect("a dynamic body");
+        w.bodies[moved].position.y = w.bodies[moved].position.y + Fix128::from_ratio(1, 10);
+        assert!(w.displaced_since_substep(moved));
+        let blob = w.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("restores");
+        assert!(t.displaced_since_substep(moved));
+        assert_eq!(t.substep_end_poses, w.substep_end_poses);
+        assert_eq!(t.snapshot_world(), blob, "round trip");
+    }
+
+    /// A blob written before version 10 carries no memory of the last substep:
+    /// every body restores as left there by the dynamics (none displaced), even
+    /// when the source world held a moved body.
+    #[test]
+    fn a_version_9_blob_restores_with_no_body_moved() {
+        let mut w = sectioned_world();
+        for _ in 0..20 {
+            w.step(fx(1, 60));
+        }
+        let moved = w
+            .bodies
+            .iter()
+            .position(|b| b.is_dynamic())
+            .expect("a dynamic body");
+        w.bodies[moved].position.y = w.bodies[moved].position.y + Fix128::from_ratio(1, 10);
+        let blob = w.snapshot_world();
+        // version 9: drop the contact section and its length, set the version
+        let n = blob.len() - super::CHECKSUM_LEN;
+        let mut len = [0u8; 8];
+        len.copy_from_slice(&blob[n - 8..n]);
+        let section = usize::try_from(u64::from_le_bytes(len)).expect("small");
+        let mut old = blob[..n - 8 - section].to_vec();
+        old.extend_from_slice(&[0u8; super::CHECKSUM_LEN]);
+        old[4..6].copy_from_slice(&9u16.to_le_bytes());
+        let payload = (old.len() - super::CHECKSUM_LEN - super::HEADER_LEN_V4) as u64;
+        old[8..16].copy_from_slice(&payload.to_le_bytes());
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&reseal(old))
+            .expect("the version 9 blob restores");
+        assert!(!t.displaced_since_substep(moved), "no memory: not moved");
+        assert!((0..t.bodies.len()).all(|i| !t.displaced_since_substep(i)));
+    }
+
+    /// A flags byte with a bit other than 0 and 1, or bit 1 with an empty list,
+    /// is refused with a typed error, not read past.
+    #[test]
+    fn unknown_contact_flags_are_refused() {
+        let mut w = sectioned_world();
+        for _ in 0..20 {
+            w.step(fx(1, 60));
+        }
+        let blob = w.snapshot_world();
+        let n = blob.len() - super::CHECKSUM_LEN;
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        for flags in [4u8, 0x80] {
+            let mut bad = blob.clone();
+            bad[n - 9] = flags;
+            assert!(
+                matches!(
+                    t.restore_world(&reseal(bad)),
+                    Err(WorldSnapshotError::InvalidValue { .. })
+                ),
+                "flags {flags:#x}"
+            );
+        }
+        // bit 1 with a count of 0: the list is there but names no body
+        let mut empty = blob[..n - 8].to_vec();
+        let at = empty.len() - 1;
+        empty[at] = 2;
+        empty.extend_from_slice(&0u64.to_le_bytes());
+        let section = {
+            let mut l = [0u8; 8];
+            l.copy_from_slice(&blob[n - 8..n]);
+            u64::from_le_bytes(l) + 8
+        };
+        empty.extend_from_slice(&section.to_le_bytes());
+        empty.extend_from_slice(&[0u8; super::CHECKSUM_LEN]);
+        let payload = (empty.len() - super::CHECKSUM_LEN - super::HEADER_LEN_V4) as u64;
+        empty[8..16].copy_from_slice(&payload.to_le_bytes());
+        assert!(matches!(
+            t.restore_world(&reseal(empty)),
+            Err(WorldSnapshotError::InvalidValue { .. })
+        ));
+    }
+
+    /// A material with a contact compliance other than the default is written
+    /// in the version 10 contact section and comes back: the restored world's
+    /// table holds the same compliance and writes the same blob.
+    #[test]
+    fn a_material_contact_compliance_round_trips() {
+        let mut w = sectioned_world();
+        let soft = crate::material::PhysicsMaterial::default()
+            .with_contact_compliance(Fix128::from_ratio(1, 1 << 20));
+        let id = w.material_table.register(soft);
+        let first = w
+            .bodies
+            .iter()
+            .position(|b| b.is_dynamic())
+            .expect("a dynamic body");
+        w.set_body_material(first, id);
+        for _ in 0..5 {
+            w.step(fx(1, 60));
+        }
+        let blob = w.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("restores");
+        let find = |w: &PhysicsWorld| {
+            w.material_table
+                .materials
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| m.contact_compliance)
+        };
+        assert_eq!(find(&t), Some(Fix128::from_ratio(1, 1 << 20)));
+        assert_eq!(t.snapshot_world(), blob, "round trip");
     }
 
     fn header_id(b: &[u8], at: usize) -> [u8; 32] {
