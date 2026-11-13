@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6175 |
-| 🔴 Red by design | 71 |
+| 🟢 Not ignored (run by CI) | 6229 |
+| 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6277** |
+| **Total** | **6332** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (72)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -23,6 +23,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_3` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear locking: the tip deflection of a cantilever under its own weight is 0.49 of the Timoshe…
 - `a_cantilever_under_its_own_weight_bends_by_the_timoshenko_tip_deflection_at_nu_0_49` (analytic_fem_cantilever_bending.rs) — known defect: P1 shear and volumetric locking at ν 0.49: the tip deflection is 0.09 of the Timoshenko closed f…
+- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
@@ -110,7 +111,7 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (10)
+## ⚠️ Known defects without an id (11)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
@@ -122,6 +123,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
+- `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
@@ -163,7 +165,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6175)
+## 🟢 Not ignored (6229)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -459,6 +461,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_hyperelastic.rs` | 9 |
 | `analytic_ragdoll_wiring.rs` | 9 |
 | `analytic_rans_wall_function.rs` | 9 |
+| `analytic_static_contact_response.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
 | `analytic_world_query_precision.rs` | 9 |
@@ -501,6 +504,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_molecular_dynamics.rs` | 8 |
 | `indep_orbit_nbody.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
+| `world_snapshot_previous_semantics.rs` | 8 |
 | `analytic_axis_lock.rs` | 7 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
@@ -524,7 +528,6 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_quality.rs` | 7 |
 | `trimesh_raycast_bruteforce.rs` | 7 |
 | `wm07_reset_and_rollback_contract.rs` | 7 |
-| `world_snapshot_previous_semantics.rs` | 7 |
 | `analytic_analytics_bridge_wiring.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |
@@ -573,6 +576,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `faulted_world_refuses_changes.rs` | 5 |
+| `fix128_product_rounding.rs` | 5 |
 | `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
@@ -584,10 +588,12 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_damping_rate.rs` | 4 |
 | `analytic_joint_break_bridge.rs` | 4 |
+| `analytic_kinematic_impact.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_shaped_static_contact.rs` | 4 |
 | `analytic_slider_reaction_limit.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
+| `analytic_vec_small_length.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
 | `analytic_world_query_cylinder_sphere.rs` | 4 |
 | `audit_bridge_self_joint.rs` | 4 |
@@ -623,9 +629,12 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_joint_compliance_xpbd.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
 | `analytic_physical_pendulum.rs` | 3 |
+| `analytic_resting_box_manifold.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
+| `analytic_sphere_inertia.rs` | 3 |
 | `analytic_static_hit_events.rs` | 3 |
+| `analytic_static_target.rs` | 3 |
 | `analytic_world_query_round_solids.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
@@ -651,17 +660,25 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
+| `analytic_compliant_rest.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
 | `analytic_impulse_sign_exact.rs` | 2 |
 | `analytic_impulsive_burn_vis_viva.rs` | 2 |
 | `analytic_mesh_grazing_cast.rs` | 2 |
+| `analytic_pair_pre_projection.rs` | 2 |
+| `analytic_rocking_block.rs` | 2 |
 | `analytic_rotation_integration.rs` | 2 |
 | `analytic_scalar_field_first_order_decay.rs` | 2 |
+| `analytic_sin_cos_small_angle.rs` | 2 |
+| `analytic_sphere_exact_contact.rs` | 2 |
+| `analytic_stack_force.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
+| `analytic_tgs_contact_separation.rs` | 2 |
 | `analytic_tgs_rotation.rs` | 2 |
 | `analytic_xpbd_angular_velocity.rs` | 2 |
 | `audit_c_fatigue.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
+| `fix128_one_product_definition.rs` | 2 |
 | `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
@@ -674,13 +691,19 @@ Per-file counts (the test names are in `tests/`):
 | `world_query_previous_bits.rs` | 2 |
 | `analytic_add_force_is_immediate.rs` | 1 |
 | `analytic_fem_convergence.rs` | 1 |
+| `analytic_flat_landing.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
 | `analytic_hypot3_max_tie.rs` | 1 |
+| `analytic_no_ghost_contact.rs` | 1 |
 | `analytic_pd_step_response.rs` | 1 |
 | `analytic_ray_scale_threshold.rs` | 1 |
+| `analytic_resting_box_mirror.rs` | 1 |
+| `analytic_restitution_threshold.rs` | 1 |
 | `analytic_rope_catenary.rs` | 1 |
 | `analytic_sdf_fem_mesh_flat_face.rs` | 1 |
+| `analytic_simultaneous_impact.rs` | 1 |
+| `analytic_sphere_landing_depth.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
