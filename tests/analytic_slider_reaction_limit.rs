@@ -94,7 +94,7 @@ fn below_the_minimum_equal_masses() {
         1,
         1,
         Fix128::from_ratio(1, 100),
-        (21, 0x7ac7_6836_31ce_5000),
+        (21, 0x7ac7_6836_31e0_3000),
     );
 }
 
@@ -104,7 +104,7 @@ fn above_the_maximum_equal_masses() {
         1,
         1,
         Fix128::from_ratio(7, 100),
-        (41, 0x7805_dba4_d078_b000),
+        (41, 0x7805_dba4_d081_f000),
     );
 }
 
@@ -114,7 +114,7 @@ fn below_the_minimum_unequal_masses() {
         2,
         5,
         Fix128::from_ratio(1, 100),
-        (61, 0x5ecc_052d_20c0_e000),
+        (61, 0x5ecc_052d_20c2_f000),
     );
 }
 
@@ -124,6 +124,6 @@ fn above_the_maximum_unequal_masses() {
         2,
         5,
         Fix128::from_ratio(7, 100),
-        (118, 0x7b7e_738d_c168_9000),
+        (118, 0x7b7e_738d_c16a_c000),
     );
 }

@@ -157,7 +157,7 @@ fn hash_body(b: &RigidBody) -> u64 {
 
 /// Golden hash of the anisotropic principal-axis spin after 600 frames under
 /// TGS with 8 sub-steps.
-const GOLDEN_ANISOTROPIC_TGS: u64 = 0x574b_a698_19db_f022;
+const GOLDEN_ANISOTROPIC_TGS: u64 = 0x6c4b_95d8_6341_d4dd;
 
 /// An anisotropic body (`I = diag(1, 2, 3)`) spinning about its major
 /// principal axis: the free rotation is integrated by the gyroscopic

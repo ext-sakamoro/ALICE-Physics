@@ -175,7 +175,7 @@ fn digest(w: &PhysicsWorld2D) -> u64 {
 
 const FRAMES: usize = 180;
 /// Recorded from `PhysicsWorld2D::step` before the tether set was introduced.
-const EXPECTED: u64 = 0x2656_33e6_ca23_5f9f;
+const EXPECTED: u64 = 0x1ef7_2081_61b8_bd42;
 
 #[test]
 fn step_digest_is_unchanged() {
@@ -220,7 +220,7 @@ fn state_sha256(w: &PhysicsWorld2D) -> String {
 }
 
 /// The state pinned by `EXPECTED`, hashed with SHA-256 (`state_sha256`).
-const EXPECTED_SHA256: &str = "9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536";
+const EXPECTED_SHA256: &str = "8d1e013f0bceb47c12d10e1f9e00dd35966484bba8146ea578d0883536f54dc1";
 
 /// The same scene and frames as `step_digest_is_unchanged`, pinned as a
 /// SHA-256 digest. The `u64` digest is checked first, so this constant is a

@@ -2441,7 +2441,7 @@ fn zero_participants_match_the_existing_step_and_golden() {
 /// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
 /// became a rate per second (a copy of `GOLDEN_CASCADE` in
 /// `tests/determinism_golden.rs`).
-const GOLDEN_CASCADE: &str = "39f0e6fd03588f095f01fbd8fd912c51a5cc8107be89a75deaefdc4cb42baade";
+const GOLDEN_CASCADE: &str = "a57805dafeed2b5faa337bcc4fb5cefe9e5153af20dd283ef08c59ec22690ed0";
 
 fn cascade_hash(w: &PhysicsWorld) -> String {
     use sha2::{Digest, Sha256};

@@ -44,6 +44,9 @@ pub struct Laws {
     /// `Some(n)`: fold row 11 as the writers up to `e90000da…` did, a `u32` count of idle
     /// steps; `None`: as this build does, `sleep.time_to_sleep` as `Fix128`.
     pub legacy_sleep_steps: Option<u32>,
+    /// `true`: fold as the writers before 4.0 did, without the contact rows (the speculative
+    /// switch and each material's contact compliance); `false`: as this build does.
+    pub legacy_without_contact_rows: bool,
     default_friction_combine: CombineRule,
     pub default_restitution_combine: CombineRule,
     /// Materials registered after the default one.
@@ -90,6 +93,7 @@ impl Laws {
             ccd: None,
             sleep: SleepConfig::default(),
             legacy_sleep_steps: None,
+            legacy_without_contact_rows: false,
             default_friction_combine: CombineRule::Average,
             default_restitution_combine: CombineRule::Average,
             materials: Vec::new(),
@@ -133,6 +137,7 @@ impl Laws {
                 time_to_sleep: Fix128::from_ratio(17, 60),
             },
             legacy_sleep_steps: None,
+            legacy_without_contact_rows: false,
             default_friction_combine: CombineRule::Max,
             default_restitution_combine: CombineRule::Multiply,
             materials: vec![
@@ -279,14 +284,16 @@ impl Spec {
             CombineRule::Multiply => b"multiply",
         });
     }
-    fn material(&mut self, id: MaterialId, m: &PhysicsMaterial) {
+    fn material(&mut self, id: MaterialId, m: &PhysicsMaterial, with_compliance: bool) {
         self.u64(u64::from(id));
         self.fix(m.static_friction);
         self.fix(m.dynamic_friction);
         self.fix(m.restitution);
         self.rule(m.friction_combine);
         self.rule(m.restitution_combine);
-        self.fix(m.contact_compliance);
+        if with_compliance {
+            self.fix(m.contact_compliance);
+        }
     }
 }
 
@@ -312,7 +319,9 @@ pub fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
         other => panic!("no documented encoding for {other:?}"),
     });
     s.fix(c.warm_start_factor);
-    s.bool(c.speculative_contacts);
+    if !laws.legacy_without_contact_rows {
+        s.bool(c.speculative_contacts);
+    }
     s.fix(laws.contact_warm_start);
     s.u32(laws.contact_stale_frames);
     s.fix(laws.sdf_radius);
@@ -329,9 +338,17 @@ pub fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
     s.rule(laws.default_restitution_combine);
     // the default material is id 0; registered ones follow in order
     s.len(1 + laws.materials.len());
-    s.material(0, &PhysicsMaterial::default());
+    s.material(
+        0,
+        &PhysicsMaterial::default(),
+        !laws.legacy_without_contact_rows,
+    );
     for (i, m) in laws.materials.iter().enumerate() {
-        s.material(MaterialId::try_from(i + 1).expect("id"), m);
+        s.material(
+            MaterialId::try_from(i + 1).expect("id"),
+            m,
+            !laws.legacy_without_contact_rows,
+        );
     }
     // pair overrides: ordered within the pair, sorted, the last value of a pair wins
     let mut pairs: Vec<(MaterialId, MaterialId, Fix128, Fix128)> = Vec::new();

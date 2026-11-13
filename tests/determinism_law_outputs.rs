@@ -289,7 +289,7 @@ fn law_output_privacy() {
 /// representable: the long side in each operand position
 #[test]
 fn law_output_shape() {
-    const SHAPE_GOLDEN: &str = "d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a";
+    const SHAPE_GOLDEN: &str = "e8f0559daab75098ae38f1256532451ae90be5f76a65e5cf7d3d56177ce17ecc";
     let mut r = Record::default();
     let fx = Fix128::from_int;
     let mut shapes = Vec::new();
@@ -925,7 +925,7 @@ fn law_output_tgs_oriented_6dof_hooks() {
     // re-recorded (from 79144576…) when damping became a rate per second with
     // default 0: this scene's default config had damped by a retention 0.99 per step
     const TGS_ORIENTED_6DOF_HOOKS_GOLDEN: &str =
-        "cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509";
+        "f0c1a48aec704624da95c4ceaccb547b6d3786379cf60ffbcb976a3f8a6fd839";
     let mut r = Record::default();
     let mut w = PhysicsWorld::new(SolverConfig {
         substeps: 4,

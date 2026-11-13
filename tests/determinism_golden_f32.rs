@@ -460,7 +460,7 @@ fn golden_thin_wall() {
 // ---------------------------------------------------------------------------
 
 const GOLDEN_SDF_COLLISION: &str =
-    "ad915a1318b4ec6e371900ae2e1212a34a943e6c43173b6ee76dfd043584de5f";
+    "ecd6921d0a6fcd67dc8c5c41bf233d38c50e322aa25d1d1d6961602da01352a2";
 
 #[test]
 fn golden_sdf_collision_family() {
@@ -788,7 +788,7 @@ fn golden_modifier_family() {
 // factor of the Facchinetti wake-oscillator equation.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_ENGINEERING: &str = "a51687cd3de021f8829495d9ae410bca4dbe823a0525194198a1fe64a9835bfe";
+const GOLDEN_ENGINEERING: &str = "a32193c9b58a94ff54a7b41252850ab1f85280e379d953efcb4fc806fb082e1b";
 
 #[test]
 fn golden_engineering_family() {

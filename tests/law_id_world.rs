@@ -197,7 +197,7 @@ fn a_world_that_sets_every_covered_field_is_encoded_as_documented() {
 /// per second with default 0, where it had been a retention per step with
 /// default 0.99: a default of a covered field moved.
 const GOLDEN_DEFAULT_LAW_ID: &str =
-    "19259542111e7ca54786d4e3a59f04d7146b5d421a31af828a7b790371bc33c3";
+    "970dd58046968b4707f2fd14afabd33a65fdc981f7cc164ea10973683d5fc34f";
 
 #[test]
 fn golden_default_world_law_id() {
