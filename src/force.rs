@@ -593,6 +593,18 @@ fn magnet_force(
     body_idx: usize,
     body: &RigidBody,
 ) -> Vec3Fix {
+    magnet_force_of(fields, material, body_radius, |f| f.affects(body_idx), body)
+}
+
+/// [`magnet_force`] counting the magnets `affects` accepts (the body's index filter, or for a
+/// probe that is no body, the magnets that act on every body)
+fn magnet_force_of(
+    fields: &[ForceFieldInstance],
+    material: crate::material::MaterialId,
+    body_radius: Fix128,
+    affects: impl Fn(&ForceFieldInstance) -> bool,
+    body: &RigidBody,
+) -> Vec3Fix {
     use crate::electromagnetic::{dipole_sample, induced_dipole_force, DipoleSample};
     let mut sample = DipoleSample::ZERO;
     let mut properties = None;
@@ -608,7 +620,7 @@ fn magnet_force(
         else {
             continue;
         };
-        if m != material || !f.affects(body_idx) {
+        if m != material || !affects(f) {
             continue;
         }
         properties.get_or_insert((response, density));
@@ -630,6 +642,30 @@ fn magnet_force(
     }
     let volume = Fix128::ONE / (body.inv_mass * density);
     induced_dipole_force(&sample, &response, volume)
+}
+
+/// The pull the magnets naming `material` would exert on a body of that material with collision
+/// radius `body_radius` and mass `mass` whose centre is at `position`: [`magnet_force`] of a
+/// probe body there, counting the enabled magnets that act on every body (a magnet limited to a
+/// list of bodies is left out, the probe is none of them). The same function the step applies, so
+/// a drawing of a magnet's reach shows what acts. Zero when no magnet names the material.
+#[cfg(feature = "wasm")]
+#[must_use]
+pub(crate) fn magnet_force_at(
+    fields: &[ForceFieldInstance],
+    material: crate::material::MaterialId,
+    body_radius: Fix128,
+    mass: Fix128,
+    position: Vec3Fix,
+) -> Vec3Fix {
+    let probe = RigidBody::new_dynamic(position, mass);
+    magnet_force_of(
+        fields,
+        material,
+        body_radius,
+        |f| f.enabled && f.affected_bodies.is_none(),
+        &probe,
+    )
 }
 
 /// Whether every [`ForceField::InducedDipole`] naming one material carries the same response

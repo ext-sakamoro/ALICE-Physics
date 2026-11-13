@@ -814,6 +814,30 @@ impl WasmPhysicsWorld {
         .and_then(|i| u32::try_from(i).ok())
     }
 
+    /// The pull (N) the magnets naming `material` would exert on a body of that material with
+    /// collision radius `body_radius` (m) and mass `mass` (kg) centred at (x, y, z), as
+    /// `[fx, fy, fz]`: the same law a step applies, for drawing a magnet's reach. `undefined` for
+    /// a bad value or a material no magnet names.
+    #[wasm_bindgen(js_name = "magnetForceAt")]
+    pub fn magnet_force_at(
+        &self,
+        material: u32,
+        x: f64,
+        y: f64,
+        z: f64,
+        body_radius: f64,
+        mass: f64,
+    ) -> Option<Vec<f64>> {
+        let f = binding_api::magnet_force_at(
+            &self.inner,
+            material,
+            binding_api::vec3(x, y, z)?,
+            body_radius,
+            mass,
+        )?;
+        Some(vec![f.x.to_f64(), f.y.to_f64(), f.z.to_f64()])
+    }
+
     /// Add a wind zone: inside the box (`min_*` to `max_*`) a body feels the drag of a wind along
     /// `dir_*` (normalised) of `base_speed` plus `gust_amplitude`·sin(2π·`gust_hz`·t) m/s, with
     /// `air_density` (kg/m³), `drag_coefficient` and reference `area` (m²). The zone is part of the
