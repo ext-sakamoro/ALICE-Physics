@@ -277,6 +277,17 @@ fn a_blob_of_the_released_3_1_0_semantics_is_refused() {
     assert_eq!(refused_every_way(BLOB_3_1_0, WRITER_3_1_0_SEMANTICS), 8);
 }
 
+/// A blob stamped with the identifier of the build before the contact rework (`0d49c4c1…`, the
+/// joint-break build) is refused: the contact goldens moved with it, and no cross-version oracle
+/// covers that pair, so it is not an earlier identifier this build reads
+#[test]
+fn a_blob_of_the_semantics_before_the_contact_rework_is_refused() {
+    let before = "0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d";
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&unhex(before)));
+    let blob = with_id(SEMANTICS_AT, &unhex(before));
+    assert_eq!(refused_every_way(&blob, before), 8);
+}
+
 /// An identifier that is neither this build's nor a listed earlier one is
 /// refused, and the target is unchanged.
 #[test]
