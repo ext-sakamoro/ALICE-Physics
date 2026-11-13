@@ -1147,8 +1147,8 @@ pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
 ///
 /// An earlier identifier is listed only when a cross-version oracle covers it
 /// (a snapshot written by that release, restored and stepped here, bit-equal
-/// to that release's own steps). It lists one identifier, and says why the
-/// others are not listed:
+/// to that release's own steps). It lists none, and says why each earlier
+/// identifier is not listed:
 ///
 /// * `e90000da…`, the identifier with `alice-det-math` 0.5.2 at 2d01c63f
 ///   folded as a whole, is listed: folding the functions one by one moved no
@@ -1178,4 +1178,10 @@ pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
 ///   carried its correction in the substep it broke in under it and carries none now, so a
 ///   snapshot of that build holding a breakable joint does not step to that build's bits here.
 ///   The same bump takes the alice-analytics entry of [`PHYSICS_PEER_IDS`] to `67650b7f…`.
+/// * `0d49c4c1…`, the identifier before the contact rework, is not listed: contacts are point
+///   constraints at the contact point now (start overlap pushed out rigidly, speculative
+///   contacts, the kinematic bodies of the temporal Gauss–Seidel step moved by velocity inside
+///   the substeps) and the `Fix128` product rounds to nearest, ties to even, so the goldens
+///   moved and a snapshot of that build does not step to that build's bits here
+///   (`tests/world_snapshot_previous_semantics.rs` checks it is refused on every restore path).
 pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];

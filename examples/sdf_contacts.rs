@@ -10,6 +10,9 @@
 //!
 //! The example checks itself: the first impact speed against the closed form
 //! of the integration, and the participant's view against the world record.
+//! The record holds contacts as detected, speculative ones included: the first
+//! record is the gap the ball closes within its substep (negative depth), so its
+//! approach speed is the free-fall speed of that substep.
 //!
 //! ```bash
 //! cargo run --example sdf_contacts --features std
@@ -114,15 +117,27 @@ fn main() {
     let mut recorded = 0usize;
     let mut in_last_substep = 0usize;
     let mut first_impact = None;
+    let mut speculative = 0usize;
     for frame in 0..120 {
         world.step(dt);
         let contacts = world.last_step_sdf_contacts();
         for c in contacts {
             assert_eq!(c.body_index, ball);
             assert_eq!(c.collider_index, 0);
-            assert!(c.depth > Fix128::ZERO);
             if c.substep == SUBSTEPS - 1 {
                 in_last_substep += 1;
+            }
+            if c.depth <= Fix128::ZERO {
+                // a speculative contact: the gap is still open but closes within the
+                // substep at the approach speed (gap <= |v| h + g h^2), so it is recorded
+                // as detected, before the ball touches
+                let gap = -c.depth.to_f64();
+                let reach = c.approach_speed.to_f64().abs() * h + (GRAVITY as f64).abs() * h * h;
+                assert!(
+                    gap <= reach + 1e-12,
+                    "speculative gap {gap} beyond one substep {reach}"
+                );
+                speculative += 1;
             }
             if first_impact.is_none() {
                 first_impact = Some((frame, *c));
@@ -158,7 +173,10 @@ fn main() {
     // each step (it runs before that substep's resolution, and the record is
     // emptied at the head of the next step).
     let counted = *counted.lock().expect("lock");
-    println!("recorded {recorded} contacts, participant read {counted} ({in_last_substep} in last substeps)");
+    println!(
+        "recorded {recorded} contacts ({speculative} speculative), participant read {counted} \
+         ({in_last_substep} in last substeps)"
+    );
     assert!(recorded > 0);
     assert_eq!(counted, recorded - in_last_substep);
 }

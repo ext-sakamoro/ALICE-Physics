@@ -742,7 +742,7 @@ pub struct ContactConstraint {
     pub feature: u32,
     /// The pair's contact compliance `α` (m/N, [`crate::material::CombinedMaterial::compliance`]):
     /// the XPBD contact gives way by `α F` under a force `F`
-    /// ([`crate::xpbd_contact`]).
+    /// (`xpbd_contact`).
     pub compliance: Fix128,
 }
 
@@ -1463,7 +1463,7 @@ impl BodySlicePtr {
     }
 }
 
-/// Pointer wrapper for the per-body contact turns ([`crate::xpbd_contact`])
+/// Pointer wrapper for the per-body contact turns (`xpbd_contact`)
 /// written by the parallel contact phase: graph coloring gives a dynamic body
 /// to one constraint per batch, so its turn slot is written by one thread.
 #[cfg(feature = "parallel")]
@@ -1684,7 +1684,7 @@ pub struct BodyAttachments {
 /// The `body_b` of a contact against something that does not move (a static
 /// collider or an SDF collider): no body of the world, read as a static body at
 /// rest at the origin with no mass. Every read of a contact's bodies goes through
-/// [`PhysicsWorld::contact_body`], so this index never reaches `bodies[..]`.
+/// `PhysicsWorld::contact_body`, so this index never reaches `bodies[..]`.
 pub const STATIC_BODY: usize = usize::MAX;
 
 /// Where a contact constraint of the substep came from, for the push-out of
@@ -1730,7 +1730,7 @@ const PROJECTION_ROUNDS: usize = 4;
 /// The overlap (m) a new point may keep after its push-out, `2⁻⁵⁰`.
 const PROJECTION_TOLERANCE: Fix128 = Fix128 { hi: 0, lo: 1 << 14 };
 
-/// [`PhysicsWorld::contact_body`] over a slice of bodies (the TGS conversion
+/// `PhysicsWorld::contact_body` over a slice of bodies (the TGS conversion
 /// reads the world's bodies this way).
 #[inline]
 pub(crate) fn contact_body_in(bodies: &[RigidBody], i: usize) -> RigidBody {
@@ -1807,7 +1807,7 @@ pub struct PhysicsWorld {
     contact_pre_vn: Vec<Fix128>,
     /// Per contact constraint, its arms at the poses it was detected at (taken
     /// by `begin_contact_solve` once per substep, read by the XPBD contact
-    /// solve and `update_velocities`; see [`crate::xpbd_contact`]).
+    /// solve and `update_velocities`; see `xpbd_contact`).
     contact_anchors: Vec<crate::xpbd_contact::ContactAnchor>,
     /// Per body, the rotation vector the substep's contact corrections have
     /// turned it by (reset by `begin_contact_solve`).
@@ -3216,7 +3216,7 @@ impl PhysicsWorld {
 
     /// Take every contact constraint's anchor at the present poses and reset the
     /// bodies' turns: the start of the substep's XPBD contact solve (see
-    /// [`crate::xpbd_contact`]).
+    /// `xpbd_contact`).
     fn begin_contact_solve(&mut self) {
         let anchors: Vec<_> = self
             .contact_constraints

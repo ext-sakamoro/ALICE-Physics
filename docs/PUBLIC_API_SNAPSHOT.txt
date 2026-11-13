@@ -3906,6 +3906,9 @@ pub fn alice_physics_core::ellipsoid::Ellipsoid::inertia_diagonal(&self, alice_p
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::new(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::ellipsoid::Ellipsoid::volume(&self) -> alice_physics_core::math::Fix128
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::with_rotation(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix) -> Self
+impl alice_physics_core::ellipsoid::Ellipsoid
+pub fn alice_physics_core::ellipsoid::Ellipsoid::nearest_point(&self, alice_physics_core::math::Vec3Fix) -> (alice_physics_core::math::Vec3Fix, bool)
+pub fn alice_physics_core::ellipsoid::Ellipsoid::normal_at(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl alice_physics_core::collider::Support for alice_physics_core::ellipsoid::Ellipsoid
 pub fn alice_physics_core::ellipsoid::Ellipsoid::support(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl core::clone::Clone for alice_physics_core::ellipsoid::Ellipsoid
@@ -7923,6 +7926,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::material::CombineRule
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::material::CombineRule
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::material::CombineRule
 pub struct alice_physics_core::material::CombinedMaterial
+pub alice_physics_core::material::CombinedMaterial::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::material::CombinedMaterial::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::material::CombinedMaterial::restitution: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::material::CombinedMaterial
@@ -7968,6 +7972,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::material::MaterialTable
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::material::MaterialTable
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::material::MaterialTable
 pub struct alice_physics_core::material::PhysicsMaterial
+pub alice_physics_core::material::PhysicsMaterial::contact_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::material::PhysicsMaterial::dynamic_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::material::PhysicsMaterial::friction_combine: alice_physics_core::material::CombineRule
 pub alice_physics_core::material::PhysicsMaterial::id: alice_physics_core::material::MaterialId
@@ -7977,6 +7982,7 @@ pub alice_physics_core::material::PhysicsMaterial::static_friction: alice_physic
 impl alice_physics_core::material::PhysicsMaterial
 pub const fn alice_physics_core::material::PhysicsMaterial::new(alice_physics_core::material::MaterialId, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_combine_rules(self, alice_physics_core::material::CombineRule, alice_physics_core::material::CombineRule) -> Self
+pub const fn alice_physics_core::material::PhysicsMaterial::with_contact_compliance(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_static_friction(self, alice_physics_core::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics_core::material::PhysicsMaterial
 pub fn alice_physics_core::material::PhysicsMaterial::clone(&self) -> Self
@@ -7996,6 +8002,7 @@ impl core::marker::Unpin for alice_physics_core::material::PhysicsMaterial
 impl core::marker::UnsafeUnpin for alice_physics_core::material::PhysicsMaterial
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::material::PhysicsMaterial
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::material::PhysicsMaterial
+pub const alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE: alice_physics_core::math::Fix128
 pub const alice_physics_core::material::DEFAULT_MATERIAL: alice_physics_core::material::MaterialId
 pub type alice_physics_core::material::MaterialId = u16
 pub mod alice_physics_core::math
@@ -8225,6 +8232,7 @@ pub fn alice_physics_core::math::Vec3Fix::length_squared_simd(self) -> alice_phy
 pub const fn alice_physics_core::math::Vec3Fix::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize(self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize_with_length(self) -> (Self, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::math::Vec3Fix::normalize_with_length_scaled(self) -> (Self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::math::Vec3Fix::scale(self, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics_core::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
@@ -11738,6 +11746,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::collider::CollisionResult
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::collider::CollisionResult
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::collider::CollisionResult
 pub struct alice_physics_core::prelude::CombinedMaterial
+pub alice_physics_core::prelude::CombinedMaterial::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::CombinedMaterial::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::CombinedMaterial::restitution: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::material::CombinedMaterial
@@ -11929,7 +11938,9 @@ pub struct alice_physics_core::prelude::ContactConstraint
 pub alice_physics_core::prelude::ContactConstraint::body_a: usize
 pub alice_physics_core::prelude::ContactConstraint::body_b: usize
 pub alice_physics_core::prelude::ContactConstraint::cached_lambda: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::ContactConstraint::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::ContactConstraint::contact: alice_physics_core::collider::Contact
+pub alice_physics_core::prelude::ContactConstraint::feature: u32
 pub alice_physics_core::prelude::ContactConstraint::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::ContactConstraint::restitution: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::ContactConstraint
@@ -12475,6 +12486,9 @@ pub fn alice_physics_core::ellipsoid::Ellipsoid::inertia_diagonal(&self, alice_p
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::new(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::ellipsoid::Ellipsoid::volume(&self) -> alice_physics_core::math::Fix128
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::with_rotation(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix) -> Self
+impl alice_physics_core::ellipsoid::Ellipsoid
+pub fn alice_physics_core::ellipsoid::Ellipsoid::nearest_point(&self, alice_physics_core::math::Vec3Fix) -> (alice_physics_core::math::Vec3Fix, bool)
+pub fn alice_physics_core::ellipsoid::Ellipsoid::normal_at(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl alice_physics_core::collider::Support for alice_physics_core::ellipsoid::Ellipsoid
 pub fn alice_physics_core::ellipsoid::Ellipsoid::support(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl core::clone::Clone for alice_physics_core::ellipsoid::Ellipsoid
@@ -13949,6 +13963,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::phase_change::PhaseChange
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::phase_change::PhaseChangeModifier
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::phase_change::PhaseChangeModifier
 pub struct alice_physics_core::prelude::PhysicsMaterial
+pub alice_physics_core::prelude::PhysicsMaterial::contact_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::PhysicsMaterial::dynamic_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::PhysicsMaterial::friction_combine: alice_physics_core::material::CombineRule
 pub alice_physics_core::prelude::PhysicsMaterial::id: alice_physics_core::material::MaterialId
@@ -13958,6 +13973,7 @@ pub alice_physics_core::prelude::PhysicsMaterial::static_friction: alice_physics
 impl alice_physics_core::material::PhysicsMaterial
 pub const fn alice_physics_core::material::PhysicsMaterial::new(alice_physics_core::material::MaterialId, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_combine_rules(self, alice_physics_core::material::CombineRule, alice_physics_core::material::CombineRule) -> Self
+pub const fn alice_physics_core::material::PhysicsMaterial::with_contact_compliance(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_static_friction(self, alice_physics_core::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics_core::material::PhysicsMaterial
 pub fn alice_physics_core::material::PhysicsMaterial::clone(&self) -> Self
@@ -14054,6 +14070,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius_keeping_inertia(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
@@ -15513,6 +15530,7 @@ pub fn alice_physics_core::math::Vec3Fix::length_squared_simd(self) -> alice_phy
 pub const fn alice_physics_core::math::Vec3Fix::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize(self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize_with_length(self) -> (Self, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::math::Vec3Fix::normalize_with_length_scaled(self) -> (Self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::math::Vec3Fix::scale(self, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics_core::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
@@ -19092,7 +19110,9 @@ pub struct alice_physics_core::solver::ContactConstraint
 pub alice_physics_core::solver::ContactConstraint::body_a: usize
 pub alice_physics_core::solver::ContactConstraint::body_b: usize
 pub alice_physics_core::solver::ContactConstraint::cached_lambda: alice_physics_core::math::Fix128
+pub alice_physics_core::solver::ContactConstraint::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::ContactConstraint::contact: alice_physics_core::collider::Contact
+pub alice_physics_core::solver::ContactConstraint::feature: u32
 pub alice_physics_core::solver::ContactConstraint::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::solver::ContactConstraint::restitution: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::ContactConstraint
@@ -19173,6 +19193,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius_keeping_inertia(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
@@ -19398,6 +19419,7 @@ pub alice_physics_core::solver::SolverConfig::damping_rate: alice_physics_core::
 pub alice_physics_core::solver::SolverConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::solver::SolverConfig::iterations: usize
 pub alice_physics_core::solver::SolverConfig::solver_backend: alice_physics_core::solver::SolverBackend
+pub alice_physics_core::solver::SolverConfig::speculative_contacts: bool
 pub alice_physics_core::solver::SolverConfig::substeps: usize
 pub alice_physics_core::solver::SolverConfig::warm_start_factor: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::solver::SolverConfig
@@ -19502,6 +19524,7 @@ impl core::marker::Unpin for alice_physics_core::WorldCcdConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::WorldCcdConfig
+pub const alice_physics_core::solver::STATIC_BODY: usize
 pub trait alice_physics_core::solver::ContactModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics_core::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics_core::collider::Contact, &mut alice_physics_core::math::Fix128, &mut alice_physics_core::math::Fix128) -> bool
 pub type alice_physics_core::solver::PhysicsConfig = alice_physics_core::solver::SolverConfig
@@ -23759,6 +23782,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::collider::CollisionResult
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::collider::CollisionResult
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::collider::CollisionResult
 pub struct alice_physics_core::CombinedMaterial
+pub alice_physics_core::CombinedMaterial::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::CombinedMaterial::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::CombinedMaterial::restitution: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::material::CombinedMaterial
@@ -23972,7 +23996,9 @@ pub struct alice_physics_core::ContactConstraint
 pub alice_physics_core::ContactConstraint::body_a: usize
 pub alice_physics_core::ContactConstraint::body_b: usize
 pub alice_physics_core::ContactConstraint::cached_lambda: alice_physics_core::math::Fix128
+pub alice_physics_core::ContactConstraint::compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::ContactConstraint::contact: alice_physics_core::collider::Contact
+pub alice_physics_core::ContactConstraint::feature: u32
 pub alice_physics_core::ContactConstraint::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::ContactConstraint::restitution: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::ContactConstraint
@@ -24518,6 +24544,9 @@ pub fn alice_physics_core::ellipsoid::Ellipsoid::inertia_diagonal(&self, alice_p
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::new(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::ellipsoid::Ellipsoid::volume(&self) -> alice_physics_core::math::Fix128
 pub const fn alice_physics_core::ellipsoid::Ellipsoid::with_rotation(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::QuatFix) -> Self
+impl alice_physics_core::ellipsoid::Ellipsoid
+pub fn alice_physics_core::ellipsoid::Ellipsoid::nearest_point(&self, alice_physics_core::math::Vec3Fix) -> (alice_physics_core::math::Vec3Fix, bool)
+pub fn alice_physics_core::ellipsoid::Ellipsoid::normal_at(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl alice_physics_core::collider::Support for alice_physics_core::ellipsoid::Ellipsoid
 pub fn alice_physics_core::ellipsoid::Ellipsoid::support(&self, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 impl core::clone::Clone for alice_physics_core::ellipsoid::Ellipsoid
@@ -26101,6 +26130,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::physics2d::PhysicsConfig2
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::physics2d::PhysicsConfig2D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::physics2d::PhysicsConfig2D
 pub struct alice_physics_core::PhysicsMaterial
+pub alice_physics_core::PhysicsMaterial::contact_compliance: alice_physics_core::math::Fix128
 pub alice_physics_core::PhysicsMaterial::dynamic_friction: alice_physics_core::math::Fix128
 pub alice_physics_core::PhysicsMaterial::friction_combine: alice_physics_core::material::CombineRule
 pub alice_physics_core::PhysicsMaterial::id: alice_physics_core::material::MaterialId
@@ -26110,6 +26140,7 @@ pub alice_physics_core::PhysicsMaterial::static_friction: alice_physics_core::ma
 impl alice_physics_core::material::PhysicsMaterial
 pub const fn alice_physics_core::material::PhysicsMaterial::new(alice_physics_core::material::MaterialId, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_combine_rules(self, alice_physics_core::material::CombineRule, alice_physics_core::material::CombineRule) -> Self
+pub const fn alice_physics_core::material::PhysicsMaterial::with_contact_compliance(self, alice_physics_core::math::Fix128) -> Self
 pub const fn alice_physics_core::material::PhysicsMaterial::with_static_friction(self, alice_physics_core::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics_core::material::PhysicsMaterial
 pub fn alice_physics_core::material::PhysicsMaterial::clone(&self) -> Self
@@ -26206,6 +26237,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usi
 pub fn alice_physics_core::solver::PhysicsWorld::add_body(&mut self, alice_physics_core::solver::RigidBody) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::solver::BodyAttachments) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::solver::PhysicsWorld::add_body_with_radius_keeping_inertia(&mut self, alice_physics_core::solver::RigidBody, alice_physics_core::math::Fix128) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_cloth(&mut self, alice_physics_core::cloth::Cloth) -> usize
 pub fn alice_physics_core::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics_core::compound::CompoundShape, alice_physics_core::math::Fix128, alice_physics_core::math::Vec3Fix) -> core::result::Result<usize, alice_physics_core::shape::ShapeError>
 pub fn alice_physics_core::solver::PhysicsWorld::add_contact(&mut self, alice_physics_core::solver::ContactConstraint)
@@ -27773,6 +27805,7 @@ pub fn alice_physics_core::math::Vec3Fix::length_squared_simd(self) -> alice_phy
 pub const fn alice_physics_core::math::Vec3Fix::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize(self) -> Self
 pub fn alice_physics_core::math::Vec3Fix::normalize_with_length(self) -> (Self, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::math::Vec3Fix::normalize_with_length_scaled(self) -> (Self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::math::Vec3Fix::scale(self, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics_core::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>

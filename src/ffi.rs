@@ -3182,7 +3182,11 @@ mod tests {
             // 10 − g h² n(n+1)/2 = 10 − 10 · 481 / 960 = 479/96 = 4.98958…
             // (y.lo 5 / 15_853_912_786_096_175_825 → 4 / 18_254_590_489_608_412_774;
             // 2321 units of 2⁻⁶⁴ above the exact 479/96, the rounding of h = 1/480)
-            const GOLDEN: [(i64, u64); 3] = [(0, 0), (4, 18_254_590_489_608_412_774), (0, 0)];
+            // The product rounded to nearest, ties to even, instead of floored:
+            // y.lo 18_254_590_489_608_412_774 → 18_254_590_489_608_413_018, 2565 units
+            // above 479/96 (the 480 products of the fall each round up to half a unit
+            // where they floored)
+            const GOLDEN: [(i64, u64); 3] = [(0, 0), (4, 18_254_590_489_608_413_018), (0, 0)];
             let y = raw.y.hi as f64 + raw.y.lo as f64 / (1u128 << 64) as f64;
             assert!((y - 479.0 / 96.0).abs() < 1e-9, "FFI free fall y = {y}");
             assert_eq!(

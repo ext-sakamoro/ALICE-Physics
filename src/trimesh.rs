@@ -1393,7 +1393,10 @@ mod tests {
             );
             hits += usize::from(got.is_some());
         }
-        assert!(hits > 0 && hits < 2000, "{hits} of 2000 cross");
+        // 356 crossings with the product rounded to nearest, ties to even (308 when it
+        // floored toward −∞): the exact ray-triangle test agrees ray by ray either way,
+        // only which tiny triangles the random rays meet moves with the rounding
+        assert_eq!(hits, 356, "{hits} of 2000 cross");
     }
 
     /// Whether a grazing ray counts as parallel depends on the angle alone: the

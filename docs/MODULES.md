@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 60 of 228 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 69 of 237 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 11 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -86,7 +86,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `compound` | several shapes with local transforms |  | [`compound_shapes`](../examples/compound_shapes.rs) | standalone (step 8, world API 2 of 21 items) |
 | `cone` | cone (apex `+Y`) |  | [`geometry_queries`](../examples/geometry_queries.rs) | step |
 | `cylinder` | cylinder |  |  | step |
-| `ellipsoid` | ellipsoid with three semi-axes |  |  | world API (step 3 of 7 items) |
+| `ellipsoid` | ellipsoid with three semi-axes |  |  | step |
 | `torus` | torus |  |  | step |
 | `wedge` | triangular prism |  |  | step |
 | `plane_collider` | infinite plane |  | [`static_colliders`](../examples/static_colliders.rs) | step |
@@ -98,7 +98,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `spatial` | spatial hash grid |  |  | standalone |
 | `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (world API 4, binding 2 of 16 items) |
 | `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
-| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | world API (step 1 of 9 items) |
+| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | world API (step 2 of 10 items) |
 | `query` | sphere / capsule casts and overlap queries |  | [`spatial_queries`](../examples/spatial_queries.rs) | standalone |
 | `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (world API 3 of 13 items) |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` |  | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) | step |
@@ -107,7 +107,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 14, binding 5 of 43 items) |
+| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 15, binding 5 of 44 items) |
 | `joint_extra` | pulley, gear, weld, rack-and-pinion and mouse joints |  | [`joint_extra_wiring`](../examples/joint_extra_wiring.rs) | standalone |
 | `articulation` | multi-joint chains with Featherstone's articulated-body algorithm |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | standalone |
 | `ragdoll` | humanoid ragdoll builder |  | [`ragdoll_demo`](../examples/ragdoll_demo.rs) | standalone |
