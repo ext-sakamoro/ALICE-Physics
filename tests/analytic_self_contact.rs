@@ -1572,9 +1572,8 @@ fn edge_edge_separation_scaled(
 ///
 /// `Fix128` の積が −∞ への切り捨ての版で 3: 3 件とも pin された境界粒子 (71 / 79) を含む対で、
 /// test が毎 frame 座標を代入する driver の頂点なので solver は離せない (自由な対の違反は下の
-/// 絶対の assert が 0 を見る) 積を最近接偶数への丸めにした版では 0 になる (丸めの版に移る時に
-/// 基準線を下げる)
-const EDGE_EDGE_BASELINE_ON: usize = 3;
+/// 絶対の assert が 0 を見る) 積を最近接偶数への丸めにした版では 0 (測定、この版の基準線)
+const EDGE_EDGE_BASELINE_ON: usize = 0;
 
 #[test]
 fn the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline() {
