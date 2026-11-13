@@ -627,8 +627,8 @@ fn splash_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const SPLASH_XPBD: &str = "08e9e1260eb633ac1d0cccea1568930ad5f5af70443659a1679282a413450b3c";
-const SPLASH_TGS: &str = "f0985cc3ea20e92e7cc9fdd837129a7d72338832f34a06e1dc4ff7cdfb104e5b";
+const SPLASH_XPBD: &str = "77865642051e598b65e651350ddd4f5af4b493d82a0c52f0e4f8027d4b2270cb";
+const SPLASH_TGS: &str = "c654fcf471ae51c9554193eb5851e7895c2a67c1c2c4e5f548835bfd888fdc45";
 
 /// golden (determinism): the world snapshot and the payload of the splash scene
 /// after 256 frames, for each backend. CI runs this on every operating system

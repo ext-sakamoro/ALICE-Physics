@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52
+//! 0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d
 //! ```
 //!
 //! # Entries
@@ -101,6 +101,10 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "Xpbd step",
         hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+    ),
+    (
+        "joint break",
+        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
     ),
     (
         "Xpbd step_n",
@@ -431,7 +435,7 @@ pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
     // folds the alice-det-math functions it calls
     (
         "alice-analytics",
-        hex32("847535174fa305517aa11fe8b98f604d1b1ec48abaa23d2b1dce9ccc8aa8884f"),
+        hex32("67650b7f63ebe71670b7fd9b5781fe276f515dbcee4497169cdd74f1c19a08d4"),
     ),
     // alice-ml on main: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights `crate::neural`
     // takes, which folds the alice-det-math functions it calls
@@ -529,18 +533,18 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("69d98d145eec4df95cc72dabcfcb6364412bcbdd649dd1cc34395220e5225e86"),
+        hex32("bde138b10545a45b734d48559fc21e09369108bc7ac1b46e651a3c3e91d2781d"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("a44c506c878f934a22c35fba43777703dfbcd1c0831fdafedd6ebedfd261c9e9"),
+        hex32("ecd2eebb926f10660552edf749b92e8c93a38d020ee8456f476d113f42b93946"),
     ),
     // alice-det-math 0.5.2 at 39507d1b (its clamp follows the G2 order: three Law outputs
     // moved, see PHYSICS_PINS_BY_DET_MATH)
     (
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
-        hex32("37e57240c368cd3f5926d132b3d2a1004d5df3222ff9b91086faa7c50150882e"),
+        hex32("c38f7401ddbbe8621868ca07e2126619afc3601f0219915ffecb531da2458fec"),
     ),
     // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
     // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
@@ -550,10 +554,12 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations);
     // then sleep by elapsed time was pinned (the rule `idle + dt/2 >= time_to_sleep`) and the
     // pendulum's distance constraint pin moved with the island sleep, moving every row from its
-    // value before (this one from e90000da…)
+    // value before (this one from e90000da…); then the joint-break path was pinned (a breaking
+    // joint carries nothing in the substep it breaks in), moving every row again (this one
+    // from 5b98f3db…)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("5b98f3dbdb4ef20be71a230869a7391592cd7cdc0a5a35ac9e244c339a5db873"),
+        hex32("be6cdc033fcd5b7b085f89ddb94666af09bfaa28b066bc595002ca93fb83ec48"),
     ),
 ];
 
@@ -707,10 +713,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52`.
+/// Hex: `0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("aa8c72e9889d03ac7111e7fde4dd79dc6faef2e74ec2e3ba764b941d8b02fd52");
+    hex32("0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
@@ -749,4 +755,8 @@ pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
 ///   another step under the time rule, and a sleeper a step moves now wakes its island, so this
 ///   build no longer steps their snapshots to their bits (`tests/analytic_magnet_world.rs`
 ///   checks such a snapshot is refused).
+///   `aa8c72e9…` (before the joint-break path was pinned) is not listed: a joint that breaks
+///   carried its correction in the substep it broke in under it and carries none now, so a
+///   snapshot of that build holding a breakable joint does not step to that build's bits here.
+///   The same bump takes the alice-analytics entry of [`PHYSICS_PEER_IDS`] to `67650b7f…`.
 pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];

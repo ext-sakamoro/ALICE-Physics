@@ -337,6 +337,46 @@ fn determinism_joint_pendulum() {
     assert_golden("joint_pendulum", hash, GOLDEN_JOINT_PENDULUM);
 }
 
+/// **Joint break**: joints that break carry no correction in the substep they break in. A slider
+/// started 6.08 m off its axis (break force 1000 N) breaks in the first substep, and a chain
+/// anchor → A → B of ball joints whose lower joint (5 N) breaks on the load passed down by the
+/// upper one (1000 N, holds). 120 steps of 1/60 s, default config. Recorded 2026-11-12 when a
+/// breaking joint stopped applying its correction before being removed (before, the slider's
+/// body left at 2919.7 m/s); the first golden on a breaking path.
+const GOLDEN_JOINT_BREAK: &str = "f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9";
+
+#[test]
+fn determinism_joint_break() {
+    use alice_physics_core::joint::{BallJoint, Joint, SliderJoint};
+    let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    let v = |x: i64, y: i64, z: i64| Vec3Fix::from_int(x, y, z);
+    let anchor = world.add_body(RigidBody::new_static(v(3, 6, 0)));
+    let slid = world.add_body(RigidBody::new_dynamic(v(6, 5, 6), Fix128::ONE));
+    let mut slider = SliderJoint::new(anchor, slid, v(1, 0, 0), Vec3Fix::ZERO, Vec3Fix::ZERO);
+    slider.limit_min = Some(Fix128::from_int(-1));
+    slider.break_force = Some(Fix128::from_int(1000));
+    world.add_joint(Joint::Slider(slider));
+    let top = world.add_body(RigidBody::new_static(v(-3, 6, 0)));
+    let a = world.add_body(RigidBody::new_dynamic(v(-3, 5, 0), Fix128::ONE));
+    let b = world.add_body(RigidBody::new_dynamic(v(-3, 4, 0), Fix128::ONE));
+    world.add_joint(Joint::Ball(
+        BallJoint::new(top, a, Vec3Fix::ZERO, v(0, 1, 0)).with_break_force(Fix128::from_int(1000)),
+    ));
+    world.add_joint(Joint::Ball(
+        BallJoint::new(a, b, Vec3Fix::ZERO, v(0, 1, 0)).with_break_force(Fix128::from_int(5)),
+    ));
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        world.step(dt);
+    }
+    // the slider and the lower joint broke, the upper one holds
+    assert_eq!(world.joints.len(), 1);
+
+    let hash = hash_world(&world);
+    assert_golden("joint_break", hash, GOLDEN_JOINT_BREAK);
+}
+
 /// Hash all cloth particles (position + velocity).
 fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
     let mut bytes = Vec::with_capacity(cloth.particle_count() * 48);

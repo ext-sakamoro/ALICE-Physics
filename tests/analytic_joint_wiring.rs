@@ -652,8 +652,11 @@ fn solve_joints_breaking_on_force_ramp_breaks_exactly_at_k_star() {
             );
         } else {
             assert_eq!(broken, vec![0], "k={k} > 5 N breaks");
-            // judged after the solve: the breaking joint's correction is applied
-            assert_eq!(bodies[1].position, Vec3Fix::ZERO);
+            // a breaking joint transmits nothing: the body stays where it was
+            assert_eq!(
+                bodies[1].position,
+                Vec3Fix::new(Fix128::ZERO, -d_k, Fix128::ZERO)
+            );
             broke_at.get_or_insert(k);
         }
     }

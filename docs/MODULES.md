@@ -107,7 +107,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 14, binding 5 of 42 items) |
+| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 14, binding 5 of 43 items) |
 | `joint_extra` | pulley, gear, weld, rack-and-pinion and mouse joints |  | [`joint_extra_wiring`](../examples/joint_extra_wiring.rs) | standalone |
 | `articulation` | multi-joint chains with Featherstone's articulated-body algorithm |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | standalone |
 | `ragdoll` | humanoid ragdoll builder |  | [`ragdoll_demo`](../examples/ragdoll_demo.rs) | standalone |

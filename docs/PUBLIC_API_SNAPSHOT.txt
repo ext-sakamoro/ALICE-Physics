@@ -6253,6 +6253,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::joint::Spri
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::joint::SpringJoint
 pub fn alice_physics_core::joint::solve_joints(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::joint::solve_joints_breakable(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics_core::joint::solve_joints_breaking_before_transmitting(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::joint::solve_joints_breaking_on_force(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<usize>
 pub fn alice_physics_core::joint::solve_joints_with_reaction_forces(&[alice_physics_core::joint::Joint], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> alloc::vec::Vec<alice_physics_core::math::Fix128>
 pub mod alice_physics_core::joint_extra

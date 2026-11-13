@@ -36,7 +36,6 @@ src/fsi_advanced.rs
 src/gyroscopic.rs
 src/hyperelastic.rs
 src/interface_capture.rs
-src/joint.rs
 src/joint_extra.rs
 src/kepler.rs
 src/kinematic_loop.rs

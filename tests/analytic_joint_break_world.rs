@@ -18,9 +18,12 @@
 //! rest (a single Gauss–Seidel sweep transmits less in the first substep and
 //! overshoots before settling, measured below).
 //!
-//! A joint whose force exceeds `break_force` (strictly) is removed after the
-//! solve that measured it (its correction for that substep is applied) and
-//! reported as a `JointBreakEvent`; the body then falls freely.
+//! A joint whose force exceeds `break_force` (strictly) transmits nothing in the
+//! substep its solve measured that force in (its bodies are put back to where
+//! they were before its solve), is removed and reported as a `JointBreakEvent`,
+//! and its island is woken; the body falls freely from that substep on. Before
+//! 2026-11-12 the breaking substep's correction was applied and the joint then
+//! removed (the body stayed on the anchor for that step).
 
 use alice_physics_core::solver::SolverBackend;
 use alice_physics_core::{
@@ -70,9 +73,10 @@ fn xpbd_joint_below_its_load_breaks_and_reports_m_g() {
                 .with_break_force(Fix128::from_int(15))
         )
     );
-    // broken after the solve that measured 16 N: that substep's correction was
-    // applied, so the body is still on the anchor after the first step
-    assert_eq!(w.bodies[1].position.y, Fix128::ZERO);
+    // broken in the substep that measured 16 N, transmitting nothing in it: the
+    // body has fallen one free substep, y = −g h² = −8/4096, v = −g h = −1/8
+    assert_eq!(w.bodies[1].position.y, Fix128::from_ratio(-1, 512));
+    assert_eq!(w.bodies[1].velocity.y, Fix128::from_ratio(-1, 8));
     // and it keeps falling: after 64 steps (1 s) it is far below the anchor
     for _ in 0..63 {
         w.step(h());
@@ -204,13 +208,13 @@ fn a_sleeping_body_left_hanging_by_a_broken_joint_wakes_and_falls() {
     assert!(w.joints.is_empty(), "the joint breaks");
     assert!(
         !w.is_sleeping(1),
-        "the body it held is awake (the solve that broke the joint moved it)"
+        "the body it held is awake (a breaking joint wakes its island)"
     );
     for _ in 0..63 {
         w.step(h());
     }
-    // the breaking substep's solve pulled the body back onto the anchor, so it
-    // starts at 1/64 m per 1/64 s upward; free fall still takes it far down
+    // the breaking joint transmitted nothing, so the body falls freely from
+    // 1/64 m below the anchor
     assert!(
         w.bodies[1].position.y < Fix128::from_int(-1),
         "and falls instead of staying frozen in the air: {:?}",
@@ -297,14 +301,39 @@ const CONFIGS: [(SolverBackend, usize); 4] = [
 /// First substep of the chain, one Gauss–Seidel sweep: the upper joint pulls A
 /// back by `g h²` (λ = m g h², 16 N); then the lower joint closes the `g h²` gap
 /// to B with `w = 2/m` (λ = m g h² / 2, 8 N). Both are exact in Fix128.
+///
+/// The upper joint holds at 16 N (the break is strictly above), so its pull on A
+/// reaches the lower joint in the same sweep and the lower one, at 7 N, breaks on
+/// the 8 N passed down. If the upper joint breaks instead (15 N), it transmits
+/// nothing: A is not pulled back, the lower joint has no gap and carries
+/// nothing, and only the upper joint breaks (the chain falls together).
 #[test]
 fn the_lower_joint_of_a_chain_carries_load_passed_down_in_the_same_sweep() {
     for (backend, substeps) in CONFIGS {
-        // thresholds just under the first-sweep forces: both break in substep 1
-        let mut w = chain(
+        let mut upper_breaks = chain(
             backend,
             substeps,
             Fix128::from_int(15),
+            Fix128::from_int(7),
+            true,
+        );
+        upper_breaks.step(h());
+        let broken: Vec<(usize, Fix128)> = upper_breaks
+            .events
+            .joint_break_events()
+            .iter()
+            .map(|e| (e.joint.bodies().1, e.force))
+            .collect();
+        assert_eq!(
+            broken,
+            vec![(1, Fix128::from_int(16))],
+            "{backend:?} substeps {substeps}: a breaking upper joint passes no load down"
+        );
+        // the upper joint holds, the lower one breaks on the load passed down
+        let mut w = chain(
+            backend,
+            substeps,
+            Fix128::from_int(16),
             Fix128::from_int(7),
             true,
         );
@@ -318,7 +347,7 @@ fn the_lower_joint_of_a_chain_carries_load_passed_down_in_the_same_sweep() {
         forces.sort();
         assert_eq!(
             forces,
-            vec![(1, Fix128::from_int(16)), (2, Fix128::from_int(8))],
+            vec![(2, Fix128::from_int(8))],
             "{backend:?} substeps {substeps}: the lower joint had no gap before the solve and still carries 8 N"
         );
     }

@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2621 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2622 |
 | live | reached without examples (crate-internal roots or a binding) | 853 |
-| | **total** | **3505** |
+| | **total** | **3506** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2621)
+## L1 — example-only (2622)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -183,7 +183,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/input_log.rs`: `InputLog::replay`, `LogInput`
 - `src/interface_capture.rs`: `fast_sweeping_reinit`, `plic_normal`, `plic_plane_offset`, `truncated_cube_volume`
 - `src/interpolation.rs`: `BodySnapshot`, `BodySnapshot::from_body`, `InterpolationState`, `InterpolationState::body_count`, `InterpolationState::capture_and_push`, `InterpolationState::empty`, `InterpolationState::interpolate`, `InterpolationState::interpolate_all`, `InterpolationState::interpolate_position`, `InterpolationState::interpolate_rotation`, `InterpolationState::new`, `InterpolationState::push`, `WorldSnapshot`, `WorldSnapshot::capture`, `WorldSnapshot::is_empty`, `WorldSnapshot::len`, `lerp_fix128`, `lerp_vec3`
-- `src/joint.rs`: `BallJoint::with_break_force`, `BallJoint::with_compliance`, `ConeTwistJoint::new`, `ConeTwistJoint::with_break_force`, `ConeTwistJoint::with_limits`, `D6Joint::new`, `D6Joint::with_angular_limits`, `D6Joint::with_angular_motion`, `D6Joint::with_break_force`, `D6Joint::with_linear_limits`, `D6Joint::with_linear_motion`, `FixedJoint::with_break_force`, `HingeJoint::with_break_force`, `HingeJoint::with_compliance`, `HingeJoint::with_limits`, `Joint::compute_force`, `Joint::joint_type`, `JointType`, `SliderJoint::with_break_force`, `SliderJoint::with_limits`, `SpringJoint::with_break_force`, `solve_joints_breakable`, `solve_joints_breaking_on_force`
+- `src/joint.rs`: `BallJoint::with_break_force`, `BallJoint::with_compliance`, `ConeTwistJoint::new`, `ConeTwistJoint::with_break_force`, `ConeTwistJoint::with_limits`, `D6Joint::new`, `D6Joint::with_angular_limits`, `D6Joint::with_angular_motion`, `D6Joint::with_break_force`, `D6Joint::with_linear_limits`, `D6Joint::with_linear_motion`, `FixedJoint::with_break_force`, `HingeJoint::with_break_force`, `HingeJoint::with_compliance`, `HingeJoint::with_limits`, `Joint::compute_force`, `Joint::joint_type`, `JointType`, `SliderJoint::with_break_force`, `SliderJoint::with_limits`, `SpringJoint::with_break_force`, `solve_joints_breakable`, `solve_joints_breaking_on_force`, `solve_joints_with_reaction_forces`
 - `src/joint_extra.rs`: `ExtraJoint`, `GearJoint`, `GearJoint::new`, `GearJoint::with_compliance`, `MouseJoint`, `MouseJoint::new`, `MouseJoint::set_target`, `PulleyJoint`, `PulleyJoint::new`, `PulleyJoint::total_length`, `PulleyJoint::with_compliance`, `RackAndPinionJoint`, `RackAndPinionJoint::new`, `RackAndPinionJoint::with_compliance`, `WeldJoint`, `WeldJoint::compute_force`, `WeldJoint::compute_torque`, `WeldJoint::is_broken`, `WeldJoint::new`, `WeldJoint::with_break_force`, `WeldJoint::with_break_torque`, `WeldJoint::with_compliance`, `solve_extra_joints`, `solve_pulley_to_length`
 - `src/kepler.rs`: `DEGENERACY_TOLERANCE`, `KEPLER_MAX_ITERATIONS`, `KEPLER_TOLERANCE`, `KeplerError`, `OrbitalElements`, `OrbitalElements::from_state`, `OrbitalElements::mean_anomaly`, `OrbitalElements::new`, `OrbitalElements::period`, `OrbitalElements::propagate`, `OrbitalElements::semi_latus_rectum`, `OrbitalElements::state_at`, `OrbitalElements::to_state`, `StateVector`, `eccentric_from_true_anomaly`, `j2_arg_periapsis_rate`, `j2_raan_rate`, `mean_from_true_anomaly`, `mean_motion`, `orbital_period`, `solve_kepler`, `specific_angular_momentum`, `specific_orbital_energy`, `true_from_eccentric_anomaly`, `true_from_mean_anomaly`, `vis_viva_speed`
 - `src/kinematic_loop.rs`: `FourBarLinkage`, `LoopClosureConstraint`, `LoopClosureConstraint::apply`, `LoopClosureConstraint::centre_to_centre`, `LoopClosureConstraint::residual`, `four_bar_linkage`, `try_four_bar_linkage`
