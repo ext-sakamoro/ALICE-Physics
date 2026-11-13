@@ -228,13 +228,17 @@ impl MaterialProperties {
         }
     }
 
-    /// Anisotropic effective yield strength (MPa) given a load direction angle.
+    /// Anisotropic effective yield strength (MPa) given a load direction angle:
+    /// `σ_xy cos²θ + σ_z sin²θ`, evaluated as `σ_xy + (σ_z − σ_xy) sin²θ` (the
+    /// same law with `cos²θ = 1 − sin²θ`). The fixed-point `sin` and `cos` do not
+    /// make `cos² + sin²` exactly 1, so the first form left an isotropic material
+    /// (`σ_z = σ_xy`) a few units off at some angles; in the second the angle term
+    /// is exactly 0 for it.
     #[must_use]
     pub fn yield_at_angle(&self, theta: Fix128) -> Fix128 {
-        let (s, c) = theta.sin_cos();
-        let c2 = c * c;
+        let (s, _) = theta.sin_cos();
         let s2 = s * s;
-        self.yield_strength_mpa * c2 + self.yield_z() * s2
+        self.yield_strength_mpa + (self.yield_z() - self.yield_strength_mpa) * s2
     }
 }
 
@@ -600,6 +604,20 @@ impl FilamentDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An isotropic material (`anisotropy_z_ratio = 1`) yields at the same stress
+    /// in every direction, bit for bit (oracle: σ(θ) = σ_xy cos²θ + σ_z sin²θ with
+    /// σ_z = σ_xy is σ_xy for every θ). The angles include 0, π/2 and ones where
+    /// the fixed-point `cos² + sin²` is not exactly 1.
+    #[test]
+    fn an_isotropic_yield_is_the_same_at_every_angle() {
+        let sus = MaterialProperties::sus304();
+        assert_eq!(sus.anisotropy_z_ratio, Fix128::ONE);
+        for k in 0..=16 {
+            let theta = Fix128::HALF_PI * Fix128::from_ratio(k, 16);
+            assert_eq!(sus.yield_at_angle(theta), sus.yield_strength_mpa, "k = {k}");
+        }
+    }
 
     #[test]
     fn pla_preset_values() {
