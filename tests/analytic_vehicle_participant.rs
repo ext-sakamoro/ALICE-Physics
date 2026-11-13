@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e"
+        "07035121d7e6f509101156013afca862f6b3e3782029db9bb003db38e8844e36"
     );
 }
 
@@ -659,8 +659,8 @@ fn drive_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const DRIVE_XPBD: &str = "de6297ff9d939f6a41a0151813050d2a65ae254b8b8b84941769b42d365b6fbd";
-const DRIVE_TGS: &str = "8184383c3327532df24d86f836b831010e33b7c1f33bf6279e1bad54a1f93ed6";
+const DRIVE_XPBD: &str = "6299d7a19d48724ad468f3fbf5567033e44229dfaec42dda76c5da8b7d960925";
+const DRIVE_TGS: &str = "49a288ddfe4fc461338b29a619875b9fd0ac083d67a4edbba301e8662a7f5f0f";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

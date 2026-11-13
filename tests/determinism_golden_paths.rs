@@ -343,7 +343,7 @@ fn golden_path_xpbd_try_step_parallel() {
 
 #[cfg(feature = "gpu-solver-bridge")]
 const GOLDEN_XPBD_STEP_WITH_BRIDGE: &str =
-    "d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd";
+    "ba1f98c44be71f65865464cb24907e12d8fc9e53322e3a298a8ab2cf652e63bc";
 
 #[cfg(feature = "gpu-solver-bridge")]
 #[test]

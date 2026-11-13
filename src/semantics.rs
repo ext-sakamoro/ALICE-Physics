@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e
+//! 07035121d7e6f509101156013afca862f6b3e3782029db9bb003db38e8844e36
 //! ```
 //!
 //! # Entries
@@ -124,11 +124,11 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "Xpbd step_with_bridge",
-        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+        hex32("ba1f98c44be71f65865464cb24907e12d8fc9e53322e3a298a8ab2cf652e63bc"),
     ),
     (
         "Xpbd substep_with_bridge",
-        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+        hex32("ba1f98c44be71f65865464cb24907e12d8fc9e53322e3a298a8ab2cf652e63bc"),
     ),
     (
         "Tgs step",
@@ -198,7 +198,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "installed bridge",
-        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+        hex32("ba1f98c44be71f65865464cb24907e12d8fc9e53322e3a298a8ab2cf652e63bc"),
     ),
     // sleep by elapsed time (`idle + dt/2 >= time_to_sleep`), pinned by four spheres
     // dropped on a plane at dt = 1/30 s (`tests/analytic_sleep_by_time.rs`)
@@ -1149,16 +1149,79 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "step_parallel shared-body order",
         hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
     ),
+    // 4.0's contact model moved the bridge pins after every earlier generation (a new
+    // overlap is pushed out on the CPU before the routed compliant solve): each keeps the
+    // digest of the earlier contact solve
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd step_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd substep_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "installed bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd step_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd substep_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "installed bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd step_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd substep_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "installed bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd step_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd substep_with_bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "installed bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e`.
+/// Hex: `07035121d7e6f509101156013afca862f6b3e3782029db9bb003db38e8844e36`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e");
+    hex32("07035121d7e6f509101156013afca862f6b3e3782029db9bb003db38e8844e36");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.

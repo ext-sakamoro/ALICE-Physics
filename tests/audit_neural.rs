@@ -438,11 +438,12 @@ fn documented_constructor_panics_fire_for_every_dimension_mismatch() {
 
 #[test]
 // AUD-A-S3W2-016: the doc promised no rounding; the sum is exact and the scale
-// multiply rounds down to the 2^-64 grid, as the doc now says
-fn matvec_output_is_the_floor_of_the_exact_product_of_the_sum_and_the_scale() {
-    // exact value: raw_x * raw_scale / 2^64 (raw_scale = f32 0.1 widened exactly),
-    // floored to the 2^-64 grid; 1/3 * 0.1 is not on the grid, so the floor is
-    // strictly below the exact value
+// multiply rounds to the nearest point of the 2^-64 grid, ties to even (the
+// rounding of `Fix128`'s product), as the doc now says
+fn matvec_output_is_the_exact_product_of_the_sum_and_the_scale_rounded_to_nearest_even() {
+    // exact value: raw_x * raw_scale / 2^64 (raw_scale = f32 0.1 widened exactly);
+    // 1/3 * 0.1 is not on the 2^-64 grid, so the output is the nearer grid point
+    // (the even one on a tie), computed here from the exact integer product
     let x = Fix128::from_ratio(1, 3);
     let scale = Fix128::from_f64(f64::from(0.1_f32));
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
@@ -455,15 +456,19 @@ fn matvec_output_is_the_floor_of_the_exact_product_of_the_sum_and_the_scale() {
     let raw = |v: Fix128| ((v.hi as i128) << 64) | i128::from(v.lo);
     let exact_num = raw(x) * raw(scale);
     // exact product in units of 2^-128; the output carries 2^-64 resolution
-    assert_ne!(
-        exact_num & ((1_i128 << 64) - 1),
-        0,
-        "the product is off the grid"
-    );
+    let rest = exact_num & ((1_i128 << 64) - 1);
+    assert_ne!(rest, 0, "the product is off the grid");
+    let below = exact_num >> 64;
+    let half = 1_i128 << 63;
+    let nearest = if rest > half || (rest == half && below & 1 == 1) {
+        below + 1
+    } else {
+        below
+    };
     assert_eq!(
         raw(out[0]),
-        exact_num >> 64,
-        "not the floor of the exact product"
+        nearest,
+        "not the exact product rounded to the nearest grid point, ties to even"
     );
 }
 

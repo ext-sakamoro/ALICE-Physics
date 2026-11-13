@@ -127,8 +127,9 @@ impl FixedTernaryWeight {
 ///
 /// With ternary weights {-1, 0, +1}, the sum is **pure addition/subtraction**:
 /// no floating-point arithmetic and no rounding. The single multiply by the
-/// layer scale is a Q64.64 product, rounded toward negative infinity to the
-/// 2⁻⁶⁴ grid (the rounding of [`Fix128`]'s `Mul`). Bit-exact everywhere.
+/// layer scale is a Q64.64 product, rounded to the nearest point of the
+/// 2⁻⁶⁴ grid, ties to even (the rounding of [`Fix128`]'s `Mul`). Bit-exact
+/// everywhere.
 ///
 /// ```text
 /// output[i] = scale * Σ_j (w[i,j] ⊙ input[j])

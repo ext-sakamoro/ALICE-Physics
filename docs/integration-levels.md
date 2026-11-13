@@ -56,7 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 41 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 72 of 240 items) | 72 / 138 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 73 of 241 items) | 73 / 138 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 2 of 10 items) | 2 / 8 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -133,7 +133,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `multiphase` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `nbody` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `netcode_prediction` | standalone | 0 / 0 / 0 / 13 / 0 | — |
-| `neural` | standalone | 0 / 0 / 0 / 26 / 0 | — |
+| `neural` | standalone | 0 / 0 / 0 / 5 / 1 | — |
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 20 / 0 | — |

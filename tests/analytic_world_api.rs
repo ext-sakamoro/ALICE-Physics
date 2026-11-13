@@ -1210,7 +1210,9 @@ mod bridge {
     use super::{dt, overlapping_pair, separated_x, substeps, weightless};
     use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
     use alice_physics_core::math::{Fix128, Vec3Fix};
-    use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld};
+    use alice_physics_core::plane_collider::PlaneCollider;
+    use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+    use alice_physics_core::static_collider::StaticCollider;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -1247,14 +1249,105 @@ mod bridge {
         usize::try_from(substeps() * iterations).expect("small")
     }
 
-    /// Oracle: `step_with_bridge` documents routing the contact solve of
-    /// every substep through the caller's bridge, so a frame dispatches
-    /// `substeps * iterations = 8` times (the pair never separates, so the
-    /// contact is present in every substep) and the no-op bridge leaves
-    /// both bodies at their start; a CPU `step` on the same scene gives the
-    /// `-4` / `7` frame.
+    /// A radius-1 unit-mass sphere resting exactly on the plane `y = 0`
+    /// (centre at `y = 1`, no overlap) under the default gravity. Every
+    /// substep the dynamics sink it into the floor, so every substep has a
+    /// contact for the compliant solve, which is the stage the bridge carries;
+    /// none of it is overlap the substep started with, so nothing is pushed
+    /// out on the CPU.
+    fn sphere_touching_a_floor(world: &mut PhysicsWorld) -> usize {
+        world.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            Vec3Fix::from_int(0, 1, 0),
+            Fix128::ZERO,
+        )));
+        world.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::from_int(0, 1, 0), Fix128::ONE),
+            Fix128::ONE,
+        )
+    }
+
+    /// One substep of free fall from rest: `y = -g h^2` with `h = 1/512`.
+    fn free_fall_one_substep() -> Fix128 {
+        super::r(-10, 512 * 512)
+    }
+
+    /// Oracle: `step_with_bridge` routes the compliant contact solve of every
+    /// substep through the caller's bridge, and only that: the bridge carries
+    /// the position-level compliant iteration, while the velocity stage
+    /// (restitution, Müller et al. 2020 eq. (34), and friction) stays on the
+    /// CPU. On the sphere the dynamics press into the floor in every substep,
+    /// so a frame dispatches `substeps * iterations = 8` times. The no-op
+    /// bridge resolves no overlap, so each substep the sphere sinks by the
+    /// `g h^2` gravity gives it from rest; the CPU velocity stage then zeroes
+    /// the approach (`g h` is below the `2 |g| h` restitution threshold, so
+    /// `e = 0` and the target normal velocity is `0`), so the next substep
+    /// starts from rest again. After substep `k`: `y = 1 - k g h^2`, `v = 0`;
+    /// after the frame `y = 1 - 8 g h^2 = 1 - 80 / 512^2`. Detection still runs
+    /// on the CPU (one contact constraint against the plane).
     #[test]
-    fn step_with_bridge_dispatches_every_substep_and_a_no_op_bridge_leaves_bodies_in_place() {
+    fn step_with_bridge_routes_every_substeps_compliant_solve_and_a_no_op_bridge_sinks_g_h2_per_substep(
+    ) {
+        let dispatches = Arc::new(AtomicUsize::new(0));
+        let mut bridge = CountingBridge {
+            dispatches: Arc::clone(&dispatches),
+        };
+        let mut world = PhysicsWorld::new(PhysicsConfig::default());
+        let s = sphere_touching_a_floor(&mut world);
+        world
+            .step_with_bridge(&mut bridge, dt())
+            .expect("the bridge computes under this build's semantics");
+        assert_eq!(dispatches.load(Ordering::SeqCst), per_frame());
+        let k = Fix128::from_int(substeps());
+        assert_eq!(
+            world.bodies[s].position,
+            Vec3Fix::new(
+                Fix128::ZERO,
+                Fix128::ONE + free_fall_one_substep() * k,
+                Fix128::ZERO
+            )
+        );
+        assert_eq!(world.bodies[s].velocity, Vec3Fix::ZERO);
+        assert_eq!(
+            world.contact_constraints.len(),
+            1,
+            "detection still runs on the CPU"
+        );
+    }
+
+    /// Oracle: the sinking above is the no-op bridge's, not the world's: the
+    /// same sphere stepped with the CPU solve settles on the plane at the
+    /// compliant overlap of one point carrying `m g`. One compliant iteration
+    /// a substep from rest at depth `d` with `λ` reset: the prediction is
+    /// `d + g h^2`, the solve keeps `α̃ / (w + α̃)` of it (`α̃ = α / h^2`,
+    /// `w = 1 / m`), so the fixed point is `d = g h^2 α̃ / w = m g α` with
+    /// `α = 2 α_default` (sphere and plane), here `20 α_default`. The products
+    /// are of `Fix128` integers times the grid value `α_default`, so the depth
+    /// is compared exactly, in `Fix128` (an `f64` of `1 - y` near 1 would lose
+    /// the last digits to cancellation).
+    #[test]
+    fn the_cpu_solve_settles_the_sphere_on_the_plane_at_the_compliant_overlap() {
+        let mut world = PhysicsWorld::new(PhysicsConfig::default());
+        let s = sphere_touching_a_floor(&mut world);
+        for _ in 0..240 {
+            world.step(dt());
+        }
+        let alpha = alice_physics_core::material::DEFAULT_CONTACT_COMPLIANCE;
+        assert_eq!(
+            Fix128::ONE - world.bodies[s].position.y,
+            alpha * Fix128::from_int(20),
+            "the centre sinks by m g (α_sphere + α_plane)"
+        );
+        assert_eq!(world.bodies[s].velocity, Vec3Fix::ZERO);
+    }
+
+    /// Oracle: the overlap a pair starts a substep with is not the compliant
+    /// solve's to take: it is pushed out by position on the CPU, before the
+    /// routed solve, even with a no-op bridge. The radius-2 pair at depth 1
+    /// ends the frame at `-1/2` / `7/2` (equal masses, half each), exactly
+    /// touching and at rest, so only the first substep has a contact to route:
+    /// `iterations` (1) dispatches.
+    #[test]
+    fn step_with_bridge_pushes_out_a_starting_overlap_on_the_cpu() {
         let dispatches = Arc::new(AtomicUsize::new(0));
         let mut bridge = CountingBridge {
             dispatches: Arc::clone(&dispatches),
@@ -1264,58 +1357,54 @@ mod bridge {
         world
             .step_with_bridge(&mut bridge, dt())
             .expect("the bridge computes under this build's semantics");
-        assert_eq!(dispatches.load(Ordering::SeqCst), per_frame());
-        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
-        assert_eq!(world.bodies[b].position, Vec3Fix::from_int(3, 0, 0));
-        assert_eq!(
-            world.contact_events().len(),
-            1,
-            "detection still runs on the CPU"
-        );
-
-        world.step(dt());
         let (xa, xb) = separated_x();
         assert_eq!(world.bodies[a].position.x, xa);
         assert_eq!(world.bodies[b].position.x, xb);
+        assert_eq!(world.bodies[a].velocity, Vec3Fix::ZERO);
+        assert_eq!(world.bodies[b].velocity, Vec3Fix::ZERO);
         assert_eq!(
             dispatches.load(Ordering::SeqCst),
-            per_frame(),
-            "CPU step did not route"
+            PhysicsConfig::default().iterations
         );
     }
 
-    /// Oracle: one `substep_with_bridge` dispatches `iterations` (1) times
-    /// and, like `step_with_bridge`, ignores non-positive `dt` only at the
-    /// frame level — a substep with the no-op bridge still leaves the pair
-    /// in place because nothing resolves the contact.
+    /// Oracle: one `substep_with_bridge` dispatches `iterations` (1) times,
+    /// and with the no-op bridge the sphere on the floor sinks by the `g h^2`
+    /// of one substep from rest, `y = 1 - g h^2`, its approach zeroed by the
+    /// CPU velocity stage (see above).
     #[test]
     fn substep_with_bridge_dispatches_iterations_times() {
         let dispatches = Arc::new(AtomicUsize::new(0));
         let mut bridge = CountingBridge {
             dispatches: Arc::clone(&dispatches),
         };
-        let mut world = PhysicsWorld::new(weightless());
-        let (a, b) = overlapping_pair(&mut world);
+        let mut world = PhysicsWorld::new(PhysicsConfig::default());
+        let s = sphere_touching_a_floor(&mut world);
         world
-            .substep_with_bridge(&mut bridge, dt())
+            .substep_with_bridge(&mut bridge, super::r(1, 512))
             .expect("the bridge computes under this build's semantics");
         assert_eq!(
             dispatches.load(Ordering::SeqCst),
             PhysicsConfig::default().iterations
         );
-        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
-        assert_eq!(world.bodies[b].position, Vec3Fix::from_int(3, 0, 0));
+        assert_eq!(
+            world.bodies[s].position.y,
+            Fix128::ONE + free_fall_one_substep()
+        );
+        assert_eq!(world.bodies[s].velocity, Vec3Fix::ZERO);
     }
 
     /// Oracle: `set_gpu_solver_bridge(Some)` makes `gpu_solver_bridge_installed`
-    /// true and routes plain `step` (8 dispatches, pair frozen);
-    /// `take_gpu_solver_bridge` returns it once (`None` the second time),
-    /// after which `step` is the CPU `-4` / `7` frame again.
+    /// true and routes plain `step` (8 dispatches, the sphere sinks by `g h^2`
+    /// per substep as with `step_with_bridge`); `take_gpu_solver_bridge`
+    /// returns it once (`None` the second time), after which `step` solves on
+    /// the CPU: no dispatch, and the sphere ends above where a second frame
+    /// through the no-op bridge puts it.
     #[test]
     fn set_and_take_gpu_solver_bridge_lifecycle() {
         let dispatches = Arc::new(AtomicUsize::new(0));
-        let mut world = PhysicsWorld::new(weightless());
-        let (a, b) = overlapping_pair(&mut world);
+        let mut world = PhysicsWorld::new(PhysicsConfig::default());
+        let s = sphere_touching_a_floor(&mut world);
         assert!(!world.gpu_solver_bridge_installed());
         assert!(
             world.take_gpu_solver_bridge().is_none(),
@@ -1330,20 +1419,39 @@ mod bridge {
         assert!(world.gpu_solver_bridge_installed());
         world.step(dt());
         assert_eq!(dispatches.load(Ordering::SeqCst), per_frame());
-        assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
-        assert_eq!(world.bodies[b].position, Vec3Fix::from_int(3, 0, 0));
+        let k = Fix128::from_int(substeps());
+        assert_eq!(
+            world.bodies[s].position.y,
+            Fix128::ONE + free_fall_one_substep() * k
+        );
 
         assert!(world.take_gpu_solver_bridge().is_some());
         assert!(!world.gpu_solver_bridge_installed());
         assert!(world.take_gpu_solver_bridge().is_none(), "taken twice");
+
+        // the same start, both frames through a no-op bridge
+        let mut bridged = PhysicsWorld::new(PhysicsConfig::default());
+        let f = sphere_touching_a_floor(&mut bridged);
+        let mut nop = CountingBridge {
+            dispatches: Arc::new(AtomicUsize::new(0)),
+        };
+        for _ in 0..2 {
+            bridged
+                .step_with_bridge(&mut nop, dt())
+                .expect("the bridge computes under this build's semantics");
+        }
+
         world.step(dt());
-        let (xa, xb) = separated_x();
-        assert_eq!(world.bodies[a].position.x, xa);
-        assert_eq!(world.bodies[b].position.x, xb);
         assert_eq!(
             dispatches.load(Ordering::SeqCst),
             per_frame(),
             "no longer routed"
+        );
+        assert!(
+            world.bodies[s].position.y > bridged.bodies[f].position.y,
+            "the CPU solve holds the sphere: {:?} vs the no-op bridge {:?}",
+            world.bodies[s].position.y,
+            bridged.bodies[f].position.y
         );
 
         world

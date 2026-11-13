@@ -240,9 +240,9 @@ fn hex(b: &[u8]) -> String {
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
 const GOLDEN_STATE_DIGEST: &str =
-    "21e112d0766a019c4037d5d181b0cfdf3d06c09bb98ca4a45a29d2f1aa07b3ef";
+    "0c2b147d80f7f5cabf6020d91b774dbf804bbb6a711c2bc470d95b82ae6d320c";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
-const GOLDEN_LAW_ID: &str = "e856d3fbc6ec20fd7bde34b30260a24c24ce758386f2a77ba345d6a546eff1e9";
+const GOLDEN_LAW_ID: &str = "d7602a1bfbce97cc7567f9438ad81ceee1b4e966f519225f94f0b53a4acdaa04";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
@@ -250,7 +250,7 @@ const GOLDEN_LAW_ID: &str = "e856d3fbc6ec20fd7bde34b30260a24c24ce758386f2a77ba34
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "e7459da7269006770d624ddacdd370f5fffe641cbb2a653d0faa1eb6e8e27540";
+    "1caf10f50dc82a568101410bbe20ee688b9dea2366065c7c61a1d31b9d8da95e";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {
