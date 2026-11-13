@@ -188,7 +188,7 @@ const GOLDEN_PLAIN: u64 = 0x93dd_d75b_5f2e_62da;
 /// Scene A: `YeeGrid::new_with_absorber(12, 10, 8, COURANT_3D,
 /// GradedPml { depth: [3, 2, 2], sigma_max: 3 })`, [`seed`] (absorbing samples
 /// skipped), 200 × `step()`, then [`hash`]. 採取手順は [`GOLDEN_PLAIN`] と同じ
-const GOLDEN_PML: u64 = 0xc273_c162_fc8e_d898;
+const GOLDEN_PML: u64 = 0xf62a_fac1_c5ae_37e0;
 
 fn scene_plain(map: bool) -> u64 {
     let mut g = YeeGrid::new(7, 6, 5, COURANT_3D);

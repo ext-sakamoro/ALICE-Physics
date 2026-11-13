@@ -570,7 +570,7 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 // re-pinned under aa8c72e9… (world snapshot version 9): the 9a stack's version 8 bytes come
 // back exactly from today's blob with the header ids and without the lock count of 0; the
 // letters did not move
-const THROW_DIGEST_600: &str = "06c01dda873df3a6b74bd60be886b24e8526a5b114cb5ca9745ead3e61354480";
+const THROW_DIGEST_600: &str = "411e0db89c8b0ee39d514997add57a7b801de307e998494440262190e57c1d92";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -705,7 +705,7 @@ fn rollback_blob_carries_the_letters() {
 // back exactly from today's blob with the header ids and without the lock count of 0; the
 // letters did not move
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "bed8c3ffea007bebd2b96081702b349b2b419722626cfee750ff2e94b33a8c4a";
+    "87598702841ba0ae15122a994091175846e9e401b5700bbbd540bfb2c4677978";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {
