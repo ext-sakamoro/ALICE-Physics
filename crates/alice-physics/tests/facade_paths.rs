@@ -697,6 +697,7 @@ use alice_physics::material::CombinedMaterial as _;
 use alice_physics::material::MaterialId as _;
 use alice_physics::material::MaterialTable as _;
 use alice_physics::material::PhysicsMaterial as _;
+use alice_physics::material::DEFAULT_CONTACT_COMPLIANCE as _;
 use alice_physics::material::DEFAULT_MATERIAL as _;
 use alice_physics::math as _;
 use alice_physics::math::simd_width as _;
@@ -1461,6 +1462,7 @@ use alice_physics::solver::StageWork as _;
 use alice_physics::solver::TgsCacheStats as _;
 use alice_physics::solver::WorldCcdConfig as _;
 use alice_physics::solver::WorldSnapshotError as _;
+use alice_physics::solver::STATIC_BODY as _;
 use alice_physics::spatial as _;
 use alice_physics::spatial::SpatialGrid as _;
 use alice_physics::speculative_contact as _;
@@ -1917,7 +1919,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1899 paths, checked at compile time
+    // 1901 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
