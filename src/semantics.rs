@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636
+//! 6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e
 //! ```
 //!
 //! # Entries
@@ -194,7 +194,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "step_parallel shared-body order",
-        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+        hex32("6a5d9698aeeb7a1743b51f9c57015c9fc292cf27fc7b20c61a7d02ad7a06cbc6"),
     ),
     (
         "installed bridge",
@@ -1126,16 +1126,39 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "law output: tgs oriented 6dof hooks",
         hex32("cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509"),
     ),
+    // 4.0's colouring in the serial order (`step_parallel` gives the bits of `step` where
+    // constraints share a body) moved the shared-body pin after every earlier generation: each
+    // keeps the digest of the first-free colouring's order
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "step_parallel shared-body order",
+        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "step_parallel shared-body order",
+        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "step_parallel shared-body order",
+        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "step_parallel shared-body order",
+        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636`.
+/// Hex: `6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636");
+    hex32("6edd67f6b97f644340f0803f25e53736f875a0a1f1f8b232e9dd98638c656f7e");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.

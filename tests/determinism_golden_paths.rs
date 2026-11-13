@@ -652,9 +652,9 @@ fn golden_participant() {
 // ── Paths the backend × entry rows do not reach ─────────────────────────────
 
 /// The path scene with a chain of three distance constraints hanging from
-/// the pivot: each inner link is shared by two constraints, so the batched
-/// solve of `step_parallel` (graph colour order) and the solve of `step`
-/// (index order) visit them in a different order.
+/// the pivot: each inner link is shared by two constraints, so a colouring
+/// that ignored the serial order would visit them in another order than
+/// `step` (index order).
 #[cfg(feature = "parallel")]
 fn shared_body_scene() -> PhysicsWorld {
     let mut w = path_scene(SolverBackend::Xpbd);
@@ -676,25 +676,28 @@ fn shared_body_scene() -> PhysicsWorld {
 
 #[cfg(feature = "parallel")]
 const GOLDEN_STEP_PARALLEL_SHARED_BODY: &str =
-    "412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca";
+    "6a5d9698aeeb7a1743b51f9c57015c9fc292cf27fc7b20c61a7d02ad7a06cbc6";
 
-/// `step_parallel` where constraints share a body: pins the batched order,
-/// which is not the order of `step` (checked: `step` gives other bits here).
+/// `step_parallel` where constraints share a body gives the bits of `step`:
+/// the colouring keeps every body's constraints in the serial order, and
+/// constraints on disjoint bodies commute. Re-recorded (from `412bed13…`,
+/// which pinned the first-free colouring's order, different from `step`)
+/// when the colouring took the serial order.
 #[cfg(feature = "parallel")]
 #[test]
-fn golden_step_parallel_shared_body_order() {
+fn golden_step_parallel_shared_bodies_equal_step() {
     let w = run_step_parallel(shared_body_scene());
     assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
+    let sequential = run_step(shared_body_scene());
+    assert_eq!(
+        hash_world(&w),
+        hash_world(&sequential),
+        "step_parallel and step differ where constraints share a body"
+    );
     assert_golden(
-        "step_parallel shared-body order",
+        "step_parallel shared bodies",
         &hash_world(&w),
         GOLDEN_STEP_PARALLEL_SHARED_BODY,
-    );
-    let sequential = run_step(shared_body_scene());
-    assert_ne!(
-        hash_world(&sequential),
-        GOLDEN_STEP_PARALLEL_SHARED_BODY,
-        "step and step_parallel agree here, so the scene does not pin the batched order"
     );
 }
 

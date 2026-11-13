@@ -563,8 +563,8 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const THREE_BODY_XPBD: &str = "46d77c1811b3bc5a178c5768b90de6d616299978bb22faa9b63ec2c91c3dc978";
-const THREE_BODY_TGS: &str = "26d523c9842c101e64e54470db5e0e2ccbf6e0c181028648174a2a38377eb265";
+const THREE_BODY_XPBD: &str = "6a2eb69451e57e62ac76a9a96367b7187b224ce06a61cff2047dcdfaba7cb87b";
+const THREE_BODY_TGS: &str = "73d1919646f8e5327aeda78e83affcd7b2048f8ab82f9581832ebb166b511810";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on

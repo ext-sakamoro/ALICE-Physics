@@ -71,8 +71,8 @@
 //!   only executed by CI lanes that enable that feature; the row records the
 //!   feature so the gate is visible.
 //! * A `step_parallel` row on a scene where no two constraints share a body
-//!   pins the parity with `step`, not the batched ordering; the ordering has
-//!   its own row, `step_parallel shared-body order`.
+//!   pins the parity with `step` only where the batches cannot reorder
+//!   anything; the row `step_parallel shared-body order` pins it where they could.
 //! * For a [`RELATION_PINS`] row, the static guards (one world built, the
 //!   other backend not named) count call sites and names only; a loop or a
 //!   later change of `config.solver_backend` passes them. The runtime check
@@ -331,7 +331,7 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     (
         "step_parallel shared-body order",
         "determinism_golden_paths.rs",
-        "golden_step_parallel_shared_body_order",
+        "golden_step_parallel_shared_bodies_equal_step",
         "parallel",
     ),
     (
@@ -420,8 +420,7 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
         1,
     ),
     // two distance constraints share a body (joints are solved the same way
-    // on both paths; the batched order applies to distance constraints and
-    // contacts)
+    // on both paths; the batches hold the distance constraints and contacts)
     (
         "step_parallel shared-body order",
         &["add_distance_constraint(", ".step_parallel("],

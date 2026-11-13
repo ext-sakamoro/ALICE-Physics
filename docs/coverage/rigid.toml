@@ -495,7 +495,7 @@ axis = "solver"
 item = "constraint graph colouring for parallel solve"
 source = "PhysX / Box2D v3 graph colouring"
 status = "implemented+oracle"
-evidence = "src/solver.rs::rebuild_batches tests/analytic_world_api.rs::num_batches_counts_the_greedy_colours tests/parallel_batch_coloring.rs::static_hub_collapses_to_a_single_batch"
+evidence = "src/solver.rs::rebuild_batches tests/analytic_world_api.rs::num_batches_counts_the_colours_in_serial_order tests/parallel_batch_coloring.rs::static_hub_collapses_to_a_single_batch"
 oracle_candidate = ""
 limitation = ""
 

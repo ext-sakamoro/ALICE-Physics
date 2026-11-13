@@ -1027,14 +1027,16 @@ fn joint_count_and_remove_joint_track_the_joint_list() {
     assert_eq!(world.joint_count(), 0);
 }
 
-/// Oracle: greedy edge colouring in index order. A path `0-1, 1-2, 2-3`
-/// of dynamic bodies needs 2 colours (constraint 1 shares body 1 with
-/// constraint 0, constraint 2 shares body 2 with constraint 1 but not body
-/// with constraint 0); two disjoint constraints need 1; a static hub
-/// imposes no colouring constraint, so `0-S, S-2` also needs 1; no
-/// constraints need 0.
+/// Oracle: each constraint takes the colour after the latest colour of
+/// either dynamic body, in index order, so every body meets its constraints
+/// in the serial solve's order. A path `0-1, 1-2, 2-3` of dynamic bodies
+/// therefore needs 3 colours: each constraint shares a body with the one
+/// before it. A first-free colouring would put `2-3` in colour 0, ahead of
+/// `1-2`, which also holds body 2. Two disjoint constraints need 1 colour.
+/// A static hub imposes no colouring constraint, so `0-S, S-2` also needs
+/// 1. No constraints need 0.
 #[test]
-fn num_batches_counts_the_greedy_colours() {
+fn num_batches_counts_the_colours_in_serial_order() {
     fn rod(a: usize, b: usize) -> DistanceConstraint {
         DistanceConstraint {
             body_a: a,
@@ -1058,7 +1060,7 @@ fn num_batches_counts_the_greedy_colours() {
             name: "path of 4",
             statics: &[],
             rods: &[(0, 1), (1, 2), (2, 3)],
-            expect: 2,
+            expect: 3,
         },
         Case {
             name: "two disjoint",

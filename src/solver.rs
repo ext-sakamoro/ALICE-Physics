@@ -4034,10 +4034,12 @@ impl PhysicsWorld {
         self.batches_dirty = true;
     }
 
-    /// Rebuild constraint batches using greedy graph coloring
+    /// Rebuild constraint batches by graph coloring in the serial solve's order
     ///
-    /// Each batch contains constraints that share no bodies,
-    /// allowing safe parallel modification.
+    /// Each batch contains constraints that share no dynamic bodies,
+    /// allowing safe parallel modification, and every dynamic body meets its
+    /// constraints in the serial order, so the batched solve equals the serial
+    /// one bit for bit.
     pub fn rebuild_batches(&mut self) {
         if !self.batches_dirty {
             return;
@@ -4055,54 +4057,43 @@ impl PhysicsWorld {
         self.batch_static_bodies
             .extend(self.bodies.iter().map(|b| b.inv_mass.is_zero()));
 
-        // Track which colors each dynamic body participates in. One growable
-        // bitset per body (64 colors per word) — no upper bound on colors, so a
-        // hub body shared by 65+ constraints still gets a unique color per
-        // constraint instead of aliasing into a single overflow batch.
-        let mut body_colors: Vec<Vec<u64>> = vec![Vec::new(); num_bodies];
-
-        // Color distance constraints
-        for (constraint_idx, constraint) in self.distance_constraints.iter().enumerate() {
-            let body_a = constraint.body_a;
-            let body_b = constraint.body_b;
-
-            // Find first color where both bodies are free
-            let color =
-                Self::find_free_color(&body_colors, &self.batch_static_bodies, body_a, body_b);
-
-            // Ensure we have enough batches
+        // Colour = one past the latest colour either dynamic body already has,
+        // in the serial solve's order (distance constraints by index, then
+        // contacts by index). Each body then meets its constraints in that
+        // order, and constraints on disjoint bodies commute, so the batched
+        // solve makes the serial solve's writes bit for bit
+        // (`batches_keep_body_order`). A first-free colour can put a body's
+        // later constraint ahead of its earlier one: a different Gauss-Seidel
+        // order, and a different result.
+        // `after[i]` = 1 + the latest colour of body `i` (0 = none yet).
+        let mut after: Vec<usize> = vec![0; num_bodies];
+        let pairs: Vec<(usize, usize)> = self
+            .distance_constraints
+            .iter()
+            .map(|c| (c.body_a, c.body_b))
+            .chain(
+                self.contact_constraints
+                    .iter()
+                    .map(|c| (c.body_a, c.body_b)),
+            )
+            .collect();
+        let num_dist = self.distance_constraints.len();
+        for (k, (body_a, body_b)) in pairs.into_iter().enumerate() {
+            let color = Self::next_color(&after, &self.batch_static_bodies, body_a, body_b);
             while self.constraint_batches.len() <= color {
                 self.constraint_batches.push(ConstraintBatch::default());
             }
-
-            // Add constraint to batch
-            self.constraint_batches[color]
-                .distance_indices
-                .push(constraint_idx);
-
-            // Mark bodies as used in this color (set bit)
-            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_a, color);
-            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_b, color);
-        }
-
-        // Color contact constraints
-        for (constraint_idx, constraint) in self.contact_constraints.iter().enumerate() {
-            let body_a = constraint.body_a;
-            let body_b = constraint.body_b;
-
-            let color =
-                Self::find_free_color(&body_colors, &self.batch_static_bodies, body_a, body_b);
-
-            while self.constraint_batches.len() <= color {
-                self.constraint_batches.push(ConstraintBatch::default());
+            let batch = &mut self.constraint_batches[color];
+            if k < num_dist {
+                batch.distance_indices.push(k);
+            } else {
+                batch.contact_indices.push(k - num_dist);
             }
-
-            self.constraint_batches[color]
-                .contact_indices
-                .push(constraint_idx);
-
-            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_a, color);
-            Self::mark_color(&mut body_colors, &self.batch_static_bodies, body_b, color);
+            for idx in [body_a, body_b] {
+                if !self.batch_static_bodies.get(idx).copied().unwrap_or(true) {
+                    after[idx] = color + 1;
+                }
+            }
         }
 
         self.batches_dirty = false;
@@ -4111,71 +4102,72 @@ impl PhysicsWorld {
             self.batches_are_body_disjoint(),
             "graph coloring produced a batch with two constraints sharing a dynamic body"
         );
+        debug_assert!(
+            self.batches_keep_body_order(),
+            "graph coloring put a body's constraint ahead of an earlier one of it"
+        );
     }
 
-    /// Occupancy word `word` of body `idx`, or 0 if the body is static,
-    /// out of range, or has no color at that word yet.
+    /// The colour of a constraint on `body_a` and `body_b`: one past the
+    /// latest colour of either (`after` holds 1 + that colour, 0 for none).
+    /// Static bodies and out-of-range indices impose nothing (the pair
+    /// solvers never write them).
     #[inline(always)]
-    fn color_word(
-        body_colors: &[Vec<u64>],
-        static_bodies: &[bool],
-        idx: usize,
-        word: usize,
-    ) -> u64 {
-        if static_bodies.get(idx).copied().unwrap_or(false) {
-            return 0;
-        }
-        body_colors
-            .get(idx)
-            .and_then(|words| words.get(word))
-            .copied()
-            .unwrap_or(0)
+    fn next_color(after: &[usize], static_bodies: &[bool], body_a: usize, body_b: usize) -> usize {
+        let of = |idx: usize| {
+            if static_bodies.get(idx).copied().unwrap_or(true) {
+                0
+            } else {
+                after.get(idx).copied().unwrap_or(0)
+            }
+        };
+        of(body_a).max(of(body_b))
     }
 
-    /// Find first color where both bodies are free (greedy coloring).
-    ///
-    /// Scans the per-body occupancy bitsets word by word (64 colors per
-    /// word); the first word with a free bit yields the color. If every
-    /// allocated word is saturated the next fresh word is used, so the
-    /// number of colors is unbounded and two constraints sharing a dynamic
-    /// body never land in the same batch.
-    fn find_free_color(
-        body_colors: &[Vec<u64>],
-        static_bodies: &[bool],
-        body_a: usize,
-        body_b: usize,
-    ) -> usize {
-        let words_a = body_colors.get(body_a).map_or(0, Vec::len);
-        let words_b = body_colors.get(body_b).map_or(0, Vec::len);
-        let words = words_a.max(words_b);
-
-        for word in 0..words {
-            let occupied = Self::color_word(body_colors, static_bodies, body_a, word)
-                | Self::color_word(body_colors, static_bodies, body_b, word);
-            if occupied != u64::MAX {
-                return word * 64 + (!occupied).trailing_zeros() as usize;
+    /// Check that every dynamic body meets its constraints in the serial
+    /// solve's order (the distance constraints by index, then the contacts by
+    /// index): the batches holding them are strictly increasing. Constraints
+    /// on disjoint bodies commute, so the batched solve then makes exactly the
+    /// serial solve's writes.
+    pub(crate) fn batches_keep_body_order(&self) -> bool {
+        let mut dist_batch = vec![usize::MAX; self.distance_constraints.len()];
+        let mut contact_batch = vec![usize::MAX; self.contact_constraints.len()];
+        for (k, batch) in self.constraint_batches.iter().enumerate() {
+            for &i in &batch.distance_indices {
+                dist_batch[i] = k;
+            }
+            for &i in &batch.contact_indices {
+                contact_batch[i] = k;
             }
         }
-
-        words * 64
-    }
-
-    /// Record that dynamic body `idx` participates in `color`.
-    ///
-    /// Static bodies and out-of-range indices are ignored (they are not
-    /// coloring constraints). Grows the body's bitset on demand.
-    #[inline(always)]
-    fn mark_color(body_colors: &mut [Vec<u64>], static_bodies: &[bool], idx: usize, color: usize) {
-        if static_bodies.get(idx).copied().unwrap_or(false) {
-            return;
-        }
-        if let Some(words) = body_colors.get_mut(idx) {
-            let word = color / 64;
-            if words.len() <= word {
-                words.resize(word + 1, 0);
+        let pairs = self
+            .distance_constraints
+            .iter()
+            .map(|c| (c.body_a, c.body_b))
+            .zip(dist_batch)
+            .chain(
+                self.contact_constraints
+                    .iter()
+                    .map(|c| (c.body_a, c.body_b))
+                    .zip(contact_batch),
+            );
+        // the batch of each body's previous constraint, plus one (0 = none yet)
+        let mut after = vec![0usize; self.bodies.len()];
+        for ((a, b), k) in pairs {
+            if k == usize::MAX {
+                return false;
             }
-            words[word] |= 1u64 << (color % 64);
+            for idx in [a, b] {
+                if idx >= self.bodies.len() || self.batch_static_bodies[idx] {
+                    continue;
+                }
+                if k + 1 < after[idx] || (k + 1 == after[idx] && a != b) {
+                    return false;
+                }
+                after[idx] = k + 1;
+            }
         }
+        true
     }
 
     /// Check the graph coloring invariant: within one batch no two
@@ -5546,11 +5538,11 @@ impl PhysicsWorld {
     /// `step_parallel` is deterministic — the same world stepped twice, on any
     /// number of threads and on every platform, produces the same bits (graph
     /// colouring is deterministic and constraints inside a batch touch
-    /// disjoint bodies). It is **not** bit-identical to [`Self::step`] once two
-    /// constraints share a body: the batches are a different Gauss–Seidel
-    /// ordering than constraint index order, and Gauss–Seidel is order
-    /// dependent. Lockstep / rollback peers must therefore all use the same
-    /// path (`fuzz/fuzz_targets/fuzz_step_parity.rs` checks both properties).
+    /// disjoint bodies). With [`SolverBackend::Xpbd`] it is also bit-identical
+    /// to [`Self::step`]: the colouring keeps every body's constraints in the
+    /// serial order (`rebuild_batches`) and constraints on disjoint bodies
+    /// commute, so the batches make the serial Gauss–Seidel's writes
+    /// (`fuzz/fuzz_targets/fuzz_step_parity.rs` checks both properties).
     ///
     /// # Solver backend
     ///
@@ -10941,6 +10933,199 @@ mod tests {
         bad.distance_indices.extend([0usize, 1]);
         world.constraint_batches = vec![bad];
         assert!(!world.batches_are_body_disjoint());
+    }
+
+    /// Five contacts among dynamic bodies 0..=5 in the order
+    /// `(0,1) (2,3) (1,2) (1,4) (4,5)`: a first-free colouring puts the last at
+    /// colour 0, ahead of `(1,4)` which shares body 4 with it (colour 2), so the
+    /// batched solve would meet body 4's contacts in the reverse of the serial
+    /// order. Each contact must instead come after every earlier one of its
+    /// bodies: colours 0, 0, 1, 2, 3.
+    #[test]
+    fn coloring_keeps_each_bodys_constraints_in_index_order() {
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        for i in 0..6 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        for (a, b) in [(0, 1), (2, 3), (1, 2), (1, 4), (4, 5)] {
+            world.add_contact(ContactConstraint::new(
+                a,
+                b,
+                Contact {
+                    point_a: v3(a as i64, 0, 0),
+                    point_b: v3(b as i64, 0, 0),
+                    normal: v3(1, 0, 0),
+                    depth: r(1, 10),
+                },
+            ));
+        }
+        world.rebuild_batches();
+        let colour_of = |i: usize| {
+            world
+                .constraint_batches
+                .iter()
+                .position(|b| b.contact_indices.contains(&i))
+                .expect("every contact is in a batch")
+        };
+        assert_eq!(
+            (0..5).map(colour_of).collect::<Vec<_>>(),
+            vec![0, 0, 1, 2, 3]
+        );
+        assert!(world.batches_are_body_disjoint());
+        assert!(world.batches_keep_body_order());
+    }
+
+    /// An index past the bodies (a static collider's slot) imposes no colour,
+    /// as a static body does: two contacts of body 0 against it take colours 0
+    /// and 1 (body 0's order), and a contact between two such slots takes 0.
+    #[test]
+    fn coloring_treats_an_index_past_the_bodies_as_static() {
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        world.add_body(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE));
+        for (a, b) in [(0, 99), (0, 99), (99, 98)] {
+            world.add_contact(ContactConstraint::new(
+                a,
+                b,
+                Contact {
+                    point_a: Vec3Fix::ZERO,
+                    point_b: Vec3Fix::ZERO,
+                    normal: v3(0, 1, 0),
+                    depth: r(1, 10),
+                },
+            ));
+        }
+        world.rebuild_batches();
+        let colours: Vec<usize> = (0..3)
+            .map(|i| {
+                world
+                    .constraint_batches
+                    .iter()
+                    .position(|b| b.contact_indices.contains(&i))
+                    .expect("every contact is in a batch")
+            })
+            .collect();
+        assert_eq!(colours, vec![0, 1, 0]);
+        assert!(world.batches_keep_body_order());
+    }
+
+    #[test]
+    fn body_order_check_detects_a_reversed_pair() {
+        // two contacts on body 0, the later one put in the earlier batch
+        let mut world = hub_world(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE), 2);
+        world.rebuild_batches();
+        assert!(world.batches_keep_body_order());
+        let (mut first, mut second) = (ConstraintBatch::default(), ConstraintBatch::default());
+        first.distance_indices.push(1);
+        second.distance_indices.push(0);
+        world.constraint_batches = vec![first, second];
+        assert!(world.batches_are_body_disjoint());
+        assert!(!world.batches_keep_body_order());
+    }
+
+    /// A random world for the batch tests: `n` dynamic bodies and one static
+    /// body, then distance constraints and contacts between random pairs
+    /// (a static end included), each contact at an axis normal with a depth in
+    /// `(0, 1/4]` and points at the bodies' centres.
+    fn random_constraint_world(seed: u64, n: usize, dists: usize, contacts: usize) -> PhysicsWorld {
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut next = move |m: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % m
+        };
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        for i in 0..n {
+            let at = v3(i as i64, next(3) as i64, next(3) as i64);
+            world.add_body(RigidBody::new_dynamic(
+                at,
+                Fix128::from_int(1 + next(3) as i64),
+            ));
+        }
+        let wall = world.add_body(RigidBody::new_static(v3(-2, 0, 0)));
+        let pair = |next: &mut dyn FnMut(u64) -> u64| {
+            let a = next(n as u64) as usize;
+            let mut b = next(n as u64 + 1) as usize;
+            if b == a {
+                b = wall;
+            }
+            if b == n {
+                b = wall;
+            }
+            (a, b)
+        };
+        for _ in 0..dists {
+            let (a, b) = pair(&mut next);
+            world.add_distance_constraint(DistanceConstraint::new(
+                a,
+                b,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Fix128::from_int(1 + next(2) as i64),
+            ));
+        }
+        let axes = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1), v3(-1, 0, 0)];
+        for _ in 0..contacts {
+            let (a, b) = pair(&mut next);
+            let (pa, pb) = (world.bodies[a].position, world.bodies[b].position);
+            world.add_contact(ContactConstraint::new(
+                a,
+                b,
+                Contact {
+                    point_a: pa,
+                    point_b: pb,
+                    normal: axes[next(4) as usize],
+                    depth: r(1 + next(25) as i64, 100),
+                },
+            ));
+        }
+        world
+    }
+
+    #[test]
+    fn coloring_keeps_body_order_on_random_constraint_lists() {
+        for seed in 0..200 {
+            let mut world = random_constraint_world(seed, 8, (seed % 5) as usize, 24);
+            world.rebuild_batches();
+            assert!(world.batches_are_body_disjoint(), "seed {seed}");
+            assert!(world.batches_keep_body_order(), "seed {seed}");
+        }
+    }
+
+    /// The batched solve makes the serial solve's writes bit for bit on random
+    /// constraint lists (the order the colouring keeps, `batches_keep_body_order`).
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn batched_solve_equals_the_serial_solve_on_random_constraint_lists() {
+        let h = Fix128::from_ratio(1, 240);
+        for seed in 0..100 {
+            let make = || {
+                let mut w = random_constraint_world(seed, 8, (seed % 5) as usize, 24);
+                w.begin_contact_solve();
+                w
+            };
+            let (mut par, mut seq) = (make(), make());
+            par.rebuild_batches();
+            for _ in 0..4 {
+                par.solve_constraints_batched(h);
+                seq.solve_distance_constraints(h);
+                seq.solve_contact_constraints(h);
+            }
+            for (i, (p, s)) in par.bodies.iter().zip(&seq.bodies).enumerate() {
+                assert_eq!(p.position, s.position, "seed {seed} body {i}");
+                assert_eq!(p.rotation, s.rotation, "seed {seed} body {i}");
+            }
+            for (p, s) in par.contact_constraints.iter().zip(&seq.contact_constraints) {
+                assert_eq!(p.cached_lambda, s.cached_lambda, "seed {seed}");
+            }
+            for (p, s) in par
+                .distance_constraints
+                .iter()
+                .zip(&seq.distance_constraints)
+            {
+                assert_eq!(p.cached_lambda, s.cached_lambda, "seed {seed}");
+            }
+        }
     }
 
     #[cfg(feature = "parallel")]
