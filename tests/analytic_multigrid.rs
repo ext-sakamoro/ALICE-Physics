@@ -417,7 +417,7 @@ fn checksum(g: &MacGrid) -> u64 {
 /// loud. Re-pin only on purpose, together with the doc of the changed
 /// parameter.
 const GOLDEN_WALLED_16: u64 = 0xc3401cdb5cd45d6f;
-const GOLDEN_MIXED_8: u64 = 0xca146c4786121f08;
+const GOLDEN_MIXED_8: u64 = 0x065cead1be5475f9;
 
 #[test]
 fn result_matches_pinned_bits() {

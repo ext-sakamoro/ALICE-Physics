@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d
+//! 9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636
 //! ```
 //!
 //! # Entries
@@ -100,27 +100,27 @@ pub(crate) const fn hex32(s: &str) -> [u8; 32] {
 pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "Xpbd step",
-        hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+        hex32("a96d8e7e2c25bef0fe6775a6189346c3fee5d54f4b235d1858b9d70efe0a6a44"),
     ),
     (
         "joint break",
-        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
+        hex32("beef7e0b695aff523f8e2d2f7464f109b65f21ff3bca9b28898e5223e5f92f81"),
     ),
     (
         "Xpbd step_n",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "Xpbd try_step",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "Xpbd step_parallel",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "Xpbd try_step_parallel",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "Xpbd step_with_bridge",
@@ -132,29 +132,29 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "Tgs step",
-        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
     ),
     (
         "Tgs step_n",
-        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
     ),
     (
         "Tgs try_step",
-        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
     ),
     (
         "contacts",
-        hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
+        hex32("9bbfa01ac96aab3ce7f720d7e15f273f2f2e8e8b3c8c606abafcc38b27a09df7"),
     ),
     // re-recorded (from 8fe963f2…) when a sleeping body a step moves began to wake its
     // island and keep the move (tests/determinism_golden.rs::determinism_joint_pendulum)
     (
         "distance constraint",
-        hex32("6dcae0f3989e3ba3afd8e4056a98e774e093175ff2307d7fca8a7e8b3c204c37"),
+        hex32("d06737c90a67a3c6621f561610a53ac76e4f30a7411258d74ac7400f2062f29f"),
     ),
     (
         "joint",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "continuous collision",
@@ -162,35 +162,35 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "sleeping",
-        hex32("3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229"),
+        hex32("a55dc2e232a0498e143005288991ef51f78e393b0f76f1d9c20392b5da00a776"),
     ),
     (
         "broadphase Bvh",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "broadphase DynamicTree",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "broadphase Hybrid",
-        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
     ),
     (
         "participant",
-        hex32("3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684"),
+        hex32("9c7570924c57b15bd5a3d71cde6a0d9b67ef0b2b8f9ef4da09b827f9e2b8c30f"),
     ),
     (
         "cloth",
-        hex32("ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556"),
+        hex32("e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb"),
     ),
     (
         "physics2d",
-        hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+        hex32("8d1e013f0bceb47c12d10e1f9e00dd35966484bba8146ea578d0883536f54dc1"),
     ),
     (
         "secondary chain",
-        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
+        hex32("b38f368c90287484da417d12e2379b0b11820a4bb298e743209bb0699fdee9e0"),
     ),
     (
         "step_parallel shared-body order",
@@ -204,7 +204,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     // dropped on a plane at dt = 1/30 s (`tests/analytic_sleep_by_time.rs`)
     (
         "sleep by time",
-        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+        hex32("8dc7cac6e1349f31c707b9444ae2750ac1bd2766cb28e215e8d64c2be203f8e3"),
     ),
     // the overflow flag on a pair whose radius sum leaves the range: one predicate
     // on every path (`tests/overflow_flag_previous_bits.rs`)
@@ -272,7 +272,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: shape",
-        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+        hex32("e8f0559daab75098ae38f1256532451ae90be5f76a65e5cf7d3d56177ce17ecc"),
     ),
     (
         "law output: sim_field",
@@ -288,7 +288,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: tgs oriented 6dof hooks",
-        hex32("cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509"),
+        hex32("f0c1a48aec704624da95c4ceaccb547b6d3786379cf60ffbcb976a3f8a6fd839"),
     ),
     (
         "law output: thermal",
@@ -707,16 +707,435 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "alice-ml",
         hex32("14e0f0435562e1fa77ab0ce071c85c422fd3f64122aaaf2e73d110264b5356b6"),
     ),
+    // 4.0's contact rework (contacts as XPBD point constraints at the contact point,
+    // speculative contacts, the temporal Gauss–Seidel step meeting kinematic motion once) and
+    // the product rounded to nearest moved these pins after every earlier generation: each
+    // earlier generation keeps the digest it had before, so its row stays as it was recorded
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd step",
+        hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd step_n",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd try_step",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Xpbd try_step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Tgs step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Tgs step_n",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "Tgs try_step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "contacts",
+        hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "joint",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "broadphase Bvh",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "broadphase DynamicTree",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "broadphase Hybrid",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "participant",
+        hex32("3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "joint break",
+        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "cloth",
+        hex32("ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "secondary chain",
+        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "sleep by time",
+        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "physics2d",
+        hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "law output: shape",
+        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd step",
+        hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd step_n",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd try_step",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Xpbd try_step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Tgs step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Tgs step_n",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "Tgs try_step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "contacts",
+        hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "joint",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "broadphase Bvh",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "broadphase DynamicTree",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "broadphase Hybrid",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "participant",
+        hex32("3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "joint break",
+        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "cloth",
+        hex32("ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "secondary chain",
+        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "sleep by time",
+        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "physics2d",
+        hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "law output: shape",
+        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd step",
+        hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd step_n",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd try_step",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Xpbd try_step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Tgs step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Tgs step_n",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "Tgs try_step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "contacts",
+        hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "joint",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "broadphase Bvh",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "broadphase DynamicTree",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "broadphase Hybrid",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "participant",
+        hex32("3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "joint break",
+        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "cloth",
+        hex32("ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "secondary chain",
+        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "sleep by time",
+        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "physics2d",
+        hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "law output: shape",
+        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd step",
+        hex32("cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd step_n",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd try_step",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Xpbd try_step_parallel",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Tgs step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Tgs step_n",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "Tgs try_step",
+        hex32("cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "contacts",
+        hex32("532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "distance constraint",
+        hex32("6dcae0f3989e3ba3afd8e4056a98e774e093175ff2307d7fca8a7e8b3c204c37"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "joint",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "sleeping",
+        hex32("3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "broadphase Bvh",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "broadphase DynamicTree",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "broadphase Hybrid",
+        hex32("7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "participant",
+        hex32("3de49332adc74a203ca1c416e3bc162bc432aa692ff5b61a58f5aa13c14bd684"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "joint break",
+        hex32("f56c2a6504061d1afb406e77ba60332fc608d3a614ccbd6c7d3005be510fa0e9"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "cloth",
+        hex32("ba4fd85c6e390518ef3326802fb3a29498e1994245901e8636cdad9c0ae1d556"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "secondary chain",
+        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "sleep by time",
+        hex32("3db0e0d0a44288c3cd4a5335d78555ef2e608a805dbee20cc1df8970596c1b24"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "physics2d",
+        hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "law output: shape",
+        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+    ),
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        "law output: tgs oriented 6dof hooks",
+        hex32("cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d`.
+/// Hex: `9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("0d49c4c18990acc2a441d8798c61a367e95dae8b0159ed60eea937ffff5c6f8d");
+    hex32("9b3567079f733aa7c0a09b0b34f86f514022e9024c8a668fbf426aec8d9cc636");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
