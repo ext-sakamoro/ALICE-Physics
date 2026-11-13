@@ -399,12 +399,32 @@ When an oracle goes green:
     return report
 
 
+def stale_problem(path, report):
+    """Why the committed copy at `path` is not `report`, or None when it is the same.
+
+    `--check` compares and writes nothing, so a prepass that runs only the generator
+    still fails on a stale ledger instead of silently refreshing it."""
+    import difflib
+    try:
+        committed = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return f"{path.name} is missing: regenerate it (scripts/land.py does) and commit it"
+    if committed == report:
+        return None
+    diff = difflib.unified_diff(committed.splitlines(), report.splitlines(),
+                                f"{path.name} (committed)", f"{path.name} (generated)", lineterm='', n=1)
+    shown = list(diff)[:40]
+    return (f"{path.name} is stale: regenerate it (scripts/land.py does) and commit it\n"
+            + "\n".join(shown))
+
+
 def main(argv=None):
     import argparse
     import sys
     ap = argparse.ArgumentParser(description="ALICE-Physics oracle status report")
     ap.add_argument('--check', action='store_true',
-                    help='do not write; fail on a stale or id-less PIN, or an external cause Cargo does not resolve')
+                    help='do not write; fail on a stale docs/oracle-status.md, a stale or id-less PIN, '
+                         'or an external cause Cargo does not resolve')
     args = ap.parse_args(argv)
     print("Scanning ALICE-Physics oracle tests...", file=sys.stderr)
 
@@ -413,6 +433,8 @@ def main(argv=None):
     if args.check:
         all_tests = categorized['implemented'] + categorized['partial'] + categorized['pending']
         pins, externals, no_id, problems = audit_links(all_tests, lock)
+        stale = stale_problem(DOCS_DIR / "oracle-status.md", generate_markdown_report(categorized, lock))
+        problems = problems + ([stale] if stale else [])
         n = sum(len(v) for v in categorized.values())
         print(f"compared: tests {n}, pins {len(pins)}, external causes {len(externals)}, known defects without id {len(no_id)}")
         for p in problems:

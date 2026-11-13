@@ -371,6 +371,76 @@ class OracleAuditLinks(unittest.TestCase):
             oracle.TESTS_DIR = saved
 
 
+class StaleLedgerCheck(unittest.TestCase):
+    """`--check` fails on a stale ledger, passes on the committed copy, and writes nothing.
+
+    The prepass runs only the generators' own lines, so a `--check` that wrote the ledger
+    (or did not compare it) would let a stale ledger through to CI."""
+
+    def setUp(self):
+        self.docs = Path(tempfile.mkdtemp(prefix="stale-ledger-"))
+        self.addCleanup(shutil.rmtree, self.docs, True)
+        self.saved = []
+
+    def patch(self, mod, **attrs):
+        for k, v in attrs.items():
+            self.saved.append((mod, k, getattr(mod, k)))
+            setattr(mod, k, v)
+
+    def tearDown(self):
+        for mod, k, v in reversed(self.saved):
+            setattr(mod, k, v)
+
+    def run_check(self, mod, name, written):
+        path = self.docs / name
+        if written is not None:
+            path.write_text(written, encoding="utf-8")
+        rc = mod.main(["--check"])
+        after = path.read_text(encoding="utf-8") if path.exists() else None
+        self.assertEqual(after, written, f"--check rewrote {name}")
+        return rc
+
+    def wiring_report(self):
+        base = {"dead_code": [], "unwired": ["unwired src/a.rs::f"]}
+        self.patch(wiring, DOCS_DIR=self.docs, load_baseline=lambda: base,
+                   run_wiring_guard=lambda: GUARD_OK)
+        return wiring.generate_markdown_report(base, wiring.parse_violations(GUARD_OK))
+
+    def oracle_report(self):
+        t = {"name": "a_test", "file": "tests/t.rs", "ignored": False, "reason": None}
+        cats = {"implemented": [t], "partial": [], "pending": []}
+        self.patch(oracle, DOCS_DIR=self.docs,
+                   run_tests_and_categorize=lambda: {k: list(v) for k, v in cats.items()},
+                   resolved_versions=lambda *a, **k: {},
+                   audit_links=lambda tests, lock: ([], [], [], []))
+        return oracle.generate_markdown_report({k: list(v) for k, v in cats.items()}, {})
+
+    def test_wiring_check_passes_only_on_the_generated_text(self):
+        report = self.wiring_report()
+        self.assertEqual(self.run_check(wiring, "wiring-status.md", report), 0)
+        self.assertEqual(self.run_check(wiring, "wiring-status.md", report + "old line\n"), 1)
+        self.assertEqual(self.run_check(wiring, "wiring-status.md", report.replace("1", "2", 1)), 1)
+
+    def test_wiring_check_fails_on_a_missing_ledger(self):
+        self.wiring_report()
+        self.assertEqual(self.run_check(wiring, "wiring-status.md", None), 1)
+
+    def test_oracle_check_passes_only_on_the_generated_text(self):
+        report = self.oracle_report()
+        self.assertEqual(self.run_check(oracle, "oracle-status.md", report), 0)
+        self.assertEqual(self.run_check(oracle, "oracle-status.md", report + "old line\n"), 1)
+        self.assertEqual(self.run_check(oracle, "oracle-status.md", ""), 1)
+
+    def test_oracle_check_fails_on_a_missing_ledger(self):
+        self.oracle_report()
+        self.assertEqual(self.run_check(oracle, "oracle-status.md", None), 1)
+
+    def test_a_link_problem_still_fails_on_a_fresh_ledger(self):
+        report = self.oracle_report()
+        self.patch(oracle, audit_links=lambda tests, lock: ([], [], [], ["a broken PIN"]))
+        self.assertEqual(self.run_check(oracle, "oracle-status.md", report), 1)
+
+
 def main() -> int:
     """the suite inside a temporary directory of its own (also the $TMPDIR of what it runs): a test
     that leaves a file or directory behind fails the run, naming it"""
