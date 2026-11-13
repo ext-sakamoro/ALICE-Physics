@@ -317,6 +317,100 @@ impl Support for Ellipsoid {
 mod tests {
     use super::*;
 
+    /// Points on a symmetry axis get the axis point exactly (oracle: the
+    /// nearest point of an ellipsoid to a point on an axis outside it is the
+    /// axis's end), and the normal there is the axis, for semi-axes given in
+    /// either order (the algorithm sorts them).
+    #[test]
+    fn a_point_on_an_axis_gets_the_axis_end() {
+        for radii in [Vec3Fix::from_int(3, 2, 1), Vec3Fix::from_int(1, 2, 3)] {
+            let e = Ellipsoid::new(Vec3Fix::ZERO, radii);
+            for (p, want) in [
+                (
+                    Vec3Fix::from_int(0, 5, 0),
+                    Vec3Fix::new(Fix128::ZERO, radii.y, Fix128::ZERO),
+                ),
+                (
+                    Vec3Fix::from_int(0, -5, 0),
+                    Vec3Fix::new(Fix128::ZERO, -radii.y, Fix128::ZERO),
+                ),
+                (
+                    Vec3Fix::from_int(7, 0, 0),
+                    Vec3Fix::new(radii.x, Fix128::ZERO, Fix128::ZERO),
+                ),
+                (
+                    Vec3Fix::from_int(0, 0, -7),
+                    Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, -radii.z),
+                ),
+            ] {
+                let (x, inside) = e.nearest_point(p);
+                assert_eq!(x, want, "{radii:?} {p:?}");
+                assert!(!inside);
+                let n = e.normal_at(x);
+                let axis = (p - x).normalize();
+                assert!(
+                    (n - axis).length() < Fix128::from_ratio(1, 1 << 40),
+                    "{n:?} {axis:?}"
+                );
+            }
+        }
+    }
+
+    /// A point off the axes, outside and inside: the nearest point lies on the
+    /// surface (`Σ xᵢ² / eᵢ² = 1`) and the segment to the point runs along the
+    /// surface normal there (the condition that defines the nearest point), to
+    /// the bisection's resolution; a turned ellipsoid gives the same in its frame.
+    #[test]
+    fn an_off_axis_point_meets_the_surface_along_its_normal() {
+        let tol = Fix128::from_ratio(1, 1 << 30);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI);
+        for (rotation, p, outside) in [
+            (QuatFix::IDENTITY, Vec3Fix::from_int(2, 2, 2), true),
+            (
+                QuatFix::IDENTITY,
+                Vec3Fix::new(
+                    Fix128::from_ratio(1, 2),
+                    Fix128::from_ratio(1, 2),
+                    Fix128::from_ratio(1, 4),
+                ),
+                false,
+            ),
+            (turn, Vec3Fix::from_int(3, 1, 1), true),
+            // in the plane of the shortest semi-axis (z = 0), inside: the nearest
+            // point leaves that plane (Eberly's y_last = 0 branch)
+            (
+                QuatFix::IDENTITY,
+                Vec3Fix::new(
+                    Fix128::from_ratio(1, 2),
+                    Fix128::from_ratio(1, 4),
+                    Fix128::ZERO,
+                ),
+                false,
+            ),
+        ] {
+            let e = Ellipsoid {
+                center: Vec3Fix::ZERO,
+                radii: Vec3Fix::from_int(3, 2, 1),
+                rotation,
+            };
+            let (x, inside) = e.nearest_point(p);
+            assert_eq!(inside, !outside, "{p:?}");
+            let l = rotation.conjugate().rotate_vec(x);
+            let level = (l.x / e.radii.x) * (l.x / e.radii.x)
+                + (l.y / e.radii.y) * (l.y / e.radii.y)
+                + (l.z / e.radii.z) * (l.z / e.radii.z);
+            assert!(
+                (level - Fix128::ONE).abs() < tol,
+                "level {level:?} at {x:?}"
+            );
+            let n = e.normal_at(x);
+            let along = (p - x).normalize();
+            let along = if outside { along } else { -along };
+            assert!(n.cross(along).length() < tol, "{n:?} vs {along:?}");
+            assert!(n.dot(along) > Fix128::ZERO);
+        }
+    }
+
     #[test]
     fn test_ellipsoid_new() {
         let e = Ellipsoid::new(Vec3Fix::ZERO, Vec3Fix::from_int(1, 2, 3));

@@ -1417,6 +1417,301 @@ fn field_piece_contact(
 mod tests {
     use super::*;
 
+    // Manifolds against closed forms. Sizes are dyadic (halves, quarters,
+    // 1/64), so the depths are exact in `Fix128` and compared bit for bit.
+
+    fn at_y(y: Fix128) -> (Vec3Fix, QuatFix) {
+        (
+            Vec3Fix::new(Fix128::ZERO, y, Fix128::ZERO),
+            QuatFix::IDENTITY,
+        )
+    }
+
+    const fn sink() -> Fix128 {
+        // 1/64
+        Fix128 { hi: 0, lo: 1 << 58 }
+    }
+
+    /// A cube of half size 1/2 sunk 1/64 into the top face of a wider cube
+    /// (half size 1): four points, the top cube's bottom corners, each 1/64
+    /// deep along the vertical.
+    #[test]
+    fn a_box_resting_on_a_wider_box_meets_it_at_four_corners() {
+        let half = Fix128::from_ratio(1, 2);
+        let top = at_y(half - sink());
+        let ground = at_y(-Fix128::ONE);
+        let pts =
+            contact_manifold_between(&cube(half), top, &cube(Fix128::ONE), ground, Fix128::ZERO);
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        for (c, _) in &pts {
+            assert_eq!(c.depth, sink());
+            assert_eq!(c.normal.y.abs(), Fix128::ONE);
+            assert_eq!((c.point_a.x.abs(), c.point_a.z.abs()), (half, half));
+        }
+    }
+
+    /// A wide cube (half size 1) turned 45 degrees about the vertical, resting
+    /// 1/64 deep on a small cube (half size 1/2): the overlap of the two faces
+    /// is an octagon (the small square clipped by the turned large one, whose
+    /// edges cut each corner), more than four points, so the manifold keeps
+    /// four of them, each 1/64 deep and inside the small face.
+    #[test]
+    fn an_octagon_of_overlap_is_reduced_to_four_points() {
+        let half = Fix128::from_ratio(1, 2);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::PI / Fix128::from_int(4));
+        let top = (
+            Vec3Fix::new(Fix128::ZERO, half + Fix128::ONE - sink(), Fix128::ZERO),
+            turn,
+        );
+        let pts = contact_manifold_between(
+            &cube(Fix128::ONE),
+            top,
+            &cube(half),
+            at_y(Fix128::ZERO),
+            Fix128::ZERO,
+        );
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        let tolerance = Fix128::from_ratio(1, 1 << 40);
+        for (c, _) in &pts {
+            assert!((c.depth - sink()).abs() <= tolerance, "{c:?}");
+            for p in [c.point_a, c.point_b] {
+                assert!(
+                    p.x.abs() <= half + tolerance && p.z.abs() <= half + tolerance,
+                    "{p:?}"
+                );
+            }
+        }
+    }
+
+    /// Two equal cubes (half size 1/2), the top one turned 45 degrees about the
+    /// vertical and sunk 1/64: the faces overlap in a regular octagon (each
+    /// square cuts the other's corners), eight clipped points, which the
+    /// manifold reduces to four, each 1/64 deep and inside both squares.
+    #[test]
+    fn equal_squares_turned_by_an_eighth_overlap_in_an_octagon_cut_to_four() {
+        let half = Fix128::from_ratio(1, 2);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::PI / Fix128::from_int(4));
+        let top = (
+            Vec3Fix::new(Fix128::ZERO, Fix128::ONE - sink(), Fix128::ZERO),
+            turn,
+        );
+        let pts = contact_manifold_between(
+            &cube(half),
+            top,
+            &cube(half),
+            at_y(Fix128::ZERO),
+            Fix128::ZERO,
+        );
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        let tolerance = Fix128::from_ratio(1, 1 << 40);
+        let edge = half * Fix128::from_int(2).sqrt();
+        for (c, _) in &pts {
+            assert!((c.depth - sink()).abs() <= tolerance, "{c:?}");
+            let p = c.point_b;
+            assert!(
+                p.x.abs() <= half + tolerance && p.z.abs() <= half + tolerance,
+                "{p:?}"
+            );
+            assert!(
+                p.x.abs() + p.z.abs() <= edge + tolerance,
+                "{p:?} outside the turned square"
+            );
+        }
+    }
+
+    /// A sphere of radius 1/4 above an ellipsoid with semi-axes (1/2, 1, 1/2),
+    /// its centre on the long axis 9/8 up: the nearest surface point is the
+    /// axis end, so the depth is `1 + 1/4 − 9/8 = 1/8` along the vertical; the
+    /// sphere 3/2 up is apart.
+    #[test]
+    fn a_sphere_meets_an_ellipsoid_at_its_exact_nearest_point() {
+        let half = Fix128::from_ratio(1, 2);
+        let ellipsoid = BodyCollider::Shape(Shape::Ellipsoid {
+            radii: Vec3Fix::new(half, Fix128::ONE, half),
+        });
+        let s = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(9, 8), Fix128::ZERO),
+            Fix128::from_ratio(1, 4),
+        );
+        let c = contact_with_sphere(&ellipsoid, at_y(Fix128::ZERO), s, true).expect("touches");
+        assert_eq!(c.depth, Fix128::from_ratio(1, 8));
+        assert_eq!(
+            (c.normal.x, c.normal.y.abs(), c.normal.z),
+            (Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+        );
+        let c = contact_with_sphere(&ellipsoid, at_y(Fix128::ZERO), s, false).expect("touches");
+        assert_eq!(c.depth, Fix128::from_ratio(1, 8));
+        let apart = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(3, 2), Fix128::ZERO),
+            Fix128::from_ratio(1, 4),
+        );
+        assert!(contact_with_sphere(&ellipsoid, at_y(Fix128::ZERO), apart, true).is_none());
+    }
+
+    /// A sphere of radius 1/4 resting on a torus (major radius 1, tube radius
+    /// 1/4) over the tube's centre line, its centre 3/8 above the ring: the
+    /// nearest tube point is straight below it, so the depth is
+    /// `1/4 + 1/4 − 3/8 = 1/8` along the vertical.
+    #[test]
+    fn a_sphere_on_a_torus_meets_the_tube_below_it() {
+        let quarter = Fix128::from_ratio(1, 4);
+        let torus = BodyCollider::Shape(Shape::Torus {
+            major_radius: Fix128::ONE,
+            minor_radius: quarter,
+        });
+        let s = Sphere::new(
+            Vec3Fix::new(Fix128::ONE, Fix128::from_ratio(3, 8), Fix128::ZERO),
+            quarter,
+        );
+        let c = contact_with_sphere(&torus, at_y(Fix128::ZERO), s, true).expect("touches");
+        assert_eq!(c.depth, Fix128::from_ratio(1, 8));
+        assert_eq!(
+            (c.normal.x, c.normal.y.abs(), c.normal.z),
+            (Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+        );
+    }
+
+    /// A sphere of radius 1/2 above a compound whose one child is a cube of half
+    /// size 1/2 set 1/2 up in the compound: the child's top face is at 1, so the
+    /// sphere centred 5/4 up is `1/2 − 1/4 = 1/4` deep along the vertical, as
+    /// against the same cube placed alone.
+    #[test]
+    fn a_sphere_meets_a_compound_box_child_at_its_exact_nearest_point() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut compound = CompoundShape::default();
+        compound.add_box(
+            OrientedBox::new(
+                Vec3Fix::ZERO,
+                Vec3Fix::new(half, half, half),
+                QuatFix::IDENTITY,
+            ),
+            Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO),
+            QuatFix::IDENTITY,
+        );
+        let collider = BodyCollider::Compound(compound);
+        let s = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(5, 4), Fix128::ZERO),
+            half,
+        );
+        let c = contact_with_sphere(&collider, at_y(Fix128::ZERO), s, true).expect("touches");
+        assert_eq!(c.depth, Fix128::from_ratio(1, 4));
+        assert_eq!(
+            (c.normal.x, c.normal.y.abs(), c.normal.z),
+            (Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+        );
+    }
+
+    /// A sphere of radius 1/2 against a cube of half size 1: outside the top
+    /// face, the sphere's centre 5/4 up is 1/4 deep (1/2 − (5/4 − 1)); inside
+    /// near the top face, 7/8 up, the nearest face is the top one and the depth
+    /// is the radius plus the centre's distance under the face (1/2 + 1/8).
+    #[test]
+    fn a_sphere_meets_a_box_at_its_exact_nearest_point() {
+        let half = Fix128::from_ratio(1, 2);
+        let pose = at_y(Fix128::ZERO);
+        let outside = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(5, 4), Fix128::ZERO),
+            half,
+        );
+        let c = contact_with_sphere(&cube(Fix128::ONE), pose, outside, true).expect("touches");
+        assert_eq!(c.depth, Fix128::from_ratio(1, 4));
+        assert_eq!(
+            (c.normal.x, c.normal.y.abs(), c.normal.z),
+            (Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+        );
+        let inside = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(7, 8), Fix128::ZERO),
+            half,
+        );
+        let c = contact_with_sphere(&cube(Fix128::ONE), pose, inside, false).expect("inside");
+        assert_eq!(c.depth, half + Fix128::from_ratio(1, 8));
+        assert_eq!(c.normal.y.abs(), Fix128::ONE);
+        let apart = Sphere::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_int(2), Fix128::ZERO),
+            half,
+        );
+        assert!(contact_with_sphere(&cube(Fix128::ONE), pose, apart, true).is_none());
+    }
+
+    /// A cylinder (radius 1/2, half height 1/2, axis vertical) standing 1/64
+    /// deep on a cube: the base rests flat, so every point of the manifold is
+    /// 1/64 deep, on the base circle's rim or inside it, at least three of them.
+    #[test]
+    fn a_standing_cylinder_rests_on_its_base() {
+        let half = Fix128::from_ratio(1, 2);
+        let cylinder = BodyCollider::Shape(Shape::Cylinder {
+            radius: half,
+            half_height: half,
+        });
+        let pts = contact_manifold_between(
+            &cylinder,
+            at_y(half - sink()),
+            &cube(Fix128::ONE),
+            at_y(-Fix128::ONE),
+            Fix128::ZERO,
+        );
+        assert!(pts.len() >= 3, "{pts:?}");
+        let tolerance = Fix128::from_ratio(1, 1 << 40);
+        for (c, _) in &pts {
+            assert!((c.depth - sink()).abs() <= tolerance, "{c:?}");
+            let p = c.point_a;
+            assert!((p.x * p.x + p.z * p.z) <= half * half + tolerance, "{p:?}");
+        }
+    }
+
+    /// A cube of half size 1/2 sunk 1/64 into a floor of two triangles: four
+    /// points at its bottom corners, each 1/64 deep.
+    #[test]
+    fn a_box_on_a_mesh_floor_meets_it_at_four_corners() {
+        use crate::trimesh::{TriMesh, Triangle};
+        let v =
+            |x: i64, z: i64| Vec3Fix::new(Fix128::from_int(x), Fix128::ZERO, Fix128::from_int(z));
+        let floor = StaticCollider::TriMesh(TriMesh::from_triangles(vec![
+            Triangle {
+                v0: v(-4, -4),
+                v1: v(-4, 4),
+                v2: v(4, 4),
+            },
+            Triangle {
+                v0: v(-4, -4),
+                v1: v(4, 4),
+                v2: v(4, -4),
+            },
+        ]));
+        let half = Fix128::from_ratio(1, 2);
+        let (p, q) = at_y(half - sink());
+        let pts = cube(half).static_manifold(p, q, &floor, Fix128::ZERO);
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        for (c, _) in &pts {
+            assert_eq!(c.depth, sink());
+            assert_eq!(c.normal.y.abs(), Fix128::ONE);
+        }
+    }
+
+    /// A cube of half size 1/2 sunk 1/64 into the SDF plane `y = 0`: four
+    /// points at its bottom corners, each 1/64 deep to the `f32` resolution of
+    /// the field near 1/64 (`2⁻³⁰`).
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_box_on_an_sdf_plane_meets_it_at_four_corners() {
+        let plane = crate::sdf_collider::SdfCollider::new_static(
+            Box::new(crate::sdf_collider::ClosureSdf::new(
+                |_x, y, _z| y,
+                |_x, _y, _z| (0.0, 1.0, 0.0),
+            )),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        let half = Fix128::from_ratio(1, 2);
+        let (p, q) = at_y(half - sink());
+        let pts = cube(half).sdf_manifold(p, q, &plane, 0.0);
+        assert_eq!(pts.len(), 4, "{pts:?}");
+        let tolerance = Fix128::from_ratio(1, 1 << 30);
+        for (c, _) in &pts {
+            assert!((c.depth - sink()).abs() <= tolerance, "{c:?}");
+        }
+    }
+
     /// A box with a non-unit orientation (norm 2) meets a plane SDF exactly as
     /// the unit one does: its sample points are not scaled by |q|^2.
     #[cfg(feature = "std")]
