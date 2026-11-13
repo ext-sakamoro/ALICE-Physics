@@ -994,10 +994,6 @@ fn on_is_deterministic_and_independent_of_the_parallel_feature() {
 /// Today's XPBD derives the velocity as `v_pred + Δx / h`, which differs from
 /// those values in the last bits; every other byte of the world is the same,
 /// so the world below is the recorded one whatever later changes the step.
-fn stacked() -> PhysicsWorld {
-    stacked_with(true)
-}
-
 fn stacked_with(speculative_contacts: bool) -> PhysicsWorld {
     let config = PhysicsConfig {
         substeps: 4,
