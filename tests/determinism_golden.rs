@@ -337,13 +337,16 @@ fn determinism_joint_pendulum() {
     assert_golden("joint_pendulum", hash, GOLDEN_JOINT_PENDULUM);
 }
 
-/// **Joint break**: joints that break carry no correction in the substep they break in. A slider
-/// started 6.08 m off its axis (break force 1000 N) breaks in the first substep, and a chain
+/// **Joint break**: joints that break carry no correction in the substep they break in. A body
+/// on a slider's axis moving across it at 6 m/s (2880 N to hold in the first substep, break
+/// force 1000 N) breaks it in the first substep, and a chain
 /// anchor → A → B of ball joints whose lower joint (5 N) breaks on the load passed down by the
 /// upper one (1000 N, holds). 120 steps of 1/60 s, default config. Recorded 2026-11-12 when a
 /// breaking joint stopped applying its correction before being removed (before, the slider's
-/// body left at 2919.7 m/s); the first golden on a breaking path.
-const GOLDEN_JOINT_BREAK: &str = "beef7e0b695aff523f8e2d2f7464f109b65f21ff3bca9b28898e5223e5f92f81";
+/// body left at 2919.7 m/s); the first golden on a breaking path. Re-recorded 2026-11-14 when a
+/// joint created off its axis stopped being a load (the world closes that error by position),
+/// with the slider now broken by its body's velocity.
+const GOLDEN_JOINT_BREAK: &str = "0c4bc8ab05d7b646dec0a0c30b151872353081b650191d075554e67dec3cb015";
 
 #[test]
 fn determinism_joint_break() {
@@ -351,7 +354,8 @@ fn determinism_joint_break() {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     let v = |x: i64, y: i64, z: i64| Vec3Fix::from_int(x, y, z);
     let anchor = world.add_body(RigidBody::new_static(v(3, 6, 0)));
-    let slid = world.add_body(RigidBody::new_dynamic(v(6, 5, 6), Fix128::ONE));
+    let slid = world.add_body(RigidBody::new_dynamic(v(6, 6, 0), Fix128::ONE));
+    world.bodies[slid].velocity = v(0, 0, 6);
     let mut slider = SliderJoint::new(anchor, slid, v(1, 0, 0), Vec3Fix::ZERO, Vec3Fix::ZERO);
     slider.limit_min = Some(Fix128::from_int(-1));
     slider.break_force = Some(Fix128::from_int(1000));

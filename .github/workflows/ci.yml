@@ -603,7 +603,7 @@ jobs:
     # the wasm-bindgen package called from JavaScript (Node), as an application would
     name: Test (WebAssembly binding from JavaScript)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain (with wasm32-unknown-unknown)
@@ -634,6 +634,16 @@ jobs:
           tool: wasm-bindgen@${{ steps.wbg.outputs.version }}
       - name: Build the package and run tests/js (zero executed is red)
         run: bash scripts/run_js_binding_tests.sh
+      # the browser package without names (scripts/build_neutral_pkg.sh --check, a fixed key that
+      # is no secret): the release build, the review of the engine string literals it overwrites,
+      # the leak check, and both packages running the same two scenes through every export, bit
+      # for bit (an export not called, a value missing or nothing compared is red)
+      - name: Browser package without names (build, literal review, leak check, equivalence)
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/neutral"
+          scripts/build_neutral_pkg.sh --check "$d/out" "$d/private"
       # the package is built from the facade: its exports and its glue must be the engine's
       - name: The facade's wasm package equals the engine's (exports, JS glue, d.ts)
         run: python3 scripts/facade_wasm_check.py
