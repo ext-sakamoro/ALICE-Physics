@@ -3,10 +3,11 @@
 //!
 //! oracle (twin worlds, bit for bit):
 //! - a joint that breaks in the first substep of a frame leaves that frame exactly as a world
-//!   that never had the joint: same bodies, to the bit. Before the fix the breaking joint's
-//!   whole correction was applied and the joint then removed; a slider started 6.08 m off its
-//!   axis snapped its body across the gap in one substep (h = 1/480 s) and left it flying at
-//!   √37 × 480 = 2919.7 m/s.
+//!   that never had the joint: same bodies, to the bit. The body starts on the slider's axis
+//!   moving across it at 6 m/s; holding it on the axis takes `m · v / h = 1 · 6 · 480 = 2880 N`
+//!   in the first substep (h = 1/480 s), above the 1000 N break force. (A joint created off its
+//!   axis is not a load: the world closes that error by position before the solve, see
+//!   `tests/analytic_joint_settle.rs`.)
 //! - the same for a joint that held for a while and is overloaded by a kick: the frame after
 //!   the kick equals the twin from which the joint was removed at the kick.
 //! - a joint whose break force is above every force it carries is bit-identical, every frame,
@@ -52,12 +53,15 @@ fn two_bodies(at: Vec3Fix, joint: Option<Joint>) -> PhysicsWorld {
 
 #[test]
 fn a_joint_breaking_in_its_first_substep_leaves_the_frame_as_if_it_was_never_there() {
-    let at = v(6, 5, 6); // √37 = 6.08 m off the slider's axis through the anchor
+    let at = v(6, 6, 0); // on the slider's axis through the anchor, 3 m along it
     let mut slider = SliderJoint::new(0, 1, v(1, 0, 0), Vec3Fix::ZERO, Vec3Fix::ZERO);
     slider.limit_min = Some(Fix128::from_int(-1));
     slider.break_force = Some(Fix128::from_int(1000));
     let mut with = two_bodies(at, Some(Joint::Slider(slider)));
     let mut without = two_bodies(at, None);
+    for w in [&mut with, &mut without] {
+        w.bodies[1].velocity = v(0, 0, 6);
+    }
     let mut compared = 0;
     for frame in 0..10 {
         with.step(dt());

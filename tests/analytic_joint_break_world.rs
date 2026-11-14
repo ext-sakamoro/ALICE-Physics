@@ -185,10 +185,26 @@ fn every_overloaded_joint_breaks_in_the_same_substep_and_the_motor_goes_with_it(
     );
 }
 
+/// A body hung from a kinematic anchor falls asleep; the anchor is then driven up at 4 m/s
+/// (a kinematic target 1/16 m up in one substep, 4 m/s: the joint pulls the 2 kg body along,
+/// a load the dynamics carry) with a break
+/// force of 1 N. The joint breaks on that pull, wakes the body it held, and the body then falls
+/// freely: after 64 more substeps of g = 8 it is more than 1 m below where it hung.
 #[test]
 fn a_sleeping_body_left_hanging_by_a_broken_joint_wakes_and_falls() {
-    // hang the body on an unbreakable joint until its island sleeps
-    let mut w = hung(SolverBackend::Xpbd, Fix128::from_int(1_000_000));
+    let config = SolverConfig {
+        substeps: 1,
+        gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
+        damping_rate: Fix128::ZERO,
+        ..SolverConfig::default()
+    };
+    let mut w = PhysicsWorld::new(config);
+    w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
+    w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(2)));
+    w.add_joint(Joint::Ball(
+        BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+            .with_break_force(Fix128::from_int(1_000_000)),
+    ));
     let mut slept = false;
     for _ in 0..2_000 {
         w.step(h());
@@ -198,25 +214,27 @@ fn a_sleeping_body_left_hanging_by_a_broken_joint_wakes_and_falls() {
         }
     }
     assert!(slept, "a body held at rest on its anchor falls asleep");
-    // lower the threshold and pull the body off the anchor by writing the pub fields
-    // directly (neither write wakes anything): the joint now carries far more than 1 N
+    let hung_at = w.bodies[1].position.y;
+    // lower the threshold (not a change of the constraint) and drive the anchor up: neither
+    // write wakes the body, the pull through the joint is the load
     w.joints[0] = Joint::Ball(
         BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_break_force(Fix128::ONE),
     );
-    w.bodies[1].position = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-1, 64), Fix128::ZERO);
+    let up = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 16), Fix128::ZERO);
+    let target = w.bodies[0].position + up;
+    let rotation = w.bodies[0].rotation;
+    w.bodies[0].set_kinematic_target(target, rotation);
     w.step(h());
-    assert!(w.joints.is_empty(), "the joint breaks");
+    assert!(w.joints.is_empty(), "the joint breaks on the pull");
     assert!(
         !w.is_sleeping(1),
         "the body it held is awake (a breaking joint wakes its island)"
     );
-    for _ in 0..63 {
+    for _ in 0..64 {
         w.step(h());
     }
-    // the breaking joint transmitted nothing, so the body falls freely from
-    // 1/64 m below the anchor
     assert!(
-        w.bodies[1].position.y < Fix128::from_int(-1),
+        w.bodies[1].position.y < hung_at - Fix128::ONE,
         "and falls instead of staying frozen in the air: {:?}",
         w.bodies[1].position.y
     );

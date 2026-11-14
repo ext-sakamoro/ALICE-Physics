@@ -448,7 +448,8 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
     if "WasmInputLog" in names:
         log = (f"export class {rename('WasmInputLog')} {{\n  constructor() {{ this.e = []; }}\n"
                f"  {rename('record')}(s, b) {{ this.e.push([s, b]); return true; }}\n"
-               f"  {rename('length')}() {{ return this.e.length; }}\n"
+               # a getter (`#[wasm_bindgen(getter)]`) under a JS builtin name the renamer keeps
+               f"  get length() {{ return this.e.length; }}\n"
                + (f"  {rename('stepAt')}(i) {{ return this.e[i][0]; }}\n" if "stepAt" in names else "")
                + (f"  {rename('inputAt')}(i) {{ return this.e[i][1]; }}\n" if "inputAt" in names else "")
                + (f"  {rename('toCode')}(d) {{ return \"c\" + this.e.length; }}\n" if "toCode" in names else "")
@@ -473,7 +474,8 @@ class Equivalence(unittest.TestCase):
 
     def run_pair(self, orig: dict = {}, neutral: dict = {}, orig_extra: str = "", drop: str = "", orig_module: str = "") -> int:
         d = Path(tempfile.mkdtemp())
-        mapping = {n: "n" + hashlib.sha256(n.encode()).hexdigest()[:10] for n in self.NAMES}
+        # `length` keeps its name, as scripts/neutral_pkg.py JS_BUILTINS does
+        mapping = {n: "n" + hashlib.sha256(n.encode()).hexdigest()[:10] for n in self.NAMES if n != "length"}
         (d / "o").mkdir()
         (d / "o" / "p.js").write_text(fake_glue(self.NAMES, lambda n: n, orig, orig_extra, orig_module))
         (d / "o" / "p_bg.wasm").write_bytes(b"\0asm")

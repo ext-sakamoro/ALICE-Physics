@@ -708,6 +708,25 @@ impl Joint {
         }
     }
 
+    /// Whether every row of the joint is rigid (no compliance, not a spring). An error of a rigid
+    /// joint is a placement error, not stored energy, so the world removes the error it did not
+    /// make by position (`PhysicsWorld` settles new and moved joints at the head of a substep); a
+    /// compliant joint or a spring stretched from outside holds that stretch as elastic energy and
+    /// is left to the dynamics.
+    #[inline]
+    #[must_use]
+    pub fn is_rigid(&self) -> bool {
+        match self {
+            Self::Ball(j) => j.compliance.is_zero(),
+            Self::Slider(j) => j.compliance.is_zero(),
+            Self::Hinge(j) => j.compliance.is_zero() && j.angular_compliance.is_zero(),
+            Self::Fixed(j) => j.compliance.is_zero() && j.angular_compliance.is_zero(),
+            Self::D6(j) => j.compliance.is_zero() && j.angular_compliance.is_zero(),
+            Self::ConeTwist(j) => j.compliance.is_zero() && j.angular_compliance.is_zero(),
+            Self::Spring(_) => false,
+        }
+    }
+
     /// Get joint type
     #[inline]
     #[must_use]
@@ -736,6 +755,27 @@ impl Joint {
             Self::D6(j) => j.break_force,
             Self::ConeTwist(j) => j.break_force,
         }
+    }
+
+    /// Whether `self` and `other` constrain their bodies the same way: equal in every field but
+    /// the break force, which is a threshold on the load and not part of the constraint (a joint
+    /// given a break force poses no new error to remove).
+    #[must_use]
+    pub(crate) fn same_constraint(&self, other: &Self) -> bool {
+        let unbreakable = |j: &Self| {
+            let mut j = *j;
+            match &mut j {
+                Self::Ball(x) => x.break_force = None,
+                Self::Hinge(x) => x.break_force = None,
+                Self::Fixed(x) => x.break_force = None,
+                Self::Slider(x) => x.break_force = None,
+                Self::Spring(x) => x.break_force = None,
+                Self::D6(x) => x.break_force = None,
+                Self::ConeTwist(x) => x.break_force = None,
+            }
+            j
+        };
+        unbreakable(self) == unbreakable(other)
     }
 
     /// Current anchor separation of the joint's positional row (metres).
@@ -815,6 +855,12 @@ pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], d
     for joint in joints {
         let _ = solve_one(joint, bodies, dt);
     }
+}
+
+/// One projection of `joint` on `bodies` (the solve [`solve_joints`] runs for each joint), for
+/// the world's positional settle of the errors it did not make.
+pub(crate) fn project_joint(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+    let _ = solve_one(joint, bodies, dt);
 }
 
 /// Solve one joint. A joint whose two bodies are the same body constrains

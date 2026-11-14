@@ -55,7 +55,7 @@ while IFS= read -r c; do tokens+=(--token "$c"); done <<< "$family"
 rm -rf "$out"
 python3 scripts/neutral_pkg.py --in "$raw" --out "$out" --map "$private/name-map.json" \
   --tokens "$out.tokens.json" --identifiers docs/PUBLIC_API_SNAPSHOT.txt \
-  --source-root . --data-literals scripts/neutral_data_literals.txt "${check[@]}" "${tokens[@]}"
+  --source-root . --data-literals scripts/neutral_data_literals.txt ${check[@]+"${check[@]}"} "${tokens[@]}"
 python3 scripts/neutral_leak_check.py --tokens "$out.tokens.json" "$out"
 # the neutral package must behave as the package it was made from: positions, rotations and the
 # whole serialized state, bit for bit
