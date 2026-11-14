@@ -102,6 +102,9 @@
 //!   rises; the drop comes to rest in a level crease within the bound above and stays (at once
 //!   at 45° and 60°, after climbing the far face at 30°); in a gutter it runs along the crease at
 //!   `g s / (√(1 + s²) c)`; on a single slope the bits are those before the crease was handled
+//! - `a_steep_gutter_holds_by_the_pull_across_its_line` (unit): in a gutter whose line falls at 2
+//!   (faces of slope 1) the hold compares with gravity's pull across the line `|p| = g / √30`, not
+//!   all of it on the face (`g √30 / 6`): a drop between the two is released
 //! - `held_drops_stay_on_square_and_curved_strokes` (wind-blown rain on a square-edged and a
 //!   curved stroke 20 mm deep, normal from a 2 mm difference: every held step within
 //!   `2 max_travel / 2^24` + 8 f32 ulps of the surface)
@@ -1198,6 +1201,101 @@ impl core::fmt::Debug for ParticleSystem {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    /// oracle (MODEL, the crease hold): in a gutter whose crease line falls steeply (faces `y = |x| − 2 z`), most of
+    /// gravity on the second face runs along the line and only its part across the line pulls a drop back to it.
+    /// Computed here in f64 from the faces: `g_B = g − n_B (g·n_B)`, `p = g_B − l (g_B·l)`, `|p| = g / √30` (1.791) and
+    /// `|g_B| = g √30 / 6` (8.955) m/s². A drop leaving the first face across the line at a speed between `|p| dt` and `|g_B| dt`
+    /// climbs the far face for more than a step (released); at half of `|p| dt`, or pressing into the first face, it is
+    /// held. Comparing with all of `g_B` would hold the first drop
+    #[test]
+    fn a_steep_gutter_holds_by_the_pull_across_its_line() {
+        let (k, s) = (1.0_f64, 2.0_f64);
+        let n = (1.0 + k * k + s * s).sqrt();
+        let field = crate::sdf_collider::ClosureSdf::new(
+            move |x, y, z| (y - k as f32 * x.abs() + s as f32 * z) / n as f32,
+            move |x, _, _| {
+                let sx = if x >= 0.0 { 1.0 } else { -1.0 };
+                (
+                    -k as f32 * sx / n as f32,
+                    1.0 / n as f32,
+                    s as f32 / n as f32,
+                )
+            },
+        );
+        let target = LandingTarget::Field(&field);
+        let v3 = |a: [f64; 3]| {
+            Vec3Fix::new(
+                Fix128::from_f64(a[0]),
+                Fix128::from_f64(a[1]),
+                Fix128::from_f64(a[2]),
+            )
+        };
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let sub =
+            |a: [f64; 3], b: [f64; 3], t: f64| [a[0] - b[0] * t, a[1] - b[1] * t, a[2] - b[2] * t];
+        let len = |a: [f64; 3]| dot(a, a).sqrt();
+        let n_a = [-k / n, 1.0 / n, s / n];
+        let n_b = [k / n, 1.0 / n, s / n];
+        let c = [
+            n_a[1] * n_b[2] - n_a[2] * n_b[1],
+            n_a[2] * n_b[0] - n_a[0] * n_b[2],
+            n_a[0] * n_b[1] - n_a[1] * n_b[0],
+        ];
+        let l = [c[0] / len(c), c[1] / len(c), c[2] / len(c)];
+        let g = [0.0, -9.81, 0.0];
+        let g_b = sub(g, n_b, dot(g, n_b));
+        let p = sub(g_b, l, dot(g_b, l));
+        assert!(
+            (len(p) - 9.81 / 30f64.sqrt()).abs() < 1e-12
+                && (len(g_b) - 9.81 * 30f64.sqrt() / 6.0).abs() < 1e-12
+        );
+        // across the line on the second face, away from the first face
+        let u = [
+            n_b[1] * l[2] - n_b[2] * l[1],
+            n_b[2] * l[0] - n_b[0] * l[2],
+            n_b[0] * l[1] - n_b[1] * l[0],
+        ];
+        let away = if dot(u, n_a) > 0.0 {
+            u
+        } else {
+            [-u[0], -u[1], -u[2]]
+        };
+        let dt = 1.0 / 60.0;
+        // a piece from the first face (x = 1 mm) into the second
+        let point = v3([0.001, 0.001, 0.0]);
+        let step = v3([-0.004, -0.003, 0.0]);
+        let decide = |speed: f64, dir: [f64; 3]| {
+            crease(
+                &target,
+                v3(n_a),
+                v3(n_b),
+                point,
+                step,
+                step.length(),
+                Fix128::from_ratio(2, 100),
+                Hold {
+                    velocity: v3([dir[0] * speed, dir[1] * speed, dir[2] * speed]),
+                    gravity: v3(g),
+                    dt: Fix128::from_ratio(1, 60),
+                },
+            )
+        };
+        let between = 0.5 * (len(p) + len(g_b)) * dt;
+        assert!(
+            decide(between, away).is_none(),
+            "{between} m/s away across the line (between |p| dt and |g_B| dt) is held"
+        );
+        assert!(
+            decide(0.5 * len(p) * dt, away).is_some(),
+            "half of |p| dt away across the line is released"
+        );
+        let into = [-away[0], -away[1], -away[2]];
+        assert!(
+            decide(between, into).is_some(),
+            "a drop pressing into the first face is released"
+        );
+    }
 
     #[test]
     fn test_new_particle_system() {
