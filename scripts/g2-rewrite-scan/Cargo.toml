@@ -19,3 +19,6 @@ syn = { version = "2", features = ["full", "visit", "extra-traits"] }
 # "span-locations" makes the fallback lexer report real lines and columns
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = "1"
+
+[package.metadata.alice]
+surfaces = []
