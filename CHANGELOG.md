@@ -122,6 +122,7 @@ were introduced during that release window.
 - 布の自己接触の impact zone の反復は、固定の上限 `2n + 2` でなく 1 巡で凍結も併合も起きなかった時に止まる (上限には届かないことを示せるので出力は全入力で bit が同じ、`PHYSICS_SEMANTICS_ID` は動かない)
 - 布の自己接触の broad phase (点と三角形、辺の組、掃いた辺の組、弦と三角形) の箱の組み立てと分離判定、全員固定の組の除外、辺の組の列挙をそれぞれ 1 か所の関数にまとめ、zone の union-find の根の探索は添字の数で必ず止まる形にした (出力は bit が同じ)
 - CI (変異試験): cargo-mutants を profile `ci-test` (opt-level 2、debug assertions と overflow 検査は有効) で build する (`.cargo/mutants.toml` の `profile`、週次・範囲指定・差分の job と手元の実行に共通) opt-level 0 では lib の試験が 1 回 236 s かかり、既定の feature の job は全変異が時間切れになっていた (ci-test で 28 s) quality-deep の cargo-mutants は確かめた版 27.1.0 に固定した
+- preflight: oracle と配線の状態台帳の生成器に、生成した文を commit 済みの台帳と比べて違えば失敗し何も書かない `--check` を持たせ、preflight はそれを呼ぶ 事前検査は生成器の行だけを走らせるので、台帳を書き換えて成功し、古い台帳は CI でしか見つからなかった
 
 ### Added
 - CI: 他の crate の `PREVIOUS_*_SEMANTICS_IDS` は一覧全体としてだけ使える (`contains` / `len` / `is_empty`、全体を回す iterator や for、引数として丸ごと渡す) とし、添字・slice のパターン・`.first` / `next` / `take` などを拒む `scripts/upstream_previous_ids_check.py` と試験を足した (ALICE-Edge と同じ中身の共有 file) 上流は major で一覧を空にする 走査した .rs が 0 件なら失敗 (ci.yml と preflight)
