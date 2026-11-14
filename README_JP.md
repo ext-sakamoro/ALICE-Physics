@@ -49,6 +49,9 @@ crates.io の最新の版は 3.1.0 で、`cargo add alice-physics` はこれを�
 alice-physics = { git = "https://github.com/ext-sakamoro/ALICE-Physics", rev = "<commit>" }
 ```
 
+手元の checkout に path で依存する時は package の directory を指す: `alice-physics = { path = "../ALICE-Physics/crates/alice-physics" }`
+repository の直下は engine の package `alice-physics-core` なので、`path = "../ALICE-Physics"` は `alice-physics` に解決されない
+
 ```sh
 cargo add alice-physics
 ```

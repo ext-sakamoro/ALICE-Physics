@@ -55,6 +55,9 @@ repository at a fixed commit:
 alice-physics = { git = "https://github.com/ext-sakamoro/ALICE-Physics", rev = "<commit>" }
 ```
 
+A checkout used as a path dependency names the package directory: `alice-physics = { path = "../ALICE-Physics/crates/alice-physics" }`.
+The repository root is the engine package `alice-physics-core`, so `path = "../ALICE-Physics"` no longer resolves to `alice-physics`.
+
 ```sh
 cargo add alice-physics
 ```
