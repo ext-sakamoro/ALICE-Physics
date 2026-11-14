@@ -15,7 +15,9 @@
 //!   (x_i − x_p))` (`f_p` the external force on the particle, [`Mpm2d::step_with_loads`], 0 in
 //!   [`Mpm2d::step`]). An elastic foundation (Winkler backing, [`Mpm2d::foundation_loads`]):
 //!   `f_p = A⁰_p (κ (a_p − x_p) − c v_p)`, `κ` N/m⁴, `c` N·s/m⁴, anchor `a_p`, damping ratio of
-//!   the whole body `ζ = c / (2 √(κ ρ))`; under a uniform load `ρ g` the body
+//!   the whole body `ζ = c / (2 √(κ ρ))`; a hand's patch ([`Mpm2d::particles_within`] a fixed
+//!   radius, [`Mpm2d::shared_loads`]) shares its force `F` by rest area, `f_p = F A⁰_p / Σ A⁰`,
+//!   adding up to `F` exactly; under a uniform load `ρ g` the body
 //!   settles by `u = ρ g / κ` as a whole, and anchors `X_p − ρ g / κ` hold it at `X_p`. In the
 //!   transfer `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
 //!   area, `τ = P Fᵀ` the Kirchhoff stress). Grid: `v_i = (m v)_i / m_i + Δt g`, then the
@@ -73,12 +75,12 @@
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles::a_damped_foundation_decays_by_the_logarithmic_decrement`, `tests/analytic_mpm2d_implicit.rs::a_free_blob_falls_on_the_discrete_parabola::a_column_at_frame_steps_settles_by_the_plane_strain_bar_value::backward_euler_does_not_create_energy::the_implicit_run_approaches_the_explicit_one_as_the_step_shrinks::a_viscoelastic_column_at_frame_steps_creeps_like_the_standard_linear_solid::a_spinning_free_blob_keeps_its_momentum_within_the_tolerance::implicit_runs_are_deterministic_and_replay_from_a_snapshot::a_solve_that_cannot_converge_is_refused_and_changes_nothing`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles::a_damped_foundation_decays_by_the_logarithmic_decrement::a_patch_takes_the_particles_within_its_radius::a_shared_force_adds_up_to_the_force_exactly`, `tests/analytic_mpm2d_implicit.rs::a_free_blob_falls_on_the_discrete_parabola::a_column_at_frame_steps_settles_by_the_plane_strain_bar_value::backward_euler_does_not_create_energy::the_implicit_run_approaches_the_explicit_one_as_the_step_shrinks::a_viscoelastic_column_at_frame_steps_creeps_like_the_standard_linear_solid::a_spinning_free_blob_keeps_its_momentum_within_the_tolerance::implicit_runs_are_deterministic_and_replay_from_a_snapshot::a_solve_that_cannot_converge_is_refused_and_changes_nothing`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused; a body on a foundation under gravity settles by `ρ g / κ` on average over four periods of `√(κ / ρ)` within 2 %, unstrained; anchors at the hanging equilibrium hold it within 1e-9 m; anchors not one a particle are refused; with damping, the free decay's logarithmic decrement is `2π ζ / √(1 − ζ²)` within 3 %).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused; a body on a foundation under gravity settles by `ρ g / κ` on average over four periods of `√(κ / ρ)` within 2 %, unstrained; anchors at the hanging equilibrium hold it within 1e-9 m; anchors not one a particle are refused; with damping, the free decay's logarithmic decrement is `2π ζ / √(1 − ζ²)` within 3 %; a patch takes exactly the particles within its radius; a shared force's parts are in proportion to area and add up to the force bit for bit).
 //! - **Tiers.** L0 only.
 //!
 
@@ -414,6 +416,62 @@ impl Mpm2d {
     /// velocity, position, deformation gradient).
     pub fn step(&mut self) -> Result<(), Mpm2dError> {
         self.step_with_loads(&[])
+    }
+
+    /// The particles within `radius` of `centre` (a hand's contact patch), by index: the patch is a
+    /// fixed physical size, so what it holds does not depend on the grid's cell.
+    #[must_use]
+    pub fn particles_within(&self, centre: V2, radius: Fix128) -> Vec<usize> {
+        let r2 = radius * radius;
+        self.particles
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                let (dx, dy) = (p.x[0] - centre[0], p.x[1] - centre[1]);
+                dx * dx + dy * dy <= r2
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// A force (N per metre of depth) shared over particles in proportion to their rest areas,
+    /// as loads for [`Self::step_with_loads`]: a hand pulling on a patch. The parts add up to the
+    /// force exactly (the last takes what the rounding of the others left), so the total applied
+    /// is the hand's force at any resolution.
+    ///
+    /// # Errors
+    ///
+    /// [`Mpm2dError::Invalid`] for no particles, a particle that is not there, or no area.
+    pub fn shared_loads(
+        &self,
+        particles: &[usize],
+        force: V2,
+    ) -> Result<Vec<(usize, V2)>, Mpm2dError> {
+        let Some((&last, rest)) = particles.split_last() else {
+            return Err(Mpm2dError::Invalid("shared: no particles"));
+        };
+        let mut area = Fix128::ZERO;
+        for &i in particles {
+            area = area
+                + self
+                    .particles
+                    .get(i)
+                    .ok_or(Mpm2dError::Invalid("shared: no such particle"))?
+                    .area0;
+        }
+        if area <= Fix128::ZERO {
+            return Err(Mpm2dError::Invalid("shared: no area"));
+        }
+        let mut loads = Vec::with_capacity(particles.len());
+        let mut given = [Fix128::ZERO; 2];
+        for &i in rest {
+            let share = self.particles[i].area0 / area;
+            let part = [force[0] * share, force[1] * share];
+            given = [given[0] + part[0], given[1] + part[1]];
+            loads.push((i, part));
+        }
+        loads.push((last, [force[0] - given[0], force[1] - given[1]]));
+        Ok(loads)
     }
 
     /// The forces of an elastic foundation (a Winkler backing) on every particle: the backing
