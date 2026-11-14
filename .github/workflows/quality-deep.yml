@@ -71,7 +71,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
-        uses: taiki-e/install-action@cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
+          tool: cargo-mutants@27.1.0
       - name: Mutants (scoped)
         run: |
           # --build-timeout + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
@@ -145,7 +148,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
-        uses: taiki-e/install-action@cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
+          tool: cargo-mutants@27.1.0
       - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
         if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
         run: |

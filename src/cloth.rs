@@ -1205,29 +1205,16 @@ impl Cloth {
                 self.positions[tri[1]],
                 self.positions[tri[2]],
             );
-            let tri_pinned = self.inv_masses[tri[0]].is_zero()
-                && self.inv_masses[tri[1]].is_zero()
-                && self.inv_masses[tri[2]].is_zero();
-            let lo = Vec3Fix::new(
-                min3(a.x, b.x, c.x) - margin,
-                min3(a.y, b.y, c.y) - margin,
-                min3(a.z, b.z, c.z) - margin,
-            );
-            let hi = Vec3Fix::new(
-                max3(a.x, b.x, c.x) + margin,
-                max3(a.y, b.y, c.y) + margin,
-                max3(a.z, b.z, c.z) + margin,
-            );
+            let tri_box = padded_bounds(&[a, b, c], margin);
             for i in 0..n {
                 if i == tri[0] || i == tri[1] || i == tri[2] {
                     continue;
                 }
-                if tri_pinned && self.inv_masses[i].is_zero() {
+                if self.all_pinned(&[tri[0], tri[1], tri[2], i]) {
                     continue; // nothing in this pair can move
                 }
                 let p = self.positions[i];
-                if p.x < lo.x || p.x > hi.x || p.y < lo.y || p.y > hi.y || p.z < lo.z || p.z > hi.z
-                {
+                if boxes_disjoint(tri_box, (p, p)) {
                     continue;
                 }
                 out.push((i as u32, ti as u32));
@@ -1273,44 +1260,64 @@ impl Cloth {
     /// A flat grid's row-mates are exactly that case, which is why this pass does not fire
     /// on an undeformed sheet.
     fn collect_edge_edge_candidates(&self, margin: Fix128) -> Vec<[u32; 4]> {
-        let edges = self.mesh_edges();
+        let edges: Vec<([usize; 2], _)> = self
+            .mesh_edges()
+            .iter()
+            .map(|&[a, b]| {
+                let ends = [self.positions[a as usize], self.positions[b as usize]];
+                let boxes = (
+                    padded_bounds(&ends, margin),
+                    padded_bounds(&ends, Fix128::ZERO),
+                );
+                ([a as usize, b as usize], boxes)
+            })
+            .collect();
         let mut out: Vec<[u32; 4]> = Vec::new();
-        for (ei, e1) in edges.iter().enumerate() {
-            let (a0, a1) = (e1[0] as usize, e1[1] as usize);
-            let (pa0, pa1) = (self.positions[a0], self.positions[a1]);
-            let lo1 = Vec3Fix::new(
-                min2(pa0.x, pa1.x) - margin,
-                min2(pa0.y, pa1.y) - margin,
-                min2(pa0.z, pa1.z) - margin,
-            );
-            let hi1 = Vec3Fix::new(
-                max2(pa0.x, pa1.x) + margin,
-                max2(pa0.y, pa1.y) + margin,
-                max2(pa0.z, pa1.z) + margin,
-            );
-            let both_pinned_1 = self.inv_masses[a0].is_zero() && self.inv_masses[a1].is_zero();
-            for e2 in &edges[ei + 1..] {
-                let (b0, b1) = (e2[0] as usize, e2[1] as usize);
+        self.for_each_movable_edge_pair(
+            &edges,
+            |([a0, a1], (padded, _)), ([b0, b1], (_, tight))| {
+                if !boxes_disjoint(padded, tight) {
+                    out.push([a0 as u32, a1 as u32, b0 as u32, b1 as u32]);
+                }
+            },
+        );
+        out
+    }
+
+    /// Whether every particle in `idx` is pinned (`inv_mass == 0`): a contact made only
+    /// of pinned particles can produce no correction, so the broad phases skip it.
+    fn all_pinned(&self, idx: &[usize]) -> bool {
+        idx.iter().all(|&i| self.inv_masses[i].is_zero())
+    }
+
+    /// Calls `f` for every unordered pair of distinct entries of `edges` that can need an
+    /// edge-edge correction, first entry ascending and then second, each entry carrying
+    /// the caller's per-edge data (its bounding boxes).
+    ///
+    /// Skipped: edges that share a vertex (their distance is 0 by construction, and the
+    /// pass would do nothing but fight the stretch constraints) and pairs whose four
+    /// particles are all pinned. The enumeration walks `split_first` rather than index
+    /// ranges, so there is no index arithmetic to get wrong.
+    fn for_each_movable_edge_pair<B: Copy>(
+        &self,
+        edges: &[([usize; 2], B)],
+        mut f: impl FnMut(([usize; 2], B), ([usize; 2], B)),
+    ) {
+        let mut rest = edges;
+        while let Some((&first, tail)) = rest.split_first() {
+            rest = tail;
+            let [a0, a1] = first.0;
+            for &second in tail {
+                let [b0, b1] = second.0;
                 if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
                     continue; // shares a vertex: distance is 0 by construction
                 }
-                if both_pinned_1 && self.inv_masses[b0].is_zero() && self.inv_masses[b1].is_zero() {
+                if self.all_pinned(&[a0, a1, b0, b1]) {
                     continue; // nothing in this pair can move
                 }
-                let (pb0, pb1) = (self.positions[b0], self.positions[b1]);
-                if min2(pb0.x, pb1.x) > hi1.x
-                    || max2(pb0.x, pb1.x) < lo1.x
-                    || min2(pb0.y, pb1.y) > hi1.y
-                    || max2(pb0.y, pb1.y) < lo1.y
-                    || min2(pb0.z, pb1.z) > hi1.z
-                    || max2(pb0.z, pb1.z) < lo1.z
-                {
-                    continue;
-                }
-                out.push([a0 as u32, a1 as u32, b0 as u32, b1 as u32]);
+                f(first, second);
             }
         }
-        out
     }
 
     /// Edge pairs whose **swept** AABBs overlap over the frame `start → positions`.
@@ -1336,52 +1343,26 @@ impl Cloth {
         let edges = self.mesh_edges();
         let n = self.particle_count().min(start.len());
         let swept_box = |i: usize, j: usize| {
-            let pts = [start[i], start[j], self.positions[i], self.positions[j]];
-            let lo = Vec3Fix::new(
-                min2(min2(pts[0].x, pts[1].x), min2(pts[2].x, pts[3].x)) - margin,
-                min2(min2(pts[0].y, pts[1].y), min2(pts[2].y, pts[3].y)) - margin,
-                min2(min2(pts[0].z, pts[1].z), min2(pts[2].z, pts[3].z)) - margin,
-            );
-            let hi = Vec3Fix::new(
-                max2(max2(pts[0].x, pts[1].x), max2(pts[2].x, pts[3].x)) + margin,
-                max2(max2(pts[0].y, pts[1].y), max2(pts[2].y, pts[3].y)) + margin,
-                max2(max2(pts[0].z, pts[1].z), max2(pts[2].z, pts[3].z)) + margin,
-            );
-            (lo, hi)
+            padded_bounds(
+                &[start[i], start[j], self.positions[i], self.positions[j]],
+                margin,
+            )
         };
 
+        // An edge with an endpoint that has no recorded start position is left out.
+        // `mesh_edges` gives `[lo, hi]` with `lo < hi`, so the high end alone decides.
+        let edges: Vec<([usize; 2], _)> = edges
+            .iter()
+            .map(|&[a, b]| [a as usize, b as usize])
+            .filter(|&[_, hi]| hi < n)
+            .map(|[a, b]| ([a, b], swept_box(a, b)))
+            .collect();
         let mut out: Vec<[u32; 4]> = Vec::new();
-        for (ei, e1) in edges.iter().enumerate() {
-            let (a0, a1) = (e1[0] as usize, e1[1] as usize);
-            if a0 >= n || a1 >= n {
-                continue; // no start position recorded for this edge
-            }
-            let (lo1, hi1) = swept_box(a0, a1);
-            let both_pinned_1 = self.inv_masses[a0].is_zero() && self.inv_masses[a1].is_zero();
-            for e2 in &edges[ei + 1..] {
-                let (b0, b1) = (e2[0] as usize, e2[1] as usize);
-                if b0 >= n || b1 >= n {
-                    continue;
-                }
-                if a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1 {
-                    continue; // shares a vertex: distance is 0 by construction
-                }
-                if both_pinned_1 && self.inv_masses[b0].is_zero() && self.inv_masses[b1].is_zero() {
-                    continue; // nothing in this pair can move
-                }
-                let (lo2, hi2) = swept_box(b0, b1);
-                if lo2.x > hi1.x
-                    || hi2.x < lo1.x
-                    || lo2.y > hi1.y
-                    || hi2.y < lo1.y
-                    || lo2.z > hi1.z
-                    || hi2.z < lo1.z
-                {
-                    continue;
-                }
+        self.for_each_movable_edge_pair(&edges, |([a0, a1], box_a), ([b0, b1], box_b)| {
+            if !boxes_disjoint(box_a, box_b) {
                 out.push([a0 as u32, a1 as u32, b0 as u32, b1 as u32]);
             }
-        }
+        });
         out
     }
 
@@ -1842,16 +1823,7 @@ impl Cloth {
                     self.positions[tri[1]],
                     self.positions[tri[2]],
                 );
-                let lo = Vec3Fix::new(
-                    min3(a.x, b.x, c.x) - thickness,
-                    min3(a.y, b.y, c.y) - thickness,
-                    min3(a.z, b.z, c.z) - thickness,
-                );
-                let hi = Vec3Fix::new(
-                    max3(a.x, b.x, c.x) + thickness,
-                    max3(a.y, b.y, c.y) + thickness,
-                    max3(a.z, b.z, c.z) + thickness,
-                );
+                let tri_box = padded_bounds(&[a, b, c], thickness);
                 let Some(face) = (b - a).cross(c - a).try_normalize() else {
                     continue; // zero-area triangle has no side to be on
                 };
@@ -1863,13 +1835,7 @@ impl Cloth {
                     let p0 = start[i];
                     let p1 = self.positions[i];
                     // Chord AABB vs triangle AABB (cheap reject before the predicate)
-                    if min2(p0.x, p1.x) > hi.x
-                        || max2(p0.x, p1.x) < lo.x
-                        || min2(p0.y, p1.y) > hi.y
-                        || max2(p0.y, p1.y) < lo.y
-                        || min2(p0.z, p1.z) > hi.z
-                        || max2(p0.z, p1.z) < lo.z
-                    {
+                    if boxes_disjoint(tri_box, padded_bounds(&[p0, p1], Fix128::ZERO)) {
                         continue;
                     }
                     let Some((t_scaled, det)) = segment_pierces_triangle(p0, p1, a, b, c) else {
@@ -1924,7 +1890,10 @@ impl Cloth {
                 break;
             }
             for i in 0..n {
-                if hits[i] == 0 || self.inv_masses[i].is_zero() {
+                // A pinned particle needs no guard here: every term added to `delta` is
+                // scaled by that particle's own inverse mass, so its `delta` is exactly zero
+                // (`a_pinned_corner_hit_by_a_chord_stays_put`).
+                if hits[i] == 0 {
                     continue;
                 }
                 let applied = delta[i] / Fix128::from_int(i64::from(hits[i]));
@@ -1944,19 +1913,26 @@ impl Cloth {
             // the zones left particles at their frame-start spacing; separate them again
             // with the proximity passes, then let the zones restore the invariant if the
             // passes broke it
-            let before = self.positions.clone();
-            let margin = thickness.double();
-            let vf = self.collect_vertex_face_candidates(margin);
-            let ee = self.collect_edge_edge_candidates(margin);
-            for _ in 0..self.config.iterations {
-                self.solve_self_collision(&vf, &ee);
-            }
-            for (i, &b) in before.iter().enumerate().take(n) {
-                if !self.inv_masses[i].is_zero() {
-                    self.velocities[i] = self.velocities[i] + (self.positions[i] - b) * inv_dt;
-                }
-            }
+            self.separate_after_zones(thickness, inv_dt);
             self.resolve_impact_zones(start);
+        }
+    }
+
+    /// The proximity passes run once more after the impact zones fired, with the velocity
+    /// of every free particle changed by its displacement over the frame: `v ← v + Δx / dt`
+    /// (`inv_dt = 1 / dt`). Pinned particles neither move nor change velocity.
+    fn separate_after_zones(&mut self, thickness: Fix128, inv_dt: Fix128) {
+        let before = self.positions.clone();
+        let margin = thickness.double();
+        let vf = self.collect_vertex_face_candidates(margin);
+        let ee = self.collect_edge_edge_candidates(margin);
+        for _ in 0..self.config.iterations {
+            self.solve_self_collision(&vf, &ee);
+        }
+        for (i, &b) in before.iter().enumerate() {
+            if !self.inv_masses[i].is_zero() {
+                self.velocities[i] = self.velocities[i] + (self.positions[i] - b) * inv_dt;
+            }
         }
     }
 
@@ -2002,18 +1978,28 @@ impl Cloth {
         let mut parent: Vec<usize> = (0..n).collect();
         let mut frozen = vec![false; n];
         let mut in_zone = vec![false; n];
+        // A parent chain visits each index at most once, so `parent.len()` steps always
+        // reach the root: the walk is bounded by construction, not by the data.
         fn root(parent: &mut [usize], mut i: usize) -> usize {
-            while parent[i] != i {
+            for _ in 0..parent.len() {
+                if parent[i] == i {
+                    return i;
+                }
                 parent[i] = parent[parent[i]];
                 i = parent[i];
             }
-            i
+            unreachable!("a union-find parent chain is longer than its index count")
         }
-        // a bound, not a budget: each round merges at least two zones or freezes one
-        for _ in 0..2 * n + 2 {
+        // Each round that acts merges two zones or freezes one that was not frozen, so
+        // `2 · (zones and loose particles) + (zones not frozen)` falls by at least one per
+        // round and the loop ends. A round that does neither can only meet offenders whose
+        // vertices all sit in frozen zones, i.e. at their frame-start positions: the frame
+        // started crossed there, nothing a translation can undo, and the loop stops.
+        loop {
             if offenders.is_empty() {
                 return true;
             }
+            let mut progress = false;
             // An offender wholly inside one zone as it stood at the start of this round: that
             // zone's translation is what the chord test flags, so it stops. Judged on the
             // zones before this round's merges, which only join what was apart.
@@ -2024,7 +2010,10 @@ impl Cloth {
                 if let Some(z) = zone_at_start[set[0]] {
                     if set.iter().all(|&v| zone_at_start[v] == Some(z)) {
                         let r = root(&mut parent, z);
-                        frozen[r] = true;
+                        if !frozen[r] {
+                            frozen[r] = true;
+                            progress = true;
+                        }
                     }
                 }
             }
@@ -2035,11 +2024,9 @@ impl Cloth {
                 for &v in &set[1..] {
                     let (a, b) = (root(&mut parent, set[0]), root(&mut parent, v));
                     if a != b {
-                        // the smaller index stays the root, so the zones do not depend on the
-                        // order the offenders came in
-                        let (keep, gone) = if a < b { (a, b) } else { (b, a) };
-                        parent[gone] = keep;
-                        frozen[keep] = frozen[keep] || frozen[gone];
+                        parent[b] = a;
+                        frozen[a] = frozen[a] || frozen[b];
+                        progress = true;
                     }
                 }
             }
@@ -2052,6 +2039,9 @@ impl Cloth {
                     continue;
                 }
                 let r = root(&mut parent, i);
+                // not progress of its own: a pinned particle enters the zones only in a round
+                // that merges it (it was its own root, the other vertices of its offender
+                // were not)
                 if self.inv_masses[i].is_zero() {
                     frozen[r] = true;
                     continue;
@@ -2060,6 +2050,11 @@ impl Cloth {
                 mass[r] = mass[r] + m;
                 moment[r] = moment[r] + (self.positions[i] - start[i]) * m;
                 momentum[r] = momentum[r] + self.velocities[i] * m;
+            }
+            if !progress {
+                #[cfg(all(test, feature = "std"))]
+                zone_probe::record_stall();
+                return true;
             }
             for i in 0..n {
                 if !in_zone[i] || self.inv_masses[i].is_zero() {
@@ -2089,11 +2084,6 @@ impl Cloth {
                 zone_probe::record(before, zone_probe::energy_and_momentum(self), max_zone);
             }
         }
-        debug_assert!(
-            offenders.is_empty(),
-            "impact zones did not terminate within their bound"
-        );
-        true
     }
 
     /// The surviving self-intersection events over the frame `start → positions`, each as the
@@ -2813,6 +2803,34 @@ fn max2(a: Fix128, b: Fix128) -> Fix128 {
     }
 }
 
+/// Axis-aligned bounds of `points`, every side moved out by `pad`: `(min − pad, max + pad)`
+/// per axis. The one box builder of the self-contact broad phases (edge pairs, swept edge
+/// pairs, chord against triangle), pinned by `padded_bounds_take_each_axis_from_its_own_point`.
+/// `points` is never empty at a call site.
+fn padded_bounds(points: &[Vec3Fix], pad: Fix128) -> (Vec3Fix, Vec3Fix) {
+    let mut lo = points[0];
+    let mut hi = points[0];
+    for p in &points[1..] {
+        lo = Vec3Fix::new(min2(lo.x, p.x), min2(lo.y, p.y), min2(lo.z, p.z));
+        hi = Vec3Fix::new(max2(hi.x, p.x), max2(hi.y, p.y), max2(hi.z, p.z));
+    }
+    let pad = Vec3Fix::new(pad, pad, pad);
+    (lo - pad, hi + pad)
+}
+
+/// Are the closed boxes `(lo, hi)` `a` and `b` disjoint? A shared face, edge or corner is an
+/// overlap, so the broad phases built on it reject only pairs that are strictly apart on
+/// some axis (`boxes_disjoint_only_when_strictly_apart_on_an_axis`).
+fn boxes_disjoint(a: (Vec3Fix, Vec3Fix), b: (Vec3Fix, Vec3Fix)) -> bool {
+    let ((lo_a, hi_a), (lo_b, hi_b)) = (a, b);
+    lo_b.x > hi_a.x
+        || hi_b.x < lo_a.x
+        || lo_b.y > hi_a.y
+        || hi_b.y < lo_a.y
+        || lo_b.z > hi_a.z
+        || hi_b.z < lo_a.z
+}
+
 /// Does the segment `p0 → p1` pass through the interior of triangle `(a, b, c)`?
 ///
 /// Möller–Trumbore without the division: the determinant is normalised to a positive
@@ -2858,26 +2876,6 @@ fn segment_pierces_triangle(
         return None; // outside the segment
     }
     Some((t, det))
-}
-
-/// Smallest of three `Fix128`
-fn min3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
-    let m = if a < b { a } else { b };
-    if m < c {
-        m
-    } else {
-        c
-    }
-}
-
-/// Largest of three `Fix128`
-fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
-    let m = if a > b { a } else { b };
-    if m > c {
-        m
-    } else {
-        c
-    }
 }
 
 /// Closest point of triangle `(a, b, c)` to `p`, with its barycentric weights.
@@ -3437,6 +3435,17 @@ pub(crate) mod zone_probe {
     std::thread_local! {
         static OFF: Cell<bool> = const { Cell::new(false) };
         static LOG: RefCell<Vec<Fired>> = const { RefCell::new(Vec::new()) };
+        static STALLS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// A zone call stopped on a round that neither merged nor froze (the frame started
+    /// crossed among frozen particles).
+    pub(crate) fn record_stall() {
+        STALLS.with(|c| c.set(c.get() + 1));
+    }
+    /// Stalls since the last call, and reset.
+    pub(crate) fn take_stalls() -> usize {
+        STALLS.with(|c| c.replace(0))
     }
 
     pub(crate) fn off() -> bool {
@@ -6118,6 +6127,7 @@ mod impact_zone_tests {
     fn with_zones<T>(on: bool, f: impl FnOnce() -> T) -> (T, Vec<zone_probe::Fired>) {
         zone_probe::set_off(!on);
         zone_probe::take();
+        zone_probe::take_stalls();
         let out = f();
         zone_probe::set_off(false);
         (out, zone_probe::take())
@@ -6128,9 +6138,9 @@ mod impact_zone_tests {
     /// Two forms, frame by frame on positions and velocities:
     /// - whole runs the stage never fires in (asserted: the log is empty): the hanging cloth
     ///   at 120 and 240 frames;
-    /// - the crumple at 60 and 120 frames up to the first frame the stage fires (asserted to
-    ///   be after some frames of contact, so the prefix is not empty), compared with the run
-    ///   without the stage: the frames where self-contact works but converges.
+    /// - the crumple at 60 and 120 frames up to the first frame the stage fires: checked in
+    ///   `impact_zone_report_on_the_crumple_sweep`, which runs those scenes with and without
+    ///   the stage anyway (one run of each instead of two).
     #[test]
     fn impact_zones_are_the_identity_where_the_repair_converges() {
         let mut compared = 0usize;
@@ -6152,46 +6162,48 @@ mod impact_zone_tests {
                 compared += 1;
             }
         }
-        for steps in [60usize, 120] {
-            let ((on, _), fired) = with_zones(true, || crumple(steps));
-            let first = FIRST_FIRE.with(core::cell::Cell::get).unwrap_or(steps);
-            assert!(!fired.is_empty() || first == steps);
-            assert!(
-                first >= 5,
-                "crumple {steps}: the stage fired in frame {first}, no prefix to compare"
-            );
-            let ((off, _), _) = with_zones(false, || crumple(steps));
-            for k in 0..first {
-                assert!(
-                    on[k] == off[k],
-                    "crumple {steps}: frame {k} differs before the stage fired"
-                );
-                compared += 1;
-            }
-            // the frame the stage fired in is where the runs part
-            if first < steps {
-                assert!(
-                    on[first] != off[first],
-                    "crumple {steps}: the stage fired in frame {first} but changed nothing"
-                );
-            }
-        }
-        assert!(compared > 360, "compared {compared} frames");
+        assert_eq!(compared, 360, "compared {compared} frames");
     }
 
     /// Per crumple scene: how often the stage fires, its largest zone, and what it costs in
     /// kinetic energy and angular momentum in the frames it fires (the stage's own change,
     /// measured before and after it in that frame). A whole-cloth freeze would show as a zone
     /// of every free particle. Also: with the stage the scenes end crossing-free, without it
-    /// they do not (the stage is what makes the invariant hold).
+    /// they do not (the stage is what makes the invariant hold). At 60 and 120 frames, the
+    /// identity of `impact_zones_are_the_identity_where_the_repair_converges` on the frames
+    /// before the stage first fires.
     #[test]
     fn impact_zone_report_on_the_crumple_sweep() {
         const FREE: usize = 7 * 7;
         let mut fired_somewhere = 0usize;
         let mut left_without = 0usize;
         for steps in [20usize, 40, 60, 80, 100, 120] {
-            let ((_, left), fired) = with_zones(true, || crumple(steps));
-            let ((_, left_off), _) = with_zones(false, || crumple(steps));
+            let ((on, left), fired) = with_zones(true, || crumple(steps));
+            let first = FIRST_FIRE.with(core::cell::Cell::get).unwrap_or(steps);
+            let ((off, left_off), _) = with_zones(false, || crumple(steps));
+            if steps == 60 || steps == 120 {
+                // the identity up to the first frame the stage fires (asserted to be after
+                // some frames of contact, so the prefix is not empty): the frames where
+                // self-contact works but converges
+                assert!(!fired.is_empty() || first == steps);
+                assert!(
+                    first >= 5,
+                    "crumple {steps}: the stage fired in frame {first}, no prefix to compare"
+                );
+                for k in 0..first {
+                    assert!(
+                        on[k] == off[k],
+                        "crumple {steps}: frame {k} differs before the stage fired"
+                    );
+                }
+                // the frame the stage fired in is where the runs part
+                if first < steps {
+                    assert!(
+                        on[first] != off[first],
+                        "crumple {steps}: the stage fired in frame {first} but changed nothing"
+                    );
+                }
+            }
             let max_zone = fired.iter().map(|f| f.max_zone).max().unwrap_or(0);
             let ke_lost: f64 = fired.iter().map(|f| f.before.0 - f.after.0).sum();
             let ke_in: f64 = fired.iter().map(|f| f.before.0).sum();
@@ -6217,6 +6229,11 @@ mod impact_zone_tests {
                 100.0 * max_zone as f64 / FREE as f64,
             );
             assert_eq!(left, 0, "crumple {steps}: crossings left with the stage");
+            assert_eq!(
+                zone_probe::take_stalls(),
+                0,
+                "crumple {steps}: a zone call stopped on a round that did nothing"
+            );
             assert!(
                 max_zone < FREE,
                 "crumple {steps}: a zone took every free particle (whole-cloth freeze)"
@@ -6288,6 +6305,11 @@ mod impact_zone_tests {
 
         assert_eq!(fired.len(), 1);
         assert_eq!(fired[0].max_zone, 8, "both patches in one zone");
+        // the stage's own change, closed form: KE ½·12·32² = 6144 J → ½·16·24² = 4608 J;
+        // L = Σ m (x × v) with v = (0, v_y, 0) is (−v_y Σ m z, 0, v_y Σ m x): before
+        // Σ m z = 6, Σ m x = 3 over B, v_y = −32; after Σ m z = 8, Σ m x = 5 over all, −24
+        assert_eq!(fired[0].before, (6144.0, [192.0, 0.0, -96.0]));
+        assert_eq!(fired[0].after, (4608.0, [192.0, 0.0, -120.0]));
         let d = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-3, 8), Fix128::ZERO);
         let v = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-24), Fix128::ZERO);
         for (i, &s0) in start.iter().enumerate() {
@@ -6454,5 +6476,772 @@ mod impact_zone_tests {
             );
         }
         assert_eq!(cloth.remaining_self_contact_crossings(&start), 0);
+    }
+    /// A square patch of four particles (two triangles) at height `y`, corners `(x0, z0)` and
+    /// `(x1, z1)` in eighths of a metre, at rest, with inverse masses `inv`; returns the index
+    /// of its first particle.
+    fn push_patch(cloth: &mut Cloth, y: Fix128, corners: [i64; 4], inv: [Fix128; 4]) -> usize {
+        let [x0, z0, x1, z1] = corners;
+        let base = cloth.positions.len();
+        for ((x, z), w) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)]
+            .into_iter()
+            .zip(inv)
+        {
+            let p = Vec3Fix::new(Fix128::from_ratio(x, 8), y, Fix128::from_ratio(z, 8));
+            cloth.positions.push(p);
+            cloth.prev_positions.push(p);
+            cloth.velocities.push(Vec3Fix::ZERO);
+            cloth.inv_masses.push(w);
+        }
+        cloth.triangles.push([base, base + 1, base + 2]);
+        cloth.triangles.push([base + 1, base + 3, base + 2]);
+        base
+    }
+
+    /// The two-patch scene of the closed-form test, built from `push_patch`: patch A (1 kg
+    /// each) at y = 0 with corners `a`, patch B (inverse masses `inv_b`) a quarter above with
+    /// corners `b`, B moved down by 1/2 over the frame at −32 m/s.
+    fn drive_patches(cloth: &mut Cloth, a: [i64; 4], b: [i64; 4], inv_b: [Fix128; 4]) {
+        push_patch(cloth, Fix128::ZERO, a, [Fix128::ONE; 4]);
+        let first_b = push_patch(cloth, Fix128::from_ratio(1, 4), b, inv_b);
+        for i in first_b..first_b + 4 {
+            cloth.positions[i].y = Fix128::from_ratio(-1, 4);
+            cloth.velocities[i] = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-32), Fix128::ZERO);
+        }
+    }
+
+    fn empty_cloth() -> Cloth {
+        let mut cloth = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        cloth.positions.clear();
+        cloth.prev_positions.clear();
+        cloth.velocities.clear();
+        cloth.inv_masses.clear();
+        cloth.triangles.clear();
+        cloth.config.self_collision = true;
+        cloth
+    }
+
+    fn quarter_kg() -> [Fix128; 4] {
+        [
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(1, 2),
+        ]
+    }
+
+    /// Two collisions 4 m apart in one frame are two zones, each moved by its own
+    /// mass-weighted mean. Zone 1 is the closed-form scene (A 4 × 1 kg, B 4, 4, 2, 2 kg):
+    /// `d = −3/8`, `v = −24` m/s. Zone 2 has every particle at 1 kg: `d = 4·(−1/2)/8 = −1/4`,
+    /// `v = 4·(−32)/8 = −16` m/s. One zone over all sixteen would move everything by
+    /// `(12 + 4)·(−1/2)/24 = −1/3`, a different answer for both.
+    #[test]
+    fn two_separate_collisions_are_two_zones_each_with_its_own_closed_form() {
+        let mut cloth = empty_cloth();
+        drive_patches(&mut cloth, [0, 0, 8, 8], [1, 3, 3, 6], quarter_kg());
+        drive_patches(&mut cloth, [32, 0, 40, 8], [33, 3, 35, 6], [Fix128::ONE; 4]);
+        let mut start = cloth.positions.clone();
+        for (i, p) in start.iter_mut().enumerate() {
+            if (4..8).contains(&i) || i >= 12 {
+                p.y = Fix128::from_ratio(1, 4);
+            }
+        }
+        assert!(cloth.remaining_self_contact_crossings(&start) > 0);
+
+        let (_, fired) = with_zones(true, || {
+            cloth.resolve_impact_zones(&start);
+        });
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(
+            fired[0].max_zone, 8,
+            "two zones of eight, not one of sixteen"
+        );
+        let y =
+            |r: (i64, i64)| Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(r.0, r.1), Fix128::ZERO);
+        for (i, &s0) in start.iter().enumerate() {
+            let (d, v) = if i < 8 {
+                (y((-3, 8)), y((-24, 1)))
+            } else {
+                (y((-1, 4)), y((-16, 1)))
+            };
+            assert_eq!(cloth.positions[i], s0 + d, "particle {i} position");
+            assert_eq!(cloth.velocities[i], v, "particle {i} velocity");
+        }
+        assert_eq!(cloth.remaining_self_contact_crossings(&start), 0);
+    }
+
+    /// A zone with a pinned member is frozen: the free members end at their start, at rest,
+    /// the pinned one is untouched, and the zone is reported with its seven free particles.
+    #[test]
+    fn a_zone_with_a_pinned_member_is_frozen_and_counts_its_free_particles() {
+        let mut cloth = empty_cloth();
+        drive_patches(&mut cloth, [0, 0, 8, 8], [1, 3, 3, 6], quarter_kg());
+        cloth.inv_masses[0] = Fix128::ZERO;
+        let mut start = cloth.positions.clone();
+        for p in start.iter_mut().skip(4) {
+            p.y = Fix128::from_ratio(1, 4);
+        }
+        assert!(cloth.remaining_self_contact_crossings(&start) > 0);
+
+        let (_, fired) = with_zones(true, || {
+            cloth.resolve_impact_zones(&start);
+        });
+
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].max_zone, 7, "the pinned particle is not counted");
+        assert_eq!(fired[0].after.0, 0.0, "a frozen zone ends at rest");
+        for (i, &s0) in start.iter().enumerate() {
+            assert_eq!(cloth.positions[i], s0, "particle {i} position");
+            assert_eq!(cloth.velocities[i], Vec3Fix::ZERO, "particle {i} velocity");
+        }
+    }
+
+    /// The scene of `a_frozen_zone_stays_frozen_when_a_later_round_merges_it` with patch B at
+    /// corners `b` (eighths, y = 1/4) and patch C at corners `[6, 5, 7, 6]` falling from
+    /// `c_start` to −1/2. Asserts what both placements share: C is not an offender of the
+    /// frame as the solver left it, the zones fire once, every particle ends at its start
+    /// and at rest, and no round stalls. Returns the size of the zone.
+    fn frozen_merge_zone(b: [i64; 4], c_start: Fix128) -> usize {
+        let mut cloth = empty_cloth();
+        push_patch(&mut cloth, Fix128::ZERO, [0, 0, 8, 8], [Fix128::ONE; 4]);
+        push_patch(&mut cloth, Fix128::from_ratio(1, 4), b, [Fix128::ONE; 4]);
+        let c = push_patch(&mut cloth, c_start, [6, 5, 7, 6], [Fix128::ONE; 4]);
+        let start = cloth.positions.clone();
+        for i in 0..4 {
+            cloth.positions[i].y = Fix128::from_ratio(3, 4);
+            cloth.velocities[i] = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(45), Fix128::ZERO);
+        }
+        for i in c..c + 4 {
+            cloth.positions[i].y = Fix128::from_ratio(-1, 2);
+            cloth.velocities[i] = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-56), Fix128::ZERO);
+        }
+        // C is not an offender of the frame as the solver left it: only A and B are
+        let first = cloth.self_contact_offenders(&start);
+        assert!(!first.is_empty());
+        assert!(
+            first.iter().all(|set| set.iter().all(|&v| v < c)),
+            "C must not be an offender in round 1"
+        );
+
+        let (_, fired) = with_zones(true, || {
+            cloth.resolve_impact_zones(&start);
+        });
+
+        assert_eq!(fired.len(), 1);
+        for (i, &s0) in start.iter().enumerate() {
+            assert_eq!(
+                cloth.positions[i], s0,
+                "particle {i} is not back at its start"
+            );
+            assert_eq!(
+                cloth.velocities[i],
+                Vec3Fix::ZERO,
+                "particle {i} is not at rest"
+            );
+        }
+        assert_eq!(zone_probe::take_stalls(), 0);
+        fired[0].max_zone
+    }
+
+    fn v3(x: (i64, i64), y: (i64, i64), z: (i64, i64)) -> Vec3Fix {
+        Vec3Fix::new(
+            Fix128::from_ratio(x.0, x.1),
+            Fix128::from_ratio(y.0, y.1),
+            Fix128::from_ratio(z.0, z.1),
+        )
+    }
+
+    /// `padded_bounds` takes each axis's minimum and maximum from whichever point holds it
+    /// (here a different point for every one of the six) and moves every side out by `pad`.
+    #[test]
+    fn padded_bounds_take_each_axis_from_its_own_point() {
+        let pts = [
+            v3((0, 1), (5, 1), (-1, 1)),
+            v3((3, 1), (-2, 1), (4, 1)),
+            v3((-4, 1), (1, 1), (2, 1)),
+        ];
+        let (lo, hi) = padded_bounds(&pts, Fix128::from_ratio(1, 4));
+        assert_eq!(lo, v3((-17, 4), (-9, 4), (-5, 4)));
+        assert_eq!(hi, v3((13, 4), (21, 4), (17, 4)));
+        // one point, no pad: the point itself on both sides
+        assert_eq!(padded_bounds(&pts[1..2], Fix128::ZERO), (pts[1], pts[1]));
+    }
+
+    /// Closed boxes: a unit box moved by exactly its width along one axis touches the
+    /// original (not disjoint), moved by 9/8 it is strictly apart (disjoint), on each of the
+    /// six sides separately, so every side of the test decides on its own.
+    #[test]
+    fn boxes_disjoint_only_when_strictly_apart_on_an_axis() {
+        let unit = (Vec3Fix::ZERO, v3((1, 1), (1, 1), (1, 1)));
+        assert!(!boxes_disjoint(unit, unit));
+        for axis in 0..3 {
+            for (num, apart) in [(8, false), (9, true), (-8, false), (-9, true)] {
+                let d = Fix128::from_ratio(num, 8);
+                let shift = match axis {
+                    0 => Vec3Fix::new(d, Fix128::ZERO, Fix128::ZERO),
+                    1 => Vec3Fix::new(Fix128::ZERO, d, Fix128::ZERO),
+                    _ => Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, d),
+                };
+                let moved = (unit.0 + shift, unit.1 + shift);
+                assert_eq!(
+                    boxes_disjoint(unit, moved),
+                    apart,
+                    "axis {axis}, shift {num}/8"
+                );
+                assert_eq!(
+                    boxes_disjoint(moved, unit),
+                    apart,
+                    "axis {axis}, shift {num}/8, swapped"
+                );
+            }
+        }
+    }
+
+    /// One vertex chord through one triangle, everything else out of reach: the scene of the
+    /// closed-form projection tests. Triangle (0) `a = (0, ½, 0)`, (1) `b = (0, ½, 1)`,
+    /// (2) `c = (1, ½, 0)` at the end of the frame (wound so `(b − a) × (c − a)` is `+y`),
+    /// inverse masses `inv`; the free vertex (3) with inverse mass 2. Thickness 1/16.
+    fn chord_scene(
+        tri_start_y: Fix128,
+        inv: [Fix128; 3],
+        p0: Vec3Fix,
+        p1: Vec3Fix,
+    ) -> (Cloth, Vec<Vec3Fix>) {
+        let mut cloth = empty_cloth();
+        cloth.config.self_collision_distance = Fix128::from_ratio(1, 16);
+        let half = Fix128::from_ratio(1, 2);
+        let corners = [(0, 0), (0, 1), (1, 0)];
+        let mut start = Vec::new();
+        for (k, (x, z)) in corners.into_iter().enumerate() {
+            let end = Vec3Fix::new(Fix128::from_int(x), half, Fix128::from_int(z));
+            start.push(Vec3Fix::new(end.x, tri_start_y, end.z));
+            cloth.positions.push(end);
+            cloth.prev_positions.push(end);
+            cloth.velocities.push(Vec3Fix::ZERO);
+            cloth.inv_masses.push(inv[k]);
+        }
+        cloth.triangles.push([0, 1, 2]);
+        start.push(p0);
+        cloth.positions.push(p1);
+        cloth.prev_positions.push(p1);
+        cloth.velocities.push(Vec3Fix::ZERO);
+        cloth.inv_masses.push(Fix128::from_int(2));
+        (cloth, start)
+    }
+
+    /// The projection of `chord_scene` in closed form: the entry point `e` has barycentric
+    /// weights `w`, the constraint is `n·(p − Σ wₖxₖ) − h ≥ 0` with `n` the face normal turned
+    /// toward the side the chord started on, so (PBD, one pass, linear constraint) with
+    /// `C = n·(p₁ − e) − h` and `D = w_p + Σ wₖ² inv_k` the vertex moves by `−n·w_p·C/D` and
+    /// corner `k` by `n·inv_k·wₖ·C/D`; velocities change by displacement / dt. Returns
+    /// `(dy_vertex, [dy_corner; 3])` along y (the normal is ±y, nothing moves in x or z).
+    fn closed_form_dy(n_y: f64, c_val: f64, w: [f64; 3], inv: [f64; 3]) -> (f64, [f64; 3]) {
+        let d = 2.0 + (0..3).map(|k| inv[k] * w[k] * w[k]).sum::<f64>();
+        let s = c_val / d;
+        (-n_y * 2.0 * s, [0, 1, 2].map(|k| n_y * inv[k] * w[k] * s))
+    }
+
+    fn assert_moved_by(cloth: &Cloth, start_end: &[Vec3Fix], dy: (f64, [f64; 3]), dt_inv: f64) {
+        let expect = [dy.1[0], dy.1[1], dy.1[2], dy.0];
+        for (i, &e) in expect.iter().enumerate() {
+            let (p, was) = (cloth.positions[i], start_end[i]);
+            assert_eq!(
+                (p.x, p.z),
+                (was.x, was.z),
+                "particle {i} moved off the normal"
+            );
+            let got = (p.y - was.y).to_f64();
+            assert!(
+                (got - e).abs() < 1e-12,
+                "particle {i}: dy {got}, closed form {e}"
+            );
+            let v = cloth.velocities[i];
+            assert_eq!((v.x, v.z), (Fix128::ZERO, Fix128::ZERO), "particle {i}");
+            let vy = v.y.to_f64();
+            assert!(
+                (vy - e * dt_inv).abs() < 1e-9,
+                "particle {i}: vy {vy}, closed form {}",
+                e * dt_inv
+            );
+        }
+    }
+
+    /// An oblique chord through a moving, unequally weighted triangle, starting on the
+    /// triangle's `−face` side: the vertex goes from `(1/8, 1/4, 1/8)` to `(3/8, 3/4, 1/4)`
+    /// and the triangle falls from y = 5/8 to 1/2. The chord crosses y = ½ at t = ½, at
+    /// `e = (1/4, ½, 3/16)`, weights `(9/16, 3/16, 1/4)`; the start is below, so `n = −y` and
+    /// `C = −(3/4 − ½) − 1/16 = −5/16`. One pass corrects it (the constraint is linear in
+    /// the positions), the second finds nothing, and the zones find no offender, so the
+    /// whole frame is the closed form (`closed_form_dy`).
+    #[test]
+    fn an_oblique_chord_through_a_weighted_triangle_is_projected_in_closed_form() {
+        let inv = [
+            Fix128::ONE,
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(1, 4),
+        ];
+        let (mut cloth, start) = chord_scene(
+            Fix128::from_ratio(5, 8),
+            inv,
+            v3((1, 8), (1, 4), (1, 8)),
+            v3((3, 8), (3, 4), (1, 4)),
+        );
+        let end = cloth.positions.clone();
+        cloth.resolve_self_contact_over_frame(&start, Fix128::from_ratio(1, 8));
+        let dy = closed_form_dy(
+            -1.0,
+            -5.0 / 16.0,
+            [9.0 / 16.0, 3.0 / 16.0, 0.25],
+            [1.0, 0.5, 0.25],
+        );
+        assert_moved_by(&cloth, &end, dy, 8.0);
+    }
+
+    /// The chord starts exactly on the plane of a resting triangle and ends 1/4 below it:
+    /// `n · (p₀ − e) = 0`, and the tie goes to the face normal (`+y`), so the vertex is
+    /// projected to the face side, `C = (1/4 − ½) − 1/16 = −5/16` at `e = (1/4, ½, 3/16)`. A
+    /// tie read the other way would find the end already clear (`C = 3/16 ≥ 0`).
+    #[test]
+    fn a_chord_from_the_plane_is_projected_to_the_face_side() {
+        let inv = [
+            Fix128::ONE,
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(1, 4),
+        ];
+        let (mut cloth, start) = chord_scene(
+            Fix128::from_ratio(1, 2),
+            inv,
+            v3((1, 4), (1, 2), (3, 16)),
+            v3((1, 4), (1, 4), (3, 16)),
+        );
+        let end = cloth.positions.clone();
+        cloth.resolve_self_contact_over_frame(&start, Fix128::from_ratio(1, 8));
+        let dy = closed_form_dy(
+            1.0,
+            -5.0 / 16.0,
+            [9.0 / 16.0, 3.0 / 16.0, 0.25],
+            [1.0, 0.5, 0.25],
+        );
+        assert_moved_by(&cloth, &end, dy, 8.0);
+    }
+
+    /// A pinned corner (inverse mass 0) hit by the chord of the oblique test does not move and
+    /// keeps zero velocity: its share of the correction is scaled by its own inverse mass, so
+    /// it is exactly zero, and the other two corners and the vertex take the closed form with
+    /// `inv = (0, ½, ¼)`.
+    #[test]
+    fn a_pinned_corner_hit_by_a_chord_stays_put() {
+        let inv = [
+            Fix128::ZERO,
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(1, 4),
+        ];
+        let (mut cloth, start) = chord_scene(
+            Fix128::from_ratio(1, 2),
+            inv,
+            v3((1, 8), (1, 4), (1, 8)),
+            v3((3, 8), (3, 4), (1, 4)),
+        );
+        let end = cloth.positions.clone();
+        cloth.resolve_self_contact_over_frame(&start, Fix128::from_ratio(1, 8));
+        assert_eq!(cloth.positions[0], end[0]);
+        assert_eq!(cloth.velocities[0], Vec3Fix::ZERO);
+        let dy = closed_form_dy(
+            -1.0,
+            -5.0 / 16.0,
+            [9.0 / 16.0, 3.0 / 16.0, 0.25],
+            [0.0, 0.5, 0.25],
+        );
+        assert_moved_by(&cloth, &end, dy, 8.0);
+    }
+
+    /// `edge_pair_frame_contact` on edge `a` from `(−1, 0, 0)` to `(1, 0, 0)` at rest and an
+    /// edge `b` along z (`z ∈ [z0, z0 + 2]` at x = 0) falling from `y = y0` to `y0 − 2·y_drop`.
+    fn falling_cross(
+        y0: Fix128,
+        drop: Fix128,
+        z0: Fix128,
+        thickness: Fix128,
+    ) -> Option<FrameEdgeContact> {
+        let at = |y: Fix128, z: Fix128| Vec3Fix::new(Fix128::ZERO, y, z);
+        let a0 = Vec3Fix::new(Fix128::from_int(-1), Fix128::ZERO, Fix128::ZERO);
+        let a1 = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        let y1 = y0 - drop - drop;
+        let z1 = z0 + Fix128::from_int(2);
+        edge_pair_frame_contact(
+            (a0, a0),
+            (a1, a1),
+            (at(y0, z0), at(y1, z0)),
+            (at(y0, z1), at(y1, z1)),
+            thickness,
+        )
+    }
+
+    /// The meeting test is `|a − b|² < h²` at the sampled instant. `b` falls from `y = Y` to
+    /// `−Y`, coplanar with `a` at t = ½; the sampled instant is the midpoint of a `2⁻¹²`
+    /// bracket next to it, `2⁻¹³` away, where `|a − b| = 2Y · 2⁻¹³ = Y / 4096`. With
+    /// h = 1/16: Y = 1 meets (and the contact reads its normal off the start, `−y`, and
+    /// ends `Y` through: gap −1 at s = t = ½); Y = 256 is exactly h apart, which is not
+    /// `< h`; Y = 512 is 1/8 apart (`1/64` against `h² = 1/256`, not against `2h = 1/8` or
+    /// `h/h = 1`).
+    #[test]
+    fn edge_pairs_meet_only_strictly_inside_the_thickness() {
+        let h = Fix128::from_ratio(1, 16);
+        let minus_one = Fix128::from_int(-1);
+        let met =
+            falling_cross(Fix128::ONE, Fix128::ONE, minus_one, h).expect("passes 1/4096 apart");
+        assert_eq!(
+            (met.s, met.t),
+            (Fix128::from_ratio(1, 2), Fix128::from_ratio(1, 2))
+        );
+        assert_eq!(
+            met.normal,
+            Vec3Fix::new(Fix128::ZERO, minus_one, Fix128::ZERO)
+        );
+        assert_eq!(met.gap, minus_one);
+        for y in [256, 512] {
+            let y = Fix128::from_int(y);
+            assert!(falling_cross(y, y, minus_one, h).is_none(), "Y = {y:?}");
+        }
+    }
+
+    /// Two edges crossing at the start of the frame have no start difference to read a normal
+    /// from; the contact falls back to their common perpendicular `(2, 0, 0) × (0, 0, 2)`,
+    /// i.e. `−y`. `b` ends 1 below `a`, so `a − b = (0, 1, 0)` and the gap is `−1`: the pair
+    /// ends crossed, as a tunnelled pair must read.
+    #[test]
+    fn edges_touching_at_the_start_separate_along_their_common_perpendicular() {
+        let half = Fix128::from_ratio(1, 2);
+        let met = falling_cross(
+            Fix128::ZERO,
+            half,
+            Fix128::from_int(-1),
+            Fix128::from_ratio(1, 16),
+        )
+        .expect("they meet at the start");
+        assert_eq!(
+            met.normal,
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-1), Fix128::ZERO)
+        );
+        assert_eq!(met.gap, Fix128::from_int(-1));
+    }
+
+    /// An edge whose end touches the other edge's interior is an endpoint contact, not this
+    /// stage's: `b` spans z ∈ [0, 2], so its closest point to `a` is its end (t = 0) while
+    /// `a`'s is interior; one interior parameter is not enough.
+    #[test]
+    fn an_endpoint_contact_is_not_an_edge_pair_contact() {
+        let h = Fix128::from_ratio(1, 16);
+        assert!(falling_cross(Fix128::ONE, Fix128::ONE, Fix128::ZERO, h).is_none());
+        // the same fall with b centred on a is a contact: the scene does reach the test
+        assert!(falling_cross(Fix128::ONE, Fix128::ONE, Fix128::from_int(-1), h).is_some());
+    }
+
+    /// `zone_probe::energy_and_momentum` on one 2 kg particle at `x = (4, 5, 6)` with
+    /// `v = (1, 2, 3)`, beside a pinned one (skipped though it moves): `KE = ½·2·14 = 14`,
+    /// `L = m x × v = 2·(3, −6, 3) = (6, −12, 6)`.
+    #[test]
+    fn energy_and_momentum_is_the_closed_form_over_free_particles() {
+        let mut cloth = empty_cloth();
+        let int = |x: i64, y: i64, z: i64| {
+            Vec3Fix::new(
+                Fix128::from_int(x),
+                Fix128::from_int(y),
+                Fix128::from_int(z),
+            )
+        };
+        for (x, v, w) in [
+            (int(4, 5, 6), int(1, 2, 3), Fix128::from_ratio(1, 2)),
+            (int(7, -1, 2), int(3, 1, -2), Fix128::ZERO),
+        ] {
+            cloth.positions.push(x);
+            cloth.prev_positions.push(x);
+            cloth.velocities.push(v);
+            cloth.inv_masses.push(w);
+        }
+        assert_eq!(
+            zone_probe::energy_and_momentum(&cloth),
+            (14.0, [6.0, -12.0, 6.0])
+        );
+    }
+
+    /// A frozen zone that a later round merges with a moving patch stays frozen. A (the unit
+    /// square, triangles `(0,0) (8,0) (0,8)` and `(8,0) (8,8) (0,8)` in eighths) rises 3/4
+    /// under B at `[2, 3, 4, 5]`, 1/4 above it and at rest; C, inside A's second triangle and
+    /// clear of B, falls from 7/16 to −1/2. Round by round (equal masses):
+    /// 1. the offenders are B's edges crossing A's diagonal `x + z = 8`; the zone is the
+    ///    diagonal's ends (1, 2) and B's 5, 6, 7, moved by the mean `2·(3/4)/5 = 3/10`. C's
+    ///    chord stays below A (at 3/4);
+    /// 2. B's vertices chord-cross A's triangles, which are not wholly in the zone (0 and 3
+    ///    are not members), so the zone grows to A's four and B's three, moved by
+    ///    `4·(3/4)/7 = 3/7`. Over C, A's second triangle is at `3/10 + (9/20)·(x + z − 8)/8`
+    ///    ≥ 3/10 + (9/20)·(3/8) ≈ 0.469 > 7/16, so C's chord still misses it;
+    /// 3. A is flat at 3/7 < 7/16: C's chord crosses it. B's chords cross A's translated
+    ///    triangles inside the zone, so the zone freezes, and in the same round C's
+    ///    vertex-face sets merge C into it with C's vertex as the new root: C is frozen only
+    ///    because the merge carries the flag over (`frozen[a] || frozen[b]`).
+    ///
+    /// Everything ends at its start and at rest; a merge that dropped the flag would move the
+    /// zone by its members' mean displacement. The zone's size: B does not move, so a corner
+    /// of B is in an offender only through an edge of it crossing A's diagonal (round 1) or
+    /// through its own chord after round 1 moved it (round 2); corner (2, 3) does neither —
+    /// `(2,3)–(4,3)` would need x = 5 and `(2,3)–(2,5)` z = 6 to meet the diagonal — so the
+    /// zone is A's 4, B's other 3 and C's 4: eleven (seven without C). The control
+    /// `the_corner_whose_edge_crosses_a_counts_in_the_zone` moves B so that every corner has a
+    /// crossing edge, and the count is twelve.
+    #[test]
+    fn a_frozen_zone_stays_frozen_when_a_later_round_merges_it() {
+        let zone = frozen_merge_zone([2, 3, 4, 5], Fix128::from_ratio(7, 16));
+        assert_eq!(zone, 11, "C joined, B's corner (2, 3) did not");
+    }
+
+    /// Control for the zone size above: B at `[1, 4, 5, 6]`, still clear of C (x 6..7). A's
+    /// diagonal `x + z = 8` now crosses two opposite edges of B, `(1,4)–(5,4)` at x = 4 and
+    /// `(1,6)–(5,6)` at x = 2 (inside both edges; no corner is on the diagonal: `x + z` is 5,
+    /// 9, 7, 11), so every corner of B is in round 1's zone. The rounds shift with it: round
+    /// 1 moves the six by `2·(3/4)/6 = 1/4`, A's second triangle over C is then at least
+    /// `1/4 + (1/2)·(3/8) = 7/16`, round 2 moves the eight by 3/8, so C starts at 13/32,
+    /// between the two. The zone is A's 4, B's 4 and C's 4: twelve.
+    #[test]
+    fn the_corner_whose_edge_crosses_a_counts_in_the_zone() {
+        let zone = frozen_merge_zone([1, 4, 5, 6], Fix128::from_ratio(13, 32));
+        assert_eq!(zone, 12, "every corner of B joined");
+    }
+
+    /// The re-separation after the zones fired: the proximity passes push apart two patches
+    /// left 1/128 apart (under the 0.02 thickness), and each free particle's velocity changes
+    /// by its displacement times `1/dt` (`dt = 1/64`, so the product is exact); a pinned
+    /// particle neither moves nor changes velocity.
+    #[test]
+    fn separation_after_the_zones_turns_each_displacement_into_velocity() {
+        let mut cloth = empty_cloth();
+        push_patch(&mut cloth, Fix128::ZERO, [0, 0, 8, 8], [Fix128::ONE; 4]);
+        push_patch(
+            &mut cloth,
+            Fix128::from_ratio(1, 128),
+            [2, 2, 5, 5],
+            [Fix128::ONE; 4],
+        );
+        cloth.inv_masses[0] = Fix128::ZERO;
+        let v0 = Vec3Fix::new(
+            Fix128::from_ratio(1, 8),
+            Fix128::from_ratio(-2, 8),
+            Fix128::from_ratio(3, 8),
+        );
+        cloth.velocities.fill(v0);
+        let (x_before, v_before) = (cloth.positions.clone(), cloth.velocities.clone());
+        let inv_dt = Fix128::from_int(64);
+
+        cloth.separate_after_zones(cloth.config.self_collision_distance, inv_dt);
+
+        let moved = (1..x_before.len())
+            .filter(|&i| cloth.positions[i] != x_before[i])
+            .count();
+        assert!(
+            moved > 0,
+            "the passes moved nothing: the case tests nothing"
+        );
+        assert_eq!(cloth.positions[0], x_before[0], "the pinned particle moved");
+        assert_eq!(
+            cloth.velocities[0], v_before[0],
+            "the pinned particle's velocity changed"
+        );
+        for i in 1..x_before.len() {
+            let dx = cloth.positions[i] - x_before[i];
+            assert_eq!(
+                cloth.velocities[i],
+                v_before[i] + Vec3Fix::new(dx.x * inv_dt, dx.y * inv_dt, dx.z * inv_dt),
+                "particle {i}"
+            );
+        }
+    }
+
+    /// An edge pair that meets and ends exactly touching (gap 0, both edges' closest points
+    /// interior) has not crossed: it is not an offender; one 1/64 further it is. Edge a lies
+    /// along x at z = 1/2, y = 0; edge b along z at x = 1/2 moves down from y = 1/4.
+    #[test]
+    fn an_edge_pair_that_ends_exactly_touching_is_not_an_offender() {
+        let build = |end_y: Fix128| {
+            let mut cloth = empty_cloth();
+            let h = Fix128::from_ratio(1, 2);
+            let pts = [
+                Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, h),
+                Vec3Fix::new(Fix128::ONE, Fix128::ZERO, h),
+                Vec3Fix::new(h, Fix128::ZERO, Fix128::from_ratio(1, 4)),
+                Vec3Fix::new(h, Fix128::from_ratio(1, 4), Fix128::ZERO),
+                Vec3Fix::new(h, Fix128::from_ratio(1, 4), Fix128::ONE),
+                Vec3Fix::new(Fix128::ONE, Fix128::from_ratio(1, 4), Fix128::ONE),
+            ];
+            for p in pts {
+                cloth.positions.push(p);
+                cloth.prev_positions.push(p);
+                cloth.velocities.push(Vec3Fix::ZERO);
+                cloth.inv_masses.push(Fix128::ONE);
+            }
+            cloth.triangles.push([0, 1, 2]);
+            cloth.triangles.push([3, 4, 5]);
+            let start = cloth.positions.clone();
+            for i in 3..6 {
+                cloth.positions[i].y = end_y;
+            }
+            (cloth, start)
+        };
+
+        let (touching, start) = build(Fix128::ZERO);
+        let contact = edge_pair_frame_contact(
+            (start[0], touching.positions[0]),
+            (start[1], touching.positions[1]),
+            (start[3], touching.positions[3]),
+            (start[4], touching.positions[4]),
+            touching.config.self_collision_distance,
+        )
+        .expect("the edges meet inside the frame");
+        assert_eq!(contact.gap, Fix128::ZERO, "the pair ends exactly touching");
+        assert!(touching.self_contact_offenders(&start).is_empty());
+
+        let (crossed, start) = build(Fix128::from_ratio(-1, 64));
+        assert!(!crossed.self_contact_offenders(&start).is_empty());
+    }
+
+    /// The zones' stop on a round that does nothing is never taken: such a round would need
+    /// an offender whose four vertices all sit in frozen zones or are pinned, i.e. at their
+    /// frame-start positions, and a configuration that does not move over the frame has no
+    /// offender, crossed or not (a vertex's chord is a point, an edge pair's end gap is
+    /// measured along its own start separation). Checked on the crumple without
+    /// self-contact, whose surface ends crossed: every frame's end, taken as its own start,
+    /// has no offender, while some frames have offenders against the frame before.
+    #[test]
+    fn a_configuration_that_does_not_move_has_no_offender_even_when_crossed() {
+        let ((frames, _), _) = with_zones(false, || crumple_with(120, false));
+        let mut cloth = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::from_int(8),
+            Fix128::from_int(8),
+            9,
+            9,
+            Fix128::from_ratio(1, 100),
+        );
+        cloth.config.self_collision_distance = Fix128::from_ratio(5, 100);
+        let mut crossed = 0usize;
+        for k in 1..frames.len() {
+            cloth.positions.clone_from(&frames[k].0);
+            crossed += usize::from(!cloth.self_contact_offenders(&frames[k - 1].0).is_empty());
+            assert!(
+                cloth.self_contact_offenders(&frames[k].0).is_empty(),
+                "frame {k}: a configuration that does not move has an offender"
+            );
+        }
+        assert!(
+            crossed > 0,
+            "no frame of the crumple crosses: the case tests nothing"
+        );
+    }
+
+    /// Two parallel triangles 1/64 apart: `0 1 2` at `y = 0` and `3 4 5` above it, every
+    /// particle pinned. Edge `0-1` and edge `3-4` (and vertex 3 over triangle 0) are inside
+    /// every margin used below, so whether they are paired depends only on pinning.
+    fn stacked_pinned_triangles() -> Cloth {
+        let lo = [
+            v3((0, 1), (0, 1), (0, 1)),
+            v3((1, 1), (0, 1), (0, 1)),
+            v3((0, 1), (0, 1), (1, 1)),
+        ];
+        let up = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 64), Fix128::ZERO);
+        let mut positions = lo.to_vec();
+        positions.extend(lo.iter().map(|&p| p + up));
+        Cloth::from_mesh(positions, vec![[0, 1, 2], [3, 4, 5]], Fix128::ZERO)
+    }
+
+    /// A contact is skipped exactly when **all** of its particles are pinned: freeing any
+    /// single one of them — whichever position it holds in the pair — brings it back, in
+    /// the vertex-face, edge-edge and swept edge-edge broad phases alike
+    #[test]
+    fn a_contact_is_skipped_only_when_every_participant_is_pinned() {
+        let margin = Fix128::from_ratio(1, 16);
+        let pinned = stacked_pinned_triangles();
+        let start = pinned.positions.clone();
+        let pair = [0u32, 1, 3, 4];
+        assert!(!pinned.collect_edge_edge_candidates(margin).contains(&pair));
+        assert!(!pinned
+            .collect_swept_edge_edge_candidates(&start, margin)
+            .contains(&pair));
+        assert!(!pinned
+            .collect_vertex_face_candidates(margin)
+            .contains(&(3, 0)));
+        for free in [0usize, 1, 3, 4] {
+            let mut cloth = stacked_pinned_triangles();
+            cloth.inv_masses[free] = Fix128::ONE;
+            assert!(
+                cloth.collect_edge_edge_candidates(margin).contains(&pair),
+                "freeing particle {free} did not bring the edge pair back"
+            );
+            assert!(
+                cloth
+                    .collect_swept_edge_edge_candidates(&start, margin)
+                    .contains(&pair),
+                "freeing particle {free} did not bring the swept edge pair back"
+            );
+        }
+        for free in [0usize, 1, 2, 3] {
+            let mut cloth = stacked_pinned_triangles();
+            cloth.inv_masses[free] = Fix128::ONE;
+            assert!(
+                cloth
+                    .collect_vertex_face_candidates(margin)
+                    .contains(&(3, 0)),
+                "freeing particle {free} did not bring the vertex-face pair back"
+            );
+        }
+    }
+
+    /// The swept broad phase drops every edge that has an endpoint without a start
+    /// position, whichever end it is, and keeps the rest: with particle 5 missing from
+    /// `start`, edges `3-5` and `4-5` are gone and `0-1` against `3-4` is still paired
+    #[test]
+    fn the_swept_broad_phase_drops_edges_without_a_start_position() {
+        let margin = Fix128::from_ratio(1, 16);
+        let mut cloth = stacked_pinned_triangles();
+        cloth.inv_masses.fill(Fix128::ONE);
+        let start: Vec<Vec3Fix> = cloth.positions[..5].to_vec();
+        let pairs = cloth.collect_swept_edge_edge_candidates(&start, margin);
+        assert!(
+            pairs.contains(&[0, 1, 3, 4]),
+            "an edge inside the start range was dropped"
+        );
+        assert!(
+            pairs.iter().all(|p| !p.contains(&5)),
+            "an edge without a start position was paired: {pairs:?}"
+        );
+    }
+
+    /// Every edge pair is visited once, never against itself or in both orders: the
+    /// candidates are exactly the vertex-disjoint pairs of distinct mesh edges, in
+    /// ascending order of the first edge and then the second
+    #[test]
+    fn each_edge_pair_is_listed_once_in_mesh_order() {
+        let margin = Fix128::from_ratio(1, 16);
+        let mut cloth = stacked_pinned_triangles();
+        cloth.inv_masses.fill(Fix128::ONE);
+        let edges = cloth.mesh_edges();
+        let mut expected = Vec::new();
+        for (i, a) in edges.iter().enumerate() {
+            for b in &edges[i + 1..] {
+                if a.iter().all(|v| !b.contains(v)) {
+                    expected.push([a[0], a[1], b[0], b[1]]);
+                }
+            }
+        }
+        assert_eq!(
+            expected.len(),
+            9,
+            "two disjoint triangles have 3 x 3 cross pairs"
+        );
+        assert_eq!(cloth.collect_edge_edge_candidates(margin), expected);
+        let start = cloth.positions.clone();
+        assert_eq!(
+            cloth.collect_swept_edge_edge_candidates(&start, margin),
+            expected
+        );
     }
 }

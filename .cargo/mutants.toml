@@ -167,6 +167,13 @@
 # without ever calling the builder. Making the limit fields private, or
 # validating every one of these paths, would both be public-API breaking
 # changes and are not pursued here.
+# Build profile: `ci-test` (Cargo.toml: opt-level 2 with debug assertions and overflow
+# checks kept), the profile the CI suite runs. One setting here covers the weekly, scoped and
+# in-diff jobs and local runs alike. At opt-level 0 the lib suite took 236 s (two
+# self-contact sweeps 213 s + 192 s), so a run whose baseline is that long reads every
+# mutant as a timeout; under `ci-test` the same suite takes 28 s.
+profile = "ci-test"
+
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
