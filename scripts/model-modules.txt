@@ -84,6 +84,7 @@ D	src/layer_adhesion.rs
 D	src/linear_elastic_fem.rs
 D	src/linear_elastic_fem/consistent_tangent.rs
 D	src/modal.rs
+D	src/mpm2d.rs
 D	src/plastic.rs
 D	src/prestressed.rs
 D	src/quadratic_elastic_fem.rs
