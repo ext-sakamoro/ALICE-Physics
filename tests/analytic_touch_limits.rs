@@ -30,7 +30,7 @@ fn rest_centre(i: usize) -> Vec3Fix {
     )
 }
 
-/// `n` soft sheets as in `tests/analytic_touch_layers.rs`: 4 × 4 particles of 10 g, tether period 0.5 s, ζ 0.42
+/// `n` soft sheets as in `tests/analytic_touch_layers.rs`: 5 × 5 particles of 10 g, tether period 0.5 s, ζ 0.42
 fn sheets(n: usize) -> Vec<Cloth> {
     let mass = Fix128::from_ratio(1, 100);
     let omega = Fix128::from_ratio(12_566, 1000);
@@ -40,7 +40,7 @@ fn sheets(n: usize) -> Vec<Cloth> {
     (0..n)
         .map(|i| {
             let origin = rest_centre(i) - Vec3Fix::new(half, Fix128::ZERO, half);
-            let mut c = Cloth::new_grid(origin, Fix128::ONE, Fix128::ONE, 4, 4, mass);
+            let mut c = Cloth::new_grid(origin, Fix128::ONE, Fix128::ONE, 5, 5, mass);
             c.config.gravity = Vec3Fix::ZERO;
             c.config.damping = Fix128::ONE;
             c.config.iterations = 4;
@@ -85,14 +85,45 @@ fn at(g: usize, dx: i64, dz: i64) -> Vec3Fix {
         )
 }
 
+/// A grab of body `g` at `at(g, dx, dz)` whose nearest particle on the sheet at rest is nearer than any other by at
+/// least [`GRAB_MARGIN`] in squared distance: at a tie or a near tie the last ulp of the distances picks the particle
+/// (the arithmetic decides, not the scene; a change of rounding moved one scene's grab to the opposite corner), so
+/// every scene grabs through here and such a point fails when the scene is built
+/// The smallest lead in squared distance (m²) the nearest particle must have over the next for a scene grab
+/// (2⁻¹⁶ m², far above any rounding of the distances and far below the grid's own spacing of 1/16 m²)
+const GRAB_MARGIN: Fix128 = Fix128::from_raw(0, 1 << 48);
+
+fn grab_at(g: usize, dx: i64, dz: i64) -> Touch {
+    let touch = Touch::grab(u32::try_from(g).expect("body index"), at(g, dx, dz));
+    let Touch::Grab { at: point, .. } = touch else {
+        unreachable!("Touch::grab builds a grab")
+    };
+    let sheet = &sheets(g + 1)[g];
+    let d2: Vec<Fix128> = sheet
+        .positions
+        .iter()
+        .map(|p| {
+            let d = *p - point;
+            d.dot(d)
+        })
+        .collect();
+    let mut sorted = d2.clone();
+    sorted.sort();
+    let gap = sorted[1] - sorted[0];
+    assert!(
+        gap >= GRAB_MARGIN,
+        "grab of body {g} at ({dx}, {dz}) cm has no clear nearest particle (the two nearest differ by {gap:?})"
+    );
+    touch
+}
+
 /// A triangle-wave shake of body `g` along x from `from` to `to` (released there unless `to` is the last step, so
 /// that no spring back after a release adds a turn): `period` steps a cycle (even, the same number of steps each way),
 /// between `−amp/2` and `+amp/2` hundredths of a metre around the grab point
 fn shake(g: u32, from: u64, to: u64, period: u64, amp: i64) -> InputLog<Touch> {
     let mut l = InputLog::new();
     let gi = g as usize;
-    l.record(from, Touch::grab(g, at(gi, 0, 0)))
-        .expect("in order");
+    l.record(from, grab_at(gi, 0, 0)).expect("in order");
     let p = period as i64;
     for s in from + 1..to {
         let ph = ((s - from) % period) as i64;
@@ -146,8 +177,7 @@ fn rung(scale: Fix128) -> (usize, Fix128) {
 fn pull(g: u32, from: u64, hold: u64, release: u64, ax: i64, bx: i64) -> InputLog<Touch> {
     let mut out = InputLog::new();
     let gi = g as usize;
-    out.record(from, Touch::grab(g, at(gi, ax, 0)))
-        .expect("in order");
+    out.record(from, grab_at(gi, ax, 0)).expect("in order");
     let n = (hold - from) as i64;
     for s in from + 1..=hold {
         let k = (s - from) as i64;
@@ -300,15 +330,15 @@ fn a_lower_layer_beyond_the_limits_cannot_be_fixed_by_weakening_the_top() {
     );
 }
 
-/// A lower layer pulls body 0 to 0.4 m (within the bound alone) and lets go at step 60; the top layer takes the
+/// A lower layer pulls body 0 to 0.55 m (within the bound alone) and lets go at step 60; the top layer takes the
 /// body at step 62 while it is still out and pulls it farther. Only the top layer is weakened: the scale returned
-/// passes with the lower layer at full strength (1/4 here), and the larger scale at which weakening both layers
-/// would pass (1/2) does not pass with the lower layer at full strength
+/// passes with the lower layer at full strength (1/2 here), and the larger scale at which weakening both layers
+/// would pass (3/4) does not pass with the lower layer at full strength
 #[test]
 fn weakening_leaves_a_lower_layer_on_the_same_body_at_full_strength() {
     let cs = sheets(1);
-    let lower = pull(0, 0, 30, 60, 0, 40);
-    let top = pull(0, 62, 82, 102, 35, 80);
+    let lower = pull(0, 0, 30, 60, 0, 55);
+    let top = pull(0, 62, 82, 102, 50, 80);
     assert!(check(
         &cs,
         &hand(),
@@ -336,15 +366,15 @@ fn weakening_leaves_a_lower_layer_on_the_same_body_at_full_strength() {
     )
     .expect("check")
     .expect("weakened");
-    assert_eq!(scale, Fix128::from_ratio(1, 4));
+    assert_eq!(scale, Fix128::from_ratio(1, 2));
     assert!(
         check(&cs, &hand(), &[lower.clone(), sent], config(), &limits())
             .expect("check")
             .is_empty()
     );
-    // what weakening both would accept: half on both passes, half on the top alone does not
-    let half = Fix128::from_ratio(1, 2);
-    let weak = |l: &InputLog<Touch>| scaled(l, half);
+    // what weakening both would accept: 3/4 on both passes, 3/4 on the top alone does not
+    let three_quarters = Fix128::from_ratio(3, 4);
+    let weak = |l: &InputLog<Touch>| scaled(l, three_quarters);
     assert!(check(
         &cs,
         &hand(),
@@ -438,5 +468,29 @@ fn limits_out_of_range_are_refused() {
     assert_eq!(
         within_limits(&sheets(2), &hand(), &[], config(), &limits()),
         Ok(Some((InputLog::new(), Fix128::ONE)))
+    );
+}
+
+/// Every grab in this file's scenes goes through [`grab_at`] (so its point is checked for a unique nearest
+/// particle): the only other grabs are of a body that does not exist. Fails when no `grab_at` call is found
+#[test]
+fn every_scene_grab_goes_through_the_unique_nearest_check() {
+    let src = include_str!("analytic_touch_limits.rs");
+    let needle = concat!("Touch", "::grab(");
+    let calls = src.matches("grab_at(").count() - 1; // the definition
+    let raw: Vec<&str> = src
+        .lines()
+        .filter(|l| {
+            l.contains(needle) && !l.contains("fn grab_at") && !l.trim_start().starts_with("//")
+        })
+        .collect();
+    let unchecked: Vec<&&str> = raw
+        .iter()
+        .filter(|l| !l.contains("Vec3Fix::ZERO") && !l.contains("let touch = Touch::grab"))
+        .collect();
+    assert!(calls > 0, "no scene grab was checked");
+    assert!(
+        unchecked.is_empty(),
+        "grabs that skip the check: {unchecked:?}"
     );
 }

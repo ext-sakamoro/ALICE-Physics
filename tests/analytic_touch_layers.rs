@@ -29,7 +29,7 @@ const STEPS: u64 = 300;
 const BUDGET: usize = 5;
 
 /// Particles per side of a sheet
-const RES: usize = 4;
+const RES: usize = 5;
 
 /// Body `i`'s rest centre: unit squares in the plane `y = 0`, 1.2 m apart along x
 fn rest_centre(i: usize) -> Vec3Fix {
@@ -40,7 +40,7 @@ fn rest_centre(i: usize) -> Vec3Fix {
     )
 }
 
-/// `n` soft sheets: 4 × 4 particles of 10 g on a unit square, no gravity, held to their rest shape by a tether
+/// `n` soft sheets: 5 × 5 particles of 10 g on a unit square (spacing 1/4, exact, so the grid is mirror-symmetric and the centre is a particle), no gravity, held to their rest shape by a tether
 /// of period 0.5 s and damping ratio 0.42
 fn sheets(n: usize) -> Vec<Cloth> {
     let mass = Fix128::from_ratio(1, 100);
@@ -84,6 +84,38 @@ fn at(g: usize, dx: i64, dz: i64) -> Vec3Fix {
             Fix128::ZERO,
             Fix128::from_ratio(dz, 100),
         )
+}
+
+/// A grab of body `g` at `at(g, dx, dz)` whose nearest particle on the sheet at rest is nearer than any other by at
+/// least [`GRAB_MARGIN`] in squared distance: at a tie or a near tie the last ulp of the distances picks the particle
+/// (the arithmetic decides, not the scene; a change of rounding moved one scene's grab to the opposite corner), so
+/// every scene grabs through here and such a point fails when the scene is built
+/// The smallest lead in squared distance (m²) the nearest particle must have over the next for a scene grab
+/// (2⁻¹⁶ m², far above any rounding of the distances and far below the grid's own spacing of 1/16 m²)
+const GRAB_MARGIN: Fix128 = Fix128::from_raw(0, 1 << 48);
+
+fn grab_at(g: usize, dx: i64, dz: i64) -> Touch {
+    let touch = Touch::grab(u32::try_from(g).expect("body index"), at(g, dx, dz));
+    let Touch::Grab { at: point, .. } = touch else {
+        unreachable!("Touch::grab builds a grab")
+    };
+    let sheet = &sheets(g + 1)[g];
+    let d2: Vec<Fix128> = sheet
+        .positions
+        .iter()
+        .map(|p| {
+            let d = *p - point;
+            d.dot(d)
+        })
+        .collect();
+    let mut sorted = d2.clone();
+    sorted.sort();
+    let gap = sorted[1] - sorted[0];
+    assert!(
+        gap >= GRAB_MARGIN,
+        "grab of body {g} at ({dx}, {dz}) cm has no clear nearest particle (the two nearest differ by {gap:?})"
+    );
+    touch
 }
 
 fn log(entries: &[(u64, Touch)]) -> InputLog<Touch> {
@@ -144,8 +176,7 @@ fn lower_layer() -> InputLog<Touch> {
     for g in 0..4u32 {
         let s0 = 10 + 70 * u64::from(g);
         let gi = g as usize;
-        l.record(s0, Touch::grab(g, at(gi, -40, -40)))
-            .expect("in order");
+        l.record(s0, grab_at(gi, -40, -40)).expect("in order");
         for s in s0 + 1..s0 + 60 {
             let k = (s - s0) as i64;
             let out = if k <= 30 {
@@ -169,7 +200,7 @@ fn lower_layer() -> InputLog<Touch> {
 /// at 135
 fn top_layer(step: u64) -> Vec<Touch> {
     match step {
-        100 => vec![Touch::grab(1, at(1, -10, 10))],
+        100 => vec![grab_at(1, -10, 10)],
         101..=119 => {
             let k = (step - 100) as i64;
             let dx = if k <= 10 {
@@ -179,7 +210,7 @@ fn top_layer(step: u64) -> Vec<Touch> {
             };
             vec![Touch::drag(at(1, -10 + dx, 10))]
         }
-        120 => vec![Touch::grab(2, at(2, -10, 10))],
+        120 => vec![grab_at(2, -10, 10)],
         121..=134 => vec![Touch::drag(at(2, -10, 10 - (step as i64 - 120)))],
         135 => vec![Touch::Release],
         _ => Vec::new(),
@@ -236,7 +267,7 @@ fn a_live_recording_and_its_replay_from_the_encoded_logs_agree_frame_for_frame()
     let lower = lower_layer();
     let touches = |s: u64| -> Vec<Touch> {
         match s {
-            30 => vec![Touch::grab(7, at(7, 30, -30))],
+            30 => vec![grab_at(7, 30, -30)],
             31..=89 => {
                 let k = (s - 30) as i64;
                 vec![Touch::drag(at(
@@ -246,7 +277,7 @@ fn a_live_recording_and_its_replay_from_the_encoded_logs_agree_frame_for_frame()
                 ))]
             }
             90 | 200 => vec![Touch::Release],
-            170 => vec![Touch::grab(2, at(2, 0, 0))],
+            170 => vec![grab_at(2, 0, 0)],
             171..=199 => vec![Touch::drag(at(2, 0, -((s - 170) as i64) * 50 / 30))],
             _ => Vec::new(),
         }
@@ -321,16 +352,12 @@ fn a_higher_layer_takes_a_body_over_and_leaves_the_others_bit_equal() {
 fn a_skipped_grab_still_lets_go_of_what_the_lower_hand_held() {
     let n = 3;
     let mut lower = InputLog::new();
-    lower
-        .record(10, Touch::grab(0, at(0, 0, 0)))
-        .expect("in order");
+    lower.record(10, grab_at(0, 0, 0)).expect("in order");
     for s in 11..80u64 {
         let k = (s - 10).min(30) as i64;
         lower.record(s, Touch::drag(at(0, k, 0))).expect("in order");
     }
-    lower
-        .record(80, Touch::grab(1, at(1, 0, 0)))
-        .expect("in order");
+    lower.record(80, grab_at(1, 0, 0)).expect("in order");
     for s in 81..120u64 {
         lower
             .record(s, Touch::drag(at(1, 0, (s - 80) as i64)))
@@ -339,7 +366,7 @@ fn a_skipped_grab_still_lets_go_of_what_the_lower_hand_held() {
     lower.record(120, Touch::Release).expect("in order");
     let top = |s: u64| -> Vec<Touch> {
         match s {
-            50 => vec![Touch::grab(1, at(1, 10, 10))],
+            50 => vec![grab_at(1, 10, 10)],
             51..=69 => vec![Touch::drag(at(1, 10, 10 + (s as i64 - 50)))],
             70 => vec![Touch::Release],
             _ => Vec::new(),
@@ -378,18 +405,14 @@ fn a_refused_higher_grab_does_not_take_the_body_from_the_lower_layers() {
     let n = 2;
     let budget = 1;
     let mut lower = InputLog::new();
-    lower
-        .record(10, Touch::grab(0, at(0, 0, 0)))
-        .expect("in order");
+    lower.record(10, grab_at(0, 0, 0)).expect("in order");
     for s in 11..30u64 {
         lower
             .record(s, Touch::drag(at(0, (s - 10) as i64, 0)))
             .expect("in order");
     }
     lower.record(30, Touch::Release).expect("in order");
-    lower
-        .record(40, Touch::grab(1, at(1, 0, 0)))
-        .expect("in order");
+    lower.record(40, grab_at(1, 0, 0)).expect("in order");
     for s in 41..80u64 {
         lower
             .record(s, Touch::drag(at(1, 0, (s - 40) as i64)))
@@ -398,7 +421,7 @@ fn a_refused_higher_grab_does_not_take_the_body_from_the_lower_layers() {
     lower.record(80, Touch::Release).expect("in order");
     let top = |s: u64| -> Vec<Touch> {
         match s {
-            20 => vec![Touch::grab(1, at(1, 10, 10))],
+            20 => vec![grab_at(1, 10, 10)],
             21..=24 => vec![Touch::drag(at(1, 10, 10 + (s as i64 - 20)))],
             25 => vec![Touch::Release],
             _ => Vec::new(),
@@ -437,9 +460,7 @@ fn a_refused_higher_grab_does_not_take_the_body_from_the_lower_layers() {
 fn a_higher_grab_that_misses_leaves_the_lower_hand_holding_the_body() {
     let n = 1;
     let mut lower = InputLog::new();
-    lower
-        .record(10, Touch::grab(0, at(0, 0, 0)))
-        .expect("in order");
+    lower.record(10, grab_at(0, 0, 0)).expect("in order");
     for s in 11..90u64 {
         lower
             .record(s, Touch::drag(at(0, (s - 10).min(40) as i64, 0)))
@@ -448,7 +469,7 @@ fn a_higher_grab_that_misses_leaves_the_lower_hand_holding_the_body() {
     lower.record(90, Touch::Release).expect("in order");
     let top = |s: u64| -> Vec<Touch> {
         match s {
-            30 => vec![Touch::grab(0, at(0, 0, 200))],
+            30 => vec![grab_at(0, 0, 200)],
             31..=39 => vec![Touch::drag(at(0, 0, 200 + (s as i64 - 30)))],
             40 => vec![Touch::Release],
             _ => Vec::new(),
@@ -488,7 +509,7 @@ fn a_grab_past_the_budget_settles_the_earliest_free_body_exactly_to_rest() {
             return Vec::new();
         }
         match s % 3 {
-            0 => vec![Touch::grab(g as u32, at(g, 30, 30))],
+            0 => vec![grab_at(g, 30, 30)],
             1 => vec![Touch::drag(at(g, 45, 45))],
             _ => vec![Touch::Release],
         }
@@ -538,7 +559,7 @@ fn no_more_than_the_budget_ever_move() {
         }
         let g = (s / 5) as usize % n;
         match s % 5 {
-            0 => vec![Touch::grab(g as u32, at(g, 20, 20))],
+            0 => vec![grab_at(g, 20, 20)],
             1..=3 => vec![Touch::drag(at(g, 40, 10 * (s % 5) as i64))],
             _ => vec![Touch::Release],
         }
@@ -558,7 +579,7 @@ fn a_released_body_comes_back_to_rest_and_is_put_exactly_there() {
     let n = 2;
     let touches = |s: u64| -> Vec<Touch> {
         match s {
-            0 => vec![Touch::grab(1, at(1, 0, 0))],
+            0 => vec![grab_at(1, 0, 0)],
             1..=20 => vec![Touch::drag(at(1, 2 * s as i64, 0))],
             21 => vec![Touch::Release],
             _ => Vec::new(),
@@ -596,12 +617,12 @@ fn a_released_body_comes_back_to_rest_and_is_put_exactly_there() {
 fn the_history_digest_tells_apart_two_logs_that_end_at_the_same_rest() {
     let n = 3;
     let a = log(&[
-        (5, Touch::grab(1, at(1, 0, 0))),
+        (5, grab_at(1, 0, 0)),
         (20, Touch::drag(at(1, 20, 0))),
         (40, Touch::Release),
     ]);
     let b = log(&[
-        (5, Touch::grab(1, at(1, 0, 0))),
+        (5, grab_at(1, 0, 0)),
         (20, Touch::drag(at(1, 0, 20))),
         (40, Touch::Release),
     ]);
@@ -623,7 +644,7 @@ fn the_history_digest_tells_apart_two_logs_that_end_at_the_same_rest() {
 #[test]
 fn a_touch_log_is_read_only_in_its_exact_form() {
     let l = log(&[
-        (0, Touch::grab(3, at(3, 10, -10))),
+        (0, grab_at(3, 10, -10)),
         (1, Touch::drag(at(3, 20, -5))),
         (299, Touch::Release),
     ]);
@@ -729,7 +750,7 @@ fn degenerate_scenes_give_their_stated_results() {
 
     // a budget of 0: every grab of a body at rest takes nothing, nothing moves
     let pull = log(&[
-        (0, Touch::grab(0, at(0, 0, 0))),
+        (0, grab_at(0, 0, 0)),
         (1, Touch::drag(at(0, 30, 0))),
         (5, Touch::Release),
     ]);
@@ -749,11 +770,11 @@ fn degenerate_scenes_give_their_stated_results() {
     // a budget of 1, one layer: grabbing another body lets go of the first, which is settled exactly
     let mut p =
         LayeredPlayback::new(sheets(2), &hand(), Vec::new(), config(20, 1)).expect("budget 1");
-    p.touch(&Touch::grab(0, at(0, 0, 0))).expect("grab");
+    p.touch(&grab_at(0, 0, 0)).expect("grab");
     p.advance().expect("step");
     p.touch(&Touch::drag(at(0, 30, 0))).expect("drag");
     p.advance().expect("step");
-    p.touch(&Touch::grab(1, at(1, 0, 0))).expect("grab");
+    p.touch(&grab_at(1, 0, 0)).expect("grab");
     p.advance().expect("step");
     assert_eq!(p.bodies().active(), &[1]);
     assert_eq!(
@@ -761,14 +782,11 @@ fn degenerate_scenes_give_their_stated_results() {
         rest_of(p.bodies(), 0)
     );
     // a budget of 1, two layers: the lower hand holds body 0, so the top grab of body 1 takes nothing
-    let hold = log(&[
-        (0, Touch::grab(0, at(0, 0, 0))),
-        (1, Touch::drag(at(0, 30, 0))),
-    ]);
+    let hold = log(&[(0, grab_at(0, 0, 0)), (1, Touch::drag(at(0, 30, 0)))]);
     let mut p = LayeredPlayback::new(sheets(2), &hand(), vec![hold], config(20, 1)).expect("held");
     p.advance().expect("step");
     p.advance().expect("step");
-    p.touch(&Touch::grab(1, at(1, 0, 0))).expect("recorded");
+    p.touch(&grab_at(1, 0, 0)).expect("recorded");
     p.advance().expect("step");
     p.touch(&Touch::drag(at(1, 30, 0))).expect("recorded");
     p.advance().expect("step");
@@ -845,7 +863,7 @@ fn degenerate_scenes_give_their_stated_results() {
     // a hand that holds, a body without a rest shape
     let mut busy = hand();
     let mut cs = sheets(1);
-    busy.apply(&mut cs, &Touch::grab(0, at(0, 0, 0)));
+    busy.apply(&mut cs, &grab_at(0, 0, 0));
     assert_eq!(
         TouchBodies::new(sheets(1), &busy, 1, config(1, 1)).err(),
         Some(LayerError::HandHolds)
@@ -871,19 +889,19 @@ fn degenerate_scenes_give_their_stated_results() {
 /// The history digest of one fixed scene (8 bodies, two pulls), recorded natively and checked on every target
 /// (`CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --release --target wasm32-wasip1 --test
 /// analytic_touch_layers`). A change of the physics or the scene moves it, and every target is then checked again.
-const PINNED: &str = "76874bcf0ab80e87f02fd76b8f7bbd6104891359afddc30f9897c1395d444edb";
+const PINNED: &str = "1e7da11f9da90ab571c416711c387486313529f7800b48f32757004307489c33";
 
 #[test]
 fn a_fixed_scene_reaches_the_pinned_history_digest() {
     let touches = |s: u64| -> Vec<Touch> {
         match s {
-            5 => vec![Touch::grab(1, at(1, -40, -40))],
+            5 => vec![grab_at(1, -40, -40)],
             6..=40 => {
                 let k = (s - 5) as i64;
                 vec![Touch::drag(at(1, -40 + 2 * k, -40 + k))]
             }
             41 | 121 => vec![Touch::Release],
-            90 => vec![Touch::grab(6, at(6, 0, 0))],
+            90 => vec![grab_at(6, 0, 0)],
             91..=120 => vec![Touch::drag(at(6, 0, -((s - 90) as i64)))],
             _ => Vec::new(),
         }
@@ -898,5 +916,29 @@ fn a_fixed_scene_reaches_the_pinned_history_digest() {
     assert_eq!(
         hex, PINNED,
         "this target's playback differs from the pinned one"
+    );
+}
+
+/// Every grab in this file's scenes goes through [`grab_at`] (so its point is checked for a unique nearest
+/// particle): the only other grabs are of a body that does not exist. Fails when no `grab_at` call is found
+#[test]
+fn every_scene_grab_goes_through_the_unique_nearest_check() {
+    let needle = concat!("Touch", "::grab(");
+    let src = include_str!("analytic_touch_layers.rs");
+    let calls = src.matches("grab_at(").count() - 1; // the definition
+    let raw: Vec<&str> = src
+        .lines()
+        .filter(|l| {
+            l.contains(needle) && !l.contains("fn grab_at") && !l.trim_start().starts_with("//")
+        })
+        .collect();
+    let unchecked: Vec<&&str> = raw
+        .iter()
+        .filter(|l| !l.contains("Vec3Fix::ZERO") && !l.contains("let touch = Touch::grab"))
+        .collect();
+    assert!(calls > 0, "no scene grab was checked");
+    assert!(
+        unchecked.is_empty(),
+        "grabs that skip the check: {unchecked:?}"
     );
 }
