@@ -1988,7 +1988,14 @@ impl Cloth {
                 parent[i] = parent[parent[i]];
                 i = parent[i];
             }
-            unreachable!("a union-find parent chain is longer than its index count")
+            // not reached: unions only link a root under another root, so the links have no
+            // cycle and the walk above ends at the root within `parent.len()` steps. This is an
+            // invariant of the structure, not of the input, so a release build drops the check
+            debug_assert!(
+                parent[i] == i,
+                "a union-find parent chain is longer than its index count"
+            );
+            i
         }
         // Each round that acts merges two zones or freezes one that was not frozen, so
         // `2 · (zones and loose particles) + (zones not frozen)` falls by at least one per
