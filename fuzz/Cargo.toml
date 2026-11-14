@@ -88,3 +88,6 @@ members = ["."]
 name = "fuzz_step_parity"
 path = "fuzz_targets/fuzz_step_parity.rs"
 doc = false
+
+[package.metadata.alice]
+surfaces = []
