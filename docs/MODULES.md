@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 73 of 241 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 75 of 243 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 11 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -107,7 +107,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 15, binding 5 of 44 items) |
+| `joint` | ball, hinge, fixed, slider, spring, D6 and cone-twist joints; limits, motors, breaking |  | [`joint_limits_and_breaking`](../examples/joint_limits_and_breaking.rs) | standalone (step 18, binding 5 of 47 items) |
 | `joint_extra` | pulley, gear, weld, rack-and-pinion and mouse joints |  | [`joint_extra_wiring`](../examples/joint_extra_wiring.rs) | standalone |
 | `articulation` | multi-joint chains with Featherstone's articulated-body algorithm |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | standalone |
 | `ragdoll` | humanoid ragdoll builder |  | [`ragdoll_demo`](../examples/ragdoll_demo.rs) | standalone |

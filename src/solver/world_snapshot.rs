@@ -2003,6 +2003,9 @@ struct Decoded {
     /// The bodies moved from outside the step since the last substep, with the
     /// pose the dynamics left each at (version 10 flag bit 1; none before)
     displaced: Vec<(usize, Vec3Fix, QuatFix)>,
+    /// The joints added or changed from outside the step since the last substep
+    /// (version 10 flag bit 2; none before)
+    unsettled_joints: Vec<usize>,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -2438,11 +2441,18 @@ impl PhysicsWorld {
         }
         // flags: bit 0 speculative contacts off; bit 1 the bodies moved from
         // outside the step since the last substep follow, each with the pose
-        // the dynamics left it at (`substep_end_poses`); no other bit is set
+        // the dynamics left it at (`substep_end_poses`); bit 2 the joints added
+        // or changed from outside the step since the last substep follow
+        // (`substep_end_joints`); no other bit is set
         let displaced: Vec<usize> = (0..self.bodies.len())
             .filter(|&i| self.displaced_since_substep(i))
             .collect();
-        t.u8(u8::from(!self.config.speculative_contacts) | if displaced.is_empty() { 0 } else { 2 });
+        let unsettled: Vec<usize> = (0..self.joints.len())
+            .filter(|&k| self.joint_changed_since_substep(k))
+            .collect();
+        t.u8(u8::from(!self.config.speculative_contacts)
+            | if displaced.is_empty() { 0 } else { 2 }
+            | if unsettled.is_empty() { 0 } else { 4 });
         if !displaced.is_empty() {
             t.usize(displaced.len());
             for i in displaced {
@@ -2451,6 +2461,12 @@ impl PhysicsWorld {
                     t.vec3(p);
                     t.quat(q);
                 }
+            }
+        }
+        if !unsettled.is_empty() {
+            t.usize(unsettled.len());
+            for k in unsettled {
+                t.usize(k);
             }
         }
         let section = t.0.len();
@@ -2838,6 +2854,11 @@ impl PhysicsWorld {
         self.record_substep_end_poses();
         for (i, p, q) in d.displaced {
             self.substep_end_poses[i] = Some((p, q));
+        }
+        // every joint was left by the dynamics as it is now, except the ones the
+        // snapshot names as added or changed since
+        for k in d.unsettled_joints {
+            self.substep_end_joints[k] = None;
         }
     }
 }
@@ -3365,10 +3386,12 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     let mut touches: [Vec<(usize, usize, u32)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     let mut speculative_contacts = true;
     let mut displaced: Vec<(usize, Vec3Fix, QuatFix)> = Vec::new();
+    let mut unsettled_joints: Vec<usize> = Vec::new();
     if version >= 10 {
         // The section: each contact's point number and compliance, each
         // material's contact compliance, the touch sets, the flags (bit 0 the
-        // speculative setting written as "off", bit 1 the moved bodies follow),
+        // speculative setting written as "off", bit 1 the moved bodies follow, bit 2
+        // the joints added or changed since the last substep follow),
         // then the section's length.
         const S: &str = "contact_section";
         let start = r.pos;
@@ -3411,7 +3434,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             }
         }
         let flags = r.u8()?;
-        if flags & !3 != 0 {
+        if flags & !7 != 0 {
             return Err(WorldSnapshotError::InvalidValue { section: S });
         }
         speculative_contacts = flags & 1 == 0;
@@ -3429,6 +3452,20 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
                 let p = r.vec3()?;
                 let q = r.quat()?;
                 displaced.push((i, p, q));
+            }
+        }
+        if flags & 4 != 0 {
+            // ascending joint indices, at least one (the bit says some follow)
+            let n = r.len(S, 8)?;
+            if n == 0 {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            for _ in 0..n {
+                let k = r.usize(S)?;
+                if k >= joints.len() || unsettled_joints.last().is_some_and(|l| *l >= k) {
+                    return Err(WorldSnapshotError::InvalidValue { section: S });
+                }
+                unsettled_joints.push(k);
             }
         }
         let length = r.pos - start;
@@ -3478,6 +3515,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         touches,
         speculative_contacts,
         displaced,
+        unsettled_joints,
         ids: None,
     })
 }
@@ -4977,6 +5015,73 @@ mod tests {
         assert_eq!(t.snapshot_world(), blob, "round trip");
     }
 
+    /// A joint added from outside the step since the last substep is named in
+    /// the version 10 flags (bit 2): the restored world settles it as the source
+    /// world does, so both step to the same bits, and writes the same blob.
+    /// Without such a joint the bit is clear. A list naming a joint that is not
+    /// there, out of order or empty, is refused.
+    #[test]
+    fn a_joint_added_since_the_last_substep_is_saved_as_unsettled() {
+        let mut w = sectioned_world();
+        for _ in 0..20 {
+            w.step(fx(1, 60));
+        }
+        let n = w.snapshot_world().len() - super::CHECKSUM_LEN;
+        assert_eq!(
+            w.snapshot_world()[n - 9] & 4,
+            0,
+            "no joint added: bit 2 clear"
+        );
+        let dynamic: Vec<usize> = (0..w.bodies.len())
+            .filter(|&i| w.bodies[i].is_dynamic())
+            .take(2)
+            .collect();
+        assert_eq!(dynamic.len(), 2, "two dynamic bodies");
+        let k = w.add_joint(Joint::Ball(crate::joint::BallJoint::new(
+            dynamic[0],
+            dynamic[1],
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        )));
+        assert!(w.joint_changed_since_substep(k));
+        let blob = w.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("restores");
+        assert!(
+            t.joint_changed_since_substep(k),
+            "the restored joint is settled"
+        );
+        assert_eq!(t.snapshot_world(), blob, "round trip");
+        for _ in 0..3 {
+            w.step(fx(1, 60));
+            t.step(fx(1, 60));
+        }
+        assert_eq!(
+            t.state_digest(),
+            w.state_digest(),
+            "the restored world steps apart"
+        );
+        assert!(
+            !w.joint_changed_since_substep(k),
+            "a stepped joint is settled"
+        );
+
+        // the list is the last thing before the section length: [count, index]
+        let n = blob.len() - super::CHECKSUM_LEN;
+        let at = n - 8 - 16;
+        assert_eq!(blob[at..at + 8], 1u64.to_le_bytes(), "one joint named");
+        for (count, index) in [(1u64, 99u64), (0, k as u64)] {
+            let mut bad = blob[..n].to_vec();
+            bad[at..at + 8].copy_from_slice(&count.to_le_bytes());
+            bad[at + 8..at + 16].copy_from_slice(&index.to_le_bytes());
+            bad.extend_from_slice(&[0u8; super::CHECKSUM_LEN]);
+            assert!(
+                t.restore_world(&reseal(bad)).is_err(),
+                "count {count} index {index} restored"
+            );
+        }
+    }
+
     /// A blob written before version 10 carries no memory of the last substep:
     /// every body restores as left there by the dynamics (none displaced), even
     /// when the source world held a moved body.
@@ -5021,7 +5126,7 @@ mod tests {
         let blob = w.snapshot_world();
         let n = blob.len() - super::CHECKSUM_LEN;
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        for flags in [4u8, 0x80] {
+        for flags in [8u8, 0x80] {
             let mut bad = blob.clone();
             bad[n - 9] = flags;
             assert!(

@@ -1838,6 +1838,12 @@ pub struct PhysicsWorld {
     /// two moved, the push-out moves that one alone (`push_apart`): the overlap
     /// was made by its move, and the partner is where the dynamics left it.
     moved_from_outside: Vec<usize>,
+    /// Each joint as the last substep's dynamics left it (`None` for a joint added since). A rigid
+    /// joint that starts a substep different from its entry, or missing from it, was added or
+    /// changed from outside the step: its error is removed by position at the head of the substep
+    /// (`settle_joints_from_outside`), as is the error of a rigid joint whose body was moved from
+    /// outside the step (`moved_from_outside`).
+    substep_end_joints: Vec<Option<Joint>>,
     /// For each contact constraint of the substep: where it came from and
     /// whether its point is new this substep (not found in the previous one).
     contact_source: Vec<(ContactSource, bool)>,
@@ -2162,6 +2168,7 @@ impl PhysicsWorld {
             body_touch: Vec::new(),
             substep_end_poses: Vec::new(),
             moved_from_outside: Vec::new(),
+            substep_end_joints: Vec::new(),
             contact_source: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
@@ -2659,6 +2666,15 @@ impl PhysicsWorld {
         //    `idx` would silently re-attach to the wrong body (2026-09-15 bug fix,
         //    found by the remove_body mutation tests; v1.1.0 and earlier produced
         //    `(idx, idx)` self-constraints for the swapped-in body).
+        // which kept joints the last substep's dynamics left as they are (the
+        // memory follows the joints through the drop and the remap below)
+        let settled: Vec<bool> = (0..self.joints.len())
+            .filter(|&k| {
+                let (a, b) = self.joints[k].bodies();
+                a != idx && b != idx
+            })
+            .map(|k| !self.joint_changed_since_substep(k))
+            .collect();
         self.distance_constraints
             .retain(|c| c.body_a != idx && c.body_b != idx);
         self.contact_constraints
@@ -2747,6 +2763,12 @@ impl PhysicsWorld {
             self.substep_end_poses.swap_remove(idx);
         }
         self.substep_end_poses.truncate(self.bodies.len());
+        self.substep_end_joints = self
+            .joints
+            .iter()
+            .zip(settled)
+            .map(|(j, kept)| kept.then_some(*j))
+            .collect();
 
         // Rebuild IslandManager to match new body count and connectivity
         let new_len = self.bodies.len();
@@ -2913,6 +2935,10 @@ impl PhysicsWorld {
             return None;
         }
         let last = self.joints.len() - 1;
+        // the memory of the last substep follows the joints (`swap_remove` as below)
+        let settled: Vec<bool> = (0..self.joints.len())
+            .map(|k| !self.joint_changed_since_substep(k))
+            .collect();
         self.remap_motor_joints(|j| {
             if j == idx {
                 None
@@ -2922,7 +2948,16 @@ impl PhysicsWorld {
                 Some(j)
             }
         });
-        Some(self.joints.swap_remove(idx))
+        let removed = self.joints.swap_remove(idx);
+        let mut settled = settled;
+        settled.swap_remove(idx);
+        self.substep_end_joints = self
+            .joints
+            .iter()
+            .zip(settled)
+            .map(|(j, kept)| kept.then_some(*j))
+            .collect();
+        Some(removed)
     }
 
     /// Re-point (or drop, on `None`) every motor's joint index through `map`.
@@ -5163,6 +5198,7 @@ impl PhysicsWorld {
         // tick starts with: a pair closing within the tick is kept as a
         // speculative contact (its margin is over the whole tick, `h = dt`).
         self.forget_displaced_touches();
+        self.settle_joints_from_outside(dt);
         self.clear_contacts();
         self.detect_collisions(dt);
 
@@ -5634,6 +5670,7 @@ impl PhysicsWorld {
     /// Single substep
     fn substep(&mut self, dt: Fix128) {
         self.forget_displaced_touches();
+        self.settle_joints_from_outside(dt);
         // 0. Joint motors act as external forces / torques of this substep.
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
@@ -5694,6 +5731,7 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     fn substep_batched(&mut self, dt: Fix128) {
         self.forget_displaced_touches();
+        self.settle_joints_from_outside(dt);
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
@@ -7222,6 +7260,7 @@ impl PhysicsWorld {
         // of its own for the rotations too.
         self.make_body_rotations_unit();
         self.forget_displaced_touches();
+        self.settle_joints_from_outside(dt);
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
@@ -8800,6 +8839,126 @@ impl PhysicsWorld {
         self.substep_end_poses.clear();
         self.substep_end_poses
             .extend(self.bodies.iter().map(|b| Some((b.position, b.rotation))));
+        self.substep_end_joints.clear();
+        self.substep_end_joints
+            .extend(self.joints.iter().copied().map(Some));
+    }
+
+    /// Whether joint `k` is not as the last substep's dynamics left it: added since, or its
+    /// constraint changed ([`Joint::same_constraint`]; a new break force alone is not a change).
+    pub(crate) fn joint_changed_since_substep(&self, k: usize) -> bool {
+        !matches!(
+            self.substep_end_joints.get(k).copied().flatten(),
+            Some(old) if old.same_constraint(&self.joints[k])
+        )
+    }
+
+    /// Remove by position, without velocity, the error of every rigid joint the dynamics did not
+    /// make: a joint added or changed since the last substep (both bodies move by their inverse
+    /// mass shares), and a joint one of whose bodies was moved from outside the step
+    /// (`moved_from_outside`: the moved body alone moves when its partner was not moved, as the
+    /// push-out of a contact). Runs at the head of the substep, before the positions are
+    /// integrated, so the velocity the substep derives from its start pose does not see the move;
+    /// an error the previous substep's dynamics left is solved by the substep as before. Each
+    /// pass projects the picked joints once in index order ([`crate::joint::project_joint`]);
+    /// the passes stop at the first that moves no body of a picked joint (a fixed point, so no
+    /// error is left for the substep to turn into velocity), at most `SETTLE_PASSES` (a chain
+    /// left unsettled after them keeps the rest of its error for the substep's solve). A locked
+    /// body keeps its locked coordinates through the settle, as through the solve. The settle
+    /// applies no impulse, so it carries no load: it reads no break force and breaks no joint
+    /// (a break force is a threshold on the load the dynamics put through the joint).
+    pub(crate) fn settle_joints_from_outside(&mut self, dt: Fix128) {
+        const SETTLE_PASSES: usize = 256;
+        if self.joints.is_empty() {
+            return;
+        }
+        let moved = |i: usize| self.moved_from_outside.binary_search(&i).is_ok();
+        // (joint, hold body a, hold body b)
+        let mut picked: Vec<(usize, bool, bool)> = Vec::new();
+        for (k, joint) in self.joints.iter().enumerate() {
+            let (a, b) = joint.bodies();
+            if a == b || !joint.is_rigid() || a >= self.bodies.len() || b >= self.bodies.len() {
+                continue;
+            }
+            if self.joint_changed_since_substep(k) {
+                picked.push((k, false, false));
+            } else if moved(a) || moved(b) {
+                picked.push((k, !moved(a), !moved(b)));
+            }
+        }
+        if picked.is_empty() {
+            return;
+        }
+        // the locked coordinates of a locked body stay where the substep starts them (as
+        // `axis_lock_end_pose` keeps them for the solve)
+        let mut locked: Vec<crate::axis_lock::LockedStart> = Vec::new();
+        for &(k, _, _) in &picked {
+            let (a, b) = self.joints[k].bodies();
+            for i in [a, b] {
+                let lock = self
+                    .body_axis_locks
+                    .get(i)
+                    .copied()
+                    .unwrap_or(crate::axis_lock::AxisLock::NONE);
+                let body = &self.bodies[i];
+                if lock.is_none()
+                    || body.body_type != BodyType::Dynamic
+                    || locked.iter().any(|s| s.body == i)
+                {
+                    continue;
+                }
+                locked.push(crate::axis_lock::LockedStart {
+                    body: i,
+                    lock,
+                    position: body.position,
+                    rotation: body.rotation,
+                });
+            }
+        }
+        let hold = |body: &mut RigidBody| {
+            let kept = (body.inv_mass, body.inv_inertia);
+            body.inv_mass = Fix128::ZERO;
+            body.inv_inertia = Vec3Fix::ZERO;
+            kept
+        };
+        for _ in 0..SETTLE_PASSES {
+            let start: Vec<(Vec3Fix, QuatFix)> = picked
+                .iter()
+                .flat_map(|&(k, _, _)| {
+                    let (a, b) = self.joints[k].bodies();
+                    [a, b]
+                })
+                .map(|i| (self.bodies[i].position, self.bodies[i].rotation))
+                .collect();
+            for &(k, hold_a, hold_b) in &picked {
+                let joint = self.joints[k];
+                let (a, b) = joint.bodies();
+                let kept_a = hold_a.then(|| hold(&mut self.bodies[a]));
+                let kept_b = hold_b.then(|| hold(&mut self.bodies[b]));
+                crate::joint::project_joint(&joint, &mut self.bodies, dt);
+                for start in locked.iter().filter(|s| s.body == a || s.body == b) {
+                    crate::axis_lock::project_pose(start, &mut self.bodies[start.body]);
+                }
+                if let Some((m, i)) = kept_a {
+                    self.bodies[a].inv_mass = m;
+                    self.bodies[a].inv_inertia = i;
+                }
+                if let Some((m, i)) = kept_b {
+                    self.bodies[b].inv_mass = m;
+                    self.bodies[b].inv_inertia = i;
+                }
+            }
+            let end = picked.iter().flat_map(|&(k, _, _)| {
+                let (a, b) = self.joints[k].bodies();
+                [a, b]
+            });
+            let still = end
+                .zip(&start)
+                .all(|(i, s)| (self.bodies[i].position, self.bodies[i].rotation) == *s);
+            if still {
+                break;
+            }
+        }
     }
 
     /// Push out the overlap the bodies started the substep with, at the
@@ -10831,7 +10990,13 @@ mod tests {
         assert!(taken.is_some(), "bridge take must return Some");
 
         // After detach, the bridge's counter must not increment on
-        // subsequent substeps — the CPU path takes over.
+        // subsequent substeps — the CPU path takes over. The joint was
+        // created 1 m apart, and the world closed that placement error by
+        // position in the first substep (it is not the dynamics'), so the
+        // stretch the CPU solve must close is made by the dynamics here:
+        // body_b moves away along +x; body_a has no x velocity of its own,
+        // so its x changes only through the CPU joint solve.
+        world.bodies[1].velocity.x = Fix128::ONE;
         let a_before = world.bodies[0].position.x;
         world.substep(dt);
         let a_after = world.bodies[0].position.x;
@@ -10840,9 +11005,9 @@ mod tests {
             1,
             "after take_gpu_solver_bridge, no further bridge dispatch may occur"
         );
-        assert_ne!(
-            a_before, a_after,
-            "CPU joint solve should move body_a toward body_b after detach"
+        assert!(
+            a_after > a_before,
+            "CPU joint solve should pull body_a along +x after body_b moved away (detach)"
         );
     }
 
