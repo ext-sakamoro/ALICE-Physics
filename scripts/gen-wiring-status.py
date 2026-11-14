@@ -210,9 +210,32 @@ For details: see `scripts/wiring_guard.py`
     return report
 
 
-def main():
+def stale_check(path, text):
+    """`--check`: compare the regenerated ledger with the committed one; print the
+    difference and return 1 when they differ (or the file is missing), write nothing"""
+    import difflib
+    import sys
+    if not path.exists():
+        print(f"error: {path.name} is missing (regenerate it and commit it)", file=sys.stderr)
+        return 1
+    old = path.read_text(encoding="utf-8")
+    if old == text:
+        print(f"compared: {path.name} is current")
+        return 0
+    sys.stderr.writelines(difflib.unified_diff(
+        old.splitlines(True), text.splitlines(True), f"committed/{path.name}", f"regenerated/{path.name}"))
+    print(f"error: {path.name} is stale (run the generator without --check and commit the result)", file=sys.stderr)
+    return 1
+
+
+def main(argv=None):
+    import argparse
     import sys
 
+    ap = argparse.ArgumentParser(description="ALICE-Physics wiring status report")
+    ap.add_argument('--check', action='store_true',
+                    help='do not write; fail when docs/wiring-status.md is stale')
+    args = ap.parse_args(argv)
     print("Scanning wiring status...", file=sys.stderr)
     baseline = load_baseline()
     guard_output = run_wiring_guard()
@@ -221,7 +244,9 @@ def main():
     report = generate_markdown_report(baseline, violations)
 
     output_file = DOCS_DIR / "wiring-status.md"
-    output_file.write_text(report)
+    if args.check:
+        return max(stale_check(output_file, report), exit_code(violations))
+    output_file.write_text(report, encoding="utf-8")
 
     print(f"✅ Generated {output_file}", file=sys.stderr)
     print(f"   Baseline: {len(baseline['dead_code']) + len(baseline['unwired'])}", file=sys.stderr)

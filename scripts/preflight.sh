@@ -183,21 +183,13 @@ cargo="$(command -v cargo)" || { echo "cargo is not on the PATH of this shell" >
 cargo_dir="$(dirname "$cargo")"
 env -i HOME="$HOME" USER="${USER:-}" LAND_CARGO_DIR="$cargo_dir" PATH=/usr/bin:/bin "$(python3 -c 'import sys; print(sys.executable)')" scripts/land.py --env-smoke
 
-step "oracle ledger links (PIN / root external)"
+step "oracle and wiring ledgers (PIN / root external / not stale)"
+# `--check` regenerates in memory and compares with the committed ledger: a stale
+# ledger fails with the diff, nothing is written (the --cheap prepass runs these
+# lines as listed gates, so a generator that only wrote and exited 0 left a stale
+# ledger green there and red only in CI)
 python3 scripts/gen-oracle-status.py --check
-
-# ⚠️ 上の `--check` は PIN / 外部原因の link だけを見る 生成物が古いことは見ない
-#    (stale でも exit 0) stale 判定は oracle-status.yml / wiring-status.yml の
-#    「再生成して git diff --exit-code」だけが持っており、preflight に無かった
-#    ⇒ 新しい test file を足した push が **preflight exit 0 のまま CI で red** になった
-#    (2026-10-09 実測、tests/ に 1 file 足しただけで Oracle Status が failure)
-step "generated ledgers are not stale (oracle-status / wiring-status)"
-python3 scripts/gen-oracle-status.py
-python3 scripts/gen-wiring-status.py
-if ! git diff --exit-code docs/oracle-status.md docs/wiring-status.md; then
-  echo "生成物が古い: 上の差分を commit に含める (scripts/land.py が再生成する)" >&2
-  exit 1
-fi
+python3 scripts/gen-wiring-status.py --check
 
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py

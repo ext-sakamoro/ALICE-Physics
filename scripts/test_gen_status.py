@@ -371,6 +371,72 @@ class OracleAuditLinks(unittest.TestCase):
             oracle.TESTS_DIR = saved
 
 
+class LedgerStaleCheck(unittest.TestCase):
+    """`--check` must fail on a stale ledger and write nothing (the --cheap prepass runs the
+    generators as listed gates, so a generator that only writes and exits 0 leaves a stale
+    ledger green there and red only in CI)"""
+
+    def _with_docs(self, mod, committed):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        saved = mod.DOCS_DIR
+        mod.DOCS_DIR = d
+        self.addCleanup(setattr, mod, "DOCS_DIR", saved)
+        return d
+
+    def _wiring_check(self, committed):
+        d = self._with_docs(wiring, committed)
+        f = d / "wiring-status.md"
+        if committed is not None:
+            f.write_text(committed, encoding="utf-8")
+        saved = (wiring.load_baseline, wiring.run_wiring_guard, wiring.generate_markdown_report)
+        wiring.load_baseline = lambda: {"dead_code": [], "unwired": []}
+        wiring.run_wiring_guard = lambda: GUARD_OK
+        wiring.generate_markdown_report = lambda b, v: "REPORT\n"
+        try:
+            code = wiring.main(["--check"])
+        finally:
+            wiring.load_baseline, wiring.run_wiring_guard, wiring.generate_markdown_report = saved
+        return code, (f.read_text(encoding="utf-8") if f.exists() else None)
+
+    def test_wiring_check_fails_on_a_stale_ledger_and_does_not_write(self):
+        self.assertEqual(self._wiring_check("OLD\n"), (1, "OLD\n"))
+
+    def test_wiring_check_passes_on_an_equal_ledger(self):
+        self.assertEqual(self._wiring_check("REPORT\n"), (0, "REPORT\n"))
+
+    def test_wiring_check_fails_on_a_missing_ledger_and_does_not_create_it(self):
+        self.assertEqual(self._wiring_check(None), (1, None))
+
+    def _oracle_check(self, committed):
+        d = self._with_docs(oracle, committed)
+        f = d / "oracle-status.md"
+        if committed is not None:
+            f.write_text(committed, encoding="utf-8")
+        cat = {"implemented": [("t", "x")], "partial": [], "pending": []}
+        saved = (oracle.run_tests_and_categorize, oracle.resolved_versions, oracle.audit_links,
+                 oracle.generate_markdown_report)
+        oracle.run_tests_and_categorize = lambda: cat
+        oracle.resolved_versions = lambda: {}
+        oracle.audit_links = lambda tests, lock: ([], [], [], [])
+        oracle.generate_markdown_report = lambda c, lock: "REPORT\n"
+        try:
+            code = oracle.main(["--check"])
+        finally:
+            (oracle.run_tests_and_categorize, oracle.resolved_versions, oracle.audit_links,
+             oracle.generate_markdown_report) = saved
+        return code, (f.read_text(encoding="utf-8") if f.exists() else None)
+
+    def test_oracle_check_fails_on_a_stale_ledger_and_does_not_write(self):
+        self.assertEqual(self._oracle_check("OLD\n"), (1, "OLD\n"))
+
+    def test_oracle_check_passes_on_an_equal_ledger(self):
+        self.assertEqual(self._oracle_check("REPORT\n"), (0, "REPORT\n"))
+
+    def test_oracle_check_fails_on_a_missing_ledger(self):
+        self.assertEqual(self._oracle_check(None), (1, None))
+
+
 def main() -> int:
     """the suite inside a temporary directory of its own (also the $TMPDIR of what it runs): a test
     that leaves a file or directory behind fails the run, naming it"""

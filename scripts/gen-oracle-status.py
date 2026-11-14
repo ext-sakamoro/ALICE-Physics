@@ -399,12 +399,30 @@ When an oracle goes green:
     return report
 
 
+def stale_check(path, text):
+    """`--check`: compare the regenerated ledger with the committed one; print the
+    difference and return 1 when they differ (or the file is missing), write nothing"""
+    import difflib
+    import sys
+    if not path.exists():
+        print(f"error: {path.name} is missing (regenerate it and commit it)", file=sys.stderr)
+        return 1
+    old = path.read_text(encoding="utf-8")
+    if old == text:
+        print(f"compared: {path.name} is current")
+        return 0
+    sys.stderr.writelines(difflib.unified_diff(
+        old.splitlines(True), text.splitlines(True), f"committed/{path.name}", f"regenerated/{path.name}"))
+    print(f"error: {path.name} is stale (run the generator without --check and commit the result)", file=sys.stderr)
+    return 1
+
+
 def main(argv=None):
     import argparse
     import sys
     ap = argparse.ArgumentParser(description="ALICE-Physics oracle status report")
     ap.add_argument('--check', action='store_true',
-                    help='do not write; fail on a stale or id-less PIN, or an external cause Cargo does not resolve')
+                    help='do not write; fail on a stale ledger, a stale or id-less PIN, or an external cause Cargo does not resolve')
     args = ap.parse_args(argv)
     print("Scanning ALICE-Physics oracle tests...", file=sys.stderr)
 
@@ -420,7 +438,8 @@ def main(argv=None):
         if n == 0:
             print("error: no tests found (compared nothing)", file=sys.stderr)
             return 1
-        return 1 if problems else 0
+        stale = stale_check(DOCS_DIR / "oracle-status.md", generate_markdown_report(categorized, lock))
+        return 1 if problems or stale else 0
     report = generate_markdown_report(categorized, lock)
 
     output_file = DOCS_DIR / "oracle-status.md"
