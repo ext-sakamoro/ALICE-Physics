@@ -10,6 +10,7 @@
 # (derived Debug text, panic locations) are not listed. Overwriting keeps the length, so only the
 # text changes; scripts/test_neutral_pkg.py checks this list against the source in CI.
 AcceptUnpinned src/solver/world_snapshot.rs error message text naming the function to call instead, and test expectations of it
+axis_lock src/solver/world_snapshot.rs section label (axis_locks) of the snapshot reader errors (InvalidValue); not hashed and not written to the snapshot bytes
 BadMagic src/solver/world_snapshot.rs WorldSnapshotError::kind, the error name the browser package throws, and a test expectation; not hashed and not in the snapshot bytes
 body_a src/scene_io.rs JSON key of the scene writer and reader; neither is exported to the browser package
 body_a src/solver.rs assertion messages of unit tests
@@ -29,6 +30,8 @@ contact_constraints src/gpu_bridge.rs panic messages of the bridge methods a bac
 contact_constraints src/solver.rs Debug output of PhysicsWorld, a bridge check label and test messages
 contact_constraints src/solver/world_snapshot.rs section label of the snapshot reader errors (InvalidValue / DanglingIndex) and of the snapshot test digest; not written to the snapshot bytes
 continuous_collision src/solver/world_snapshot.rs section label of the snapshot reader errors (InvalidValue / DanglingIndex) and of the snapshot test digest; not written to the snapshot bytes
+ConvexHull src/collider.rs assertion message of ConvexHull::new; not hashed
+ConvexHull src/convex_mesh_builder.rs assertion message of build_convex_hull; not hashed
 DanglingIndex src/solver/world_snapshot.rs WorldSnapshotError::kind, the error name the browser package throws, and a test expectation; not hashed and not in the snapshot bytes
 distance_constraints src/solver.rs Debug output of PhysicsWorld, a bridge check label and test messages
 distance_constraints src/solver/world_snapshot.rs section label of the snapshot reader errors (InvalidValue / DanglingIndex) and of the snapshot test digest; not written to the snapshot bytes
@@ -39,6 +42,7 @@ InvalidValue src/solver/world_snapshot.rs WorldSnapshotError::kind, the error na
 LawIdMismatch src/solver/world_snapshot.rs WorldSnapshotError::kind, the error name the browser package throws, and a test expectation; not hashed and not in the snapshot bytes
 LegacyDampingNeedsStep src/solver/world_snapshot.rs WorldSnapshotError::kind, the error name the browser package throws, and a test expectation; not hashed and not in the snapshot bytes
 LegacyPolicy src/solver/world_snapshot.rs error message text naming the function to call instead, and test expectations of it
+LegacySleepFramesNeedsStep src/solver/world_snapshot.rs WorldSnapshotError::kind, the error name the browser package throws, and a test expectation; not hashed and not in the snapshot bytes
 material_table src/solver/world_snapshot.rs section label of the snapshot reader errors (InvalidValue / DanglingIndex) and of the snapshot test digest; not written to the snapshot bytes
 overflow_detected src/solver.rs Debug output of PhysicsWorld, a bridge check label and test messages
 overflow_detected src/solver/world_snapshot.rs section label of the snapshot reader errors (InvalidValue / DanglingIndex) and of the snapshot test digest; not written to the snapshot bytes
