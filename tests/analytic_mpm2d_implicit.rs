@@ -402,9 +402,10 @@ fn measure_the_cost_per_frame_of_a_letter_sized_block() {
 /// Measurement (not an oracle): one letter "E" of the logo alone (strokes 0.085 m, 0.5 m
 /// tall, arms 0.3 m long, area ≈ 0.097 m²), ρ 1000, ν 0.3, neo-Hookean, cell 0.04 m, the
 /// explicit step's cost per 1/60 s frame, in two settings: E 2e6 Pa standing on the ground,
-/// and E 2e5 Pa carried by an elastic backing (`foundation_loads`, κ 2e5 N/m⁴, anchors set
-/// `ρ g / κ` above the rest positions so the backing carries the weight; the loads are
-/// computed every step). Run with
+/// and E 2e5 Pa as the live step runs it: carried by an elastic backing (`foundation_loads`,
+/// κ 2e5 N/m⁴, damping ratio 0.5, anchors set `ρ g / κ` above the rest positions so the backing
+/// carries the weight) and pressed by a hand (`particles_within` 0.06 m of the top arm's
+/// middle, `shared_loads` 20 N/m down), every load computed every step. Run with
 /// `cargo test --release --test analytic_mpm2d_implicit -- --ignored --nocapture`.
 #[test]
 #[ignore = "measurement: prints the cost per frame of one letter"]
@@ -456,6 +457,9 @@ fn measure_the_cost_per_frame_of_one_letter() {
             }
         }
         let lift = fx(rho * G / kappa);
+        // damping ratio 0.5 of the backing, c = 2 ζ √(κ ρ); the hand at the top arm's middle
+        let damping = 2.0 * 0.5 * (kappa * rho).sqrt();
+        let hand = [fx(x0 + arm / 2.0), fx(y0 + tall - stroke / 2.0)];
         let anchors: Vec<[Fix128; 2]> = w
             .particles()
             .iter()
@@ -467,7 +471,17 @@ fn measure_the_cost_per_frame_of_one_letter() {
             let t = Instant::now();
             for _ in 0..per_frame {
                 if backed {
-                    let loads = w.foundation_loads(&anchors, fx(kappa)).expect("anchors");
+                    // the live step: the damped backing and a hand pressing the top arm
+                    let mut loads = w
+                        .foundation_loads(&anchors, fx(kappa), fx(damping))
+                        .expect("anchors");
+                    let touched = w.particles_within(hand, fx(0.06));
+                    if !touched.is_empty() {
+                        loads.extend(
+                            w.shared_loads(&touched, [Fix128::ZERO, fx(-20.0)])
+                                .expect("a patch"),
+                        );
+                    }
                     w.step_with_loads(&loads).expect("explicit");
                 } else {
                     w.step().expect("explicit");
