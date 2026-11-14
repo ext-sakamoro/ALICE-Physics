@@ -71,6 +71,15 @@ function api(glue, neutral, called) {
       return C;
     },
     statik: (C, n, ...args) => fn(C, n).apply(C, args),
+    // a getter: `length` is a JS builtin name the renamer keeps (scripts/neutral_pkg.py
+    // JS_BUILTINS), so it is read by its own name in both packages; any other getter goes through the map
+    prop: (o, n) => {
+      const key = n === "length" ? n : name(n);
+      const v = o[key];
+      if (v === undefined || typeof v === "function") throw new Error(`the package has no getter ${n}`);
+      called.add(n);
+      return v;
+    },
   };
 }
 
@@ -213,15 +222,16 @@ function wide(a) {
   out.clothParticles = val(a.call(w, "clothParticleCount", cloth), "clothParticleCount");
   out.clothRest = a.call(w, "clothRestPositions", cloth);
   out.clothTriangles = a.call(w, "clothTriangles", cloth);
+  // a number, the id clothMoveGrab takes (undefined when no particle is in reach)
   const grab = id(a.call(w, "clothGrab", cloth, 0.15, 0.15, 0, 0.2), "clothGrab");
-  if (grab < 0) throw new Error("clothGrab reached no particle");
   out.clothMoved = val(a.call(w, "clothMoveGrab", grab, 0.15, 0.25, 0.1), "clothMoveGrab");
   for (let i = 0; i < 10; i++) a.call(w, "step", 1 / 60);
   out.clothPositions = a.call(w, "clothPositions", cloth);
   out.clothAsleep = val(a.call(w, "clothAsleep", cloth), "clothAsleep");
   out.clothReleased = val(a.call(w, "clothRelease", grab), "clothRelease");
-  const grab2 = id(a.call(w, "clothGrab", cloth, 0, 0, 0, 0.2), "clothGrab");
-  if (grab2 < 0) throw new Error("the second clothGrab reached no particle");
+  // after the first grab the particle nearest the origin is 0.221 m from it, out of a 0.2 reach, so
+  // the second grab is at the centre again (0.03 m from that particle)
+  const grab2 = id(a.call(w, "clothGrab", cloth, 0.15, 0.15, 0, 0.2), "the second clothGrab");
   out.clothThrown = val(a.call(w, "clothReleaseWithVelocity", grab2, 0, 0.5, 0), "clothReleaseWithVelocity");
   for (let i = 0; i < 5; i++) a.call(w, "step", 1 / 60);
   out.clothBytes = a.call(w, "clothStateBytes", cloth);
@@ -247,14 +257,14 @@ function wide(a) {
   const log = new Log();
   if (a.call(log, "record", 3, new Uint8Array([1, 2])) !== true) throw new Error("record refused the first entry");
   a.call(log, "record", 7, new Uint8Array([9]));
-  out.logLength = val(a.call(log, "length"), "length");
+  out.logLength = val(a.prop(log, "length"), "length");
   out.logStep = f([a.call(log, "stepAt", 1)]);
   out.logInput = a.call(log, "inputAt", 0);
   const code = a.call(log, "toCode", new Uint8Array(32).map((_, i) => i));
   if (typeof code !== "string") throw new Error(`toCode gave ${code}`);
   out.logCode = new TextEncoder().encode(code);
   const back = a.statik(Log, "fromCode", code);
-  out.logBack = val(a.call(back, "length"), "length");
+  out.logBack = val(a.prop(back, "length"), "length");
   out.codeHead = a.statik(Log, "codeHead", code);
   const fresh = a.fresh();
   out.freshCount = val(a.call(fresh, "bodyCount"), "bodyCount");

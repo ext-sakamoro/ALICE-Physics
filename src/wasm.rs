@@ -1313,9 +1313,10 @@ impl WasmPhysicsWorld {
             .is_some_and(crate::cloth::Cloth::is_asleep)
     }
 
-    /// Grab cloth `body` at `(x, y, z)` within `reach`: the grab id, or -1.
+    /// Grab cloth `body` at `(x, y, z)` within `reach`: the grab id (a `number`, the id
+    /// `clothMoveGrab` / `clothRelease` take), or `undefined` when no free particle is in reach.
     #[wasm_bindgen(js_name = "clothGrab")]
-    pub fn cloth_grab(&mut self, body: usize, x: f64, y: f64, z: f64, reach: f64) -> i64 {
+    pub fn cloth_grab(&mut self, body: usize, x: f64, y: f64, z: f64, reach: f64) -> Option<u32> {
         let p = Vec3Fix::new(
             Fix128::from_f64(x),
             Fix128::from_f64(y),
@@ -1323,7 +1324,7 @@ impl WasmPhysicsWorld {
         );
         self.inner
             .cloth_grab(body, p, Fix128::from_f64(reach))
-            .map_or(-1, |g| i64::from(g.0))
+            .map(|g| g.0)
     }
 
     /// Move grab `id`'s pointer; `false` when no grab has that id.
