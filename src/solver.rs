@@ -59,6 +59,15 @@ pub use world_snapshot::{LawCheck, LegacyPolicy, SnapshotIds, WorldSnapshotError
 // Body Type
 // ============================================================================
 
+/// The step memory of a rollback state (v6), read and checked before any byte of the world is
+/// written: the bodies' poses at the last substep's start, the three sets of last-substep
+/// contact points and the TGS warm-start impulses.
+struct StepMemory {
+    prev: Vec<(Vec3Fix, QuatFix)>,
+    touches: [Vec<(usize, usize, u32)>; 3],
+    impulses: Vec<(u64, [Fix128; 3])>,
+}
+
 /// Type of rigid body
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -9560,12 +9569,14 @@ impl PhysicsWorld {
     /// ([`Self::population_fingerprint`]、rollback の body 数不一致検査強化)
     /// v4 = body ごと sleep が 5 byte (state 1 + idle_frames u32 4) から
     /// **17 byte (state 1 + idle_time Fix128 16)** に (sleep は経過時間基準)
+    /// v5 = v4 + 弾性 joint の島の再帰の記録と cloth の運動状態
+    /// v6 = v5 + **step の記憶** (body ごとの直前の substep の始めの姿勢、直前の substep の接触点 3 集合、TGS の warm start の力積)
     ///
     /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
     /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否、
     /// v1 / v2 の blob は v3 実装に対して version 不一致で拒否される、
     /// 既存の v1→v2 bump と同じ方針)
-    pub const STATE_VERSION: u16 = 5;
+    pub const STATE_VERSION: u16 = 6;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -9583,6 +9594,7 @@ impl PhysicsWorld {
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     /// | 続き | 弾性 joint の島の再帰の記録 (v4、[`crate::sleeping::IslandOrbit`]、world snapshot の `islands` と同じ符号化: 島の数 u64、島ごとに member 数 u64 + index u64、inputs 長 u64 + byte、asleep u8、状態数 u64 + 状態ごとに長さ u64 + byte) |
     /// | 続き | cloth 数 u32、cloth ごとに [`crate::cloth::Cloth`] の運動状態 (粒子数 u32 + 構造の hash u64 + 粒子ごと 160 byte + pin / grab の列 + last_dt)、world ごと次の grab id u32 構造 (三角形 / rest / config / tether) は復元しない: 不一致は拒否 (v5) |
+    /// | 続き | step の記憶 (v6): body ごとに直前の substep の始めの姿勢 (`prev_position` 48 + `prev_rotation` 64 byte、新しい接触点の押し出しは直前の substep の移動 `position − prev_position` から接近を測る)、直前の substep の接触点 `static_touch` / `sdf_touch` / `body_touch` の 3 つの整列した集合 (それぞれ数 u32、点ごとに index u64 × 2 + feature u32) と TGS の warm start の力積 (数 u32、id で整列、entry ごとに id u64 + normal / tangent × 2 の `Fix128`、`std` なしでは 0 件) 接触点は次の substep で「前からある点 (静止の重なりを保つ)」と「新しい点 (位置で押し出す)」を分け、力積は次の tick の解法の初期値になる どれも無いと、読み込んだ時点の記憶が再生に入り、保存と読み込みの間に接触が終わった場面で別の軌道になる (`tests/analytic_state_rollback_contact_memory.rs`) XPBD の `contact_cache` は解法が読まないので入れない |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -9695,8 +9707,159 @@ impl PhysicsWorld {
             b.write_rollback(&mut data);
         }
         data.extend_from_slice(&self.next_grab_id.to_le_bytes());
+        // the memory a step reads from the step before (v6)
+        self.write_step_memory(&mut data);
 
         data
+    }
+
+    /// The step memory of the rollback state (v6, see [`Self::serialize_state`]): per body the
+    /// pose of the last substep's start (`prev_position` 48 + `prev_rotation` 64 byte), the
+    /// contact points of the last substep as three sorted sets (`static_touch`, `sdf_touch`,
+    /// `body_touch`: count `u32`, then per point two indices `u64` and a feature `u32`), then the
+    /// TGS warm-start impulses (count `u32`, then per entry the contact id `u64` and the normal
+    /// and two tangent impulses, each `Fix128` as `hi` `i64` + `lo` `u64`, sorted by id; none
+    /// without `std`).
+    fn write_step_memory(&self, data: &mut Vec<u8>) {
+        for body in &self.bodies {
+            let p = body.prev_position;
+            let q = body.prev_rotation;
+            for f in [p.x, p.y, p.z, q.x, q.y, q.z, q.w] {
+                data.extend_from_slice(&f.hi.to_le_bytes());
+                data.extend_from_slice(&f.lo.to_le_bytes());
+            }
+        }
+        for set in [&self.static_touch, &self.sdf_touch, &self.body_touch] {
+            data.extend_from_slice(&(set.len() as u32).to_le_bytes());
+            for &(x, y, f) in set {
+                data.extend_from_slice(&(x as u64).to_le_bytes());
+                data.extend_from_slice(&(y as u64).to_le_bytes());
+                data.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        #[cfg(feature = "std")]
+        let mut entries: Vec<(u64, [Fix128; 3])> = self
+            .tgs_impulse_cache
+            .entries
+            .iter()
+            .map(|(&k, v)| (k, [v.normal, v.tangent1, v.tangent2]))
+            .collect();
+        #[cfg(not(feature = "std"))]
+        let mut entries: Vec<(u64, [Fix128; 3])> = Vec::new();
+        entries.sort_unstable_by_key(|e| e.0);
+        data.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        for (id, imp) in entries {
+            data.extend_from_slice(&id.to_le_bytes());
+            for f in imp {
+                data.extend_from_slice(&f.hi.to_le_bytes());
+                data.extend_from_slice(&f.lo.to_le_bytes());
+            }
+        }
+    }
+
+    /// Reads the contact memory written by [`Self::write_step_memory`] from `data[at..]`, which
+    /// it must end exactly: `None` for a short or longer blob, an unsorted or repeated entry, or
+    /// an index past this world's bodies or colliders (a state of another world).
+    fn read_step_memory(&self, data: &[u8], at: usize) -> Option<StepMemory> {
+        struct Cursor<'a> {
+            data: &'a [u8],
+            at: usize,
+        }
+        impl Cursor<'_> {
+            fn bytes<const N: usize>(&mut self) -> Option<[u8; N]> {
+                let s = self.data.get(self.at..self.at.checked_add(N)?)?;
+                self.at += N;
+                s.try_into().ok()
+            }
+            fn u32(&mut self) -> Option<u32> {
+                self.bytes().map(u32::from_le_bytes)
+            }
+            fn u64(&mut self) -> Option<u64> {
+                self.bytes().map(u64::from_le_bytes)
+            }
+            fn fix(&mut self) -> Option<Fix128> {
+                let hi = i64::from_le_bytes(self.bytes()?);
+                Some(Fix128::from_raw(hi, self.u64()?))
+            }
+        }
+        let mut r = Cursor { data, at };
+        let mut prev = Vec::with_capacity(self.bodies.len());
+        for _ in 0..self.bodies.len() {
+            let p = Vec3Fix::new(r.fix()?, r.fix()?, r.fix()?);
+            let q = QuatFix::new(r.fix()?, r.fix()?, r.fix()?, r.fix()?);
+            prev.push((p, q));
+        }
+        let n = self.bodies.len() as u64;
+        let limits = [
+            (n, self.static_colliders.len() as u64),
+            (n, self.sdf_colliders.len() as u64),
+            (n, n),
+        ];
+        let mut touches: [Vec<(usize, usize, u32)>; 3] = Default::default();
+        for (set, &(lx, ly)) in touches.iter_mut().zip(limits.iter()) {
+            let count = r.u32()?;
+            for _ in 0..count {
+                let (x, y, f) = (r.u64()?, r.u64()?, r.u32()?);
+                if x >= lx || y >= ly {
+                    return None;
+                }
+                let entry = (usize::try_from(x).ok()?, usize::try_from(y).ok()?, f);
+                // sorted, as the solver keeps them (it searches them)
+                if set.last().is_some_and(|last| *last >= entry) {
+                    return None;
+                }
+                set.push(entry);
+            }
+        }
+        let count = r.u32()?;
+        let mut impulses: Vec<(u64, [Fix128; 3])> = Vec::new();
+        for _ in 0..count {
+            let id = r.u64()?;
+            let imp = [r.fix()?, r.fix()?, r.fix()?];
+            if impulses.last().is_some_and(|last| last.0 >= id) {
+                return None;
+            }
+            impulses.push((id, imp));
+        }
+        if r.at != data.len() {
+            return None;
+        }
+        Some(StepMemory {
+            prev,
+            touches,
+            impulses,
+        })
+    }
+
+    /// Writes the step memory read by [`Self::read_step_memory`].
+    fn apply_step_memory(&mut self, memory: StepMemory) {
+        for (body, (p, q)) in self.bodies.iter_mut().zip(memory.prev) {
+            body.prev_position = p;
+            body.prev_rotation = q;
+        }
+        let [static_touch, sdf_touch, body_touch] = memory.touches;
+        self.static_touch = static_touch;
+        self.sdf_touch = sdf_touch;
+        self.body_touch = body_touch;
+        #[cfg(feature = "std")]
+        {
+            // the live set is empty between steps (`sweep` clears it); the hit and miss
+            // counters are diagnostics of this world and stay as they are
+            self.tgs_impulse_cache.entries.clear();
+            self.tgs_impulse_cache.live.clear();
+            for (id, [normal, tangent1, tangent2]) in memory.impulses {
+                self.tgs_impulse_cache.entries.insert(
+                    id,
+                    crate::solver_tgs::CachedImpulse {
+                        normal,
+                        tangent1,
+                        tangent2,
+                    },
+                );
+            }
+        }
+        #[cfg(not(feature = "std"))]
+        let _ = memory.impulses;
     }
 
     /// FNV-1a 64-bit hash of per-body quantities [`Self::serialize_state`]
@@ -9835,9 +9998,13 @@ impl PhysicsWorld {
         // cloths (v5): checked before any byte is written, written after the
         // rigid bodies; a blob of other cloths (count, particles, structure)
         // is refused with the world unchanged, and so is a byte after them
-        if self.read_cloth_rollback(data, soft_at, false) != Some(data.len()) {
+        let Some(memory_at) = self.read_cloth_rollback(data, soft_at, false) else {
             return false;
-        }
+        };
+        // the step memory (v6), which ends the blob exactly: checked here, written last
+        let Some(memory) = self.read_step_memory(data, memory_at) else {
+            return false;
+        };
 
         // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
         let mut offset = 12;
@@ -9953,6 +10120,7 @@ impl PhysicsWorld {
 
         self.read_cloth_rollback(data, soft_at, true)
             .expect("checked before the rigid bodies were written");
+        self.apply_step_memory(memory);
         true
     }
 
@@ -14807,3 +14975,4 @@ mod loom_tests {
         check_batches(batches, n);
     }
 }
+

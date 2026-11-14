@@ -25,6 +25,16 @@
 //!
 //! ⚠️ **教訓**: 対照実験を先に置いたおかげで、**無駄な format 拡張を回避できた**
 //! 本命 test だけ書いていたら green を「穴が無い」と読んでしまう
+//!
+//! # 起きている body の `prev` (state v6、2026-11-14)
+//!
+//! 接触の作り直しの後、新しい接触点の押し出し (`push_out_new_points`) は直前の
+//! substep の移動 `position − prev_position` から接近を測り、TGS の tick も substep の
+//! 先頭の再代入より前にそれを読む 起きている body の `prev` は巻き戻しを跨ぐ state に
+//! なったので、state v6 は body ごとに `prev_position` / `prev_rotation` を持つ
+//! (`tests/analytic_state_rollback_contact_memory.rs`、TGS の箱が段から落ちる場面で
+//! `prev` だけを写すと bit で一致した) 眠っている body についての本 file の試験は
+//! そのまま成り立つ
 
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix};
 
