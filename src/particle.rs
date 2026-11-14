@@ -31,7 +31,27 @@
 //! again while a projection still moves it more than `max_travel / 2^24` (at most
 //! [`RUN_OFF_PROJECTIONS`] times). It drips (becomes free, keeping its velocity) when the
 //! normal where it ends satisfies `n·ĝ ≥ drip_cos`, or when the step's straight move ends
-//! further than `max_travel` from the surface (it ran past an edge). Landing from the first
+//! further than `max_travel` outside the surface (it ran past an edge; a straight move that ends
+//! inside, into the other face of a crotch, is no edge and slides on). Two faces meeting in a
+//! concave crease (a valley, the inner corner of a stroke) hold a drop between them: a piece of the
+//! move crosses a crease when the normal turns by more than any curve the field resolves can turn
+//! over it (a surface held within `max_travel` curves with a radius of at least `max_travel`, so
+//! over a piece `p` its normal turns at most `p / max_travel`; the chord `|n − n'|` is compared,
+//! which never exceeds the angle) and the piece goes into the second face (`fn crease`). The impact
+//! on the second face takes the part of the move into it, `u' = u − n' (u·n')`, as a landing does;
+//! if `u'` still presses into the first face (`u'·n < 0`) both faces are in contact, the drop stops
+//! at the crease (bisected to `max_travel / 2^24`), goes on along the crease line `l = n × n' /
+//! |n × n'|` and keeps only `v ← l (v·l)`; otherwise it goes on along the second face alone. In a
+//! symmetric V of face angle θ, a drop running down one face keeps `r = cos 2θ` of its speed up
+//! the other (`d_A · u_B = cos² θ − sin² θ`): at θ ≥ 45° (`r ≤ 0`) it stops in the crease at once,
+//! below it climbs the far face and comes back, each time with at most `r` of the speed it
+//! arrived with (drag only takes more). An excursion at speed `v` lasts at most `2 v / a + 1 / c`
+//! (`a = g sin θ`: the climb ends within `v / a`, and the descent from the height reached, at
+//! most `v² / (2 a)` along the face, within `v / a` plus the drag time `1 / c`, since under the
+//! drag `s(t) ≥ (a / c)(t − 1 / c)`). It stops climbing once what is left, `r^n v₀`, is no more
+//! than one step of the pull undoes, `a dt`, after `N = ⌈ln(a dt / v₀) / ln r⌉` crossings; so
+//! after first reaching the crease at `v₀` it is at rest within `Σ_{n<N} (2 r^n v₀ / a + 1 / c) +
+//! 2 dt`. Landing from the first
 //! occupied sample itself, a sample can lie up to `max_travel` inside, where the gradient
 //! belongs to another face (near an edge, or the nearest face is not the one the path
 //! crossed): one projection from there missed the surface by millimetres or put the drop on
@@ -71,6 +91,10 @@
 //! - `past_an_edge_the_drop_falls_free`
 //! - `a_query_surface_holds_the_drop_where_it_is_occupied`
 //! - `rain_scene_digest_is_pinned`
+//! - `tests/analytic_particle_run_off_crotch.rs`: in a V valley the energy `|v|²/2 + g y` never
+//!   rises; the drop comes to rest in a level crease within the bound above and stays (at once
+//!   at 45° and 60°, after climbing the far face at 30°); in a gutter it runs along the crease at
+//!   `g s / (√(1 + s²) c)`; on a single slope the bits are those before the crease was handled
 //! - `held_drops_stay_on_square_and_curved_strokes` (wind-blown rain on a square-edged and a
 //!   curved stroke 20 mm deep, normal from a 2 mm difference: every held step within
 //!   `2 max_travel / 2^24` + 8 f32 ulps of the surface)
@@ -235,6 +259,25 @@ impl LandingTarget<'_> {
 
     /// `(point on the surface, outward normal)` when `point` is on this target or within
     /// `reach` of it, on either side. A query has no distance: it answers for occupied points.
+    /// The signed distance of `point` from the target (negative inside), at any range; `None` for a query, which
+    /// says only whether a point is occupied
+    fn distance(&self, point: Vec3Fix) -> Option<Fix128> {
+        match self {
+            Self::Field(field) => {
+                let (x, y, z) = point.to_f32();
+                Some(Fix128::from_f32(field.distance(x, y, z)))
+            }
+            #[cfg(feature = "std")]
+            Self::Collider(collider) => {
+                let (x, y, z) = collider.world_to_local(point);
+                Some(Fix128::from_f32(
+                    collider.field.distance(x, y, z) * collider.scale_f32,
+                ))
+            }
+            Self::Query(_) => None,
+        }
+    }
+
     fn surface(&self, point: Vec3Fix, reach: Fix128) -> Option<(Vec3Fix, Vec3Fix)> {
         let on_field = |field: &dyn SdfField, x: f32, y: f32, z: f32| {
             let d = Fix128::from_f32(field.distance(x, y, z));
@@ -605,14 +648,37 @@ impl ParticleSystem {
                 particle.velocity = (along + pull * dt) * slowing;
                 let travel = particle.velocity * dt;
                 let moved = particle.position + travel;
-                // it leaves the surface when the step's straight move ends further than `max_travel` from it (it ran
-                // past an edge); otherwise it slides along the surface and drips where the normal tips past `drip_cos`
-                let slid = targets[t]
-                    .surface(moved, max_travel)
-                    .and_then(|_| slide(&targets[t], particle.position, travel, max_travel));
+                // it leaves the surface when the step's straight move ends further than `max_travel` outside it (it ran
+                // past an edge); otherwise it slides along the surface and drips where the normal tips past `drip_cos`.
+                // A straight move that ends deep inside (into a second face of a crotch) is no edge: it slides, and the
+                // crease holds it
+                let past_edge = match targets[t].distance(moved) {
+                    Some(d) => d > max_travel,
+                    None => targets[t].surface(moved, max_travel).is_none(),
+                };
+                let slid = if past_edge {
+                    None
+                } else {
+                    slide(
+                        &targets[t],
+                        particle.position,
+                        travel,
+                        max_travel,
+                        Hold {
+                            velocity: particle.velocity,
+                            gravity,
+                            dt,
+                        },
+                    )
+                };
                 match slid {
-                    Some((position, n)) if n.dot(down) < run_off.drip_cos => {
+                    Some((position, n, line)) if n.dot(down) < run_off.drip_cos => {
                         particle.position = position;
+                        // held by two faces at a crease, it keeps only the velocity along the line where they meet
+                        // (each face takes the part into it, as a single face does on landing)
+                        if let Some(l) = line {
+                            particle.velocity = l * particle.velocity.dot(l);
+                        }
                         still_on = Some(t);
                     }
                     _ => {
@@ -847,11 +913,12 @@ fn slide(
     start: Vec3Fix,
     travel: Vec3Fix,
     max_travel: Fix128,
-) -> Option<(Vec3Fix, Vec3Fix)> {
+    hold: Hold,
+) -> Option<(Vec3Fix, Vec3Fix, Option<Vec3Fix>)> {
     let length = travel.length();
     let mut at = settle(target, start, max_travel)?;
     if length.is_zero() {
-        return Some(at);
+        return Some((at.0, at.1, None));
     }
     let ratio = length / max_travel;
     let whole = usize::try_from(ratio.hi).unwrap_or(usize::MAX);
@@ -866,16 +933,140 @@ fn slide(
         "step_with_run_off: |v*dt| / max_travel = {pieces} pieces exceeds {MAX_LANDING_SAMPLES}"
     );
     let piece = length / Fix128::from_int(pieces as i64);
+    // once the move meets a crease it goes on along the crease line, the only way both faces let it
+    let mut line: Option<Vec3Fix> = None;
     for _ in 0..pieces {
         let (point, normal) = at;
-        let along = travel - normal * travel.dot(normal);
-        let along_length = along.length();
-        if along_length.is_zero() {
-            break;
+        let step = match line {
+            Some(l) => l * (travel.dot(l) / length * piece),
+            None => {
+                let along = travel - normal * travel.dot(normal);
+                let along_length = along.length();
+                if along_length.is_zero() {
+                    break;
+                }
+                along * (piece / along_length)
+            }
+        };
+        let next = settle(target, point + step, max_travel)?;
+        if line.is_none() {
+            // the face the straight step entered is the one at its end before it is settled: settled, the point
+            // can land on the crease itself, where the field may name the first face again
+            let entered = target
+                .surface(point + step, max_travel)
+                .map_or(next.1, |(_, n)| n);
+            if let Some(l) = crease(
+                target, normal, entered, point, step, piece, max_travel, hold,
+            ) {
+                // the crease on this piece: the furthest point of the straight step still outside the second face
+                // (bisected to `max_travel / 2^LANDING_BISECTIONS`), and the rest of the piece along the line
+                let s = outside_until(target, point, step, max_travel);
+                let corner = settle(target, point + step * s, max_travel)?;
+                let rest = l * (travel.dot(l) / length * piece * (Fix128::ONE - s));
+                at = settle(target, corner.0 + rest, max_travel)?;
+                line = Some(l);
+                continue;
+            }
         }
-        at = settle(target, point + along * (piece / along_length), max_travel)?;
+        at = next;
     }
-    Some(at)
+    Some((at.0, at.1, line))
+}
+
+/// What decides whether a crease holds a drop: its velocity for the step, gravity, the step
+#[derive(Clone, Copy)]
+struct Hold {
+    velocity: Vec3Fix,
+    gravity: Vec3Fix,
+    dt: Fix128,
+}
+
+/// Whether the piece `point → point + step` (on the face of outward normal `normal`) crosses a crease into a second
+/// face of normal `next_normal`, and if so the crease line (unit, along `normal × next_normal`). A crease turns the
+/// normal by more than any curve the field resolves can over the piece: a surface the field holds curves with a radius
+/// of at least `max_travel` (its reach), so over a piece of length `p` its normal turns by at most `p / max_travel`;
+/// the chord `|n − n'| = 2 sin(θ/2) ≤ θ` must exceed that. And the step must go into the second face (`step · n' <
+/// 0`, the straight step ends inside it), else it is an edge the drop runs over, not a crotch that holds it. `None`
+/// for a target with no distance (a query) and for faces nearly opposite (no line between them)
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the crease test needs the target, both normals, the point, the step, the piece, the reach and the hold state; a struct for one private call adds nothing"
+)]
+fn crease(
+    target: &LandingTarget<'_>,
+    normal: Vec3Fix,
+    next_normal: Vec3Fix,
+    point: Vec3Fix,
+    step: Vec3Fix,
+    piece: Fix128,
+    max_travel: Fix128,
+    hold: Hold,
+) -> Option<Vec3Fix> {
+    if matches!(target, LandingTarget::Query(_)) {
+        return None;
+    }
+    let turn = piece / max_travel;
+    let chord = (normal - next_normal).length();
+    if chord <= turn || step.dot(next_normal) >= Fix128::ZERO {
+        return None;
+    }
+    if signed_distance(target, point + step, max_travel)? >= Fix128::ZERO {
+        return None;
+    }
+    let l = normal.cross(next_normal);
+    let len = l.length();
+    if len <= turn {
+        return None;
+    }
+    let l = l / len;
+    // the impact on the second face takes the part of the velocity into it (inelastic, as a landing does); what is
+    // left climbs away from the first face by its part across the crease line. It climbs the far face (in a shallow
+    // valley) only if that part moves away from the first face faster than one step of gravity along the second face
+    // takes back; slower, it is back in the crease within the step, and both faces hold it
+    let after = hold.velocity - next_normal * hold.velocity.dot(next_normal);
+    let across = after - l * after.dot(l);
+    let pull = hold.gravity - next_normal * hold.gravity.dot(next_normal);
+    if across.dot(normal) > Fix128::ZERO && across.length() > pull.length() * hold.dt {
+        return None;
+    }
+    Some(l)
+}
+
+/// The signed distance of `point` from the target's surface (negative inside), `None` beyond its reach or for a query
+fn signed_distance(
+    target: &LandingTarget<'_>,
+    point: Vec3Fix,
+    max_travel: Fix128,
+) -> Option<Fix128> {
+    let (on, n) = target.surface(point, max_travel)?;
+    Some((point - on).dot(n))
+}
+
+/// The largest fraction `s` of the straight `step` from `point` whose end is not inside the target (to `max_travel /
+/// 2^`[`LANDING_BISECTIONS`] of distance): `0` when the step enters it at once
+fn outside_until(
+    target: &LandingTarget<'_>,
+    point: Vec3Fix,
+    step: Vec3Fix,
+    max_travel: Fix128,
+) -> Fix128 {
+    let tolerance = max_travel / Fix128::from_int(1_i64 << LANDING_BISECTIONS);
+    let inside = |s: Fix128| {
+        signed_distance(target, point + step * s, max_travel).is_some_and(|d| d < -tolerance)
+    };
+    let (mut lo, mut hi) = (Fix128::ZERO, Fix128::ONE);
+    if !inside(hi) {
+        return hi;
+    }
+    for _ in 0..LANDING_BISECTIONS {
+        let mid = (lo + hi) / Fix128::from_int(2);
+        if inside(mid) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    lo
 }
 
 /// First occupied sample on the segment `start → start + displacement`:

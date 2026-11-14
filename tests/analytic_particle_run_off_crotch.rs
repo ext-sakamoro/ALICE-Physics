@@ -4,8 +4,8 @@
 //!
 //! - in a V valley the drop's mechanical energy `|v|²/2 + g y` never rises once it is on the surface (it falls by the
 //!   drag), for three slopes
-//! - a drop that reaches a level crotch comes to rest there and stays, within the time to slide to it at the slope's
-//!   terminal speed
+//! - a drop in a level crotch ends at rest in the crease and stays, within a bound from the drag and the impact loss
+//!   per crossing; at 45° and 60° at once, at 30° after climbing the far face
 //! - in a gutter whose crotch line falls at `s` (rise over run along it) the drop runs along the line at the closed
 //!   form `g s / (√(1 + s²) drag)` and stays on it
 //! - a drop on a single slope (no crotch) steps to the same bits as before the crotch was handled (pinned digest)
@@ -136,38 +136,87 @@ fn in_a_valley_the_drop_never_gains_energy() {
                 );
             }
         }
-        assert!(compared > 100, "slope {k}: only {compared} steps on the surface");
+        assert!(
+            compared > 100,
+            "slope {k}: only {compared} steps on the surface"
+        );
     }
 }
 
-/// oracle: a drop that reaches a level crotch (a V valley along z) is held by both faces: it comes to rest on the
-/// crotch line and stays. It reaches the line within twice the time to slide the 0.03 m to it at the slope's terminal
-/// speed `g sin θ / drag` plus the drag time `1 / drag`; from then on it does not move
+/// oracle: a drop in a level crotch (a V valley along z, face angle θ) ends at rest in the crease and stays, within
+/// the bound of the MODEL: after it first reaches the crease at speed `v₀`, an impact leaves at most `r = cos 2θ` of
+/// the speed up the far face, an excursion at speed `v` lasts at most `2 v / a + 1 / c` (`a = g sin θ`), and it stops
+/// climbing after `N = ⌈ln(a dt / v₀) / ln r⌉` crossings, so it is at rest within `Σ_{n<N} (2 r^n v₀ / a + 1 / c) +
+/// 2 dt`. At 45° and 60° (`r ≤ 0`) it rests at once (within 2 steps of arriving); at 30° it climbs the far face first
+/// (more than a millimetre from the crease), as an inelastic impact leaves it moving away from the first face. The
+/// drop starts at rest on one face, so its first crossing is the slow arrival the crease rule decides: holding it at
+/// every crossing (always on the line) fails the 30° climb, never holding it fails the 60° rest
 #[test]
-fn a_drop_comes_to_rest_in_a_level_crotch() {
+fn a_drop_comes_to_rest_in_a_level_crotch_within_the_bound() {
+    let dt = 1.0 / 60.0;
     for k in [0.58_f32, 1.0, 1.73] {
-        let mut sys = one_drop(0.03, 0.2, 0.0);
+        // released at rest a millimetre above one face, 0.1 m from the crease: it lands at a crawl, slides down and
+        // first reaches the crease at the slide's own speed (a drop falling onto the crease from height crosses it on
+        // the landing's momentum and climbs the far face whatever the crease rule does)
+        let mut sys = one_drop(0.1, 0.1 * k + 0.001, 0.0);
+        sys.particles[0].velocity = Vec3Fix::from_f32(0.0, 0.0, 0.0);
         let path = track(&mut sys, &valley(k, 0.0));
-        let sin = f64::from(k) / (1.0 + f64::from(k) * f64::from(k)).sqrt();
-        let fall = 0.2 / 6.5;
-        let slide = 0.03 / sin.max(1e-9) / (G * sin / DRAG);
-        let by = fall + 2.0 * (slide + 1.0 / DRAG);
-        let arrive = path
-            .iter()
-            .position(|t| t.on && t.x.abs() <= 1e-6)
+        let theta = f64::from(k).atan();
+        let a = G * theta.sin();
+        // cos 2θ from the slope itself, (1 − k²)/(1 + k²): exactly 0 at 45° (the cosine of 2 atan 1 is 6e-17)
+        let kd = f64::from(k);
+        let r = (1.0 - kd * kd) / (1.0 + kd * kd);
+        // it first reaches the crease where, on the surface, it is on it or has crossed it within the step
+        let arrive = (1..STEPS)
+            .find(|&i| {
+                path[i].on
+                    && (path[i].x.abs() <= 1e-6
+                        || (path[i - 1].on && path[i].x * path[i - 1].x < 0.0))
+            })
             .unwrap_or_else(|| panic!("slope {k}: the drop never reached the crotch"));
+        let v0 = speed(&path[arrive - 1]).max(speed(&path[arrive]));
+        // at rest the drop is put back on the crease from either face each step: the position may move by the
+        // projection's tolerance, `max_travel / 2^24`, from each side
+        let still = 2.0 * 0.02 / f64::from(1u32 << 24);
+        let bound = if r <= 0.0 {
+            2.0 * dt
+        } else {
+            let n = ((a * dt / v0).ln() / r.ln()).ceil().max(0.0) as i32;
+            (0..n)
+                .map(|i| 2.0 * r.powi(i) * v0 / a + 1.0 / DRAG)
+                .sum::<f64>()
+                + 2.0 * dt
+        };
+        // at rest from `rest` on: on the crease, not moving, not moved
+        let rest = (arrive..STEPS)
+            .find(|&i| {
+                let at = &path[i];
+                path[i..].iter().all(|t| {
+                    t.on && t.x.abs() <= 1e-6
+                        && speed(t) <= 1e-9
+                        && (t.x - at.x).abs() + (t.y - at.y).abs() + (t.z - at.z).abs() <= still
+                })
+            })
+            .unwrap_or_else(|| panic!("slope {k}: the drop never came to rest in the crotch"));
+        let took = (rest - arrive) as f64 * dt;
         assert!(
-            (arrive as f64) / 60.0 <= by,
-            "slope {k}: reached the crotch at {:.3} s, the slide gives at most {by:.3} s",
-            arrive as f64 / 60.0
+            took <= bound,
+            "slope {k}: at rest {took:.3} s after reaching the crotch, the bound is {bound:.3} s"
         );
-        let at = &path[arrive];
-        for t in &path[arrive..] {
-            assert!(t.on, "slope {k}: the drop left the crotch");
-            assert!(speed(t) <= 1e-9, "slope {k}: moving at {:.3e} m/s in the crotch", speed(t));
+        let climbed = path[arrive..rest]
+            .iter()
+            .map(|t| t.x.abs())
+            .fold(0.0, f64::max);
+        if r > 0.0 {
             assert!(
-                (t.x - at.x).abs() + (t.y - at.y).abs() + (t.z - at.z).abs() <= 1e-9,
-                "slope {k}: the drop moved in the crotch"
+                climbed > 1e-3,
+                "slope {k}: the drop did not climb the far face ({climbed:.2e} m)"
+            );
+        } else {
+            assert!(
+                rest - arrive <= 2,
+                "slope {k}: at rest {} steps after arriving",
+                rest - arrive
             );
         }
     }
@@ -185,7 +234,11 @@ fn in_a_gutter_the_drop_runs_along_the_crotch_at_the_closed_form() {
         let want = G * sd / ((1.0 + sd * sd).sqrt() * DRAG);
         let end = &path[STEPS - 1];
         assert!(end.on, "s {s}: the drop is not on the surface at the end");
-        assert!(end.x.abs() <= 1e-6, "s {s}: the drop is {} off the crotch line", end.x);
+        assert!(
+            end.x.abs() <= 1e-6,
+            "s {s}: the drop is {} off the crotch line",
+            end.x
+        );
         assert!(
             (end.y + sd * end.z).abs() <= 1e-6,
             "s {s}: the drop is off the crotch line (y + s z = {})",
