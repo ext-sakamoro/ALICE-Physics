@@ -3209,7 +3209,10 @@ impl PhysicsWorld {
     #[inline]
     pub(crate) fn contact_set_velocity(&mut self, i: usize, v: Vec3Fix) {
         if i == STATIC_BODY {
-            assert!(
+            // an internal invariant (the solver scales a static target's correction by inverse
+            // mass 0), not an input check: nothing is written either way, so a release build
+            // drops the check and keeps the skip
+            debug_assert!(
                 v == Vec3Fix::ZERO,
                 "a contact wrote a velocity into a static target"
             );
@@ -3223,7 +3226,10 @@ impl PhysicsWorld {
     #[inline]
     pub(crate) fn contact_set_angular_velocity(&mut self, i: usize, w: Vec3Fix) {
         if i == STATIC_BODY {
-            assert!(
+            // an internal invariant (the solver scales a static target's correction by inverse
+            // mass 0), not an input check: nothing is written either way, so a release build
+            // drops the check and keeps the skip
+            debug_assert!(
                 w == Vec3Fix::ZERO,
                 "a contact wrote an angular velocity into a static target"
             );
@@ -3486,7 +3492,10 @@ impl PhysicsWorld {
     #[inline]
     pub(crate) fn contact_set_position(&mut self, i: usize, p: Vec3Fix) {
         if i == STATIC_BODY {
-            assert!(p == Vec3Fix::ZERO, "a contact moved a static target");
+            // an internal invariant (the solver scales a static target's correction by inverse
+            // mass 0), not an input check: nothing is written either way, so a release build
+            // drops the check and keeps the skip
+            debug_assert!(p == Vec3Fix::ZERO, "a contact moved a static target");
             return;
         }
         self.bodies[i].position = p;
