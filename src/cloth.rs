@@ -7141,6 +7141,64 @@ mod impact_zone_tests {
     /// Two parallel triangles 1/64 apart: `0 1 2` at `y = 0` and `3 4 5` above it, every
     /// particle pinned. Edge `0-1` and edge `3-4` (and vertex 3 over triangle 0) are inside
     /// every margin used below, so whether they are paired depends only on pinning.
+    /// A frame that starts crossed among pinned particles is a stall: a pinned vertex the
+    /// caller drives through a pinned triangle is an offender in every round (pinned
+    /// particles keep their driven positions), so after the round that merges and freezes
+    /// the zone no round can act. The loop stops there instead of re-running: one stall is
+    /// recorded, the free member of the frozen zone ends at its frame start and at rest, and
+    /// the pinned particles keep their positions
+    #[test]
+    fn a_frame_started_crossed_among_pinned_particles_stops_on_the_stalled_round() {
+        let tri = [
+            v3((0, 1), (0, 1), (0, 1)),
+            v3((1, 1), (0, 1), (0, 1)),
+            v3((0, 1), (0, 1), (1, 1)),
+        ];
+        let mut positions = tri.to_vec();
+        positions.push(v3((1, 4), (-1, 8), (1, 4)));
+        positions.push(v3((3, 1), (1, 8), (3, 1)));
+        positions.push(v3((3, 1), (1, 8), (4, 1)));
+        let mut cloth = Cloth::from_mesh(positions, vec![[0, 1, 2], [3, 4, 5]], Fix128::ZERO);
+        // particle 4 is free (2 kg); the others stay pinned
+        cloth.inv_masses[4] = Fix128::from_ratio(1, 2);
+        let mut start = cloth.positions.clone();
+        start[3].y = Fix128::from_ratio(1, 8);
+        start[4].y = Fix128::from_ratio(1, 4);
+        cloth.velocities[4] = v3((0, 1), (-3, 1), (0, 1));
+        let driven = cloth.positions.clone();
+        assert!(cloth.self_contact_offenders(&start).contains(&[3, 0, 1, 2]));
+
+        let (stalls, fired) = with_zones(true, || {
+            assert!(cloth.resolve_impact_zones(&start));
+            zone_probe::take_stalls()
+        });
+
+        assert_eq!(
+            stalls, 1,
+            "the loop stops on the first round that does nothing"
+        );
+        assert!(fired.is_empty(), "a stalled call reports no resolved zone");
+        assert!(
+            cloth.self_contact_offenders(&start).contains(&[3, 0, 1, 2]),
+            "the crossing the frame started with is still there"
+        );
+        assert_eq!(
+            cloth.positions[4], start[4],
+            "the free member ends at its frame start"
+        );
+        assert_eq!(
+            cloth.velocities[4],
+            Vec3Fix::ZERO,
+            "the free member ends at rest"
+        );
+        for i in [0usize, 1, 2, 3, 5] {
+            assert_eq!(
+                cloth.positions[i], driven[i],
+                "pinned particle {i} keeps its position"
+            );
+        }
+    }
+
     fn stacked_pinned_triangles() -> Cloth {
         let lo = [
             v3((0, 1), (0, 1), (0, 1)),
