@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6283 |
+| 🟢 Not ignored (run by CI) | 6284 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6386** |
+| **Total** | **6387** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -165,7 +165,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6283)
+## 🟢 Not ignored (6284)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -396,6 +396,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_transient_thermal.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
 | `audit_wedge.rs` | 12 |
+| `determinism_golden.rs` | 12 |
 | `indep_molecular_pair_potential.rs` | 12 |
 | `indep_orbit_kepler.rs` | 12 |
 | `world_snapshot_v4.rs` | 12 |
@@ -423,7 +424,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_rolling_contact.rs` | 11 |
 | `audit_sdf_wind_field.rs` | 11 |
 | `audit_vibration_wall.rs` | 11 |
-| `determinism_golden.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
 | `indep_participant_order.rs` | 11 |
 | `input_log.rs` | 11 |

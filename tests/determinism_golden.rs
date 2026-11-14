@@ -423,6 +423,35 @@ fn determinism_cloth_drape() {
     assert_golden("cloth_drape", hash, GOLDEN_CLOTH_DRAPE);
 }
 
+/// **Cloth drape, spacing 1/3**: the drape above on a 4 × 4 grid of side 1, so the particle
+/// spacing (1/3) is not a binary fraction and the grid placement's rounding reaches the state.
+/// The 5 × 5 drape has spacing 1/2, exact in every placement, so it cannot see how
+/// `Cloth::new_grid` rounds; this row does (a placement as `origin + width · (i · 1/(n−1))`
+/// gives a different digest from the mirrored exact placement).
+const GOLDEN_CLOTH_DRAPE_THIRDS: &str =
+    "2923b7dda08d8bf0a5f3339885dfae3d74cbaefcf86d9777f3a2215dc51520b3";
+
+#[test]
+fn determinism_cloth_drape_thirds() {
+    let mut cloth = Cloth::new_grid(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(5), Fix128::ZERO),
+        Fix128::ONE, // width
+        Fix128::ONE, // height
+        4,           // res_x
+        4,           // res_y
+        Fix128::ONE, // mass per particle
+    );
+    cloth.pin_top_row(4);
+
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..120 {
+        cloth.step(dt);
+    }
+
+    let hash = hash_cloth(&cloth);
+    assert_golden("cloth_drape_thirds", hash, GOLDEN_CLOTH_DRAPE_THIRDS);
+}
+
 /// **Secondary chain**: four particles hanging from a moving anchor, one per limit kind (angle,
 /// hinge, polar, none; tight enough that each one acts), with gravity and its falloff, stiffness, an immobile share, a radius
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated

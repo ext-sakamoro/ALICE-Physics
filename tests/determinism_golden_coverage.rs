@@ -311,6 +311,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "cloth thirds",
+        "determinism_golden.rs",
+        "determinism_cloth_drape_thirds",
+        "",
+    ),
+    (
         "secondary chain",
         "determinism_golden.rs",
         "determinism_secondary_chain",
@@ -406,6 +412,9 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("sleeping", &["is_sleeping("], 1),
     ("participant", &["add_participant("], 1),
     ("cloth", &["Cloth::"], 1),
+    // a cloth grid whose spacing is not a binary fraction (4 particles over side 1), so the
+    // grid placement's rounding reaches the state: the 5 × 5 drape (spacing 1/2) cannot see it
+    ("cloth thirds", &["Cloth::new_grid(", "pin_top_row(4)"], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
     // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
     ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),

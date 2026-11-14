@@ -714,8 +714,8 @@ fn swing_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const SWING_XPBD: &str = "a5ebc0a012aeb398f177f6721cec1f452f0ffda5d4694b0066f8ab4b4244f086";
-const SWING_TGS: &str = "b3df63823f49df9ea610a1efe3030333785b86b62e8f5040065de757c76d82d6";
+const SWING_XPBD: &str = "4989b886df483996fe4448226964ab302233d7d98f4113948f19ebeb0e2370de";
+const SWING_TGS: &str = "4142e37dd6ef1878869f6b515e5dd0534481be00b5df4c351a2e474dd4b1f1fb";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene
 /// after 256 frames, for each backend, printed so the log shows the bits.

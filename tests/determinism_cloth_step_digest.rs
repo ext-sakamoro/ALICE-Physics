@@ -60,9 +60,9 @@ fn curtain(self_collision: bool) -> Cloth {
 }
 
 /// Recorded from `Cloth::step` before the rest tether was introduced.
-const EXPECTED_PLAIN: u64 = 0xb937_85d6_3968_460e;
+const EXPECTED_PLAIN: u64 = 0xeeda_82bd_3481_0f67;
 /// Same with self-collision enabled.
-const EXPECTED_SELF: u64 = 0x0803_b30a_8617_ea52;
+const EXPECTED_SELF: u64 = 0x67c0_4a70_350b_591b;
 
 #[test]
 fn cloth_step_digest_is_unchanged() {

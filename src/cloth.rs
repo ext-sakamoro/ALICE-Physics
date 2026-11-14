@@ -506,6 +506,23 @@ pub struct Grab {
     pub(crate) applied: [Vec3Fix; 2],
 }
 
+/// The offset of particle `k` of `n` along a side of length `len`: `len · k / (n − 1)` for the lower half, and
+/// `len` minus the offset of its mirror particle for the upper half, so the last particle is exactly at `len` and
+/// mirrored particles are mirrored exactly (`offset(k) + offset(n − 1 − k) == len`). A quotient rounded once on each
+/// side is not: `1/3` and `2/3` both truncate down, so the particle at `2/3` was one ulp nearer the centre than its
+/// mirror at `1/3` and the last one ended one ulp short of `len`. With an odd `n` the middle particle is at
+/// `len / 2`, exact when `len` is a whole number of 2⁻⁶³
+fn grid_offset(len: Fix128, k: usize, n: usize) -> Fix128 {
+    if n <= 1 {
+        return Fix128::ZERO;
+    }
+    let m = n - 1;
+    if 2 * k > m {
+        return len - grid_offset(len, m - k, n);
+    }
+    (len * Fix128::from_int(k as i64)).div_int(m as i64)
+}
+
 impl Cloth {
     /// Create a rectangular cloth grid
     ///
@@ -526,28 +543,14 @@ impl Cloth {
             Fix128::ONE / mass_per_particle
         };
 
-        // Precompute reciprocals for grid UV generation — avoids per-iteration division.
-        let recip_res_x = if res_x > 1 {
-            Fix128::ONE / Fix128::from_int((res_x - 1) as i64)
-        } else {
-            Fix128::ZERO
-        };
-        let recip_res_y = if res_y > 1 {
-            Fix128::ONE / Fix128::from_int((res_y - 1) as i64)
-        } else {
-            Fix128::ZERO
-        };
-
         // Generate particles
         let mut positions = Vec::with_capacity(n);
         for j in 0..res_y {
             for i in 0..res_x {
-                let u = Fix128::from_int(i as i64) * recip_res_x;
-                let v = Fix128::from_int(j as i64) * recip_res_y;
                 positions.push(Vec3Fix::new(
-                    origin.x + width * u,
+                    origin.x + grid_offset(width, i, res_x),
                     origin.y,
-                    origin.z + height * v,
+                    origin.z + grid_offset(height, j, res_y),
                 ));
             }
         }
@@ -3500,6 +3503,39 @@ pub(crate) mod zone_probe {
 
 #[cfg(test)]
 mod tests {
+    /// Grid positions are mirror-symmetric by construction: along each side, particle k and particle n − 1 − k sit
+    /// at offsets that add up to the side's length exactly, and the last particle is exactly at the length, for even
+    /// and odd particle counts and for lengths that are not a power of two
+    #[test]
+    fn grid_particles_are_mirrored_exactly_and_the_last_is_at_the_length() {
+        let origin = Vec3Fix::new(
+            Fix128::from_ratio(-7, 3),
+            Fix128::from_ratio(1, 9),
+            Fix128::from_ratio(5, 11),
+        );
+        // an arbitrary length with the last bit cleared, so its half is exact (see grid_offset)
+        let odd = Fix128::from_ratio(7, 5);
+        let arbitrary = Fix128::from_raw(odd.hi, odd.lo & !1);
+        let mut compared = 0;
+        for len in [Fix128::ONE, Fix128::from_ratio(3, 4), arbitrary] {
+            for n in 2..=6usize {
+                let c = Cloth::new_grid(origin, len, len, n, n, Fix128::ONE);
+                let at = |i: usize, j: usize| c.positions[j * n + i];
+                for j in 0..n {
+                    for i in 0..n {
+                        let (p, q) = (at(i, j), at(n - 1 - i, n - 1 - j));
+                        assert_eq!((p.x - origin.x) + (q.x - origin.x), len, "x n={n} i={i}");
+                        assert_eq!((p.z - origin.z) + (q.z - origin.z), len, "z n={n} j={j}");
+                        compared += 1;
+                    }
+                }
+                assert_eq!(at(n - 1, 0).x - origin.x, len, "far edge n={n}");
+                assert_eq!(at(0, n - 1).z - origin.z, len, "far edge n={n}");
+            }
+        }
+        assert_eq!(compared, 3 * (4 + 9 + 16 + 25 + 36));
+    }
+
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::format;

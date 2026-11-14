@@ -295,4 +295,4 @@ fn trajectory_digest_with_sleep_is_pinned() {
 
 // from Physics main bc76ee2d without any sleep code: the same scene never slept (release by
 // restoring the inverse mass by hand), 540 frames
-const TRAJECTORY_DIGEST: &str = "2d99d5f030cf87123f5098985ec8fe6bbc63ddd7ecc5464f5fb997785bcfa9a9";
+const TRAJECTORY_DIGEST: &str = "6e1c4bc77c2891eedf85887abc046623af80f6e93cf308dedb08dfde40feb009";

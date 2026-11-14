@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439
+//! 40a2baa92090a4df4b26f0e0c40d5c9c7cad2038d059a37d882fe4b77b9fe1cf
 //! ```
 //!
 //! # Entries
@@ -183,6 +183,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "cloth",
         hex32("e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb"),
+    ),
+    // the same drape on a 4 × 4 grid of side 1 (spacing 1/3, not a binary fraction), so
+    // the grid placement's rounding reaches the identifier (`determinism_cloth_drape_thirds`)
+    (
+        "cloth thirds",
+        hex32("2923b7dda08d8bf0a5f3339885dfae3d74cbaefcf86d9777f3a2215dc51520b3"),
     ),
     (
         "physics2d",
@@ -534,18 +540,18 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("ef2d5bb5e5866d5374036151532226f70a008d075e186a4ba646952ff9291e88"),
+        hex32("1503a4fe9b5d52c2d64c9dccd3b087c7ecf07bddeb1aec819b2c9725303f87ae"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("2eeacca7a913d312a9a27fed07ba5850a6f94a99a982e88529c243a364063432"),
+        hex32("6bfa61dc7b8bfcaa879bfdc393682db65fdc60ff8761cb2ef69fe6678a07ef33"),
     ),
     // alice-det-math 0.5.2 at 39507d1b (its clamp follows the G2 order: three Law outputs
     // moved, see PHYSICS_PINS_BY_DET_MATH)
     (
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
-        hex32("00f9c03f7a93d0df567334a140ed3fa2cb0611145e99172cdb7aeb19a49058b3"),
+        hex32("6e410179bf0c763e5c8727edd6b43931996fa560e79946cafa28f4a084e6760f"),
     ),
     // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
     // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
@@ -560,7 +566,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // from 5b98f3db…)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("acee68582e654ad8403ab9a11855e9019a78b9caff3829af8b2a1cdad27d660c"),
+        hex32("30566b1093bba8dea683719d2c9b64d5069c4bb01f7668f7eeb9781605103678"),
     ),
 ];
 
@@ -1219,10 +1225,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439`.
+/// Hex: `40a2baa92090a4df4b26f0e0c40d5c9c7cad2038d059a37d882fe4b77b9fe1cf`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439");
+    hex32("40a2baa92090a4df4b26f0e0c40d5c9c7cad2038d059a37d882fe4b77b9fe1cf");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
