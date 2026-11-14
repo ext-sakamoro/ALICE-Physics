@@ -38,10 +38,17 @@
 //! over it (a surface held within `max_travel` curves with a radius of at least `max_travel`, so
 //! over a piece `p` its normal turns at most `p / max_travel`; the chord `|n − n'|` is compared,
 //! which never exceeds the angle) and the piece goes into the second face (`fn crease`). The impact
-//! on the second face takes the part of the move into it, `u' = u − n' (u·n')`, as a landing does;
-//! if `u'` still presses into the first face (`u'·n < 0`) both faces are in contact, the drop stops
-//! at the crease (bisected to `max_travel / 2^24`), goes on along the crease line `l = n × n' /
-//! |n × n'|` and keeps only `v ← l (v·l)`; otherwise it goes on along the second face alone. In a
+//! on the second face takes the part of the velocity into it, `v' = v − n' (v·n')`, as a landing
+//! does. Its part across the crease line `l = n × n' / |n × n'|` is `w = v' − l (v'·l)`; gravity's
+//! part on the second face across the line, `p = g_B − l (g_B·l)` with `g_B = g − n' (g·n')`,
+//! pulls it back to the line at `|p|` (in a level crotch `|p| = g sin θ = a`). Moving away from
+//! the first face (`w·n > 0`) at `|w| > |p| dt`, it climbs the far face for more than a step and
+//! goes on along the second face alone. Otherwise (pressing into the first face, or `|w| ≤ |p| dt`)
+//! it is back on the line within the step: the excursion lasts `2 |w| / |p| ≤ 2 dt` and reaches
+//! `|w|² / (2 |p|) ≤ |p| dt² / 2` up the face, below what one step resolves, so both faces hold
+//! it: it stops at the crease (bisected to `max_travel / 2^24`), goes on along `l` and keeps only
+//! `v ← l (v·l)`. The same `a dt` ends the climbs below (`N`), and the `2 dt` of the bound is this
+//! last excursion. In a
 //! symmetric V of face angle θ, a drop running down one face keeps `r = cos 2θ` of its speed up
 //! the other (`d_A · u_B = cos² θ − sin² θ`): at θ ≥ 45° (`r ≤ 0`) it stops in the crease at once,
 //! below it climbs the far face and comes back, each time with at most `r` of the speed it
@@ -1021,11 +1028,12 @@ fn crease(
     let l = l / len;
     // the impact on the second face takes the part of the velocity into it (inelastic, as a landing does); what is
     // left climbs away from the first face by its part across the crease line. It climbs the far face (in a shallow
-    // valley) only if that part moves away from the first face faster than one step of gravity along the second face
-    // takes back; slower, it is back in the crease within the step, and both faces hold it
+    // valley) only if that part moves away from the first face faster than one step of gravity's pull back across
+    // the line undoes; slower, it is back in the crease within the step, and both faces hold it (MODEL)
     let after = hold.velocity - next_normal * hold.velocity.dot(next_normal);
     let across = after - l * after.dot(l);
-    let pull = hold.gravity - next_normal * hold.gravity.dot(next_normal);
+    let along_face = hold.gravity - next_normal * hold.gravity.dot(next_normal);
+    let pull = along_face - l * along_face.dot(l);
     if across.dot(normal) > Fix128::ZERO && across.length() > pull.length() * hold.dt {
         return None;
     }
