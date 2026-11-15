@@ -102,6 +102,12 @@
 //!   rises; the drop comes to rest in a level crease within the bound above and stays (at once
 //!   at 45° and 60°, after climbing the far face at 30°); in a gutter it runs along the crease at
 //!   `g s / (√(1 + s²) c)`; on a single slope the bits are those before the crease was handled
+//! - `a_held_drop_is_on_the_surface_in_a_crease_as_on_a_face` (same file): every step a drop is held,
+//!   in three level crotches and a gutter, it is within `2 max_travel / 2^24` + 8 f32 ulps of the
+//!   surface, a point of the crease line being on both faces. Alternating projections between two
+//!   faces lose a fixed share of the error each time, so the cap left a drop 3.8e-5 m inside a 60°
+//!   crotch; `settle` puts it on both planes at once where the normal turns like a concave crease
+//!   (`q + (c n₁ − n₂) d₂ / (1 − c²)`), taken only when nearer the surface than the plain projection
 //! - `a_steep_gutter_holds_by_the_pull_across_its_line` (unit): in a gutter whose line falls at 2
 //!   (faces of slope 1) the hold compares with gravity's pull across the line `|p| = g / √30`, not
 //!   all of it on the face (`g √30 / 6`): a drop between the two is released
@@ -907,6 +913,36 @@ fn settle(
     let mut k = 1;
     while moved > tolerance && k < RUN_OFF_PROJECTIONS {
         let next = target.surface(at.0, max_travel)?;
+        // a concave crease: the projection from one face lands on the other's plane and back, the error shrinking only
+        // by a fixed ratio each time (half of it at faces of 60°), so the cap could leave it inside the solid. Where
+        // the normal turns like a crease, not a curve, the point is put on both planes at once: from `q` on the first
+        // plane (normal n₁), with the second's normal n₂ and signed distance d₂ at `q`, the nearest point on both is
+        // `q + (c n₁ − n₂) d₂ / (1 − c²)`, `c = n₁·n₂` (exact for flat faces, one step)
+        let c = at.1.dot(next.1);
+        let turn = (at.1 - next.1).length();
+        let one_minus_c2 = Fix128::ONE - c * c;
+        let crease_turn = Fix128::from_ratio(1, 100);
+        // concave only: the point on the first plane lies inside the second face (`d₂ < 0`); outside a convex edge the
+        // field's normal turns about the edge, not between two planes, and the plain projection is right
+        let d2 = next.1.dot(at.0 - next.0);
+        let at_crease =
+            turn > crease_turn && one_minus_c2 > Fix128::from_ratio(1, 10_000) && d2.is_negative();
+        // taken only where it is nearer the surface than the plain projection (nearly parallel normals at a mild bend
+        // make `1 − c²` small and the step overshoot): each projection must bring the point closer, never past it
+        let next = if at_crease {
+            let both = at.0 + (at.1 * c - next.1) * (d2 / one_minus_c2);
+            let off = |p: Vec3Fix| {
+                target
+                    .surface(p, max_travel)
+                    .map(|s| ((s.0 - p).length(), s.1))
+            };
+            match (off(both), off(next.0)) {
+                (Some((d_both, n_both)), Some((d_plain, _))) if d_both < d_plain => (both, n_both),
+                _ => next,
+            }
+        } else {
+            next
+        };
         moved = (next.0 - at.0).length();
         at = next;
         k += 1;
