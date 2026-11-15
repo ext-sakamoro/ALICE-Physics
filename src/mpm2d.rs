@@ -8,11 +8,11 @@
 //! affine particle-in-cell transfer (APIC, Jiang et al. 2015), in plane strain, in `Q64.64`
 //! throughout, so a run is bit for bit the same on every machine.
 //!
-//! Status: the public surface and the oracles exist; [`Mpm2d::step`], [`Mpm2d::seed`],
-//! [`Mpm2d::elastic_energy`] and [`Mpm2d::state_digest`] fail fast until implemented.
 
 use crate::math::Fix128;
 
+#[cfg(not(feature = "std"))]
+use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
@@ -91,6 +91,92 @@ pub struct Mpm2d {
     particles: Vec<MpmParticle2>,
 }
 
+/// The 3×3 quadratic B-spline stencil of one particle: the lower-left node and the weights
+/// along each axis.
+struct Stencil {
+    base: [usize; 2],
+    /// the particle's position in cell units from `base`, in `[0.5, 1.5)`
+    frac: V2,
+    w: [[Fix128; 3]; 2],
+}
+
+impl Stencil {
+    fn new(cfg: &Mpm2dConfig, inv_dx: Fix128, x: V2) -> Option<Self> {
+        let half = Fix128::from_ratio(1, 2);
+        let mut base = [0usize; 2];
+        let mut frac = [Fix128::ZERO; 2];
+        let mut w = [[Fix128::ZERO; 3]; 2];
+        for k in 0..2 {
+            let g = (x[k] - cfg.origin[k]) * inv_dx;
+            let b = (g - half).hi;
+            if b < 0 || (b as u64).checked_add(3)? > cfg.nodes[k] as u64 {
+                return None;
+            }
+            base[k] = b as usize;
+            let f = g - Fix128::from_int(b);
+            frac[k] = f;
+            let a = Fix128::from_ratio(3, 2) - f;
+            let m = f - Fix128::ONE;
+            let c = f - half;
+            w[k] = [half * a * a, Fix128::from_ratio(3, 4) - m * m, half * c * c];
+        }
+        Some(Self { base, frac, w })
+    }
+
+    /// node `(base + (a, b))` minus the particle, m
+    fn dpos(&self, cfg: &Mpm2dConfig, a: usize, b: usize) -> V2 {
+        [
+            (Fix128::from_int(a as i64) - self.frac[0]) * cfg.cell,
+            (Fix128::from_int(b as i64) - self.frac[1]) * cfg.cell,
+        ]
+    }
+}
+
+fn mul(a: M2, b: M2) -> M2 {
+    let mut m = [[Fix128::ZERO; 2]; 2];
+    for i in 0..2 {
+        for j in 0..2 {
+            m[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j];
+        }
+    }
+    m
+}
+
+fn det(f: M2) -> Fix128 {
+    f[0][0] * f[1][1] - f[0][1] * f[1][0]
+}
+
+/// The rotation of the polar decomposition `F = R S` of a 2×2 `F` with `det F > 0`:
+/// `R = [[c, −s], [s, c]]`, `(c, s) = (F₀₀ + F₁₁, F₁₀ − F₀₁) / |…|`.
+fn rotation(f: M2) -> M2 {
+    let c = f[0][0] + f[1][1];
+    let s = f[1][0] - f[0][1];
+    let n = (c * c + s * s).sqrt();
+    if n == Fix128::ZERO {
+        return identity();
+    }
+    let (c, s) = (c / n, s / n);
+    [[c, -s], [s, c]]
+}
+
+/// The Kirchhoff stress `τ = P Fᵀ` of the fixed co-rotated model,
+/// `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ` (`J F⁻ᵀ` is the cofactor matrix of `F`).
+fn kirchhoff(f: M2, mu: Fix128, lambda: Fix128) -> M2 {
+    let r = rotation(f);
+    let j = det(f);
+    let cof = [[f[1][1], -f[1][0]], [-f[0][1], f[0][0]]];
+    let two_mu = Fix128::from_int(2) * mu;
+    let l = lambda * (j - Fix128::ONE);
+    let mut p = [[Fix128::ZERO; 2]; 2];
+    for i in 0..2 {
+        for k in 0..2 {
+            p[i][k] = two_mu * (f[i][k] - r[i][k]) + l * cof[i][k];
+        }
+    }
+    let ft = [[f[0][0], f[1][0]], [f[0][1], f[1][1]]];
+    mul(p, ft)
+}
+
 const fn identity() -> M2 {
     [[Fix128::ONE, Fix128::ZERO], [Fix128::ZERO, Fix128::ONE]]
 }
@@ -159,15 +245,147 @@ impl Mpm2d {
     /// Seed `per_axis × per_axis` particles in every cell whose sample points lie inside the
     /// signed distance `sdf` (negative inside), at rest; returns the number added.
     pub fn seed<F: Fn(V2) -> Fix128>(&mut self, sdf: F, per_axis: usize) -> usize {
-        let _ = (sdf, per_axis);
-        todo!("STUB: Mpm2d::seed (2D MPM mochi, regular lattice from the SDF)")
+        if per_axis == 0 {
+            return 0;
+        }
+        let k = Fix128::from_int(per_axis as i64);
+        let h = self.config.cell / k;
+        let area = h * h;
+        let before = self.particles.len();
+        for i in 0..self.config.nodes[0] - 1 {
+            for j in 0..self.config.nodes[1] - 1 {
+                for a in 0..per_axis {
+                    for b in 0..per_axis {
+                        let x = [
+                            self.config.origin[0]
+                                + self.config.cell * Fix128::from_int(i as i64)
+                                + h * Fix128::from_int(a as i64)
+                                + h / Fix128::from_int(2),
+                            self.config.origin[1]
+                                + self.config.cell * Fix128::from_int(j as i64)
+                                + h * Fix128::from_int(b as i64)
+                                + h / Fix128::from_int(2),
+                        ];
+                        if sdf(x) < Fix128::ZERO {
+                            self.add_particle(x, [Fix128::ZERO; 2], area);
+                        }
+                    }
+                }
+            }
+        }
+        self.particles.len() - before
     }
 
     /// Advance one step of [`Mpm2dConfig::dt`]: particle to grid (mass, APIC momentum, MLS
     /// stress force), grid update (gravity, ground), grid to particle (velocity, affine
     /// velocity, position, deformation gradient).
     pub fn step(&mut self) -> Result<(), Mpm2dError> {
-        todo!("STUB: Mpm2d::step (MLS-MPM P2G / grid / G2P)")
+        let cfg = self.config;
+        let (nx, ny) = (cfg.nodes[0], cfg.nodes[1]);
+        let inv_dx = Fix128::ONE / cfg.cell;
+        let four_inv_dx2 = Fix128::from_int(4) * inv_dx * inv_dx;
+        let (mu, lambda) = self.lame();
+        let dt = cfg.dt;
+        // every particle's stencil first: a step either runs whole or not at all
+        let mut stencils = Vec::with_capacity(self.particles.len());
+        for (k, p) in self.particles.iter().enumerate() {
+            let st =
+                Stencil::new(&cfg, inv_dx, p.x).ok_or(Mpm2dError::OutOfGrid { particle: k })?;
+            stencils.push(st);
+        }
+        // particle to grid: mass, APIC momentum and the MLS stress force
+        let mut gm = vec![Fix128::ZERO; nx * ny];
+        let mut gv = vec![[Fix128::ZERO; 2]; nx * ny];
+        for (p, st) in self.particles.iter().zip(&stencils) {
+            let tau = kirchhoff(p.f, mu, lambda);
+            // affine = −dt · area0 · 4/Δx² · τ + m C
+            let s = -(dt * p.area0 * four_inv_dx2);
+            let aff = [
+                [
+                    s * tau[0][0] + p.mass * p.c[0][0],
+                    s * tau[0][1] + p.mass * p.c[0][1],
+                ],
+                [
+                    s * tau[1][0] + p.mass * p.c[1][0],
+                    s * tau[1][1] + p.mass * p.c[1][1],
+                ],
+            ];
+            let mv = [p.mass * p.v[0], p.mass * p.v[1]];
+            for a in 0..3 {
+                for b in 0..3 {
+                    let w = st.w[0][a] * st.w[1][b];
+                    let d = st.dpos(&cfg, a, b);
+                    let idx = (st.base[0] + a) * ny + st.base[1] + b;
+                    gm[idx] = gm[idx] + w * p.mass;
+                    gv[idx][0] = gv[idx][0] + w * (mv[0] + aff[0][0] * d[0] + aff[0][1] * d[1]);
+                    gv[idx][1] = gv[idx][1] + w * (mv[1] + aff[1][0] * d[0] + aff[1][1] * d[1]);
+                }
+            }
+        }
+        // grid: momentum to velocity, gravity, the ground
+        for i in 0..nx {
+            for j in 0..ny {
+                let idx = i * ny + j;
+                if gm[idx] == Fix128::ZERO {
+                    continue;
+                }
+                let mut v = [gv[idx][0] / gm[idx], gv[idx][1] / gm[idx]];
+                v[0] = v[0] + dt * cfg.gravity[0];
+                v[1] = v[1] + dt * cfg.gravity[1];
+                if let Some(g) = cfg.ground {
+                    let y = cfg.origin[1] + cfg.cell * Fix128::from_int(j as i64);
+                    if y <= g && v[1] < Fix128::ZERO {
+                        v[1] = Fix128::ZERO;
+                    }
+                }
+                gv[idx] = v;
+            }
+        }
+        // grid to particle: velocity, affine velocity, position, deformation gradient
+        for (k, (p, st)) in self.particles.iter_mut().zip(&stencils).enumerate() {
+            let mut v = [Fix128::ZERO; 2];
+            let mut b = [[Fix128::ZERO; 2]; 2];
+            for a in 0..3 {
+                for c in 0..3 {
+                    let w = st.w[0][a] * st.w[1][c];
+                    let d = st.dpos(&cfg, a, c);
+                    let gvi = gv[(st.base[0] + a) * ny + st.base[1] + c];
+                    v[0] = v[0] + w * gvi[0];
+                    v[1] = v[1] + w * gvi[1];
+                    for r in 0..2 {
+                        for q in 0..2 {
+                            b[r][q] = b[r][q] + w * gvi[r] * d[q];
+                        }
+                    }
+                }
+            }
+            let c = [
+                [four_inv_dx2 * b[0][0], four_inv_dx2 * b[0][1]],
+                [four_inv_dx2 * b[1][0], four_inv_dx2 * b[1][1]],
+            ];
+            // F ← (I + dt C) F
+            let g = [
+                [Fix128::ONE + dt * c[0][0], dt * c[0][1]],
+                [dt * c[1][0], Fix128::ONE + dt * c[1][1]],
+            ];
+            let f = mul(g, p.f);
+            if det(f) <= Fix128::ZERO {
+                return Err(Mpm2dError::Inverted { particle: k });
+            }
+            p.v = v;
+            p.c = c;
+            p.x = [p.x[0] + dt * v[0], p.x[1] + dt * v[1]];
+            p.f = f;
+        }
+        Ok(())
+    }
+
+    /// The Lamé parameters `(μ, λ)` of the material (plane strain: `λ = E ν / ((1 + ν)(1 − 2ν))`)
+    fn lame(&self) -> (Fix128, Fix128) {
+        let (e, nu) = (self.material.youngs, self.material.poisson);
+        let mu = e / (Fix128::from_int(2) * (Fix128::ONE + nu));
+        let lambda = e * nu / ((Fix128::ONE + nu) * (Fix128::ONE - Fix128::from_int(2) * nu));
+        (mu, lambda)
     }
 
     /// Total mass, kg/m
@@ -206,12 +424,57 @@ impl Mpm2d {
     /// Stored elastic energy, J per metre of depth
     #[must_use]
     pub fn elastic_energy(&self) -> Fix128 {
-        todo!("STUB: Mpm2d::elastic_energy (the constitutive model's energy density × area0)")
+        let (mu, lambda) = self.lame();
+        self.particles.iter().fold(Fix128::ZERO, |acc, p| {
+            let r = rotation(p.f);
+            let mut dev = Fix128::ZERO;
+            for (fr, rr) in p.f.iter().zip(&r) {
+                for (&a, &b) in fr.iter().zip(rr) {
+                    let d = a - b;
+                    dev = dev + d * d;
+                }
+            }
+            let j1 = det(p.f) - Fix128::ONE;
+            acc + p.area0 * (mu * dev + lambda * j1 * j1 / Fix128::from_int(2))
+        })
     }
 
     /// SHA-256 of the configuration, the material and every particle's state, in order
     #[must_use]
     pub fn state_digest(&self) -> [u8; 32] {
-        todo!("STUB: Mpm2d::state_digest")
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        let mut put = |x: Fix128| {
+            h.update(x.hi.to_le_bytes());
+            h.update(x.lo.to_le_bytes());
+        };
+        let c = &self.config;
+        put(c.origin[0]);
+        put(c.origin[1]);
+        put(c.cell);
+        put(Fix128::from_int(c.nodes[0] as i64));
+        put(Fix128::from_int(c.nodes[1] as i64));
+        put(c.gravity[0]);
+        put(c.gravity[1]);
+        put(c.dt);
+        put(c.ground.unwrap_or(Fix128::ZERO));
+        put(Fix128::from_int(i64::from(c.ground.is_some())));
+        put(self.material.youngs);
+        put(self.material.poisson);
+        put(self.material.density);
+        put(Fix128::from_int(self.particles.len() as i64));
+        for p in &self.particles {
+            for x in [p.x[0], p.x[1], p.v[0], p.v[1], p.mass, p.area0] {
+                put(x);
+            }
+            for m in [p.c, p.f] {
+                for row in m {
+                    for x in row {
+                        put(x);
+                    }
+                }
+            }
+        }
+        h.finalize().into()
     }
 }
