@@ -4340,5 +4340,184 @@ class LawState(Isolated):
                          "https://github.com/ext-sakamoro/ALICE-Law")
 
 
+
+# --- the SCIP index skipped when the landed range touches none of its inputs (scripts/land-scip-inputs.txt) -----------
+
+class ScipDecision(unittest.TestCase):
+    def root(self, patterns: str | None) -> Path:
+        d = Path(tempfile.mkdtemp(prefix="scip-decision-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        if patterns is not None:
+            (d / "scripts").mkdir()
+            (d / land.SCIP_INPUTS).write_text(patterns, encoding="utf-8")
+        return d
+
+    def test_no_match_skips_and_says_so(self):
+        skip, line = land.scip_decision(self.root("**/*.rs\nCargo.lock\n"), ["docs/a.md", ".github/workflows/ci.yml"])
+        self.assertTrue(skip)
+        self.assertEqual(line, "scip: skipped (0 of 2 changed files match 2 patterns)")
+
+    def test_a_match_runs_and_names_it(self):
+        skip, line = land.scip_decision(self.root("**/*.rs\n"), ["docs/a.md", "src/x.rs"])
+        self.assertFalse(skip)
+        self.assertEqual(line, "scip: run (matched: src/x.rs)")
+
+    def test_fail_closed(self):
+        for root, changed, why in ((self.root(None), ["docs/a.md"], "cannot be read"),
+                                   (self.root("# only a comment\n"), ["docs/a.md"], "cannot be read"),
+                                   (self.root("**/*.rs\n"), None, "cannot be listed"),
+                                   (self.root("**/*.rs\n"), [], "changes no file")):
+            skip, line = land.scip_decision(root, changed)
+            self.assertFalse(skip, why)
+            self.assertIn(why, line)
+
+    def test_the_real_inputs_file(self):
+        skip, _ = land.scip_decision(REAL_ROOT, ["CHANGELOG.md", ".github/workflows/ci.yml", "scripts/run_unittest_shards.py"])
+        self.assertTrue(skip)
+        for f in ("src/lib.rs", "tests/x.rs", "Cargo.lock", "docs/MODULES.md", "scripts/land.py", "scripts/scip_reach.py"):
+            self.assertFalse(land.scip_decision(REAL_ROOT, [f])[0], f)
+
+    def test_duplicate_symbols_are_counted_only_by_their_exact_prefix(self):
+        text = ("Duplicate symbols encountered:\n  Duplicate symbol: a crate/\n  Duplicate symbol: b main().\n"
+                "Duplicate symbol: c\nerror: something\n")
+        kept, n = land.filter_duplicate_symbols(text)
+        self.assertEqual(n, 2)
+        self.assertEqual(kept, ["Duplicate symbols encountered:", "Duplicate symbol: c", "error: something"])
+
+
+class ScipSkipSteps(unittest.TestCase):
+    """regenerate / run_checks / ci_receipt with the index skipped and not"""
+
+    def lander(self, skip: bool, jobs=None, runs=None):
+        class L(land.Lander):
+            def __init__(self):
+                self.scip_skipped = skip
+                self.scip_dir = "/tmp/scip"
+                self.ran: list[tuple] = []
+                self.record = []
+                self.log = lambda *_: None
+                self.poll_seconds = 0
+                self.after_max_polls = 1
+                self.written = []
+                self.jobs_asked = []
+
+            def sh(self, *cmd):
+                self.ran.append(cmd)
+
+            def scip_index(self, scip):
+                self.ran.append(("scip_index", scip))
+
+            def regenerate_public_api(self):
+                self.ran.append(("public-api",))
+
+            def check_changelog(self):
+                pass
+
+            def slug(self):
+                return "o/r"
+
+            def list_branch_runs(self, slug, ref):
+                return runs or []
+
+            def run_jobs(self, slug, run_id):
+                self.jobs_asked.append(run_id)
+                return jobs if jobs is not None else []
+
+            def write_ci_receipt(self, sha):
+                self.written.append(sha)
+        return L()
+
+    def flat(self, lr):
+        return [" ".join(c) for c in lr.ran]
+
+    def test_skipped_runs_no_index_and_no_index_reader(self):
+        lr = self.lander(True)
+        lr.regenerate()
+        lr.run_checks()
+        ran = self.flat(lr)
+        self.assertFalse(any("scip_index" in c or "--scip" in c for c in ran), ran)
+        self.assertTrue(any("gen-oracle-status.py" in c for c in ran))
+        self.assertTrue(any("public-api" in c for c in ran))
+
+    def test_not_skipped_runs_the_index_and_its_readers(self):
+        lr = self.lander(False)
+        lr.regenerate()
+        lr.run_checks()
+        ran = self.flat(lr)
+        self.assertIn("scip_index /tmp/scip", ran)
+        self.assertEqual(sum("--scip" in c for c in ran), 4, ran)
+
+    def wf_run(self, i, name="CI", sha="s1", conclusion="success"):
+        return {"databaseId": i, "workflowName": name, "status": "completed", "conclusion": conclusion, "headSha": sha}
+
+    def job(self, conclusion="success"):
+        return {"name": land.SCIP_JOB[1], "status": "completed", "conclusion": conclusion}
+
+    def test_receipt_requires_the_scip_job_when_skipped(self):
+        lr = self.lander(True, jobs=[self.job()], runs=[self.wf_run(1), self.wf_run(2), self.wf_run(3, name="Fuzz")])
+        lr.ci_receipt("ci/x", "s1")
+        self.assertEqual(lr.written, ["s1"])
+        self.assertEqual(lr.jobs_asked, [2])
+
+    def test_receipt_refuses_a_missing_or_failed_scip_job(self):
+        for jobs, why in (([], "absent"), ([self.job("skipped")], "completed/skipped"),
+                          ([self.job("failure")], "completed/failure")):
+            lr = self.lander(True, jobs=jobs, runs=[self.wf_run(1)])
+            with self.assertRaisesRegex(land.LandError, why):
+                lr.ci_receipt("ci/x", "s1")
+            self.assertEqual(lr.written, [])
+
+    def test_receipt_refuses_when_no_ci_run(self):
+        lr = self.lander(True, jobs=[self.job()], runs=[self.wf_run(1, name="Fuzz")])
+        with self.assertRaisesRegex(land.LandError, "no CI run"):
+            lr.ci_receipt("ci/x", "s1")
+
+    def test_receipt_does_not_ask_when_the_index_ran(self):
+        lr = self.lander(False, jobs=[], runs=[self.wf_run(1)])
+        lr.ci_receipt("ci/x", "s1")
+        self.assertEqual((lr.written, lr.jobs_asked), (["s1"], []))
+
+
+class ScipDecisionInALanding(Isolated):
+    """decided on the range as it will land: after the rebase onto the moved main"""
+
+    def lander(self) -> FakeLander:
+        class Recording(FakeLander):
+            def decide_scip(self):
+                super().decide_scip()
+                self.calls.append(f"scip skipped={self.scip_skipped}")
+        return Recording(self.r.work, "T-1")
+
+    def inputs(self):
+        # on main (another session's commit): the landed range is only the work clone's own commits
+        self.r.push_upstream({land.SCIP_INPUTS: "**/*.rs\n"}, "chore: inputs")
+
+    def prepared(self) -> FakeLander:
+        lr = self.lander()
+        lr.fetch()
+        lr.prepare("none")
+        return lr
+
+    def test_a_docs_only_range_skips(self):
+        self.inputs()
+        commit(self.r.work, {"docs/a.md": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- a\n"},
+               "docs: a")
+        self.assertIn("scip skipped=True", self.prepared().calls)
+
+    def test_a_rust_change_runs(self):
+        self.inputs()
+        commit(self.r.work, {"src/c.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- c\n"},
+               "feat: c")
+        self.assertIn("scip skipped=False", self.prepared().calls)
+
+    def test_decided_after_the_rebase(self):
+        self.inputs()
+        commit(self.r.work, {"docs/a.md": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- a\n"},
+               "docs: a")
+        self.r.push_upstream({"src/main_moved.rs": "y\n"}, "feat: moved")   # main's .rs change is not in the landed range
+        lr = self.prepared()
+        self.assertLess(lr.calls.index("rebase"), lr.calls.index("scip skipped=True"))
+
+
 if __name__ == "__main__":
     unittest.main()
