@@ -101,11 +101,49 @@ fn tail_add_then_remove_before_any_body_sleeps_matches_never_added() {
     never_added.step(dt());
     never_added.step(dt());
 
+    // The snapshot carries the bodies' stable ids when they are not `0..n` with `n` next
+    // (flag bit 3 of the contact section): the tail add and removal used one id, so the ids
+    // are 0, 1, 2 with 4 next and that section is the only trace. Laid out from the end: the
+    // checksum (8), the section's length (8), the id count (8), the ids (8 each), the next id
+    // (8), and before them the flags byte.
+    let (a, b) = (with_extra.snapshot_world(), never_added.snapshot_world());
+    let word = |s: &[u8], at: usize| u64::from_le_bytes(s[at..at + 8].try_into().unwrap());
+    let ids = 8 + 3 * 8 + 8;
+    let end = a.len() - 16;
+    let start = end - ids;
+    assert_eq!(a.len(), b.len() + ids, "the id section's bytes");
+    assert_ne!(a[start - 1] & 8, 0, "flag bit 3 set");
     assert_eq!(
-        with_extra.snapshot_world(),
-        never_added.snapshot_world(),
+        (
+            word(&a, start),
+            word(&a, start + 8),
+            word(&a, start + 16),
+            word(&a, start + 24)
+        ),
+        (3, 0, 1, 2),
+        "three ids, 0..3"
+    );
+    assert_eq!(
+        word(&a, start + 32),
+        4,
+        "the next id after the tail add and removal"
+    );
+    let mut stripped = [&a[..start], &a[end..a.len() - 8]].concat();
+    stripped[start - 1] &= !8;
+    let section = word(&stripped, start) - ids as u64;
+    stripped[start..start + 8].copy_from_slice(&section.to_le_bytes());
+    let payload = word(&stripped, 8) - ids as u64;
+    stripped[8..16].copy_from_slice(&payload.to_le_bytes());
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in &stripped {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0001_0000_01b3);
+    }
+    stripped.extend_from_slice(&hash.to_le_bytes());
+    assert_eq!(
+        stripped, b,
         "adding a body at the tail and removing it again (before anything \
-         slept) should leave no trace in snapshot_world"
+         slept) should leave no trace in snapshot_world but the id section"
     );
     // The rollback state carries the next stable id as it is (a body removed between steps
     // leaves warm-start entries keyed by its id until the next step, so the id is never handed

@@ -2006,6 +2006,8 @@ struct Decoded {
     /// The joints added or changed from outside the step since the last substep
     /// (version 10 flag bit 2; none before)
     unsettled_joints: Vec<usize>,
+    /// the bodies' stable ids and the next id (flag bit 3), or `None` for `0..n` and `n`
+    stable_ids: Option<(Vec<u64>, u64)>,
     /// The header's `(semantics_id, law_id)` (version 4; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
@@ -2054,8 +2056,12 @@ impl PhysicsWorld {
     /// finds again) and a flags byte: bit 0 [`crate::solver::SolverConfig::speculative_contacts`]
     /// off, bit 1 a list follows of the bodies moved from outside the step since
     /// the last substep (`u64` count, at least 1, then per body ascending its index
-    /// `u64` and the pose the dynamics left it at, `Vec3Fix` and `QuatFix`); another
-    /// bit is refused. A world with no such body writes the byte as before.
+    /// `u64` and the pose the dynamics left it at, `Vec3Fix` and `QuatFix`); bit 2 a
+    /// list of the joints added or changed since; bit 3 the bodies' stable ids follow
+    /// (`u64` count, one a body, then per body its `u64` id, then the next `u64` id;
+    /// written only when the ids are not `0..n` with `n` next, and refused when they are,
+    /// so each world has one byte form); another bit is refused. A world with no such body
+    /// writes the byte as before.
     pub const WORLD_SNAPSHOT_VERSION: u16 = 10;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
@@ -2119,6 +2125,7 @@ impl PhysicsWorld {
     /// | `overflow_detected` | saved | sticky flag |
     /// | `kinematic_substeps_left` | rebuilt | always 0 outside `step` (reset at the end of every step), and a snapshot is only taken between steps |
     /// | `tgs_impulse_cache` (std) | saved | entries sorted by id, hit / miss counters; the live set is rebuilt empty (the `sweep` at the end of every step empties it) |
+    /// | `body_stable_ids` / `next_body_stable_id` (std) | saved | the names the warm-start keys use: flag bit 3 of the contact section when they are not `0..n` and `n`, else rebuilt as `0..n` and `n` |
     /// | `participants` (std) | saved / not covered | each participant's kind and its [`crate::world_participant::Participant::write_state`] payload are saved; the participant itself is code, so the target world must hold the same kinds in the same order ([`WorldSnapshotError::ParticipantMismatch`]), and every payload is checked before any is read ([`WorldSnapshotError::ParticipantState`]) |
     /// | `participant_plan` (std) | not covered | derived from the target world's own participants and fields |
     /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
@@ -2450,9 +2457,13 @@ impl PhysicsWorld {
         let unsettled: Vec<usize> = (0..self.joints.len())
             .filter(|&k| self.joint_changed_since_substep(k))
             .collect();
+        // bit 3: the bodies' stable ids and the next id follow (the TGS warm start
+        // names contacts and joints by them), only when they are not `0..n` and `n`
+        let stable_ids = self.stable_ids_for_snapshot();
         t.u8(u8::from(!self.config.speculative_contacts)
             | if displaced.is_empty() { 0 } else { 2 }
-            | if unsettled.is_empty() { 0 } else { 4 });
+            | if unsettled.is_empty() { 0 } else { 4 }
+            | if stable_ids.is_none() { 0 } else { 8 });
         if !displaced.is_empty() {
             t.usize(displaced.len());
             for i in displaced {
@@ -2468,6 +2479,13 @@ impl PhysicsWorld {
             for k in unsettled {
                 t.usize(k);
             }
+        }
+        if let Some((ids, next)) = stable_ids {
+            t.usize(ids.len());
+            for id in ids {
+                t.u64(id);
+            }
+            t.u64(next);
         }
         let section = t.0.len();
         w.0.extend_from_slice(&t.0);
@@ -2860,7 +2878,44 @@ impl PhysicsWorld {
         for k in d.unsettled_joints {
             self.substep_end_joints[k] = None;
         }
+        self.install_stable_ids(d.stable_ids);
     }
+
+    /// The bodies' stable ids and the next id as a snapshot writes them: `None` when they
+    /// are `0..n` and `n` (bit 3 clear). Bodies pushed onto `bodies` without an id yet are
+    /// named as `sync_body_stable_ids` will name them.
+    fn stable_ids_for_snapshot(&self) -> Option<(Vec<u64>, u64)> {
+        #[cfg(feature = "std")]
+        {
+            let held = self.body_stable_ids.len().min(self.bodies.len());
+            let fresh = (self.bodies.len() - held) as u64;
+            let mut ids = self.body_stable_ids[..held].to_vec();
+            ids.extend((0..fresh).map(|k| self.next_body_stable_id + k));
+            let next = self.next_body_stable_id + fresh;
+            (!is_canonical_ids(&ids, next)).then_some((ids, next))
+        }
+        #[cfg(not(feature = "std"))]
+        None
+    }
+
+    /// Name the restored bodies: the snapshot's ids, or `0..n` with `n` next.
+    fn install_stable_ids(&mut self, ids: Option<(Vec<u64>, u64)>) {
+        #[cfg(feature = "std")]
+        {
+            let n = self.bodies.len() as u64;
+            let (ids, next) = ids.unwrap_or_else(|| ((0..n).collect(), n));
+            self.body_stable_ids = ids;
+            self.next_body_stable_id = next;
+        }
+        #[cfg(not(feature = "std"))]
+        let _ = ids;
+    }
+}
+
+/// `ids` is `0..n` and `next` is `n`: the naming of a world whose bodies were never removed
+/// from the middle (what a snapshot writes as flag bit 3 clear)
+fn is_canonical_ids(ids: &[u64], next: u64) -> bool {
+    ids.iter().enumerate().all(|(i, &id)| id == i as u64) && next == ids.len() as u64
 }
 
 fn w_cloth(w: &mut W, c: &crate::cloth::Cloth) {
@@ -3387,6 +3442,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
     let mut speculative_contacts = true;
     let mut displaced: Vec<(usize, Vec3Fix, QuatFix)> = Vec::new();
     let mut unsettled_joints: Vec<usize> = Vec::new();
+    let mut stable_ids: Option<(Vec<u64>, u64)> = None;
     if version >= 10 {
         // The section: each contact's point number and compliance, each
         // material's contact compliance, the touch sets, the flags (bit 0 the
@@ -3434,7 +3490,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
             }
         }
         let flags = r.u8()?;
-        if flags & !7 != 0 {
+        if flags & !15 != 0 {
             return Err(WorldSnapshotError::InvalidValue { section: S });
         }
         speculative_contacts = flags & 1 == 0;
@@ -3467,6 +3523,30 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
                 }
                 unsettled_joints.push(k);
             }
+        }
+        if flags & 8 != 0 {
+            // one id a body, unique, each below the next id; never the canonical
+            // `0..n` with `n` next, which is written as the bit clear (one byte form
+            // for each world)
+            let n = r.len(S, 8)?;
+            if n != bodies.len() {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            let mut ids = Vec::with_capacity(n);
+            for _ in 0..n {
+                ids.push(r.u64()?);
+            }
+            let next = r.u64()?;
+            let mut sorted = ids.clone();
+            sorted.sort_unstable();
+            if next >= super::STABLE_ID_LIMIT
+                || sorted.last().is_some_and(|&top| top >= next)
+                || sorted.windows(2).any(|w| w[0] == w[1])
+                || is_canonical_ids(&ids, next)
+            {
+                return Err(WorldSnapshotError::InvalidValue { section: S });
+            }
+            stable_ids = Some((ids, next));
         }
         let length = r.pos - start;
         if r.usize(S)? != length {
@@ -3516,6 +3596,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         speculative_contacts,
         displaced,
         unsettled_joints,
+        stable_ids,
         ids: None,
     })
 }
@@ -5115,7 +5196,89 @@ mod tests {
         assert!((0..t.bodies.len()).all(|i| !t.displaced_since_substep(i)));
     }
 
-    /// A flags byte with a bit other than 0 and 1, or bit 1 with an empty list,
+    /// A world whose first body was removed after a third one was added: its bodies are
+    /// named 2 and 1 with 3 next, so its snapshot carries the id section (flag bit 3).
+    fn churned_ids_world() -> PhysicsWorld {
+        let mut w = PhysicsWorld::new(SolverConfig::default());
+        for x in 0..3 {
+            w.add_body(RigidBody::new_dynamic(
+                Vec3Fix::from_int(x * 3, 2, 0),
+                Fix128::ONE,
+            ));
+        }
+        w.step(fx(1, 60));
+        w.remove_body(0).expect("the first body");
+        w.step(fx(1, 60));
+        w
+    }
+
+    /// The id section (flag bit 3) round-trips, and a section that is the canonical naming,
+    /// names a body twice, names one at or past the next id, has a next id at or above
+    /// `STABLE_ID_LIMIT` or does not hold one id a body is refused with the target world unchanged.
+    #[test]
+    fn the_stable_id_section_round_trips_and_is_checked() {
+        let w = churned_ids_world();
+        assert_eq!(w.body_stable_ids, vec![2, 1]);
+        assert_eq!(w.next_body_stable_id, 3);
+        let blob = w.snapshot_world();
+        let n = blob.len() - super::CHECKSUM_LEN;
+        // [flags][count 2][id][id][next][section length][checksum]
+        let start = n - 8 - 8 * 4;
+        assert_ne!(blob[start - 1] & 8, 0, "flag bit 3");
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob)
+            .expect("the churned snapshot restores");
+        assert_eq!(t.body_stable_ids, vec![2, 1]);
+        assert_eq!(t.next_body_stable_id, 3);
+        assert_eq!(t.snapshot_world(), blob);
+
+        // the id words replaced by `words` (count first), lengths fixed and resealed
+        let with = |words: &[u64]| {
+            let mut b = blob[..start].to_vec();
+            for v in words {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            let grown = words.len() as u64 * 8;
+            let mut l = [0u8; 8];
+            l.copy_from_slice(&blob[n - 8..n]);
+            let section = u64::from_le_bytes(l) - 32 + grown;
+            b.extend_from_slice(&section.to_le_bytes());
+            l.copy_from_slice(&b[8..16]);
+            let payload = u64::from_le_bytes(l) - 32 + grown;
+            b[8..16].copy_from_slice(&payload.to_le_bytes());
+            b.extend_from_slice(&[0u8; super::CHECKSUM_LEN]);
+            reseal(b)
+        };
+        assert_eq!(
+            with(&[2, 2, 1, 3]),
+            blob,
+            "the helper rebuilds the blob itself"
+        );
+        for (what, words) in [
+            ("the canonical naming", vec![2, 0, 1, 2]),
+            ("a body named twice", vec![2, 1, 1, 3]),
+            ("an id at the next id", vec![2, 3, 1, 3]),
+            (
+                "a next id at the limit",
+                vec![2, 2, 1, super::super::STABLE_ID_LIMIT],
+            ),
+            ("one id for two bodies", vec![1, 2, 3]),
+            ("three ids for two bodies", vec![3, 2, 1, 0, 3]),
+        ] {
+            let mut target = churned_ids_world();
+            let before = target.snapshot_world();
+            assert!(
+                matches!(
+                    target.restore_world(&with(&words)),
+                    Err(WorldSnapshotError::InvalidValue { .. })
+                ),
+                "{what}"
+            );
+            assert_eq!(target.snapshot_world(), before, "{what}: the world changed");
+        }
+    }
+
+    /// A flags byte with a bit other than 0 to 3, or bit 1 with an empty list,
     /// is refused with a typed error, not read past.
     #[test]
     fn unknown_contact_flags_are_refused() {
@@ -5126,7 +5289,7 @@ mod tests {
         let blob = w.snapshot_world();
         let n = blob.len() - super::CHECKSUM_LEN;
         let mut t = PhysicsWorld::new(SolverConfig::default());
-        for flags in [8u8, 0x80] {
+        for flags in [0x10u8, 0x80] {
             let mut bad = blob.clone();
             bad[n - 9] = flags;
             assert!(
