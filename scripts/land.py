@@ -360,6 +360,18 @@ _PINNED: dict[str, str] = {}
 # (the tests' own checkout).
 TOOL_OVERRIDE: dict[str, list[str]] = {}
 FORBIDDEN_ROOTS: set[str] = set()
+# FAST_POLL_FOR_TESTS lets the tests' stand-in runs poll without waiting (a real landing never sets it).
+FAST_POLL_FOR_TESTS = False
+
+# GitHub's API allows 5000 calls an hour per account, shared by every session and tool of the account (on 2026-11-16
+# the account reached 0). A landing polls CI no faster than once every MIN_POLL_SECONDS, one run list per poll (a run's
+# jobs only when its status changed), and the waits keep their old ceilings by polling fewer times.
+MIN_POLL_SECONDS = 180
+EVIDENCE_WAIT_SECONDS = 2 * 3600   # the ci/** run and the queued heavy runs
+AFTER_WAIT_SECONDS = 3 * 3600      # the Mac Intel leg and Miri on main
+# A wait does not start with fewer calls left than this: a 3-hour wait at 180 s is 60 polls of at most 1 list + a few
+# jobs reads (about 180 calls), and the rest is left to the other sessions of the account.
+API_QUOTA_FLOOR = 500
 
 
 def pinned_git() -> str:
@@ -1241,12 +1253,12 @@ class Lander:
         self.preflight_runs = 0
         self.preflighted_tree = ""
         self.public: bool | None = None   # GitHub's visibility of the repository, read on first use (is_public)
-        self.poll_seconds = 30
+        self.poll_seconds = MIN_POLL_SECONDS
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
         # the delays before asking a read again after a transient GitHub failure (GH_TRANSIENT)
         self.gh_retry_seconds: tuple[float, ...] = (10.0, 30.0, 90.0)
-        self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
-        self.after_max_polls = 360  # 3 hours at 30 s: the Mac Intel leg and Miri on main
+        self.max_polls = EVIDENCE_WAIT_SECONDS // MIN_POLL_SECONDS
+        self.after_max_polls = AFTER_WAIT_SECONDS // MIN_POLL_SECONDS
         self.lock_wait_seconds = LOCK_WAIT_MINUTES * 60
         self.lock_poll_seconds = 5.0
         problem = direct_reason_problem(direct_reason is not None, direct_reason)
@@ -1364,12 +1376,35 @@ class Lander:
         runner = hooks_tool("scripts/run-preflight.sh")
         self.sh(bash_program(), runner.as_posix(), Path(self.root).as_posix(), "--cheap")
 
+    def poll_interval(self) -> float:
+        """the seconds between two CI polls: at least MIN_POLL_SECONDS (the account's API quota is shared)"""
+        if self.poll_seconds < MIN_POLL_SECONDS and not FAST_POLL_FOR_TESTS:
+            raise LandError(f"a CI poll interval of {self.poll_seconds} s is under {MIN_POLL_SECONDS} s: the GitHub API "
+                            "quota is shared by every session of the account")
+        return self.poll_seconds
+
+    def check_api_quota(self) -> None:
+        """print the account's remaining GitHub API calls and refuse to start a wait below API_QUOTA_FLOOR"""
+        self.poll_interval()
+        data = self.gh_json("api", "rate_limit")
+        core = (data or {}).get("resources", {}).get("core", {}) if isinstance(data, dict) else {}
+        left, limit, reset = core.get("remaining"), core.get("limit"), core.get("reset")
+        if not isinstance(left, int) or not isinstance(limit, int):
+            raise LandError(f"GitHub's API quota cannot be read ({data!r:.120})")
+        line = f"GitHub API: {left} of {limit} calls left (resets at {reset}), polling every {self.poll_seconds} s"
+        self.log(line)
+        self.record.append(line)
+        if left < API_QUOTA_FLOOR:
+            raise LandError(f"GitHub API: {left} calls left, under the floor of {API_QUOTA_FLOOR}: not starting a wait "
+                            f"(the quota is shared by every session; it resets at {reset})")
+
     def ci_receipt(self, ref: str, sha: str) -> None:
         """a public repository: wait until every run on `sha` on `ref` has completed (the after-landing legs too:
         the receipt is for every run the change fired), then the hooks checkout's ci_evidence_receipt.py writes the
         "ci" receipt of the tree, which the pre-push gate asks for on main; a run that is not green, a run still
         going when the polls run out, and a refused receipt stop the landing"""
         slug = self.slug()
+        self.check_api_quota()
         for _ in range(self.after_max_polls):
             runs = [r for r in self.list_branch_runs(slug, ref) if r.get("headSha") == sha]
             verdict, why = all_runs_verdict(runs)
@@ -1380,7 +1415,7 @@ class Lander:
                 if getattr(self, "scip_skipped", False):
                     self.require_scip_job(slug, runs, sha)
                 break
-            time.sleep(self.poll_seconds)
+            time.sleep(self.poll_interval())
         else:
             raise LandError(f"CI on {ref} did not complete every run on {sha[:7]} in time: {why}")
         self.write_ci_receipt(sha)
@@ -1551,7 +1586,7 @@ class Lander:
 
     def list_branch_runs(self, slug: str, ref: str) -> list[dict]:
         runs = self.gh_json("run", "list", "--repo", repo_arg(slug), "--branch", ref, "--limit", "100", "--json",
-                            "workflowName,headSha,databaseId,status,conclusion,createdAt,event")
+                            "workflowName,headSha,databaseId,status,conclusion,createdAt,event,updatedAt")
         if not isinstance(runs, list):
             raise LandError("gh run list did not return a list")
         return runs
@@ -1616,6 +1651,9 @@ class Lander:
         last_seen = {w["file"]: started for w in expected}
         dispatched = {w["file"]: 0 for w in expected}
         states: dict[str, tuple[str, str]] = {}
+        # a run's jobs are read again only when the run itself changed (status, conclusion or update time)
+        jobs_seen: dict[int, tuple[tuple, list[dict]]] = {}
+        self.check_api_quota()
         for _ in range(self.max_polls):
             runs = self.list_branch_runs(slug, ref)
             states = {}
@@ -1625,7 +1663,11 @@ class Lander:
                 chosen[w["file"]] = run
                 state, why = run_verdict(w, run, None)
                 if state == "need-jobs":
-                    state, why = run_verdict(w, run, self.run_jobs(slug, run["databaseId"]))
+                    rid = run["databaseId"]
+                    key = (run.get("status"), run.get("conclusion"), run.get("updatedAt"))
+                    if rid not in jobs_seen or jobs_seen[rid][0] != key:
+                        jobs_seen[rid] = (key, self.run_jobs(slug, rid))
+                    state, why = run_verdict(w, run, jobs_seen[rid][1])
                 states[w["file"]] = (state, why)
             red = {f: why for f, (s, why) in states.items() if s == "red"}
             if red:
@@ -1659,7 +1701,7 @@ class Lander:
             if not any(s != "missing" for s, _ in states.values()) and (at := self.remote_sha(ref)) != sha:
                 raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
                                 "the push did not reach it, or the ref moved (no CI run to wait for)")
-            time.sleep(self.poll_seconds)
+            time.sleep(self.poll_interval())
         waiting = "\n  ".join(f"{f}: {why}" for f, (s, why) in sorted(states.items()) if s != "ok")
         raise LandError(f"CI on {ref} did not give its evidence in time:\n  {waiting}")
 
@@ -1675,21 +1717,24 @@ class Lander:
         items = after_landing_items(self.root)
         self.check_gh_auth()
         slug = self.slug()
+        self.check_api_quota()
         states: dict[str, tuple[str, str]] = {}
+        # a run's jobs are read again only when the run itself changed (status, conclusion or update time)
+        cache: dict[int, tuple[tuple, list[dict]]] = {}
         for _ in range(self.after_max_polls):
             runs = self.list_branch_runs(slug, self.branch)
-            cache: dict[int, list[dict]] = {}
+            keys = {r.get("databaseId"): (r.get("status"), r.get("conclusion"), r.get("updatedAt")) for r in runs}
 
             def jobs_of(rid: int) -> list[dict]:
-                if rid not in cache:
-                    cache[rid] = self.run_jobs(slug, rid)
-                return cache[rid]
+                if rid not in cache or cache[rid][0] != keys.get(rid):
+                    cache[rid] = (keys.get(rid), self.run_jobs(slug, rid))
+                return cache[rid][1]
             for it in items:
                 mine = [r for r in runs if r.get("workflowName") == it["name"] and r.get("headSha") == sha]
                 states[after_item_label(it)] = after_verdict(it, mine, jobs_of)
             if any(s == "red" for s, _ in states.values()) or all(s == "ok" for s, _ in states.values()):
                 break
-            time.sleep(self.poll_seconds)
+            time.sleep(self.poll_interval())
         lines = []
         for label, (s, why) in states.items():
             if s == "red":
