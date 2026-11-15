@@ -28,6 +28,17 @@
 //! bodies are put back to where they were before its solve
 //! ([`solve_joints_breaking_before_transmitting`]) and it is removed.
 //!
+//! An error the dynamics did not make is not solved this way. A joint created with its anchors apart, a joint added
+//! or changed (other than its `break_force` alone), and a joint whose body a pose write moved
+//! start a substep with an error the previous substep's dynamics did not leave. At the head of
+//! the substep the world projects the rigid rows of those joints (compliance 0, not a
+//! spring) by position only, `Δx_i = ± w_i / (w_a + w_b) · C` along the
+//! row's gradient (the same XPBD row with `α = 0`), moving only the moved body when its partner
+//! was not moved, and repeats until no body moves (at most 256 passes). The velocities are not
+//! touched and no impulse is applied, so the projection carries no load and breaks no joint;
+//! a body with an axis lock keeps its locked coordinates. An error the dynamics made in the
+//! previous substep, a compliant joint and a spring are left to the solve above.
+//!
 //! **Units.** SI: positions and anchors m, masses kg, time s, forces (`break_force`, motor
 //! limits) N, angles rad, compliance m/N, spring stiffness N/m and damping N·s/m.
 //!
@@ -35,9 +46,10 @@
 //! their inverse masses, so a joint's correction keeps the pair's linear momentum. Energy is
 //! not conserved: the position projection dissipates it at first order in `h` (a physical
 //! pendulum from horizontal loses 3.64 / 1.13 / 0.29 J over 20 s at 8 / 32 / 128 substeps, and
-//! its total energy never rises above the start). A joint that starts violated is closed in
-//! one substep and the velocity update turns the gap into velocity `gap / h`, which adds
-//! energy `½·m·(gap / h)²`. A breaking joint transmits no impulse in the substep it breaks
+//! its total energy never rises above the start). A joint that starts violated is closed by
+//! position at the head of the substep (above) and adds no energy; before 2026-11-14 it was
+//! closed by the solve and the velocity update turned the gap into velocity `gap / h`, which
+//! added energy `½·m·(gap / h)²`. A breaking joint transmits no impulse in the substep it breaks
 //! in, so against an ideal brittle joint (which would transmit `break_force · h` while
 //! failing) the error is at most `break_force · h` of impulse; the more physical form, the
 //! transmitted impulse clamped to exactly `break_force · h`, is not taken (multi-row joints
@@ -45,8 +57,11 @@
 //! 2026-11-12 a breaking joint applied its whole correction and was then removed, which kept
 //! an unbounded snap: a slider started 6.08 m off its axis left its body at 2919.7 m/s.
 //!
-//! **Valid range.** Any substep `h > 0`; the error terms above shrink with `h`. Joints should
-//! start at their rest pose (a violated start becomes velocity, see above). The reaction force
+//! **Valid range.** Any substep `h > 0`; the error terms above shrink with `h`. A joint may
+//! start away from its rest pose: the rigid rows are closed by position without velocity
+//! (above), a compliant joint or a spring starts with that stretch as stored energy. The
+//! position projection repeats at most 256 times per substep, so a chain of placement errors
+//! that needs more passes is left partly open to the solve. The reaction force
 //! used for breaking includes the start-up transient of the sequential sweep (a chain from rest
 //! overshoots its static load, see [`solve_joints_with_reaction_forces`]), so a `break_force`
 //! between the static load and that peak breaks during start-up. Positions and multipliers
@@ -61,7 +76,11 @@
 //! `4·√(I_p / (m·g·L))·K(sin(θ₀/2))`, energy non-increasing, first-order loss),
 //! `tests/analytic_joint_break_transmits_nothing.rs` (a breaking joint leaves the frame as a
 //! world without it, a holding joint with a break force is bit-identical to one without),
-//! `tests/analytic_joint_break_world.rs` (breaking at the reaction force `m·g`), and
+//! `tests/analytic_joint_break_world.rs` (breaking at the reaction force `m·g`),
+//! `tests/analytic_joint_settle.rs` (a violated joint closes by the inverse-mass shares with
+//! its velocities unchanged, a moved body alone returns to its partner, a violated fixed and
+//! slider chain gains no energy, a joint created far off holds under its break force, springs
+//! and compliant joints are left to the dynamics), and
 //! `the_jointed_bodies_stay_within_the_speed_their_forces_allow` (the snapshot scene's jointed
 //! bodies stay within the speed their forces allow).
 //!

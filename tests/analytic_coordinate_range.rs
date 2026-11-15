@@ -1734,18 +1734,22 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// 4.0 の接触の作り直し (接触点で働く XPBD の点拘束、speculative contact、TGS の kinematic の
 /// 扱い) と `Fix128` の積の最近接偶数への丸めで取り直した 範囲内の scene は接触と積を通るので
 /// 体の運動状態が動く
+///
+/// step の記憶 (`serialize_state` v6、body ごとの直前の substep の始めの姿勢、直前の substep の
+/// 接触点、TGS の warm start の力積) を足した時に取り直した blob の形式だけが動く (記憶を書かず
+/// version を 5 に戻すと 13 件すべてが直前の値と一致する)
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0x87bfcd73693c7354_u64),
-    (1, SolverBackend::Xpbd, 0x1ce35842a1dfa2e7_u64),
-    (2, SolverBackend::Xpbd, 0xe7d07ae35764daef_u64),
-    (3, SolverBackend::Xpbd, 0xa5a2a6de4c935b25_u64),
-    (4, SolverBackend::Xpbd, 0x6f6cb30b5d308aa8_u64),
-    (5, SolverBackend::Xpbd, 0x3a8b06b9666d3629_u64),
-    (6, SolverBackend::Xpbd, 0x8e9f84b2b203f601_u64),
-    (0, SolverBackend::Tgs, 0x14eb3b806a51fc59_u64),
-    (1, SolverBackend::Tgs, 0x3d65cdc9eb1e132e_u64),
-    (2, SolverBackend::Tgs, 0xf6f2048852e17780_u64),
-    (3, SolverBackend::Tgs, 0xa5a2a6de4c935b25_u64),
-    (4, SolverBackend::Tgs, 0x85aedd7a335e42bc_u64),
-    (5, SolverBackend::Tgs, 0x8e1769677fc667f4_u64),
+    (0, SolverBackend::Xpbd, 0x2d2be1833f197433_u64),
+    (1, SolverBackend::Xpbd, 0x09a608a2c8b10a3a_u64),
+    (2, SolverBackend::Xpbd, 0x02fdd442c12b6c75_u64),
+    (3, SolverBackend::Xpbd, 0x880a1113e2e92b3b_u64),
+    (4, SolverBackend::Xpbd, 0x0c7bccf6cc7316ea_u64),
+    (5, SolverBackend::Xpbd, 0xb00ecc92ca61b171_u64),
+    (6, SolverBackend::Xpbd, 0x6fb7042e37795fa3_u64),
+    (0, SolverBackend::Tgs, 0xb91d9d0f37c860ec_u64),
+    (1, SolverBackend::Tgs, 0x1d85426d800aeb13_u64),
+    (2, SolverBackend::Tgs, 0xf1189f7d7f605da0_u64),
+    (3, SolverBackend::Tgs, 0x880a1113e2e92b3b_u64),
+    (4, SolverBackend::Tgs, 0x9125b469ff138260_u64),
+    (5, SolverBackend::Tgs, 0x1b685d9f1baad092_u64),
 ];

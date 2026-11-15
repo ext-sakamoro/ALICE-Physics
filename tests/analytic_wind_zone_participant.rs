@@ -552,8 +552,8 @@ fn gust_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-const GUST_XPBD: &str = "fca2e4db607e94bc2310fc45eb837a61539627219ca4cd743065bb7a4b2deb7e";
-const GUST_TGS: &str = "8326f31cc777be22a8a6fb7e31e6bd6bd5a268bc9f65704cb4e7ca7687fe920e";
+const GUST_XPBD: &str = "65ac52abbd4b1544687415e44727109d6edb5f037f6d03d53e1e3b9eca1a5a25";
+const GUST_TGS: &str = "2be7a932951c9da6fe2ec09bf0e0b13dd420a75b78c143ed0c3436c1b90b8ef8";
 
 /// golden (determinism): the world snapshot and the payload of the gust scene
 /// after 256 frames, for each backend. CI runs this on every operating system

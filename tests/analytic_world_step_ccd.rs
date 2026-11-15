@@ -969,7 +969,10 @@ fn crowd_hash(parallel: bool) -> String {
 /// 17 bytes a body where version 3 held a state byte and a `u32` step count). Re-recorded (from
 /// `a5f48863…`) when the elastic islands' recurrence record was appended to the blob (an 8-byte
 /// island count, 0 here); with the record not written the digest is the value before.
-const GOLDEN_CROWD: &str = "3cbd3017240d9b5e9f2b0d7abe6363b688cc84f9d6989ad2fd65b36ec20ac030";
+/// Re-recorded (from `3cbd3017…`) when the state blob gained the step memory (version 6: the
+/// previous poses, the contact points of the last substep, the TGS impulses); with the memory
+/// not written and the version put back to 5 the digest is the value before.
+const GOLDEN_CROWD: &str = "24b24ea00e5d2a1fe1b3e82c28a26c3b72f6f989d42fb76ae5fda216555b7f8b";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
