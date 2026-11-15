@@ -98,6 +98,9 @@ gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (o
 # - sibling API drift 対応は各 bridge module 側で restoration commit 内で修正
 neural = ["dep:alice-ml", "std"]        # Deterministic neural controller (ALICE-ML × Physics)
 analytics = ["dep:alice-analytics", "std"]  # ALICE-Analytics simulation profiling
+# 2D material point method for soft solids (`mpm2d`): off by default, so a build that does
+# not use it carries none of its code; no_std-capable (alloc only)
+mpm2d = []
 
 [dependencies]
 rayon = { version = "1.8", optional = true }
@@ -145,6 +148,22 @@ num-traits = "0.2"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 loom = "0.7"
 
+[[test]]
+name = "analytic_mpm2d"
+required-features = ["mpm2d"]
+
+[[test]]
+name = "analytic_mpm2d_implicit"
+required-features = ["mpm2d"]
+
+[[test]]
+name = "analytic_mpm2d_mass"
+required-features = ["mpm2d"]
+
+[[test]]
+name = "mpm2d_step_cost"
+required-features = ["mpm2d"]
+
 [[example]]
 name = "privacy_budget_and_rappor"
 required-features = ["privacy-crypto"]
@@ -179,6 +198,10 @@ required-features = ["std"]
 [[example]]
 name = "physics2d_tethers"
 required-features = ["std"]
+
+[[example]]
+name = "mpm2d_mochi"
+required-features = ["mpm2d"]
 
 [[example]]
 name = "cloth_simulation"

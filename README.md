@@ -253,7 +253,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 24 |
 | world API: used through another `PhysicsWorld` method | 15 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 127 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 128 |
 | unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics
@@ -362,6 +362,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | `privacy-crypto` | | `privacy` re-exports `alice-crypto`'s differential-privacy primitives (`SecureRng`, `DpNoise`, `dp_int`, `randomized_response`, …) and adds `KeyedRappor`. Off by default, so `std` alone pulls no entropy source. `alice-crypto` is then a public dependency: its breaking releases are breaking for this crate. On `wasm32-unknown-unknown` enable it together with `wasm` (`--features std,wasm,privacy-crypto`), which supplies the browser's entropy; `std,privacy-crypto` alone fails to compile there with getrandom's "you may need to enable the \"js\" feature" error. |
 | `neural` | | Deterministic neural controller using [`alice-ml`](https://crates.io/crates/alice-ml). |
 | `analytics` | | Simulation profiling using [`alice-analytics`](https://crates.io/crates/alice-analytics). |
+| `mpm2d` | | `mpm2d`: the 2D material point method for soft solids (MLS-MPM, APIC, plane strain, explicit and implicit steps, viscoelasticity, loads and an elastic foundation). Off by default, so a build that does not use it carries none of its code; no_std-capable. |
 
 ## Bindings
 
