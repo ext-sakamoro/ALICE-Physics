@@ -62,7 +62,7 @@ jobs:
           if [ "$EVENT" = workflow_dispatch ]; then EVENT=push CREATED=true; fi;
           python3 scripts/changed_paths.py decide --event "$EVENT"
           --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
-          --pattern 'scripts/land.py' --pattern 'scripts/test_land.py'
+          --pattern 'scripts/land.py' --pattern 'scripts/test_land.py' --pattern 'scripts/run_unittest_shards.py'
       - id: decide
         if: github.event_name == 'schedule'
         # a crash of the script leaves the output empty, which reads as 'true' above
@@ -285,8 +285,13 @@ jobs:
       # after the toolchain: land.py's children find cargo / rustc in the cargo directory, which
       # some runner images have only once the toolchain is installed (scripts/test_land.py
       # checks this order)
+      # the 269 landing-script tests start git and python processes, serial they took 15-22 min on
+      # Windows and Mac Intel (3 on Linux): one process per shard, test i in shard i mod N, and the
+      # run fails unless every discovered test ran exactly once and no shard ran 0
+      - name: Unittest shard runner (tests)
+        run: python scripts/test_run_unittest_shards.py
       - name: Landing script (tests)
-        run: python scripts/test_land.py
+        run: python scripts/run_unittest_shards.py scripts/test_land.py
 
       # the tools land.py's children need (python3 >= 3.11, bash, cargo, rustc, rust-analyzer
       # when installed, git) started the way a landing starts them, from a minimal environment;

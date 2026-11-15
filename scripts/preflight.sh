@@ -176,7 +176,8 @@ python3 scripts/test_integration_levels.py
 python3 scripts/integration_levels.py --no-index --check
 # the landing script's tests and its child tools from a minimal environment, after the toolchain
 # (as ci.yml orders them on every OS)
-python3 scripts/test_land.py
+python3 scripts/test_run_unittest_shards.py
+python3 scripts/run_unittest_shards.py scripts/test_land.py
 # the cargo of this shell's PATH is named to land.py, as ci.yml does (the emptied environment
 # cannot find a cargo outside $CARGO_HOME/bin otherwise)
 cargo="$(command -v cargo)" || { echo "cargo is not on the PATH of this shell" >&2; exit 1; }

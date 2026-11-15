@@ -88,7 +88,8 @@ either of them, and a release (crates.io, PyPI) needs every leg green.
 
 ### Mac Intel on a `ci/**` push (landing script changes)
 
-When the branch changes `scripts/land.py` or `scripts/test_land.py`, the Mac Intel leg
+When the branch changes `scripts/land.py`, `scripts/test_land.py` or the runner of those
+tests (`scripts/run_unittest_shards.py`), the Mac Intel leg
 also runs on the `ci/**` push and on a manual run, as an ordinary job of the run: the
 landing waits for it like the other legs. Those files start the runner's own git and
 tools, and the Intel image has different ones (its system git was older than the
