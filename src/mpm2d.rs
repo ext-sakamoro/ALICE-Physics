@@ -8,6 +8,45 @@
 //! affine particle-in-cell transfer (APIC, Jiang et al. 2015), in plane strain, in `Q64.64`
 //! throughout, so a run is bit for bit the same on every machine.
 //!
+//! # MODEL
+//!
+//! - **Equations.** Momentum balance of a continuum, `ρ Dv/Dt = ∇·σ + ρ g`, discretised by
+//!   MLS-MPM. Particle to grid: `m_i = Σ_p w_ip m_p`, `(m v)_i = Σ_p w_ip (m_p v_p + A_p
+//!   (x_i − x_p))` with `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
+//!   area, `τ = P Fᵀ` the Kirchhoff stress). Grid: `v_i = (m v)_i / m_i + Δt g`, then the
+//!   ground. Grid to particle: `v_p = Σ_i w_ip v_i`, `C_p = (4 / Δx²) Σ_i w_ip v_i (x_i −
+//!   x_p)ᵀ`, `x_p += Δt v_p`, `F_p ← (I + Δt C_p) F_p`. Weights: quadratic B-splines,
+//!   `w(f) = ½(1.5 − f)², ¾ − (f − 1)², ½(f − ½)²` per axis. Material: fixed co-rotated,
+//!   `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ`, energy density `μ |F − R|² + λ (J − 1)² / 2`, `R` the
+//!   rotation of the polar decomposition, `μ = E / (2 (1 + ν))`, `λ = E ν / ((1 + ν)(1 − 2ν))`.
+//! - **Units.** SI: m, s, kg, Pa; plane strain, so masses, momenta and energies are per metre
+//!   of depth (kg/m, kg/s, J/m).
+//! - **Conservation.** Mass is carried by the particles and conserved exactly. Linear momentum
+//!   and the APIC angular momentum `Σ m (x × v) + m (Δx² / 4)(C₁₀ − C₀₁)` are conserved by the
+//!   transfers and the internal stress in exact arithmetic; in `Q64.64` the grid's division of
+//!   momentum by mass floors, and the drift stays within a rounding budget (measured 1e-15
+//!   kg/s per metre after 48 steps of a 64-particle blob). Energy is not conserved: symplectic
+//!   Euler's energy oscillates within a period and APIC dissipates (measured on the column:
+//!   above the start by 3.6e-5 of it in the first period only, then about 3e-5 of it lost per
+//!   period); the ground removes the downward velocity of the nodes on it.
+//! - **Range.** Explicit: stable for a step below the cell crossing time of the elastic wave
+//!   (`Δt < Δx / c`, the oracles use a third of it). Every particle's 3×3 stencil must lie in
+//!   the grid ([`Mpm2dError::OutOfGrid`], the step does nothing); a step that would make
+//!   `det F ≤ 0` is refused ([`Mpm2dError::Inverted`]); a refused step changes nothing. 2D plane strain only; `0 ≤ ν < 0.5`.
+//! - **Approximations.** Plane strain (no out-of-plane strain). The fixed co-rotated model
+//!   is linear elasticity under rotation at small strain and its own large-strain law beyond
+//!   it. One material per world. The ground is frictionless and only stops downward motion
+//!   (no adhesion); there are no side walls. No plasticity, no viscosity (the generalised
+//!   Maxwell model of the mochi is a later step). Contact between two bodies of particles is
+//!   the grid's (they stick where their stencils overlap).
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing`
+//!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
+//!   within the rounding budget; the time-averaged settlement of a self-weight column within
+//!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
+//!   period's largest energy at most the previous one's; two runs give the same digest;
+//!   invalid worlds refused; a refused step leaves every particle as it was).
+//! - **Tiers.** L0 only.
+//!
 
 use crate::math::Fix128;
 
@@ -342,7 +381,8 @@ impl Mpm2d {
             }
         }
         // grid to particle: velocity, affine velocity, position, deformation gradient
-        for (k, (p, st)) in self.particles.iter_mut().zip(&stencils).enumerate() {
+        let mut next = Vec::with_capacity(self.particles.len());
+        for (k, (p, st)) in self.particles.iter().zip(&stencils).enumerate() {
             let mut v = [Fix128::ZERO; 2];
             let mut b = [[Fix128::ZERO; 2]; 2];
             for a in 0..3 {
@@ -372,11 +412,15 @@ impl Mpm2d {
             if det(f) <= Fix128::ZERO {
                 return Err(Mpm2dError::Inverted { particle: k });
             }
-            p.v = v;
-            p.c = c;
-            p.x = [p.x[0] + dt * v[0], p.x[1] + dt * v[1]];
-            p.f = f;
+            next.push(MpmParticle2 {
+                x: [p.x[0] + dt * v[0], p.x[1] + dt * v[1]],
+                v,
+                c,
+                f,
+                ..*p
+            });
         }
+        self.particles = next;
         Ok(())
     }
 
