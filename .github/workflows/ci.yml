@@ -578,6 +578,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build SCIP indexes
         run: scripts/scip_index.sh
+      # scripts/land.py skips the index when a landing touches none of scripts/land-scip-inputs.txt: every file the
+      # index's readers open must match a pattern there (a reader that read nothing is red)
+      - name: Inputs of the SCIP readers (tests and check)
+        run: |
+          python3 scripts/test_scip_inputs_check.py
+          python3 scripts/scip_inputs_check.py --scip target/scip
       - name: Every symbol named by a known-defect reason exists
         run: python3 scripts/audit_refs.py --check
       - name: No new L0 item, no stale baseline entry

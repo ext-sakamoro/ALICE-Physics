@@ -1,0 +1,33 @@
+# What the SCIP index and its readers depend on (scripts/land.py SCIP_INPUTS). A landing whose range touches none of
+# these skips the index and the writers and checks that take --scip; CI's scip job checks the same SHA.
+# scripts/test_land.py runs those writers and checks with an audit hook and fails on a file they open that no pattern
+# below matches; add the file here when it does.
+#
+# rust-analyzer indexes every target of the crate and the fuzz crate: every .rs file and every manifest, resolved with
+# the lock and the pinned toolchain
+**/*.rs
+**/Cargo.toml
+**/Cargo.lock
+**/rust-toolchain.toml
+**/rust-toolchain
+**/.cargo/**
+scripts/scip_index.sh
+# the writers and checks that read the index, what they import and what they read besides it
+scripts/scip_reach.py
+scripts/integration_levels.py
+scripts/wiring_guard.py
+scripts/wiring-baseline.txt
+scripts/integration-baseline.txt
+scripts/abi-consumer-gaps.txt
+docs/integration-status.md
+docs/integration-levels.md
+docs/MODULES.md
+README.md
+README_JP.md
+bindings/**
+include/**
+unreal-plugin/**
+# the landing's own list of writers and how it runs them
+scripts/ledgers.py
+scripts/land.py
+scripts/land-scip-inputs.txt
