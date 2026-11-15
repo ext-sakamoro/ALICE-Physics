@@ -565,8 +565,11 @@ fn measure_the_implicit_step_on_the_live_letter() {
     let mut ends: Vec<Vec<[f64; 2]>> = Vec::new();
     for (steps, implicit) in [(explicit_steps, false), (1, true), (2, true)] {
         let mut w = build(steps);
-        let anchors: Vec<[Fix128; 2]> =
-            w.particles().iter().map(|p| [p.x[0], p.x[1] + lift]).collect();
+        let anchors: Vec<[Fix128; 2]> = w
+            .particles()
+            .iter()
+            .map(|p| [p.x[0], p.x[1] + lift])
+            .collect();
         let touched = w.particles_within(hand, fx(0.06));
         let rest_y: f64 = touched
             .iter()
@@ -606,7 +609,12 @@ fn measure_the_implicit_step_on_the_live_letter() {
             frame_ms.push(t.elapsed().as_secs_f64() * 1e3);
             if frame == 59 {
                 deflection = rest_y - hand_y(&w);
-                ends.push(w.particles().iter().map(|p| [p.x[0].to_f64(), p.x[1].to_f64()]).collect());
+                ends.push(
+                    w.particles()
+                        .iter()
+                        .map(|p| [p.x[0].to_f64(), p.x[1].to_f64()])
+                        .collect(),
+                );
             }
             if !pressing {
                 after.push(hand_y(&w));

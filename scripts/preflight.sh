@@ -382,13 +382,13 @@ python3 scripts/facade_check.py --build-features
 # ambiguity error at this exact feature combination (missed here once and
 # only caught by CI, 2026-10-03), so the combination is linted here too.
 step "clippy -D warnings (full native feature set incl. neural/analytics/privacy-crypto, all targets)"
-cargo clippy --all-targets --features "$NATIVE,neural,analytics,privacy-crypto" -- -D warnings
+cargo clippy --all-targets --features "$NATIVE,neural,analytics,privacy-crypto,mpm2d" -- -D warnings
 
 # the library code also may not call f32 / f64 max and min (CI's "Clippy
 # (library code, ...)" step; .github/clippy-lib/clippy.toml is generated from
 # clippy.toml and the script checks it is current and fires on the canary)
 step "clippy -D warnings (library code, f32 / f64 max and min forbidden)"
-CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,analytics,privacy-crypto" -- -D warnings
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,analytics,privacy-crypto,mpm2d" -- -D warnings
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods -D clippy::disallowed_types
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods -D clippy::disallowed_types
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
@@ -414,7 +414,7 @@ step "wasm32-unknown-unknown build with every browser feature (CI job js-binding
 grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
-cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd,mpm2d"
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
 step "a world without continuous collision or cloth links neither (CI job js-binding)"
@@ -447,6 +447,10 @@ scripts/run_tests.sh test_profile_checks=2 -- cargo test --profile ci-test --tes
 
 step "ci.yml / test: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)"
 scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
+
+step "ci.yml / test: Test (mpm2d feature, zero executed is red)"
+scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass
+scripts/run_tests.sh lib=1 -- cargo test --profile ci-test --features mpm2d --lib mpm2d::
 
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"

@@ -379,6 +379,14 @@ jobs:
         shell: bash
         run: scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
 
+      # the 2D material point method is behind the `mpm2d` feature (off by default), so the
+      # default run above does not build it: its oracles run here by name
+      - name: Test (mpm2d feature, zero executed is red)
+        shell: bash
+        run: |
+          scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass
+          scripts/run_tests.sh lib=1 -- cargo test --profile ci-test --features mpm2d --lib mpm2d::
+
       # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
       # cdylib / staticlib — assert both are actually produced, not just the rlib.
       # the ffi test module (goldens the Unity / UE5 bindings replay) was never
@@ -662,7 +670,7 @@ jobs:
       - name: Build for wasm32-unknown-unknown (std only)
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
       - name: Build for wasm32-unknown-unknown with every browser feature
-        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
+        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd,mpm2d"
       - name: Build for wasm32-unknown-unknown (privacy-crypto, entropy from the browser)
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
       # a world that never turns on continuous collision nor makes a cloth links neither (what a page
@@ -842,7 +850,7 @@ jobs:
       - name: Clippy (full native feature set, lib + all targets)
         run: >-
           cargo clippy
-          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,analytics,privacy-crypto"
+          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,analytics,privacy-crypto,mpm2d"
           --all-targets -- -D warnings
 
       # The library code also may not call f32 / f64 max and min (the sign of an
@@ -858,7 +866,7 @@ jobs:
           CLIPPY_CONF_DIR: .github/clippy-lib
         run: >-
           cargo clippy --lib
-          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,analytics,privacy-crypto"
+          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,analytics,privacy-crypto,mpm2d"
           -- -D warnings
       # `wasm` and `python` are left out of the set above (`wasm` × `ffi` is a
       # compile_error!), so their modules are linted on their own, for the

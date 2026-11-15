@@ -272,6 +272,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `physics2d` | a separate 2D XPBD engine with circle, polygon, capsule and edge shapes and 2D joints |  | [`physics2d_impulse_spin`](../examples/physics2d_impulse_spin.rs) | standalone (world API 1 of 60 items) |
+| `mpm2d` | 2D material point method for soft solids (MLS-MPM, APIC, quadratic B-spline, plane strain, fixed corotated and neo-Hookean, Maxwell viscoelasticity, explicit and backward Euler implicit steps, loads and an elastic foundation; feature `mpm2d`) |  | [`mpm2d_mochi`](../examples/mpm2d_mochi.rs) | standalone |
 
 ## Visualization
 
