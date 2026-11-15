@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 127 |
+| standalone | a Rust API that only examples call | 128 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -130,6 +130,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `maxwell_fdtd` | standalone | 0 / 0 / 0 / 44 / 0 | — |
 | `modal` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `molecular_dynamics` | standalone | 0 / 0 / 0 / 37 / 0 | — |
+| `mpm2d` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `multiphase` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `nbody` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `netcode_prediction` | standalone | 0 / 0 / 0 / 13 / 0 | — |

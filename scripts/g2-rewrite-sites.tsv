@@ -312,3 +312,5 @@ src/cloth.rs	within_of_outline	expr	t > Fix128 :: ONE	fixed-point	operands are F
 src/shape_raycast.rs	ray_extent	assign	reach > out	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	ray_extent	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	ray_extent	expr	r > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/mpm2d/implicit.rs	hessian_times_exact	assign	e . abs () > big	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/mpm2d/implicit.rs	power_of_two_scale	assign	a . abs () > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN

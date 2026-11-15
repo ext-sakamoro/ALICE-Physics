@@ -38,6 +38,7 @@ privacy-crypto = ["alice_physics_core/privacy-crypto"]
 gpu-solver-bridge = ["alice_physics_core/gpu-solver-bridge"]
 neural = ["alice_physics_core/neural"]
 analytics = ["alice_physics_core/analytics"]
+mpm2d = ["alice_physics_core/mpm2d"]
 
 [dependencies]
 alice_physics_core = { package = "alice-physics-core", path = "../..", version = "=4.0.0", default-features = false }
