@@ -273,3 +273,50 @@ fn on_a_single_slope_the_bits_are_unchanged() {
         .collect();
     assert_eq!(hex, SLOPE_DIGEST);
 }
+
+/// oracle: a drop held by the surface, on a face or in a crease, is on the surface. In a crease the closed form is a point
+/// of the crease line, which lies on both faces: its distance to the solid is 0. The drop is put there by the landing's
+/// bisection and the slide's projections, each to `max_travel / 2^24` (the MODEL), so it is within twice that, plus the
+/// field's own reading in f32 (a few ulps of the scene's 0.1 m, `8 · 2^-24 · 0.2` covers it). Measured on every step
+/// it is held, in three level crotches and a gutter
+#[test]
+fn a_held_drop_is_on_the_surface_in_a_crease_as_on_a_face() {
+    let tolerance = 2.0 * 0.02 / f64::from(1u32 << 24);
+    let f32_reading = 8.0 * f64::from(f32::EPSILON) * 0.2;
+    let bound = tolerance + f32_reading;
+    let mut held_steps = 0;
+    let mut worst: f64 = 0.0;
+    for (k, s, start) in [
+        (0.58_f32, 0.0_f32, (0.1_f32, 0.0_f32)),
+        (1.0, 0.0, (0.1, 0.0)),
+        (1.73, 0.0, (0.1, 0.0)),
+        (1.0, 0.5, (0.05, 0.0)),
+    ] {
+        let field = valley(k, s);
+        let mut sys = one_drop(start.0, start.0 * k - s * start.1 + 0.001, start.1);
+        sys.particles[0].velocity = Vec3Fix::from_f32(0.0, 0.0, 0.0);
+        let path = track(&mut sys, &field);
+        for (i, t) in path.iter().enumerate() {
+            if !t.on {
+                continue;
+            }
+            held_steps += 1;
+            let n = f64::from((1.0 + k * k + s * s).sqrt());
+            // the solid's distance in f64, from its closed form (not the engine's f32 field)
+            let d = (t.y - f64::from(k) * t.x.abs() + f64::from(s) * t.z) / n;
+            worst = worst.max(d.abs());
+            assert!(
+                d.abs() <= bound,
+                "slope {k}, fall {s}, step {i}: a held drop at ({:.9}, {:.9}, {:.9}) is {d:.3e} m off the surface, the \
+                 bound is {bound:.3e}",
+                t.x,
+                t.y,
+                t.z
+            );
+        }
+    }
+    println!(
+        "{held_steps} held steps, the farthest {worst:.3e} m off the surface (bound {bound:.3e})"
+    );
+    assert!(held_steps > 0, "0 held steps compared");
+}
