@@ -107,7 +107,12 @@
 //!   surface, a point of the crease line being on both faces. Alternating projections between two
 //!   faces lose a fixed share of the error each time, so the cap left a drop 3.8e-5 m inside a 60°
 //!   crotch; `settle` puts it on both planes at once where the normal turns like a concave crease
-//!   (`q + (c n₁ − n₂) d₂ / (1 − c²)`), taken only when nearer the surface than the plain projection
+//!   (`q + (c n₁ − n₂) d₂ / (1 − c²)`), taken only when nearer the surface than the plain projection;
+//!   `a_shallow_crease_at_the_gate_keeps_the_drop_on_the_surface`: faces 0.012 rad apart (just past the
+//!   step's gate, where `1 − c²` is near its least) and 0.004 rad (below it) keep the same bound
+//! - Known limit, `in_an_inside_corner_of_three_faces_the_held_drop_is_where_this_pins_it`: where three
+//!   faces meet a held drop is put on at most two planes, not three, and sinks 2.2e-5 m into the solid
+//!   (1.4e-4 m at worst on the way), as before the crease step; pinned as it is
 //! - `a_steep_gutter_holds_by_the_pull_across_its_line` (unit): in a gutter whose line falls at 2
 //!   (faces of slope 1) the hold compares with gravity's pull across the line `|p| = g / √30`, not
 //!   all of it on the face (`g √30 / 6`): a drop between the two is released

@@ -320,3 +320,89 @@ fn a_held_drop_is_on_the_surface_in_a_crease_as_on_a_face() {
     );
     assert!(held_steps > 0, "0 held steps compared");
 }
+
+/// oracle: a crease whose faces turn by little more than the gate (`settle` takes the two-plane step only when the
+/// normal's chord exceeds 0.01, so `1 − c²` is at least about `1e-4` and the step scales `d₂` by up to `1e4`): the step is
+/// taken only when it ends nearer the surface than the plain projection, so a held drop stays within the same bound as
+/// at a sharp crease. Faces of slope 0.006 (normals 0.012 rad apart, just above the gate) and 0.004 (just below it)
+#[test]
+fn a_shallow_crease_at_the_gate_keeps_the_drop_on_the_surface() {
+    let bound = 2.0 * 0.02 / f64::from(1u32 << 24) + 8.0 * f64::from(f32::EPSILON) * 0.2;
+    let mut held_steps = 0;
+    for k in [0.006_f32, 0.004] {
+        let field = valley(k, 0.0);
+        let mut sys = one_drop(0.002, 0.002 * k + 0.001, 0.0);
+        sys.particles[0].velocity = Vec3Fix::from_f32(0.0, 0.0, 0.0);
+        let path = track(&mut sys, &field);
+        let n = f64::from((1.0 + k * k).sqrt());
+        for (i, t) in path.iter().enumerate().filter(|(_, t)| t.on) {
+            held_steps += 1;
+            let d = (t.y - f64::from(k) * t.x.abs()) / n;
+            assert!(
+                d.abs() <= bound,
+                "slope {k}, step {i}: {d:.3e} m off the surface, the bound is {bound:.3e}"
+            );
+        }
+    }
+    assert!(held_steps > 0, "0 held steps compared");
+}
+
+/// The air of an inside corner where three faces meet: a floor rising away from the corner by `k` along x and z, and two
+/// upright walls `x = 0` and `z = 0`. The distance to the solid is the least of the three
+fn inside_corner(k: f32) -> ClosureSdf {
+    let n = (1.0 + 2.0 * k * k).sqrt();
+    ClosureSdf::new(
+        move |x, y, z| ((y - k * x - k * z) / n).min(x).min(z),
+        move |x, y, z| {
+            let floor = (y - k * x - k * z) / n;
+            if floor <= x && floor <= z {
+                (-k / n, 1.0 / n, -k / n)
+            } else if x <= z {
+                (1.0, 0.0, 0.0)
+            } else {
+                (0.0, 0.0, 1.0)
+            }
+        },
+    )
+}
+
+/// Known limit, pinned as it is (a change here is a change of behaviour to look at, not a bound to widen): in an inside
+/// corner where three faces meet (two creases meeting), a held drop is put on at most two planes at once, not three, and
+/// sinks into the solid. Measured on a floor of slope 0.5 into two upright walls: the farthest a held drop is from the
+/// surface is 1.409e-4 m, and it comes to rest 2.243e-5 m inside all three faces, the same before and after the crease
+/// step was added (it is not what the crease step does: the corner is left as it was). The crease bound, 1.93e-7 m, is
+/// what a three-plane solve would have to meet
+#[test]
+fn in_an_inside_corner_of_three_faces_the_held_drop_is_where_this_pins_it() {
+    let bound = 2.0 * 0.02 / f64::from(1u32 << 24) + 8.0 * f64::from(f32::EPSILON) * 0.2;
+    let k = 0.5_f32;
+    let field = inside_corner(k);
+    let mut sys = one_drop(0.04, 0.04 * k * 2.0 + 0.001, 0.03);
+    sys.particles[0].velocity = Vec3Fix::from_f32(0.0, 0.0, 0.0);
+    let path = track(&mut sys, &field);
+    let n = f64::from((1.0 + 2.0 * k * k).sqrt());
+    let (mut held, mut worst) = (0, 0.0_f64);
+    for t in path.iter().filter(|t| t.on) {
+        held += 1;
+        let d = ((t.y - f64::from(k) * (t.x + t.z)) / n).min(t.x).min(t.z);
+        worst = worst.max(d.abs());
+    }
+    let last = path.last().expect("steps");
+    println!("inside corner: {held} held steps, the farthest {worst:.3e} m off the surface (crease bound {bound:.3e}), at rest at ({:.3e}, {:.3e}, {:.3e})", last.x, last.y, last.z);
+    assert!(held > 0, "0 held steps compared");
+    assert!(
+        worst > bound,
+        "the corner now meets the crease's bound: the known limit is gone, update the MODEL"
+    );
+    // the run is deterministic: the numbers as measured, to the f64 they were printed at
+    assert!(
+        (worst - 1.409e-4).abs() < 1e-7,
+        "the farthest a held drop is off the surface moved: {worst:.4e}"
+    );
+    for c in [last.x, last.y, last.z] {
+        assert!(
+            (c + 2.243e-5).abs() < 1e-8,
+            "the drop rests elsewhere: {c:.4e}"
+        );
+    }
+}
