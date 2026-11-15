@@ -11,8 +11,9 @@
 //! # MODEL
 //!
 //! - **Equations.** Momentum balance of a continuum, `ρ Dv/Dt = ∇·σ + ρ g`, discretised by
-//!   MLS-MPM. Particle to grid: `m_i = Σ_p w_ip m_p`, `(m v)_i = Σ_p w_ip (m_p v_p + A_p
-//!   (x_i − x_p))` with `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
+//!   MLS-MPM. Particle to grid: `m_i = Σ_p w_ip m_p`, `(m v)_i = Σ_p w_ip (m_p v_p + Δt f_p + A_p
+//!   (x_i − x_p))` (`f_p` the external force on the particle, [`Mpm2d::step_with_loads`], 0 in
+//!   [`Mpm2d::step`]) with `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
 //!   area, `τ = P Fᵀ` the Kirchhoff stress). Grid: `v_i = (m v)_i / m_i + Δt g`, then the
 //!   ground. Grid to particle: `v_p = Σ_i w_ip v_i`, `C_p = (4 / Δx²) Σ_i w_ip v_i (x_i −
 //!   x_p)ᵀ`, `x_p += Δt v_p`, `F_p ← (I + Δt C_p) F_p`. Weights: quadratic B-splines,
@@ -48,12 +49,12 @@
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
-//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material).
+//!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused).
 //! - **Tiers.** L0 only.
 //!
 
@@ -380,6 +381,28 @@ impl Mpm2d {
     /// stress force), grid update (gravity, ground), grid to particle (velocity, affine
     /// velocity, position, deformation gradient).
     pub fn step(&mut self) -> Result<(), Mpm2dError> {
+        self.step_with_loads(&[])
+    }
+
+    /// One step with external forces on particles: `(particle, force)`, N per metre of depth,
+    /// held over the step. A load enters the grid with the particle's momentum (`Δt f` spread by
+    /// the particle's weights), so a total force `F` changes the momentum by `Δt F` and the
+    /// stress carries it through the body; several loads on one particle add. A load on a
+    /// particle that is not there is refused ([`Mpm2dError::Invalid`]), and the step does
+    /// nothing; otherwise as [`Self::step`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::step`], and [`Mpm2dError::Invalid`] for a load on no particle.
+    pub fn step_with_loads(&mut self, loads: &[(usize, V2)]) -> Result<(), Mpm2dError> {
+        let mut force = vec![[Fix128::ZERO; 2]; self.particles.len()];
+        for &(k, f) in loads {
+            let at = force
+                .get_mut(k)
+                .ok_or(Mpm2dError::Invalid("loads: no such particle"))?;
+            at[0] = at[0] + f[0];
+            at[1] = at[1] + f[1];
+        }
         let cfg = self.config;
         let (nx, ny) = (cfg.nodes[0], cfg.nodes[1]);
         let inv_dx = Fix128::ONE / cfg.cell;
@@ -404,7 +427,7 @@ impl Mpm2d {
             .filter(|m| m.fraction > Fix128::ZERO)
             .map(|m| ((-(dt / m.relaxation_time)).exp(), m));
         let mut branches = Vec::with_capacity(self.particles.len());
-        for (p, st) in self.particles.iter().zip(&stencils) {
+        for ((p, st), load) in self.particles.iter().zip(&stencils).zip(&force) {
             let mut tau = kirchhoff(self.material.model, p.f, mu, lambda);
             if let Some((e, m)) = decay {
                 let r = rotation(p.f);
@@ -436,7 +459,11 @@ impl Mpm2d {
                     s * tau[1][1] + p.mass * p.c[1][1],
                 ],
             ];
-            let mv = [p.mass * p.v[0], p.mass * p.v[1]];
+            // the particle's momentum and the impulse of its load over the step
+            let mv = [
+                p.mass * p.v[0] + dt * load[0],
+                p.mass * p.v[1] + dt * load[1],
+            ];
             for a in 0..3 {
                 for b in 0..3 {
                     let w = st.w[0][a] * st.w[1][b];
