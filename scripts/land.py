@@ -606,6 +606,44 @@ def identity_problem(name: str, email: str) -> str | None:
 # (the preflight's stale check reads the same list)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS  # noqa: E402
+
+# The SCIP index (scripts/scip_index.sh, three rust-analyzer passes, about 20 minutes) feeds only the writers and checks
+# that take --scip. Its inputs, and the inputs of those writers and checks, are the patterns of SCIP_INPUTS
+# (scripts/test_land.py traces every file they open and fails on one no pattern matches). A landing whose range, as it
+# will land, touches none of them skips the index: the ledgers it would write are the ones main already holds, and the
+# CI's `scip` job (SCIP_JOB, not path-gated) checks the same SHA, which the receipt then requires. Anything that cannot be
+# read or computed runs the index (fail closed).
+SCIP_INPUTS = "scripts/land-scip-inputs.txt"
+SCIP_JOB = ("CI", "SCIP checks (defect references, L0 ratchet)")
+# rust-analyzer's report of a symbol defined twice (every integration test, example and bench is its own crate under one
+# package, so their roots, `main` and shared helper names repeat): counted, not printed; nothing else is dropped
+DUPLICATE_SYMBOL_PREFIX = "  Duplicate symbol: "
+
+
+def scip_decision(root: Path, changed: list[str] | None) -> tuple[bool, str]:
+    """(skip the index?, the line the landing prints): skip only when the patterns were read and the changed files were
+    listed and none matches"""
+    import changed_paths as cp
+    try:
+        pats = cp.read_patterns(str(Path(root) / SCIP_INPUTS), [])
+        rules = cp.compile_patterns(pats)
+    except (OSError, UnicodeDecodeError, cp.PatternError) as e:
+        return False, f"scip: run ({SCIP_INPUTS} cannot be read: {e})"
+    if changed is None:
+        return False, "scip: run (the changed files of the range cannot be listed)"
+    if not changed:
+        return False, "scip: run (the range changes no file)"
+    hit = [f for f in changed if cp.selected(f, rules)]
+    if hit:
+        more = f" and {len(hit) - 3} more" if len(hit) > 3 else ""
+        return False, f"scip: run (matched: {', '.join(hit[:3])}{more})"
+    return True, f"scip: skipped (0 of {len(changed)} changed files match {len(pats)} patterns)"
+
+
+def filter_duplicate_symbols(text: str) -> tuple[list[str], int]:
+    """the lines of a SCIP run without rust-analyzer's duplicate-symbol reports, and how many were dropped"""
+    kept = [line for line in text.splitlines() if not line.startswith(DUPLICATE_SYMBOL_PREFIX)]
+    return kept, len(text.splitlines()) - len(kept)
 from bash_path import find_bash  # noqa: E402
 # lists that both sides mostly add to: a conflict is merged by merge_append(),
 # which keeps lines both sides added and a line one side rewrote, and stops when
@@ -1336,11 +1374,29 @@ class Lander:
                 raise LandError(f"CI on {ref} is red for {sha[:7]} (every run counts for a public repository):\n  {why}")
             if verdict == "ok":
                 self.log(f"CI on {ref}: every run on {sha[:7]} green ({why})")
+                if getattr(self, "scip_skipped", False):
+                    self.require_scip_job(slug, runs, sha)
                 break
             time.sleep(self.poll_seconds)
         else:
             raise LandError(f"CI on {ref} did not complete every run on {sha[:7]} in time: {why}")
         self.write_ci_receipt(sha)
+
+    def require_scip_job(self, slug: str, runs: list[dict], sha: str) -> None:
+        """the landing skipped the SCIP index: the newest CI run on `sha` must hold a successful SCIP job (asserted,
+        not assumed: that job is what checked the index-built ledgers of this SHA)"""
+        wf, job = SCIP_JOB
+        mine = [r for r in runs if r.get("workflowName") == wf and r.get("headSha") == sha]
+        if not mine:
+            raise LandError(f"scip was skipped, but no {wf} run on {sha[:7]} holds the {job!r} job")
+        run = max(mine, key=lambda r: r.get("databaseId", 0))
+        jobs = [j for j in self.run_jobs(slug, run["databaseId"]) if j.get("name") == job]
+        if not jobs or any(j.get("conclusion") != "success" for j in jobs):
+            got = ", ".join(f"{j.get('status')}/{j.get('conclusion')}" for j in jobs) or "absent"
+            raise LandError(f"scip was skipped, but the {job!r} job of {wf} run {run['databaseId']} on {sha[:7]} "
+                            f"is {got} (it must have succeeded)")
+        self.log(f"scip: the {job!r} job of {wf} run {run['databaseId']} succeeded on {sha[:7]}")
+        self.record.append(f"scip job: run {run['databaseId']} success")
 
     def write_ci_receipt(self, sha: str) -> None:
         tool = hooks_tool("scripts/ci_evidence_receipt.py")
@@ -1390,10 +1446,39 @@ class Lander:
             raise LandError("no SCIP index directory (the landing makes one beside its working copy)")
         return Path(d).as_posix()
 
+    def decide_scip(self) -> None:
+        """whether this landing builds the SCIP index: decided on the range as it will land (after the rebase)"""
+        changed: list[str] | None
+        try:
+            out = self.git("diff", "--name-only", "-z", f"{self.upstream()}...HEAD")
+            changed = [f for f in out.split("\0") if f]
+        except LandError:
+            changed = None
+        self.scip_skipped, line = scip_decision(self.root, changed)
+        self.log(line)
+        self.record.append(line)
+
+    def scip_index(self, scip: str) -> None:
+        """scripts/scip_index.sh, its duplicate-symbol reports counted in one line, every other line printed"""
+        cmd = (bash_program(), "scripts/scip_index.sh", scip)
+        self.log("$ " + " ".join(cmd))
+        r = subprocess.run(list(cmd), cwd=self.root, env=self.child_env(), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        kept, dropped = filter_duplicate_symbols((r.stdout or "") + (r.stderr or ""))
+        for line in kept:
+            self.log(line)
+        self.log(f"scip: {dropped} duplicate-symbol reports of rust-analyzer not printed")
+        if r.returncode != 0:
+            raise LandError(f"`{' '.join(cmd)}` failed (exit {r.returncode})")
+
     def regenerate(self) -> None:
-        scip = self.scip()
-        self.sh(bash_program(), "scripts/scip_index.sh", scip)
+        skip = getattr(self, "scip_skipped", False)
+        scip = None if skip else self.scip()
+        if scip is not None:
+            self.scip_index(scip)
         for _, argv, needs_index in WRITERS:
+            if needs_index and skip:
+                continue
             self.sh(sys.executable, *argv[1:], *(["--scip", scip] if needs_index else []))
         self.regenerate_public_api()
 
@@ -1406,7 +1491,8 @@ class Lander:
         (self.root / "docs/PUBLIC_API_SNAPSHOT.txt").write_text(r.stdout, encoding="utf-8")
 
     def run_checks(self) -> None:
-        scip = self.scip()
+        skip = getattr(self, "scip_skipped", False)
+        scip = None if skip else self.scip()
         for cmd in ([sys.executable, "scripts/integration_levels.py", "--check", "--scip", scip],
                     [sys.executable, "scripts/readme_sync.py", "--check"],
                     [sys.executable, "scripts/docs_lint.py", "--check"],
@@ -1414,6 +1500,8 @@ class Lander:
                     [sys.executable, "scripts/gen-oracle-status.py", "--check"],
                     [sys.executable, "scripts/wiring_guard.py"],
                     [sys.executable, "scripts/coverage_check.py"]):
+            if "--scip" in cmd and skip:
+                continue   # (the CI's scip job runs it on the same SHA: ci_receipt requires that job)
             self.sh(*cmd)
         self.check_changelog()
 
@@ -1916,6 +2004,7 @@ class Lander:
         `verify`: preflight / compile / none. Returns HEAD."""
         if self.needs_rebase():
             self.rebase()
+        self.decide_scip()
         self.regenerate()
         self.commit_regenerated()
         self.run_checks()
