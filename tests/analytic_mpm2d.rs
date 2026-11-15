@@ -4,14 +4,20 @@
 //!    transfers conserve momentum, so the centre of mass follows symplectic Euler's discrete
 //!    parabola `x_n = x_0 + n dt v_0 + g dt² n (n + 1) / 2` to the rounding.
 //! 2. A spinning free blob (no gravity): the transfers and the internal stress conserve linear
-//!    momentum and the APIC angular momentum `Σ m (x × v) + m D (C₁₀ − C₀₁)`, `D = cell²/4`.
+//!    momentum and the APIC angular momentum `Σ m (x × v) + m D (C₁₀ − C₀₁)`, `D = cell²/4`, in
+//!    exact arithmetic; in `Q64.64` each step's operations round (the grid's division of
+//!    momentum by mass floors), so the drift is held to a rounding budget: per step, per
+//!    particle, per stencil node, 16 roundings of `2⁻⁶⁴` scaled by the momentum's size.
 //! 3. A column under its own weight on a frictionless ground, plane strain, free sides: the
 //!    static settlement of the top is `ρ g H² (1 − ν²) / (2 E)` (the 1D bar with the plane
 //!    strain modulus `E / (1 − ν²)`); measured as the time average over whole periods.
 //! 4. The same column's first axial mode: a quarter-wave bar fixed at the ground, period
 //!    `4 H / c`, `c = sqrt(E / ((1 − ν²) ρ))`.
-//! 5. Energy: kinetic + elastic + potential never grows above its start by more than the
-//!    rounding over 20 periods (the scheme may dissipate, it may not create energy).
+//! 5. Energy: kinetic + elastic + potential does not grow: the largest value in each period of
+//!    the first mode is at most the previous period's, over 20 periods. Symplectic Euler's
+//!    energy oscillates within a period (measured: above the start by 3.6e-5 of it in the
+//!    first period only), and APIC dissipates (measured: about 3e-5 of the start per period),
+//!    so the bound is on the period maxima, not on every step.
 //! 6. Determinism: two runs from the same inputs end with the same state digest.
 #![allow(
     clippy::disallowed_methods,
@@ -135,20 +141,31 @@ fn a_spinning_free_blob_keeps_its_momenta() {
     });
     let p0 = w.momentum();
     let l0 = w.angular_momentum();
-    for n in 1..=300 {
+    let ulp = 2f64.powi(-64);
+    let particles = w.particles().len() as f64;
+    let scale = w.mass().to_f64() + p0[0].to_f64().abs() + p0[1].to_f64().abs() + 1.0;
+    // the lever arm is at most the grid's extent (0.64 m)
+    let lever = 1.0 + 0.64;
+    for n in 1..=300u32 {
         w.step().expect("the step succeeds");
+        let budget = f64::from(n) * particles * 9.0 * 16.0 * ulp * scale;
         let p = w.momentum();
+        for k in 0..2 {
+            let d = (p[k] - p0[k]).to_f64().abs();
+            assert!(
+                d <= budget,
+                "step {n}: momentum axis {k} drifted {d:.3e} > {budget:.3e}"
+            );
+        }
+        let d = (w.angular_momentum() - l0).to_f64().abs();
         assert!(
-            (p[0] - p0[0]).abs().to_f64() < 1e-15 && (p[1] - p0[1]).abs().to_f64() < 1e-15,
-            "step {n}: momentum"
-        );
-        assert!(
-            (w.angular_momentum() - l0).abs().to_f64() < 1e-15,
-            "step {n}: angular momentum {} vs {}",
-            w.angular_momentum().to_f64(),
-            l0.to_f64()
+            d <= budget * lever,
+            "step {n}: angular momentum drifted {d:.3e} > {:.3e}",
+            budget * lever
         );
     }
+    // the budget is not loose: a missing affine term breaks the angular momentum by far more
+    assert!(l0.to_f64().abs() > 1e3 * 300.0 * particles * 9.0 * 16.0 * ulp * scale * lever);
 }
 
 /// (the column world, the indices of its top row of particles)
@@ -220,15 +237,19 @@ fn the_energy_of_the_column_never_grows() {
     };
     let total =
         |w: &Mpm2d| w.kinetic_energy().to_f64() + w.elastic_energy().to_f64() + potential(w);
-    let e0 = total(&w);
-    let steps = (20.0 * 4.0 * H / bar_speed() / dt()).round() as usize;
-    for n in 1..=steps {
-        w.step().expect("the step succeeds");
-        let e = total(&w);
+    let per = (4.0 * H / bar_speed() / dt()).round() as usize;
+    let mut previous = f64::INFINITY;
+    for k in 0..20 {
+        let mut top = f64::NEG_INFINITY;
+        for _ in 0..per {
+            w.step().expect("the step succeeds");
+            top = top.max(total(&w));
+        }
         assert!(
-            e <= e0 + 1e-12 * e0.abs(),
-            "step {n}: energy {e} above the start {e0}"
+            top <= previous,
+            "period {k}: largest energy {top} above the previous period's {previous}"
         );
+        previous = top;
     }
 }
 
@@ -304,4 +325,38 @@ fn invalid_worlds_are_refused() {
         }
     )
     .is_err());
+}
+
+#[test]
+#[ignore = "a measurement, not a check"]
+fn measure_the_energy_per_period() {
+    let (mut w, _) = column();
+    let ground = 0.05;
+    let potential = |w: &Mpm2d| {
+        w.particles()
+            .iter()
+            .map(|p| p.mass.to_f64() * G * (p.x[1].to_f64() - ground))
+            .sum::<f64>()
+    };
+    let total =
+        |w: &Mpm2d| w.kinetic_energy().to_f64() + w.elastic_energy().to_f64() + potential(w);
+    let e0 = total(&w);
+    let per = (4.0 * H / bar_speed() / dt()).round() as usize;
+    let mut drift = Vec::new();
+    for k in 0..40 {
+        let (mut hi, mut lo) = (f64::MIN, f64::MAX);
+        for _ in 0..per {
+            w.step().expect("step");
+            let e = total(&w) - e0;
+            hi = hi.max(e);
+            lo = lo.min(e);
+        }
+        drift.push((k, hi / e0, lo / e0));
+    }
+    for d in drift {
+        println!(
+            "period {:2}: max {:+.3e} min {:+.3e} (relative to E0)",
+            d.0, d.1, d.2
+        );
+    }
 }
