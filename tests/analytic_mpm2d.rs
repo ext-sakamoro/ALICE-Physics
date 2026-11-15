@@ -25,7 +25,7 @@
 )]
 
 use alice_physics_core::math::Fix128;
-use alice_physics_core::mpm2d::{Mpm2d, Mpm2dConfig, Mpm2dMaterial};
+use alice_physics_core::mpm2d::{Mpm2d, Mpm2dConfig, Mpm2dMaterial, Mpm2dModel};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -41,10 +41,15 @@ const W: f64 = 0.04;
 const H: f64 = 0.1;
 
 fn material() -> Mpm2dMaterial {
+    material_of(Mpm2dModel::FixedCorotated)
+}
+
+fn material_of(model: Mpm2dModel) -> Mpm2dMaterial {
     Mpm2dMaterial {
         youngs: fx(E),
         poisson: fx(NU),
         density: fx(RHO),
+        model,
     }
 }
 
@@ -74,6 +79,12 @@ fn block(world: &mut Mpm2d, x0: f64, y0: f64, w: f64, h: f64, v: impl Fn(f64, f6
 }
 
 fn world(gravity: f64, ground: Option<f64>, nodes: [usize; 2]) -> Mpm2d {
+    world_of(Mpm2dModel::FixedCorotated, gravity, ground, nodes)
+}
+
+const MODELS: [Mpm2dModel; 2] = [Mpm2dModel::FixedCorotated, Mpm2dModel::NeoHookean];
+
+fn world_of(model: Mpm2dModel, gravity: f64, ground: Option<f64>, nodes: [usize; 2]) -> Mpm2d {
     Mpm2d::new(
         Mpm2dConfig {
             origin: [Fix128::ZERO, Fix128::ZERO],
@@ -83,7 +94,7 @@ fn world(gravity: f64, ground: Option<f64>, nodes: [usize; 2]) -> Mpm2d {
             dt: fx(dt()),
             ground: ground.map(fx),
         },
-        material(),
+        material_of(model),
     )
     .expect("a valid world")
 }
@@ -169,9 +180,9 @@ fn a_spinning_free_blob_keeps_its_momenta() {
 }
 
 /// (the column world, the indices of its top row of particles)
-fn column() -> (Mpm2d, Vec<usize>) {
+fn column(model: Mpm2dModel) -> (Mpm2d, Vec<usize>) {
     let ground = 0.05;
-    let mut w = world(G, Some(ground), [24, 40]);
+    let mut w = world_of(model, G, Some(ground), [24, 40]);
     block(&mut w, 0.1, ground, W, H, |_, _| [0.0, 0.0]);
     let top_y = ground + H - CELL / 4.0;
     let top = (0..w.particles().len())
@@ -181,8 +192,8 @@ fn column() -> (Mpm2d, Vec<usize>) {
 }
 
 /// the top's height every step over `periods` periods of the first mode
-fn column_history(periods: f64) -> (Vec<f64>, f64) {
-    let (mut w, top) = column();
+fn column_history(model: Mpm2dModel, periods: f64) -> (Vec<f64>, f64) {
+    let (mut w, top) = column(model);
     let rest = top_height(&w, &top);
     let period = 4.0 * H / bar_speed();
     let steps = (periods * period / dt()).round() as usize;
@@ -196,67 +207,73 @@ fn column_history(periods: f64) -> (Vec<f64>, f64) {
 
 #[test]
 fn a_column_settles_by_the_plane_strain_bar_value() {
-    let (hist, period) = column_history(10.0);
-    let per = (period / dt()).round() as usize;
-    // the time average over the last 8 whole periods
-    let tail = &hist[hist.len() - 8 * per..];
-    let mean = tail.iter().sum::<f64>() / tail.len() as f64;
-    let want = RHO * G * H * H * (1.0 - NU * NU) / (2.0 * E);
-    assert!(
-        (mean - want).abs() < 0.05 * want,
-        "settlement {mean:.4e} m vs closed form {want:.4e} m"
-    );
+    for model in MODELS {
+        let (hist, period) = column_history(model, 10.0);
+        let per = (period / dt()).round() as usize;
+        // the time average over the last 8 whole periods
+        let tail = &hist[hist.len() - 8 * per..];
+        let mean = tail.iter().sum::<f64>() / tail.len() as f64;
+        let want = RHO * G * H * H * (1.0 - NU * NU) / (2.0 * E);
+        assert!(
+            (mean - want).abs() < 0.05 * want,
+            "{model:?}: settlement {mean:.4e} m vs closed form {want:.4e} m"
+        );
+    }
 }
 
 #[test]
 fn a_column_oscillates_with_the_quarter_wave_period() {
-    let (hist, period) = column_history(10.0);
-    let mean = hist.iter().sum::<f64>() / hist.len() as f64;
-    // upward crossings of the mean, after the first period
-    let per = (period / dt()).round() as usize;
-    let ups: Vec<usize> = (per + 1..hist.len())
-        .filter(|&k| hist[k - 1] < mean && hist[k] >= mean)
-        .collect();
-    assert!(ups.len() >= 5, "{} crossings", ups.len());
-    let measured = (ups[ups.len() - 1] - ups[0]) as f64 * dt() / (ups.len() - 1) as f64;
-    assert!(
-        (measured - period).abs() < 0.05 * period,
-        "period {measured:.5} s vs 4H/c = {period:.5} s"
-    );
+    for model in MODELS {
+        let (hist, period) = column_history(model, 10.0);
+        let mean = hist.iter().sum::<f64>() / hist.len() as f64;
+        // upward crossings of the mean, after the first period
+        let per = (period / dt()).round() as usize;
+        let ups: Vec<usize> = (per + 1..hist.len())
+            .filter(|&k| hist[k - 1] < mean && hist[k] >= mean)
+            .collect();
+        assert!(ups.len() >= 5, "{} crossings", ups.len());
+        let measured = (ups[ups.len() - 1] - ups[0]) as f64 * dt() / (ups.len() - 1) as f64;
+        assert!(
+            (measured - period).abs() < 0.05 * period,
+            "{model:?}: period {measured:.5} s vs 4H/c = {period:.5} s"
+        );
+    }
 }
 
 #[test]
 fn the_energy_of_the_column_never_grows() {
-    let (mut w, _) = column();
-    let ground = 0.05;
-    let potential = |w: &Mpm2d| {
-        w.particles()
-            .iter()
-            .map(|p| p.mass.to_f64() * G * (p.x[1].to_f64() - ground))
-            .sum::<f64>()
-    };
-    let total =
-        |w: &Mpm2d| w.kinetic_energy().to_f64() + w.elastic_energy().to_f64() + potential(w);
-    let per = (4.0 * H / bar_speed() / dt()).round() as usize;
-    let mut previous = f64::INFINITY;
-    for k in 0..20 {
-        let mut top = f64::NEG_INFINITY;
-        for _ in 0..per {
-            w.step().expect("the step succeeds");
-            top = top.max(total(&w));
+    for model in MODELS {
+        let (mut w, _) = column(model);
+        let ground = 0.05;
+        let potential = |w: &Mpm2d| {
+            w.particles()
+                .iter()
+                .map(|p| p.mass.to_f64() * G * (p.x[1].to_f64() - ground))
+                .sum::<f64>()
+        };
+        let total =
+            |w: &Mpm2d| w.kinetic_energy().to_f64() + w.elastic_energy().to_f64() + potential(w);
+        let per = (4.0 * H / bar_speed() / dt()).round() as usize;
+        let mut previous = f64::INFINITY;
+        for k in 0..20 {
+            let mut top = f64::NEG_INFINITY;
+            for _ in 0..per {
+                w.step().expect("the step succeeds");
+                top = top.max(total(&w));
+            }
+            assert!(
+                top <= previous,
+                "{model:?} period {k}: largest energy {top} above the previous period's {previous}"
+            );
+            previous = top;
         }
-        assert!(
-            top <= previous,
-            "period {k}: largest energy {top} above the previous period's {previous}"
-        );
-        previous = top;
     }
 }
 
 #[test]
 fn two_runs_end_in_the_same_state() {
     let run = || {
-        let (mut w, _) = column();
+        let (mut w, _) = column(Mpm2dModel::NeoHookean);
         for _ in 0..200 {
             w.step().expect("the step succeeds");
         }
@@ -330,7 +347,7 @@ fn invalid_worlds_are_refused() {
 #[test]
 #[ignore = "a measurement, not a check"]
 fn measure_the_energy_per_period() {
-    let (mut w, _) = column();
+    let (mut w, _) = column(Mpm2dModel::FixedCorotated);
     let ground = 0.05;
     let potential = |w: &Mpm2d| {
         w.particles()

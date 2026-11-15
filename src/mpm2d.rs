@@ -18,7 +18,9 @@
 //!   x_p)ᵀ`, `x_p += Δt v_p`, `F_p ← (I + Δt C_p) F_p`. Weights: quadratic B-splines,
 //!   `w(f) = ½(1.5 − f)², ¾ − (f − 1)², ½(f − ½)²` per axis. Material: fixed co-rotated,
 //!   `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ`, energy density `μ |F − R|² + λ (J − 1)² / 2`, `R` the
-//!   rotation of the polar decomposition, `μ = E / (2 (1 + ν))`, `λ = E ν / ((1 + ν)(1 − 2ν))`.
+//!   rotation of the polar decomposition; or compressible neo-Hookean, `P = μ (F − F⁻ᵀ) + λ
+//!   ln J F⁻ᵀ`, energy density `μ (tr FᵀF − 2) / 2 − μ ln J + λ (ln J)² / 2` ([`Mpm2dModel`]);
+//!   `μ = E / (2 (1 + ν))`, `λ = E ν / ((1 + ν)(1 − 2ν))`.
 //! - **Units.** SI: m, s, kg, Pa; plane strain, so masses, momenta and energies are per metre
 //!   of depth (kg/m, kg/s, J/m).
 //! - **Conservation.** Mass is carried by the particles and conserved exactly. Linear momentum
@@ -77,6 +79,18 @@ pub struct Mpm2dConfig {
     pub ground: Option<Fix128>,
 }
 
+/// The hyperelastic law of a material.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Mpm2dModel {
+    /// Fixed co-rotated: `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ`, energy density
+    /// `μ |F − R|² + λ (J − 1)² / 2`
+    #[default]
+    FixedCorotated,
+    /// Compressible neo-Hookean (plane strain): `P = μ (F − F⁻ᵀ) + λ ln J F⁻ᵀ`, energy density
+    /// `μ (tr FᵀF − 2) / 2 − μ ln J + λ (ln J)² / 2`
+    NeoHookean,
+}
+
 /// An isotropic elastic material.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mpm2dMaterial {
@@ -86,6 +100,8 @@ pub struct Mpm2dMaterial {
     pub poisson: Fix128,
     /// Density, kg/m³ (per unit thickness: masses are kg per metre of depth)
     pub density: Fix128,
+    /// The hyperelastic law
+    pub model: Mpm2dModel,
 }
 
 /// One material point.
@@ -198,11 +214,20 @@ fn rotation(f: M2) -> M2 {
     [[c, -s], [s, c]]
 }
 
-/// The Kirchhoff stress `τ = P Fᵀ` of the fixed co-rotated model,
-/// `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ` (`J F⁻ᵀ` is the cofactor matrix of `F`).
-fn kirchhoff(f: M2, mu: Fix128, lambda: Fix128) -> M2 {
-    let r = rotation(f);
+/// The Kirchhoff stress `τ = P Fᵀ` of `model` (`J F⁻ᵀ` is the cofactor matrix of `F`).
+/// Neo-Hookean: `τ = μ (F Fᵀ − I) + λ ln J I`.
+fn kirchhoff(model: Mpm2dModel, f: M2, mu: Fix128, lambda: Fix128) -> M2 {
     let j = det(f);
+    if model == Mpm2dModel::NeoHookean {
+        let ft = [[f[0][0], f[1][0]], [f[0][1], f[1][1]]];
+        let b = mul(f, ft);
+        let l = lambda * j.ln();
+        return [
+            [mu * (b[0][0] - Fix128::ONE) + l, mu * b[0][1]],
+            [mu * b[1][0], mu * (b[1][1] - Fix128::ONE) + l],
+        ];
+    }
+    let r = rotation(f);
     let cof = [[f[1][1], -f[1][0]], [-f[0][1], f[0][0]]];
     let two_mu = Fix128::from_int(2) * mu;
     let l = lambda * (j - Fix128::ONE);
@@ -336,7 +361,7 @@ impl Mpm2d {
         let mut gm = vec![Fix128::ZERO; nx * ny];
         let mut gv = vec![[Fix128::ZERO; 2]; nx * ny];
         for (p, st) in self.particles.iter().zip(&stencils) {
-            let tau = kirchhoff(p.f, mu, lambda);
+            let tau = kirchhoff(self.material.model, p.f, mu, lambda);
             // affine = −dt · area0 · 4/Δx² · τ + m C
             let s = -(dt * p.area0 * four_inv_dx2);
             let aff = [
@@ -469,7 +494,17 @@ impl Mpm2d {
     #[must_use]
     pub fn elastic_energy(&self) -> Fix128 {
         let (mu, lambda) = self.lame();
+        let model = self.material.model;
         self.particles.iter().fold(Fix128::ZERO, |acc, p| {
+            if model == Mpm2dModel::NeoHookean {
+                let tr = p.f[0][0] * p.f[0][0]
+                    + p.f[0][1] * p.f[0][1]
+                    + p.f[1][0] * p.f[1][0]
+                    + p.f[1][1] * p.f[1][1];
+                let lj = det(p.f).ln();
+                let two = Fix128::from_int(2);
+                return acc + p.area0 * (mu * (tr - two) / two - mu * lj + lambda * lj * lj / two);
+            }
             let r = rotation(p.f);
             let mut dev = Fix128::ZERO;
             for (fr, rr) in p.f.iter().zip(&r) {
@@ -506,6 +541,10 @@ impl Mpm2d {
         put(self.material.youngs);
         put(self.material.poisson);
         put(self.material.density);
+        put(Fix128::from_int(match self.material.model {
+            Mpm2dModel::FixedCorotated => 0,
+            Mpm2dModel::NeoHookean => 1,
+        }));
         put(Fix128::from_int(self.particles.len() as i64));
         for p in &self.particles {
             for x in [p.x[0], p.x[1], p.v[0], p.v[1], p.mass, p.area0] {
