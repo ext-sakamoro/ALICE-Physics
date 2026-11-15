@@ -467,3 +467,38 @@ fn a_seeded_disk_has_the_disk_area() {
         "no samples per axis seeds nothing"
     );
 }
+
+/// A snapshot taken mid-run restores a world that steps on bit for bit as the original, for
+/// both materials; damaged or foreign bytes are refused.
+#[test]
+fn a_restored_snapshot_replays_bit_for_bit() {
+    for model in MODELS {
+        let (mut a, _) = column(model);
+        for _ in 0..50 {
+            a.step().expect("step");
+        }
+        let blob = a.snapshot();
+        let mut b = Mpm2d::restore(&blob).expect("restores");
+        assert_eq!(a, b);
+        for _ in 0..50 {
+            a.step().expect("step");
+            b.step().expect("step");
+        }
+        assert_eq!(a.state_digest(), b.state_digest(), "{model:?}");
+        assert_eq!(a, b);
+        let mut bad = blob.clone();
+        bad[0] ^= 1;
+        assert!(Mpm2d::restore(&bad).is_none(), "magic");
+        let mut bad = blob.clone();
+        bad[4] ^= 1;
+        assert!(Mpm2d::restore(&bad).is_none(), "version");
+        assert!(Mpm2d::restore(&blob[..blob.len() - 1]).is_none(), "short");
+        let mut long = blob.clone();
+        long.push(0);
+        assert!(Mpm2d::restore(&long).is_none(), "long");
+        let mut bad = blob.clone();
+        let at = blob.len() - 9;
+        bad[at] = 7;
+        assert!(Mpm2d::restore(&bad).is_none(), "model tag");
+    }
+}
