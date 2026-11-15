@@ -24,6 +24,9 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import land  # noqa: E402
 
+# the stand-in CI runs answer at once: the tests poll without the 180-second interval (ApiQuota tests the real rule)
+land.FAST_POLL_FOR_TESTS = True
+
 # the landing lock of these tests lives in a throwaway directory, not in the home cache
 os.environ[land.LOCK_DIR_ENV] = tempfile.mkdtemp(prefix="land-lock-")
 atexit.register(shutil.rmtree, os.environ[land.LOCK_DIR_ENV], True)
@@ -620,6 +623,10 @@ class CiReceipt(unittest.TestCase):
 
             def write_ci_receipt(self, sha):
                 self.written.append(sha)
+
+            def gh_json(self, *args):
+                assert list(args) == ["api", "rate_limit"], args
+                return {"resources": {"core": {"remaining": 4999, "limit": 5000, "reset": 0}}}
         return L()
 
     def r(self, status, conclusion=None, sha="s1", i=1, name="CI"):
@@ -1950,6 +1957,9 @@ elif a[:1] == ["api"]:
     path_arg = [x for i, x in enumerate(a[1:], 1) if x != "--hostname" and a[i - 1] != "--hostname"][0]
     if path_arg in st.get("api", {}):
         print(json.dumps(st["api"][path_arg]))
+    elif path_arg == "rate_limit":
+        # a GitHub with plenty of quota unless the test says otherwise
+        print(json.dumps({"resources": {"core": {"remaining": 4999, "limit": 5000, "reset": 1700000000}}}))
     else:
         print("HTTP 404", file=sys.stderr)
         rc = 1
@@ -2413,6 +2423,39 @@ class WaitEvidence(Isolated):
     def st(self) -> dict:
         return json.loads(self.state.read_text())
 
+    # --- the API quota: a run's jobs are read once while the run is unchanged -------------------
+
+    def polls_with_other_running(self, n: int, ci_updates: bool) -> list[list[dict]]:
+        """n polls in which another workflow still runs (the wait goes on), the last one all green"""
+        other = next(w["file"] for w in self.expected if w["file"] not in ("ci.yml", "unsafe-and-parallel.yml")
+                     and w["cls"] == "landing")
+        out = []
+        for i in range(n):
+            runs = self.green()
+            for r in runs:
+                if r["databaseId"] == self.rid("ci.yml"):
+                    r["updatedAt"] = f"2026-11-16T00:00:{i:02d}Z" if ci_updates else "2026-11-16T00:00:00Z"
+                if i < n - 1 and r["databaseId"] == self.rid(other):
+                    r.update(status="in_progress", conclusion="")
+            out.append(runs)
+        return out
+
+    def views_of(self, rid: int) -> int:
+        return sum(1 for c in self.st()["calls"] if c[:3] == ["run", "view", str(rid)])
+
+    def test_jobs_are_read_once_while_the_run_is_unchanged(self):
+        self.wait(self.polls_with_other_running(4, ci_updates=False))
+        self.assertEqual(self.st()["polls"], 4)
+        self.assertEqual(self.views_of(self.rid("ci.yml")), 1)
+
+    def test_jobs_are_read_again_when_the_run_changed(self):
+        self.wait(self.polls_with_other_running(4, ci_updates=True))
+        self.assertEqual(self.views_of(self.rid("ci.yml")), 4)
+
+    def test_the_quota_is_read_once_before_the_wait(self):
+        self.wait([self.green()])
+        self.assertEqual(sum(1 for c in self.st()["calls"] if c[:2] == ["api", "rate_limit"]), 1)
+
     # --- the expected set ----------------------------------------------------------------
 
     def test_the_expected_set_is_derived_from_the_workflows(self):
@@ -2506,7 +2549,7 @@ class WaitEvidence(Isolated):
             land.NO_RUN_GRACE = old
         self.assertEqual(self.st()["dispatched"], ["fuzz.yml"])
         self.assertIn(["workflow", "run", "fuzz.yml", "--repo", "github.com/o/r", "--ref", "ci/T"], self.st()["calls"])
-        self.assertFalse(any(c[:2] not in (["run", "list"], ["run", "view"], ["workflow", "run"]) for c in self.st()["calls"]))
+        self.assertFalse(any(c[:2] not in (["run", "list"], ["run", "view"], ["workflow", "run"], ["api", "rate_limit"]) for c in self.st()["calls"]))
 
     def test_a_missing_run_waits_for_the_grace_before_re_creating(self):
         runs = self.green()
@@ -2620,7 +2663,8 @@ class WaitEvidence(Isolated):
         self.assertEqual(self.st()["dispatched"], ["unsafe-and-parallel.yml"])
 
     def test_gh_failure_is_not_an_empty_list(self):
-        self.state.write_text("{}")  # the fake gh then fails
+        # the fake gh answers the quota read, then fails on the runs list (it has no runs to give)
+        self.state.write_text('{"calls": []}')
 
         class L(land.Lander):
             def git(self, *a, check=True):
@@ -4341,6 +4385,65 @@ class LawState(Isolated):
 
 
 
+
+
+class PollDefaults(Isolated):
+    def test_a_lander_polls_every_180_seconds_within_the_old_ceilings(self):
+        lnd = land.Lander(self.r.work, "T-1", log=lambda *_: None)
+        self.assertEqual(lnd.poll_seconds, 180)
+        self.assertEqual(lnd.max_polls * lnd.poll_seconds, 2 * 3600)
+        self.assertEqual(lnd.after_max_polls * lnd.poll_seconds, 3 * 3600)
+
+class ApiQuota(unittest.TestCase):
+    """the poll interval and the quota floor (GitHub's 5000 calls an hour are shared by the account)"""
+
+    def lander(self, data, poll=land.MIN_POLL_SECONDS):
+        class L(land.Lander):
+            def __init__(self):  # (no repository: only the quota and the interval)
+                self.poll_seconds = poll
+                self.record = []
+                self.logged = []
+                self.log = self.logged.append
+
+            def gh_json(self, *args):
+                assert args == ("api", "rate_limit"), args
+                return data
+        return L()
+
+    def quota(self, left, limit=5000):
+        return {"resources": {"core": {"remaining": left, "limit": limit, "reset": 1700000000}}}
+
+    def setUp(self):
+        land.FAST_POLL_FOR_TESTS = False
+        self.addCleanup(setattr, land, "FAST_POLL_FOR_TESTS", True)
+
+    def test_an_interval_under_180_seconds_is_refused(self):
+        for s in (0, 30, 179):
+            with self.assertRaisesRegex(land.LandError, "under 180 s"):
+                self.lander(self.quota(4000), poll=s).poll_interval()
+        self.assertEqual(self.lander(self.quota(4000)).poll_interval(), 180)
+
+    def test_the_rule_is_180_seconds_and_500_calls(self):
+        self.assertEqual((land.MIN_POLL_SECONDS, land.API_QUOTA_FLOOR), (180, 500))
+
+    def test_the_quota_is_printed_and_the_floor_holds(self):
+        lr = self.lander(self.quota(land.API_QUOTA_FLOOR))
+        lr.check_api_quota()
+        self.assertTrue(any(f"{land.API_QUOTA_FLOOR} of 5000 calls left" in x for x in lr.logged), lr.logged)
+        with self.assertRaisesRegex(land.LandError, "under the floor of 500"):
+            self.lander(self.quota(land.API_QUOTA_FLOOR - 1)).check_api_quota()
+
+    def test_an_unreadable_quota_stops(self):
+        for data in (None, {}, {"resources": {"core": {"remaining": "x", "limit": 5000}}}):
+            with self.assertRaisesRegex(land.LandError, "cannot be read"):
+                self.lander(data).check_api_quota()
+
+    def test_a_short_interval_stops_before_reading_the_quota(self):
+        lr = self.lander(None, poll=30)
+        with self.assertRaisesRegex(land.LandError, "under 180 s"):
+            lr.check_api_quota()
+
+
 # --- the SCIP index skipped when the landed range touches none of its inputs (scripts/land-scip-inputs.txt) -----------
 
 class ScipDecision(unittest.TestCase):
@@ -4440,6 +4543,10 @@ class ScipSkipSteps(unittest.TestCase):
 
             def write_ci_receipt(self, sha):
                 self.written.append(sha)
+
+            def gh_json(self, *args):
+                assert list(args) == ["api", "rate_limit"], args
+                return {"resources": {"core": {"remaining": 4999, "limit": 5000, "reset": 0}}}
         return L()
 
     def flat(self, lr):
