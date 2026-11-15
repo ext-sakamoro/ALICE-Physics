@@ -107,11 +107,50 @@ fn tail_add_then_remove_before_any_body_sleeps_matches_never_added() {
         "adding a body at the tail and removing it again (before anything \
          slept) should leave no trace in snapshot_world"
     );
+    // The rollback state carries the next stable id as it is (a body removed between steps
+    // leaves warm-start entries keyed by its id until the next step, so the id is never handed
+    // out again): the tail add and removal used one id, and that word is the only trace.
+    let (a, b) = (with_extra.serialize_state(), never_added.serialize_state());
+    assert_eq!(a.len(), b.len(), "serialize_state lengths");
+    // The next-id word follows the header (12 bytes), the motion (208 a body), the sleep
+    // records (17), the overflow flag (1), the population fingerprint (8), the elastic islands'
+    // record (8, no island), the cloth count and the next grab id (4 each), the previous poses
+    // (112 a body) and the bodies' stable ids (8 a body); this scene has no spring and no cloth.
+    let n = 3;
+    let at = 12 + n * 208 + n * 17 + 1 + 8 + 8 + 4 + 4 + n * 112 + n * 8;
+    let word = |s: &[u8]| u64::from_le_bytes(s[at..at + 8].try_into().unwrap());
     assert_eq!(
-        with_extra.serialize_state(),
-        never_added.serialize_state(),
-        "adding a body at the tail and removing it again (before anything \
-         slept) should leave no trace in serialize_state"
+        (word(&a), word(&b)),
+        (4, 3),
+        "next stable id after the tail add and removal vs never added"
+    );
+    let masked = |s: &[u8]| [&s[..at], &s[at + 8..]].concat();
+    assert_eq!(
+        masked(&a),
+        masked(&b),
+        "serialize_state should differ in the next stable id word only"
+    );
+
+    // The id word changes no motion: the same body added to both worlds moves the same.
+    for w in [&mut with_extra, &mut never_added] {
+        w.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::from_int(0, 2, 0), Fix128::ONE),
+            Fix128::from_ratio(1, 4),
+        );
+        for _ in 0..30 {
+            w.step(dt());
+        }
+    }
+    let motion = |w: &PhysicsWorld| -> Vec<_> {
+        w.bodies
+            .iter()
+            .map(|b| (b.position, b.rotation, b.velocity, b.angular_velocity))
+            .collect()
+    };
+    assert_eq!(
+        motion(&with_extra),
+        motion(&never_added),
+        "a body added after the tail add and removal should move as in a world that never had it"
     );
 }
 

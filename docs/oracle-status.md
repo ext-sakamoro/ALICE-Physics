@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6265 |
+| 🟢 Not ignored (run by CI) | 6276 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 31 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6368** |
+| **Total** | **6379** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -165,7 +165,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6265)
+## 🟢 Not ignored (6276)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -566,6 +566,8 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
+| `analytic_state_rollback_contact_memory.rs` | 5 |
+| `analytic_state_rollback_outside_writes.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
 | `analytic_xpbd_velocity.rs` | 5 |
@@ -654,6 +656,7 @@ Per-file counts (the test names are in `tests/`):
 | `fix128_vec_div.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
+| `overflow_flag_previous_bits.rs` | 3 |
 | `panic_paths_fault_the_world.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
 | `participant_semantics_id.rs` | 3 |
@@ -687,7 +690,6 @@ Per-file counts (the test names are in `tests/`):
 | `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
-| `overflow_flag_previous_bits.rs` | 2 |
 | `participant_panic_leaves_world_faulted.rs` | 2 |
 | `poisoned_world_fault.rs` | 2 |
 | `test_profile_checks.rs` | 2 |

@@ -59,6 +59,29 @@ pub use world_snapshot::{LawCheck, LegacyPolicy, SnapshotIds, WorldSnapshotError
 // Body Type
 // ============================================================================
 
+/// The step memory of a rollback state (v6), read and checked before any byte of the world is
+/// written: the bodies' poses at the last substep's start, the bodies' stable ids and the next
+/// id to hand out, the bodies moved and the joints added or changed from outside the step since
+/// the last substep, the three sets of last-substep contact points and the TGS warm-start
+/// impulses.
+///
+/// The next id is state, not a function of the ids held: a body removed between steps leaves
+/// warm-start entries keyed by its id until the next step sweeps them, so its id is never handed
+/// out again. Two worlds with the same bodies can therefore differ in that word alone (one added
+/// a body at the tail and removed it); every other byte, and the motion, is the same. A next id
+/// derived from the ids held would hand the removed body's warm-start entries to a body added
+/// after a load; in the scenes measured that shows in the warm-start hit count, not in the motion
+/// (`tests/analytic_state_rollback_outside_writes.rs` names them).
+struct StepMemory {
+    prev: Vec<(Vec3Fix, QuatFix)>,
+    stable_ids: Vec<u64>,
+    next_stable_id: u64,
+    moved: Vec<(usize, Vec3Fix, QuatFix)>,
+    unsettled: Vec<usize>,
+    touches: [Vec<(usize, usize, u32)>; 3],
+    impulses: Vec<(u64, [Fix128; 3])>,
+}
+
 /// Type of rigid body
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -9560,12 +9583,14 @@ impl PhysicsWorld {
     /// ([`Self::population_fingerprint`]、rollback の body 数不一致検査強化)
     /// v4 = body ごと sleep が 5 byte (state 1 + idle_frames u32 4) から
     /// **17 byte (state 1 + idle_time Fix128 16)** に (sleep は経過時間基準)
+    /// v5 = v4 + 弾性 joint の島の再帰の記録と cloth の運動状態
+    /// v6 = v5 + **step の記憶** (body ごとの直前の substep の始めの姿勢、body ごとの安定な id と次の id、外から動かされた body と外から足された・変えられた関節、直前の substep の接触点 3 集合、TGS の warm start の力積)
     ///
     /// 被覆を足す時はここを上げ、[`Self::deserialize_state`] で分岐する
     /// (不一致を silent に読み替えない — 旧 version の blob は `false` で拒否、
     /// v1 / v2 の blob は v3 実装に対して version 不一致で拒否される、
     /// 既存の v1→v2 bump と同じ方針)
-    pub const STATE_VERSION: u16 = 5;
+    pub const STATE_VERSION: u16 = 6;
 
     /// Serialize world state (for rollback netcode).
     ///
@@ -9583,6 +9608,7 @@ impl PhysicsWorld {
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     /// | 続き | 弾性 joint の島の再帰の記録 (v4、[`crate::sleeping::IslandOrbit`]、world snapshot の `islands` と同じ符号化: 島の数 u64、島ごとに member 数 u64 + index u64、inputs 長 u64 + byte、asleep u8、状態数 u64 + 状態ごとに長さ u64 + byte) |
     /// | 続き | cloth 数 u32、cloth ごとに [`crate::cloth::Cloth`] の運動状態 (粒子数 u32 + 構造の hash u64 + 粒子ごと 160 byte + pin / grab の列 + last_dt)、world ごと次の grab id u32 構造 (三角形 / rest / config / tether) は復元しない: 不一致は拒否 (v5) |
+    /// | 続き | step の記憶 (v6): body ごとに直前の substep の始めの姿勢 (`prev_position` 48 + `prev_rotation` 64 byte、新しい接触点の押し出しは直前の substep の移動 `position − prev_position` から接近を測る)、body ごとの安定な id (u64) と次に振る id (u64、どの id もこれ未満で重ならない、TGS の warm start の力積は接触と関節を両端の body の id で引くので、別の分岐で body を消して同じ body を足し直すと id が変わり、持たないと力積が当たらない)、最後の substep の後に外から動かされた body (数 u32、index で整列、body ごとに index u64 + dynamics が置いた姿勢 112 byte) と外から足された・変えられた関節 (数 u32、index で整列、index u64)、直前の substep の接触点 `static_touch` / `sdf_touch` / `body_touch` の 3 つの整列した集合 (それぞれ数 u32、点ごとに index u64 × 2 + feature u32) と TGS の warm start の力積 (数 u32、id で整列、entry ごとに id u64 + normal / tangent × 2 の `Fix128`、`std` なしでは 0 件) 外から動かされた body の接触点は次の substep で新しい点として位置で押し出され、外から足された・変えられた関節の誤差は位置で除かれる (外から書いた直後に保存すると、これが無いと読み込んだ時点の記憶で別の扱いになる、`tests/analytic_state_rollback_outside_writes.rs`) 接触点は次の substep で「前からある点 (静止の重なりを保つ)」と「新しい点 (位置で押し出す)」を分け、力積は次の tick の解法の初期値になる どれも無いと、読み込んだ時点の記憶が再生に入り、保存と読み込みの間に接触が終わった場面で別の軌道になる (`tests/analytic_state_rollback_contact_memory.rs`) XPBD の `contact_cache` は解法が読まないので入れない |
     ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
@@ -9695,8 +9721,266 @@ impl PhysicsWorld {
             b.write_rollback(&mut data);
         }
         data.extend_from_slice(&self.next_grab_id.to_le_bytes());
+        // the memory a step reads from the step before (v6)
+        self.write_step_memory(&mut data);
 
         data
+    }
+
+    /// The step memory of the rollback state (v6, see [`Self::serialize_state`]): per body the
+    /// pose of the last substep's start (`prev_position` 48 + `prev_rotation` 64 byte), the
+    /// bodies moved from outside the step since the last substep (count `u32`, then per body its
+    /// index `u64` and the pose the dynamics left it at, 48 + 64 byte, ascending), the joints
+    /// added or changed from outside the step since the last substep (count `u32`, then each
+    /// index `u64`, ascending), the contact points of the last substep as three sorted sets (`static_touch`, `sdf_touch`,
+    /// `body_touch`: count `u32`, then per point two indices `u64` and a feature `u32`), then the
+    /// TGS warm-start impulses (count `u32`, then per entry the contact id `u64` and the normal
+    /// and two tangent impulses, each `Fix128` as `hi` `i64` + `lo` `u64`, sorted by id; none
+    /// without `std`).
+    fn write_step_memory(&self, data: &mut Vec<u8>) {
+        for body in &self.bodies {
+            let p = body.prev_position;
+            let q = body.prev_rotation;
+            for f in [p.x, p.y, p.z, q.x, q.y, q.z, q.w] {
+                data.extend_from_slice(&f.hi.to_le_bytes());
+                data.extend_from_slice(&f.lo.to_le_bytes());
+            }
+        }
+        // the ids the TGS warm-start keys name a body by (`step_tgs`): a body removed and an
+        // equal one added back in another branch gets a new id, so the loaded world has to
+        // name its bodies as the saved one did or the carried impulses miss. Bodies pushed onto
+        // `bodies` directly have no id yet; they are named as `sync_body_stable_ids` will
+        // Without `std` there is no TGS warm-start cache and no ids: the bodies are named
+        // 0..n with n next, so the layout is the same on every feature set.
+        #[cfg(feature = "std")]
+        let (ids, next) = (&self.body_stable_ids[..], self.next_body_stable_id);
+        #[cfg(not(feature = "std"))]
+        let (ids, next): (&[u64], u64) = (&[], 0);
+        let held = ids.len().min(self.bodies.len());
+        let fresh = (self.bodies.len() - held) as u64;
+        for &id in &ids[..held] {
+            data.extend_from_slice(&id.to_le_bytes());
+        }
+        for k in 0..fresh {
+            data.extend_from_slice(&(next + k).to_le_bytes());
+        }
+        data.extend_from_slice(&(next + fresh).to_le_bytes());
+        // what the next substep settles by position (`forget_displaced_touches`,
+        // `settle_joints_from_outside`): a state saved between an outside write and the next step
+        // carries it, or the loaded world would take the write for the dynamics' own
+        let moved: Vec<(usize, Vec3Fix, QuatFix)> = (0..self.bodies.len())
+            .filter(|&i| self.displaced_since_substep(i))
+            .filter_map(|i| match self.substep_end_poses.get(i).copied() {
+                Some(Some((p, q))) => Some((i, p, q)),
+                _ => None,
+            })
+            .collect();
+        data.extend_from_slice(&(moved.len() as u32).to_le_bytes());
+        for (i, p, q) in moved {
+            data.extend_from_slice(&(i as u64).to_le_bytes());
+            for f in [p.x, p.y, p.z, q.x, q.y, q.z, q.w] {
+                data.extend_from_slice(&f.hi.to_le_bytes());
+                data.extend_from_slice(&f.lo.to_le_bytes());
+            }
+        }
+        let unsettled: Vec<usize> = (0..self.joints.len())
+            .filter(|&k| self.joint_changed_since_substep(k))
+            .collect();
+        data.extend_from_slice(&(unsettled.len() as u32).to_le_bytes());
+        for k in unsettled {
+            data.extend_from_slice(&(k as u64).to_le_bytes());
+        }
+        for set in [&self.static_touch, &self.sdf_touch, &self.body_touch] {
+            data.extend_from_slice(&(set.len() as u32).to_le_bytes());
+            for &(x, y, f) in set {
+                data.extend_from_slice(&(x as u64).to_le_bytes());
+                data.extend_from_slice(&(y as u64).to_le_bytes());
+                data.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        #[cfg(feature = "std")]
+        let mut entries: Vec<(u64, [Fix128; 3])> = self
+            .tgs_impulse_cache
+            .entries
+            .iter()
+            .map(|(&k, v)| (k, [v.normal, v.tangent1, v.tangent2]))
+            .collect();
+        #[cfg(not(feature = "std"))]
+        let mut entries: Vec<(u64, [Fix128; 3])> = Vec::new();
+        entries.sort_unstable_by_key(|e| e.0);
+        data.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        for (id, imp) in entries {
+            data.extend_from_slice(&id.to_le_bytes());
+            for f in imp {
+                data.extend_from_slice(&f.hi.to_le_bytes());
+                data.extend_from_slice(&f.lo.to_le_bytes());
+            }
+        }
+    }
+
+    /// Reads the contact memory written by [`Self::write_step_memory`] from `data[at..]`, which
+    /// it must end exactly: `None` for a short or longer blob, an unsorted or repeated entry, or
+    /// an index past this world's bodies or colliders (a state of another world).
+    fn read_step_memory(&self, data: &[u8], at: usize) -> Option<StepMemory> {
+        struct Cursor<'a> {
+            data: &'a [u8],
+            at: usize,
+        }
+        impl Cursor<'_> {
+            fn bytes<const N: usize>(&mut self) -> Option<[u8; N]> {
+                let s = self.data.get(self.at..self.at.checked_add(N)?)?;
+                self.at += N;
+                s.try_into().ok()
+            }
+            fn u32(&mut self) -> Option<u32> {
+                self.bytes().map(u32::from_le_bytes)
+            }
+            fn u64(&mut self) -> Option<u64> {
+                self.bytes().map(u64::from_le_bytes)
+            }
+            fn fix(&mut self) -> Option<Fix128> {
+                let hi = i64::from_le_bytes(self.bytes()?);
+                Some(Fix128::from_raw(hi, self.u64()?))
+            }
+        }
+        let mut r = Cursor { data, at };
+        let mut prev = Vec::with_capacity(self.bodies.len());
+        for _ in 0..self.bodies.len() {
+            let p = Vec3Fix::new(r.fix()?, r.fix()?, r.fix()?);
+            let q = QuatFix::new(r.fix()?, r.fix()?, r.fix()?, r.fix()?);
+            prev.push((p, q));
+        }
+        // one id a body, each below the next id and none twice
+        let mut stable_ids = Vec::with_capacity(self.bodies.len());
+        for _ in 0..self.bodies.len() {
+            stable_ids.push(r.u64()?);
+        }
+        let next_stable_id = r.u64()?;
+        let mut sorted = stable_ids.clone();
+        sorted.sort_unstable();
+        if sorted.last().is_some_and(|&top| top >= next_stable_id)
+            || sorted.windows(2).any(|w| w[0] == w[1])
+        {
+            return None;
+        }
+        let n = self.bodies.len() as u64;
+        // ascending indices into this world's bodies / joints
+        let mut moved: Vec<(usize, Vec3Fix, QuatFix)> = Vec::new();
+        for _ in 0..r.u32()? {
+            let i = r.u64()?;
+            if i >= n {
+                return None;
+            }
+            let i = usize::try_from(i).ok()?;
+            if moved.last().is_some_and(|last| last.0 >= i) {
+                return None;
+            }
+            let p = Vec3Fix::new(r.fix()?, r.fix()?, r.fix()?);
+            let q = QuatFix::new(r.fix()?, r.fix()?, r.fix()?, r.fix()?);
+            moved.push((i, p, q));
+        }
+        let mut unsettled: Vec<usize> = Vec::new();
+        for _ in 0..r.u32()? {
+            let k = r.u64()?;
+            if k >= self.joints.len() as u64 {
+                return None;
+            }
+            let k = usize::try_from(k).ok()?;
+            if unsettled.last().is_some_and(|last| *last >= k) {
+                return None;
+            }
+            unsettled.push(k);
+        }
+        let limits = [
+            (n, self.static_colliders.len() as u64),
+            (n, self.sdf_colliders.len() as u64),
+            (n, n),
+        ];
+        let mut touches: [Vec<(usize, usize, u32)>; 3] = Default::default();
+        for (set, &(lx, ly)) in touches.iter_mut().zip(limits.iter()) {
+            let count = r.u32()?;
+            for _ in 0..count {
+                let (x, y, f) = (r.u64()?, r.u64()?, r.u32()?);
+                if x >= lx || y >= ly {
+                    return None;
+                }
+                let entry = (usize::try_from(x).ok()?, usize::try_from(y).ok()?, f);
+                // sorted, as the solver keeps them (it searches them)
+                if set.last().is_some_and(|last| *last >= entry) {
+                    return None;
+                }
+                set.push(entry);
+            }
+        }
+        let count = r.u32()?;
+        let mut impulses: Vec<(u64, [Fix128; 3])> = Vec::new();
+        for _ in 0..count {
+            let id = r.u64()?;
+            let imp = [r.fix()?, r.fix()?, r.fix()?];
+            if impulses.last().is_some_and(|last| last.0 >= id) {
+                return None;
+            }
+            impulses.push((id, imp));
+        }
+        if r.at != data.len() {
+            return None;
+        }
+        Some(StepMemory {
+            prev,
+            stable_ids,
+            next_stable_id,
+            moved,
+            unsettled,
+            touches,
+            impulses,
+        })
+    }
+
+    /// Writes the step memory read by [`Self::read_step_memory`].
+    fn apply_step_memory(&mut self, memory: StepMemory) {
+        for (body, (p, q)) in self.bodies.iter_mut().zip(memory.prev) {
+            body.prev_position = p;
+            body.prev_rotation = q;
+        }
+        #[cfg(feature = "std")]
+        {
+            self.body_stable_ids = memory.stable_ids;
+            self.next_body_stable_id = memory.next_stable_id;
+        }
+        // checked on read; nothing to name without the warm-start cache
+        #[cfg(not(feature = "std"))]
+        let _ = (memory.stable_ids, memory.next_stable_id);
+        // every body and joint was left as it is by the dynamics (`record_substep_end_poses`,
+        // called before this), except the ones the state names as written from outside since
+        for (i, p, q) in memory.moved {
+            self.substep_end_poses[i] = Some((p, q));
+        }
+        for k in memory.unsettled {
+            self.substep_end_joints[k] = None;
+        }
+        let [static_touch, sdf_touch, body_touch] = memory.touches;
+        self.static_touch = static_touch;
+        self.sdf_touch = sdf_touch;
+        self.body_touch = body_touch;
+        #[cfg(feature = "std")]
+        {
+            // the live set is empty between steps (`sweep` clears it); the hit and miss
+            // counters are diagnostics of this world and stay as they are
+            self.tgs_impulse_cache.entries.clear();
+            self.tgs_impulse_cache.live.clear();
+            for (id, [normal, tangent1, tangent2]) in memory.impulses {
+                self.tgs_impulse_cache.entries.insert(
+                    id,
+                    crate::solver_tgs::CachedImpulse {
+                        normal,
+                        tangent1,
+                        tangent2,
+                    },
+                );
+            }
+        }
+        #[cfg(not(feature = "std"))]
+        let _ = memory.impulses;
     }
 
     /// FNV-1a 64-bit hash of per-body quantities [`Self::serialize_state`]
@@ -9835,9 +10119,13 @@ impl PhysicsWorld {
         // cloths (v5): checked before any byte is written, written after the
         // rigid bodies; a blob of other cloths (count, particles, structure)
         // is refused with the world unchanged, and so is a byte after them
-        if self.read_cloth_rollback(data, soft_at, false) != Some(data.len()) {
+        let Some(memory_at) = self.read_cloth_rollback(data, soft_at, false) else {
             return false;
-        }
+        };
+        // the step memory (v6), which ends the blob exactly: checked here, written last
+        let Some(memory) = self.read_step_memory(data, memory_at) else {
+            return false;
+        };
 
         // Per-body: position(48) + velocity(48) + rotation(64) + angular_velocity(48) = 208 bytes
         let mut offset = 12;
@@ -9908,7 +10196,8 @@ impl PhysicsWorld {
             self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         }
         self.body_materials.truncate(n);
-        // a saved state is a state of the dynamics: every body was left there by it
+        // every body and joint as the dynamics left it; the step memory (applied last) names the
+        // ones written from outside the step since the last substep
         self.record_substep_end_poses();
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
@@ -9953,6 +10242,7 @@ impl PhysicsWorld {
 
         self.read_cloth_rollback(data, soft_at, true)
             .expect("checked before the rigid bodies were written");
+        self.apply_step_memory(memory);
         true
     }
 
@@ -12721,9 +13011,14 @@ mod tests {
     fn deserialize_state_roundtrip_restores_every_field_bit_exact() {
         let src = snapshot_world();
         let bytes = src.serialize_state();
-        // v5: header 12 + body ごと 208 + body ごと sleep 17 + world ごと flag 1 + fingerprint 8
+        // v6: header 12 + body ごと 208 + body ごと sleep 17 + world ごと flag 1 + fingerprint 8
         //     + 弾性の島の再帰の記録 (spring が無いので島の数 0 の 8 byte) + soft body 数 4 + 次の grab id 4
-        assert_eq!(bytes.len(), 12 + 2 * 208 + 2 * 17 + 1 + 8 + 8 + 4 + 4);
+        //     + step の記憶 (body ごと直前の姿勢 112、body ごとの安定な id 8 と次の id 8、
+        //       外から動いた body と関節の数 4 × 2、接触点 3 集合の数 4 × 3、TGS の力積の数 4)
+        assert_eq!(
+            bytes.len(),
+            12 + 2 * 208 + 2 * 17 + 1 + 8 + 8 + 4 + 4 + 2 * 112 + 2 * 8 + 8 + 2 * 4 + 3 * 4 + 4
+        );
         let mut dst = quiet_world();
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         dst.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -12735,6 +13030,14 @@ mod tests {
             assert_eq!(
                 dst.bodies[i].angular_velocity, src.bodies[i].angular_velocity,
                 "ang {i}"
+            );
+            assert_eq!(
+                dst.bodies[i].prev_position, src.bodies[i].prev_position,
+                "prev pos {i}"
+            );
+            assert_eq!(
+                dst.bodies[i].prev_rotation, src.bodies[i].prev_rotation,
+                "prev rot {i}"
             );
         }
         // 並列配列は body 数に同期
@@ -12758,9 +13061,13 @@ mod tests {
         let src = snapshot_world();
         let bytes = src.serialize_state();
         let body_end = 12 + 2 * 208;
-        // v5: 末尾は soft body 数 4 + 次の grab id 4、その前に再帰の記録 8 (島 0)、その前に
-        // fingerprint 8、その前が flag
-        let flag_pos = bytes.len() - 8 - 8 - 8 - 1;
+        // v6: 末尾は step の記憶 (body ごと直前の姿勢 112、body ごとの安定な id 8 と次の id 8、
+        // 外から動いた body と関節の数 4 × 2、接触点 3 集合の数 4 × 3、TGS の力積の数 4)、
+        // その前に soft body 数 4 + 次の grab id 4、その前に再帰の記録 8 (島 0)、その前に
+        // fingerprint 8、その前が flag 以下の v5 までの領域は記憶の始め `end` から数える
+        let memory = 2 * 112 + 2 * 8 + 8 + 2 * 4 + 3 * 4 + 4;
+        let end = bytes.len() - memory;
+        let flag_pos = end - 8 - 8 - 8 - 1;
 
         // 領域 1: header — 1 byte 壊れたら受け付けない
         for pos in 0..12 {
@@ -12795,7 +13102,7 @@ mod tests {
         // gap #3 の population 検査そのもの)
         // 領域 6: 再帰の記録 (soft body の節の手前の 8 byte、島の数 0) — 壊すと島の数が 0 で
         // なくなり、続く byte が島の記録として読めないので拒否する
-        for pos in bytes.len() - 16..bytes.len() - 8 {
+        for pos in end - 16..end - 8 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -12809,7 +13116,7 @@ mod tests {
             "a trailing byte"
         );
 
-        for pos in bytes.len() - 24..bytes.len() - 16 {
+        for pos in end - 24..end - 16 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -12822,7 +13129,7 @@ mod tests {
         }
 
         // 領域 6 (v5): soft body 数 (4 byte) — 壊れたら数が合わず拒否する
-        for pos in bytes.len() - 8..bytes.len() - 4 {
+        for pos in end - 8..end - 4 {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -12832,8 +13139,8 @@ mod tests {
             );
             assert_eq!(dst.bodies[0].position, src.bodies[0].position);
         }
-        // 領域 7 (v5): 次の grab id (末尾 4 byte) — 壊したら next_grab_id が変わる
-        for pos in bytes.len() - 4..bytes.len() {
+        // 領域 7 (v5): 次の grab id (記憶の手前の 4 byte) — 壊したら next_grab_id が変わる
+        for pos in end - 4..end {
             let mut bad = bytes.clone();
             bad[pos] ^= 0x01;
             let mut dst = snapshot_world();
@@ -12842,6 +13149,71 @@ mod tests {
                 dst.next_grab_id, src.next_grab_id,
                 "next grab id byte {pos} を壊しても next_grab_id が変わらない"
             );
+        }
+
+        // 領域 8 (v6): body ごとの直前の姿勢 (112 byte) — 壊したらその body の
+        // prev_position / prev_rotation だけが変わる
+        for pos in end..end + 2 * 112 {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "prev pose byte {pos}");
+            let body = (pos - end) / 112;
+            let changed: Vec<usize> = (0..2)
+                .filter(|&i| {
+                    let (s, d) = (&src.bodies[i], &dst.bodies[i]);
+                    s.prev_position != d.prev_position || s.prev_rotation != d.prev_rotation
+                })
+                .collect();
+            assert_eq!(
+                changed,
+                vec![body],
+                "prev pose byte {pos} must change only body {body}"
+            );
+            let (s, d) = (&src.bodies[body], &dst.bodies[body]);
+            if (pos - end) % 112 < 48 {
+                assert!(
+                    s.prev_position != d.prev_position && s.prev_rotation == d.prev_rotation,
+                    "byte {pos} → prev position"
+                );
+            } else {
+                assert!(
+                    s.prev_rotation != d.prev_rotation && s.prev_position == d.prev_position,
+                    "byte {pos} → prev rotation"
+                );
+            }
+        }
+        // 領域 9 (v6): body ごとの安定な id (8 byte、ここでは 0 と 1) と次の id (8 byte、2) —
+        // id の byte を壊すと id が重なる (0 ↔ 1) か次の id 以上になるので拒否する (world は
+        // 変わらない)、次の id の byte を壊すと次の id だけが変わる (3 以上、どの id よりも大きい)
+        let ids = end + 2 * 112;
+        for pos in ids..ids + 2 * 8 {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(!dst.deserialize_state(&bad), "stable id byte {pos}");
+            assert_eq!(dst.bodies[0].position, src.bodies[0].position);
+        }
+        for pos in ids + 2 * 8..ids + 2 * 8 + 8 {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(dst.deserialize_state(&bad), "next stable id byte {pos}");
+            assert_eq!(dst.body_stable_ids, src.body_stable_ids, "byte {pos}");
+            assert_ne!(
+                dst.next_body_stable_id, src.next_body_stable_id,
+                "next stable id byte {pos}"
+            );
+        }
+        // 領域 10 (v6): 外から動いた body と関節、接触点 3 集合と TGS の力積の数 (各 4 byte、
+        // ここではすべて 0) — 壊すと数が 0 でなくなり、続く記録が足りないので拒否する
+        // (world は変わらない)
+        for pos in ids + 2 * 8 + 8..bytes.len() {
+            let mut bad = bytes.clone();
+            bad[pos] ^= 0x01;
+            let mut dst = snapshot_world();
+            assert!(!dst.deserialize_state(&bad), "step memory count byte {pos}");
+            assert_eq!(dst.bodies[0].position, src.bodies[0].position);
         }
 
         // 領域 3: sleep — 1 byte 壊れたら sleep_data が変わる (flag の手前まで)
@@ -12931,6 +13303,13 @@ mod tests {
             !dst.deserialize_state(&v1),
             "v1 blob は version 不一致で拒否されるべき"
         );
+        // ⚠️ v5 blob (step の記憶が無い) も version 不一致で拒否される
+        let mut v5 = bytes[..bytes.len() - (2 * 112 + 2 * 8 + 8 + 2 * 4 + 3 * 4 + 4)].to_vec();
+        v5[4] = 5;
+        assert!(
+            !dst.deserialize_state(&v5),
+            "v5 blob は version 不一致で拒否されるべき"
+        );
         let mut one_body = quiet_world();
         one_body.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         assert!(!one_body.deserialize_state(&bytes)); // count 不一致
@@ -12950,6 +13329,13 @@ mod tests {
         one.extend_from_slice(&0u64.to_le_bytes()); // v4: 弾性の島の再帰の記録 (島 0)
         one.extend_from_slice(&0u32.to_le_bytes()); // v5: soft body 数
         one.extend_from_slice(&0u32.to_le_bytes()); // v5: 次の grab id
+        let memory = 2 * 112 + 2 * 8 + 8 + 2 * 4 + 3 * 4 + 4;
+        let end = bytes.len() - memory;
+        one.extend_from_slice(&bytes[end..end + 112]); // v6: 1 体目の直前の姿勢
+        one.extend_from_slice(&0u64.to_le_bytes()); // v6: 1 体目の安定な id
+        one.extend_from_slice(&1u64.to_le_bytes()); // v6: 次の id
+                                                    // v6: 外から動いた body と関節、接触点 3 集合と TGS の力積 (すべて 0 件)
+        one.extend_from_slice(&[0u8; 2 * 4 + 3 * 4 + 4]);
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
     }
@@ -14068,9 +14454,10 @@ mod tests {
     fn deserialize_state_accepts_header_only_snapshot_of_empty_world() {
         let src = quiet_world();
         let bytes = src.serialize_state();
-        // v5: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
-        //     + cloth 数 4 + 次の grab id 4
-        assert_eq!(bytes.len(), 37);
+        // v6: body 0 体でも header 12 + flag 1 + fingerprint 8 + 再帰の記録の島の数 8
+        //     + cloth 数 4 + 次の grab id 4 + 次の body の安定な id 8
+        //     + 外から動いた body と関節の数 4 × 2 + 接触点 3 集合と TGS の力積の数 4 × 4
+        assert_eq!(bytes.len(), 69);
         let mut dst = quiet_world();
         assert!(dst.deserialize_state(&bytes));
         assert_eq!(dst.body_count(), 0);
