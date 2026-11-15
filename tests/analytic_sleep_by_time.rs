@@ -243,7 +243,8 @@ fn sleep_by_time_scene_has_its_pinned_sha256() {
 
 /// The state format moved to version 4 with the sleep rule (each body's sleep record is a
 /// state byte and a `Fix128` idle time, 17 bytes, where version 3 held a state byte and a
-/// `u32` idle step count, 5 bytes) and to version 5 with the cloths: a blob that says an
+/// `u32` idle step count, 5 bytes), to version 5 with the cloths and to version 6 with the
+/// step memory (the previous poses, the contact points and the TGS impulses): a blob that says an
 /// earlier version is refused, not read with the new layout, and the world it was offered
 /// to is left as it was. The same blob with its version put back is read, so the refusal
 /// is the version's.
@@ -256,10 +257,10 @@ fn an_earlier_version_state_blob_is_refused_and_leaves_the_world_unchanged() {
     let current = w.serialize_state();
     assert_eq!(
         &current[4..6],
-        &5u16.to_le_bytes(),
+        &6u16.to_le_bytes(),
         "the current state version"
     );
-    for version in [3u16, 4] {
+    for version in [3u16, 4, 5] {
         let mut old = current.clone();
         old[4..6].copy_from_slice(&version.to_le_bytes());
         let mut target = pinned_scene();
