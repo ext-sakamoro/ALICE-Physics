@@ -54,8 +54,10 @@ fn step(w: &mut PhysicsWorld, n: usize) {
     }
 }
 
-/// FNV-1a and SHA-256 over the scene tag, the flag and the state.
-struct Digest(u64, Sha256);
+/// FNV-1a and SHA-256 over the scene tag, the flag and each body's motion and sleep record (the
+/// physics this file guards: the parked pairs are asleep), and a SHA-256 over the scene tag and
+/// the whole rollback state (the format).
+struct Digest(u64, Sha256, Sha256);
 
 impl Digest {
     fn bytes(&mut self, b: &[u8]) {
@@ -66,10 +68,24 @@ impl Digest {
         self.1.update(b);
     }
 
+    /// The physics bytes are read from the fields, not from the rollback state, so a change of
+    /// the state's format does not move them (it moves [`EXPECTED_STATE_SHA256`] instead).
     fn world(&mut self, tag: &str, w: &PhysicsWorld) {
         self.bytes(tag.as_bytes());
         self.bytes(&[u8::from(w.overflow_detected())]);
-        self.bytes(&w.serialize_state());
+        for (i, b) in w.bodies.iter().enumerate() {
+            let (p, v, q, o) = (b.position, b.velocity, b.rotation, b.angular_velocity);
+            let idle = w.islands.sleep_data[i].idle_time;
+            for f in [
+                p.x, p.y, p.z, v.x, v.y, v.z, q.x, q.y, q.z, q.w, o.x, o.y, o.z, idle,
+            ] {
+                self.bytes(&f.hi.to_le_bytes());
+                self.bytes(&f.lo.to_le_bytes());
+            }
+            self.bytes(&[w.islands.sleep_data[i].state as u8]);
+        }
+        self.2.update(tag.as_bytes());
+        self.2.update(w.serialize_state());
     }
 }
 
@@ -83,9 +99,9 @@ fn radii() -> [Fix128; 3] {
 }
 
 /// Every scene, stepped under every kind with the skip on and off; returns
-/// `(scenes, flags raised, digest, sha256 hex)`.
-fn run() -> (usize, usize, u64, String) {
-    let mut dg = Digest(0xcbf2_9ce4_8422_2325, Sha256::new());
+/// `(scenes, flags raised, digest, sha256 hex, state sha256 hex)`.
+fn run() -> (usize, usize, u64, String, String) {
+    let mut dg = Digest(0xcbf2_9ce4_8422_2325, Sha256::new(), Sha256::new());
     let (mut scenes, mut raised) = (0, 0);
     let mut record = |tag: String, w: &PhysicsWorld| {
         dg.world(&tag, w);
@@ -173,28 +189,39 @@ fn run() -> (usize, usize, u64, String) {
             }
         }
     }
-    let sha = dg.1.finalize();
-    let hex: String = sha.iter().map(|b| format!("{b:02x}")).collect();
-    (scenes, raised, dg.0, hex)
+    let hex = |d: &[u8]| d.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let sha = hex(&dg.1.finalize());
+    let state = hex(&dg.2.finalize());
+    (scenes, raised, dg.0, sha, state)
 }
 
 /// Recorded with the one-predicate rule (`pair_radius_sum_overflows`), and recorded again
 /// when the state blob gained the sleep time, the island records and the cloth section (the
-/// bytes each scene hashes are its `serialize_state`; the flags raised did not change). Before it,
+/// bytes each scene hashed were its `serialize_state`; the flags raised did not change), and
+/// recorded again (2026-11-15) when the bytes became each body's motion and sleep record read from its fields
+/// instead of the whole rollback state, so that a change of the state's format no longer moves
+/// the physics identifier (the format has its own golden, [`EXPECTED_STATE_SHA256`]); the
+/// scenes and the flags raised did not change. Before it,
 /// on main `06b1e84b` (2026-11-07), the same scenes gave 189 flags raised and
 /// the digest `0xb923ddd589b2f53d`: 33 scenes changed their flag (static pairs
 /// and pairs whose layers do not collide no longer raise it under Bvh /
 /// DynamicTree, parked pairs raise it with the skip on as without).
 const EXPECTED_SCENES: usize = 216;
 const EXPECTED_RAISED: usize = 156;
-const EXPECTED_DIGEST: u64 = 0x6e5daff63bcadd9d;
+const EXPECTED_DIGEST: u64 = 0xdf08502a08eae2ad;
 /// SHA-256 over the same bytes, the entry `"overflow flag"` of
 /// `PHYSICS_SEMANTICS_PINS` folds (see `tests/physics_semantics_id.rs`).
-const EXPECTED_SHA256: &str = "a673ff33022aeb79a6302a34009893acb120c01019d18cdcc74dc27b25b1b802";
+///
+/// What it covers: the flag and the sleep record. The pairs rest and are parked, so their
+/// motion bytes are constant by construction; a change of the gravity integration moves
+/// them, a change of the velocity the position solve derives does not. Motion is covered
+/// by the other entries of `PHYSICS_SEMANTICS_PINS` (the step paths, contacts, joints,
+/// sleeping), not by this one.
+const EXPECTED_SHA256: &str = "3c95da7db690095851a549449f838aa85a094a28be00c5a06e0c832f20de4dcd";
 
 #[test]
 fn the_overflow_flag_keeps_its_previous_bits_on_the_path_dependent_scenes() {
-    let (scenes, raised, digest, sha) = run();
+    let (scenes, raised, digest, sha, _) = run();
     assert!(
         scenes > 0 && raised > 0,
         "nothing compared or no flag raised"
@@ -209,7 +236,24 @@ fn the_overflow_flag_keeps_its_previous_bits_on_the_path_dependent_scenes() {
 /// The SHA-256 of the same bytes, for the semantics identifier's entry.
 #[test]
 fn the_overflow_flag_scenes_have_their_pinned_sha256() {
-    let (_, _, digest, sha) = run();
+    let (_, _, digest, sha, _) = run();
     assert_eq!(digest, EXPECTED_DIGEST);
     assert_eq!(sha, EXPECTED_SHA256, "recorded sha256 {sha}");
+}
+
+/// The rollback state of the same scenes (each scene's tag and its whole `serialize_state`
+/// blob, the version in its header included): the format's own golden, outside
+/// `PHYSICS_SEMANTICS_PINS`. A change of the state's format moves this and not the physics
+/// digest above (state version 6: with the step memory not written and the version put back to
+/// 5 this is red and the physics digest and SHA-256 stay green).
+const EXPECTED_STATE_SHA256: &str =
+    "5090da2ca6e941ea5b67cab39f23114715fb840cd29432a1aa2353268208e908";
+
+#[test]
+fn the_overflow_flag_scenes_have_their_pinned_state_format() {
+    let (_, _, _, _, state) = run();
+    assert_eq!(
+        state, EXPECTED_STATE_SHA256,
+        "recorded state sha256 {state}"
+    );
 }

@@ -34,14 +34,17 @@ fn washing_world() -> PhysicsWorld {
 /// 洗浄 step は sleep 状態も変えるので、**flag が被覆外でも blob は変わる**
 /// ⇒ 長さで見るのが精密 (v3 = header 12 + body ごと 208 + body ごと sleep 5 に
 /// world ごと flag 1 と world ごと population fingerprint 8 を足したもの、v4 は sleep 17 と
-/// 再帰の記録の島の数 8、v5 はさらに cloth 数 4 と次の grab id 4、cloth が無い world ではそれだけ)
+/// 再帰の記録の島の数 8、v5 はさらに cloth 数 4 と次の grab id 4、cloth が無い world ではそれだけ、
+/// v6 はさらに step の記憶 = body ごとの直前の姿勢 112、body ごとの安定な id 8 と次の id 8、
+/// 外から動いた body と関節の数 4 × 2、
+/// 接触点 3 集合・TGS の力積の数 4 × 4、外からの書き込みも接触も無い world ではそれだけ)
 #[test]
 fn the_blob_length_includes_the_flag_byte() {
     let n = 1; // body 1 個
     let len = washing_world().serialize_state().len();
     assert_eq!(
         len,
-        12 + n * 208 + n * 17 + 1 + 8 + 8 + 4 + 4,
+        12 + n * 208 + n * 17 + 1 + 8 + 8 + 4 + 4 + n * 112 + n * 8 + 8 + 2 * 4 + 4 * 4,
         "blob の長さに flag の 1 byte が含まれていない (実測 {len})"
     );
 }
