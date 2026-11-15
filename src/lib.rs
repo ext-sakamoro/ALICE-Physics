@@ -34,6 +34,7 @@
 //! | `analytics` | ALICE-Analytics simulation profiling (`DDSketch`, `HyperLogLog`). |
 //! | `gpu-solver-bridge` | `GpuSolverBridge` trait for external GPU solver backends. No cost when off. |
 //! | `privacy-crypto` | `privacy` re-exports `alice-crypto`'s differential-privacy primitives and adds `KeyedRappor`. Off by default; `alice-crypto` becomes a public dependency. |
+//! | `mpm2d` | `mpm2d`: 2D material point method for soft solids (MLS-MPM, APIC, plane strain). Off by default; no_std-capable. |
 //!
 //! # Example
 //!
@@ -943,7 +944,9 @@ pub mod world_shape_query;
 
 pub mod physics2d;
 
-/// 2D material point method for soft solids (MLS-MPM, APIC, plane strain, `Q64.64`)
+/// 2D material point method for soft solids (MLS-MPM, APIC, plane strain, `Q64.64`), behind
+/// the `mpm2d` feature (off by default)
+#[cfg(feature = "mpm2d")]
 pub mod mpm2d;
 
 #[cfg(feature = "gpu-solver-bridge")]
