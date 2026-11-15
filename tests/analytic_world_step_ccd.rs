@@ -969,7 +969,12 @@ fn crowd_hash(parallel: bool) -> String {
 /// 17 bytes a body where version 3 held a state byte and a `u32` step count). Re-recorded (from
 /// `a5f48863…`) when the elastic islands' recurrence record was appended to the blob (an 8-byte
 /// island count, 0 here); with the record not written the digest is the value before.
-const GOLDEN_CROWD: &str = "3cbd3017240d9b5e9f2b0d7abe6363b688cc84f9d6989ad2fd65b36ec20ac030";
+/// Re-recorded (from `3cbd3017…`) when the state blob gained the step memory (version 6: the
+/// previous poses, the bodies' stable ids, the bodies moved and the joints added or changed from
+/// outside since the last
+/// substep, the contact points of the last substep, the TGS impulses); with the memory
+/// not written and the version put back to 5 the digest is the value before.
+const GOLDEN_CROWD: &str = "274183a9fae573ab27a11461b90ee8c4cc79089cd41bd216f33a20bb85e04dfd";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -1017,6 +1022,23 @@ fn stacked_with(speculative_contacts: bool) -> PhysicsWorld {
         body.velocity.y = Fix128::from_raw(-1, 0xd5c2_8f5c_28f5_c03d);
     }
     w
+}
+
+/// `state` (a `serialize_state` of a world of `n` bodies with no spring and no cloth) with its
+/// list of bodies moved from outside the step since the last substep emptied. The list follows
+/// the header (12 bytes), the motion (208 bytes a body), the sleep records (17), the overflow
+/// flag (1), the population fingerprint (8), the elastic islands' record (8, no island), the
+/// cloth count and the next grab id (4 each), the previous poses (112 a body) and the bodies'
+/// stable ids (8 a body) with the next one (8); each entry is an index (8 bytes) and a pose
+/// (112).
+fn settled(state: &[u8], n: usize) -> Vec<u8> {
+    let at = 12 + n * 208 + n * 17 + 1 + 8 + 8 + 4 + 4 + n * 112 + n * 8 + 8;
+    let count = u32::from_le_bytes(state[at..at + 4].try_into().unwrap()) as usize;
+    assert!(count <= n, "not the moved list: {count}");
+    let mut out = state[..at].to_vec();
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&state[at + 4 + count * 120..]);
+    out
 }
 
 /// A version 1 or 2 blob has no continuous collision section: it is read as
@@ -1070,9 +1092,10 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
             ..alice_physics_core::SleepConfig::default()
         });
         // the poses were written into the rebuilt world to reproduce the writer's
-        // state, not moved there from outside its step: a state round trip makes
-        // them the poses the dynamics left (a version 1 blob holds no such memory)
-        let state = original.serialize_state();
+        // state, not moved there from outside its step: loaded from a state that
+        // names no body moved from outside (as a version 1 blob, which holds no such
+        // memory), they are the poses the dynamics left
+        let state = settled(&original.serialize_state(), original.bodies.len());
         assert!(original.deserialize_state(&state));
         assert_eq!(
             restored.snapshot_world(),
