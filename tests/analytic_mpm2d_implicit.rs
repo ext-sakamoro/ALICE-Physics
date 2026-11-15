@@ -500,3 +500,141 @@ fn measure_the_cost_per_frame_of_one_letter() {
         );
     }
 }
+
+/// Measurement (not an oracle): the live letter (as `measure_the_cost_per_frame_of_one_letter`,
+/// E 2e5 on the damped backing) pressed by the hand for 60 frames, then released for 60, by the
+/// explicit step (a third of the cell crossing time) and by the implicit step at 1 and 2 steps
+/// per frame. Prints each run's cost per frame, the press deflection at the hand, the largest
+/// particle distance from the explicit run at the end of the press, and the hand point's
+/// oscillation after the release (peak-to-peak over the first and the last 20 frames).
+#[test]
+#[ignore = "measurement: prints the implicit step's cost and its difference from explicit on the live letter"]
+fn measure_the_implicit_step_on_the_live_letter() {
+    use std::time::Instant;
+    let (rho, cell, kappa, e): (f64, f64, f64, f64) = (1000.0, 0.04, 2.0e5, 2.0e5);
+    let (stroke, tall, arm) = (0.085, 0.5, 0.3);
+    let c = (e / ((1.0 - NU * NU) * rho)).sqrt();
+    let explicit_steps = (FRAME / (cell / c / 3.0)).ceil() as usize;
+    let (x0, y0) = (0.2, 0.1);
+    let build = |steps: usize| {
+        let nodes = ((tall + 0.4) / cell).ceil() as usize;
+        let mut w = Mpm2d::new(
+            Mpm2dConfig {
+                origin: [Fix128::ZERO, Fix128::ZERO],
+                cell: fx(cell),
+                nodes: [nodes, nodes],
+                gravity: [Fix128::ZERO, fx(-G)],
+                dt: fx(FRAME / steps as f64),
+                ground: None,
+            },
+            Mpm2dMaterial {
+                youngs: fx(e),
+                poisson: fx(NU),
+                density: fx(rho),
+                model: Mpm2dModel::NeoHookean,
+                maxwell: None,
+            },
+        )
+        .expect("valid");
+        let inside = |x: f64, y: f64| {
+            let (x, y) = (x - x0, y - y0);
+            let bar = (0.0..stroke).contains(&x) && (0.0..tall).contains(&y);
+            let arms = (0.0..arm).contains(&x)
+                && [0.0, (tall - stroke) / 2.0, tall - stroke]
+                    .iter()
+                    .any(|&a| (a..a + stroke).contains(&y));
+            bar || arms
+        };
+        let n = (((tall + 0.1) / cell).ceil() as usize) * 2;
+        let h = cell / 2.0;
+        for i in 0..n {
+            for j in 0..n {
+                let x = x0 + (i as f64 + 0.5) * h;
+                let y = y0 + (j as f64 + 0.5) * h;
+                if inside(x, y) {
+                    w.add_particle([fx(x), fx(y)], [Fix128::ZERO; 2], fx(h * h));
+                }
+            }
+        }
+        w
+    };
+    let lift = fx(rho * G / kappa);
+    let damping = 2.0 * 0.5 * (kappa * rho).sqrt();
+    let hand = [fx(x0 + arm / 2.0), fx(y0 + tall - stroke / 2.0)];
+    // (steps per frame, implicit?)
+    let mut ends: Vec<Vec<[f64; 2]>> = Vec::new();
+    for (steps, implicit) in [(explicit_steps, false), (1, true), (2, true)] {
+        let mut w = build(steps);
+        let anchors: Vec<[Fix128; 2]> =
+            w.particles().iter().map(|p| [p.x[0], p.x[1] + lift]).collect();
+        let touched = w.particles_within(hand, fx(0.06));
+        let rest_y: f64 = touched
+            .iter()
+            .map(|&i| w.particles()[i].x[1].to_f64())
+            .sum::<f64>()
+            / touched.len() as f64;
+        let hand_y = |w: &Mpm2d| {
+            touched
+                .iter()
+                .map(|&i| w.particles()[i].x[1].to_f64())
+                .sum::<f64>()
+                / touched.len() as f64
+        };
+        let mut frame_ms = Vec::new();
+        let mut after = Vec::new();
+        let mut deflection = 0.0;
+        for frame in 0..120 {
+            let pressing = frame < 60;
+            let t = Instant::now();
+            for _ in 0..steps {
+                let mut loads = w
+                    .foundation_loads(&anchors, fx(kappa), fx(damping))
+                    .expect("anchors");
+                if pressing {
+                    loads.extend(
+                        w.shared_loads(&touched, [Fix128::ZERO, fx(-20.0)])
+                            .expect("a patch"),
+                    );
+                }
+                if implicit {
+                    w.step_implicit_with_loads(&ImplicitSolve::default(), &loads)
+                        .expect("implicit");
+                } else {
+                    w.step_with_loads(&loads).expect("explicit");
+                }
+            }
+            frame_ms.push(t.elapsed().as_secs_f64() * 1e3);
+            if frame == 59 {
+                deflection = rest_y - hand_y(&w);
+                ends.push(w.particles().iter().map(|p| [p.x[0].to_f64(), p.x[1].to_f64()]).collect());
+            }
+            if !pressing {
+                after.push(hand_y(&w));
+            }
+        }
+        frame_ms.sort_by(f64::total_cmp);
+        let p2p = |s: &[f64]| {
+            s.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                - s.iter().copied().fold(f64::INFINITY, f64::min)
+        };
+        let off = ends
+            .last()
+            .zip(ends.first())
+            .map(|(a, b)| {
+                a.iter()
+                    .zip(b)
+                    .map(|(p, q)| ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt())
+                    .fold(0.0, f64::max)
+            })
+            .unwrap_or(0.0);
+        println!(
+            "{} {steps} step(s)/frame: median {:.2} ms/frame; press deflection {:.3e} m; max distance from explicit {:.3e} m; release peak-to-peak first 20 frames {:.3e} m, last 20 {:.3e} m",
+            if implicit { "implicit" } else { "explicit" },
+            frame_ms[60],
+            deflection,
+            off,
+            p2p(&after[..20]),
+            p2p(&after[40..])
+        );
+    }
+}
