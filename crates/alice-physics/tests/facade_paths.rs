@@ -359,12 +359,20 @@ use alice_physics::euler_fv::Conserved as _;
 use alice_physics::euler_fv::EulerConfig as _;
 use alice_physics::euler_fv::EulerError as _;
 use alice_physics::euler_fv::EulerFv1d as _;
+use alice_physics::euler_fv::EulerFv1dParticipant as _;
 use alice_physics::euler_fv::Limiter as _;
 use alice_physics::euler_fv::Primitive as _;
 use alice_physics::euler_fv::Reconstruction as _;
 use alice_physics::euler_fv::RiemannSolver as _;
 use alice_physics::euler_fv::StarState as _;
 use alice_physics::euler_fv::TimeIntegrator as _;
+use alice_physics::euler_fv::EULER_FV_OBS_ENERGY as _;
+use alice_physics::euler_fv::EULER_FV_OBS_LAST_STEPS as _;
+use alice_physics::euler_fv::EULER_FV_OBS_MASS as _;
+use alice_physics::euler_fv::EULER_FV_OBS_MOMENTUM as _;
+use alice_physics::euler_fv::EULER_FV_OBS_STEPS as _;
+use alice_physics::euler_fv::EULER_FV_OBS_TIME as _;
+use alice_physics::euler_fv::EULER_FV_PARTICIPANT_KIND as _;
 use alice_physics::euler_fv::MAX_NEWTON_ITERATIONS as _;
 use alice_physics::eulerian_grid as _;
 use alice_physics::eulerian_grid::g2p_velocity as _;
@@ -1943,7 +1951,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1925 paths, checked at compile time
+    // 1933 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

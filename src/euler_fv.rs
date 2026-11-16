@@ -131,6 +131,10 @@
 //!   star pressure at about `10⁻⁷`.
 
 use crate::math::Fix128;
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
+    SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -1189,6 +1193,302 @@ impl EulerFv1d {
         Ok(g)
     }
 }
+
+// ============================================================================
+// World participant
+// ============================================================================
+
+/// Snapshot tag of [`EulerFv1dParticipant`]: the ASCII code `EUFV`, big endian.
+pub const EULER_FV_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"EUFV"));
+
+/// Observation channel of [`EulerFv1dParticipant`]: the solver clock (world
+/// seconds).
+pub const EULER_FV_OBS_TIME: u32 = 0;
+
+/// Observation channel of [`EulerFv1dParticipant`]: CFL steps taken in the
+/// last substep it ran (the subcycle count).
+pub const EULER_FV_OBS_LAST_STEPS: u32 = 1;
+
+/// Observation channel of [`EulerFv1dParticipant`]: CFL steps taken since it
+/// was built.
+pub const EULER_FV_OBS_STEPS: u32 = 2;
+
+/// Observation channels of [`EulerFv1dParticipant`]: the totals `Σρ`, `Σρu`,
+/// `ΣE` ([`EulerFv1d::totals`]) after the last substep it ran.
+pub const EULER_FV_OBS_MASS: u32 = 3;
+/// See [`EULER_FV_OBS_MASS`].
+pub const EULER_FV_OBS_MOMENTUM: u32 = 4;
+/// See [`EULER_FV_OBS_MASS`].
+pub const EULER_FV_OBS_ENERGY: u32 = 5;
+
+/// Payload layout version written by [`EulerFv1dParticipant`].
+const EULER_FV_PARTICIPANT_STATE_VERSION: u32 = 1;
+
+/// Bytes before the cells: version, digest, clock, last step count, total
+/// step count.
+const EULER_FV_PARTICIPANT_HEADER: usize = 4 + 8 + 16 + 8 + 8;
+
+/// Bytes of one cell (`ρ`, `ρu`, `E`).
+const EULER_FV_CELL_BYTES: usize = 3 * 16;
+
+/// A 1-D Euler finite-volume solver ([`EulerFv1d`]) that advances inside the
+/// world's substep loop, splitting each substep into its own CFL steps
+/// ([`StepRule::Subcycle`]).
+///
+/// # MODEL
+///
+/// - **Equations**: the 1-D compressible Euler equations
+///   `∂U/∂t + ∂F(U)/∂x = 0`, `U = (ρ, ρu, E)`, ideal gas `p = (γ−1)(E − ρu²/2)`,
+///   exactly as [`EulerFv1d::step_with_dt`] discretises them (Godunov or
+///   MUSCL, exact or HLLC Riemann solver, the configured boundaries).
+/// - **Units**: the solver's own (`Δx` and time in the world's length and
+///   time units; the world's seconds drive the clock directly).
+/// - **Scheduling**: [`Participant::step_rule`] is `StepRule::Subcycle`. Each
+///   world substep of width `h` calls [`EulerFv1d::advance_to`]`(t + h)`: CFL
+///   steps `Δt = C·Δx / s_max` from the current state, the last one shortened
+///   to land on `t + h` exactly. The number of steps is a function of the
+///   state alone, so the same state and substep give the same count — also
+///   after a snapshot is restored.
+/// - **Coupling**: none. The gas does not read or push the world's bodies and
+///   declares no ports.
+/// - **Conservation and range**: as [`EulerFv1d`] — under periodic boundaries
+///   the totals `Σρ`, `Σρu`, `ΣE` are kept bit for bit (the interface fluxes
+///   cancel exactly in [`Fix128`]); a state the solver refuses (non-positive
+///   density or pressure, a step that cannot be represented) makes the substep
+///   fail with [`ParticipantFault::OutOfRange`] and leaves the participant as
+///   it was.
+/// - **Verification**: `tests/analytic_euler_fv_participant.rs` — the Sod
+///   shock tube through the world against the exact Riemann solution
+///   ([`exact_riemann`], checked against Toro's table 4.2 in
+///   `tests/analytic_euler_fv.rs`), with the density L1 error converging under
+///   refinement; world path equal to direct `advance_to` calls bit for bit;
+///   periodic totals kept bit for bit through the world; the subcycle count
+///   the same after snapshot and resume; foreign payloads refused.
+///
+/// # Determinism
+///
+/// All arithmetic is [`Fix128`] inside [`EulerFv1d`]; the participant adds one
+/// clock target per substep and integer step counts.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, the solver clock as a
+/// [`Fix128`] (`hi: i64`, `lo: u64`), the last subcycle count (`u64`), the
+/// total step count (`u64`), then each cell's `ρ`, `ρu`, `E` as [`Fix128`].
+/// The digest is FNV-1a 64 over the configuration, `Δx` and the cell count;
+/// [`Participant::check_state`] refuses a payload of another length
+/// ([`StateError::Length`]), version or digest, or one whose cells the solver
+/// would not accept (non-positive density or pressure) or whose clock is
+/// negative ([`StateError::InvalidValue`]).
+#[derive(Clone, Debug)]
+pub struct EulerFv1dParticipant {
+    solver: EulerFv1d,
+    digest: u64,
+    last_steps: u64,
+    steps: u64,
+}
+
+impl EulerFv1dParticipant {
+    /// The participant for `solver`, keeping its clock.
+    #[must_use]
+    pub fn new(solver: EulerFv1d) -> Self {
+        let digest = euler_participant_digest(&solver);
+        Self {
+            solver,
+            digest,
+            last_steps: 0,
+            steps: 0,
+        }
+    }
+
+    /// The solver it advances.
+    #[must_use]
+    pub fn solver(&self) -> &EulerFv1d {
+        &self.solver
+    }
+
+    /// CFL steps taken in the last substep it ran.
+    #[must_use]
+    pub fn last_steps(&self) -> u64 {
+        self.last_steps
+    }
+
+    /// CFL steps taken since it was built.
+    #[must_use]
+    pub fn steps(&self) -> u64 {
+        self.steps
+    }
+
+    fn state_len(&self) -> usize {
+        EULER_FV_PARTICIPANT_HEADER + self.solver.cells.len() * EULER_FV_CELL_BYTES
+    }
+}
+
+fn euler_participant_digest(s: &EulerFv1d) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    let c = &s.config;
+    let tag = |b: Boundary| match b {
+        Boundary::Transmissive => 0u8,
+        Boundary::ReflectiveWall => 1,
+        Boundary::Periodic => 2,
+    };
+    eat(&[
+        match c.solver {
+            RiemannSolver::Exact => 0,
+            RiemannSolver::Hllc => 1,
+        },
+        match c.reconstruction {
+            Reconstruction::FirstOrder => 0,
+            Reconstruction::Muscl(Limiter::Minmod) => 1,
+            Reconstruction::Muscl(Limiter::VanLeer) => 2,
+        },
+        match c.time {
+            TimeIntegrator::ForwardEuler => 0,
+            TimeIntegrator::SspRk2 => 1,
+        },
+        tag(c.left),
+        tag(c.right),
+    ]);
+    for f in [c.gamma, c.cfl, s.dx] {
+        eat(&f.hi.to_le_bytes());
+        eat(&f.lo.to_le_bytes());
+    }
+    eat(&(s.cells.len() as u64).to_le_bytes());
+    h
+}
+
+fn euler_u64_at(bytes: &[u8], at: usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[at..at + 8]);
+    u64::from_le_bytes(b)
+}
+
+fn euler_fix_at(bytes: &[u8], at: usize) -> Fix128 {
+    Fix128 {
+        hi: euler_u64_at(bytes, at) as i64,
+        lo: euler_u64_at(bytes, at + 8),
+    }
+}
+
+fn euler_put_fix(out: &mut Vec<u8>, f: Fix128) {
+    out.extend_from_slice(&f.hi.to_le_bytes());
+    out.extend_from_slice(&f.lo.to_le_bytes());
+}
+
+impl Participant for EulerFv1dParticipant {
+    fn kind(&self) -> ParticipantKind {
+        EULER_FV_PARTICIPANT_KIND
+    }
+
+    fn step_rule(&self) -> StepRule {
+        StepRule::Subcycle
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        // Advance a copy: an error part way leaves this participant untouched.
+        let target = self
+            .solver
+            .time
+            .checked_add(h)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        let mut next = self.solver.clone();
+        let n = next
+            .advance_to(target)
+            .map_err(|_| ParticipantFault::OutOfRange)? as u64;
+        let steps = self
+            .steps
+            .checked_add(n)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        self.solver = next;
+        self.last_steps = n;
+        self.steps = steps;
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        let t = self.solver.totals();
+        out.push(EULER_FV_OBS_TIME, self.solver.time);
+        out.push(
+            EULER_FV_OBS_LAST_STEPS,
+            Fix128::from_int(self.last_steps as i64),
+        );
+        out.push(EULER_FV_OBS_STEPS, Fix128::from_int(self.steps as i64));
+        out.push(EULER_FV_OBS_MASS, t.rho);
+        out.push(EULER_FV_OBS_MOMENTUM, t.mom);
+        out.push(EULER_FV_OBS_ENERGY, t.energy);
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&EULER_FV_PARTICIPANT_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        euler_put_fix(out, self.solver.time);
+        out.extend_from_slice(&self.last_steps.to_le_bytes());
+        out.extend_from_slice(&self.steps.to_le_bytes());
+        for c in &self.solver.cells {
+            euler_put_fix(out, c.rho);
+            euler_put_fix(out, c.mom);
+            euler_put_fix(out, c.energy);
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        let expected = self.state_len();
+        if bytes.len() != expected {
+            return Err(StateError::Length {
+                expected,
+                found: bytes.len(),
+            });
+        }
+        let mut version = [0u8; 4];
+        version.copy_from_slice(&bytes[0..4]);
+        if u32::from_le_bytes(version) != EULER_FV_PARTICIPANT_STATE_VERSION
+            || euler_u64_at(bytes, 4) != self.digest
+            || euler_fix_at(bytes, 12) < Fix128::ZERO
+        {
+            return Err(StateError::InvalidValue);
+        }
+        for (i, cell) in bytes[EULER_FV_PARTICIPANT_HEADER..]
+            .chunks_exact(EULER_FV_CELL_BYTES)
+            .enumerate()
+        {
+            let c = Conserved {
+                rho: euler_fix_at(cell, 0),
+                mom: euler_fix_at(cell, 16),
+                energy: euler_fix_at(cell, 32),
+            };
+            to_primitive_at(self.solver.config.gamma, &c, i)
+                .map_err(|_| StateError::InvalidValue)?;
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        self.solver.time = euler_fix_at(bytes, 12);
+        self.last_steps = euler_u64_at(bytes, 28);
+        self.steps = euler_u64_at(bytes, 36);
+        self.solver.cells = bytes[EULER_FV_PARTICIPANT_HEADER..]
+            .chunks_exact(EULER_FV_CELL_BYTES)
+            .map(|cell| Conserved {
+                rho: euler_fix_at(cell, 0),
+                mom: euler_fix_at(cell, 16),
+                energy: euler_fix_at(cell, 32),
+            })
+            .collect();
+    }
+}
+
+// The participant's oracles compile as lib tests too, so the participant's lines count in the
+// `--lib` coverage (the same file runs as the integration test `analytic_euler_fv_participant`).
+#[cfg(test)]
+#[path = "../tests/analytic_euler_fv_participant.rs"]
+mod analytic_euler_fv_participant_oracle;
 
 #[cfg(test)]
 mod tests {
