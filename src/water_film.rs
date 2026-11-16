@@ -6,7 +6,12 @@
 //!   (m²/s, per unit width) across a face is the diffusion-wave flux driven by the difference
 //!   of the free-surface elevation `η = b + h`: `q = sign(Δη)·min(g h_f³ |Δη| / (3ν l),
 //!   h_f √(g h_f))`, the lubrication (viscous, Nusselt) flux capped by the critical flux
-//!   ([`diffusion_wave_flux`]). `h_f = max(η_L, η_R) − max(b_L, b_R)` (zero or above) is the
+//!   ([`simultaneous_transfer`]). It is evaluated in integers: with `H = h_f` and `E = |Δη|` in
+//!   quanta, the lubrication transfer is `⌊H³E / D_l⌋` and the critical transfer
+//!   `⌊⌊√(H³)⌋ · N_c / 2⁶⁴⌋`, both floored, with `D_l = 3 ν l² 2⁹⁶ / (g Δt)` and
+//!   `N_c = √g Δt / l · 2⁴⁸` taken once per substep as the raw bits of their [`Fix128`] values
+//!   ([`FluxConstants`]); a product past 128 bits saturates, which is exact because it then
+//!   exceeds the `⌊h_f/4⌋` cap ([`MAX_LUBRICATION_DIVISOR`], [`MAX_FACE_DEPTH`]). `h_f = max(η_L, η_R) − max(b_L, b_R)` (zero or above) is the
 //!   depth over the higher bed of the two cells ([`face_depth`]), so no water crosses a face
 //!   while the surface stands below the higher bed: a basin holds water until its surface
 //!   passes the rim. On a steady incline of angle `α` the flux is the Nusselt film flux
@@ -41,11 +46,13 @@
 //!   by `Δt`, not at the gravity-wave speed**: their steady states (a level surface, overflow
 //!   at the rim) are physical, their levelling time is not
 //!   (`a_closed_groove_levels_to_the_closed_form_surface` reports it against `L/√(g h)`).
-//!   More than [`FilmConfig::max_subcycles`] substeps, or a depth leaving the integer range,
-//!   is [`ParticipantFault::OutOfRange`] and changes nothing ([`WaterFilm::advance`]).
+//!   More than [`FilmConfig::max_subcycles`] substeps, a depth leaving the integer range, a
+//!   face depth above 4 m ([`MAX_FACE_DEPTH`]) or a substep so short that `D_l` passes 2⁹⁸
+//!   (`3 ν l² / (g Δt) > 4`: below 7.6·10⁻⁸ s for water at `l` = 1 m) is
+//!   [`ParticipantFault::OutOfRange`] and changes nothing ([`WaterFilm::advance`]).
 //! - **Approximations**: 2.5D, one depth per column, the bed a height field sampled once per
 //!   cell centre ([`FilmBed::from_height_fn`], [`FilmBed::from_sdf`]); gravity along −y only;
-//!   no inertia, surface tension, contact angle or infiltration ([`diffusion_wave_flux`]);
+//!   no inertia, surface tension, contact angle or infiltration ([`simultaneous_transfer`]);
 //!   rain uniform over the grid and evaporation at a fixed rate on wet cells
 //!   ([`WaterFilm::step_once`]); the bed is fixed while the film steps, a new one is set with
 //!   [`WaterFilm::set_bed`], which needs a larger generation. Rest is reached when every face
@@ -59,7 +66,7 @@
 //!   leaves the potential unchanged, so it never comes to rest.
 //!   Measured on a closed 8-cell groove: spread 48 quanta at rest (11 nm, bound 49).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned`
+//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds`
 //!
 //! Author: Moroya Sakamoto
 
@@ -425,58 +432,107 @@ pub fn face_depth(b_l: i64, h_l: i64, b_r: i64, h_r: i64) -> i64 {
     (eta - b_l.max(b_r)).max(0)
 }
 
-/// The diffusion-wave flux: `sign(Δη)·min(g h_f³ |Δη| / (3ν l), h_f √(g h_f))`.
-#[must_use]
-pub fn diffusion_wave_flux(
-    h_face: Fix128,
-    d_eta: Fix128,
-    cell: Fix128,
-    g: Fix128,
-    nu: Fix128,
-) -> Fix128 {
-    if h_face.is_zero() || d_eta.is_zero() {
-        return Fix128::ZERO;
-    }
-    let lub = g * h_face * h_face * h_face * d_eta.abs() / (Fix128::from_int(3) * nu * cell);
-    let crit = h_face * (g * h_face).sqrt();
-    let m = if lub < crit { lub } else { crit };
-    if d_eta.is_negative() {
-        -m
-    } else {
-        m
+/// Largest face depth the flux law accepts, `2³⁴` quanta (4 m): `h_f³` then fits in 102 bits.
+pub const MAX_FACE_DEPTH: u64 = 1 << 34;
+
+/// Largest lubrication divisor `D_l` the flux law accepts (`2⁹⁸`): with `h_f ≤ 2³⁴` a product
+/// `h_f³ |Δη|` that overflows 128 bits then means a lubrication transfer above `2³⁰` quanta,
+/// more than any `⌊h_f/4⌋`, so saturating it is exact.
+pub const MAX_LUBRICATION_DIVISOR: u128 = 1 << 98;
+
+/// The two per-substep constants of the integer flux law, from the cell side `l`, the
+/// substep `Δt`, gravity `g` and viscosity `ν` (all [`Fix128`]):
+/// `lubrication = ⌊3 ν l² 2⁹⁶ / (g Δt)⌋` and `critical = ⌊√g · Δt / l · 2⁻¹⁶ · 2⁶⁴⌋`, each the
+/// raw Q64.64 bits of the [`Fix128`] value (so rounded as [`Fix128`] multiplication, division
+/// and square root round).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FluxConstants {
+    /// `D_l`: the lubrication transfer is `⌊h_f³ |Δη| / D_l⌋` quanta.
+    pub lubrication: u128,
+    /// `N_c`: the critical transfer is `⌊⌊√(h_f³)⌋ · N_c / 2⁶⁴⌋` quanta.
+    pub critical: u128,
+}
+
+fn raw_bits(f: Fix128) -> u128 {
+    ((f.hi as u128) << 64) | u128::from(f.lo)
+}
+
+impl FluxConstants {
+    /// The constants for a substep `dt`; `None` when `dt`, `g`, `ν` or `l` is not positive or
+    /// `D_l` exceeds [`MAX_LUBRICATION_DIVISOR`].
+    #[must_use]
+    pub fn new(cell: Fix128, dt: Fix128, g: Fix128, nu: Fix128) -> Option<Self> {
+        if cell <= Fix128::ZERO || dt <= Fix128::ZERO || g <= Fix128::ZERO || nu <= Fix128::ZERO {
+            return None;
+        }
+        let x = Fix128::from_int(3) * nu * cell * cell * Fix128::from_int(1i64 << 32) / (g * dt);
+        let c = (g.sqrt() * dt / cell).shr_bits(16);
+        if x.is_negative() || c.is_negative() {
+            return None;
+        }
+        let lubrication = raw_bits(x);
+        if lubrication == 0 || lubrication > MAX_LUBRICATION_DIVISOR {
+            return None;
+        }
+        Some(Self {
+            lubrication,
+            critical: raw_bits(c),
+        })
     }
 }
 
+/// `⌊√n⌋` for a `u128`, by bits (exact).
+#[must_use]
+pub fn isqrt_u128(n: u128) -> u128 {
+    let mut rem = n;
+    let mut root = 0u128;
+    let mut bit = 1u128 << 126;
+    while bit > n {
+        bit >>= 2;
+    }
+    while bit != 0 {
+        if rem >= root + bit {
+            rem -= root + bit;
+            root = (root >> 1) + bit;
+        } else {
+            root >>= 1;
+        }
+        bit >>= 2;
+    }
+    root
+}
+
 /// The water (quanta) a face moves in a substep when every face moves at once from the same
-/// state: `min(⌊|q|·Δt/l⌋, ⌊|Δη|/8⌋, ⌊h_f/4⌋)` with the sign of `Δη`.
+/// state, in integers: with `H = h_f` and `E = |Δη|` in quanta,
+/// `t = min(⌊H³E / D_l⌋, ⌊⌊√(H³)⌋·N_c / 2⁶⁴⌋, ⌊E/8⌋, ⌊H/4⌋)` with the sign of `Δη`
+/// (the lubrication and the critical transfer, each floored; a product past 128 bits
+/// saturates, which is exact by [`MAX_LUBRICATION_DIVISOR`]). `None` when `H` exceeds
+/// [`MAX_FACE_DEPTH`].
 #[must_use]
 pub fn simultaneous_transfer(
     first: (i64, i64),
     second: (i64, i64),
-    cell: Fix128,
-    dt: Fix128,
-    g: Fix128,
-    nu: Fix128,
-) -> i64 {
+    k: FluxConstants,
+) -> Option<i64> {
     let d_eta = (first.0 + first.1) - (second.0 + second.1);
-    let hf = face_depth(first.0, first.1, second.0, second.1);
-    if d_eta == 0 || hf == 0 {
-        return 0;
+    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
+    if hf > MAX_FACE_DEPTH {
+        return None;
     }
-    let q = diffusion_wave_flux(
-        quanta_to_metres(hf),
-        quanta_to_metres(d_eta.abs()),
-        cell,
-        g,
-        nu,
-    );
-    let flux = metres_to_quanta(q * dt / cell);
-    let t = flux.min(d_eta.abs() / 8).min(hf / 4);
-    if d_eta > 0 {
-        t
-    } else {
-        -t
+    let e = d_eta.unsigned_abs();
+    let caps = (e / 8).min(hf / 4);
+    if caps == 0 {
+        return Some(0);
     }
+    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
+    let lub = h3
+        .checked_mul(u128::from(e))
+        .map_or(u128::MAX, |v| v / k.lubrication);
+    let crit = isqrt_u128(h3)
+        .checked_mul(k.critical)
+        .map_or(u128::MAX, |v| v >> 64);
+    let t = lub.min(crit).min(u128::from(caps)) as i64;
+    Some(if d_eta > 0 { t } else { -t })
 }
 
 /// A thin water film over a [`FilmBed`]; a [`Participant`] of kind `FILM`.
@@ -742,20 +798,8 @@ impl WaterFilm {
         delta.clear();
         delta.resize(ncell, 0);
         let (nx, nz) = (self.bed.nx, self.bed.nz);
-        // the lubrication transfer in quanta is `K·h_f³·|Δη|` (h_f, Δη in quanta) with
-        // `K = g Δt / (3 ν l²) · 2⁻⁹⁶`; it is below half a quantum when `h_f³ |Δη| < 1/(2K)`,
-        // computed as the raw Q64.64 bits of `3 ν l² 2³² / (g Δt)` halved
-        let x = Fix128::from_int(3)
-            * cfg.viscosity
-            * self.bed.cell
-            * self.bed.cell
-            * Fix128::from_int(1i64 << 32)
-            / (cfg.gravity * dt);
-        let lub_zero = if x.is_negative() {
-            0
-        } else {
-            ((((x.hi as u128) << 64) | u128::from(x.lo)) >> 1).saturating_sub(1)
-        };
+        let k = FluxConstants::new(self.bed.cell, dt, cfg.gravity, cfg.viscosity)
+            .ok_or(ParticipantFault::OutOfRange)?;
         let nfx = (nx + 1) * nz;
         let nf = nfx + nx * (nz + 1);
         for n in 0..nf {
@@ -778,25 +822,10 @@ impl WaterFilm {
                 (Some(x), Some(y)) => (x, y),
                 _ => continue,
             };
-            // exact early outs, each a case where the transfer is 0: two dry cells; a surface
-            // difference below 8 quanta (the `⌊|Δη|/8⌋` cap); a face depth below 4 quanta (the
-            // `⌊h_f/4⌋` cap); a lubrication flux below half a quantum (`h_f³ |Δη| < lub_zero`)
             if sa.1 == 0 && sb.1 == 0 {
                 continue;
             }
-            let d_eta = ((sa.0 + sa.1) - (sb.0 + sb.1)).unsigned_abs();
-            let hf = face_depth(sa.0, sa.1, sb.0, sb.1).unsigned_abs();
-            if d_eta < 8 || hf < 4 {
-                continue;
-            }
-            let lub_bound = u128::from(hf)
-                .checked_mul(u128::from(hf))
-                .and_then(|x| x.checked_mul(u128::from(hf)))
-                .and_then(|x| x.checked_mul(u128::from(d_eta)));
-            if matches!(lub_bound, Some(v) if v < lub_zero) {
-                continue;
-            }
-            let t = simultaneous_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
+            let t = simultaneous_transfer(sa, sb, k).ok_or(ParticipantFault::OutOfRange)?;
             if t == 0 {
                 continue;
             }
