@@ -780,7 +780,17 @@ pub mod det_math {
         }
     }
 }
-#[cfg(any(feature = "ffi", feature = "wasm", feature = "python"))]
+// also built for the lib tests in every feature set: its oracles must run wherever the mutation
+// tests do (an in-diff run without a binding feature otherwise compiled none of them and reported
+// every mutant of a binding change as missed)
+#[cfg(any(feature = "ffi", feature = "wasm", feature = "python", test))]
+#[cfg_attr(
+    not(any(feature = "ffi", feature = "wasm", feature = "python")),
+    allow(
+        dead_code,
+        reason = "a lib test build without a binding feature compiles the binding helpers for their oracles; only the bindings call them"
+    )
+)]
 mod binding_api;
 pub mod dynamic_bvh;
 #[cfg(feature = "std")]
