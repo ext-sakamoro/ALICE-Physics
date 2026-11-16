@@ -61,6 +61,7 @@
 //! | `WNDZ` | `0x574e_445a` | `wind_zone::WindZoneParticipant` |
 //! | `BUOY` | `0x4255_4f59` | `buoyancy_zone::BuoyancyZoneParticipant` |
 //! | `ROPE` | `0x524f_5045` | `rope_participant::RopeParticipant` |
+//! | `YEEG` | `0x5945_4547` | `maxwell_fdtd::YeeGridParticipant` |
 //!
 //! # Coupling through ports
 //!
