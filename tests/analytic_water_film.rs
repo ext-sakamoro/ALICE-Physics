@@ -818,3 +818,64 @@ fn the_substep_count_depends_on_declared_inputs_only() {
     }
     assert_eq!(compared, 600);
 }
+
+/// A mixed scene: an uneven bed with a trough, scattered initial water, rain, evaporation and
+/// point deposits, stepped 400 times; returns the SHA-256 of the state bytes.
+fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
+    let (nx, nz) = (23usize, 17usize);
+    let h: Vec<Fix128> = (0..nx * nz)
+        .map(|c| {
+            let (i, k) = (c % nx, c / nx);
+            mm(((i * 7 + k * 13) % 11) as i64 - 5)
+                - if (5..9).contains(&k) && (3..19).contains(&i) {
+                    mm(30)
+                } else {
+                    Fix128::ZERO
+                }
+        })
+        .collect();
+    let bed = FilmBed::from_heights(nx, nz, mm(10), (Fix128::ZERO, Fix128::ZERO), &h, 1).unwrap();
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, edge);
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(20_000));
+    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(700));
+    let mut f = WaterFilm::new(cfg, bed).unwrap();
+    f.set_reverse_faces(rev);
+    for c in (0..nx * nz).step_by(5) {
+        f.set_initial_depth(c % nx, c / nx, metres_to_quanta(mm(((c * 3) % 40) as i64)));
+    }
+    for n in 0..400 {
+        if n % 9 == 0 {
+            let (x, z) = f.bed().centre(n % nx, (n / 3) % nz);
+            f.deposit(x, z, Fix128::from_ratio(3, 10_000_000));
+        }
+        f.advance(Fix128::from_ratio(1, 20)).unwrap();
+    }
+    let mut s = Vec::new();
+    f.write_state(&mut s);
+    Sha256::digest(&s)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// golden (determinism and the exact early outs): the state of the mixed scene, closed and
+/// open, visited forwards and backwards. Pinned from the stepping code before the early outs
+/// (dry pairs, `|Δη| < 8`, `h_f < 4`, the half-quantum lubrication bound) were added: each
+/// early out skips only a face whose transfer is 0, so the bytes did not move.
+#[test]
+fn the_mixed_scene_digest_is_pinned() {
+    const CLOSED: &str = "443140cf36cb7b5bcfaedc0783f99b0ec56a7ad30e630133e29e821cf7329b91";
+    const OPEN: &str = "9b81cdbd18373c227b1cdca60827bd8f9364d8ebb1168d9e412f1b690b445092";
+    for rev in [false, true] {
+        assert_eq!(
+            mixed_scene(FilmEdge::Closed, rev),
+            CLOSED,
+            "closed, reverse {rev}"
+        );
+        assert_eq!(
+            mixed_scene(FilmEdge::Open, rev),
+            OPEN,
+            "open, reverse {rev}"
+        );
+    }
+}
