@@ -195,7 +195,73 @@ fn the_potential_never_rises_without_a_source() {
         }
         assert!(fell > 100, "{edge:?}: the potential fell only {fell} times");
     }
-    assert_eq!(compared, 40_000);
+    // a deep flat pool (four wet neighbours per cell) with a bump of 8 quanta and a bump of
+    // 4 mm: the cap `⌊|Δη|/8⌋` is what keeps four simultaneous moves from overshooting
+    let bed = FilmBed::from_heights(
+        9,
+        9,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &[Fix128::ZERO; 81],
+        1,
+    )
+    .expect("bed");
+    let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
+    let base = metres_to_quanta(mm(20));
+    for k in 0..9 {
+        for i in 0..9 {
+            f.set_initial_depth(i, k, base);
+        }
+    }
+    f.set_initial_depth(4, 4, base + 8);
+    f.set_initial_depth(2, 6, base + metres_to_quanta(mm(4)));
+    let dt = f.config().max_substep;
+    let mut last = potential(&f);
+    let mut fell = 0;
+    for n in 0..2_000 {
+        f.step_once(dt).expect("substep");
+        let p = potential(&f);
+        assert!(
+            p <= last,
+            "pool substep {n}: potential rose by {}",
+            p - last
+        );
+        fell += usize::from(p < last);
+        last = p;
+        compared += 1;
+    }
+    assert!(fell > 10, "pool: the potential fell only {fell} times");
+    assert_eq!(compared, 42_000);
+}
+
+/// oracle: no cell gives more than it holds. A 5 cm column on a pedestal 10 cm above four
+/// lower neighbours spills on all four sides at once (each side alone could carry more than a
+/// quarter of the column in one substep); every depth stays at or above zero and the volume
+/// is exact at every substep.
+#[test]
+fn a_column_spilling_four_ways_never_goes_negative() {
+    let mut h = vec![Fix128::ZERO; 25];
+    h[12] = mm(100);
+    let bed =
+        FilmBed::from_heights(5, 5, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
+    let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
+    f.set_initial_depth(2, 2, metres_to_quanta(mm(50)));
+    let dt = f.config().max_substep;
+    let mut compared = 0;
+    for n in 0..500 {
+        f.step_once(dt).expect("substep");
+        assert!(
+            f.depths().iter().all(|d| *d >= 0),
+            "substep {n}: a depth below zero"
+        );
+        assert_eq!(f.total(), f.ledger().expected(), "substep {n}");
+        compared += 1;
+    }
+    assert!(
+        f.depths()[12] < metres_to_quanta(mm(50)),
+        "the column did not spill"
+    );
+    assert_eq!(compared, 500);
 }
 
 /// oracle: conservation as integers. Through rain, evaporation, point deposits and open
@@ -612,9 +678,11 @@ fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
     assert_eq!(compared, 20);
 }
 
-/// oracle: evaporation. A uniform layer `h₀` on a flat closed bed under evaporation `E` and
-/// no rain is gone at `t = h₀ / E` (to one substep), and each cell turns dry (depth at or
-/// below the wet threshold) at `(h₀ − threshold) / E` (to one substep).
+/// oracle: evaporation. A layer of mean depth `h̄` on a flat closed bed under evaporation `E`
+/// and no rain is gone at `t = h̄ / E` (to one substep), and every cell is dry (depth at or
+/// below the wet threshold) at `(h̄ − threshold) / E` (to one substep). One cell starts at a
+/// third of the others: on a flat bed it is refilled by its neighbours faster than it
+/// evaporates, so it dries with them (at the mean), never early and never below zero.
 #[test]
 fn a_wet_cell_dries_in_the_closed_form_time() {
     let bed = FilmBed::from_heights(
@@ -636,14 +704,21 @@ fn a_wet_cell_dries_in_the_closed_form_time() {
             f.set_initial_depth(i, k, h0);
         }
     }
+    // one shallower cell: it must dry first and never go below zero
+    f.set_initial_depth(3, 2, h0 / 3);
     let dt = f.config().max_substep;
     let e = f.config().evaporation.to_f64();
     let q = QUANTUM_M;
-    let t_gone = h0 as f64 * q / e;
-    let t_dry = (h0 - threshold) as f64 * q / e;
+    let mean = f.total() as f64 / 12.0;
+    let t_gone = mean * q / e;
+    let t_dry = (mean - threshold as f64) * q / e;
     let (mut gone_at, mut dry_at) = (None, None);
     for n in 1..200_000u64 {
         f.step_once(dt).expect("substep");
+        assert!(
+            f.depths().iter().all(|d| *d >= 0),
+            "substep {n}: a depth below zero"
+        );
         let t = n as f64 * dt.to_f64();
         if dry_at.is_none() && f.dry_ages().iter().all(|a| *a > 0) {
             dry_at = Some(t);
