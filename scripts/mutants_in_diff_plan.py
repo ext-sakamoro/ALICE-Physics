@@ -17,7 +17,14 @@ mutants. This script reads the diff and prints, as JSON:
     besides `--lib`;
   * `skipped`: changed files whose module cannot be compiled on the host at
     all (it requires `not(feature = "std")`, or a wasm / python build); they
-    are removed from the diff written to `--out`, and listed so the run says so.
+    are removed from the diff written to `--out`, and listed so the run says so;
+  * `not_exercised`: changed lines inside an item (fn, impl, statement, ...) of
+    a buildable file whose own cfg cannot hold on the host (`#[cfg(feature =
+    "wasm")] fn ...`). The item is not compiled in the host test run, so a
+    mutant of it changes nothing and would read missed; the lines are turned
+    into context lines in the diff written to `--out` (no mutant is made there)
+    and listed by file, line count and cfg, so the run reports them as not
+    exercised instead of missed.
 
 The spans and attributes come from a Rust parser (`syn`, scripts/cfg-items), not
 from a line scanner: an item header that spans several lines (a long signature,
@@ -286,6 +293,58 @@ def item_gates(spans: list[Span], lines: list[int]) -> list[str]:
     return found
 
 
+def unbuildable_lines(spans: list[Span], lines: list[int]) -> dict[str, list[int]]:
+    """`{cfg: [changed lines]}` for the changed lines inside a node whose cfg cannot
+    hold on the host test run (every such node counts, nested or not, and of any
+    kind: an item, a `mod` declaration, or a file's own `#![cfg(...)]`)."""
+    out: dict[str, list[int]] = {}
+    for s in spans:
+        if not features_for(s.cfg)[1]:
+            hit = [n for n in lines if s.start <= n <= s.end]
+            if hit:
+                out.setdefault(s.cfg, []).extend(hit)
+    return out
+
+
+def neutralise(file_diff: str, lines: set[int]) -> str:
+    """The file's diff with the added lines at `lines` (new-file numbers) turned into
+    context lines, each hunk's old-side count raised to match: those lines are no
+    longer changed lines, so cargo-mutants makes no mutant there."""
+    if not lines:
+        return file_diff
+    out: list[str] = []
+    hunk_at = -1
+    old_start = old_len = new_start = new_len = 0
+    added_ctx = 0
+    line = 0
+    for raw in file_diff.splitlines(keepends=True):
+        m = re.match(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$", raw.rstrip("\n"))
+        if m:
+            if hunk_at >= 0 and added_ctx:
+                out[hunk_at] = f"@@ -{old_start},{old_len + added_ctx} +{new_start},{new_len} @@{tail}\n"
+            old_start, new_start = int(m.group(1)), int(m.group(3))
+            old_len = int(m.group(2)) if m.group(2) is not None else 1
+            new_len = int(m.group(4)) if m.group(4) is not None else 1
+            tail = m.group(5)
+            hunk_at, added_ctx, line = len(out), 0, new_start
+            out.append(raw)
+            continue
+        if hunk_at < 0 or raw.startswith(("+++", "---")):
+            out.append(raw)
+            continue
+        if raw.startswith("+"):
+            if line in lines:
+                raw = " " + raw[1:]
+                added_ctx += 1
+            line += 1
+        elif raw.startswith(" "):
+            line += 1
+        out.append(raw)
+    if hunk_at >= 0 and added_ctx:
+        out[hunk_at] = f"@@ -{old_start},{old_len + added_ctx} +{new_start},{new_len} @@{tail}\n"
+    return "".join(out)
+
+
 def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     cargo = (root / "Cargo.toml").read_text(encoding="utf-8")
     req = required_features(cargo)
@@ -294,6 +353,7 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     features = set(base_features)
     tests: set[str] = set()
     kept, skipped = [], []
+    not_exercised: list[dict] = []
     for path, text in split_diff(diff):
         path = path.replace("\\", "/")  # a diff written on Windows by another tool
         module = module_of(path)
@@ -315,10 +375,16 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
         features.update(feats)
         source = root / path
         if source.is_file():
-            for cfg in item_gates(cfg_spans(source), changed_lines(text)):
+            spans = cfg_spans(source)
+            lines = changed_lines(text)
+            for cfg in item_gates(spans, lines):
                 item_feats, item_buildable = features_for(cfg)
                 if item_buildable:
                     features.update(item_feats)
+            dropped = unbuildable_lines(spans, lines)
+            for cfg, hit in sorted(dropped.items()):
+                not_exercised.append({"file": path, "lines": len(set(hit)), "cfg": cfg})
+            text = neutralise(text, {n for hit in dropped.values() for n in hit})
         kept.append(text)
         token = re.compile(rf"(^|_){re.escape(module)}(_|$)")
         for t in test_names:
@@ -332,6 +398,7 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
         "features": sorted(f for f in features if f),
         "tests": sorted(tests),
         "skipped": skipped,
+        "not_exercised": not_exercised,
         "diff": "".join(kept),
     }
 
@@ -341,13 +408,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("diff")
     ap.add_argument("--features", default="", help="comma-separated features of the matrix entry")
     ap.add_argument("--out", required=True, help="where to write the diff with unbuildable files removed")
+    ap.add_argument("--summary", help="append the not-exercised lines (by file and in total) to this file")
     args = ap.parse_args(argv)
     base = [f for f in args.features.split(",") if f.strip()]
-    p = plan(Path(args.diff).read_text(encoding="utf-8"), base)
+    p = plan(Path(args.diff).read_text(encoding="utf-8"), base, ROOT)
     Path(args.out).write_text(p.pop("diff"), encoding="utf-8")
     print(json.dumps(p))
     for f in p["skipped"]:
         print(f"note: {f} is not buildable on the host test run; not mutated", file=sys.stderr)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as f:
+            for n in p["not_exercised"]:
+                f.write(f"- not exercised by this job: {n['file']}: {n['lines']} changed line(s) under "
+                        f"#[cfg({n['cfg']})]\n")
+            total = sum(n["lines"] for n in p["not_exercised"])
+            f.write(f"- not exercised (host-unbuildable cfg): {total} changed line(s)\n")
+    for n in p["not_exercised"]:
+        print(f"note: {n['file']}: {n['lines']} changed line(s) under #[cfg({n['cfg']})] are not compiled "
+              "on the host test run; not exercised by this job (not mutated)", file=sys.stderr)
     return 0
 
 
