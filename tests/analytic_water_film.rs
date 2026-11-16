@@ -951,3 +951,61 @@ fn the_flux_law_holds_at_its_bounds() {
     assert_eq!(f.advance(tiny), Err(ParticipantFault::OutOfRange));
     assert_eq!(state(&f), before);
 }
+
+/// oracle: critical outflow over a free edge. A single cell, open on all four edges, empties
+/// over them at the critical flux `q = h √(g h)` per unit width (the lubrication flux of a
+/// fall the depth of the cell is far larger), so `dh/dt = −4 √g h^(3/2) / l` and
+/// `h(t) = (h₀^(−1/2) + 2 √g t / l)^(−2)`. The step is explicit, so the depth follows the
+/// closed form to a relative error of the order of one substep's change, `4 √(g h₀) Δt / l`
+/// (the bound used), measured at the time the closed form halves the depth.
+#[test]
+fn a_cell_drains_over_its_edges_at_the_critical_rate() {
+    let bed = FilmBed::from_heights(
+        1,
+        1,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &[Fix128::ZERO],
+        1,
+    )
+    .expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
+    cfg.max_substep = Fix128::from_ratio(1, 4096);
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    let h0 = 0.02;
+    f.set_initial_depth(0, 0, metres_to_quanta(mm(20)));
+    let (g, l) = (9.80665_f64, 0.01_f64);
+    let sqrt_g = 3.131_557_121_916_5_f64; // √9.80665
+    let h0_inv_sqrt = 7.071_067_811_865_475_f64; // 1/√0.02
+                                                 // closed form halving time: (√2 − 1)/√h₀ · l / (2 √g)
+    let t_half = (core::f64::consts::SQRT_2 - 1.0) * h0_inv_sqrt * l / (2.0 * sqrt_g);
+    let dt = f.config().max_substep.to_f64();
+    let steps = (t_half / dt).round() as u64;
+    for _ in 0..steps {
+        f.step_once(f.config().max_substep).expect("substep");
+    }
+    let t = steps as f64 * dt;
+    let s = h0_inv_sqrt + 2.0 * sqrt_g * t / l;
+    let expected = 1.0 / (s * s);
+    let got = f.depth_m(0, 0).to_f64();
+    let bound = 4.0 * (g * h0).sqrt_approx() * dt / l;
+    assert!(
+        (got - expected).abs() / expected <= bound,
+        "depth {got:.6e} m at {t:.5} s, closed form {expected:.6e} m, bound {bound:.3e}"
+    );
+    assert!(f.ledger().outflow > 0);
+}
+
+trait SqrtApprox {
+    fn sqrt_approx(self) -> f64;
+}
+impl SqrtApprox for f64 {
+    // Newton iterations: a bound only, no libm
+    fn sqrt_approx(self) -> f64 {
+        let mut x = self.max(1.0e-300);
+        for _ in 0..60 {
+            x = 0.5 * (x + self / x);
+        }
+        x
+    }
+}
