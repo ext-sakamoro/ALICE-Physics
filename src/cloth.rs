@@ -77,6 +77,18 @@
 //! (`impact_zones_are_the_identity_where_the_repair_converges`). The zones guarantee no
 //! crossing, not the contact thickness: pairs held against a particle the caller moves (a pinned
 //! one) can end the frame inside the thickness.
+//! **Bending through a fold.** The dihedral constraint uses the unsigned angle between the face
+//! normals (Müller et al. 2007), whose gradient vanishes at the flat angle and at the fully
+//! folded one; at a fold and next to it (measured on the test hinge exactly folded and one ulp
+//! off) its correction rounds to zero in `Fix128`, so a sheet that stays exactly in its
+//! plane kept a fold made by a drag for ever. The fold branch: on a hinge folded past a right
+//! angle (`n̂₁ · n̂₂ > 0`), away from its rest angle, whose every correction rounded to zero, the
+//! hinge is projected with the face-normal gradients of the signed angle (Bridson et al. 2003),
+//! which have no degenerate point between flat and folded; everywhere else the unsigned formula
+//! runs bit for bit as before. Replacing the whole bend term with the face-normal formula was
+//! measured and not taken: it moved hinges away from the fold by up to 0.078 m in one solve
+//! (not rounding), and a released sheet's tether + kinetic energy rose by 0.32 J in one step at
+//! release with it, with or without more iterations.
 //! A grabA grab ([`Cloth::grab`]) is a kinematic pin (infinite mass while held, no
 //! reaction on the pointer; the throw velocity is the pointer's velocity over the last step).
 //! An outline lattice ([`Cloth::from_outline`]) gives every particle the same mass (mass
@@ -96,7 +108,13 @@
 //! translation, velocity and exact linear momentum),
 //! `a_zone_whose_translation_the_chord_test_flags_is_frozen`,
 //! `the_self_contact_stages_alone_reduce_the_edge_edge_violations` and
-//! `impact_zone_report_on_the_crumple_sweep` (the per-scene cost).
+//! `impact_zone_report_on_the_crumple_sweep` (the per-scene cost); the fold branch:
+//! `the_exact_fold_is_corrected_by_the_fold_branch`, `one_ulp_off_the_fold_is_corrected_by_the_fold_branch`,
+//! `a_sweep_of_hinge_angles_to_the_fold_never_gives_a_zero_correction`,
+//! `the_fold_branch_has_no_gap_and_no_overlap`,
+//! `the_face_normal_gradients_are_the_derivatives_of_the_signed_angle` (in this file) and
+//! `tests/analytic_touch_release_settle.rs` (a released sheet settles within the closed-form
+//! tether decay over a 24-case drag sweep).
 //!
 //! **Tiers.** L0 only: no lighter tier yet (a coarser lattice would be one, with its error
 //! against this lattice measured on the same outline).
@@ -195,6 +213,9 @@ struct BendConstraint {
     i3: usize,
     /// Rest dihedral angle
     rest_angle: Fix128,
+    /// Rest signed angle between the face normals about the shared edge, for the fold branch
+    /// (`hinge_signed_angle`): 0 when flat, ±π folded onto itself
+    rest_signed: Fix128,
 }
 
 // ============================================================================
@@ -1114,6 +1135,12 @@ impl Cloth {
     /// sign-blind — and the cloth accumulated energy until it flew upward.
     #[inline(always)]
     fn solve_bend_constraints(&mut self, dt: Fix128) {
+        self.solve_bend(dt, true);
+    }
+
+    /// The bending pass, with or without the fold branch (`fold_branch = false` is the formula
+    /// alone, kept for the tests that compare the two)
+    fn solve_bend(&mut self, dt: Fix128, fold_branch: bool) {
         let compliance = self.config.bend_compliance / (dt * dt);
 
         for c_idx in 0..self.bend_constraints.len() {
@@ -1163,23 +1190,87 @@ impl Cloth {
 
             // s = sin(angle) · C / denom (sqrt(1 - d²) == |n1 × n2|)
             let scale = sin_angle * error / denom;
+            let deltas = [
+                q0 * (w0 * scale),
+                q1 * (w1 * scale),
+                q2 * (w2 * scale),
+                q3 * (w3 * scale),
+            ];
+            // The fold branch: the gradient of the unsigned angle vanishes at the fold (as at
+            // flat), so near a hinge folded onto itself the correction rounds to nothing and a
+            // sheet that stays in its plane keeps the fold. Where the hinge is folded past a right
+            // angle (d > 0), away from its rest angle, and every correction rounded to zero, it is
+            // solved with the face-normal gradients instead, which are defined through the fold.
+            if fold_branch
+                && d > Fix128::ZERO
+                && !error.is_zero()
+                && deltas.iter().all(|v| *v == Vec3Fix::ZERO)
+            {
+                self.solve_hinge_face_normal(c, compliance);
+                continue;
+            }
             if scale.is_zero() {
                 continue;
             }
 
             if !w0.is_zero() {
-                self.positions[c.i0] = self.positions[c.i0] - q0 * (w0 * scale);
+                self.positions[c.i0] = self.positions[c.i0] - deltas[0];
             }
             if !w1.is_zero() {
-                self.positions[c.i1] = self.positions[c.i1] - q1 * (w1 * scale);
+                self.positions[c.i1] = self.positions[c.i1] - deltas[1];
             }
             if !w2.is_zero() {
-                self.positions[c.i2] = self.positions[c.i2] - q2 * (w2 * scale);
+                self.positions[c.i2] = self.positions[c.i2] - deltas[2];
             }
             if !w3.is_zero() {
-                self.positions[c.i3] = self.positions[c.i3] - q3 * (w3 * scale);
+                self.positions[c.i3] = self.positions[c.i3] - deltas[3];
             }
         }
+    }
+
+    /// One hinge by the signed angle between the face normals and the face-normal gradients
+    /// (Bridson et al. 2003), which are defined from flat through folded onto itself. Edge
+    /// `(x3, x4) = (i0, i1)`, opposite vertices `x1 = i2`, `x2 = i3`, `E = x4 − x3`,
+    /// `N1 = (x1 − x3) × (x1 − x4)`, `N2 = (x2 − x4) × (x2 − x3)`,
+    /// `θ = atan2((N̂1 × N̂2) · Ê, N̂1 · N̂2)`, `C = θ − θ_rest` wrapped to `(−π, π]`, and
+    /// `Δx_i = −w_i C / (Σ w_j |u_j|² + α / dt²) · u_i` with `u1 = |E| N1 / |N1|²`,
+    /// `u2 = |E| N2 / |N2|²`, `u3 = ((x1 − x4)·E / |E|) N1 / |N1|² + ((x2 − x4)·E / |E|) N2 / |N2|²`,
+    /// `u4 = −((x1 − x3)·E / |E|) N1 / |N1|² − ((x2 − x3)·E / |E|) N2 / |N2|²` (`u_i = ∂θ / ∂x_i`).
+    fn solve_hinge_face_normal(&mut self, c: BendConstraint, compliance: Fix128) {
+        let (x3, x4) = (self.positions[c.i0], self.positions[c.i1]);
+        let (x1, x2) = (self.positions[c.i2], self.positions[c.i3]);
+        let Some((theta, [u1, u2, u3, u4])) = hinge_signed_angle(x1, x2, x3, x4) else {
+            return;
+        };
+        let mut err = theta - c.rest_signed;
+        let two_pi = Fix128::PI + Fix128::PI;
+        if err > Fix128::PI {
+            err = err - two_pi;
+        } else if err <= -Fix128::PI {
+            err = err + two_pi;
+        }
+        if err.is_zero() {
+            return;
+        }
+        let (w1, w2, w3, w4) = (
+            self.inv_masses[c.i2],
+            self.inv_masses[c.i3],
+            self.inv_masses[c.i0],
+            self.inv_masses[c.i1],
+        );
+        let denom = w1 * u1.length_squared()
+            + w2 * u2.length_squared()
+            + w3 * u3.length_squared()
+            + w4 * u4.length_squared()
+            + compliance;
+        if denom.is_zero() {
+            return;
+        }
+        let lambda = -err / denom;
+        self.positions[c.i2] = self.positions[c.i2] + u1 * (w1 * lambda);
+        self.positions[c.i3] = self.positions[c.i3] + u2 * (w2 * lambda);
+        self.positions[c.i0] = self.positions[c.i0] + u3 * (w3 * lambda);
+        self.positions[c.i1] = self.positions[c.i1] + u4 * (w4 * lambda);
     }
 
     /// Candidate (vertex, triangle) pairs for vertex-face self-contact.
@@ -3367,6 +3458,39 @@ fn edge_pair_frame_contact(
     })
 }
 
+/// The signed angle between the face normals of hinge `(x3, x4)` with opposite vertices `x1`,
+/// `x2`, and its gradients `[∂θ/∂x1, ∂θ/∂x2, ∂θ/∂x3, ∂θ/∂x4]` (Bridson et al. 2003); `None` for a
+/// degenerate face or edge
+fn hinge_signed_angle(
+    x1: Vec3Fix,
+    x2: Vec3Fix,
+    x3: Vec3Fix,
+    x4: Vec3Fix,
+) -> Option<(Fix128, [Vec3Fix; 4])> {
+    let e = x4 - x3;
+    let e_len = e.length();
+    let big_n1 = (x1 - x3).cross(x1 - x4);
+    let big_n2 = (x2 - x4).cross(x2 - x3);
+    let l1 = big_n1.length_squared();
+    let l2 = big_n2.length_squared();
+    if e_len.is_zero() || l1.is_zero() || l2.is_zero() {
+        return None;
+    }
+    let n1 = big_n1 / big_n1.length();
+    let n2 = big_n2 / big_n2.length();
+    let e_hat = e / e_len;
+    let theta = Fix128::atan2(n1.cross(n2).dot(e_hat), n1.dot(n2));
+    let a1 = big_n1 / l1;
+    let a2 = big_n2 / l2;
+    let inv_e = Fix128::ONE / e_len;
+    let u1 = a1 * e_len;
+    let u2 = a2 * e_len;
+    let u3 = a1 * ((x1 - x4).dot(e) * inv_e) + a2 * ((x2 - x4).dot(e) * inv_e);
+    let u4 = -(a1 * ((x1 - x3).dot(e) * inv_e) + a2 * ((x2 - x3).dot(e) * inv_e));
+    // Bridson's modes point against the increase of this θ: the gradients are their negatives
+    Some((theta, [-u1, -u2, -u3, -u4]))
+}
+
 /// Find shared edge between two triangles and create a bending constraint
 fn find_shared_edge(
     tri_a: &[usize; 3],
@@ -3403,12 +3527,20 @@ fn find_shared_edge(
                     Fix128::atan2(sin_val, cos_val)
                 };
 
+                let rest_signed = hinge_signed_angle(
+                    positions[opposite_a],
+                    positions[opposite_b],
+                    positions[a0],
+                    positions[a1],
+                )
+                .map_or(Fix128::ZERO, |(theta, _)| theta);
                 return Some(BendConstraint {
                     i0: a0,
                     i1: a1,
                     i2: opposite_a,
                     i3: opposite_b,
                     rest_angle,
+                    rest_signed,
                 });
             }
         }
@@ -3503,6 +3635,203 @@ mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::format;
+
+    /// One hinge: shared edge (0, 1), opposite vertices 2 (z > 0) and 3 (z < 0), flat at rest in y = 0
+    fn hinge() -> Cloth {
+        let h = Fix128::from_ratio(1, 2);
+        let rest = vec![
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(h, Fix128::ZERO, Fix128::ONE),
+            Vec3Fix::new(h, Fix128::ZERO, -Fix128::ONE),
+        ];
+        Cloth::from_mesh(rest, vec![[0, 1, 2], [1, 0, 3]], Fix128::ONE)
+    }
+
+    /// The hinge folded exactly onto itself: vertex 3 mirrored to the side of vertex 2, `y` off
+    /// the plane by `y_off`
+    fn folded(y_off: Fix128) -> Cloth {
+        let mut c = hinge();
+        assert_eq!(c.bend_constraints.len(), 1, "one hinge");
+        c.positions[3] = Vec3Fix::new(
+            Fix128::from_ratio(1, 2),
+            y_off,
+            Fix128::ONE / Fix128::from_int(2),
+        );
+        c
+    }
+
+    /// One bend pass of a hinge with vertex 3 at `(1/2, y, z)`, with or without the fold branch;
+    /// whether it moved and the positions
+    fn bend_pass(y: Fix128, z: Fix128, fold_branch: bool) -> (bool, Vec<Vec3Fix>) {
+        let mut c = hinge();
+        c.positions[3] = Vec3Fix::new(Fix128::from_ratio(1, 2), y, z);
+        let before = c.positions.clone();
+        c.solve_bend(Fix128::from_ratio(1, 60), fold_branch);
+        (c.positions != before, c.positions)
+    }
+
+    /// Folded exactly onto itself: the unsigned-angle formula alone leaves it (zero gradient);
+    /// with the fold branch the hinge is projected, out of the plane
+    #[test]
+    fn the_exact_fold_is_corrected_by_the_fold_branch() {
+        let half = Fix128::from_ratio(1, 2);
+        let (alone, _) = bend_pass(Fix128::ZERO, half, false);
+        assert!(!alone, "the formula alone: no correction at the exact fold");
+        let (moved, p) = bend_pass(Fix128::ZERO, half, true);
+        assert!(moved, "the fold branch projects the exact fold");
+        assert!(p.iter().any(|v| !v.y.is_zero()), "it leaves the plane");
+    }
+
+    /// One ulp (2^-64) off the fold: the formula alone rounds its correction to nothing (the band
+    /// an exact-fold test would miss); with the fold branch it is projected and repeated passes
+    /// open the hinge
+    #[test]
+    fn one_ulp_off_the_fold_is_corrected_by_the_fold_branch() {
+        let half = Fix128::from_ratio(1, 2);
+        let ulp = Fix128::from_raw(0, 1);
+        let (alone, _) = bend_pass(ulp, half, false);
+        assert!(
+            !alone,
+            "measured: the formula alone underflows one ulp off the fold"
+        );
+        let mut c = folded(ulp);
+        let start = c.positions[3];
+        c.solve_bend(Fix128::from_ratio(1, 60), true);
+        assert_ne!(c.positions[3], start, "one ulp off the fold is projected");
+        for _ in 0..400 {
+            c.solve_bend(Fix128::from_ratio(1, 60), true);
+        }
+        let opened = (c.positions[3] - start).length();
+        assert!(
+            opened > Fix128::from_ratio(1, 100),
+            "opened {}",
+            opened.to_f64()
+        );
+    }
+
+    /// Hinge angles from 2^-1 down to one ulp off the fold (vertex 3 at `(1/2, 2^-k, 1/2)`):
+    /// with the fold branch every one of the 64 gets a non-zero correction (nothing compared
+    /// fails), and the formula alone leaves a band of them
+    #[test]
+    fn a_sweep_of_hinge_angles_to_the_fold_never_gives_a_zero_correction() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut compared = 0;
+        let mut zero_alone = 0;
+        for k in 1..=64u32 {
+            let y = Fix128::from_raw(0, 1u64 << (64 - k));
+            let (moved, _) = bend_pass(y, half, true);
+            assert!(moved, "zero correction 2^-{k} off the fold");
+            compared += 1;
+            if !bend_pass(y, half, false).0 {
+                zero_alone += 1;
+            }
+        }
+        assert_eq!(compared, 64);
+        assert!(
+            zero_alone > 0,
+            "the formula alone leaves a band next to the fold"
+        );
+    }
+
+    /// No gap and no overlap: on the 64 angles next to the fold and on both sides of the right
+    /// angle (d = 0, vertex 3 straight above the edge), the pass with the branch equals the pass
+    /// without it whenever that moves anything, and moves when it does not (the branch condition
+    /// as the code tests it: d > 0, error not zero, every correction rounded to zero)
+    #[test]
+    fn the_fold_branch_has_no_gap_and_no_overlap() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut configs: Vec<(Fix128, Fix128)> = (1..=64u32)
+            .map(|k| (Fix128::from_raw(0, 1u64 << (64 - k)), half))
+            .collect();
+        for k in [1u32, 8, 32, 63] {
+            let z = Fix128::from_raw(0, 1u64 << (64 - k));
+            configs.push((half, z));
+            configs.push((half, -z));
+        }
+        configs.push((half, Fix128::ZERO));
+        let (mut by_formula, mut by_branch) = (0, 0);
+        for (y, z) in configs {
+            let (alone_moved, alone) = bend_pass(y, z, false);
+            let (moved, with) = bend_pass(y, z, true);
+            if alone_moved {
+                assert_eq!(
+                    with,
+                    alone,
+                    "y {} z {}: the branch replaced a working pass",
+                    y.to_f64(),
+                    z.to_f64()
+                );
+                by_formula += 1;
+            } else {
+                assert!(
+                    moved,
+                    "y {} z {}: neither the formula nor the branch moved it",
+                    y.to_f64(),
+                    z.to_f64()
+                );
+                by_branch += 1;
+            }
+        }
+        assert!(
+            by_formula > 0 && by_branch > 0,
+            "both sides compared: {by_formula} / {by_branch}"
+        );
+    }
+
+    /// The face-normal gradients are the gradients of the signed angle: every vertex and axis
+    /// against a central difference (f64), on hinges near flat, in between, past a right angle and
+    /// near the fold
+    #[test]
+    fn the_face_normal_gradients_are_the_derivatives_of_the_signed_angle() {
+        let r = |n: i64, d: i64| Fix128::from_ratio(n, d);
+        let base = [
+            Vec3Fix::ZERO,
+            Vec3Fix::new(Fix128::ONE, Fix128::ZERO, r(1, 10)),
+        ];
+        let a = Vec3Fix::new(r(1, 2), r(1, 3), Fix128::ONE);
+        // vertex 2 (y, z): near flat, in between, past a right angle, near the fold
+        let cases = [
+            (r(1, 64), -Fix128::ONE),
+            (r(1, 2), -r(1, 2)),
+            (r(1, 2), r(1, 4)),
+            (r(1, 64), Fix128::ONE),
+        ];
+        let h = Fix128::from_ratio(1, 1 << 20);
+        let mut compared = 0;
+        for (y, z) in cases {
+            let p = [a, Vec3Fix::new(r(2, 5), y, z), base[0], base[1]];
+            let (_, grads) = hinge_signed_angle(p[0], p[1], p[2], p[3]).expect("hinge");
+            for (i, g) in grads.iter().enumerate() {
+                for axis in 0..3 {
+                    let shift = |s: Fix128| {
+                        let mut q = p;
+                        let d = match axis {
+                            0 => Vec3Fix::new(s, Fix128::ZERO, Fix128::ZERO),
+                            1 => Vec3Fix::new(Fix128::ZERO, s, Fix128::ZERO),
+                            _ => Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, s),
+                        };
+                        q[i] = q[i] + d;
+                        hinge_signed_angle(q[0], q[1], q[2], q[3])
+                            .expect("hinge")
+                            .0
+                            .to_f64()
+                    };
+                    let fd = (shift(h) - shift(-h)) / (2.0 * h.to_f64());
+                    let an = [g.x, g.y, g.z][axis].to_f64();
+                    let tol = 1e-6 * (1.0 + an.abs());
+                    assert!(
+                        (fd - an).abs() < tol,
+                        "case ({}, {}) x{i} axis {axis}: difference {fd} vs gradient {an}",
+                        y.to_f64(),
+                        z.to_f64()
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 48);
+    }
 
     #[test]
     fn test_cloth_creation() {
