@@ -929,3 +929,14 @@ impl Mpm2d {
         Sha256::digest(self.snapshot()).into()
     }
 }
+
+// The closed-form oracles of the 2D material point method compile as lib tests too (with the
+// `mpm2d` feature), so their paths count in the `--lib` coverage. The implicit-step oracles
+// (`tests/analytic_mpm2d_implicit.rs`, about 37 s under the ci-test profile) stay integration
+// tests only: lib tests run once per mutant.
+#[cfg(test)]
+#[path = "../tests/analytic_mpm2d_mass.rs"]
+mod analytic_mpm2d_mass_oracle;
+#[cfg(test)]
+#[path = "../tests/analytic_mpm2d.rs"]
+mod analytic_mpm2d_oracle;
