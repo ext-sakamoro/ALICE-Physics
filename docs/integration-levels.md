@@ -100,7 +100,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 25 / 0 | — |
 | `electromagnetic` | standalone (step 5 of 12 items) | 5 / 0 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
 | `erosion` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `euler_fv` | standalone | 0 / 0 / 0 / 32 / 0 | — |
+| `euler_fv` | standalone | 0 / 0 / 0 / 44 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
 | `fatigue` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |

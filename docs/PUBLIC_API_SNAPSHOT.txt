@@ -4253,6 +4253,33 @@ impl core::marker::Unpin for alice_physics_core::euler_fv::EulerFv1d
 impl core::marker::UnsafeUnpin for alice_physics_core::euler_fv::EulerFv1d
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::euler_fv::EulerFv1d
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::euler_fv::EulerFv1d
+pub struct alice_physics_core::euler_fv::EulerFv1dParticipant
+impl alice_physics_core::euler_fv::EulerFv1dParticipant
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::last_steps(&self) -> u64
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::new(alice_physics_core::euler_fv::EulerFv1d) -> Self
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::solver(&self) -> &alice_physics_core::euler_fv::EulerFv1d
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::steps(&self) -> u64
+impl alice_physics_core::world_participant::Participant for alice_physics_core::euler_fv::EulerFv1dParticipant
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics_core::euler_fv::EulerFv1dParticipant
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics_core::euler_fv::EulerFv1dParticipant
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::marker::Send for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::marker::Sync for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::marker::Unpin for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::euler_fv::EulerFv1dParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::euler_fv::EulerFv1dParticipant
 pub struct alice_physics_core::euler_fv::Primitive
 pub alice_physics_core::euler_fv::Primitive::p: alice_physics_core::math::Fix128
 pub alice_physics_core::euler_fv::Primitive::rho: alice_physics_core::math::Fix128
@@ -4295,6 +4322,13 @@ impl core::marker::Unpin for alice_physics_core::euler_fv::StarState
 impl core::marker::UnsafeUnpin for alice_physics_core::euler_fv::StarState
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::euler_fv::StarState
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::euler_fv::StarState
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_ENERGY: u32
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_LAST_STEPS: u32
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_MASS: u32
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_MOMENTUM: u32
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_STEPS: u32
+pub const alice_physics_core::euler_fv::EULER_FV_OBS_TIME: u32
+pub const alice_physics_core::euler_fv::EULER_FV_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub const alice_physics_core::euler_fv::MAX_NEWTON_ITERATIONS: u32
 pub fn alice_physics_core::euler_fv::exact_riemann(alice_physics_core::math::Fix128, &alice_physics_core::euler_fv::Primitive, &alice_physics_core::euler_fv::Primitive) -> core::result::Result<alice_physics_core::euler_fv::StarState, alice_physics_core::euler_fv::EulerError>
 pub fn alice_physics_core::euler_fv::numerical_flux(alice_physics_core::euler_fv::RiemannSolver, alice_physics_core::math::Fix128, &alice_physics_core::euler_fv::Primitive, &alice_physics_core::euler_fv::Primitive) -> core::result::Result<alice_physics_core::euler_fv::Conserved, alice_physics_core::euler_fv::EulerError>
@@ -22369,6 +22403,16 @@ pub fn alice_physics_core::erosion::ErosionModifier::semantics_id(&self) -> core
 pub fn alice_physics_core::erosion::ErosionModifier::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::erosion::ErosionModifier::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::euler_fv::EulerFv1dParticipant
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::euler_fv::EulerFv1dParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::fracture::FractureModifier
 pub fn alice_physics_core::fracture::FractureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::fracture::FractureModifier::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
