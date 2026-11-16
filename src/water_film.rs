@@ -361,6 +361,9 @@ pub struct FilmConfig {
     pub solver: FilmSolver,
     /// Iterations of the solver per implicit solve (≥ 1), a declared input.
     pub solver_iterations: u32,
+    /// Conductance above which a face joins its two cells into one pool, levelled exactly
+    /// within the substep (> 0); the implicit system keeps only faces at or below it.
+    pub pool_conductance: Fix128,
 }
 
 impl FilmConfig {
@@ -381,6 +384,7 @@ impl FilmConfig {
             max_subcycles: 1 << 16,
             solver: FilmSolver::JacobiPcg,
             solver_iterations: 64,
+            pool_conductance: Fix128::from_int(1024),
         }
     }
 
@@ -406,6 +410,8 @@ impl FilmConfig {
         h.write(&self.max_subcycles.to_le_bytes());
         h.write(&[self.solver as u8]);
         h.write(&self.solver_iterations.to_le_bytes());
+        h.write(&self.pool_conductance.hi.to_le_bytes());
+        h.write(&self.pool_conductance.lo.to_le_bytes());
     }
 }
 
@@ -475,6 +481,18 @@ struct Transfers {
     escalated: bool,
 }
 
+/// Pool id of a cell in no pool.
+const NOT_POOLED: u32 = u32::MAX;
+
+fn find(parent: &mut [u32], mut x: u32) -> u32 {
+    while parent[x as usize] != x {
+        let up = parent[parent[x as usize] as usize];
+        parent[x as usize] = up;
+        x = up;
+    }
+    x
+}
+
 /// Metres to whole quanta, truncated toward zero.
 fn metres_to_quanta_toward_zero(m: Fix128) -> i64 {
     if m.is_negative() {
@@ -500,8 +518,12 @@ fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
     a.iter().zip(b).fold(Fix128::ZERO, |s, (x, y)| s + *x * *y)
 }
 
-/// Conjugate gradients with the diagonal as preconditioner, `iterations` steps from `x0`;
-/// stops early only when a step length would divide by zero (an exact zero residual).
+/// Conjugate gradients with the diagonal as preconditioner, for at most `iterations` steps.
+/// It solves for the correction `δ = x − x0` in units of `2⁻¹⁶` m, so that the residuals the
+/// solve needs (well below a depth quantum, `2⁻³²` m) stay far above the resolution of
+/// [`Fix128`] (`2⁻⁶⁴`) while squares summed over a grid stay far below its range; it stops
+/// early when the preconditioned residual `r·z` has fallen below `2⁻⁴⁸` of its first value
+/// or is zero (both decided by the arithmetic alone, so the stop is deterministic).
 fn solve_pcg(
     links: &[FaceLink],
     diag: &[Fix128],
@@ -509,21 +531,30 @@ fn solve_pcg(
     x0: &[Fix128],
     iterations: u32,
 ) -> Vec<Fix128> {
-    let mut x = x0.to_vec();
-    let ax = apply_a(links, diag, &x);
-    let mut r: Vec<Fix128> = rhs.iter().zip(&ax).map(|(b, a)| *b - *a).collect();
-    let mut z: Vec<Fix128> = r.iter().zip(diag).map(|(v, d)| *v / *d).collect();
+    let unit = Fix128::from_int(1 << 16);
+    let ax0 = apply_a(links, diag, x0);
+    let mut r: Vec<Fix128> = rhs
+        .iter()
+        .zip(&ax0)
+        .map(|(b, a)| (*b - *a) * unit)
+        .collect();
+    let mut d = vec_of(x0.len(), Fix128::ZERO);
+    let mut z: Vec<Fix128> = r.iter().zip(diag).map(|(v, dg)| *v / *dg).collect();
     let mut p = z.clone();
     let mut rz = dot(&r, &z);
+    let stop = rz.shr_bits(48);
     for _ in 0..iterations {
+        if rz.is_zero() || rz <= stop {
+            break;
+        }
         let ap = apply_a(links, diag, &p);
         let pap = dot(&p, &ap);
-        if pap.is_zero() || rz.is_zero() {
+        if pap <= Fix128::ZERO {
             break;
         }
         let alpha = rz / pap;
-        for i in 0..x.len() {
-            x[i] = x[i] + alpha * p[i];
+        for i in 0..d.len() {
+            d[i] = d[i] + alpha * p[i];
             r[i] = r[i] - alpha * ap[i];
             z[i] = r[i] / diag[i];
         }
@@ -534,7 +565,7 @@ fn solve_pcg(
             p[i] = z[i] + beta * p[i];
         }
     }
-    x
+    x0.iter().zip(&d).map(|(x, dd)| *x + *dd / unit).collect()
 }
 
 /// Gauss–Seidel over the red cells (`(i + k)` even), then the black ones, `iterations` times
@@ -602,6 +633,7 @@ pub struct WaterFilm {
     last_fallback_faces: u32,
     last_escalations: u32,
     last_fallback_cells: Vec<usize>,
+    last_pooled_cells: Vec<usize>,
     reverse_faces: bool,
 }
 
@@ -621,6 +653,7 @@ impl WaterFilm {
             || config.wet_threshold < 0
             || config.max_subcycles == 0
             || config.solver_iterations == 0
+            || config.pool_conductance <= Fix128::ZERO
         {
             return Err(FilmBuildError::BadConfig);
         }
@@ -642,6 +675,7 @@ impl WaterFilm {
             last_fallback_faces: 0,
             last_escalations: 0,
             last_fallback_cells: Vec::new(),
+            last_pooled_cells: Vec::new(),
             reverse_faces: false,
         };
         film.digest = film.config_digest();
@@ -773,6 +807,11 @@ impl WaterFilm {
     pub fn last_fallback_cells(&self) -> &[usize] {
         &self.last_fallback_cells
     }
+    /// Cells levelled as part of a pool in the last substep, ascending.
+    #[must_use]
+    pub fn last_pooled_cells(&self) -> &[usize] {
+        &self.last_pooled_cells
+    }
     /// Solves of the last substep where a capped face stayed bad and every face took the
     /// capped transfer.
     #[must_use]
@@ -858,9 +897,12 @@ impl WaterFilm {
         self.last_fallback_faces = 0;
         self.last_escalations = 0;
         self.last_fallback_cells.clear();
+        self.last_pooled_cells.clear();
         self.unit(dt, MAX_SPLITS)?;
         self.last_fallback_cells.sort_unstable();
         self.last_fallback_cells.dedup();
+        self.last_pooled_cells.sort_unstable();
+        self.last_pooled_cells.dedup();
         let cfg = self.config;
         for (d, age) in self.depth.iter().zip(self.dry_age.iter_mut()) {
             if *d > cfg.wet_threshold {
@@ -878,7 +920,10 @@ impl WaterFilm {
     fn unit(&mut self, dt: Fix128, splits_left: u32) -> Result<(), ParticipantFault> {
         let mut trial = self.clone();
         trial.rain(dt)?;
-        let transfers = trial.implicit_transfers(dt)?;
+        // conductances frozen at the start of the substep, for the pools and the implicit step
+        let links = trial.conductances(dt)?;
+        let pool = trial.level_pools(&links)?;
+        let transfers = trial.implicit_transfers(links, &pool)?;
         if transfers.overdrawn {
             if splits_left == 0 {
                 return Err(ParticipantFault::OutOfRange);
@@ -895,6 +940,10 @@ impl WaterFilm {
         trial.last_fallback_faces = self.last_fallback_faces + transfers.fallback_faces;
         trial.last_escalations = self.last_escalations + u32::from(transfers.escalated);
         trial.last_fallback_cells = self.last_fallback_cells.clone();
+        trial.last_pooled_cells = self.last_pooled_cells.clone();
+        trial
+            .last_pooled_cells
+            .extend((0..pool.len()).filter(|c| pool[*c] != NOT_POOLED));
         trial
             .last_fallback_cells
             .extend_from_slice(&transfers.fallback_cells);
@@ -963,6 +1012,80 @@ impl WaterFilm {
         (nx + 1) * nz + nx * (nz + 1)
     }
 
+    // join the cells of every face whose conductance exceeds c_max into pools and level each
+    // pool exactly: the common surface η* is the largest with Σ max(η* − b, 0) ≤ V, and the
+    // r quanta left over go one each to the r lowest-index cells whose bed is at or below η*;
+    // returns each cell's pool (the lowest cell index in it) or NOT_POOLED
+    fn level_pools(&mut self, links: &[FaceLink]) -> Result<Vec<u32>, ParticipantFault> {
+        let n = self.depth.len();
+        let cap = self.config.pool_conductance;
+        let mut parent: Vec<u32> = (0..n as u32).collect();
+        let mut joined = vec_of(n, false);
+        for link in links {
+            if let (Some(a), Some(b)) = (link.a, link.b) {
+                if link.c > cap {
+                    let (ra, rb) = (find(&mut parent, a as u32), find(&mut parent, b as u32));
+                    if ra != rb {
+                        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                        parent[hi as usize] = lo;
+                    }
+                    joined[a] = true;
+                    joined[b] = true;
+                }
+            }
+        }
+        let mut pool = vec_of(n, NOT_POOLED);
+        for c in 0..n {
+            if joined[c] {
+                pool[c] = find(&mut parent, c as u32);
+            }
+        }
+        let mut members: Vec<Vec<usize>> = vec_of(n, Vec::new());
+        for c in 0..n {
+            if pool[c] != NOT_POOLED {
+                members[pool[c] as usize].push(c);
+            }
+        }
+        for cells in members.iter().filter(|m| m.len() > 1) {
+            let volume: i128 = cells.iter().map(|c| i128::from(self.depth[*c])).sum();
+            let fill = |eta: i64| -> i128 {
+                cells
+                    .iter()
+                    .map(|c| i128::from((eta - self.bed.heights[*c]).max(0)))
+                    .sum()
+            };
+            let mut lo = cells
+                .iter()
+                .map(|c| self.bed.heights[*c])
+                .min()
+                .unwrap_or(0);
+            let mut hi = lo
+                .checked_add(i64::try_from(volume).map_err(|_| ParticipantFault::OutOfRange)?)
+                .and_then(|v| v.checked_add(1))
+                .ok_or(ParticipantFault::OutOfRange)?;
+            // invariant: fill(lo) ≤ V < fill(hi)
+            while hi - lo > 1 {
+                let mid = lo + (hi - lo) / 2;
+                if fill(mid) <= volume {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let mut left = volume - fill(lo);
+            for &c in cells {
+                let b = self.bed.heights[c];
+                let mut d = (lo - b).max(0);
+                if left > 0 && b <= lo {
+                    d += 1;
+                    left -= 1;
+                }
+                self.depth[c] = d;
+            }
+        }
+        Ok(pool)
+    }
+
     // the conductance of every face from the present state (the frozen linearisation of the
     // substep), with the fixed surface of an open edge
     fn conductances(&self, dt: Fix128) -> Result<Vec<FaceLink>, ParticipantFault> {
@@ -1006,8 +1129,20 @@ impl WaterFilm {
     // backward Euler on the surface with the conductances frozen: (I + L) η' = η, solved by
     // the configured solver for a fixed number of iterations; then the transfers
     // t = trunc(c (η'_a − η'_b)) in quanta, and whether any cell would give more than it holds
-    fn implicit_transfers(&mut self, dt: Fix128) -> Result<Transfers, ParticipantFault> {
-        let links = self.conductances(dt)?;
+    fn implicit_transfers(
+        &mut self,
+        links: Vec<FaceLink>,
+        pool: &[u32],
+    ) -> Result<Transfers, ParticipantFault> {
+        // faces inside a pool were levelled; every other face has c ≤ c_max (it would have
+        // joined a pool otherwise)
+        let links: Vec<FaceLink> = links
+            .into_iter()
+            .filter(|l| match (l.a, l.b) {
+                (Some(a), Some(b)) => pool[a] == NOT_POOLED || pool[a] != pool[b],
+                _ => true,
+            })
+            .collect();
         let n = self.depth.len();
         let eta: Vec<Fix128> = (0..n)
             .map(|c| quanta_to_metres(self.bed.heights[c] + self.depth[c]))

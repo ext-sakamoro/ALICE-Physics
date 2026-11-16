@@ -230,7 +230,20 @@ fn the_potential_never_rises_without_a_source() {
         last = p;
         compared += 1;
     }
-    assert!(fell > 10, "pool: the potential fell only {fell} times");
+    // the deep pool is one component above the pool conductance: it levels in one substep
+    assert!(fell >= 1, "pool: the potential never fell");
+    let s: Vec<i64> = f
+        .bed()
+        .heights()
+        .iter()
+        .zip(f.depths())
+        .map(|(b, d)| b + d)
+        .collect();
+    let spread = s.iter().max().unwrap_or(&0) - s.iter().min().unwrap_or(&0);
+    assert!(
+        spread <= 1,
+        "pool: surface spread {spread} quanta after levelling"
+    );
     assert_eq!(compared, 42_000);
 }
 
@@ -664,7 +677,9 @@ fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
     // compare the flux the depth carries, `g h³ tan α / (3ν)`, with the inflow: a relative
     // flux error within `ε` (equivalently a depth error within `ε/3`)
     let q_f = 2.0e-5;
-    let eps = QUANTUM_M * 0.01 / (q_f * f.config().max_substep.to_f64());
+    // the substep actually taken: the advance of 1/64 s in one substep (Δt_max is larger)
+    let step = dt.to_f64() / f64::from(f.subcycles(dt).expect("substeps"));
+    let eps = QUANTUM_M * 0.01 / (q_f * step);
     let mut compared = 0;
     for i in 10..30 {
         let d = f.depth_m(i, 1).to_f64();
@@ -859,14 +874,13 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
 }
 
 /// golden (determinism): the state of the mixed scene, closed and open, visited forwards and
-/// backwards, under the integer flux law. Re-pinned once when the flux moved from `Fix128`
-/// arithmetic to integers (a new rounding law, not new physics: over these 400 steps the
-/// depths of the two forms differed by at most 3 quanta in a cell, 0.2 on average, and every
-/// validation oracle passed unchanged).
+/// backwards. Re-pinned when the step became implicit with pools (backward Euler on the
+/// faces at or below the pool conductance, exact levelling above it): a new scheme, so the
+/// bytes moved; every validation oracle passes at its derived tolerance.
 #[test]
 fn the_mixed_scene_digest_is_pinned() {
-    const CLOSED: &str = "127f4629acdea08a4224da7d949ec4d39cffc99981bddb507b0599d183ad17a5";
-    const OPEN: &str = "2a45bb5ff9291a5003874301fbe2da09631e462ff62f2f2b22e0fb35329a221e";
+    const CLOSED: &str = "761031b9d5dcef2e2db7d0e9db667c02363a8983f7259616b5d83afeb9753840";
+    const OPEN: &str = "d5aff1106d9db84308836434e443c57317929fe2cd086c7810a9b20f69d168e9";
     for rev in [false, true] {
         assert_eq!(
             mixed_scene(FilmEdge::Closed, rev),
@@ -880,8 +894,6 @@ fn the_mixed_scene_digest_is_pinned() {
         );
     }
 }
-
-
 
 /// oracle: critical outflow over a free edge. A single cell, open on all four edges, empties
 /// over them at the critical flux `q = h √(g h)` per unit width (the lubrication flux of a
