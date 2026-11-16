@@ -59,9 +59,14 @@ class Plan(unittest.TestCase):
         (self.root / "tests").mkdir()
         (self.root / "src/lib.rs").write_text(LIB, encoding="utf-8")
         (self.root / "Cargo.toml").write_text(CARGO, encoding="utf-8")
-        for t in ["audit_replay", "analytic_replay_in_memory", "audit_replayer_x", "audit_math",
-                  "python_replay_binding", "audit_neural_net"]:
-            (self.root / f"tests/{t}.rs").write_text("", encoding="utf-8")
+        # a test target reaches a module when its source names the module path
+        for t, src in {"audit_replay": "use alice_physics_core::replay::Store;\n",
+                       "analytic_replay_in_memory": "let s = c::replay::Store::new();\n",
+                       "audit_replayer_x": "use c::replayer_x::Thing; // replay in a comment only\n",
+                       "audit_math": "use c::math;\n",
+                       "python_replay_binding": "use c::replay::Store;\n",
+                       "audit_neural_net": "use c::neural::Net;\n"}.items():
+            (self.root / f"tests/{t}.rs").write_text(src, encoding="utf-8")
 
     def plan(self, *paths, base=()):
         return mp.plan(diff_of(*paths), list(base), self.root)
@@ -78,8 +83,8 @@ class Plan(unittest.TestCase):
     def test_doc_comments_between_the_cfg_and_the_mod_line_are_skipped(self):
         self.assertIn("neural", self.plan("src/neural.rs")["features"])
 
-    def test_tests_named_after_the_module_run_but_not_longer_names(self):
-        # audit_replayer_x is a different word; the python binding test needs a
+    def test_tests_whose_source_names_the_module_path_run_but_not_longer_names(self):
+        # audit_replayer_x names a different module; the python binding test needs a
         # host-unbuildable feature and is left out
         self.assertEqual(self.plan("src/replay.rs")["tests"], ["analytic_replay_in_memory", "audit_replay"])
 
@@ -309,7 +314,7 @@ pub fn par() -> u8 {
     def test_a_test_target_that_requires_simd_is_left_to_the_union_job(self):
         cargo = self.CARGO + '\n[[test]]\nname = "audit_math"\nrequired-features = ["simd"]\n'
         (self.root / "Cargo.toml").write_text(cargo, encoding="utf-8")
-        (self.root / "tests/audit_math.rs").write_text("", encoding="utf-8")
+        (self.root / "tests/audit_math.rs").write_text("use c::math::f;\n", encoding="utf-8")
         no_simd = mp.plan(self.change("src/math.rs", 8), ["parallel"], self.root, only_sensitive="simd")
         self.assertEqual(no_simd["tests"], [])
         self.assertNotIn("simd", no_simd["features"])

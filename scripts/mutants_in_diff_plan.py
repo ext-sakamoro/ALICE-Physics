@@ -299,6 +299,53 @@ def required_features(cargo_toml: str) -> dict[str, list[str]]:
     return out
 
 
+# a group of changed files shares one cargo-mutants invocation (one baseline build and test run);
+# more groups than this are merged, the pair that adds the fewest test targets first
+MAX_GROUPS = 4
+
+
+def reach_name(path: str) -> str | None:
+    """The module name a test target names to reach a src/ file: the file stem, or the directory
+    of a `mod.rs` (`src/solver/world_snapshot.rs` -> `world_snapshot`)."""
+    p = Path(path)
+    if p.parts[:1] != ("src",) or p.suffix != ".rs":
+        return None
+    name = p.parent.name if p.stem == "mod" else p.stem
+    return None if name in ("lib", "main", "src") else name
+
+
+def reaches(name: str, test_source: str) -> bool:
+    """A test target reaches a module when its source names the module path: `<name>::` or
+    `use …<name>` (2026-11-16: on the 11-14 nightly artifact this map kept all 59 mutants an
+    integration target caught, and builds 2,431 targets a night against 20,140)."""
+    n = re.escape(name)
+    return re.search(rf"(::|\buse\s+[\w:]*){n}\b|\b{n}::", test_source) is not None
+
+
+def group_files(subsets: dict[str, frozenset[str]], max_groups: int = MAX_GROUPS) -> list[dict]:
+    """Files with the same reaching targets share a group; a group whose targets another group
+    already contains is merged into it (no extra target, one baseline less), then groups are
+    merged pairwise, the pair adding the fewest targets first, until at most `max_groups` remain."""
+    by: dict[frozenset[str], list[str]] = {}
+    for f, sub in sorted(subsets.items()):
+        by.setdefault(sub, []).append(f)
+    groups = [(set(k), sorted(v)) for k, v in by.items()]
+
+    def cost(a, b):
+        u = a[0] | b[0]
+        return (len(u) - max(len(a[0]), len(b[0])), len(u))
+
+    while len(groups) > 1:
+        pairs = [(cost(groups[i], groups[j]), i, j) for i in range(len(groups)) for j in range(i + 1, len(groups))]
+        (added, _), i, j = min(pairs)
+        if added > 0 and len(groups) <= max_groups:
+            break
+        a, b = groups[i], groups[j]
+        groups[i] = (a[0] | b[0], sorted(a[1] + b[1]))
+        del groups[j]
+    return [{"files": f, "tests": sorted(t)} for t, f in sorted(groups, key=lambda g: g[1])]
+
+
 def module_of(path: str) -> str | None:
     """The top-level module of a src/ file (`src/a.rs` and `src/a/b.rs` -> `a`)."""
     p = Path(path)
@@ -413,7 +460,9 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT, only_sensitive:
     cargo = (root / "Cargo.toml").read_text(encoding="utf-8")
     req = required_features(cargo)
     tests_dir = root / "tests"
-    test_names = sorted(p.stem for p in tests_dir.glob("*.rs")) if tests_dir.is_dir() else []
+    test_sources = ({p.stem: p.read_text(encoding="utf-8", errors="replace") for p in sorted(tests_dir.glob("*.rs"))}
+                    if tests_dir.is_dir() else {})
+    subsets: dict[str, frozenset[str]] = {}
     features = set(base_features)
     tests: set[str] = set()
     kept, skipped = [], []
@@ -466,14 +515,19 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT, only_sensitive:
                 gone |= elsewhere
             text = neutralise(text, gone)
         kept.append(text)
-        token = re.compile(rf"(^|_){re.escape(module)}(_|$)")
-        for t in test_names:
-            if token.search(t):
+        if not changed_lines(text):
+            continue
+        name = reach_name(path)
+        sub = set()
+        for t, src in test_sources.items():
+            if name and reaches(name, src):
                 need = req.get(t, [])
                 if any(n in HOST_UNBUILDABLE or n in held for n in need):
                     continue
                 features.update(n for n in need if n != "std")
-                tests.add(t)
+                sub.add(t)
+        subsets[path] = frozenset(sub)
+        tests |= sub
     return {
         "features": sorted(f for f in features if f),
         "tests": sorted(tests),
@@ -481,6 +535,8 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT, only_sensitive:
         "not_exercised": not_exercised,
         "outside_this_job": outside,
         "other_job_lines": other_job,
+        "groups": group_files(subsets),
+        "lib_tests_only": sorted(f for f, sub in subsets.items() if not sub),
         "diff": "".join(kept),
     }
 
