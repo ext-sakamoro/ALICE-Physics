@@ -361,6 +361,11 @@ pub struct FilmConfig {
     /// cells into a pool, levelled exactly. The substep is at most `3 ν l² / (8 g h³)` for
     /// this depth, so no lubrication face meets the `⌊|Δη|/8⌋` cap.
     pub film_depth_max: Fix128,
+    /// How far a pool's surface may be from level (a fraction of its mean depth, ≥ 0)
+    /// before a pool carrying flow is refused as outside the model: a level pool stands in
+    /// for a surface that falls by `ΔH = 3 ν Q L² / (g h̄³ A)` across it, and the error is
+    /// accepted while `ΔH ≤ tolerance · h̄` (never less than 7 quanta per cell of length).
+    pub pool_level_tolerance: Fix128,
 }
 
 impl FilmConfig {
@@ -380,6 +385,7 @@ impl FilmConfig {
             max_substep: Fix128::from_ratio(1, 256),
             max_subcycles: 1 << 16,
             film_depth_max: Fix128::from_ratio(1, 1000),
+            pool_level_tolerance: Fix128::from_ratio(1, 100),
         }
     }
 
@@ -405,6 +411,8 @@ impl FilmConfig {
         h.write(&self.max_subcycles.to_le_bytes());
         h.write(&self.film_depth_max.hi.to_le_bytes());
         h.write(&self.film_depth_max.lo.to_le_bytes());
+        h.write(&self.pool_level_tolerance.hi.to_le_bytes());
+        h.write(&self.pool_level_tolerance.lo.to_le_bytes());
     }
 }
 
@@ -632,6 +640,7 @@ impl WaterFilm {
             || config.wet_threshold < 0
             || config.max_subcycles == 0
             || config.film_depth_max <= Fix128::ZERO
+            || config.pool_level_tolerance.is_negative()
         {
             return Err(FilmBuildError::BadConfig);
         }
@@ -903,7 +912,9 @@ impl WaterFilm {
             let q = quanta_to_metres(through) * l * l / dt;
             let need = Fix128::from_int(3) * cfg.viscosity * q * span * span
                 / (cfg.gravity * mean_h * mean_h * mean_h * count);
-            let allowed = quanta_to_metres(7) * span;
+            let floor = quanta_to_metres(7) * span;
+            let relative = cfg.pool_level_tolerance * mean_h;
+            let allowed = if relative > floor { relative } else { floor };
             if mean_h.is_zero() || need > allowed {
                 band.extend_from_slice(cells);
             }
