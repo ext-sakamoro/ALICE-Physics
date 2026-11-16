@@ -8,9 +8,9 @@
 
 use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::water_film::{
-    isqrt_u128, metres_to_quanta, quanta_to_metres, simultaneous_transfer, FilmBed, FilmBuildError,
-    FilmConfig, FilmEdge, FilmScheme, FluxConstants, WaterFilm, DEPTH_QUANTUM_BITS, MAX_FACE_DEPTH,
-    MAX_LUBRICATION_DIVISOR,
+    isqrt_u128, join_step, metres_to_quanta, quanta_to_metres, simultaneous_transfer, FilmBed,
+    FilmBuildError, FilmConfig, FilmEdge, FilmScheme, FluxConstants, WaterFilm, DEPTH_QUANTUM_BITS,
+    MAX_FACE_DEPTH, MAX_LUBRICATION_DIVISOR,
 };
 use alice_physics_core::world_participant::{Participant, ParticipantFault, StateError};
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
@@ -45,6 +45,27 @@ fn groove_bed(nx: usize, first: usize, last: usize, groove_only: bool) -> FilmBe
         h[i + row * nx] = mm(v);
     }
     FilmBed::from_heights(nx, nz, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed")
+}
+
+/// Still water in row `row` up to `level` (quanta): every cell whose bed is below it holds
+/// `level − b` (a level pool, inside the model at any depth).
+fn fill_level(f: &mut WaterFilm, row: usize, level: i64) {
+    let nx = f.bed().nx();
+    for i in 0..nx {
+        let b = f.bed().heights()[i + row * nx];
+        if b < level {
+            f.set_initial_depth(i, row, level - b);
+        }
+    }
+}
+
+/// Thin films (`depth`, below the deepest film) on the plateau rows 0 and 2.
+fn wet_plateau(f: &mut WaterFilm, depth: i64) {
+    for k in [0usize, 2] {
+        for i in 0..f.bed().nx() {
+            f.set_initial_depth(i, k, depth);
+        }
+    }
 }
 
 fn film(bed: FilmBed, scheme: FilmScheme, edge: FilmEdge) -> WaterFilm {
@@ -175,9 +196,10 @@ fn the_potential_never_rises_without_a_source() {
     let mut compared = 0;
     for edge in [FilmEdge::Closed, FilmEdge::Open] {
         let mut f = film(groove_bed(14, 4, 9, false), FilmScheme::DiffusionWave, edge);
-        for i in 3..8 {
-            f.set_initial_depth(i, 1, metres_to_quanta(mm(45)));
-        }
+        // a still pool in the groove, plateau films running into it, and one 3 mm cell (a
+        // face deeper than the film with a large step: explicit)
+        fill_level(&mut f, 1, metres_to_quanta(mm(-10)));
+        wet_plateau(&mut f, metres_to_quanta(Fix128::from_ratio(8, 10_000)));
         f.set_initial_depth(0, 0, metres_to_quanta(mm(3)));
         let dt = f.config().max_substep;
         let mut last = potential(&f);
@@ -248,7 +270,7 @@ fn the_potential_never_rises_without_a_source() {
     assert_eq!(compared, 42_000);
 }
 
-/// oracle: no cell gives more than it holds. A 5 cm column on a pedestal 10 cm above four
+/// oracle: no cell gives more than it holds. A 0.9 mm film on a pedestal 10 cm above four
 /// lower neighbours spills on all four sides at once (each side alone could carry more than a
 /// quarter of the column in one substep); every depth stays at or above zero and the volume
 /// is exact at every substep.
@@ -259,7 +281,8 @@ fn a_column_spilling_four_ways_never_goes_negative() {
     let bed =
         FilmBed::from_heights(5, 5, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
     let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
-    f.set_initial_depth(2, 2, metres_to_quanta(mm(50)));
+    let start = metres_to_quanta(Fix128::from_ratio(9, 10_000));
+    f.set_initial_depth(2, 2, start);
     let dt = f.config().max_substep;
     let mut compared = 0;
     for n in 0..500 {
@@ -271,10 +294,7 @@ fn a_column_spilling_four_ways_never_goes_negative() {
         assert_eq!(f.total(), f.ledger().expected(), "substep {n}");
         compared += 1;
     }
-    assert!(
-        f.depths()[12] < metres_to_quanta(mm(50)),
-        "the column did not spill"
-    );
+    assert!(f.depths()[12] < start, "the column did not spill");
     assert_eq!(compared, 500);
 }
 
@@ -285,10 +305,11 @@ fn a_column_spilling_four_ways_never_goes_negative() {
 fn volume_is_conserved_to_the_last_quantum() {
     for scheme in [FilmScheme::DiffusionWave] {
         let mut cfg = FilmConfig::water(scheme, FilmEdge::Open);
-        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(36_000));
-        cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(3_600));
+        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
+        cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(70));
         let mut f = WaterFilm::new(cfg, groove_bed(14, 4, 9, false)).expect("film");
-        f.set_initial_depth(5, 1, metres_to_quanta(mm(20)));
+        fill_level(&mut f, 1, metres_to_quanta(mm(-10)));
+        wet_plateau(&mut f, metres_to_quanta(Fix128::from_ratio(8, 10_000)));
         let mut compared = 0;
         for n in 0..600 {
             if n % 7 == 0 {
@@ -338,7 +359,7 @@ fn a_groove_overflows_at_its_rim_height() {
         // rest band of `L` quanta) and the water that left over the edges is what came in
         // above the capacity, less the films left on the plateau.
         let mut cfg = FilmConfig::water(scheme, FilmEdge::Open);
-        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(36_000));
+        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
         let mut f = WaterFilm::new(cfg, groove_bed(14, 4, 9, false)).expect("film");
         let start = rim - metres_to_quanta(mm(2));
         for i in 0..nx {
@@ -347,7 +368,8 @@ fn a_groove_overflows_at_its_rim_height() {
                 f.set_initial_depth(i, 1, start - b);
             }
         }
-        for _ in 0..40 {
+        // 200 mm/h for 60 s: 3.3 mm, past the rim
+        for _ in 0..1200 {
             f.advance(Fix128::from_ratio(1, 20)).expect("rain");
         }
         let mut cfg = *f.config();
@@ -434,12 +456,12 @@ fn a_groove_fills_in_the_closed_form_time() {
 
 fn busy_film(scheme: FilmScheme) -> WaterFilm {
     let mut cfg = FilmConfig::water(scheme, FilmEdge::Open);
-    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(20_000));
-    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(500));
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
+    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(70));
     let mut f = WaterFilm::new(cfg, groove_bed(14, 4, 9, false)).expect("film");
-    for i in 4..=6 {
-        f.set_initial_depth(i, 1, metres_to_quanta(mm(45)));
-    }
+    // a pool 20 mm deep in the groove, films draining into it from the plateau
+    fill_level(&mut f, 1, metres_to_quanta(mm(-10)));
+    wet_plateau(&mut f, metres_to_quanta(Fix128::from_ratio(8, 10_000)));
     f
 }
 
@@ -1250,4 +1272,92 @@ fn flow_along_a_stroke_has_the_lubrication_depth() {
             "{cm} cm: depth {h:.5e} vs {h_closed:.5e} ({rel:+.3e}, bound {eps:.2e})"
         );
     }
+}
+
+/// oracle: two basins joined over a sill (1 cm cells, one row, closed). The left basin (10
+/// cells, floor −30 mm) and the sill (bed −10 mm) start level at +5 mm; the right basin (10
+/// cells, floor −15 mm) is dry.
+/// (1) While the right side is below the sill, water leaves over the sill as critical flow,
+/// `q = √g h^{3/2}` per unit width with `h` the head over the sill, so the head of the left
+/// pool (area `11 l²`) follows `h(t) = (h₀^{-1/2} + √g t / (22 l))⁻²`, to the explicit
+/// step's error `Δt √(g h₀) / (11 l)`.
+/// (2) The two sides join into one pool only when the step across the sill is within the
+/// join step, so the levelling at the join moves the left level by at most that step.
+/// (3) At rest the common level is the level of the whole volume over all 21 beds (±1 quantum
+/// per cell).
+#[test]
+fn two_basins_join_over_a_sill_without_a_jump() {
+    let l = 0.01_f64;
+    let beds: Vec<Fix128> = (0..21)
+        .map(|i| match i {
+            0..=9 => mm(-30),
+            10 => mm(-10),
+            _ => mm(-15),
+        })
+        .collect();
+    let bed = FilmBed::from_heights(21, 1, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &beds, 1)
+        .expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    // a substep short enough that the critical transfer, not `⌊|Δη|/8⌋`, sets the weir flow
+    cfg.max_substep = Fix128::from_ratio(1, 1024);
+    let frac = cfg.pool_join_step;
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    let start = metres_to_quanta(mm(5));
+    for i in 0..=10 {
+        f.set_initial_depth(i, 0, start - f.bed().heights()[i]);
+    }
+    let sill = f.bed().heights()[10];
+    let total = f.total();
+    let dt = f.substep().to_f64();
+    let g = 9.80665_f64;
+    let h0 = quanta_to_metres(start - sill).to_f64();
+    let bound = dt * (g * h0).sqrt() / (11.0 * l);
+    let surface = |f: &WaterFilm, c: usize| f.bed().heights()[c] + f.depths()[c];
+    let mut checked = 0;
+    let mut joined_at = None;
+    let mut n = 0u64;
+    while n < 1_000_000 {
+        let before = (surface(&f, 0), f.depths()[10], f.depths()[11]);
+        f.step_once(f.substep()).expect("substep");
+        n += 1;
+        let t = n as f64 * dt;
+        // (1) free weir flow while the right side is 2 mm or more below the sill
+        if surface(&f, 20) < sill - metres_to_quanta(mm(2)) && n % 128 == 0 {
+            let h = quanta_to_metres(surface(&f, 0) - sill).to_f64();
+            let closed = (h0.powf(-0.5) + g.sqrt() * t / (22.0 * l)).powi(-2);
+            let rel = (h - closed) / closed;
+            assert!(
+                rel.abs() <= bound,
+                "t {t:.3} s: head {h:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e})"
+            );
+            checked += 1;
+        }
+        // (2) the join: the first substep in which cells 0 and 20 are one pool
+        if joined_at.is_none() {
+            let pooled = f.last_pooled_cells();
+            if pooled.contains(&0) && pooled.contains(&20) {
+                let j = join_step(frac, before.1, before.2);
+                let jump = (surface(&f, 0) - before.0).abs();
+                assert!(
+                    jump <= j,
+                    "join at t {t:.3} s: left level moved {jump} quanta, join step {j}"
+                );
+                joined_at = Some(t);
+                println!("joined at {t:.3} s: left level moved {jump} quanta (join step {j})");
+            }
+        }
+        if joined_at.is_some() && f.last_moved() == 0 {
+            break;
+        }
+    }
+    assert!(checked >= 4, "compared the weir flow {checked} times");
+    assert!(joined_at.is_some(), "the basins never joined");
+    // (3) rest: one level over all 21 beds
+    let all: Vec<i64> = f.bed().heights().to_vec();
+    let eta = level_for(&all, total);
+    for c in 0..21 {
+        let off = (surface(&f, c) - eta).abs();
+        assert!(off <= 21, "cell {c}: {off} quanta from the level at rest");
+    }
+    println!("weir compared {checked} times (bound {bound:.2e}); rest after {n} substeps");
 }

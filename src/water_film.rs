@@ -366,6 +366,12 @@ pub struct FilmConfig {
     /// for a surface that falls by `ΔH = 3 ν Q L² / (g h̄³ A)` across it, and the error is
     /// accepted while `ΔH ≤ tolerance · h̄` (never less than 7 quanta per cell of length).
     pub pool_level_tolerance: Fix128,
+    /// Largest surface step (a fraction of the shallower side's depth, ≥ 0; never less than
+    /// 7 quanta) across which a face deeper than the film joins two cells into one pool. A
+    /// deeper face with a larger step (water standing over a sill against a lower basin)
+    /// stays a face carrying the capped (critical) flux, so the lower side fills over time
+    /// and the two join when their levels meet: levelling at a join moves at most this step.
+    pub pool_join_step: Fix128,
 }
 
 impl FilmConfig {
@@ -386,6 +392,7 @@ impl FilmConfig {
             max_subcycles: 1 << 16,
             film_depth_max: Fix128::from_ratio(1, 1000),
             pool_level_tolerance: Fix128::from_ratio(1, 100),
+            pool_join_step: Fix128::from_ratio(1, 100),
         }
     }
 
@@ -413,6 +420,8 @@ impl FilmConfig {
         h.write(&self.film_depth_max.lo.to_le_bytes());
         h.write(&self.pool_level_tolerance.hi.to_le_bytes());
         h.write(&self.pool_level_tolerance.lo.to_le_bytes());
+        h.write(&self.pool_join_step.hi.to_le_bytes());
+        h.write(&self.pool_join_step.lo.to_le_bytes());
     }
 }
 
@@ -445,6 +454,12 @@ impl FilmLedger {
 pub fn face_depth(b_l: i64, h_l: i64, b_r: i64, h_r: i64) -> i64 {
     let eta = (b_l + h_l).max(b_r + h_r);
     (eta - b_l.max(b_r)).max(0)
+}
+
+/// The join step of a face in quanta: `max(⌊fraction · min(h_a, h_b)⌋, 7)`.
+#[must_use]
+pub fn join_step(fraction: Fix128, h_a: i64, h_b: i64) -> i64 {
+    (fraction * Fix128::from_int(h_a.min(h_b))).hi.max(7)
 }
 
 /// Largest face depth the flux law accepts, `2³⁴` quanta (4 m): `h_f³` then fits in 102 bits.
@@ -641,6 +656,7 @@ impl WaterFilm {
             || config.max_subcycles == 0
             || config.film_depth_max <= Fix128::ZERO
             || config.pool_level_tolerance.is_negative()
+            || config.pool_join_step.is_negative()
         {
             return Err(FilmBuildError::BadConfig);
         }
@@ -1012,8 +1028,9 @@ impl WaterFilm {
                 )
             }
         };
-        // pools: faces whose depth over the higher bed exceeds the deepest film join their
-        // cells; each pool is levelled exactly before the film moves
+        // pools: faces whose depth over the higher bed exceeds the deepest film and whose
+        // surface step is within the join step join their cells; each pool is levelled
+        // exactly before the film moves
         let h_film = metres_to_quanta(cfg.film_depth_max);
         let mut parent: Vec<u32> = (0..ncell as u32).collect();
         let mut joined = vec_of(ncell, false);
@@ -1025,7 +1042,14 @@ impl WaterFilm {
                     self.bed.heights[b],
                     self.depth[b],
                 );
-                if hf > h_film {
+                let (ea, eb) = (
+                    self.bed.heights[a] + self.depth[a],
+                    self.bed.heights[b] + self.depth[b],
+                );
+                if hf > h_film
+                    && (ea - eb).abs()
+                        <= join_step(cfg.pool_join_step, self.depth[a], self.depth[b])
+                {
                     let (ra, rb) = (find(&mut parent, a as u32), find(&mut parent, b as u32));
                     if ra != rb {
                         let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
