@@ -329,7 +329,12 @@ use alice_physics::dynamic_fem as _;
 use alice_physics::dynamic_fem::CorotationalTransientSolver as _;
 use alice_physics::dynamic_fem::DynamicsConfig as _;
 use alice_physics::dynamic_fem::MassLumping as _;
+use alice_physics::dynamic_fem::TransientFemParticipant as _;
 use alice_physics::dynamic_fem::TransientSolver as _;
+use alice_physics::dynamic_fem::TRANSIENT_FEM_OBS_ITERATIONS as _;
+use alice_physics::dynamic_fem::TRANSIENT_FEM_OBS_STEPS as _;
+use alice_physics::dynamic_fem::TRANSIENT_FEM_OBS_TIME as _;
+use alice_physics::dynamic_fem::TRANSIENT_FEM_PARTICIPANT_KIND as _;
 use alice_physics::electromagnetic as _;
 use alice_physics::electromagnetic::dipole_sample as _;
 use alice_physics::electromagnetic::induced_dipole_energy as _;
@@ -1951,7 +1956,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1933 paths, checked at compile time
+    // 1938 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

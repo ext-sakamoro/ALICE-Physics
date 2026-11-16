@@ -63,6 +63,7 @@
 //! | `ROPE` | `0x524f_5045` | `rope_participant::RopeParticipant` |
 //! | `YEEG` | `0x5945_4547` | `maxwell_fdtd::YeeGridParticipant` |
 //! | `EUFV` | `0x4555_4656` | `euler_fv::EulerFv1dParticipant` |
+//! | `FEMD` | `0x4645_4d44` | `dynamic_fem::TransientFemParticipant` |
 //!
 //! # Coupling through ports
 //!

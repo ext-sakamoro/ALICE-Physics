@@ -248,6 +248,10 @@ use crate::linear_elastic_fem::{
 };
 use crate::math::{Fix128, Mat3Fix, Vec3Fix};
 use crate::sdf_fem_mesh::SdfTetMesh;
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
+    SubstepCtx,
+};
 
 // ---------------------------------------------------------------------------
 // element geometry (P1) — the same arithmetic as `linear_elastic_fem`
@@ -1164,6 +1168,287 @@ impl TransientSolver {
         h.finalize().into()
     }
 }
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`TransientFemParticipant`]: the ASCII code `FEMD`, big
+/// endian.
+pub const TRANSIENT_FEM_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"FEMD"));
+
+/// Observation channel of [`TransientFemParticipant`]: the solver clock
+/// (world seconds, `steps · dt`).
+pub const TRANSIENT_FEM_OBS_TIME: u32 = 0;
+
+/// Observation channel of [`TransientFemParticipant`]: Newmark steps taken
+/// since it was built.
+pub const TRANSIENT_FEM_OBS_STEPS: u32 = 1;
+
+/// Observation channel of [`TransientFemParticipant`]: conjugate-gradient
+/// iterations of the last Newmark step it took.
+pub const TRANSIENT_FEM_OBS_ITERATIONS: u32 = 2;
+
+/// Payload layout version written by [`TransientFemParticipant`].
+const TRANSIENT_FEM_STATE_VERSION: u32 = 1;
+
+/// Bytes before the fields: version, digest, clock, step count, last
+/// iteration count.
+const TRANSIENT_FEM_HEADER: usize = 4 + 8 + 16 + 8 + 8;
+
+/// A transient P1 FEM body ([`TransientSolver`], average-acceleration
+/// Newmark) that advances inside the world's substep loop on its own fixed
+/// step ([`StepRule::Fixed`]).
+///
+/// # MODEL
+///
+/// - **Equations**: small-strain linear elastodynamics `M ü + K u = f` on P1
+///   tetrahedra, integrated by [`TransientSolver::step`] with `β = 1/4`,
+///   `γ = 1/2` (unconditionally stable, no numerical damping, period
+///   elongation `ω̄ = (2/dt)·atan(ω dt/2)`).
+/// - **Units**: the solver's own (the mesh's length unit, the material's
+///   stress unit, the density's mass unit); `dt` is the solver's step and is
+///   read in the world's time unit.
+/// - **Scheduling**: [`Participant::step_rule`] is `StepRule::Fixed(dt)`, so
+///   the world refuses a substep `h` that is not `n·dt` (`StepError::Rule`,
+///   nothing runs) and otherwise calls this participant once per substep; it
+///   takes `n` Newmark steps. `k` substeps give exactly the fields of `k·n`
+///   direct [`TransientSolver::step`] calls.
+/// - **Coupling**: none. The body does not read or push the world's rigid
+///   bodies and declares no ports.
+/// - **Range**: a conjugate-gradient failure in any of the `n` steps makes
+///   the substep fail with [`ParticipantFault::OutOfRange`]; the fields are
+///   restored to their values before the substep.
+/// - **Verification**: `tests/analytic_transient_fem_participant.rs` — a
+///   single free degree of freedom on one tetrahedron follows the closed-form
+///   step response `u_s(1 − cos nθ)`, `tan(θ/2) = ω dt/2`, through the world
+///   (peak `2 u_s`, the dynamic amplification factor of a suddenly applied
+///   load); world path equal to direct stepping bit for bit; a substep that
+///   `dt` does not divide refused; snapshot, branch and resume equal to an
+///   unbroken run; foreign payloads refused.
+///
+/// # Determinism
+///
+/// All arithmetic is [`Fix128`] inside [`TransientSolver`]; the participant
+/// adds integer step counts and one clock addition per substep.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, the clock as a
+/// [`Fix128`] (`hi: i64`, `lo: u64`), the step count (`u64`), the last
+/// iteration count (`u64`), then `u`, `v` and `a` (each `ndof` [`Fix128`]).
+/// The digest is FNV-1a 64 over the degree-of-freedom count, `dt`, the
+/// constrained set and its values, the load and the preconditioner diagonal
+/// (which carries the mesh, the material and the mass);
+/// [`Participant::check_state`] refuses a payload of another length
+/// ([`StateError::Length`]), version or digest, or one whose prescribed
+/// degrees of freedom do not hold their prescribed values
+/// ([`StateError::InvalidValue`]).
+pub struct TransientFemParticipant {
+    solver: TransientSolver,
+    digest: u64,
+    time: Fix128,
+    steps: u64,
+    iterations: u64,
+}
+
+impl TransientFemParticipant {
+    /// The participant for `solver`, with its clock at zero.
+    #[must_use]
+    pub fn new(solver: TransientSolver) -> Self {
+        let digest = transient_fem_digest(&solver);
+        Self {
+            solver,
+            digest,
+            time: Fix128::ZERO,
+            steps: 0,
+            iterations: 0,
+        }
+    }
+
+    /// The solver it advances.
+    #[must_use]
+    pub fn solver(&self) -> &TransientSolver {
+        &self.solver
+    }
+
+    /// The solver clock (world seconds).
+    #[must_use]
+    pub fn time(&self) -> Fix128 {
+        self.time
+    }
+
+    /// Newmark steps taken since it was built.
+    #[must_use]
+    pub fn steps(&self) -> u64 {
+        self.steps
+    }
+
+    fn state_len(&self) -> usize {
+        TRANSIENT_FEM_HEADER + 3 * self.solver.u.len() * 16
+    }
+}
+
+fn transient_fem_digest(s: &TransientSolver) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    eat(&(s.u.len() as u64).to_le_bytes());
+    for f in core::iter::once(&s.dt)
+        .chain(&s.prescribed_value)
+        .chain(&s.load)
+        .chain(&s.precond)
+    {
+        eat(&f.hi.to_le_bytes());
+        eat(&f.lo.to_le_bytes());
+    }
+    for &free in &s.is_free {
+        eat(&[u8::from(free)]);
+    }
+    h
+}
+
+fn fem_u64_at(bytes: &[u8], at: usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[at..at + 8]);
+    u64::from_le_bytes(b)
+}
+
+fn fem_fix_at(bytes: &[u8], at: usize) -> Fix128 {
+    Fix128 {
+        hi: fem_u64_at(bytes, at) as i64,
+        lo: fem_u64_at(bytes, at + 8),
+    }
+}
+
+impl Participant for TransientFemParticipant {
+    fn kind(&self) -> ParticipantKind {
+        TRANSIENT_FEM_PARTICIPANT_KIND
+    }
+
+    fn step_rule(&self) -> StepRule {
+        StepRule::Fixed(self.solver.dt)
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        let n = StepRule::Fixed(self.solver.dt)
+            .steps_per_substep(h)
+            .map_err(|_| ParticipantFault::InvalidState)?;
+        let time = self
+            .time
+            .checked_add(h)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        let steps = self
+            .steps
+            .checked_add(n)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        // The solver is not `Clone`; keep its fields to put back on failure.
+        let saved = (
+            self.solver.u.clone(),
+            self.solver.v.clone(),
+            self.solver.a.clone(),
+        );
+        let mut iterations = self.iterations;
+        for _ in 0..n {
+            match self.solver.step() {
+                Ok(it) => iterations = u64::from(it),
+                Err(_) => {
+                    (self.solver.u, self.solver.v, self.solver.a) = saved;
+                    return Err(ParticipantFault::OutOfRange);
+                }
+            }
+        }
+        self.time = time;
+        self.steps = steps;
+        self.iterations = iterations;
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        out.push(TRANSIENT_FEM_OBS_TIME, self.time);
+        out.push(TRANSIENT_FEM_OBS_STEPS, Fix128::from_int(self.steps as i64));
+        out.push(
+            TRANSIENT_FEM_OBS_ITERATIONS,
+            Fix128::from_int(self.iterations as i64),
+        );
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&TRANSIENT_FEM_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&self.time.hi.to_le_bytes());
+        out.extend_from_slice(&self.time.lo.to_le_bytes());
+        out.extend_from_slice(&self.steps.to_le_bytes());
+        out.extend_from_slice(&self.iterations.to_le_bytes());
+        for x in self
+            .solver
+            .u
+            .iter()
+            .chain(&self.solver.v)
+            .chain(&self.solver.a)
+        {
+            out.extend_from_slice(&x.hi.to_le_bytes());
+            out.extend_from_slice(&x.lo.to_le_bytes());
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        let expected = self.state_len();
+        if bytes.len() != expected {
+            return Err(StateError::Length {
+                expected,
+                found: bytes.len(),
+            });
+        }
+        let mut version = [0u8; 4];
+        version.copy_from_slice(&bytes[0..4]);
+        if u32::from_le_bytes(version) != TRANSIENT_FEM_STATE_VERSION
+            || fem_u64_at(bytes, 4) != self.digest
+            || fem_fix_at(bytes, 12) < Fix128::ZERO
+        {
+            return Err(StateError::InvalidValue);
+        }
+        for (d, (&free, &value)) in self
+            .solver
+            .is_free
+            .iter()
+            .zip(&self.solver.prescribed_value)
+            .enumerate()
+        {
+            if !free && fem_fix_at(bytes, TRANSIENT_FEM_HEADER + d * 16) != value {
+                return Err(StateError::InvalidValue);
+            }
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        let ndof = self.solver.u.len();
+        let field = |k: usize| -> Vec<Fix128> {
+            (0..ndof)
+                .map(|d| fem_fix_at(bytes, TRANSIENT_FEM_HEADER + (k * ndof + d) * 16))
+                .collect()
+        };
+        self.solver.u = field(0);
+        self.solver.v = field(1);
+        self.solver.a = field(2);
+        self.time = fem_fix_at(bytes, 12);
+        self.steps = fem_u64_at(bytes, 28);
+        self.iterations = fem_u64_at(bytes, 36);
+    }
+}
+
+// The participant's oracles compile as lib tests too, so the participant's lines count in the
+// `--lib` coverage (the same file runs as the integration test
+// `analytic_transient_fem_participant`).
+#[cfg(test)]
+#[path = "../tests/analytic_transient_fem_participant.rs"]
+mod analytic_transient_fem_participant_oracle;
 
 // ---------------------------------------------------------------------------
 // the co-rotational solver

@@ -3786,6 +3786,29 @@ impl core::marker::Unpin for alice_physics_core::dynamic_fem::DynamicsConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::dynamic_fem::DynamicsConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::dynamic_fem::DynamicsConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::dynamic_fem::DynamicsConfig
+pub struct alice_physics_core::dynamic_fem::TransientFemParticipant
+impl alice_physics_core::dynamic_fem::TransientFemParticipant
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::new(alice_physics_core::dynamic_fem::TransientSolver) -> Self
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::solver(&self) -> &alice_physics_core::dynamic_fem::TransientSolver
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::steps(&self) -> u64
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::time(&self) -> alice_physics_core::math::Fix128
+impl alice_physics_core::world_participant::Participant for alice_physics_core::dynamic_fem::TransientFemParticipant
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::marker::Freeze for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::marker::Send for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::marker::Sync for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::marker::Unpin for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::dynamic_fem::TransientFemParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::dynamic_fem::TransientFemParticipant
 pub struct alice_physics_core::dynamic_fem::TransientSolver
 impl alice_physics_core::dynamic_fem::TransientSolver
 pub const alice_physics_core::dynamic_fem::TransientSolver::STATE_DIGEST_DOMAIN: [u8; 32]
@@ -3802,6 +3825,10 @@ impl core::marker::Unpin for alice_physics_core::dynamic_fem::TransientSolver
 impl core::marker::UnsafeUnpin for alice_physics_core::dynamic_fem::TransientSolver
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::dynamic_fem::TransientSolver
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::dynamic_fem::TransientSolver
+pub const alice_physics_core::dynamic_fem::TRANSIENT_FEM_OBS_ITERATIONS: u32
+pub const alice_physics_core::dynamic_fem::TRANSIENT_FEM_OBS_STEPS: u32
+pub const alice_physics_core::dynamic_fem::TRANSIENT_FEM_OBS_TIME: u32
+pub const alice_physics_core::dynamic_fem::TRANSIENT_FEM_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub mod alice_physics_core::electromagnetic
 pub enum alice_physics_core::electromagnetic::EmSource
 pub alice_physics_core::electromagnetic::EmSource::MagneticDipole
@@ -22393,6 +22420,16 @@ pub fn alice_physics_core::crowd_force::CrowdParticipant::semantics_id(&self) ->
 pub fn alice_physics_core::crowd_force::CrowdParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::crowd_force::CrowdParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::crowd_force::CrowdParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::dynamic_fem::TransientFemParticipant
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::dynamic_fem::TransientFemParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::erosion::ErosionModifier
 pub fn alice_physics_core::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::erosion::ErosionModifier::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
