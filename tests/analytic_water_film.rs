@@ -798,12 +798,13 @@ fn an_sdf_bed_and_a_height_bed_agree() {
     );
 }
 
-/// The substep count is `⌈h / Δt_max⌉` whatever the water: dry, deep, flowing, raining
+/// The substep count is `⌈h / Δt⌉`, `Δt = min(Δt_max, 3 ν l² / (8 g h_film³))`, whatever the water: dry, deep, flowing, raining
 /// (a count read from the moving water changes `Δt` in phase with the motion).
 #[test]
 fn the_substep_count_depends_on_declared_inputs_only() {
     let mut f = busy_film(FilmScheme::DiffusionWave);
-    let dt_max = f.config().max_substep;
+    // the substep from declared inputs: min(max_substep, 3 ν l² / (8 g h_film³))
+    let dt_max = f.substep();
     let mut compared = 0;
     for _ in 0..200 {
         for h in [
@@ -1007,5 +1008,91 @@ impl SqrtApprox for f64 {
             x = 0.5 * (x + self / x);
         }
         x
+    }
+}
+
+/// The band is refused, not levelled silently: water 3 mm deep flowing down a channel at
+/// slope 1/200 (Re ≈ 440, Fr ≈ 0.86: lubrication is the right closure) is deeper than the
+/// declared deepest film of 1.5 mm, so its faces pool; a level pool cannot carry the flow
+/// (it needs a surface fall of millimetres along the channel). The advance must return
+/// out of range, name channel cells in `last_band_cells`, and leave the state unchanged.
+#[test]
+fn a_flowing_channel_deeper_than_the_film_is_refused() {
+    let (nx, nz) = (60usize, 3usize);
+    let cell = mm(20);
+    let wall = Fix128::from_ratio(1, 10);
+    let mut h = vec![wall; nx * nz];
+    for i in 0..nx {
+        h[i + nx] = -Fix128::from_ratio(1, 200) * cell * Fix128::from_int(i as i64);
+    }
+    let bed =
+        FilmBed::from_heights(nx, nz, cell, (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
+    cfg.film_depth_max = Fix128::from_ratio(15, 10_000);
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    // start the channel at the uniform 3 mm it would carry and keep feeding the top
+    for i in 0..nx {
+        f.set_initial_depth(i, 1, metres_to_quanta(mm(3)));
+    }
+    let q = Fix128::from_ratio(44, 100_000) * cell; // q ≈ 4.4e-4 m²/s over one cell width
+    let step = Fix128::from_ratio(1, 6);
+    let (x0, z0) = f.bed().centre(0, 1);
+    let mut refused = None;
+    for n in 0..60 {
+        f.deposit(x0, z0, q * step);
+        let before = state(&f);
+        match f.advance(step) {
+            Ok(_) => {}
+            Err(e) => {
+                assert_eq!(e, ParticipantFault::OutOfRange);
+                assert_eq!(state(&f), before, "a refused advance changed the state");
+                refused = Some(n);
+                break;
+            }
+        }
+    }
+    assert!(
+        refused.is_some(),
+        "the flowing 3 mm channel was levelled, not refused"
+    );
+    let band = f.last_band_cells();
+    assert!(
+        band.iter().any(|c| c / nx == 1),
+        "band cells {band:?} miss the channel"
+    );
+}
+
+/// A closed groove filling under 200 mm/h of rain (no water enters or leaves the domain, a
+/// pool exchanges water only with its own bevels) is never refused and ends level: once the
+/// rain stops, every wet groove cell stands within the rest band of the closed-form level.
+#[test]
+fn a_filling_groove_is_accepted_and_levels() {
+    let bed = groove_bed(12, 3, 8, true);
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
+    let mut f = WaterFilm::new(cfg, bed.clone()).expect("film");
+    let step = Fix128::from_ratio(1, 6);
+    for n in 0..(6 * 120) {
+        if f.advance(step).is_err() {
+            panic!("refused at step {n}: band cells {:?}", f.last_band_cells());
+        }
+    }
+    let mut dry_cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    dry_cfg.rain = Fix128::ZERO;
+    let mut g = WaterFilm::new(dry_cfg, bed).expect("film");
+    for i in 0..12 {
+        g.set_initial_depth(i, 0, f.depths()[i]);
+    }
+    settle(&mut g, 10_000_000);
+    let beds = g.bed().heights().to_vec();
+    let eta = level_for(&beds, g.total());
+    let wet: Vec<usize> = (0..12).filter(|c| g.depths()[*c] > 0).collect();
+    assert!(wet.len() >= 6, "only {} wet cells", wet.len());
+    for &c in &wet {
+        let off = (beds[c] + g.depths()[c] - eta).abs();
+        assert!(
+            off <= 7 * wet.len() as i64,
+            "cell {c}: {off} quanta from the level"
+        );
     }
 }
