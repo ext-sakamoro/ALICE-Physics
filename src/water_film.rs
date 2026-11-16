@@ -1237,6 +1237,7 @@ impl WaterFilm {
         // R, and every face touching R takes its capped transfer; a capped face that is still
         // bad sends the whole substep to the capped transfers, whose sum is proven negative
         let mut use_capped = vec_of(m, false);
+        let mut zeroed = vec_of(m, false);
         let mut in_r = vec_of(n, false);
         let mut all_capped = false;
         let mut passes = 0u32;
@@ -1244,7 +1245,11 @@ impl WaterFilm {
             passes += 1;
             let t: Vec<i64> = (0..m)
                 .map(|i| {
-                    if all_capped || use_capped[i] {
+                    if all_capped {
+                        capped[i]
+                    } else if zeroed[i] {
+                        0
+                    } else if use_capped[i] {
                         capped[i]
                     } else {
                         implicit[i]
@@ -1264,7 +1269,6 @@ impl WaterFilm {
                 break (t, delta);
             }
             let mut grew = false;
-            let mut capped_bad = false;
             for (i, link) in links.iter().enumerate() {
                 if t[i] == 0 {
                     continue;
@@ -1276,7 +1280,11 @@ impl WaterFilm {
                     continue;
                 }
                 if use_capped[i] {
-                    capped_bad = true;
+                    // a capped face still bad (its neighbours moved more): it moves nothing
+                    // this substep, which adds 0 to the potential change
+                    zeroed[i] = true;
+                    grew = true;
+                    continue;
                 }
                 for c in [link.a, link.b].into_iter().flatten() {
                     if !in_r[c] {
@@ -1285,11 +1293,13 @@ impl WaterFilm {
                     }
                 }
             }
-            if capped_bad {
-                all_capped = true;
-                continue;
-            }
             if !grew {
+                // nothing moves although capped moves exist: take the capped transfers on
+                // every face, whose potential change is proven negative (finite rest)
+                if t.iter().all(|v| *v == 0) && capped.iter().any(|v| *v != 0) {
+                    all_capped = true;
+                    continue;
+                }
                 break (t, delta);
             }
             for (i, link) in links.iter().enumerate() {
