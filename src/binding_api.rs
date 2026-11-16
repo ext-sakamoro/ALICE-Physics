@@ -324,7 +324,9 @@ pub(crate) fn add_magnet(
 /// reach from the law itself. `None` for a radius that is negative or not finite, a mass that is
 /// not finite and positive, a material id that does not fit `MaterialId`, or a material no magnet
 /// names.
-#[cfg(feature = "wasm")]
+// built for the lib tests in every feature set too: its oracles below must run wherever the
+// mutation tests do, not only in a wasm build
+#[cfg(any(feature = "wasm", test))]
 pub(crate) fn magnet_force_at(
     w: &PhysicsWorld,
     material: u32,
@@ -946,7 +948,6 @@ mod tests {
     /// `magnet_force_at · inv_mass · dt` bit for bit (the step's own arithmetic). A body of
     /// another material, or a material no magnet names, gets no answer.
     #[test]
-    #[cfg(feature = "wasm")]
     fn magnet_force_at_is_the_pull_a_step_applies() {
         let m = steel();
         let (mass, radius) = (0.00411, 0.005);
@@ -993,10 +994,44 @@ mod tests {
         assert!(compared > 0);
     }
 
+    /// oracle: the pull at a point counts only the magnets that act on every body. Beside one
+    /// enabled magnet, a second magnet that is disabled and a third limited to a list of bodies
+    /// change nothing: at each sampled point the pull equals, bit for bit, the pull in a world
+    /// holding the first magnet alone (and with the other two enabled for all bodies it differs,
+    /// so they are near enough to count)
+    #[test]
+    fn magnet_force_at_counts_only_magnets_acting_on_every_body() {
+        let m = steel();
+        let world = |extra: bool, limited: bool| {
+            let mut w = PhysicsWorld::new(PhysicsConfig::default());
+            add_magnet(&mut w, vf(0.0, 0.0, 0.0), vf(0.0, 0.5, 0.0), 0.01, &m).unwrap();
+            if extra {
+                add_magnet(&mut w, vf(0.03, 0.0, 0.0), vf(0.0, 0.5, 0.0), 0.01, &m).unwrap();
+                add_magnet(&mut w, vf(-0.03, 0.0, 0.0), vf(0.0, 0.5, 0.0), 0.01, &m).unwrap();
+                let n = w.force_fields.len();
+                if limited {
+                    w.force_fields[n - 2].enabled = false;
+                    w.force_fields[n - 1].affected_bodies = Some(vec![0]);
+                }
+            }
+            w
+        };
+        let (alone, quiet, loud) = (world(false, false), world(true, true), world(true, false));
+        let (mass, radius) = (0.00411, 0.005);
+        let mut compared = 0;
+        for (x, y) in [(0.0, 0.06), (0.05, 0.02), (-0.04, 0.05), (0.02, -0.07)] {
+            let p = vf(x, y, 0.0);
+            let a = magnet_force_at(&alone, 1, p, radius, mass).unwrap();
+            assert_eq!(magnet_force_at(&quiet, 1, p, radius, mass).unwrap(), a, "({x}, {y})");
+            assert_ne!(magnet_force_at(&loud, 1, p, radius, mass).unwrap(), a, "({x}, {y}) the others reach it");
+            compared += 1;
+        }
+        assert_eq!(compared, 4);
+    }
+
     /// `magnet_force_at` refuses a bad radius, mass or material id, and answers nothing in a
     /// world with no magnet
     #[test]
-    #[cfg(feature = "wasm")]
     fn magnet_force_at_refuses_bad_values() {
         let (mut w, _, _) = magnet_scene();
         assert_eq!(

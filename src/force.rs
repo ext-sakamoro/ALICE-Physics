@@ -649,7 +649,7 @@ fn magnet_force_of(
 /// probe body there, counting the enabled magnets that act on every body (a magnet limited to a
 /// list of bodies is left out, the probe is none of them). The same function the step applies, so
 /// a drawing of a magnet's reach shows what acts. Zero when no magnet names the material.
-#[cfg(feature = "wasm")]
+#[cfg(any(feature = "wasm", test))]
 #[must_use]
 pub(crate) fn magnet_force_at(
     fields: &[ForceFieldInstance],
