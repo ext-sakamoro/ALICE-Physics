@@ -105,6 +105,7 @@ scripts/g11_table.sh
   python3 "$law/alice-law/scripts/g11_self_check.py" --repo . --name ALICE-Physics
 )
 python3 scripts/test_lib_test_gate.py
+python3 scripts/lib_test_gate.py origin/main
 python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
 python3 scripts/test_fuzz_targets.py

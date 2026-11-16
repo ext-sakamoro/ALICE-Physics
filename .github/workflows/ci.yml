@@ -63,6 +63,11 @@ jobs:
           python3 scripts/changed_paths.py decide --event "$EVENT"
           --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
           --pattern 'scripts/land.py' --pattern 'scripts/test_land.py' --pattern 'scripts/run_unittest_shards.py'
+      # the lib-test gate land.py runs before it pushes (scripts/lib_test_gate.py): here on a ci/** push so a new
+      # source file without lib tests is refused in this round, not at the land after it; 0 commits over main = fail
+      - name: Lib-test gate (new source files bring lib tests)
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+        run: python3 scripts/lib_test_gate.py --require-commits origin/main
       - id: decide
         if: github.event_name == 'schedule'
         # a crash of the script leaves the output empty, which reads as 'true' above

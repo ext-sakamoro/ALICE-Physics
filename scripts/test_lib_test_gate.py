@@ -93,6 +93,17 @@ class Gate(unittest.TestCase):
             os.chdir(old)
         self.assertTrue(errors)
 
+    def test_the_range_is_counted(self):
+        root = repo(BASE, {"src/z.rs": "pub fn z() {}\n#[cfg(test)]\nmod tests {}\n"})
+        _, _, counts = gate.check(root, "base")
+        self.assertEqual(counts["commits"], 1)
+
+    def test_require_commits_refuses_an_empty_range(self):
+        root = repo(BASE, {})
+        self.assertEqual(gate.main(["--root", root, "base"]), 0)
+        self.assertEqual(gate.main(["--root", root, "--require-commits", "HEAD"]), 1)
+        self.assertEqual(gate.main(["--root", root, "--require-commits", "base"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,8 +19,14 @@ When the commits add no source file the gate says so and passes; when they add
 some, each one is examined (the count is printed), so an empty discovery cannot
 pass by comparing nothing.
 
-Usage: `python3 scripts/lib_test_gate.py BASE` (BASE = the commit the landed
-commits sit on, e.g. `origin/main`); exit 1 on an error.
+The same check runs in three places, so a commit that would be refused at the
+land is refused before its CI round: the cheap prepass (scripts/preflight.sh),
+the `gate` job of ci.yml on a ci/** push, and land.py. Each run prints how many
+commits it examined; with `--require-commits` (CI on a branch that is not main)
+a range of 0 commits is an error: the base was wrong, so nothing was compared.
+
+Usage: `python3 scripts/lib_test_gate.py [--require-commits] BASE` (BASE = the
+commit the landed commits sit on, e.g. `origin/main`); exit 1 on an error.
 """
 from __future__ import annotations
 
@@ -66,7 +72,8 @@ def test_part(text: str) -> str:
 def check(root: str, base: str) -> tuple[list[str], list[str], dict[str, int]]:
     errors: list[str] = []
     warnings: list[str] = []
-    counts = {"new_files": 0, "new_fns": 0}
+    counts = {"new_files": 0, "new_fns": 0,
+              "commits": int(git(root, "rev-list", "--count", f"{base}..HEAD").strip())}
     ex = exempt(root)
     for f, reason in ex.items():
         if not reason:
@@ -106,12 +113,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("base", help="the commit the landed commits sit on (e.g. origin/main)")
     ap.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ap.add_argument("--require-commits", action="store_true",
+                    help="a range of 0 commits is an error (CI on a branch that is not main)")
     args = ap.parse_args(argv)
     errors, warnings, counts = check(args.root, args.base)
+    if args.require_commits and counts["commits"] == 0:
+        errors.append(f"no commit between {args.base} and HEAD: the base is wrong, nothing was compared")
     for w in warnings:
         print(f"warning: {w}")
     for e in errors:
         print(f"error: {e}")
+    print(f"lib-test gate: commits examined: {counts['commits']}")
     if counts["new_files"] == 0:
         print("lib-test gate: the commits add no source file (new-file check skipped); "
               f"new pub fns examined: {counts['new_fns']}")
