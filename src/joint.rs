@@ -4021,4 +4021,53 @@ mod tests {
         }
         assert_eq!(differ, 0, "{differ}/64 orientations differ from c·(n·n)");
     }
+
+    /// Kills `is_rigid` `&&` → `||` for hinge / fixed / d6 / cone-twist (one row compliant, the
+    /// other rigid must not count as rigid, in both orders) and `same_constraint` → `true`
+    /// (a changed compliance is a different constraint; a new break force alone is not).
+    #[test]
+    fn is_rigid_needs_every_row_rigid_and_same_constraint_ignores_only_break_force() {
+        let c = Fix128::from_ratio(1, 16);
+        let z = Vec3Fix::ZERO;
+        let rows = |lin: Fix128, ang: Fix128| -> [Joint; 4] {
+            let mut h = HingeJoint::new(0, 1, z, z, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Z);
+            h.compliance = lin;
+            h.angular_compliance = ang;
+            let mut f = FixedJoint::new(0, 1, z, z, QuatFix::IDENTITY);
+            f.compliance = lin;
+            f.angular_compliance = ang;
+            let mut d = D6Joint::new(0, 1, z, z);
+            d.compliance = lin;
+            d.angular_compliance = ang;
+            let mut k = ConeTwistJoint::new(0, 1, z, z, Vec3Fix::UNIT_X, Vec3Fix::UNIT_X);
+            k.compliance = lin;
+            k.angular_compliance = ang;
+            [Joint::Hinge(h), Joint::Fixed(f), Joint::D6(d), Joint::ConeTwist(k)]
+        };
+        for (i, j) in rows(Fix128::ZERO, Fix128::ZERO).iter().enumerate() {
+            assert!(j.is_rigid(), "{i}: both rows rigid");
+        }
+        for (i, j) in rows(c, Fix128::ZERO).iter().enumerate() {
+            assert!(!j.is_rigid(), "{i}: linear row compliant");
+        }
+        for (i, j) in rows(Fix128::ZERO, c).iter().enumerate() {
+            assert!(!j.is_rigid(), "{i}: angular row compliant");
+        }
+
+        let rigid = rows(Fix128::ZERO, Fix128::ZERO);
+        let soft = rows(c, Fix128::ZERO);
+        for i in 0..4 {
+            assert!(rigid[i].same_constraint(&rigid[i]), "{i}: itself");
+            assert!(!rigid[i].same_constraint(&soft[i]), "{i}: compliance changed");
+            let mut broken = rigid[i];
+            match &mut broken {
+                Joint::Hinge(x) => x.break_force = Some(Fix128::ONE),
+                Joint::Fixed(x) => x.break_force = Some(Fix128::ONE),
+                Joint::D6(x) => x.break_force = Some(Fix128::ONE),
+                Joint::ConeTwist(x) => x.break_force = Some(Fix128::ONE),
+                _ => unreachable!(),
+            }
+            assert!(rigid[i].same_constraint(&broken), "{i}: break force alone");
+        }
+    }
 }

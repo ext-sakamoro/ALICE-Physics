@@ -1526,6 +1526,80 @@ mod tests {
         }
     }
 
+    /// Kills the clamp mutants of `cell_coord` (`>` → `==`, `<` → `==`: a coordinate beyond
+    /// `i64` must clamp, not wrap), the `raw_extent` guard → `true` (an inverted box has extent
+    /// 0, not a huge one) and `auto_cell_shift` `median > 0` → `>=` (a zero median falls back to
+    /// the largest extent: points plus one 2-unit box give a 2-unit cell, `2^65`, not `2^64`).
+    #[test]
+    fn hybrid_clamps_far_coordinates_and_falls_back_on_a_zero_median() {
+        // raw 2^64 at shift 0 is above i64::MAX; raw -2^65 is below i64::MIN
+        assert_eq!(cell_coord(Fix128::from_raw(1, 0), 0), i64::MAX);
+        assert_eq!(cell_coord(Fix128::from_raw(-2, 0), 0), i64::MIN);
+        assert_eq!(cell_coord(Fix128::from_raw(0, 5), 1), 2);
+        assert_eq!(cell_coord(Fix128::from_raw(-1, u64::MAX - 4), 1), -3);
+
+        let one = Fix128::ONE;
+        let inverted = AABB {
+            min: Vec3Fix::new(one, one, one),
+            max: Vec3Fix::new(-one, -one, -one),
+        };
+        assert_eq!(raw_extent(&inverted), 0);
+
+        let point = |x: i64| {
+            let p = Vec3Fix::new(Fix128::from_int(x), Fix128::ZERO, Fix128::ZERO);
+            (0u32, AABB { min: p, max: p })
+        };
+        let two_units = ball(Vec3Fix::ZERO, 1000);
+        assert_eq!(raw_extent(&two_units), 2u128 << 64);
+        let set = [point(10), point(20), (2u32, two_units)];
+        assert_eq!(BroadphaseHybrid::auto_cell_shift(&set), 65);
+    }
+
+    /// Kills `build_dynamic`'s large-body threshold mutants: `shift + 2` → `shift - 2` (a
+    /// 1-raw-unit median gives shift 0, which must not underflow), `CELLS - 1` → `+ 1` or `/ 1`
+    /// (a body 3 cells wide is large, the threshold is 2 cells) and `>` → `>=` (a body exactly 2
+    /// cells wide stays in the grid); and `tested += 1` → `*=` in the small × large pass
+    /// (`tested >= out.len()` with only a small × large pair).
+    #[test]
+    fn hybrid_large_threshold_is_two_cells_and_counts_small_large_work() {
+        let v3i = |x: i64, y: i64, z: i64| {
+            Vec3Fix::new(Fix128::from_int(x), Fix128::from_int(y), Fix128::from_int(z))
+        };
+        // unit-size bodies: cell 2^64 (1 unit), threshold 2 units
+        let mut bodies: Vec<Body> = (0..9u32)
+            .map(|i| (i, ball(v3i(i64::from(i) * 10, 0, 0), 500), false))
+            .collect();
+        bodies.push((100, ball(v3i(200, 0, 0), 1000), false)); // 2 units: grid
+        bodies.push((101, ball(v3i(300, 0, 0), 1500), false)); // 3 units: large
+        let mut h = BroadphaseHybrid::new();
+        stage(&mut h, &bodies);
+        assert_eq!(h.cell_shift, 64);
+        let large: Vec<u32> = h.large.iter().map(|&(id, _)| id).collect();
+        assert_eq!(large, vec![101]);
+        assert!(h.small.iter().any(|&(id, _, _)| id == 100));
+
+        // one small body inside one large body: the only pair is small x large
+        let pair = [
+            (1u32, ball(v3i(0, 0, 0), 500), false),
+            (2u32, ball(v3i(0, 0, 0), 5000), false),
+            (3u32, ball(v3i(50, 0, 0), 500), false),
+        ];
+        let (out, tested) = run(&mut h, &pair);
+        assert_eq!(out, vec![(1, 2)]);
+        assert!(tested >= 1, "tested {tested}");
+
+        // a median extent of 1 raw unit: shift 0, pairs still exact
+        let tiny = |x: u64, id: u32| {
+            let lo = Vec3Fix::new(Fix128::from_raw(0, x), Fix128::ZERO, Fix128::ZERO);
+            let hi = Vec3Fix::new(Fix128::from_raw(0, x + 1), Fix128::ZERO, Fix128::ZERO);
+            (id, AABB { min: lo, max: hi }, false)
+        };
+        let tiny_set = [tiny(0, 1), tiny(1, 2), tiny(10, 3)];
+        let (out, _) = run(&mut h, &tiny_set);
+        assert_eq!(h.cell_shift, 0);
+        assert_eq!(out, brute_force(&tiny_set));
+    }
+
     /// Adding, removing or moving a static body is detected: the static BVH
     /// is rebuilt (once per change) and the pairs stay exact; an unchanged
     /// static set is not rebuilt.
