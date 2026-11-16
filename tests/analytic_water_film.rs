@@ -10,6 +10,7 @@ use alice_physics_core::water_film::{
     metres_to_quanta, quanta_to_metres, FilmBed, FilmBuildError, FilmConfig, FilmEdge,
     FilmScheme, WaterFilm, DEPTH_QUANTUM_BITS,
 };
+use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::world_participant::{Participant, ParticipantFault, StateError};
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
 use sha2::{Digest, Sha256};
@@ -501,4 +502,153 @@ fn the_film_steps_and_rewinds_inside_a_world() {
     assert_eq!(digest.len(), 64);
     // one quantum is 2^-32 m
     assert_eq!(quanta_to_metres(1), Fix128::from_raw(0, 1u64 << (64 - DEPTH_QUANTUM_BITS)));
+}
+
+/// oracle: the Nusselt film. A steady inflow `q` per unit width fed at the top of a plane of
+/// slope `tan α` runs down as a film of uniform depth `h = (3 ν q / (g tan α))^(1/3)` (the
+/// model's flux `g h³ ∇η / (3ν)` with `∇η = tan α`; for the small angle here `tan α` and
+/// `sin α` differ by 0.1 %). Cells away from the inlet and the outlet are within 1 % of it.
+#[test]
+fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
+    // a channel one cell wide between walls 0.1 m high (open edges drain every side, so the
+    // walls keep the water in the channel), closed at the top by a wall cell, open at the foot
+    let nx = 42;
+    let tan: f64 = 0.05;
+    let cell = mm(CELL_MM);
+    let wall = Fix128::from_ratio(1, 10);
+    let mut h = vec![wall; nx * 3];
+    for i in 1..nx {
+        h[i + nx] = -Fix128::from_ratio(5, 100) * cell * Fix128::from_int(i as i64);
+    }
+    let bed = FilmBed::from_heights(nx, 3, cell, (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
+    let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Open);
+    // q = 2e-5 m²/s per unit width, fed into the top channel cell as volume q·Δt·l per advance
+    let q = Fix128::from_ratio(2, 100_000);
+    let dt = Fix128::from_ratio(1, 64);
+    let (x0, z0) = f.bed().centre(1, 1);
+    for _ in 0..(64 * 200) {
+        f.deposit(x0, z0, q * dt * cell);
+        f.advance(dt).expect("advance");
+    }
+    let prof: Vec<String> = (0..nx).step_by(4).map(|i| format!("{:.3e}", f.depth_m(i, 1).to_f64())).collect();
+    println!("profile {prof:?} ledger {:?} total {}", f.ledger(), f.total());
+    let nusselt = (3.0_f64 * 1.0e-6 * 2.0e-5 / (9.80665 * tan)).cbrt();
+    let mut compared = 0;
+    for i in 10..30 {
+        let d = f.depth_m(i, 1).to_f64();
+        assert!(
+            (d - nusselt).abs() / nusselt < 0.01,
+            "cell {i}: depth {d:.6e} m, Nusselt {nusselt:.6e} m"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 20);
+}
+
+/// oracle: evaporation. A uniform layer `h₀` on a flat closed bed under evaporation `E` and
+/// no rain is gone at `t = h₀ / E` (to one substep), and each cell turns dry (depth at or
+/// below the wet threshold) at `(h₀ − threshold) / E` (to one substep).
+#[test]
+fn a_wet_cell_dries_in_the_closed_form_time() {
+    let bed = FilmBed::from_heights(4, 3, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &[Fix128::ZERO; 12], 1)
+        .expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(360));
+    let threshold = cfg.wet_threshold;
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    let h0 = metres_to_quanta(mm(1));
+    for k in 0..3 {
+        for i in 0..4 {
+            f.set_initial_depth(i, k, h0);
+        }
+    }
+    let dt = f.config().max_substep;
+    let e = f.config().evaporation.to_f64();
+    let q = 2f64.powi(-(DEPTH_QUANTUM_BITS as i32));
+    let t_gone = h0 as f64 * q / e;
+    let t_dry = (h0 - threshold) as f64 * q / e;
+    let (mut gone_at, mut dry_at) = (None, None);
+    for n in 1..200_000u64 {
+        f.step_once(dt).expect("substep");
+        let t = n as f64 * dt.to_f64();
+        if dry_at.is_none() && f.dry_ages().iter().all(|a| *a > 0) {
+            dry_at = Some(t);
+        }
+        if f.total() == 0 {
+            gone_at = Some(t);
+            break;
+        }
+    }
+    let step = dt.to_f64();
+    let gone = gone_at.expect("gone");
+    let dry = dry_at.expect("dry");
+    assert!((gone - t_gone).abs() <= step, "gone at {gone} s, closed form {t_gone} s");
+    assert!((dry - t_dry).abs() <= step, "dry at {dry} s, closed form {t_dry} s");
+    assert_eq!(f.ledger().evaporated, f.ledger().initial);
+}
+
+/// A tilted plane `y = a·x + c` as an SDF (exact distance).
+struct TiltedPlane {
+    a: f32,
+    c: f32,
+}
+
+impl SdfField for TiltedPlane {
+    fn distance(&self, x: f32, y: f32, _z: f32) -> f32 {
+        (y - self.a * x - self.c) / (1.0 + self.a * self.a).sqrt()
+    }
+    fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+        let n = (1.0 + self.a * self.a).sqrt();
+        (-self.a / n, 1.0 / n, 0.0)
+    }
+}
+
+/// oracle: the bed from an SDF is the bed from the same surface as a height function: the
+/// sampled heights agree to within the f32 resolution at that height (the bisection works in
+/// f32), and both agree with the closed form `a·x + c` at the cell centres.
+#[test]
+fn an_sdf_bed_and_a_height_bed_agree() {
+    let plane = TiltedPlane { a: -0.25, c: 0.02 };
+    let cell = mm(CELL_MM);
+    let o = (Fix128::ZERO, Fix128::ZERO);
+    let from_sdf = FilmBed::from_sdf(16, 2, cell, o, 1, &plane, (-1.0, 1.0)).expect("sdf bed");
+    let from_fn = FilmBed::from_height_fn(16, 2, cell, o, 1, |x, _| plane.a * x + plane.c).expect("fn bed");
+    let mut compared = 0;
+    for k in 0..2 {
+        for i in 0..16 {
+            let c = i + k * 16;
+            let (x, _) = from_fn.centre(i, k);
+            let exact = metres_to_quanta(Fix128::from_f64(-0.25 * x.to_f64() + 0.02));
+            // one f32 step at |y| (and at the bisection bounds' scale, 1 m), in quanta, plus one
+            let ulp = (f32::EPSILON as f64 * 2f64.powi(DEPTH_QUANTUM_BITS as i32)).ceil() as i64 + 1;
+            let (s, h) = (from_sdf.heights()[c], from_fn.heights()[c]);
+            assert!((s - h).abs() <= ulp, "cell {c}: sdf {s} vs fn {h} quanta (bound {ulp})");
+            assert!((h - exact).abs() <= ulp, "cell {c}: fn {h} vs exact {exact} quanta");
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 32);
+    // a column with no surface between the bounds is refused
+    assert_eq!(
+        FilmBed::from_sdf(2, 1, cell, o, 1, &plane, (0.5, 1.0)).err(),
+        Some(FilmBuildError::NoSurface)
+    );
+}
+
+/// The substep count is `⌈h / Δt_max⌉` whatever the water: dry, deep, flowing, raining
+/// (a count read from the moving water changes `Δt` in phase with the motion).
+#[test]
+fn the_substep_count_depends_on_declared_inputs_only() {
+    let mut f = busy_film(FilmScheme::DiffusionWave);
+    let dt_max = f.config().max_substep;
+    let mut compared = 0;
+    for _ in 0..200 {
+        for h in [Fix128::from_ratio(1, 20), Fix128::from_ratio(1, 300), Fix128::from_ratio(7, 3)] {
+            let want = (h / dt_max).ceil().hi.max(1) as u32;
+            assert_eq!(f.subcycles(h), Some(want), "h = {}", h.to_f64());
+            compared += 1;
+        }
+        f.advance(Fix128::from_ratio(1, 20)).expect("advance");
+    }
+    assert_eq!(compared, 600);
 }
