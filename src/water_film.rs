@@ -59,7 +59,7 @@
 //!   leaves the potential unchanged, so it never comes to rest.
 //!   Measured on a closed 8-cell groove: spread 48 quanta at rest (11 nm, bound 49).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative`
+//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned`
 //!
 //! Author: Moroya Sakamoto
 
@@ -505,6 +505,8 @@ pub struct WaterFilm {
     last_subcycles: u32,
     last_moved: u64,
     reverse_faces: bool,
+    // per-substep work buffer, not state
+    scratch: Vec<i64>,
 }
 
 impl WaterFilm {
@@ -539,6 +541,7 @@ impl WaterFilm {
             last_subcycles: 0,
             last_moved: 0,
             reverse_faces: false,
+            scratch: Vec::new(),
         };
         film.digest = film.config_digest();
         Ok(film)
@@ -688,39 +691,6 @@ impl WaterFilm {
         }
     }
 
-    // the faces of group `colour` (0: x faces, even low index; 1: x, odd; 2: z, even; 3: z,
-    // odd) as (first cell, second cell); None = past the edge
-    fn face_set(&self, colour: u64) -> Vec<(Option<usize>, Option<usize>)> {
-        let (nx, nz) = (self.bed.nx, self.bed.nz);
-        let parity = (colour % 2) as usize;
-        let mut faces = Vec::new();
-        if colour % 4 < 2 {
-            for k in 0..nz {
-                let mut i = parity;
-                while i <= nx {
-                    let a = if i > 0 { Some(i - 1 + k * nx) } else { None };
-                    let b = if i < nx { Some(i + k * nx) } else { None };
-                    faces.push((a, b));
-                    i += 2;
-                }
-            }
-        } else {
-            for i in 0..nx {
-                let mut k = parity;
-                while k <= nz {
-                    let a = if k > 0 { Some(i + (k - 1) * nx) } else { None };
-                    let b = if k < nz { Some(i + k * nx) } else { None };
-                    faces.push((a, b));
-                    k += 2;
-                }
-            }
-        }
-        if self.reverse_faces {
-            faces.reverse();
-        }
-        faces
-    }
-
     /// Advance by `h` seconds in [`Self::subcycles`] substeps; returns their number.
     ///
     /// # Errors
@@ -766,37 +736,84 @@ impl WaterFilm {
         }
         let mut moved = 0u64;
         let mut edge_out = 0i64;
-        {
-            // every face from the same state; the deltas are summed, so order does not matter
-            let mut delta: Vec<i64> = vec_of(ncell, 0);
-            let mut faces = Vec::new();
-            for colour in 0..4 {
-                faces.extend(self.face_set(colour));
+        // every face from the same state; the moves are summed per cell, so the order the
+        // faces are visited does not matter
+        let mut delta = core::mem::take(&mut self.scratch);
+        delta.clear();
+        delta.resize(ncell, 0);
+        let (nx, nz) = (self.bed.nx, self.bed.nz);
+        // the lubrication transfer in quanta is `K·h_f³·|Δη|` (h_f, Δη in quanta) with
+        // `K = g Δt / (3 ν l²) · 2⁻⁹⁶`; it is below half a quantum when `h_f³ |Δη| < 1/(2K)`,
+        // computed as the raw Q64.64 bits of `3 ν l² 2³² / (g Δt)` halved
+        let x = Fix128::from_int(3)
+            * cfg.viscosity
+            * self.bed.cell
+            * self.bed.cell
+            * Fix128::from_int(1i64 << 32)
+            / (cfg.gravity * dt);
+        let lub_zero = if x.is_negative() {
+            0
+        } else {
+            ((((x.hi as u128) << 64) | u128::from(x.lo)) >> 1).saturating_sub(1)
+        };
+        let nfx = (nx + 1) * nz;
+        let nf = nfx + nx * (nz + 1);
+        for n in 0..nf {
+            let f = if self.reverse_faces { nf - 1 - n } else { n };
+            let (a, b) = if f < nfx {
+                let (i, k) = (f % (nx + 1), f / (nx + 1));
+                (
+                    if i > 0 { Some(i - 1 + k * nx) } else { None },
+                    if i < nx { Some(i + k * nx) } else { None },
+                )
+            } else {
+                let g = f - nfx;
+                let (i, k) = (g % nx, g / nx);
+                (
+                    if k > 0 { Some(i + (k - 1) * nx) } else { None },
+                    if k < nz { Some(i + k * nx) } else { None },
+                )
+            };
+            let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
+                (Some(x), Some(y)) => (x, y),
+                _ => continue,
+            };
+            // exact early outs, each a case where the transfer is 0: two dry cells; a surface
+            // difference below 8 quanta (the `⌊|Δη|/8⌋` cap); a face depth below 4 quanta (the
+            // `⌊h_f/4⌋` cap); a lubrication flux below half a quantum (`h_f³ |Δη| < lub_zero`)
+            if sa.1 == 0 && sb.1 == 0 {
+                continue;
             }
-            for (a, b) in faces {
-                let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
-                    (Some(x), Some(y)) => (x, y),
-                    _ => continue,
-                };
-                let t =
-                    simultaneous_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
-                if t == 0 {
-                    continue;
-                }
-                match a {
-                    Some(c) => delta[c] -= t,
-                    None => edge_out -= t,
-                }
-                match b {
-                    Some(c) => delta[c] += t,
-                    None => edge_out += t,
-                }
-                moved += t.unsigned_abs();
+            let d_eta = ((sa.0 + sa.1) - (sb.0 + sb.1)).unsigned_abs();
+            let hf = face_depth(sa.0, sa.1, sb.0, sb.1).unsigned_abs();
+            if d_eta < 8 || hf < 4 {
+                continue;
             }
-            for (d, dd) in self.depth.iter_mut().zip(&delta) {
-                *d += dd;
+            let lub_bound = u128::from(hf)
+                .checked_mul(u128::from(hf))
+                .and_then(|x| x.checked_mul(u128::from(hf)))
+                .and_then(|x| x.checked_mul(u128::from(d_eta)));
+            if matches!(lub_bound, Some(v) if v < lub_zero) {
+                continue;
             }
+            let t = simultaneous_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
+            if t == 0 {
+                continue;
+            }
+            match a {
+                Some(c) => delta[c] -= t,
+                None => edge_out -= t,
+            }
+            match b {
+                Some(c) => delta[c] += t,
+                None => edge_out += t,
+            }
+            moved += t.unsigned_abs();
         }
+        for (d, dd) in self.depth.iter_mut().zip(&delta) {
+            *d += dd;
+        }
+        self.scratch = delta;
         self.ledger.outflow += edge_out;
         self.last_moved = moved;
         // evaporation: the same whole quanta off every cell that has them, never below zero
