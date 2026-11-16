@@ -1022,8 +1022,16 @@ mod tests {
         for (x, y) in [(0.0, 0.06), (0.05, 0.02), (-0.04, 0.05), (0.02, -0.07)] {
             let p = vf(x, y, 0.0);
             let a = magnet_force_at(&alone, 1, p, radius, mass).unwrap();
-            assert_eq!(magnet_force_at(&quiet, 1, p, radius, mass).unwrap(), a, "({x}, {y})");
-            assert_ne!(magnet_force_at(&loud, 1, p, radius, mass).unwrap(), a, "({x}, {y}) the others reach it");
+            assert_eq!(
+                magnet_force_at(&quiet, 1, p, radius, mass).unwrap(),
+                a,
+                "({x}, {y})"
+            );
+            assert_ne!(
+                magnet_force_at(&loud, 1, p, radius, mass).unwrap(),
+                a,
+                "({x}, {y}) the others reach it"
+            );
             compared += 1;
         }
         assert_eq!(compared, 4);

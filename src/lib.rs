@@ -785,6 +785,7 @@ pub mod det_math {
 // tests do (an in-diff run without a binding feature otherwise compiled none of them and reported
 // every mutant of a binding change as missed)
 #[cfg(any(feature = "ffi", feature = "wasm", feature = "python", test))]
+// ALLOW-DEAD: binding helpers are compiled for their lib oracles in a build without a binding feature, where only the bindings call them
 #[cfg_attr(
     not(any(feature = "ffi", feature = "wasm", feature = "python")),
     allow(
