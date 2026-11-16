@@ -840,10 +840,12 @@ impl Mpm2d {
             return None;
         }
         let tail = &data[data.len() - TAIL..];
-        let u = |b: &[u8]| u64::from_le_bytes(b.try_into().expect("8 bytes"));
+        // a slice of the wrong length (it cannot be one after the length checks above) is a
+        // refused blob, not a panic
+        let u = |b: &[u8]| <[u8; 8]>::try_from(b).ok().map(u64::from_le_bytes);
         let nodes = [
-            usize::try_from(u(&tail[0..8])).ok()?,
-            usize::try_from(u(&tail[8..16])).ok()?,
+            usize::try_from(u(&tail[0..8])?).ok()?,
+            usize::try_from(u(&tail[8..16])?).ok()?,
         ];
         let has_ground = match tail[16] {
             0 => false,
@@ -860,7 +862,7 @@ impl Mpm2d {
             1 => true,
             _ => return None,
         };
-        let count = usize::try_from(u(&tail[19..27])).ok()?;
+        let count = usize::try_from(u(&tail[19..27])?).ok()?;
         let want = count
             .checked_mul(PER * 16)?
             .checked_add(HEAD + NUMS * 16 + TAIL)?;
@@ -868,13 +870,18 @@ impl Mpm2d {
             return None;
         }
         let body = &data[HEAD..data.len() - TAIL];
-        let fix = |k: usize| {
-            let b = &body[16 * k..16 * k + 16];
-            Fix128 {
-                hi: i64::from_le_bytes(b[0..8].try_into().expect("8 bytes")),
-                lo: u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")),
-            }
-        };
+        // every number of the body, read once: `body` is a whole count of 16-byte numbers (the
+        // length check above), so a chunk of another length is a refused blob, not a panic
+        let numbers = body
+            .chunks_exact(16)
+            .map(|b| {
+                Some(Fix128 {
+                    hi: i64::from_le_bytes(<[u8; 8]>::try_from(&b[0..8]).ok()?),
+                    lo: u64::from_le_bytes(<[u8; 8]>::try_from(&b[8..16]).ok()?),
+                })
+            })
+            .collect::<Option<Vec<Fix128>>>()?;
+        let fix = |k: usize| numbers[k];
         let ground = fix(6);
         if !has_ground && ground != Fix128::ZERO {
             return None;

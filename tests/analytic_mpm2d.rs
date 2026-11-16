@@ -271,6 +271,44 @@ fn the_energy_of_the_column_never_grows() {
     }
 }
 
+/// `Mpm2d::restore` refuses a blob it cannot read with `None`, never a panic: every truncation
+/// (each length from 0 to one byte short), a blob one byte or one 16-byte number too long, and a
+/// blob with a byte cut from the middle (an odd length); a whole snapshot still restores to a
+/// world whose snapshot and state digest are bit-equal, and that world steps on identically.
+#[test]
+fn restore_refuses_a_wrong_length_and_round_trips_bit_equal() {
+    let (mut w, _) = column(Mpm2dModel::NeoHookean);
+    for _ in 0..20 {
+        w.step().expect("the step succeeds");
+    }
+    let blob = w.snapshot();
+    for len in 0..blob.len() {
+        assert!(
+            Mpm2d::restore(&blob[..len]).is_none(),
+            "truncated to {len} of {}",
+            blob.len()
+        );
+    }
+    let mut longer = blob.clone();
+    longer.push(0);
+    assert!(Mpm2d::restore(&longer).is_none(), "one byte too long");
+    let mut longer = blob.clone();
+    longer.extend_from_slice(&[0u8; 16]);
+    assert!(Mpm2d::restore(&longer).is_none(), "one number too long");
+    let mut cut = blob.clone();
+    cut.remove(blob.len() / 2);
+    assert!(Mpm2d::restore(&cut).is_none(), "a byte cut from the middle");
+
+    let mut r = Mpm2d::restore(&blob).expect("a whole snapshot restores");
+    assert_eq!(r.snapshot(), blob);
+    assert_eq!(r.state_digest(), w.state_digest());
+    for _ in 0..20 {
+        w.step().expect("the step succeeds");
+        r.step().expect("the restored step succeeds");
+    }
+    assert_eq!(r.state_digest(), w.state_digest());
+}
+
 #[test]
 fn two_runs_end_in_the_same_state() {
     let run = || {
