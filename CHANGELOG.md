@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- 変異試験の差分の計画 (`scripts/mutants_in_diff_plan.py`) は、host の試験の build で成り立たない cfg (wasm / python の feature、`not(feature = "std")` など) の下にある変更行を変異の対象から外し、file・行数・cfg を「この job では試されない」として要約に出す 以前は module の cfg だけを見て file を外していたので、関数単位で wasm だけの項目 (`#[cfg(feature = "wasm")] fn magnet_force_at`) の変異は compile されないまま見逃しとして数えられた (2026-11-14 の夜間の run で 8 件) 2026-11-14 の差分では変更行 2,586 のうち 154 が外れる 試験 `scripts/test_mutants_in_diff_plan.py` (wasm だけの関数の変更が変異 0 件と行数になる、diff の hunk の数え直し、要約の行)
 - 変異試験の差分の run (quality-deep.yml、夜間) は、計画した変異のすべてに結果が出る前に止まった run を `killed (n/計画数 tested)`、結果の 10 % を超えて build の締切で止まった run を `not measured` と表示して失敗にし、結果としては読まない (`scripts/mutants_run_status.py`、試験 `scripts/test_mutants_run_status.py`) 止まった run の見逃し数は `missed.txt` (終わりに書かれる) でなく結果から数える 以前は止まった run が「did not finish」の失敗と見逃し 0 の要約になり、途中で出た見逃しの行だけが見逃しとして読まれた
 - binding の共通部 (`binding_api`) と磁石の点の引力 (`magnet_force_at`) を、binding の feature が無い lib test でも build する 製品の build は従来どおり ffi / wasm / python の時だけ これまで binding の feature を持たない変異試験 (in-diff の default / parallel,gpu-solver-bridge,simd) では binding の oracle が 1 本も build されず、binding の変更の変異はすべて見逃しとして出ていた (`magnet_force_at` の 8 件)、同じ feature で 8 件とも検出に変わった 無効にした磁石と body を限った磁石を点の引力が数えない oracle を追加
 - 試験: `Hand::would_take` が grab の結果と一致することを grip 7 種 (剛な手・使える grip・剛さ 0・強さ 0・両方 0・負の値) と届く点・届かない点で突合する lib 試験、`TouchBodies::is_empty` / `len` の 0 件と 1 件の試験を追加 (変異試験で見逃されていた grip の判定の 3 変異と `is_empty` の変異が red になる)

@@ -151,6 +151,61 @@ impl Thing {
         # line 18: `3` inside the else of `inner`, two blocks below the impl
         self.assertEqual(self.plan_math(18)["features"], ["simd"])
 
+    # a buildable, ungated file with one fn behind a host-unbuildable feature
+    WASM_FN = """\
+pub fn plain() -> u8 {
+    1
+}
+
+#[cfg(feature = "wasm")]
+pub fn magnet_force_at(x: u8) -> u8 {
+    x + 1
+}
+"""
+
+    def test_a_changed_fn_under_a_host_unbuildable_cfg_is_not_mutated_and_counted(self):
+        (self.root / "src/geom.rs").write_text(self.WASM_FN, encoding="utf-8")
+        d = ("diff --git a/src/geom.rs b/src/geom.rs\n--- a/src/geom.rs\n+++ b/src/geom.rs\n"
+             "@@ -1,9 +1,9 @@\n pub fn plain() -> u8 {\n-    0\n+    1\n }\n \n #[cfg(feature = \"wasm\")]\n"
+             " pub fn magnet_force_at(x: u8) -> u8 {\n-    x\n+    x + 1\n }\n")
+        p = mp.plan(d, [], self.root)
+        # the wasm-only line is no longer a changed line; the plain one still is
+        self.assertEqual(p["not_exercised"], [{"file": "src/geom.rs", "lines": 1, "cfg": 'feature = "wasm"'}])
+        self.assertEqual(mp.changed_lines(p["diff"]), [2])
+        self.assertNotIn("wasm", p["features"])
+        self.assertEqual(p["skipped"], [])
+        # the hunk still reads as a valid diff: old side 9 + 1 neutralised line, new side 9
+        self.assertIn("@@ -1,10 +1,9 @@", p["diff"])
+        self.assertIn("\n     x + 1\n", p["diff"])
+
+    def test_main_writes_the_not_exercised_count_to_the_summary(self):
+        (self.root / "src/geom.rs").write_text(self.WASM_FN, encoding="utf-8")
+        (self.root / "change.diff").write_text(self.changed(8), encoding="utf-8")
+        summary = self.root / "summary.md"
+        old = mp.ROOT
+        mp.ROOT = self.root
+        try:
+            self.assertEqual(mp.main([str(self.root / "change.diff"), "--out", str(self.root / "planned.diff"),
+                                      "--summary", str(summary)]), 0)
+        finally:
+            mp.ROOT = old
+        self.assertEqual(summary.read_text(encoding="utf-8").splitlines(), [
+            '- not exercised by this job: src/geom.rs: 1 changed line(s) under #[cfg(feature = "wasm")]',
+            "- not exercised (host-unbuildable cfg): 1 changed line(s)"])
+
+    def test_a_file_with_only_host_unbuildable_changes_keeps_no_changed_line(self):
+        (self.root / "src/geom.rs").write_text(self.WASM_FN, encoding="utf-8")
+        p = mp.plan(self.changed(8), [], self.root)
+        self.assertEqual(p["not_exercised"][0]["lines"], 1)
+        self.assertEqual(mp.changed_lines(p["diff"]), [])
+
+    def test_neutralise_keeps_other_hunks_and_numbers(self):
+        d = "@@ -1,2 +1,3 @@\n a\n+b\n+c\n@@ -10 +11 @@\n-x\n+y\n"
+        out = mp.neutralise(d, {2})
+        self.assertEqual(mp.changed_lines(out), [3, 11])
+        self.assertTrue(out.startswith("@@ -1,3 +1,3 @@\n a\n b\n+c\n@@ -10 +11 @@"), out)
+        self.assertEqual(mp.neutralise(d, set()), d)
+
     def test_changed_lines_are_counted_in_the_new_file(self):
         d = "@@ -1,3 +5,4 @@\n ctx\n-gone\n+new1\n+new2\n ctx\n@@ -20 +30 @@\n-x\n+y\n"
         self.assertEqual(mp.changed_lines(d), [6, 7, 30])
