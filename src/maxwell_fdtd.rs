@@ -198,6 +198,10 @@
 //! are staircased to the cell grid (no conformal correction).
 
 use crate::math::Fix128;
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
+    SubstepCtx,
+};
 use core::fmt;
 
 #[cfg(not(feature = "std"))]
@@ -2179,6 +2183,263 @@ impl YeeGrid {
 #[must_use]
 pub fn cfl_limit_3d() -> Fix128 {
     Fix128::ONE / Fix128::from_int(3).sqrt()
+}
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`YeeGridParticipant`]: the ASCII code `YEEG`, big endian.
+pub const YEE_GRID_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"YEEG"));
+
+/// Observation channel of [`YeeGridParticipant`]: the lattice clock, in world
+/// seconds (`steps · step`).
+pub const YEE_GRID_OBS_TIME: u32 = 0;
+
+/// Observation channel of [`YeeGridParticipant`]: how many lattice steps it
+/// has taken since it was built.
+pub const YEE_GRID_OBS_STEPS: u32 = 1;
+
+/// Observation channel of [`YeeGridParticipant`]: the largest absolute field
+/// sample after the last substep it ran ([`YeeGrid::max_abs_field`]).
+pub const YEE_GRID_OBS_MAX_FIELD: u32 = 2;
+
+/// Payload layout version written by [`YeeGridParticipant`].
+const YEE_GRID_PARTICIPANT_STATE_VERSION: u32 = 1;
+
+/// Bytes before the lattice state in a [`YeeGridParticipant`] payload:
+/// version, digest, clock, step count.
+const YEE_GRID_PARTICIPANT_HEADER: usize = 4 + 8 + 16 + 8;
+
+/// Why a [`YeeGridParticipant`] could not be built.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum YeeParticipantError {
+    /// The world time of one lattice step is zero or negative.
+    NonPositiveStep,
+}
+
+impl fmt::Display for YeeParticipantError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonPositiveStep => {
+                f.write_str("the world time of one lattice step must be positive")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for YeeParticipantError {}
+
+/// A [`YeeGrid`] that advances inside the world's substep loop, on its own
+/// fixed step ([`StepRule::Fixed`]).
+///
+/// # MODEL
+///
+/// - **Equations**: the source-free (or current-driven) Maxwell curl
+///   equations on the lattice, exactly as [`YeeGrid::step`] marches them; this
+///   type adds no physics, it only schedules the steps.
+/// - **Units**: the lattice stays in normalised units (`c = Δx = 1`, one step
+///   is `S` light-cell times, see the module header). `step` is the **world
+///   time of one lattice step**, the caller's boundary conversion
+///   `Δt = S·Δx/c` in the world's time unit. The participant converts nothing
+///   else: fields are read and written in lattice units.
+/// - **Scheduling**: [`Participant::step_rule`] is `StepRule::Fixed(step)`, so
+///   the world refuses any substep `h` that is not `n·step` for an integer
+///   `n ≥ 1` (`StepError::Rule`, nothing runs, the world is unchanged) and
+///   otherwise calls this participant once per substep; the participant takes
+///   `n` lattice steps. `k` world substeps therefore advance the lattice by
+///   exactly `k·n` steps of [`YeeGrid::step`]: the field equals, bit for bit,
+///   the one a caller gets by calling `step` `k·n` times directly.
+/// - **Coupling**: none. The field does not read or push the world's bodies
+///   and declares no ports (a Lorentz force on bodies is a later resident).
+/// - **Conservation and range**: as [`YeeGrid`] — lossless PEC lattices under
+///   the CFL limit keep a bounded discrete energy; the participant does not
+///   check the Courant number again (the lattice was built with it).
+/// - **Verification**: `tests/analytic_yee_grid_participant.rs` — the 4×4
+///   PEC cavity mode `m = n = 2` at `S = 1/2` returns to its initial lattice
+///   every 6 steps (`2cos(ωΔt) = 2 − S²λ = 1`), compared with the continuum
+///   resonance `f = (c/2)√((m/a)² + (n/b)²)` as the exact rational
+///   `T²f² = 9/8`; world path equal to direct stepping bit for bit; a
+///   substep that `step` does not divide refused with the world unchanged;
+///   snapshot, branch and resume equal to an unbroken run.
+///
+/// # Determinism
+///
+/// All arithmetic is [`Fix128`] inside [`YeeGrid::step`]; the participant
+/// adds only integer step counts and one clock addition per substep. The same
+/// lattice, `step` and substep sequence give the same bits on every platform.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, the clock as a
+/// [`Fix128`] (`hi: i64`, `lo: u64`), the step count (`u64`), then the
+/// lattice's own state ([`YeeGrid::write_state`]). The digest is FNV-1a 64
+/// over the lattice dimensions, its Courant number and `step`;
+/// [`Participant::check_state`] refuses a payload too short for the header
+/// ([`StateError::Length`]), of another version or digest, or whose lattice
+/// state does not read back or has other dimensions or Courant number
+/// ([`StateError::InvalidValue`]).
+#[derive(Clone, Debug)]
+pub struct YeeGridParticipant {
+    grid: YeeGrid,
+    step: Fix128,
+    digest: u64,
+    time: Fix128,
+    steps: u64,
+}
+
+impl YeeGridParticipant {
+    /// The participant for `grid`, one lattice step lasting `step` world
+    /// seconds, with its clock at zero.
+    ///
+    /// # Errors
+    ///
+    /// [`YeeParticipantError::NonPositiveStep`] when `step ≤ 0`.
+    pub fn new(grid: YeeGrid, step: Fix128) -> Result<Self, YeeParticipantError> {
+        if step <= Fix128::ZERO {
+            return Err(YeeParticipantError::NonPositiveStep);
+        }
+        let digest = yee_participant_digest(&grid, step);
+        Ok(Self {
+            grid,
+            step,
+            digest,
+            time: Fix128::ZERO,
+            steps: 0,
+        })
+    }
+
+    /// The lattice it advances.
+    #[must_use]
+    pub fn grid(&self) -> &YeeGrid {
+        &self.grid
+    }
+
+    /// The world time of one lattice step.
+    #[must_use]
+    pub fn step(&self) -> Fix128 {
+        self.step
+    }
+
+    /// The lattice clock (world seconds).
+    #[must_use]
+    pub fn time(&self) -> Fix128 {
+        self.time
+    }
+
+    /// Lattice steps taken since it was built.
+    #[must_use]
+    pub fn steps(&self) -> u64 {
+        self.steps
+    }
+}
+
+fn yee_participant_digest(grid: &YeeGrid, step: Fix128) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for n in [grid.nx, grid.ny, grid.nz] {
+        eat(&(n as u64).to_le_bytes());
+    }
+    for f in [grid.courant, step] {
+        eat(&f.hi.to_le_bytes());
+        eat(&f.lo.to_le_bytes());
+    }
+    h
+}
+
+fn yee_u64_at(bytes: &[u8], at: usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[at..at + 8]);
+    u64::from_le_bytes(b)
+}
+
+impl Participant for YeeGridParticipant {
+    fn kind(&self) -> ParticipantKind {
+        YEE_GRID_PARTICIPANT_KIND
+    }
+
+    fn step_rule(&self) -> StepRule {
+        StepRule::Fixed(self.step)
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        // The world checks the rule at the head of every step; this repeats it
+        // so a direct caller cannot advance by a width the rule does not allow.
+        // Everything is worked out before the lattice moves.
+        let n = StepRule::Fixed(self.step)
+            .steps_per_substep(h)
+            .map_err(|_| ParticipantFault::InvalidState)?;
+        let time = self
+            .time
+            .checked_add(h)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        let steps = self
+            .steps
+            .checked_add(n)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        for _ in 0..n {
+            self.grid.step();
+        }
+        self.time = time;
+        self.steps = steps;
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        out.push(YEE_GRID_OBS_TIME, self.time);
+        out.push(YEE_GRID_OBS_STEPS, Fix128::from_int(self.steps as i64));
+        out.push(YEE_GRID_OBS_MAX_FIELD, self.grid.max_abs_field());
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&YEE_GRID_PARTICIPANT_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&self.time.hi.to_le_bytes());
+        out.extend_from_slice(&self.time.lo.to_le_bytes());
+        out.extend_from_slice(&self.steps.to_le_bytes());
+        self.grid.write_state(out);
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() < YEE_GRID_PARTICIPANT_HEADER {
+            return Err(StateError::Length {
+                expected: YEE_GRID_PARTICIPANT_HEADER,
+                found: bytes.len(),
+            });
+        }
+        let mut version = [0u8; 4];
+        version.copy_from_slice(&bytes[0..4]);
+        if u32::from_le_bytes(version) != YEE_GRID_PARTICIPANT_STATE_VERSION
+            || yee_u64_at(bytes, 4) != self.digest
+        {
+            return Err(StateError::InvalidValue);
+        }
+        let grid = YeeGrid::read_state(&bytes[YEE_GRID_PARTICIPANT_HEADER..])
+            .map_err(|_| StateError::InvalidValue)?;
+        if yee_participant_digest(&grid, self.step) != self.digest {
+            return Err(StateError::InvalidValue);
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        // `check_state` accepted these bytes, so the lattice reads back.
+        if let Ok(grid) = YeeGrid::read_state(&bytes[YEE_GRID_PARTICIPANT_HEADER..]) {
+            self.grid = grid;
+            self.time = Fix128 {
+                hi: yee_u64_at(bytes, 12) as i64,
+                lo: yee_u64_at(bytes, 20),
+            };
+            self.steps = yee_u64_at(bytes, 28);
+        }
+    }
 }
 
 #[cfg(test)]
