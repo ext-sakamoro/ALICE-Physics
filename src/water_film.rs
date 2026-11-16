@@ -11,15 +11,18 @@
 //!   while the surface stands below the higher bed: a basin holds water until its surface
 //!   passes the rim. On a steady incline of angle `α` the flux is the Nusselt film flux
 //!   `q = g h³ sinα / (3ν)`.
-//! - **Discretisation**: the faces are split into four sets that share no cell (x faces with
-//!   an even, then odd, low index; then the z faces likewise); substep `n` moves water only
-//!   across set `n mod 4`, each face carrying `4·q·Δt/l` (so every face carries `q` on
-//!   average), truncated toward zero to whole quanta and capped at `⌊|Δη|/2⌋` (the pair
-//!   cannot pass its common level) and at `h_f` ([`pair_transfer`]). The cells of a set are
-//!   disjoint, so the result does not depend on the order the faces are visited, and no cell
-//!   gives more than it holds. Each nonzero transfer `t` (`1 ≤ t ≤ Δη/2`) lowers the
-//!   potential `Σ g(η² − b²)/2` by `g·t·(Δη − t) > 0`, and the state is integer, so without
-//!   rain the film reaches rest (every transfer zero) in finitely many substeps.
+//! - **Discretisation**: every substep moves water across every face at once, each face read
+//!   from the state at the start of the substep: `t = min(⌊|q|·Δt/l⌋, ⌊|Δη|/8⌋, ⌊h_f/4⌋)` with
+//!   the sign of `Δη` ([`simultaneous_transfer`]), the moves summed per cell, so the result does
+//!   not depend on the order the faces are visited and no cell gives more than it holds (four
+//!   faces of at most `h_f/4`, `h_f ≤ h`). The potential `P = Σ (η² − b²)` falls with every move:
+//!   with `δ` the change per cell, `ΔP = −2 Σ_f t_f Δη_f + Σ_c δ_c²`; `t ≤ Δη/8` gives
+//!   `Σ t Δη ≥ 8 Σ t²` and four faces per cell give `Σ δ² ≤ 8 Σ t²`, so `ΔP ≤ −8 Σ t² < 0` when
+//!   anything moves; the state is integer, so without rain the film reaches rest (every
+//!   transfer zero) in finitely many substeps. On a uniform steady film every face reads the
+//!   same state, so the scheme carries the Nusselt flux exactly at any `Δt` (measured: depth
+//!   error below 10⁻⁴ at `Δt` = 1/256, 1/1024 and 1/4096 s; an earlier variant that moved
+//!   disjoint face sets in turn was first order, depth error ≈ −5.2·uΔt/l).
 //! - **Units**: SI. Lengths and depths m, time s, `q` m²/s, `g` m/s², `ν` m²/s, rates m/s
 //!   (rain given in mm/h converts with [`FilmConfig::rain_mm_per_hour`]). The depth is held
 //!   as an integer number of quanta of `2⁻³²` m ([`DEPTH_QUANTUM_BITS`],
@@ -31,9 +34,9 @@
 //! - **Range**: cell side `l` from 1 mm to 1 m ([`FilmBed::from_heights`]). The substep is
 //!   `Δt = h / ⌈h / Δt_max⌉` with `Δt_max` declared in [`FilmConfig::max_substep`]
 //!   ([`WaterFilm::subcycles`]): a function of the step and the configuration only, never of
-//!   the water. The film flux is resolved while `4 u Δt ≤ l` (u the film speed); above it the
-//!   `⌊Δη/2⌋` cap binds and flow is slower than the model (at `l` = 1 cm and `Δt` = 1/256 s:
-//!   films up to 0.64 m/s, which a 1 mm film reaches only beyond a slope of about 11°).
+//!   the water. The film flux is resolved while `u Δt ≤ l/4` (u the film speed, the `⌊h_f/4⌋`
+//!   cap); above it flow is slower than the model (at `l` = 1 cm and `Δt` = 1/256 s: films up
+//!   to 0.64 m/s, which a 1 mm film reaches only beyond a slope of about 11°).
 //!   **Deep pools (`h ≳ 1` mm, where the critical cap binds) level at a relaxation rate set
 //!   by `Δt`, not at the gravity-wave speed**: their steady states (a level surface, overflow
 //!   at the rim) are physical, their levelling time is not
@@ -46,15 +49,15 @@
 //!   rain uniform over the grid and evaporation at a fixed rate on wet cells
 //!   ([`WaterFilm::step_once`]); the bed is fixed while the film steps, a new one is set with
 //!   [`WaterFilm::set_bed`], which needs a larger generation. Rest is reached when every face
-//!   moves less than one quantum: at rest two neighbouring wet cells differ by at most one
-//!   quantum in the pool regime ([`pair_transfer`]), so a pool of `L` cells along its longest
-//!   path is level to within `L − 1` quanta (`L · 2⁻³²` m), and a thin film on a slope stops
-//!   once its flux moves less than a quantum per substep. The band is `L` quanta and not one
-//!   for any rule of this kind (local, independent of face order, integer, potential strictly
-//!   falling): a staircase of unit steps `η, η + 1, η + 2, …` is at rest under every rule that
-//!   moves nothing across `|Δη| ≤ 1`, and a rule that moves a quantum across `|Δη| = 1` only
-//!   swaps the pair, which leaves the potential unchanged, so it never comes to rest. Measured
-//!   on a closed 8-cell groove: neighbours within 1 quantum, spread 6 quanta (1.4 nm).
+//!   moves less than one quantum: in the pool regime two neighbouring wet cells then differ by
+//!   at most 7 quanta (`⌊|Δη|/8⌋ = 0`), so a pool of `L` cells along its longest path is level
+//!   to within `7(L − 1)` quanta, and a thin film on a slope stops once its flux moves less
+//!   than a quantum per substep. The band cannot be one quantum for any rule of this kind
+//!   (local, independent of face order, integer, potential strictly falling): a staircase of
+//!   unit steps `η, η + 1, η + 2, …` is at rest under every rule that moves nothing across
+//!   `|Δη| ≤ 1`, and a rule that moves a quantum across `|Δη| = 1` only swaps the pair, which
+//!   leaves the potential unchanged, so it never comes to rest.
+//!   Measured on a closed 8-cell groove: spread 48 quanta at rest (11 nm, bound 49).
 //! - **Tiers**: L0 only.
 //! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only`
 //!
@@ -114,8 +117,8 @@ fn metres_in_quanta(m: Fix128) -> Fix128 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FilmScheme {
-    /// Lubrication flux capped by the critical flux, moved across disjoint face sets in turn;
-    /// no inertia, no flux state.
+    /// Lubrication flux capped by the critical flux, every face at once from the same state,
+    /// each face moving at most `⌊|Δη|/8⌋` and `⌊h_f/4⌋`; no inertia, no flux state.
     DiffusionWave,
 }
 
@@ -271,8 +274,7 @@ impl FilmBed {
                         hi = mid;
                     }
                 }
-                bed.heights[i + k * nx] =
-                    metres_to_quanta(Fix128::from_f32(lo + (hi - lo) * 0.5));
+                bed.heights[i + k * nx] = metres_to_quanta(Fix128::from_f32(lo + (hi - lo) * 0.5));
             }
         }
         Ok(bed)
@@ -445,13 +447,10 @@ pub fn diffusion_wave_flux(
     }
 }
 
-/// The water (quanta) one face of the active set moves from the side with the higher surface
-/// to the other in a substep of `dt`: `min(⌊4·|q|·Δt/l⌋, ⌊|Δη|/2⌋, h_f)` with the sign of
-/// `Δη` (positive = from the first side). `(b, h)` are bed and depth in quanta. With
-/// `t ≤ Δη/2` the pair cannot pass its common level, and with `t ≤ h_f` no cell gives more
-/// than it holds.
+/// The water (quanta) a face moves in a substep when every face moves at once from the same
+/// state: `min(⌊|q|·Δt/l⌋, ⌊|Δη|/8⌋, ⌊h_f/4⌋)` with the sign of `Δη`.
 #[must_use]
-pub fn pair_transfer(
+pub fn simultaneous_transfer(
     first: (i64, i64),
     second: (i64, i64),
     cell: Fix128,
@@ -464,9 +463,15 @@ pub fn pair_transfer(
     if d_eta == 0 || hf == 0 {
         return 0;
     }
-    let q = diffusion_wave_flux(quanta_to_metres(hf), quanta_to_metres(d_eta.abs()), cell, g, nu);
-    let flux = metres_to_quanta(Fix128::from_int(4) * q * dt / cell);
-    let t = flux.min(d_eta.abs() / 2).min(hf);
+    let q = diffusion_wave_flux(
+        quanta_to_metres(hf),
+        quanta_to_metres(d_eta.abs()),
+        cell,
+        g,
+        nu,
+    );
+    let flux = metres_to_quanta(q * dt / cell);
+    let t = flux.min(d_eta.abs() / 8).min(hf / 4);
     if d_eta > 0 {
         t
     } else {
@@ -678,14 +683,12 @@ impl WaterFilm {
     fn side(&self, me: Option<usize>, other: Option<usize>) -> Option<(i64, i64)> {
         match (me, other) {
             (Some(c), _) => Some((self.bed.heights[c], self.depth[c])),
-            (None, Some(o)) if self.config.edge == FilmEdge::Open => {
-                Some((self.bed.heights[o], 0))
-            }
+            (None, Some(o)) if self.config.edge == FilmEdge::Open => Some((self.bed.heights[o], 0)),
             _ => None,
         }
     }
 
-    // the faces of set `colour` (0: x faces, even low index; 1: x, odd; 2: z, even; 3: z,
+    // the faces of group `colour` (0: x faces, even low index; 1: x, odd; 2: z, even; 3: z,
     // odd) as (first cell, second cell); None = past the edge
     fn face_set(&self, colour: u64) -> Vec<(Option<usize>, Option<usize>)> {
         let (nx, nz) = (self.bed.nx, self.bed.nz);
@@ -739,8 +742,7 @@ impl WaterFilm {
         Ok(n)
     }
 
-    /// One substep of width `dt`: rain, the transfers across the active face set,
-    /// evaporation.
+    /// One substep of width `dt`: rain, the transfers across every face, evaporation.
     ///
     /// # Errors
     ///
@@ -762,29 +764,38 @@ impl WaterFilm {
                 self.ledger.rain += k * ncell as i64;
             }
         }
-        // the active set: faces that share no cell, so each transfer reads its own pair only
         let mut moved = 0u64;
         let mut edge_out = 0i64;
-        for (a, b) in self.face_set(self.steps) {
-            let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
-                (Some(x), Some(y)) => (x, y),
-                _ => continue,
-            };
-            // past an open edge the side is a dry cell on the inside bed, so its surface is
-            // never above the inside one and the transfer never brings water in
-            let t = pair_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
-            if t == 0 {
-                continue;
+        {
+            // every face from the same state; the deltas are summed, so order does not matter
+            let mut delta: Vec<i64> = vec_of(ncell, 0);
+            let mut faces = Vec::new();
+            for colour in 0..4 {
+                faces.extend(self.face_set(colour));
             }
-            match a {
-                Some(c) => self.depth[c] -= t,
-                None => edge_out -= t,
+            for (a, b) in faces {
+                let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
+                    (Some(x), Some(y)) => (x, y),
+                    _ => continue,
+                };
+                let t =
+                    simultaneous_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
+                if t == 0 {
+                    continue;
+                }
+                match a {
+                    Some(c) => delta[c] -= t,
+                    None => edge_out -= t,
+                }
+                match b {
+                    Some(c) => delta[c] += t,
+                    None => edge_out += t,
+                }
+                moved += t.unsigned_abs();
             }
-            match b {
-                Some(c) => self.depth[c] += t,
-                None => edge_out += t,
+            for (d, dd) in self.depth.iter_mut().zip(&delta) {
+                *d += dd;
             }
-            moved += t.unsigned_abs();
         }
         self.ledger.outflow += edge_out;
         self.last_moved = moved;

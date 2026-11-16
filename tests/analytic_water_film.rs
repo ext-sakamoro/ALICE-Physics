@@ -6,16 +6,18 @@
 //! Every expected value here comes from a closed form or a ledger written independently of
 //! the stepping code; none is taken from a run of the film.
 
-use alice_physics_core::water_film::{
-    metres_to_quanta, quanta_to_metres, FilmBed, FilmBuildError, FilmConfig, FilmEdge,
-    FilmScheme, WaterFilm, DEPTH_QUANTUM_BITS,
-};
 use alice_physics_core::sdf_collider::SdfField;
+use alice_physics_core::water_film::{
+    metres_to_quanta, quanta_to_metres, FilmBed, FilmBuildError, FilmConfig, FilmEdge, FilmScheme,
+    WaterFilm, DEPTH_QUANTUM_BITS,
+};
 use alice_physics_core::world_participant::{Participant, ParticipantFault, StateError};
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
 use sha2::{Digest, Sha256};
 
 const CELL_MM: i64 = 10;
+/// One depth quantum in metres (`2⁻³²`, exact in f64).
+const QUANTUM_M: f64 = 1.0 / 4_294_967_296.0;
 const RIM_MM: i64 = 0;
 const FLOOR_MM: i64 = -30;
 const BEVEL_MM: i64 = -15;
@@ -41,8 +43,7 @@ fn groove_bed(nx: usize, first: usize, last: usize, groove_only: bool) -> FilmBe
         };
         h[i + row * nx] = mm(v);
     }
-    FilmBed::from_heights(nx, nz, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &h, 1)
-        .expect("bed")
+    FilmBed::from_heights(nx, nz, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed")
 }
 
 fn film(bed: FilmBed, scheme: FilmScheme, edge: FilmEdge) -> WaterFilm {
@@ -105,15 +106,19 @@ fn state(f: &WaterFilm) -> Vec<u8> {
 }
 
 /// oracle: hydrostatics. Water piled at one end of a closed groove comes to rest level:
-/// (1) across every face between two wet cells the surfaces differ by at most one quantum
-/// (the rest set of the model: a pair moves water while it differs by two or more);
-/// (2) so every wet surface lies within `L − 1` quanta of the closed form `η*` that holds the
-/// volume over the sampled bed (`L` = wet cells on the path), and every cell whose bed is
-/// above `η* + L` is dry. The levelling time is reported against the gravity-wave time
+/// (1) across every face between two wet cells the surfaces differ by at most 7 quanta
+/// (the rest set of the model: a face moves `⌊|Δη|/8⌋` in the pool regime);
+/// (2) so every wet surface lies within `7(L − 1)` quanta of the closed form `η*` that holds
+/// the volume over the sampled bed (`L` = wet cells on the path), and every cell whose bed is
+/// above `η* + 7L` is dry. The levelling time is reported against the gravity-wave time
 /// `L/√(g h)`: under this model it is a relaxation set by `Δt_max`, not a wave crossing.
 #[test]
 fn a_closed_groove_levels_to_the_closed_form_surface() {
-    let mut f = film(groove_bed(12, 3, 8, true), FilmScheme::DiffusionWave, FilmEdge::Closed);
+    let mut f = film(
+        groove_bed(12, 3, 8, true),
+        FilmScheme::DiffusionWave,
+        FilmEdge::Closed,
+    );
     let pile = metres_to_quanta(mm(40));
     for i in 3..6 {
         assert!(f.set_initial_depth(i, 0, pile));
@@ -128,20 +133,30 @@ fn a_closed_groove_levels_to_the_closed_form_surface() {
     for c in 0..d.len() - 1 {
         if d[c] > 0 && d[c + 1] > 0 {
             let diff = (beds[c] + d[c] - beds[c + 1] - d[c + 1]).abs();
-            assert!(diff <= 1, "face {c}|{}: surfaces differ by {diff} quanta", c + 1);
+            assert!(
+                diff <= 7,
+                "face {c}|{}: surfaces differ by {diff} quanta",
+                c + 1
+            );
             faces += 1;
         }
     }
     for &c in &wet {
         let off = (beds[c] + d[c] - eta).abs();
-        assert!(off < l, "cell {c}: surface {off} quanta from η* (L = {l})");
+        assert!(
+            off <= 7 * (l - 1),
+            "cell {c}: surface {off} quanta from η* (L = {l})"
+        );
     }
     for c in 0..d.len() {
-        if beds[c] > eta + l {
+        if beds[c] > eta + 7 * l {
             assert_eq!(d[c], 0, "cell {c} above the level holds water");
         }
     }
-    assert!(faces >= 5 && l >= 6, "compared {faces} faces over {l} wet cells");
+    assert!(
+        faces >= 5 && l >= 6,
+        "compared {faces} faces over {l} wet cells"
+    );
     let spread = wet.iter().map(|c| beds[*c] + d[*c]).max().unwrap_or(0)
         - wet.iter().map(|c| beds[*c] + d[*c]).min().unwrap_or(0);
     let t = substeps as f64 * f.config().max_substep.to_f64();
@@ -169,7 +184,11 @@ fn the_potential_never_rises_without_a_source() {
         for n in 0..20_000 {
             f.step_once(dt).expect("substep");
             let p = potential(&f);
-            assert!(p <= last, "{edge:?} substep {n}: potential rose by {}", p - last);
+            assert!(
+                p <= last,
+                "{edge:?} substep {n}: potential rose by {}",
+                p - last
+            );
             fell += usize::from(p < last);
             last = p;
             compared += 1;
@@ -198,11 +217,17 @@ fn volume_is_conserved_to_the_last_quantum() {
             }
             f.advance(Fix128::from_ratio(1, 20)).expect("advance");
             assert_eq!(f.total(), f.ledger().expected(), "{scheme:?} after {n}");
-            assert!(f.depths().iter().all(|d| *d >= 0), "{scheme:?} negative depth");
+            assert!(
+                f.depths().iter().all(|d| *d >= 0),
+                "{scheme:?} negative depth"
+            );
             compared += 1;
         }
         let l = f.ledger();
-        assert!(l.rain > 0 && l.evaporated > 0 && l.deposits > 0 && l.outflow > 0, "{l:?}");
+        assert!(
+            l.rain > 0 && l.evaporated > 0 && l.deposits > 0 && l.outflow > 0,
+            "{l:?}"
+        );
         assert_eq!(compared, 600);
     }
 }
@@ -255,12 +280,18 @@ fn a_groove_overflows_at_its_rim_height() {
             }
         }
         settle(&mut dry, 10_000_000);
-        let groove: Vec<usize> = (0..nx).filter(|i| f.bed().heights()[i + nx] < rim).collect();
-        let band = groove.len() as i64;
+        let groove: Vec<usize> = (0..nx)
+            .filter(|i| f.bed().heights()[i + nx] < rim)
+            .collect();
+        let band = 7 * groove.len() as i64;
         let mut compared = 0;
         for &i in &groove {
             let eta = dry.bed().heights()[i + nx] + dry.depths()[i + nx];
-            assert!(eta >= rim - band, "{scheme:?} cell {i}: {} quanta below the rim", rim - eta);
+            assert!(
+                eta >= rim - band,
+                "{scheme:?} cell {i}: {} quanta below the rim",
+                rim - eta
+            );
             assert!(
                 eta - rim < metres_to_quanta(Fix128::from_ratio(1, 10_000)),
                 "{scheme:?} cell {i}: {} m over the rim at rest",
@@ -358,8 +389,9 @@ fn rewind_and_rerun_are_bit_identical() {
     }
 }
 
-/// determinism: the faces moved in one substep share no cell, so visiting them backwards
-/// gives the same bytes. The scene moves water every substep, which the counter asserts.
+/// determinism: every face reads the state at the start of the substep and the moves are
+/// summed, so visiting the faces backwards gives the same bytes. The scene moves water every
+/// substep, which the counter asserts.
 #[test]
 fn face_order_does_not_change_the_state() {
     for scheme in [FilmScheme::DiffusionWave] {
@@ -407,14 +439,21 @@ fn a_tampered_payload_is_refused() {
         bed2.nz(),
         bed2.cell(),
         (Fix128::ZERO, Fix128::ZERO),
-        &bed2.heights().iter().map(|q| quanta_to_metres(*q)).collect::<Vec<_>>(),
+        &bed2
+            .heights()
+            .iter()
+            .map(|q| quanta_to_metres(*q))
+            .collect::<Vec<_>>(),
         2,
     )
     .expect("bed2");
     g.set_bed(bed2).expect("rebuild");
     assert_eq!(g.check_state(&good), Err(StateError::InvalidValue));
     // and a bed that does not raise the generation is refused
-    assert_eq!(g.set_bed(groove_bed(14, 4, 9, false)), Err(FilmBuildError::BadGrid));
+    assert_eq!(
+        g.set_bed(groove_bed(14, 4, 9, false)),
+        Err(FilmBuildError::BadGrid)
+    );
 }
 
 /// degenerate inputs: each refused with the stated error, nothing changed.
@@ -422,8 +461,14 @@ fn a_tampered_payload_is_refused() {
 fn degenerate_inputs_are_refused() {
     let one = [Fix128::ZERO];
     let o = (Fix128::ZERO, Fix128::ZERO);
-    assert_eq!(FilmBed::from_heights(0, 1, mm(10), o, &[], 1), Err(FilmBuildError::BadGrid));
-    assert_eq!(FilmBed::from_heights(2, 1, mm(10), o, &one, 1), Err(FilmBuildError::BadGrid));
+    assert_eq!(
+        FilmBed::from_heights(0, 1, mm(10), o, &[], 1),
+        Err(FilmBuildError::BadGrid)
+    );
+    assert_eq!(
+        FilmBed::from_heights(2, 1, mm(10), o, &one, 1),
+        Err(FilmBuildError::BadGrid)
+    );
     assert_eq!(
         FilmBed::from_heights(1, 1, Fix128::from_ratio(1, 10_000), o, &one, 1),
         Err(FilmBuildError::CellOutOfRange)
@@ -435,12 +480,22 @@ fn degenerate_inputs_are_refused() {
     let bed = FilmBed::from_heights(1, 1, mm(10), o, &one, 1).expect("bed");
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
     cfg.viscosity = Fix128::ZERO;
-    assert_eq!(WaterFilm::new(cfg, bed.clone()).err(), Some(FilmBuildError::BadConfig));
+    assert_eq!(
+        WaterFilm::new(cfg, bed.clone()).err(),
+        Some(FilmBuildError::BadConfig)
+    );
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
     cfg.rain = -Fix128::ONE;
-    assert_eq!(WaterFilm::new(cfg, bed.clone()).err(), Some(FilmBuildError::BadConfig));
+    assert_eq!(
+        WaterFilm::new(cfg, bed.clone()).err(),
+        Some(FilmBuildError::BadConfig)
+    );
 
-    let mut f = film(groove_bed(6, 2, 3, true), FilmScheme::DiffusionWave, FilmEdge::Closed);
+    let mut f = film(
+        groove_bed(6, 2, 3, true),
+        FilmScheme::DiffusionWave,
+        FilmEdge::Closed,
+    );
     assert!(!f.set_initial_depth(6, 0, 1));
     assert!(!f.set_initial_depth(0, 0, -1));
     assert_eq!(f.deposit(-Fix128::ONE, Fix128::ZERO, mm(1)), 0);
@@ -467,7 +522,11 @@ fn degenerate_inputs_are_refused() {
 fn the_film_steps_and_rewinds_inside_a_world() {
     let make = || {
         let mut w = PhysicsWorld::new(PhysicsConfig {
-            gravity: Vec3Fix::new(Fix128::ZERO, -Fix128::from_ratio(980_665, 100_000), Fix128::ZERO),
+            gravity: Vec3Fix::new(
+                Fix128::ZERO,
+                -Fix128::from_ratio(980_665, 100_000),
+                Fix128::ZERO,
+            ),
             ..PhysicsConfig::default()
         });
         w.add_participant(Box::new(busy_film(FilmScheme::DiffusionWave)))
@@ -501,13 +560,19 @@ fn the_film_steps_and_rewinds_inside_a_world() {
         .collect();
     assert_eq!(digest.len(), 64);
     // one quantum is 2^-32 m
-    assert_eq!(quanta_to_metres(1), Fix128::from_raw(0, 1u64 << (64 - DEPTH_QUANTUM_BITS)));
+    assert_eq!(
+        quanta_to_metres(1),
+        Fix128::from_raw(0, 1u64 << (64 - DEPTH_QUANTUM_BITS))
+    );
 }
 
 /// oracle: the Nusselt film. A steady inflow `q` per unit width fed at the top of a plane of
 /// slope `tan α` runs down as a film of uniform depth `h = (3 ν q / (g tan α))^(1/3)` (the
 /// model's flux `g h³ ∇η / (3ν)` with `∇η = tan α`; for the small angle here `tan α` and
-/// `sin α` differ by 0.1 %). Cells away from the inlet and the outlet are within 1 % of it.
+/// `sin α` differ by 0.1 %). Every face of a uniform steady film reads the same state, so the
+/// only error is the truncation of each transfer to whole quanta: at most one quantum in
+/// `q·Δt/l`, a relative flux error `ε = 2⁻³² l / (q Δt)` and, since `h ∝ q^(1/3)`, a depth
+/// error `ε/3`. Cells away from the inlet and the outlet are within `ε` of it.
 #[test]
 fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
     // a channel one cell wide between walls 0.1 m high (open edges drain every side, so the
@@ -526,19 +591,21 @@ fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
     let q = Fix128::from_ratio(2, 100_000);
     let dt = Fix128::from_ratio(1, 64);
     let (x0, z0) = f.bed().centre(1, 1);
-    for _ in 0..(64 * 200) {
+    for _ in 0..(64 * 60) {
         f.deposit(x0, z0, q * dt * cell);
         f.advance(dt).expect("advance");
     }
-    let prof: Vec<String> = (0..nx).step_by(4).map(|i| format!("{:.3e}", f.depth_m(i, 1).to_f64())).collect();
-    println!("profile {prof:?} ledger {:?} total {}", f.ledger(), f.total());
-    let nusselt = (3.0_f64 * 1.0e-6 * 2.0e-5 / (9.80665 * tan)).cbrt();
+    // compare the flux the depth carries, `g h³ tan α / (3ν)`, with the inflow: a relative
+    // flux error within `ε` (equivalently a depth error within `ε/3`)
+    let q_f = 2.0e-5;
+    let eps = QUANTUM_M * 0.01 / (q_f * f.config().max_substep.to_f64());
     let mut compared = 0;
     for i in 10..30 {
         let d = f.depth_m(i, 1).to_f64();
+        let carried = 9.80665 * d * d * d * tan / (3.0 * 1.0e-6);
         assert!(
-            (d - nusselt).abs() / nusselt < 0.01,
-            "cell {i}: depth {d:.6e} m, Nusselt {nusselt:.6e} m"
+            (carried - q_f).abs() / q_f <= eps,
+            "cell {i}: depth {d:.6e} m carries {carried:.6e} m²/s, inflow {q_f:.1e}, bound {eps:.2e}"
         );
         compared += 1;
     }
@@ -550,8 +617,15 @@ fn a_steady_film_on_an_incline_has_the_nusselt_depth() {
 /// below the wet threshold) at `(h₀ − threshold) / E` (to one substep).
 #[test]
 fn a_wet_cell_dries_in_the_closed_form_time() {
-    let bed = FilmBed::from_heights(4, 3, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &[Fix128::ZERO; 12], 1)
-        .expect("bed");
+    let bed = FilmBed::from_heights(
+        4,
+        3,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &[Fix128::ZERO; 12],
+        1,
+    )
+    .expect("bed");
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
     cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(360));
     let threshold = cfg.wet_threshold;
@@ -564,7 +638,7 @@ fn a_wet_cell_dries_in_the_closed_form_time() {
     }
     let dt = f.config().max_substep;
     let e = f.config().evaporation.to_f64();
-    let q = 2f64.powi(-(DEPTH_QUANTUM_BITS as i32));
+    let q = QUANTUM_M;
     let t_gone = h0 as f64 * q / e;
     let t_dry = (h0 - threshold) as f64 * q / e;
     let (mut gone_at, mut dry_at) = (None, None);
@@ -582,8 +656,14 @@ fn a_wet_cell_dries_in_the_closed_form_time() {
     let step = dt.to_f64();
     let gone = gone_at.expect("gone");
     let dry = dry_at.expect("dry");
-    assert!((gone - t_gone).abs() <= step, "gone at {gone} s, closed form {t_gone} s");
-    assert!((dry - t_dry).abs() <= step, "dry at {dry} s, closed form {t_dry} s");
+    assert!(
+        (gone - t_gone).abs() <= step,
+        "gone at {gone} s, closed form {t_gone} s"
+    );
+    assert!(
+        (dry - t_dry).abs() <= step,
+        "dry at {dry} s, closed form {t_dry} s"
+    );
     assert_eq!(f.ledger().evaporated, f.ledger().initial);
 }
 
@@ -612,7 +692,8 @@ fn an_sdf_bed_and_a_height_bed_agree() {
     let cell = mm(CELL_MM);
     let o = (Fix128::ZERO, Fix128::ZERO);
     let from_sdf = FilmBed::from_sdf(16, 2, cell, o, 1, &plane, (-1.0, 1.0)).expect("sdf bed");
-    let from_fn = FilmBed::from_height_fn(16, 2, cell, o, 1, |x, _| plane.a * x + plane.c).expect("fn bed");
+    let from_fn =
+        FilmBed::from_height_fn(16, 2, cell, o, 1, |x, _| plane.a * x + plane.c).expect("fn bed");
     let mut compared = 0;
     for k in 0..2 {
         for i in 0..16 {
@@ -620,10 +701,16 @@ fn an_sdf_bed_and_a_height_bed_agree() {
             let (x, _) = from_fn.centre(i, k);
             let exact = metres_to_quanta(Fix128::from_f64(-0.25 * x.to_f64() + 0.02));
             // one f32 step at |y| (and at the bisection bounds' scale, 1 m), in quanta, plus one
-            let ulp = (f32::EPSILON as f64 * 2f64.powi(DEPTH_QUANTUM_BITS as i32)).ceil() as i64 + 1;
+            let ulp = (f32::EPSILON as f64 * (1.0 / QUANTUM_M)).ceil() as i64 + 1;
             let (s, h) = (from_sdf.heights()[c], from_fn.heights()[c]);
-            assert!((s - h).abs() <= ulp, "cell {c}: sdf {s} vs fn {h} quanta (bound {ulp})");
-            assert!((h - exact).abs() <= ulp, "cell {c}: fn {h} vs exact {exact} quanta");
+            assert!(
+                (s - h).abs() <= ulp,
+                "cell {c}: sdf {s} vs fn {h} quanta (bound {ulp})"
+            );
+            assert!(
+                (h - exact).abs() <= ulp,
+                "cell {c}: fn {h} vs exact {exact} quanta"
+            );
             compared += 1;
         }
     }
@@ -643,7 +730,11 @@ fn the_substep_count_depends_on_declared_inputs_only() {
     let dt_max = f.config().max_substep;
     let mut compared = 0;
     for _ in 0..200 {
-        for h in [Fix128::from_ratio(1, 20), Fix128::from_ratio(1, 300), Fix128::from_ratio(7, 3)] {
+        for h in [
+            Fix128::from_ratio(1, 20),
+            Fix128::from_ratio(1, 300),
+            Fix128::from_ratio(7, 3),
+        ] {
             let want = (h / dt_max).ceil().hi.max(1) as u32;
             assert_eq!(f.subcycles(h), Some(want), "h = {}", h.to_f64());
             compared += 1;
