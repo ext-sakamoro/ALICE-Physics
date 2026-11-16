@@ -95,16 +95,20 @@ jobs:
         run: |
           {
             echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
+            # cargo-mutants writes into mutants.out/mutants.out/ (--output names the parent)
+            root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
+            export MUTANTS_ROOT="$root"
+            if [ -f "$root/outcomes.json" ]; then
               python3 - <<'PY'
           import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          import os
+          d = json.load(open(os.path.join(os.environ["MUTANTS_ROOT"], "outcomes.json")))
           caught = d.get("caught", 0); missed = d.get("missed", 0); un = d.get("unviable", 0); to = d.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -100
+              echo; echo "### missed"; cat "$root/missed.txt" 2>/dev/null | head -100
             else
               echo "no output (build failed?)"
             fi
@@ -199,7 +203,19 @@ jobs:
           # equivalent mutants (scripts/mutants-equivalent.txt, keyed by position and the
           # hash of their source line) are reported by cargo-mutants on every run; only
           # the others are survivors
-          python3 scripts/mutants_equivalent.py --filter mutants.out/missed.txt > mutants.out/missed-real.txt
+          # cargo-mutants writes into mutants.out/mutants.out/; until 2026-11-16 this read
+          # mutants.out/missed.txt, which does not exist, so every run reported 0 missed
+          root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
+          if [ ! -f "$root/missed.txt" ]; then
+            # a killed run writes no missed.txt: the status below says so; a complete one must have it
+            if python3 scripts/mutants_run_status.py mutants.out > /dev/null; then
+              echo "::error::the run is complete but $root/missed.txt does not exist (nothing was compared)"
+              exit 1
+            fi
+            : > mutants.out/missed-real.txt
+          else
+            python3 scripts/mutants_equivalent.py --filter "$root/missed.txt" > mutants.out/missed-real.txt
+          fi
           missed=$(grep -c . mutants.out/missed-real.txt || true)
           if [ "${missed:-0}" -gt 0 ]; then
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
@@ -248,10 +264,14 @@ jobs:
         run: |
           {
             echo "## cargo-mutants (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
+            # cargo-mutants writes into mutants.out/mutants.out/ (--output names the parent)
+            root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
+            export MUTANTS_ROOT="$root"
+            if [ -f "$root/outcomes.json" ]; then
               python3 - <<'PY'
           import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          import os
+          d = json.load(open(os.path.join(os.environ["MUTANTS_ROOT"], "outcomes.json")))
           s = d.get("summary", d)
           caught = s.get("caught", 0); missed = s.get("missed", 0); un = s.get("unviable", 0); to = s.get("timeout", 0)
           tot = caught + missed
@@ -260,7 +280,7 @@ jobs:
           PY
               # complete / killed (n/planned tested) / not measured: a killed or unmeasured run is not a result
               python3 scripts/mutants_run_status.py mutants.out || true
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
+              echo; echo "### missed"; cat "$root/missed.txt" 2>/dev/null | head -50
             else
               echo "no output (build failed?)"
             fi

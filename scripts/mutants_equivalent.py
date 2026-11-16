@@ -314,7 +314,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     missed = Path(args.filter)
-    lines = missed.read_text(encoding="utf-8", errors="replace").splitlines() if missed.is_file() else []
+    if not missed.is_file():
+        # a missing file is not "no survivor": cargo-mutants nests its output (`mutants.out/mutants.out/`),
+        # and reading the wrong path as empty made the in-diff gate compare nothing (2026-11-16)
+        print(f"error: {missed} does not exist (a run that wrote no missed.txt is not a run with 0 missed)",
+              file=sys.stderr)
+        return 2
+    lines = missed.read_text(encoding="utf-8", errors="replace").splitlines()
     real, equivalent = split_missed(lines, valid_keys(path, root))
     for line in real:
         print(line)

@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed
+- 夜間の差分の変異試験 (`quality-deep.yml`) は見逃しの一覧を `mutants.out/missed.txt` から読んでいたが、cargo-mutants は `mutants.out/mutants.out/` に書くので file が存在せず、毎回「見逃し 0」として通っていた (2026-11-14 の run の実際の見逃しは 28 件) 入れ子の位置を読み、一覧の file が無い時は `scripts/mutants_equivalent.py --filter` が exit 2 で失敗し、run が完了しているのに一覧が無い時は step が失敗する 要約の `outcomes.json` も同じ位置から読む 試験 `scripts/test_mutants_equivalent.py` (無い file は error、空の file は 0 件)
 ### Changed
 - 夜間の差分の変異試験は 2 つの job から、host で build できる全 feature の 1 job (`--features host-union`、Cargo.toml の `[features]` から default / std / wasm / python を除いて読む) と、`simd` 無しで `simd` によって code が変わる file だけを変異する小さな job (`host-union-no-simd`、cfg-items の span が `simd` を名指す file、scalar の代替経路) に変える 以前の 2 job は同じ差分を feature の違う 2 組で build していたので、同じ変異を 2 回試していた feature の組と file の一覧は手で書かず、feature が増えれば和に入り、file が `simd` の cfg を得れば 2 つ目の job に入る (`simd` を名指す cfg が src に 1 つも無ければ計画は失敗) 試験 `scripts/test_mutants_in_diff_plan.py`
 - 変異試験の差分の計画 (`scripts/mutants_in_diff_plan.py`) は、host の試験の build で成り立たない cfg (wasm / python の feature、`not(feature = "std")` など) の下にある変更行を変異の対象から外し、file・行数・cfg を「この job では試されない」として要約に出す 以前は module の cfg だけを見て file を外していたので、関数単位で wasm だけの項目 (`#[cfg(feature = "wasm")] fn magnet_force_at`) の変異は compile されないまま見逃しとして数えられた (2026-11-14 の夜間の run で 8 件) 2026-11-14 の差分では変更行 2,586 のうち 154 が外れる 試験 `scripts/test_mutants_in_diff_plan.py` (wasm だけの関数の変更が変異 0 件と行数になる、diff の hunk の数え直し、要約の行)
