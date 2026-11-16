@@ -392,24 +392,12 @@ fn on_collision_course_substeps(
     struct CcdVelocityBody(Vec3Fix);
     impl crate::solver_tgs::HasVelocity for CcdVelocityBody {
         fn velocity_l_inf(&self) -> Fix128 {
-            let ax = self.0.x.abs();
-            let ay = self.0.y.abs();
-            let az = self.0.z.abs();
-            let m = if ax > ay { ax } else { ay };
-            if az > m {
-                az
-            } else {
-                m
-            }
+            self.0.x.abs().max(self.0.y.abs()).max(self.0.z.abs())
         }
     }
 
     let bodies = [CcdVelocityBody(vel_a), CcdVelocityBody(vel_b)];
-    let smallest_radius = if radius_a < radius_b {
-        radius_a
-    } else {
-        radius_b
-    };
+    let smallest_radius = radius_a.min(radius_b);
     // Half the smaller collider's radius: the hard per-sub-step travel
     // cap a fast body must respect so it cannot pass clean through the
     // other body within one sub-step.
@@ -548,13 +536,7 @@ pub fn sphere_capsule_toi(
         cap_a
     } else {
         let t = (sphere_center - cap_a).dot(ab) / ab_len_sq;
-        let t_clamped = if t < Fix128::ZERO {
-            Fix128::ZERO
-        } else if t > Fix128::ONE {
-            Fix128::ONE
-        } else {
-            t
-        };
+        let t_clamped = t.clamp(Fix128::ZERO, Fix128::ONE);
         cap_a + ab * t_clamped
     };
     sphere_sphere_toi(
@@ -1977,5 +1959,85 @@ mod tests {
             assert_eq!(hit.t, Fix128::ZERO);
             assert_eq!(hit.point, Vec3Fix::ZERO);
         }
+    }
+
+    /// Pins the rewritten `velocity_l_inf` (`max` of the absolute components) and
+    /// `smallest_radius` (`min`): the sub-step count is the same for every permutation and sign
+    /// of the velocity components and for a velocity carrying only its largest component (ties
+    /// included), and for the radii in either order; it differs when both radii are the larger
+    /// one (a `max` would give that count).
+    #[cfg(feature = "std")]
+    #[test]
+    fn adaptive_toi_substeps_is_symmetric_in_components_and_radii() {
+        let n = |v: Vec3Fix, ra: Fix128, rb: Fix128| {
+            // the other body sits on the path at 9/64 of the velocity: for |v| in [8, 8 sqrt 3] it is
+            // beyond touching for every radius pair below and reached within dt = 1/8
+            adaptive_toi_substeps(
+                Vec3Fix::ZERO,
+                v,
+                ra,
+                v * r(9, 64),
+                Vec3Fix::ZERO,
+                rb,
+                r(1, 8),
+                100,
+            )
+        };
+        let (small, big) = (r(1, 8), r(1, 2));
+        let base = n(v3i(0, 0, 8), small, big);
+        assert_eq!(base, 16);
+        for v in [
+            v3i(1, 2, 8),
+            v3i(-2, 1, 8),
+            v3i(2, -1, 8),
+            v3i(-8, -2, 1),
+            v3i(8, 8, 8),
+            v3i(-8, 8, 8),
+            v3i(8, -8, 8),
+            v3i(0, 8, 8),
+            v3i(8, 0, 8),
+        ] {
+            assert_eq!(n(v, small, big), base, "{v:?}");
+        }
+        assert_eq!(n(v3i(0, 0, 8), big, small), base, "radii swapped");
+        assert_eq!(n(v3i(0, 0, 8), small, small), base, "equal radii");
+        assert_ne!(
+            n(v3i(0, 0, 8), big, big),
+            base,
+            "the larger radius gives fewer sub-steps"
+        );
+    }
+
+    /// Pins the rewritten clamp of `sphere_capsule_toi`: the sphere meets the sphere around the
+    /// segment point at parameter `clamp(t, 0, 1)`, checked against `sphere_sphere_toi` at
+    /// that point for `t` below 0, at 0, just inside, at 1 and above 1.
+    #[test]
+    fn sphere_capsule_toi_uses_the_clamped_segment_point() {
+        let (cap_a, cap_b) = (v3i(0, 0, 0), v3i(4, 0, 0));
+        let vel = v3i(0, -8, 0);
+        for (x, closest) in [
+            (r(-1, 2), v3i(0, 0, 0)),
+            (fi(0), v3i(0, 0, 0)),
+            (fi(1), v3i(1, 0, 0)),
+            (fi(4), v3i(4, 0, 0)),
+            (r(9, 2), v3i(4, 0, 0)),
+        ] {
+            let c = Vec3Fix::new(x, fi(3), Fix128::ZERO);
+            let got = sphere_capsule_toi(c, r(1, 2), vel, cap_a, cap_b, r(1, 2));
+            let want = sphere_sphere_toi(c, r(1, 2), vel, closest, r(1, 2), Vec3Fix::ZERO);
+            assert!(want.is_some(), "x {x:?}");
+            assert_eq!(got, want, "x {x:?}");
+        }
+    }
+
+    /// The sub-step floor `on_collision_course_substeps` writes out (`min_substeps: 1`) is the
+    /// default's: the mutants.toml exclusion of that field's deletion rests on this equality.
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_ccd_substep_config_floor_is_the_default() {
+        assert_eq!(
+            crate::solver_tgs::AdaptiveSubStepConfig::default().min_substeps,
+            1
+        );
     }
 }

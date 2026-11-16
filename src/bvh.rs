@@ -323,7 +323,9 @@ impl LinearBvh {
     /// (see `find_pairs`) and drive unbounded push into the pair Vec
     /// until OOM — this was the root cause of the 5 GB / n=50 crash
     /// before the placeholder=0 rewrite of `build_recursive`.
-    #[cfg(debug_assertions)]
+    ///
+    /// Compiled in every profile (one body, no release stub): the only caller is a
+    /// `debug_assert!`, which does not evaluate it when debug assertions are off.
     fn debug_verify_escape_forward(nodes: &[BvhNode]) -> bool {
         for (i, node) in nodes.iter().enumerate() {
             let esc = node.escape_idx();
@@ -334,12 +336,6 @@ impl LinearBvh {
                 return false;
             }
         }
-        true
-    }
-
-    #[cfg(not(debug_assertions))]
-    #[inline]
-    fn debug_verify_escape_forward(_nodes: &[BvhNode]) -> bool {
         true
     }
 
@@ -753,7 +749,7 @@ pub struct BvhStats {
 /// Raw signed 128-bit value of a [`Fix128`] (integer part in the high 64 bits).
 #[inline]
 const fn fix_raw(v: Fix128) -> i128 {
-    ((v.hi as i128) << 64) | (v.lo as i128)
+    ((v.hi as i128) << 64) + (v.lo as i128)
 }
 
 /// Grid coordinate of `v` for cells of raw size `2^shift`, clamped to `i64`.
@@ -764,13 +760,7 @@ const fn fix_raw(v: Fix128) -> i128 {
 #[inline]
 fn cell_coord(v: Fix128, shift: u32) -> i64 {
     let c = fix_raw(v) >> shift;
-    if c > i64::MAX as i128 {
-        i64::MAX
-    } else if c < i64::MIN as i128 {
-        i64::MIN
-    } else {
-        c as i64
-    }
+    c.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64
 }
 
 /// Largest axis extent of `aabb` in raw units (saturating, 0 for an inverted box).
@@ -778,8 +768,7 @@ fn cell_coord(v: Fix128, shift: u32) -> i64 {
 fn raw_extent(aabb: &AABB) -> u128 {
     let axis = |lo: Fix128, hi: Fix128| -> u128 {
         match fix_raw(hi).checked_sub(fix_raw(lo)) {
-            Some(d) if d > 0 => d as u128,
-            Some(_) => 0,
+            Some(d) => u128::try_from(d).unwrap_or(0),
             None => u128::MAX,
         }
     };
@@ -946,7 +935,7 @@ impl BroadphaseHybrid {
         let mut tested: u64 = 0;
         let push = |a: u32, b: u32, out: &mut Vec<(u32, u32)>| {
             if a != b {
-                out.push(if a < b { (a, b) } else { (b, a) });
+                out.push((a.min(b), a.max(b)));
             }
         };
 
@@ -1602,6 +1591,63 @@ mod tests {
         let (out, _) = run(&mut h, &tiny_set);
         assert_eq!(h.cell_shift, 0);
         assert_eq!(out, brute_force(&tiny_set));
+    }
+
+    /// Pins the rewritten forms of `fix_raw` (high and low words summed: a negative high word
+    /// with a non-zero low word, where a sign-extended low word would overlap the high bits),
+    /// `cell_coord` (clamp to `i64` at both bounds, exactly at them and one inside),
+    /// `raw_extent` (`try_from`: negative 0, zero 0, positive as is) and the pair order of
+    /// `query_pairs` (smaller id first whatever order the bodies were staged in).
+    #[test]
+    fn hybrid_rewritten_forms_hold_at_their_bounds() {
+        assert_eq!(fix_raw(Fix128::from_raw(-1, u64::MAX)), -1);
+        assert_eq!(fix_raw(Fix128::from_raw(-2, 3)), -(2i128 << 64) + 3);
+        assert_eq!(
+            fix_raw(Fix128::from_raw(1, 1 << 63)),
+            (1i128 << 64) + (1i128 << 63)
+        );
+        assert_eq!(fix_raw(Fix128::from_raw(i64::MIN, 0)), i128::MIN);
+
+        let max = Fix128::from_raw(0, i64::MAX as u64);
+        let min = Fix128::from_raw(-1, 1 << 63);
+        assert_eq!(cell_coord(max, 0), i64::MAX);
+        assert_eq!(
+            cell_coord(Fix128::from_raw(0, i64::MAX as u64 - 1), 0),
+            i64::MAX - 1
+        );
+        assert_eq!(cell_coord(Fix128::from_raw(0, 1 << 63), 0), i64::MAX);
+        assert_eq!(cell_coord(min, 0), i64::MIN);
+        assert_eq!(
+            cell_coord(Fix128::from_raw(-1, (1 << 63) + 1), 0),
+            i64::MIN + 1
+        );
+        assert_eq!(cell_coord(Fix128::from_raw(-1, (1 << 63) - 1), 0), i64::MIN);
+        assert_eq!(cell_coord(Fix128::from_raw(i64::MIN, 0), 125), -4);
+
+        let p = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, -Fix128::ONE);
+        assert_eq!(raw_extent(&AABB { min: p, max: p }), 0);
+        let wide = AABB {
+            min: Vec3Fix::new(-Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            max: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        };
+        assert_eq!(raw_extent(&wide), 2u128 << 64);
+        let flipped_x = AABB {
+            min: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            max: Vec3Fix::new(-Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        };
+        assert_eq!(raw_extent(&flipped_x), 1u128 << 64);
+
+        let c = Vec3Fix::ZERO;
+        let mut h = BroadphaseHybrid::new();
+        for staged in [
+            vec![(9u32, ball(c, 500), false), (4u32, ball(c, 500), false)],
+            vec![(4u32, ball(c, 500), false), (9u32, ball(c, 500), false)],
+            vec![(9u32, ball(c, 500), false), (4u32, ball(c, 9000), false)],
+            vec![(4u32, ball(c, 9000), false), (9u32, ball(c, 500), false)],
+        ] {
+            let (out, _) = run(&mut h, &staged);
+            assert_eq!(out, vec![(4, 9)]);
+        }
     }
 
     /// Adding, removing or moving a static body is detected: the static BVH
@@ -2344,9 +2390,7 @@ mod tests {
 
     /// `debug_verify_escape_forward` line 320 `→ true` and line 322 `==` →
     /// `!=`: a backward escape pointer (node 2 → 1) and a self-loop (node 0 →
-    /// 0) must be reported. Only the debug-profile body is under test here;
-    /// the release stub always returns `true`.
-    #[cfg(debug_assertions)]
+    /// 0) must be reported (the checker has one body in every profile).
     #[test]
     fn debug_verify_escape_forward_rejects_backward_pointer() {
         let aabb = unit_box(0, 0, 0);
@@ -2363,8 +2407,7 @@ mod tests {
         assert!(!LinearBvh::debug_verify_escape_forward(&self_loop));
     }
 
-    /// Forward pointers and `ESCAPE_NONE` are accepted in both profiles
-    /// (`debug_verify_escape_forward` line 335 release stub → `false`).
+    /// Forward pointers and `ESCAPE_NONE` are accepted (`→ false`).
     #[test]
     fn debug_verify_escape_forward_accepts_forward_and_none() {
         let aabb = unit_box(0, 0, 0);
