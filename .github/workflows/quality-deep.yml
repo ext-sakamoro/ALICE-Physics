@@ -200,6 +200,17 @@ jobs:
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
             cat mutants.out/missed-real.txt
           fi
+          # killed (stopped before every planned mutant had an outcome) and not measured (mostly
+          # build timeouts: the run measured its build deadline) are not results: the step fails
+          # with the line, never reads as green or as "missed"
+          set +e
+          line=$(python3 scripts/mutants_run_status.py mutants.out)
+          verdict=$?
+          set -e
+          if [ "$verdict" -ne 0 ]; then
+            echo "::error::in-diff mutants $line (cargo-mutants exit $rc)"
+            exit 1
+          fi
           if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
             echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
             exit 1
@@ -242,6 +253,8 @@ jobs:
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
+              # complete / killed (n/planned tested) / not measured: a killed or unmeasured run is not a result
+              python3 scripts/mutants_run_status.py mutants.out || true
               echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
             else
               echo "no output (build failed?)"
