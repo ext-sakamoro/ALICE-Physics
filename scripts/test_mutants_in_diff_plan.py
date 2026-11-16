@@ -210,11 +210,131 @@ pub fn magnet_force_at(x: u8) -> u8 {
         d = "@@ -1,3 +5,4 @@\n ctx\n-gone\n+new1\n+new2\n ctx\n@@ -20 +30 @@\n-x\n+y\n"
         self.assertEqual(mp.changed_lines(d), [6, 7, 30])
 
+    def test_the_real_src_has_simd_sensitive_files_and_a_union_without_wasm(self):
+        self.assertIn("src/math.rs", mp.feature_sensitive_files(HERE.parent, "simd"))
+        union = mp.host_union((HERE.parent / "Cargo.toml").read_text(encoding="utf-8"))
+        self.assertIn("simd", union)
+        self.assertNotIn("wasm", union)
+        self.assertNotIn("python", union)
+
     def test_the_real_lib_rs_gates_analytics_bridge_behind_its_feature(self):
         gates = mp.module_gates(mp.cfg_spans(HERE.parent / "src/lib.rs"))
         self.assertEqual(mp.features_for(gates["analytics_bridge"]), (["analytics"], True))
         self.assertGreater(len(gates), 5, "the real lib.rs has gated modules")
 
+
+
+class FeatureSets(unittest.TestCase):
+    """--features host-union / host-union-no-simd: the sets come from Cargo.toml and the src cfgs."""
+
+    CARGO = """\
+[package]
+name = "x"
+
+[features]
+default = ["std"]
+std = []
+simd = []
+parallel = ["rayon"]
+python = ["pyo3"]
+wasm = ["wasm-bindgen"]
+analytics = ["dep:alice-analytics", "std"]
+
+[dependencies]
+rayon = "1"
+"""
+    MATH = """\
+pub fn dot(a: f32, b: f32) -> f32 {
+    #[cfg(feature = "simd")]
+    {
+        return a * b;
+    }
+    #[cfg(not(feature = "simd"))]
+    {
+        a * b + 0.0
+    }
+}
+
+#[cfg(feature = "simd")]
+pub fn wide() -> u8 {
+    4
+}
+"""
+    PLAIN = """\
+#[cfg(feature = "parallel")]
+pub fn par() -> u8 {
+    1
+}
+"""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        (self.root / "src").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "src/lib.rs").write_text("pub mod math;\npub mod plain;\n", encoding="utf-8")
+        (self.root / "src/math.rs").write_text(self.MATH, encoding="utf-8")
+        (self.root / "src/plain.rs").write_text(self.PLAIN, encoding="utf-8")
+        (self.root / "Cargo.toml").write_text(self.CARGO, encoding="utf-8")
+
+    def change(self, path: str, line: int) -> str:
+        return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -{line} +{line} @@\n-old\n+new\n"
+
+    def test_the_union_is_every_host_buildable_feature_of_cargo_toml(self):
+        self.assertEqual(mp.host_union(self.CARGO), ["analytics", "parallel", "simd"])
+        more = self.CARGO.replace("[dependencies]", 'mpm2d = []\n\n[dependencies]')
+        self.assertIn("mpm2d", mp.host_union(more))
+
+    def test_a_file_with_a_simd_cfg_at_any_depth_is_sensitive_others_are_not(self):
+        self.assertEqual(mp.feature_sensitive_files(self.root, "simd"), ["src/math.rs"])
+
+    def test_a_file_gaining_a_statement_level_not_simd_block_joins(self):
+        (self.root / "src/plain.rs").write_text(
+            self.PLAIN + 'pub fn f() -> u8 {\n    #[cfg(not(feature = "simd"))]\n    let x = 1;\n    x\n}\n',
+            encoding="utf-8")
+        self.assertEqual(mp.feature_sensitive_files(self.root, "simd"), ["src/math.rs", "src/plain.rs"])
+
+    def test_a_feature_no_cfg_names_is_stale_and_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "no src file has a cfg naming feature 'gone'"):
+            mp.feature_sensitive_files(self.root, "gone")
+
+    def test_the_no_simd_plan_keeps_only_sensitive_files_and_never_turns_simd_on(self):
+        d = self.change("src/plain.rs", 2) + self.change("src/math.rs", 8) + self.change("src/math.rs", 14)
+        p = mp.plan(d, ["parallel"], self.root, only_sensitive="simd")
+        self.assertEqual(p["outside_this_job"], ["src/plain.rs"])
+        self.assertNotIn("simd", p["features"])
+        # line 8 (scalar fallback) stays a changed line; line 14 (simd-only fn) is the first job's
+        self.assertEqual(mp.changed_lines(p["diff"]), [8])
+        self.assertEqual(p["other_job_lines"], [{"file": "src/math.rs", "lines": 1}])
+
+    def test_a_test_target_that_requires_simd_is_left_to_the_union_job(self):
+        cargo = self.CARGO + '\n[[test]]\nname = "audit_math"\nrequired-features = ["simd"]\n'
+        (self.root / "Cargo.toml").write_text(cargo, encoding="utf-8")
+        (self.root / "tests/audit_math.rs").write_text("", encoding="utf-8")
+        no_simd = mp.plan(self.change("src/math.rs", 8), ["parallel"], self.root, only_sensitive="simd")
+        self.assertEqual(no_simd["tests"], [])
+        self.assertNotIn("simd", no_simd["features"])
+        union = mp.plan(self.change("src/math.rs", 8), ["parallel", "simd"], self.root)
+        self.assertEqual(union["tests"], ["audit_math"])
+
+    def test_main_with_the_no_simd_set_reads_cargo_toml_and_reports_the_other_job(self):
+        diff = self.root / "change.diff"
+        diff.write_text(self.change("src/plain.rs", 2) + self.change("src/math.rs", 14), encoding="utf-8")
+        summary, out = self.root / "summary.md", self.root / "planned.diff"
+        old = mp.ROOT
+        mp.ROOT = self.root
+        try:
+            self.assertEqual(mp.main([str(diff), "--features", "host-union-no-simd", "--out", str(out),
+                                      "--summary", str(summary)]), 0)
+        finally:
+            mp.ROOT = old
+        self.assertIn("- left to the simd job: 1 file(s) whose code does not differ without simd, "
+                      "1 changed line(s) that need simd", summary.read_text(encoding="utf-8"))
+        self.assertEqual(mp.changed_lines(out.read_text(encoding="utf-8")), [])
+
+    def test_the_union_plan_turns_simd_on_for_a_simd_only_change(self):
+        p = mp.plan(self.change("src/math.rs", 14), ["parallel"], self.root)
+        self.assertIn("simd", p["features"])
+        self.assertEqual(mp.changed_lines(p["diff"]), [14])
 
 
 # Every shape of an item header rustfmt writes, and the nodes inside an item that

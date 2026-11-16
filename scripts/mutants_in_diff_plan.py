@@ -33,6 +33,15 @@ its attribute. The helper is built with cargo on first use; a file that does not
 parse fails the plan.
 
   python3 scripts/mutants_in_diff_plan.py change.diff --features "parallel" --out planned.diff
+
+`--features host-union` takes every feature of Cargo.toml that the host test run can
+build (all but `default`, `std` and the host-unbuildable ones), so one job compiles
+everything the host can; `--features host-union-no-simd` is the same set without
+`simd` and keeps only the changed files whose code differs with `simd` (some cfg-items
+span names the feature): the scalar fallbacks the first job does not compile. The
+feature sets are read from Cargo.toml, not listed by hand: a new feature joins the
+union, and a file that gains a `simd`-gated node joins the second job. A crate in
+which no src file names `simd` in a cfg fails the second plan (the name is stale).
 """
 
 from __future__ import annotations
@@ -98,6 +107,52 @@ def cfg_spans(path: Path) -> list[Span]:
         _, start, end, kind, name, cfg = line.split("\t", 5)
         spans.append(Span(int(start), int(end), kind, name, cfg))
     return spans
+
+
+def cfg_spans_many(paths: list[Path]) -> dict[str, list[Span]]:
+    """`{path: cfg-gated nodes}` for many files in one run of the parser."""
+    out: dict[str, list[Span]] = {str(p): [] for p in paths}
+    if not paths:
+        return out
+    r = subprocess.run([str(helper()), *map(str, paths)], capture_output=True, text=True,
+                       encoding="utf-8", check=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"cfg-items failed: {r.stderr.strip()}")
+    for line in r.stdout.splitlines():
+        path, start, end, kind, name, cfg = line.split("\t", 5)
+        out.setdefault(path, []).append(Span(int(start), int(end), kind, name, cfg))
+    return out
+
+
+def names_feature(cfg: str, feature: str) -> bool:
+    """Whether a cfg expression has a `feature = "<feature>"` term anywhere in it."""
+    def walk(node) -> bool:
+        if node[0] == "pred":
+            return node[1] == "feature" and node[2] == feature
+        return any(walk(k) for k in node[1])
+    return walk(parse_cfg(cfg))
+
+
+def host_union(cargo_toml: str) -> list[str]:
+    """Every feature of the `[features]` table the host test run can build: all but
+    `default`, `std` and the host-unbuildable ones."""
+    m = re.search(r"^\[features\]\s*$(.*?)(?=^\[)", cargo_toml + "\n[", re.M | re.S)
+    if not m:
+        return []
+    names = re.findall(r"^([A-Za-z0-9_-]+)\s*=", m.group(1), re.M)
+    return sorted(n for n in names if n not in ("default", "std") and n not in HOST_UNBUILDABLE)
+
+
+def feature_sensitive_files(root: Path, feature: str) -> list[str]:
+    """The src files with a cfg-gated node naming `feature` (relative, `/`-separated).
+    Raises when there is none: a feature no cfg names is a stale name."""
+    files = sorted((root / "src").rglob("*.rs"))
+    spans = cfg_spans_many(files)
+    hits = sorted({Path(p).relative_to(root).as_posix() for p, ss in spans.items()
+                   if any(names_feature(s.cfg, feature) for s in ss)})
+    if not hits:
+        raise RuntimeError(f"no src file has a cfg naming feature {feature!r} ({len(files)} files read)")
+    return hits
 
 
 def module_gates(spans: list[Span]) -> dict[str, str]:
@@ -176,6 +231,9 @@ def parse_cfg(cfg: str):
     return tree
 
 
+_HELD_OFF: frozenset[str] = frozenset()
+
+
 def _solve(node, positive: bool):
     """(features that must be on, features that must be off) for `node` to be
     `positive` on the host, or None when it cannot be."""
@@ -183,7 +241,7 @@ def _solve(node, positive: bool):
         _, name, value = node
         if name == "feature":
             if positive:
-                return None if value in HOST_UNBUILDABLE else ({value}, set())
+                return None if value in HOST_UNBUILDABLE or value in _HELD_OFF else ({value}, set())
             return None if value == "std" else (set(), {value})
         truth = (name, value) not in HOST_FALSE
         return (set(), set()) if truth == positive else None
@@ -207,7 +265,7 @@ def _solve(node, positive: bool):
     return None
 
 
-def features_for(cfg: str) -> tuple[list[str], bool]:
+def features_for(cfg: str, held_off: frozenset[str] = frozenset()) -> tuple[list[str], bool]:
     """(features to turn on, buildable on the host) for a cfg expression, or for
     several joined with " , " (all of them must hold).
 
@@ -218,7 +276,12 @@ def features_for(cfg: str) -> tuple[list[str], bool]:
     the code unbuildable for the host test run."""
     if not cfg.strip():
         return [], True
-    r = _solve(parse_cfg(f"all({cfg})"), True)
+    global _HELD_OFF
+    saved, _HELD_OFF = _HELD_OFF, frozenset(held_off)
+    try:
+        r = _solve(parse_cfg(f"all({cfg})"), True)
+    finally:
+        _HELD_OFF = saved
     if r is None:
         return [], False
     return sorted(n for n in r[0] if n != "std"), True
@@ -293,13 +356,14 @@ def item_gates(spans: list[Span], lines: list[int]) -> list[str]:
     return found
 
 
-def unbuildable_lines(spans: list[Span], lines: list[int]) -> dict[str, list[int]]:
+def unbuildable_lines(spans: list[Span], lines: list[int],
+                      held_off: frozenset[str] = frozenset()) -> dict[str, list[int]]:
     """`{cfg: [changed lines]}` for the changed lines inside a node whose cfg cannot
     hold on the host test run (every such node counts, nested or not, and of any
     kind: an item, a `mod` declaration, or a file's own `#![cfg(...)]`)."""
     out: dict[str, list[int]] = {}
     for s in spans:
-        if not features_for(s.cfg)[1]:
+        if not features_for(s.cfg, held_off)[1]:
             hit = [n for n in lines if s.start <= n <= s.end]
             if hit:
                 out.setdefault(s.cfg, []).extend(hit)
@@ -345,7 +409,7 @@ def neutralise(file_diff: str, lines: set[int]) -> str:
     return "".join(out)
 
 
-def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
+def plan(diff: str, base_features: list[str], root: Path = ROOT, only_sensitive: str | None = None) -> dict:
     cargo = (root / "Cargo.toml").read_text(encoding="utf-8")
     req = required_features(cargo)
     tests_dir = root / "tests"
@@ -354,8 +418,16 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     tests: set[str] = set()
     kept, skipped = [], []
     not_exercised: list[dict] = []
+    outside: list[str] = []
+    other_job: list[dict] = []
+    held = frozenset({only_sensitive}) if only_sensitive else frozenset()
+    sensitive = set(feature_sensitive_files(root, only_sensitive)) if only_sensitive else None
     for path, text in split_diff(diff):
         path = path.replace("\\", "/")  # a diff written on Windows by another tool
+        if sensitive is not None and path not in sensitive:
+            # this job compiles the code that differs without the feature; the others are the first job's
+            outside.append(path)
+            continue
         module = module_of(path)
         if module is None:
             # lib.rs / main.rs have no module gate, but their items can carry one
@@ -363,12 +435,12 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
             source = root / path
             if path.startswith("src/") and path.endswith(".rs") and source.is_file():
                 for cfg in item_gates(cfg_spans(source), changed_lines(text)):
-                    item_feats, item_buildable = features_for(cfg)
+                    item_feats, item_buildable = features_for(cfg, held)
                     if item_buildable:
                         features.update(item_feats)
             kept.append(text)
             continue
-        feats, buildable = features_for(" , ".join(module_path_gates(path, root)))
+        feats, buildable = features_for(" , ".join(module_path_gates(path, root)), held)
         if not buildable:
             skipped.append(path)
             continue
@@ -378,19 +450,27 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
             spans = cfg_spans(source)
             lines = changed_lines(text)
             for cfg in item_gates(spans, lines):
-                item_feats, item_buildable = features_for(cfg)
+                item_feats, item_buildable = features_for(cfg, held)
                 if item_buildable:
                     features.update(item_feats)
             dropped = unbuildable_lines(spans, lines)
             for cfg, hit in sorted(dropped.items()):
                 not_exercised.append({"file": path, "lines": len(set(hit)), "cfg": cfg})
-            text = neutralise(text, {n for hit in dropped.values() for n in hit})
+            gone = {n for hit in dropped.values() for n in hit}
+            if held:
+                # code that needs the held-off feature is compiled by the job that has it, not here
+                other = unbuildable_lines(spans, lines, held)
+                elsewhere = {n for hit in other.values() for n in hit} - gone
+                if elsewhere:
+                    other_job.append({"file": path, "lines": len(elsewhere)})
+                gone |= elsewhere
+            text = neutralise(text, gone)
         kept.append(text)
         token = re.compile(rf"(^|_){re.escape(module)}(_|$)")
         for t in test_names:
             if token.search(t):
                 need = req.get(t, [])
-                if any(n in HOST_UNBUILDABLE for n in need):
+                if any(n in HOST_UNBUILDABLE or n in held for n in need):
                     continue
                 features.update(n for n in need if n != "std")
                 tests.add(t)
@@ -399,6 +479,8 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
         "tests": sorted(tests),
         "skipped": skipped,
         "not_exercised": not_exercised,
+        "outside_this_job": outside,
+        "other_job_lines": other_job,
         "diff": "".join(kept),
     }
 
@@ -410,8 +492,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, help="where to write the diff with unbuildable files removed")
     ap.add_argument("--summary", help="append the not-exercised lines (by file and in total) to this file")
     args = ap.parse_args(argv)
-    base = [f for f in args.features.split(",") if f.strip()]
-    p = plan(Path(args.diff).read_text(encoding="utf-8"), base, ROOT)
+    only = None
+    if args.features in ("host-union", "host-union-no-simd"):
+        base = host_union((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        if args.features == "host-union-no-simd":
+            base = [f for f in base if f != "simd"]
+            only = "simd"
+    else:
+        base = [f for f in args.features.split(",") if f.strip()]
+    p = plan(Path(args.diff).read_text(encoding="utf-8"), base, ROOT, only)
     Path(args.out).write_text(p.pop("diff"), encoding="utf-8")
     print(json.dumps(p))
     for f in p["skipped"]:
@@ -423,6 +512,10 @@ def main(argv: list[str] | None = None) -> int:
                         f"#[cfg({n['cfg']})]\n")
             total = sum(n["lines"] for n in p["not_exercised"])
             f.write(f"- not exercised (host-unbuildable cfg): {total} changed line(s)\n")
+            if only:
+                other = sum(n["lines"] for n in p["other_job_lines"])
+                f.write(f"- left to the {only} job: {len(p['outside_this_job'])} file(s) whose code does not differ "
+                        f"without {only}, {other} changed line(s) that need {only}\n")
     for n in p["not_exercised"]:
         print(f"note: {n['file']}: {n['lines']} changed line(s) under #[cfg({n['cfg']})] are not compiled "
               "on the host test run; not exercised by this job (not mutated)", file=sys.stderr)
