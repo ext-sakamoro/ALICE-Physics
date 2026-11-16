@@ -8,9 +8,8 @@
 
 use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::water_film::{
-    isqrt_u128, metres_to_quanta, quanta_to_metres, simultaneous_transfer, FilmBed, FilmBuildError,
-    FilmConfig, FilmEdge, FilmScheme, FluxConstants, WaterFilm, DEPTH_QUANTUM_BITS, MAX_FACE_DEPTH,
-    MAX_LUBRICATION_DIVISOR,
+    metres_to_quanta, quanta_to_metres, FilmBed, FilmBuildError, FilmConfig, FilmEdge, FilmScheme,
+    WaterFilm, DEPTH_QUANTUM_BITS,
 };
 use alice_physics_core::world_participant::{Participant, ParticipantFault, StateError};
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
@@ -882,75 +881,7 @@ fn the_mixed_scene_digest_is_pinned() {
     }
 }
 
-/// The integer square root is the floor of the square root at both ends of its range and
-/// across perfect squares.
-#[test]
-fn the_integer_square_root_is_exact() {
-    let mut compared = 0;
-    for r in [
-        0u128,
-        1,
-        2,
-        3,
-        1 << 20,
-        (1 << 51) - 1,
-        1 << 51,
-        (1u128 << 64) - 1,
-    ] {
-        for n in [r * r, r * r + r, (r * r + 2 * r).max(r * r)] {
-            assert_eq!(isqrt_u128(n), r, "√{n}");
-            compared += 1;
-        }
-        if r > 0 {
-            assert_eq!(isqrt_u128(r * r - 1), r - 1, "√({r}² − 1)");
-        }
-    }
-    assert_eq!(isqrt_u128(u128::MAX), (1u128 << 64) - 1);
-    assert!(compared >= 24);
-}
 
-/// The flux law's bounds: a face of [`MAX_FACE_DEPTH`] is accepted and one quantum more is
-/// refused; at that depth with the largest surface difference the products saturate and the
-/// transfer is exactly the `⌊h_f/4⌋` cap; a substep so short that `D_l` passes
-/// [`MAX_LUBRICATION_DIVISOR`] is refused, and a film stepping it reports `OutOfRange` and
-/// does not change.
-#[test]
-fn the_flux_law_holds_at_its_bounds() {
-    let g = Fix128::from_ratio(980_665, 100_000);
-    let nu = Fix128::from_ratio(1, 1_000_000);
-    let k = FluxConstants::new(mm(CELL_MM), Fix128::from_ratio(1, 256), g, nu).expect("constants");
-    let h = MAX_FACE_DEPTH as i64;
-    // high side: bed 0, depth h; low side: a dry bed far below
-    let t = simultaneous_transfer((0, h), (-(1i64 << 40), 0), k).expect("at the bound");
-    assert_eq!(t, h / 4, "saturated products give the cap");
-    assert_eq!(
-        simultaneous_transfer((0, h + 1), (-(1i64 << 40), 0), k),
-        None
-    );
-    // D_l = 3 ν l² 2⁹⁶ / (g Δt) passes 2⁹⁸ when 3 ν l² / (g Δt) > 4: l = 1 m, Δt = 2⁻²⁶ s
-    let tiny = Fix128::from_raw(0, 1u64 << 38);
-    assert_eq!(FluxConstants::new(Fix128::ONE, tiny, g, nu), None);
-    let at =
-        FluxConstants::new(Fix128::ONE, Fix128::from_ratio(1, 1_000_000), g, nu).expect("1 µs");
-    assert!(at.lubrication <= MAX_LUBRICATION_DIVISOR);
-    let bed = FilmBed::from_heights(
-        2,
-        1,
-        Fix128::ONE,
-        (Fix128::ZERO, Fix128::ZERO),
-        &[Fix128::ZERO; 2],
-        1,
-    )
-    .expect("bed");
-    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
-    cfg.max_substep = tiny;
-    cfg.max_subcycles = 4;
-    let mut f = WaterFilm::new(cfg, bed).expect("film");
-    f.set_initial_depth(0, 0, metres_to_quanta(mm(10)));
-    let before = state(&f);
-    assert_eq!(f.advance(tiny), Err(ParticipantFault::OutOfRange));
-    assert_eq!(state(&f), before);
-}
 
 /// oracle: critical outflow over a free edge. A single cell, open on all four edges, empties
 /// over them at the critical flux `q = h √(g h)` per unit width (the lubrication flux of a

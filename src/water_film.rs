@@ -66,7 +66,7 @@
 //!   leaves the potential unchanged, so it never comes to rest.
 //!   Measured on a closed 8-cell groove: spread 48 quanta at rest (11 nm, bound 49).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds::a_cell_drains_over_its_edges_at_the_critical_rate`
+//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned::a_cell_drains_over_its_edges_at_the_critical_rate`
 //!
 //! Author: Moroya Sakamoto
 
@@ -357,6 +357,10 @@ pub struct FilmConfig {
     pub max_substep: Fix128,
     /// Most substeps one [`WaterFilm::advance`] may take (≥ 1).
     pub max_subcycles: u32,
+    /// Solver of the implicit system.
+    pub solver: FilmSolver,
+    /// Iterations of the solver per implicit solve (≥ 1), a declared input.
+    pub solver_iterations: u32,
 }
 
 impl FilmConfig {
@@ -373,8 +377,10 @@ impl FilmConfig {
             rain: Fix128::ZERO,
             evaporation: Fix128::ZERO,
             wet_threshold: metres_to_quanta(Fix128::from_ratio(1, 1_000_000)),
-            max_substep: Fix128::from_ratio(1, 256),
+            max_substep: Fix128::from_ratio(1, 6),
             max_subcycles: 1 << 16,
+            solver: FilmSolver::JacobiPcg,
+            solver_iterations: 64,
         }
     }
 
@@ -398,6 +404,8 @@ impl FilmConfig {
         }
         h.write(&self.wet_threshold.to_le_bytes());
         h.write(&self.max_subcycles.to_le_bytes());
+        h.write(&[self.solver as u8]);
+        h.write(&self.solver_iterations.to_le_bytes());
     }
 }
 
@@ -435,104 +443,129 @@ pub fn face_depth(b_l: i64, h_l: i64, b_r: i64, h_r: i64) -> i64 {
 /// Largest face depth the flux law accepts, `2³⁴` quanta (4 m): `h_f³` then fits in 102 bits.
 pub const MAX_FACE_DEPTH: u64 = 1 << 34;
 
-/// Largest lubrication divisor `D_l` the flux law accepts (`2⁹⁸`): with `h_f ≤ 2³⁴` a product
-/// `h_f³ |Δη|` that overflows 128 bits then means a lubrication transfer above `2³⁰` quanta,
-/// more than any `⌊h_f/4⌋`, so saturating it is exact.
-pub const MAX_LUBRICATION_DIVISOR: u128 = 1 << 98;
+/// How many times a substep may be halved when its implicit transfers would over-draw a cell.
+pub const MAX_SPLITS: u32 = 8;
 
-/// The two per-substep constants of the integer flux law, from the cell side `l`, the
-/// substep `Δt`, gravity `g` and viscosity `ν` (all [`Fix128`]):
-/// `lubrication = ⌊3 ν l² 2⁹⁶ / (g Δt)⌋` and `critical = ⌊√g · Δt / l · 2⁻¹⁶ · 2⁶⁴⌋`, each the
-/// raw Q64.64 bits of the [`Fix128`] value (so rounded as [`Fix128`] multiplication, division
-/// and square root round).
+/// The solver for the implicit system of a substep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FluxConstants {
-    /// `D_l`: the lubrication transfer is `⌊h_f³ |Δη| / D_l⌋` quanta.
-    pub lubrication: u128,
-    /// `N_c`: the critical transfer is `⌊⌊√(h_f³)⌋ · N_c / 2⁶⁴⌋` quanta.
-    pub critical: u128,
+#[non_exhaustive]
+pub enum FilmSolver {
+    /// Conjugate gradients preconditioned by the diagonal.
+    JacobiPcg,
+    /// Gauss–Seidel sweeps over the two colours of the grid (red, then black).
+    RedBlackGaussSeidel,
 }
 
-fn raw_bits(f: Fix128) -> u128 {
-    ((f.hi as u128) << 64) | u128::from(f.lo)
+#[derive(Clone, Copy, Debug)]
+struct FaceLink {
+    a: Option<usize>,
+    b: Option<usize>,
+    c: Fix128,
 }
 
-impl FluxConstants {
-    /// The constants for a substep `dt`; `None` when `dt`, `g`, `ν` or `l` is not positive or
-    /// `D_l` exceeds [`MAX_LUBRICATION_DIVISOR`].
-    #[must_use]
-    pub fn new(cell: Fix128, dt: Fix128, g: Fix128, nu: Fix128) -> Option<Self> {
-        if cell <= Fix128::ZERO || dt <= Fix128::ZERO || g <= Fix128::ZERO || nu <= Fix128::ZERO {
-            return None;
-        }
-        let x = Fix128::from_int(3) * nu * cell * cell * Fix128::from_int(1i64 << 32) / (g * dt);
-        let c = (g.sqrt() * dt / cell).shr_bits(16);
-        if x.is_negative() || c.is_negative() {
-            return None;
-        }
-        let lubrication = raw_bits(x);
-        if lubrication == 0 || lubrication > MAX_LUBRICATION_DIVISOR {
-            return None;
-        }
-        Some(Self {
-            lubrication,
-            critical: raw_bits(c),
-        })
+#[derive(Clone, Debug)]
+struct Transfers {
+    delta: Vec<i64>,
+    edge_out: i64,
+    moved: u64,
+    overdrawn: bool,
+}
+
+/// Metres to whole quanta, truncated toward zero.
+fn metres_to_quanta_toward_zero(m: Fix128) -> i64 {
+    if m.is_negative() {
+        -metres_to_quanta(-m)
+    } else {
+        metres_to_quanta(m)
     }
 }
 
-/// `⌊√n⌋` for a `u128`, by bits (exact).
-#[must_use]
-pub fn isqrt_u128(n: u128) -> u128 {
-    let mut rem = n;
-    let mut root = 0u128;
-    let mut bit = 1u128 << 126;
-    while bit > n {
-        bit >>= 2;
-    }
-    while bit != 0 {
-        if rem >= root + bit {
-            rem -= root + bit;
-            root = (root >> 1) + bit;
-        } else {
-            root >>= 1;
+// y = A x for A = diag − Σ links (couplings between cells; links to an edge only add to diag)
+fn apply_a(links: &[FaceLink], diag: &[Fix128], x: &[Fix128]) -> Vec<Fix128> {
+    let mut y: Vec<Fix128> = diag.iter().zip(x).map(|(d, v)| *d * *v).collect();
+    for link in links {
+        if let (Some(a), Some(b)) = (link.a, link.b) {
+            y[a] = y[a] - link.c * x[b];
+            y[b] = y[b] - link.c * x[a];
         }
-        bit >>= 2;
     }
-    root
+    y
 }
 
-/// The water (quanta) a face moves in a substep when every face moves at once from the same
-/// state, in integers: with `H = h_f` and `E = |Δη|` in quanta,
-/// `t = min(⌊H³E / D_l⌋, ⌊⌊√(H³)⌋·N_c / 2⁶⁴⌋, ⌊E/8⌋, ⌊H/4⌋)` with the sign of `Δη`
-/// (the lubrication and the critical transfer, each floored; a product past 128 bits
-/// saturates, which is exact by [`MAX_LUBRICATION_DIVISOR`]). `None` when `H` exceeds
-/// [`MAX_FACE_DEPTH`].
-#[must_use]
-pub fn simultaneous_transfer(
-    first: (i64, i64),
-    second: (i64, i64),
-    k: FluxConstants,
-) -> Option<i64> {
-    let d_eta = (first.0 + first.1) - (second.0 + second.1);
-    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
-    if hf > MAX_FACE_DEPTH {
-        return None;
+fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
+    a.iter().zip(b).fold(Fix128::ZERO, |s, (x, y)| s + *x * *y)
+}
+
+/// Conjugate gradients with the diagonal as preconditioner, `iterations` steps from `x0`;
+/// stops early only when a step length would divide by zero (an exact zero residual).
+fn solve_pcg(
+    links: &[FaceLink],
+    diag: &[Fix128],
+    rhs: &[Fix128],
+    x0: &[Fix128],
+    iterations: u32,
+) -> Vec<Fix128> {
+    let mut x = x0.to_vec();
+    let ax = apply_a(links, diag, &x);
+    let mut r: Vec<Fix128> = rhs.iter().zip(&ax).map(|(b, a)| *b - *a).collect();
+    let mut z: Vec<Fix128> = r.iter().zip(diag).map(|(v, d)| *v / *d).collect();
+    let mut p = z.clone();
+    let mut rz = dot(&r, &z);
+    for _ in 0..iterations {
+        let ap = apply_a(links, diag, &p);
+        let pap = dot(&p, &ap);
+        if pap.is_zero() || rz.is_zero() {
+            break;
+        }
+        let alpha = rz / pap;
+        for i in 0..x.len() {
+            x[i] = x[i] + alpha * p[i];
+            r[i] = r[i] - alpha * ap[i];
+            z[i] = r[i] / diag[i];
+        }
+        let rz_next = dot(&r, &z);
+        let beta = rz_next / rz;
+        rz = rz_next;
+        for i in 0..p.len() {
+            p[i] = z[i] + beta * p[i];
+        }
     }
-    let e = d_eta.unsigned_abs();
-    let caps = (e / 8).min(hf / 4);
-    if caps == 0 {
-        return Some(0);
+    x
+}
+
+/// Gauss–Seidel over the red cells (`(i + k)` even), then the black ones, `iterations` times
+/// from `x0`; cells of one colour do not touch each other, so each half sweep is order-free.
+fn solve_red_black(
+    links: &[FaceLink],
+    diag: &[Fix128],
+    rhs: &[Fix128],
+    x0: &[Fix128],
+    iterations: u32,
+    nx: usize,
+) -> Vec<Fix128> {
+    let mut x = x0.to_vec();
+    let colour = |c: usize| (c % nx + c / nx) % 2;
+    for _ in 0..iterations {
+        for pass in 0..2 {
+            let mut acc = rhs.to_vec();
+            for link in links {
+                if let (Some(a), Some(b)) = (link.a, link.b) {
+                    if colour(a) == pass {
+                        acc[a] = acc[a] + link.c * x[b];
+                    }
+                    if colour(b) == pass {
+                        acc[b] = acc[b] + link.c * x[a];
+                    }
+                }
+            }
+            for c in 0..x.len() {
+                if colour(c) == pass {
+                    x[c] = acc[c] / diag[c];
+                }
+            }
+        }
     }
-    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
-    let lub = h3
-        .checked_mul(u128::from(e))
-        .map_or(u128::MAX, |v| v / k.lubrication);
-    let crit = isqrt_u128(h3)
-        .checked_mul(k.critical)
-        .map_or(u128::MAX, |v| v >> 64);
-    let t = lub.min(crit).min(u128::from(caps)) as i64;
-    Some(if d_eta > 0 { t } else { -t })
+    x
 }
 
 /// A thin water film over a [`FilmBed`]; a [`Participant`] of kind `FILM`.
@@ -560,9 +593,8 @@ pub struct WaterFilm {
     steps: u64,
     last_subcycles: u32,
     last_moved: u64,
+    last_solves: u32,
     reverse_faces: bool,
-    // per-substep work buffer, not state
-    scratch: Vec<i64>,
 }
 
 impl WaterFilm {
@@ -580,6 +612,7 @@ impl WaterFilm {
             || config.evaporation.is_negative()
             || config.wet_threshold < 0
             || config.max_subcycles == 0
+            || config.solver_iterations == 0
         {
             return Err(FilmBuildError::BadConfig);
         }
@@ -596,8 +629,8 @@ impl WaterFilm {
             steps: 0,
             last_subcycles: 0,
             last_moved: 0,
+            last_solves: 0,
             reverse_faces: false,
-            scratch: Vec::new(),
         };
         film.digest = film.config_digest();
         Ok(film)
@@ -712,6 +745,12 @@ impl WaterFilm {
     pub fn last_moved(&self) -> u64 {
         self.last_moved
     }
+    /// Implicit solves the last substep took: 1, or more when it was split because a cell
+    /// would have been over-drawn.
+    #[must_use]
+    pub fn last_solves(&self) -> u32 {
+        self.last_solves
+    }
     /// Visit the faces in reverse order. The state must not depend on it; this exists so a
     /// test can show that.
     pub fn set_reverse_faces(&mut self, reverse: bool) {
@@ -768,97 +807,21 @@ impl WaterFilm {
         Ok(n)
     }
 
-    /// One substep of width `dt`: rain, the transfers across every face, evaporation.
+    /// One substep of width `dt`: rain, the implicit transfers, evaporation. When the implicit
+    /// transfers would ask a cell for more water than it holds, the substep is split in two
+    /// halves, each tried the same way, at most [`MAX_SPLITS`] times deep ([`Self::last_solves`]
+    /// counts the implicit solves it took).
     ///
     /// # Errors
     ///
-    /// [`ParticipantFault::OutOfRange`] when a depth leaves the integer range (the film may
-    /// then be partly stepped; [`Self::advance`] discards it).
+    /// [`ParticipantFault::OutOfRange`] when a depth leaves the integer range, a face is deeper
+    /// than [`MAX_FACE_DEPTH`], or a cell would still be over-drawn after [`MAX_SPLITS`]
+    /// halvings (the film may then be partly stepped; [`Self::advance`] discards it).
     pub fn step_once(&mut self, dt: Fix128) -> Result<(), ParticipantFault> {
+        self.last_solves = 0;
+        self.last_moved = 0;
+        self.unit(dt, MAX_SPLITS)?;
         let cfg = self.config;
-        let ncell = self.depth.len();
-        // rain: the same whole quanta on every cell, the fraction carried
-        if !cfg.rain.is_zero() {
-            let total = self.rain_carry + metres_in_quanta(cfg.rain * dt);
-            let whole = total.floor();
-            self.rain_carry = total - whole;
-            let k = whole.hi;
-            if k > 0 {
-                for d in &mut self.depth {
-                    *d = d.checked_add(k).ok_or(ParticipantFault::OutOfRange)?;
-                }
-                self.ledger.rain += k * ncell as i64;
-            }
-        }
-        let mut moved = 0u64;
-        let mut edge_out = 0i64;
-        // every face from the same state; the moves are summed per cell, so the order the
-        // faces are visited does not matter
-        let mut delta = core::mem::take(&mut self.scratch);
-        delta.clear();
-        delta.resize(ncell, 0);
-        let (nx, nz) = (self.bed.nx, self.bed.nz);
-        let k = FluxConstants::new(self.bed.cell, dt, cfg.gravity, cfg.viscosity)
-            .ok_or(ParticipantFault::OutOfRange)?;
-        let nfx = (nx + 1) * nz;
-        let nf = nfx + nx * (nz + 1);
-        for n in 0..nf {
-            let f = if self.reverse_faces { nf - 1 - n } else { n };
-            let (a, b) = if f < nfx {
-                let (i, k) = (f % (nx + 1), f / (nx + 1));
-                (
-                    if i > 0 { Some(i - 1 + k * nx) } else { None },
-                    if i < nx { Some(i + k * nx) } else { None },
-                )
-            } else {
-                let g = f - nfx;
-                let (i, k) = (g % nx, g / nx);
-                (
-                    if k > 0 { Some(i + (k - 1) * nx) } else { None },
-                    if k < nz { Some(i + k * nx) } else { None },
-                )
-            };
-            let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
-                (Some(x), Some(y)) => (x, y),
-                _ => continue,
-            };
-            if sa.1 == 0 && sb.1 == 0 {
-                continue;
-            }
-            let t = simultaneous_transfer(sa, sb, k).ok_or(ParticipantFault::OutOfRange)?;
-            if t == 0 {
-                continue;
-            }
-            match a {
-                Some(c) => delta[c] -= t,
-                None => edge_out -= t,
-            }
-            match b {
-                Some(c) => delta[c] += t,
-                None => edge_out += t,
-            }
-            moved += t.unsigned_abs();
-        }
-        for (d, dd) in self.depth.iter_mut().zip(&delta) {
-            *d += dd;
-        }
-        self.scratch = delta;
-        self.ledger.outflow += edge_out;
-        self.last_moved = moved;
-        // evaporation: the same whole quanta off every cell that has them, never below zero
-        if !cfg.evaporation.is_zero() {
-            let total = self.evap_carry + metres_in_quanta(cfg.evaporation * dt);
-            let whole = total.floor();
-            self.evap_carry = total - whole;
-            let k = whole.hi;
-            if k > 0 {
-                for d in &mut self.depth {
-                    let take = (*d).min(k);
-                    *d -= take;
-                    self.ledger.evaporated += take;
-                }
-            }
-        }
         for (d, age) in self.depth.iter().zip(self.dry_age.iter_mut()) {
             if *d > cfg.wet_threshold {
                 *age = 0;
@@ -868,6 +831,230 @@ impl WaterFilm {
         }
         self.steps += 1;
         Ok(())
+    }
+
+    // rain, the implicit transfers and evaporation over `dt`, split in halves while a cell
+    // would be over-drawn
+    fn unit(&mut self, dt: Fix128, splits_left: u32) -> Result<(), ParticipantFault> {
+        let mut trial = self.clone();
+        trial.rain(dt)?;
+        let transfers = trial.implicit_transfers(dt)?;
+        if transfers.overdrawn {
+            if splits_left == 0 {
+                return Err(ParticipantFault::OutOfRange);
+            }
+            let half = dt.half();
+            self.unit(half, splits_left - 1)?;
+            return self.unit(half, splits_left - 1);
+        }
+        trial.apply(&transfers);
+        trial.evaporate(dt);
+        trial.last_solves = self.last_solves + 1;
+        trial.last_moved = self.last_moved + transfers.moved;
+        *self = trial;
+        Ok(())
+    }
+
+    fn rain(&mut self, dt: Fix128) -> Result<(), ParticipantFault> {
+        let rate = self.config.rain;
+        if rate.is_zero() {
+            return Ok(());
+        }
+        let total = self.rain_carry + metres_in_quanta(rate * dt);
+        let whole = total.floor();
+        self.rain_carry = total - whole;
+        let k = whole.hi;
+        if k > 0 {
+            for d in &mut self.depth {
+                *d = d.checked_add(k).ok_or(ParticipantFault::OutOfRange)?;
+            }
+            self.ledger.rain += k * self.depth.len() as i64;
+        }
+        Ok(())
+    }
+
+    fn evaporate(&mut self, dt: Fix128) {
+        let rate = self.config.evaporation;
+        if rate.is_zero() {
+            return;
+        }
+        let total = self.evap_carry + metres_in_quanta(rate * dt);
+        let whole = total.floor();
+        self.evap_carry = total - whole;
+        let k = whole.hi;
+        if k > 0 {
+            for d in &mut self.depth {
+                let take = (*d).min(k);
+                *d -= take;
+                self.ledger.evaporated += take;
+            }
+        }
+    }
+
+    // the faces as (first cell, second cell), x faces then z faces; None = past the edge
+    fn face(&self, f: usize) -> (Option<usize>, Option<usize>) {
+        let (nx, nz) = (self.bed.nx, self.bed.nz);
+        let nfx = (nx + 1) * nz;
+        if f < nfx {
+            let (i, k) = (f % (nx + 1), f / (nx + 1));
+            (
+                if i > 0 { Some(i - 1 + k * nx) } else { None },
+                if i < nx { Some(i + k * nx) } else { None },
+            )
+        } else {
+            let g = f - nfx;
+            let (i, k) = (g % nx, g / nx);
+            (
+                if k > 0 { Some(i + (k - 1) * nx) } else { None },
+                if k < nz { Some(i + k * nx) } else { None },
+            )
+        }
+    }
+
+    fn face_count(&self) -> usize {
+        let (nx, nz) = (self.bed.nx, self.bed.nz);
+        (nx + 1) * nz + nx * (nz + 1)
+    }
+
+    // the conductance of every face from the present state (the frozen linearisation of the
+    // substep), with the fixed surface of an open edge
+    fn conductances(&self, dt: Fix128) -> Result<Vec<FaceLink>, ParticipantFault> {
+        let cfg = self.config;
+        let l = self.bed.cell;
+        let lub = cfg.gravity * dt / (Fix128::from_int(3) * cfg.viscosity * l * l);
+        let mut links = Vec::new();
+        for f in 0..self.face_count() {
+            let (a, b) = self.face(f);
+            let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
+                (Some(x), Some(y)) => (x, y),
+                _ => continue,
+            };
+            let hf = face_depth(sa.0, sa.1, sb.0, sb.1);
+            if hf == 0 {
+                continue;
+            }
+            if hf.unsigned_abs() > MAX_FACE_DEPTH {
+                return Err(ParticipantFault::OutOfRange);
+            }
+            let h = quanta_to_metres(hf);
+            let mut c = lub * h * h * h;
+            let e = ((sa.0 + sa.1) - (sb.0 + sb.1)).unsigned_abs();
+            if e > 0 {
+                let crit = h * (cfg.gravity * h).sqrt() * dt / l / quanta_to_metres(e as i64);
+                if crit < c {
+                    c = crit;
+                }
+            }
+            if c.is_zero() || c.is_negative() {
+                continue;
+            }
+            links.push(FaceLink { a, b, c });
+        }
+        Ok(links)
+    }
+
+    // backward Euler on the surface with the conductances frozen: (I + L) η' = η, solved by
+    // the configured solver for a fixed number of iterations; then the transfers
+    // t = trunc(c (η'_a − η'_b)) in quanta, and whether any cell would give more than it holds
+    fn implicit_transfers(&mut self, dt: Fix128) -> Result<Transfers, ParticipantFault> {
+        let links = self.conductances(dt)?;
+        let n = self.depth.len();
+        let eta: Vec<Fix128> = (0..n)
+            .map(|c| quanta_to_metres(self.bed.heights[c] + self.depth[c]))
+            .collect();
+        let mut diag = vec_of(n, Fix128::ONE);
+        let mut rhs = eta.clone();
+        for link in &links {
+            match (link.a, link.b) {
+                (Some(a), Some(b)) => {
+                    diag[a] = diag[a] + link.c;
+                    diag[b] = diag[b] + link.c;
+                }
+                (Some(a), None) => {
+                    diag[a] = diag[a] + link.c;
+                    rhs[a] = rhs[a] + link.c * quanta_to_metres(self.bed.heights[a]);
+                }
+                (None, Some(b)) => {
+                    diag[b] = diag[b] + link.c;
+                    rhs[b] = rhs[b] + link.c * quanta_to_metres(self.bed.heights[b]);
+                }
+                (None, None) => {}
+            }
+        }
+        let solved = match self.config.solver {
+            FilmSolver::JacobiPcg => {
+                solve_pcg(&links, &diag, &rhs, &eta, self.config.solver_iterations)
+            }
+            FilmSolver::RedBlackGaussSeidel => solve_red_black(
+                &links,
+                &diag,
+                &rhs,
+                &eta,
+                self.config.solver_iterations,
+                self.bed.nx,
+            ),
+        };
+        let mut moved = 0u64;
+        let mut delta: Vec<i64> = vec_of(n, 0);
+        let mut out: Vec<i64> = vec_of(n, 0);
+        let mut edge_out = 0i64;
+        let order: Vec<usize> = if self.reverse_faces {
+            (0..links.len()).rev().collect()
+        } else {
+            (0..links.len()).collect()
+        };
+        for i in order {
+            let link = links[i];
+            let ea = link.a.map_or_else(
+                || link.b.map(|b| quanta_to_metres(self.bed.heights[b])),
+                |a| Some(solved[a]),
+            );
+            let eb = link.b.map_or_else(
+                || link.a.map(|a| quanta_to_metres(self.bed.heights[a])),
+                |b| Some(solved[b]),
+            );
+            let (Some(ea), Some(eb)) = (ea, eb) else {
+                continue;
+            };
+            let mut t = metres_to_quanta_toward_zero(link.c * (ea - eb));
+            // an open edge never brings water in
+            if (link.a.is_none() && t > 0) || (link.b.is_none() && t < 0) {
+                t = 0;
+            }
+            if t == 0 {
+                continue;
+            }
+            match link.a {
+                Some(c) => delta[c] -= t,
+                None => edge_out -= t,
+            }
+            match link.b {
+                Some(c) => delta[c] += t,
+                None => edge_out += t,
+            }
+            if t > 0 {
+                if let Some(c) = link.a {
+                    out[c] += t;
+                }
+            } else if let Some(c) = link.b {
+                out[c] -= t;
+            }
+            moved += t.unsigned_abs();
+        }
+        let overdrawn = out.iter().zip(&self.depth).any(|(o, d)| o > d);
+        Ok(Transfers {
+            delta,
+            edge_out,
+            moved,
+            overdrawn,
+        })
+    }
+
+    fn apply(&mut self, t: &Transfers) {
+        for (d, dd) in self.depth.iter_mut().zip(&t.delta) {
+            *d += dd;
+        }
+        self.ledger.outflow += t.edge_out;
     }
 
     fn state_len(&self) -> usize {
