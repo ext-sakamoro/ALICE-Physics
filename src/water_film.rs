@@ -469,6 +469,10 @@ struct Transfers {
     edge_out: i64,
     moved: u64,
     overdrawn: bool,
+    passes: u32,
+    fallback_faces: u32,
+    fallback_cells: Vec<usize>,
+    escalated: bool,
 }
 
 /// Metres to whole quanta, truncated toward zero.
@@ -594,6 +598,10 @@ pub struct WaterFilm {
     last_subcycles: u32,
     last_moved: u64,
     last_solves: u32,
+    last_passes: u32,
+    last_fallback_faces: u32,
+    last_escalations: u32,
+    last_fallback_cells: Vec<usize>,
     reverse_faces: bool,
 }
 
@@ -630,6 +638,10 @@ impl WaterFilm {
             last_subcycles: 0,
             last_moved: 0,
             last_solves: 0,
+            last_passes: 0,
+            last_fallback_faces: 0,
+            last_escalations: 0,
+            last_fallback_cells: Vec::new(),
             reverse_faces: false,
         };
         film.digest = film.config_digest();
@@ -745,6 +757,28 @@ impl WaterFilm {
     pub fn last_moved(&self) -> u64 {
         self.last_moved
     }
+    /// Most passes of the potential check in one solve of the last substep (1 = no face was
+    /// bad).
+    #[must_use]
+    pub fn last_passes(&self) -> u32 {
+        self.last_passes
+    }
+    /// Faces that took the capped transfer in the last substep (the fallback).
+    #[must_use]
+    pub fn last_fallback_faces(&self) -> u32 {
+        self.last_fallback_faces
+    }
+    /// Cells in the fallback region in the last substep, ascending.
+    #[must_use]
+    pub fn last_fallback_cells(&self) -> &[usize] {
+        &self.last_fallback_cells
+    }
+    /// Solves of the last substep where a capped face stayed bad and every face took the
+    /// capped transfer.
+    #[must_use]
+    pub fn last_escalations(&self) -> u32 {
+        self.last_escalations
+    }
     /// Implicit solves the last substep took: 1, or more when it was split because a cell
     /// would have been over-drawn.
     #[must_use]
@@ -820,7 +854,13 @@ impl WaterFilm {
     pub fn step_once(&mut self, dt: Fix128) -> Result<(), ParticipantFault> {
         self.last_solves = 0;
         self.last_moved = 0;
+        self.last_passes = 0;
+        self.last_fallback_faces = 0;
+        self.last_escalations = 0;
+        self.last_fallback_cells.clear();
         self.unit(dt, MAX_SPLITS)?;
+        self.last_fallback_cells.sort_unstable();
+        self.last_fallback_cells.dedup();
         let cfg = self.config;
         for (d, age) in self.depth.iter().zip(self.dry_age.iter_mut()) {
             if *d > cfg.wet_threshold {
@@ -851,6 +891,13 @@ impl WaterFilm {
         trial.evaporate(dt);
         trial.last_solves = self.last_solves + 1;
         trial.last_moved = self.last_moved + transfers.moved;
+        trial.last_passes = self.last_passes.max(transfers.passes);
+        trial.last_fallback_faces = self.last_fallback_faces + transfers.fallback_faces;
+        trial.last_escalations = self.last_escalations + u32::from(transfers.escalated);
+        trial.last_fallback_cells = self.last_fallback_cells.clone();
+        trial
+            .last_fallback_cells
+            .extend_from_slice(&transfers.fallback_cells);
         *self = trial;
         Ok(())
     }
@@ -950,6 +997,9 @@ impl WaterFilm {
             }
             links.push(FaceLink { a, b, c });
         }
+        if self.reverse_faces {
+            links.reverse();
+        }
         Ok(links)
     }
 
@@ -994,43 +1044,138 @@ impl WaterFilm {
                 self.bed.nx,
             ),
         };
-        let mut moved = 0u64;
-        let mut delta: Vec<i64> = vec_of(n, 0);
-        let mut out: Vec<i64> = vec_of(n, 0);
-        let mut edge_out = 0i64;
-        let order: Vec<usize> = if self.reverse_faces {
-            (0..links.len()).rev().collect()
-        } else {
-            (0..links.len()).collect()
+        // per link: the start difference Δη (quanta, side a minus side b, a fixed open-edge
+        // surface on a missing side), the rounded implicit transfer, and the capped transfer
+        let side_eta = |me: Option<usize>, other: Option<usize>| -> i64 {
+            match (me, other) {
+                (Some(c), _) => self.bed.heights[c] + self.depth[c],
+                (None, Some(o)) => self.bed.heights[o],
+                (None, None) => 0,
+            }
         };
-        for i in order {
-            let link = links[i];
-            let ea = link.a.map_or_else(
-                || link.b.map(|b| quanta_to_metres(self.bed.heights[b])),
-                |a| Some(solved[a]),
-            );
-            let eb = link.b.map_or_else(
-                || link.a.map(|a| quanta_to_metres(self.bed.heights[a])),
-                |b| Some(solved[b]),
-            );
-            let (Some(ea), Some(eb)) = (ea, eb) else {
-                continue;
-            };
-            let mut t = metres_to_quanta_toward_zero(link.c * (ea - eb));
+        let m = links.len();
+        let mut d_eta = vec_of(m, 0i64);
+        let mut implicit = vec_of(m, 0i64);
+        let mut capped = vec_of(m, 0i64);
+        let limit = quanta_to_metres(MAX_FACE_DEPTH as i64);
+        for (i, link) in links.iter().enumerate() {
+            let e = side_eta(link.a, link.b) - side_eta(link.b, link.a);
+            d_eta[i] = e;
+            let ea = link
+                .a
+                .map_or_else(|| quanta_to_metres(side_eta(None, link.b)), |a| solved[a]);
+            let eb = link
+                .b
+                .map_or_else(|| quanta_to_metres(side_eta(None, link.a)), |b| solved[b]);
+            let flow = link.c * (ea - eb);
+            if flow.abs() > limit {
+                return Err(ParticipantFault::OutOfRange);
+            }
+            let mut t = metres_to_quanta_toward_zero(flow);
             // an open edge never brings water in
             if (link.a.is_none() && t > 0) || (link.b.is_none() && t < 0) {
                 t = 0;
             }
+            implicit[i] = t;
+            // the capped transfer: the direction of Δη, at most ⌊|Δη|/8⌋ and ⌊h_f/4⌋, and no
+            // more than the implicit transfer in that direction
+            let hf = face_depth(
+                link.a.map_or(self.bed.heights[link.b.unwrap_or(0)], |c| {
+                    self.bed.heights[c]
+                }),
+                link.a.map_or(0, |c| self.depth[c]),
+                link.b.map_or(self.bed.heights[link.a.unwrap_or(0)], |c| {
+                    self.bed.heights[c]
+                }),
+                link.b.map_or(0, |c| self.depth[c]),
+            );
+            let along = if (t > 0) == (e > 0) {
+                t.unsigned_abs()
+            } else {
+                0
+            };
+            let mag = along.min(e.unsigned_abs() / 8).min(hf.unsigned_abs() / 4) as i64;
+            capped[i] = if e > 0 { mag } else { -mag };
+        }
+        // the potential check: P = Σ (η² − b²) changes by −Σ_f t_f (Δη_f + Δη'_f) exactly, so a
+        // moving face whose term is not negative ("bad") puts its cells in the fallback region
+        // R, and every face touching R takes its capped transfer; a capped face that is still
+        // bad sends the whole substep to the capped transfers, whose sum is proven negative
+        let mut use_capped = vec_of(m, false);
+        let mut in_r = vec_of(n, false);
+        let mut all_capped = false;
+        let mut passes = 0u32;
+        let (t_final, delta) = loop {
+            passes += 1;
+            let t: Vec<i64> = (0..m)
+                .map(|i| {
+                    if all_capped || use_capped[i] {
+                        capped[i]
+                    } else {
+                        implicit[i]
+                    }
+                })
+                .collect();
+            let mut delta: Vec<i64> = vec_of(n, 0);
+            for (i, link) in links.iter().enumerate() {
+                if let Some(c) = link.a {
+                    delta[c] -= t[i];
+                }
+                if let Some(c) = link.b {
+                    delta[c] += t[i];
+                }
+            }
+            if all_capped {
+                break (t, delta);
+            }
+            let mut grew = false;
+            let mut capped_bad = false;
+            for (i, link) in links.iter().enumerate() {
+                if t[i] == 0 {
+                    continue;
+                }
+                let after =
+                    d_eta[i] + link.a.map_or(0, |c| delta[c]) - link.b.map_or(0, |c| delta[c]);
+                let term = i128::from(t[i]) * (i128::from(d_eta[i]) + i128::from(after));
+                if term > 0 {
+                    continue;
+                }
+                if use_capped[i] {
+                    capped_bad = true;
+                }
+                for c in [link.a, link.b].into_iter().flatten() {
+                    if !in_r[c] {
+                        in_r[c] = true;
+                        grew = true;
+                    }
+                }
+            }
+            if capped_bad {
+                all_capped = true;
+                continue;
+            }
+            if !grew {
+                break (t, delta);
+            }
+            for (i, link) in links.iter().enumerate() {
+                if [link.a, link.b].into_iter().flatten().any(|c| in_r[c]) {
+                    use_capped[i] = true;
+                }
+            }
+        };
+        let mut moved = 0u64;
+        let mut edge_out = 0i64;
+        let mut out: Vec<i64> = vec_of(n, 0);
+        for (i, link) in links.iter().enumerate() {
+            let t = t_final[i];
             if t == 0 {
                 continue;
             }
-            match link.a {
-                Some(c) => delta[c] -= t,
-                None => edge_out -= t,
+            if link.a.is_none() {
+                edge_out -= t;
             }
-            match link.b {
-                Some(c) => delta[c] += t,
-                None => edge_out += t,
+            if link.b.is_none() {
+                edge_out += t;
             }
             if t > 0 {
                 if let Some(c) = link.a {
@@ -1042,11 +1187,25 @@ impl WaterFilm {
             moved += t.unsigned_abs();
         }
         let overdrawn = out.iter().zip(&self.depth).any(|(o, d)| o > d);
+        let fallback_faces = if all_capped {
+            m as u32
+        } else {
+            use_capped.iter().filter(|u| **u).count() as u32
+        };
+        let fallback_cells: Vec<usize> = if all_capped {
+            (0..n).collect()
+        } else {
+            (0..n).filter(|c| in_r[*c]).collect()
+        };
         Ok(Transfers {
             delta,
             edge_out,
             moved,
             overdrawn,
+            passes,
+            fallback_faces,
+            fallback_cells,
+            escalated: all_capped,
         })
     }
 
