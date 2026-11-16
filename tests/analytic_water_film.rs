@@ -231,7 +231,20 @@ fn the_potential_never_rises_without_a_source() {
         last = p;
         compared += 1;
     }
-    assert!(fell > 10, "pool: the potential fell only {fell} times");
+    // the deep pool is one component of faces deeper than the film: it levels at once
+    assert!(fell >= 1, "pool: the potential never fell");
+    let s: Vec<i64> = f
+        .bed()
+        .heights()
+        .iter()
+        .zip(f.depths())
+        .map(|(b, d)| b + d)
+        .collect();
+    let spread = s.iter().max().unwrap_or(&0) - s.iter().min().unwrap_or(&0);
+    assert!(
+        spread <= 1,
+        "pool: surface spread {spread} quanta after levelling"
+    );
     assert_eq!(compared, 42_000);
 }
 
@@ -374,7 +387,7 @@ fn a_groove_overflows_at_its_rim_height() {
 /// oracle: the fill time. Rain at rate `R` over a closed groove of `N` cells fills the
 /// capacity below the rim, `V = Σ (rim − b)`, at `t = V / (R·N)` (same cell area on both
 /// sides). The first advance at which the groove holds `V` ends within one advance of `t`.
-/// The rate is 1 800 mm/h so the run is short; the same formula gives the site's 4 and 20 mm/h
+/// The rate is 200 mm/h (in range: a filling pool stays within its level tolerance); the same formula gives the site's 4 and 20 mm/h
 /// groove times (also checked against the hand value).
 #[test]
 fn a_groove_fills_in_the_closed_form_time() {
@@ -390,7 +403,9 @@ fn a_groove_fills_in_the_closed_form_time() {
     assert!((t4 - hand).abs() / hand < 1e-6, "{t4} s vs {hand} s");
     for scheme in [FilmScheme::DiffusionWave] {
         let mut cfg = FilmConfig::water(scheme, FilmEdge::Closed);
-        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(1_800));
+        // 200 mm/h: a filling pool 1 mm deep stays within its 1 % level tolerance (at
+        // 1 800 mm/h it is refused as outside the model)
+        cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
         let r = cfg.rain.to_f64();
         let t_closed = cap_m / (r * n as f64);
         let mut f = WaterFilm::new(cfg, bed.clone()).expect("film");
@@ -398,7 +413,9 @@ fn a_groove_fills_in_the_closed_form_time() {
         let mut t = 0.0;
         let mut filled_at = None;
         for _ in 0..2000 {
-            f.advance(h).expect("advance");
+            if f.advance(h).is_err() {
+                panic!("{scheme:?}: refused, band cells {:?}", f.last_band_cells());
+            }
             t += 0.25;
             if f.total() >= cap_q {
                 filled_at = Some(t);
@@ -821,8 +838,9 @@ fn the_substep_count_depends_on_declared_inputs_only() {
     assert_eq!(compared, 600);
 }
 
-/// A mixed scene: an uneven bed with a trough, scattered initial water, rain, evaporation and
-/// point deposits, stepped 400 times; returns the SHA-256 of the state bytes.
+/// A mixed scene: an uneven bed with a trough, scattered thin films (up to 0.78 mm, below the
+/// deepest film), rain, evaporation and point deposits, stepped 400 times; returns the SHA-256
+/// of the state bytes.
 fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
     let (nx, nz) = (23usize, 17usize);
     let h: Vec<Fix128> = (0..nx * nz)
@@ -838,12 +856,19 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
         .collect();
     let bed = FilmBed::from_heights(nx, nz, mm(10), (Fix128::ZERO, Fix128::ZERO), &h, 1).unwrap();
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, edge);
-    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(20_000));
-    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(700));
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(200));
+    cfg.evaporation = FilmConfig::rain_mm_per_hour(Fix128::from_int(70));
+    // this scene pins bytes, not accuracy: its small pools on a bumpy bed may stand level
+    // whatever flow they carry
+    cfg.pool_level_tolerance = Fix128::ONE;
     let mut f = WaterFilm::new(cfg, bed).unwrap();
     f.set_reverse_faces(rev);
     for c in (0..nx * nz).step_by(5) {
-        f.set_initial_depth(c % nx, c / nx, metres_to_quanta(mm(((c * 3) % 40) as i64)));
+        f.set_initial_depth(
+            c % nx,
+            c / nx,
+            metres_to_quanta(Fix128::from_ratio(((c * 3) % 40) as i64, 50_000)),
+        );
     }
     for n in 0..400 {
         if n % 9 == 0 {
@@ -861,14 +886,13 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
 }
 
 /// golden (determinism): the state of the mixed scene, closed and open, visited forwards and
-/// backwards, under the integer flux law. Re-pinned once when the flux moved from `Fix128`
-/// arithmetic to integers (a new rounding law, not new physics: over these 400 steps the
-/// depths of the two forms differed by at most 3 quanta in a cell, 0.2 on average, and every
-/// validation oracle passed unchanged).
+/// backwards. Re-pinned when the step gained pools (faces deeper than the film levelled
+/// exactly) and the derived substep, and the scene moved inside the model's range (thin
+/// initial films, 200 mm/h): the bytes moved, every validation oracle passes.
 #[test]
 fn the_mixed_scene_digest_is_pinned() {
-    const CLOSED: &str = "127f4629acdea08a4224da7d949ec4d39cffc99981bddb507b0599d183ad17a5";
-    const OPEN: &str = "2a45bb5ff9291a5003874301fbe2da09631e462ff62f2f2b22e0fb35329a221e";
+    const CLOSED: &str = "be0203fb97a8894360f3c4572ab41193f521bdd0eb35c4fd919c67817d7e6f6a";
+    const OPEN: &str = "ff7994786486c06c776b2bf779816247028e12f3004916fe82d7113b5a97ac3a";
     for rev in [false, true] {
         assert_eq!(
             mixed_scene(FilmEdge::Closed, rev),
@@ -1012,9 +1036,10 @@ impl SqrtApprox for f64 {
 }
 
 /// The band is refused, not levelled silently: water 3 mm deep flowing down a channel at
-/// slope 1/200 (Re ≈ 440, Fr ≈ 0.86: lubrication is the right closure) is deeper than the
-/// declared deepest film of 1.5 mm, so its faces pool; a level pool cannot carry the flow
-/// (it needs a surface fall of millimetres along the channel). The advance must return
+/// slope 1/1000 (Re ≈ 88, Fr ≈ 0.17: lubrication is the right closure) is deeper than the
+/// declared deepest film of 1.5 mm, so its faces pool; a level pool cannot carry the flow:
+/// it needs a surface fall of about 1.2 mm along the 1.2 m channel, against an accepted
+/// error of 1 % of the 3 mm depth. The advance must return
 /// out of range, name channel cells in `last_band_cells`, and leave the state unchanged.
 #[test]
 fn a_flowing_channel_deeper_than_the_film_is_refused() {
@@ -1023,7 +1048,7 @@ fn a_flowing_channel_deeper_than_the_film_is_refused() {
     let wall = Fix128::from_ratio(1, 10);
     let mut h = vec![wall; nx * nz];
     for i in 0..nx {
-        h[i + nx] = -Fix128::from_ratio(1, 200) * cell * Fix128::from_int(i as i64);
+        h[i + nx] = -Fix128::from_ratio(1, 1000) * cell * Fix128::from_int(i as i64);
     }
     let bed =
         FilmBed::from_heights(nx, nz, cell, (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
@@ -1034,7 +1059,7 @@ fn a_flowing_channel_deeper_than_the_film_is_refused() {
     for i in 0..nx {
         f.set_initial_depth(i, 1, metres_to_quanta(mm(3)));
     }
-    let q = Fix128::from_ratio(44, 100_000) * cell; // q ≈ 4.4e-4 m²/s over one cell width
+    let q = Fix128::from_ratio(88, 1_000_000) * cell; // q ≈ 8.8e-5 m²/s over one cell width
     let step = Fix128::from_ratio(1, 6);
     let (x0, z0) = f.bed().centre(0, 1);
     let mut refused = None;
@@ -1085,14 +1110,39 @@ fn a_filling_groove_is_accepted_and_levels() {
     }
     settle(&mut g, 10_000_000);
     let beds = g.bed().heights().to_vec();
-    let eta = level_for(&beds, g.total());
-    let wet: Vec<usize> = (0..12).filter(|c| g.depths()[*c] > 0).collect();
-    assert!(wet.len() >= 6, "only {} wet cells", wet.len());
-    for &c in &wet {
+    // the level of the water below it (the films stalled above it are their own residue)
+    let first = level_for(&beds, g.total());
+    let below: Vec<usize> = (0..12).filter(|c| beds[*c] < first).collect();
+    let pool_beds: Vec<i64> = below.iter().map(|c| beds[*c]).collect();
+    let eta = level_for(&pool_beds, below.iter().map(|c| g.depths()[*c]).sum());
+    // above the level only thin films remain, each stopped where its lubrication transfer
+    // rounds to zero: on every face between two such cells h_f³ |Δη| < D_l with
+    // D_l = 3 ν l² 2⁹⁶ / (g Δt) (the film rest set)
+    let dt = g.config().max_substep.to_f64();
+    let d_l = 3.0e-6 * 1.0e-4 / (QUANTUM_M * QUANTUM_M * QUANTUM_M) / (9.80665 * dt);
+    let pool: Vec<usize> = (0..12).filter(|c| beds[*c] < eta).collect();
+    assert!(pool.len() >= 6, "only {} cells below the level", pool.len());
+    for &c in &pool {
         let off = (beds[c] + g.depths()[c] - eta).abs();
         assert!(
-            off <= 7 * wet.len() as i64,
+            off <= 7 * pool.len() as i64,
             "cell {c}: {off} quanta from the level"
         );
     }
+    let mut films = 0;
+    for c in 0..11 {
+        let (a, b) = (c, c + 1);
+        if beds[a] < eta || beds[b] < eta {
+            continue;
+        }
+        let (ea, eb) = (beds[a] + g.depths()[a], beds[b] + g.depths()[b]);
+        let hf = (ea.max(eb) - beds[a].max(beds[b])).max(0) as f64;
+        let e = (ea - eb).abs() as f64;
+        assert!(
+            hf * hf * hf * e < d_l,
+            "face {a}|{b}: film still moving at rest"
+        );
+        films += 1;
+    }
+    assert!(films >= 2, "compared {films} film faces");
 }
