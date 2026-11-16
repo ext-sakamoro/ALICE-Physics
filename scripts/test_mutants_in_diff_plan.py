@@ -331,6 +331,27 @@ pub fn par() -> u8 {
                       "1 changed line(s) that need simd", summary.read_text(encoding="utf-8"))
         self.assertEqual(mp.changed_lines(out.read_text(encoding="utf-8")), [])
 
+    def test_main_compiles_simd_only_in_the_union_job(self):
+        import contextlib
+        import io
+        import json
+        diff = self.root / "change.diff"
+        diff.write_text(self.change("src/math.rs", 8), encoding="utf-8")
+        out = self.root / "planned.diff"
+        old = mp.ROOT
+        mp.ROOT = self.root
+        feats = {}
+        try:
+            for name in ("host-union", "host-union-no-simd"):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    self.assertEqual(mp.main([str(diff), "--features", name, "--out", str(out)]), 0)
+                feats[name] = json.loads(buf.getvalue().splitlines()[0])["features"]
+        finally:
+            mp.ROOT = old
+        self.assertIn("simd", feats["host-union"])
+        self.assertNotIn("simd", feats["host-union-no-simd"])
+
     def test_the_union_plan_turns_simd_on_for_a_simd_only_change(self):
         p = mp.plan(self.change("src/math.rs", 14), ["parallel"], self.root)
         self.assertIn("simd", p["features"])
