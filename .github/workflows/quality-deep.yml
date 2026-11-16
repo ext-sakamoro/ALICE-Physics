@@ -166,8 +166,10 @@ jobs:
           # a module behind #[cfg(feature = ...)] is not compiled without its feature, so all
           # its mutants would read "missed"; turn the features of the changed modules on and
           # run the integration tests named after them besides --lib
+          # changed lines under a cfg the host test run cannot build (a wasm / python-only item) are not
+          # mutated: the plan reports them by count in the summary as not exercised, never as missed
           plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff \
-            --features "${{ matrix.features }}" --out /tmp/planned.diff)
+            --features "${{ matrix.features }}" --out /tmp/planned.diff --summary "$GITHUB_STEP_SUMMARY")
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
