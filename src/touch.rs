@@ -455,3 +455,48 @@ impl Hand {
         out
     }
 }
+
+#[cfg(test)]
+mod would_take_tests {
+    use super::*;
+
+    /// `Hand::would_take` must answer exactly what the grab of `Hand::apply` does, for every grip: none (rigid),
+    /// usable, and each way of being unusable (no stiffness, no strength, neither, negative), at a point within and
+    /// out of reach. Oracle: the grab itself on a copy of the hand and the cloth, not a restated rule.
+    #[test]
+    fn would_take_agrees_with_the_grab_for_every_grip() {
+        let one = Fix128::ONE;
+        let zero = Fix128::ZERO;
+        let reach = Fix128::from_ratio(4, 10);
+        let cloth = Cloth::new_grid(Vec3Fix::ZERO, one, one, 3, 3, Fix128::from_ratio(1, 100));
+        let hands = [
+            Hand::new(reach),
+            Hand::with_grip(reach, one, one),
+            Hand::with_grip(reach, zero, one),
+            Hand::with_grip(reach, one, zero),
+            Hand::with_grip(reach, zero, zero),
+            Hand::with_grip(reach, -one, one),
+            Hand::with_grip(reach, one, -one),
+        ];
+        let near = Vec3Fix::new(Fix128::from_ratio(1, 10), zero, Fix128::from_ratio(1, 10));
+        let far = Vec3Fix::new(Fix128::from_int(5), zero, Fix128::from_int(5));
+        let (mut compared, mut taken, mut refused) = (0, 0, 0);
+        for hand in &hands {
+            for at in [near, far] {
+                let said = hand.would_take(&cloth, at);
+                let mut h = hand.clone();
+                let mut bodies = [cloth.clone()];
+                let did = h.apply(&mut bodies, &Touch::Grab { body: 0, at });
+                assert_eq!(said, did, "grip {:?} at {:?}", hand.grip, at);
+                compared += 1;
+                if did {
+                    taken += 1
+                } else {
+                    refused += 1
+                }
+            }
+        }
+        // the scene must exercise both answers: 2 grips take at the near point, 12 do not
+        assert_eq!((compared, taken, refused), (14, 2, 12));
+    }
+}

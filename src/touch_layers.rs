@@ -572,3 +572,31 @@ pub fn replay_with(
     }
     Ok(p.finish().0)
 }
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    /// `len` / `is_empty` count the bodies given: none, then one (oracle: the length of the input)
+    #[test]
+    fn is_empty_and_len_count_the_bodies() {
+        let config =
+            PlaybackConfig::new(1, Fix128::from_ratio(1, 60), 1, Fix128::ZERO).expect("config");
+        let hand = Hand::new(Fix128::from_ratio(4, 10));
+        let none = TouchBodies::new(Vec::new(), &hand, 1, config).expect("no bodies");
+        assert!(none.is_empty());
+        assert_eq!(none.len(), 0);
+        let mut c = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ONE,
+            2,
+            2,
+            Fix128::from_ratio(1, 100),
+        );
+        c.set_rest_tether(Fix128::ONE, Fix128::ZERO);
+        let one = TouchBodies::new(vec![c], &hand, 1, config).expect("one body");
+        assert!(!one.is_empty());
+        assert_eq!(one.len(), 1);
+    }
+}
