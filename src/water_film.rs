@@ -357,6 +357,10 @@ pub struct FilmConfig {
     pub max_substep: Fix128,
     /// Most substeps one [`WaterFilm::advance`] may take (≥ 1).
     pub max_subcycles: u32,
+    /// Deepest film (m, > 0) the lubrication flux serves: a face deeper than this joins its
+    /// cells into a pool, levelled exactly. The substep is at most `3 ν l² / (8 g h³)` for
+    /// this depth, so no lubrication face meets the `⌊|Δη|/8⌋` cap.
+    pub film_depth_max: Fix128,
 }
 
 impl FilmConfig {
@@ -375,6 +379,7 @@ impl FilmConfig {
             wet_threshold: metres_to_quanta(Fix128::from_ratio(1, 1_000_000)),
             max_substep: Fix128::from_ratio(1, 256),
             max_subcycles: 1 << 16,
+            film_depth_max: Fix128::from_ratio(1, 1000),
         }
     }
 
@@ -398,6 +403,8 @@ impl FilmConfig {
         }
         h.write(&self.wet_threshold.to_le_bytes());
         h.write(&self.max_subcycles.to_le_bytes());
+        h.write(&self.film_depth_max.hi.to_le_bytes());
+        h.write(&self.film_depth_max.lo.to_le_bytes());
     }
 }
 
@@ -535,6 +542,45 @@ pub fn simultaneous_transfer(
     Some(if d_eta > 0 { t } else { -t })
 }
 
+/// [`simultaneous_transfer`] and whether a stability cap (`⌊|Δη|/8⌋` or `⌊h_f/4⌋`) held the
+/// transfer below the lubrication flux while that flux was below the critical one (a
+/// lubrication face outside its diffusion number).
+#[must_use]
+pub fn simultaneous_transfer_report(
+    first: (i64, i64),
+    second: (i64, i64),
+    k: FluxConstants,
+) -> Option<(i64, bool)> {
+    let t = simultaneous_transfer(first, second, k)?;
+    let d_eta = (first.0 + first.1) - (second.0 + second.1);
+    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
+    let e = d_eta.unsigned_abs();
+    if hf == 0 || e == 0 {
+        return Some((t, false));
+    }
+    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
+    let lub = h3
+        .checked_mul(u128::from(e))
+        .map_or(u128::MAX, |v| v / k.lubrication);
+    let crit = isqrt_u128(h3)
+        .checked_mul(k.critical)
+        .map_or(u128::MAX, |v| v >> 64);
+    let capped = lub <= crit && u128::from(t.unsigned_abs()) < lub;
+    Some((t, capped))
+}
+
+/// Pool id of a cell in no pool.
+const NOT_POOLED: u32 = u32::MAX;
+
+fn find(parent: &mut [u32], mut x: u32) -> u32 {
+    while parent[x as usize] != x {
+        let up = parent[parent[x as usize] as usize];
+        parent[x as usize] = up;
+        x = up;
+    }
+    x
+}
+
 /// A thin water film over a [`FilmBed`]; a [`Participant`] of kind `FILM`.
 ///
 /// # Snapshot payload
@@ -563,6 +609,11 @@ pub struct WaterFilm {
     reverse_faces: bool,
     // per-substep work buffer, not state
     scratch: Vec<i64>,
+    // the substep used: min(max_substep, 3 ν l² / (8 g h_film³)), from declared inputs
+    substep: Fix128,
+    last_pooled_cells: Vec<usize>,
+    last_band_cells: Vec<usize>,
+    last_cap_faces: u32,
 }
 
 impl WaterFilm {
@@ -580,6 +631,7 @@ impl WaterFilm {
             || config.evaporation.is_negative()
             || config.wet_threshold < 0
             || config.max_subcycles == 0
+            || config.film_depth_max <= Fix128::ZERO
         {
             return Err(FilmBuildError::BadConfig);
         }
@@ -598,8 +650,24 @@ impl WaterFilm {
             last_moved: 0,
             reverse_faces: false,
             scratch: Vec::new(),
+            substep: Fix128::ZERO,
+            last_pooled_cells: Vec::new(),
+            last_band_cells: Vec::new(),
+            last_cap_faces: 0,
         };
         film.digest = film.config_digest();
+        let l = film.bed.cell;
+        let h = film.config.film_depth_max;
+        let limit = Fix128::from_int(3) * film.config.viscosity * l * l
+            / (Fix128::from_int(8) * film.config.gravity * h * h * h);
+        film.substep = if limit < film.config.max_substep {
+            limit
+        } else {
+            film.config.max_substep
+        };
+        if film.substep <= Fix128::ZERO {
+            return Err(FilmBuildError::BadConfig);
+        }
         Ok(film)
     }
 
@@ -728,7 +796,7 @@ impl WaterFilm {
     /// and [`FilmConfig::max_substep`] only; `None` above [`FilmConfig::max_subcycles`].
     #[must_use]
     pub fn subcycles(&self, h: Fix128) -> Option<u32> {
-        let need = (h / self.config.max_substep).ceil();
+        let need = (h / self.substep).ceil();
         if need.hi < 1 {
             return Some(1);
         }
@@ -747,6 +815,125 @@ impl WaterFilm {
         }
     }
 
+    // level each pool exactly: the common surface η* is the largest with
+    // Σ max(η* − b, 0) ≤ V over its cells, and the r quanta left over go one each to the r
+    // lowest-index cells whose bed is at or below η*
+    fn level_pools(&mut self, pool: &[u32]) -> Result<(), ParticipantFault> {
+        let n = self.depth.len();
+        let mut members: Vec<Vec<usize>> = vec_of(n, Vec::new());
+        for c in 0..n {
+            if pool[c] != NOT_POOLED {
+                members[pool[c] as usize].push(c);
+            }
+        }
+        for cells in members.iter().filter(|m| m.len() > 1) {
+            let volume: i128 = cells.iter().map(|c| i128::from(self.depth[*c])).sum();
+            let fill = |eta: i64| -> i128 {
+                cells
+                    .iter()
+                    .map(|c| i128::from((eta - self.bed.heights[*c]).max(0)))
+                    .sum()
+            };
+            let mut lo = cells
+                .iter()
+                .map(|c| self.bed.heights[*c])
+                .min()
+                .unwrap_or(0);
+            let mut hi = lo
+                .checked_add(i64::try_from(volume).map_err(|_| ParticipantFault::OutOfRange)?)
+                .and_then(|v| v.checked_add(1))
+                .ok_or(ParticipantFault::OutOfRange)?;
+            // invariant: fill(lo) ≤ V < fill(hi)
+            while hi - lo > 1 {
+                let mid = lo + (hi - lo) / 2;
+                if fill(mid) <= volume {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let mut left = volume - fill(lo);
+            for &c in cells {
+                let b = self.bed.heights[c];
+                let mut d = (lo - b).max(0);
+                if left > 0 && b <= lo {
+                    d += 1;
+                    left -= 1;
+                }
+                self.depth[c] = d;
+            }
+        }
+        Ok(())
+    }
+
+    // the cells of every pool whose throughflow needs a surface gradient beyond the rest band
+    fn pool_band(&self, pool: &[u32], inflow: &[i64], outflow: &[i64], dt: Fix128) -> Vec<usize> {
+        let n = self.depth.len();
+        let nx = self.bed.nx;
+        let l = self.bed.cell;
+        let cfg = self.config;
+        let mut band = Vec::new();
+        let mut members: Vec<Vec<usize>> = vec_of(n, Vec::new());
+        for c in 0..n {
+            if pool[c] != NOT_POOLED {
+                members[pool[c] as usize].push(c);
+            }
+        }
+        for (id, cells) in members.iter().enumerate() {
+            if cells.len() < 2 {
+                continue;
+            }
+            let through = inflow[id].min(outflow[id]);
+            if through <= 0 {
+                continue;
+            }
+            let count = Fix128::from_int(cells.len() as i64);
+            let (mut i0, mut i1, mut k0, mut k1) = (usize::MAX, 0, usize::MAX, 0);
+            for &c in cells {
+                let (i, k) = (c % nx, c / nx);
+                i0 = i0.min(i);
+                i1 = i1.max(i);
+                k0 = k0.min(k);
+                k1 = k1.max(k);
+            }
+            let span = Fix128::from_int(((i1 - i0).max(k1 - k0) + 1) as i64);
+            let total: i64 = cells.iter().map(|c| self.depth[*c]).sum();
+            let mean_h = quanta_to_metres(total) / count;
+            // Q (m³/s) = through quanta × l² / Δt; ΔH = 3 ν Q L² / (g h̄³ A), L = span·l, A = count·l²
+            let q = quanta_to_metres(through) * l * l / dt;
+            let need = Fix128::from_int(3) * cfg.viscosity * q * span * span
+                / (cfg.gravity * mean_h * mean_h * mean_h * count);
+            let allowed = quanta_to_metres(7) * span;
+            if mean_h.is_zero() || need > allowed {
+                band.extend_from_slice(cells);
+            }
+        }
+        band
+    }
+
+    /// Cells levelled as a pool in the last substep, ascending.
+    #[must_use]
+    pub fn last_pooled_cells(&self) -> &[usize] {
+        &self.last_pooled_cells
+    }
+    /// Cells of the pools that carried throughflow beyond the rest band in the substep that
+    /// was refused as out of range (empty when the last advance succeeded).
+    #[must_use]
+    pub fn last_band_cells(&self) -> &[usize] {
+        &self.last_band_cells
+    }
+    /// Lubrication faces held below their flux by a stability cap in the last substep (0 when
+    /// the substep is within the diffusion number of the deepest film).
+    #[must_use]
+    pub fn last_cap_faces(&self) -> u32 {
+        self.last_cap_faces
+    }
+    /// The substep this film takes (s): `min(max_substep, 3 ν l² / (8 g h_film³))`.
+    #[must_use]
+    pub fn substep(&self) -> Fix128 {
+        self.substep
+    }
+
     /// Advance by `h` seconds in [`Self::subcycles`] substeps; returns their number.
     ///
     /// # Errors
@@ -760,8 +947,13 @@ impl WaterFilm {
         let n = self.subcycles(h).ok_or(ParticipantFault::OutOfRange)?;
         let dt = h.div_int(i64::from(n));
         let mut next = self.clone();
+        self.last_band_cells.clear();
         for _ in 0..n {
-            next.step_once(dt)?;
+            if let Err(e) = next.step_once(dt) {
+                // keep the report of a refused substep (the band), not its state
+                self.last_band_cells = core::mem::take(&mut next.last_band_cells);
+                return Err(e);
+            }
         }
         next.last_subcycles = n;
         *self = next;
@@ -790,21 +982,11 @@ impl WaterFilm {
                 self.ledger.rain += k * ncell as i64;
             }
         }
-        let mut moved = 0u64;
-        let mut edge_out = 0i64;
-        // every face from the same state; the moves are summed per cell, so the order the
-        // faces are visited does not matter
-        let mut delta = core::mem::take(&mut self.scratch);
-        delta.clear();
-        delta.resize(ncell, 0);
         let (nx, nz) = (self.bed.nx, self.bed.nz);
-        let k = FluxConstants::new(self.bed.cell, dt, cfg.gravity, cfg.viscosity)
-            .ok_or(ParticipantFault::OutOfRange)?;
         let nfx = (nx + 1) * nz;
         let nf = nfx + nx * (nz + 1);
-        for n in 0..nf {
-            let f = if self.reverse_faces { nf - 1 - n } else { n };
-            let (a, b) = if f < nfx {
+        let face = |f: usize| -> (Option<usize>, Option<usize>) {
+            if f < nfx {
                 let (i, k) = (f % (nx + 1), f / (nx + 1));
                 (
                     if i > 0 { Some(i - 1 + k * nx) } else { None },
@@ -817,7 +999,61 @@ impl WaterFilm {
                     if k > 0 { Some(i + (k - 1) * nx) } else { None },
                     if k < nz { Some(i + k * nx) } else { None },
                 )
-            };
+            }
+        };
+        // pools: faces whose depth over the higher bed exceeds the deepest film join their
+        // cells; each pool is levelled exactly before the film moves
+        let h_film = metres_to_quanta(cfg.film_depth_max);
+        let mut parent: Vec<u32> = (0..ncell as u32).collect();
+        let mut joined = vec_of(ncell, false);
+        for f in 0..nf {
+            if let (Some(a), Some(b)) = face(f) {
+                let hf = face_depth(
+                    self.bed.heights[a],
+                    self.depth[a],
+                    self.bed.heights[b],
+                    self.depth[b],
+                );
+                if hf > h_film {
+                    let (ra, rb) = (find(&mut parent, a as u32), find(&mut parent, b as u32));
+                    if ra != rb {
+                        let (lo, hi) = if ra < rb { (ra, rb) } else { (rb, ra) };
+                        parent[hi as usize] = lo;
+                    }
+                    joined[a] = true;
+                    joined[b] = true;
+                }
+            }
+        }
+        let mut pool = vec_of(ncell, NOT_POOLED);
+        for c in 0..ncell {
+            if joined[c] {
+                pool[c] = find(&mut parent, c as u32);
+            }
+        }
+        self.level_pools(&pool)?;
+        self.last_pooled_cells = (0..ncell).filter(|c| pool[*c] != NOT_POOLED).collect();
+        let mut moved = 0u64;
+        let mut edge_out = 0i64;
+        let mut cap_faces = 0u32;
+        // pool throughflow (quanta): water entering and leaving each pool over its rim
+        let mut pool_in: Vec<i64> = vec_of(ncell, 0);
+        let mut pool_out: Vec<i64> = vec_of(ncell, 0);
+        // every face from the same state; the moves are summed per cell, so the order the
+        // faces are visited does not matter
+        let mut delta = core::mem::take(&mut self.scratch);
+        delta.clear();
+        delta.resize(ncell, 0);
+        let k = FluxConstants::new(self.bed.cell, dt, cfg.gravity, cfg.viscosity)
+            .ok_or(ParticipantFault::OutOfRange)?;
+        for n in 0..nf {
+            let f = if self.reverse_faces { nf - 1 - n } else { n };
+            let (a, b) = face(f);
+            if let (Some(a), Some(b)) = (a, b) {
+                if pool[a] != NOT_POOLED && pool[a] == pool[b] {
+                    continue;
+                }
+            }
             let (sa, sb) = match (self.side(a, b), self.side(b, a)) {
                 (Some(x), Some(y)) => (x, y),
                 _ => continue,
@@ -825,7 +1061,9 @@ impl WaterFilm {
             if sa.1 == 0 && sb.1 == 0 {
                 continue;
             }
-            let t = simultaneous_transfer(sa, sb, k).ok_or(ParticipantFault::OutOfRange)?;
+            let (t, capped) =
+                simultaneous_transfer_report(sa, sb, k).ok_or(ParticipantFault::OutOfRange)?;
+            cap_faces += u32::from(capped);
             if t == 0 {
                 continue;
             }
@@ -837,7 +1075,28 @@ impl WaterFilm {
                 Some(c) => delta[c] += t,
                 None => edge_out += t,
             }
+            // rim flow of pools (the water leaves the giving side, enters the other)
+            let (from, to) = if t > 0 { (a, b) } else { (b, a) };
+            let amount = t.abs();
+            let pf = from.map_or(NOT_POOLED, |c| pool[c]);
+            let pt = to.map_or(NOT_POOLED, |c| pool[c]);
+            if pf != pt {
+                if pf != NOT_POOLED {
+                    pool_out[pf as usize] += amount;
+                }
+                if pt != NOT_POOLED {
+                    pool_in[pt as usize] += amount;
+                }
+            }
             moved += t.unsigned_abs();
+        }
+        // the band: a pool carrying throughflow Q needs a lubrication gradient across its
+        // length L, ΔH = 3 ν Q L² / (g h̄³ A) (A its area, h̄ its mean depth); a level pool is
+        // right only while ΔH stays within the rest band (7 quanta per cell of length)
+        let band = self.pool_band(&pool, &pool_in, &pool_out, dt);
+        if !band.is_empty() {
+            self.last_band_cells = band;
+            return Err(ParticipantFault::OutOfRange);
         }
         for (d, dd) in self.depth.iter_mut().zip(&delta) {
             *d += dd;
@@ -845,6 +1104,7 @@ impl WaterFilm {
         self.scratch = delta;
         self.ledger.outflow += edge_out;
         self.last_moved = moved;
+        self.last_cap_faces = cap_faces;
         // evaporation: the same whole quanta off every cell that has them, never below zero
         if !cfg.evaporation.is_zero() {
             let total = self.evap_carry + metres_in_quanta(cfg.evaporation * dt);
