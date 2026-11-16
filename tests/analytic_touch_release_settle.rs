@@ -53,9 +53,15 @@ fn centre() -> Vec3Fix {
 }
 
 fn sheet() -> Cloth {
+    sheet_at(0)
+}
+
+/// Sheet `g` of a row: 1 em square, the next one 1.2 em further along x
+fn sheet_at(g: i64) -> Cloth {
     let mass = Fix128::from_ratio(1, 100);
     let omega = Fix128::from_ratio(12_566, 1000);
-    let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, RES, RES, mass);
+    let origin = Vec3Fix::new(Fix128::from_ratio(6 * g, 5), Fix128::ZERO, Fix128::ZERO);
+    let mut c = Cloth::new_grid(origin, Fix128::ONE, Fix128::ONE, RES, RES, mass);
     c.config.gravity = Vec3Fix::ZERO;
     c.config.damping = Fix128::ONE;
     c.config.iterations = 4;
@@ -68,7 +74,11 @@ fn sheet() -> Cloth {
 }
 
 fn config() -> PlaybackConfig {
-    PlaybackConfig::new(STEPS, dt(), 5, rest_tolerance()).expect("config")
+    config_with(rest_tolerance())
+}
+
+fn config_with(tolerance: Fix128) -> PlaybackConfig {
+    PlaybackConfig::new(STEPS, dt(), 5, tolerance).expect("config")
 }
 
 fn at(dx: i64, dz: i64) -> Vec3Fix {
@@ -114,6 +124,27 @@ struct Run {
     energy_end: f64,
     /// any step where every particle was exactly at its rest place but a velocity was not exactly zero
     rest_with_speed: Option<u64>,
+    /// at the step the playback put the sheet at rest: the largest distance on any axis between where the step left a
+    /// particle and its rest place (the jump of the snap), measured by stepping a copy of the previous state
+    snap_jump: Option<f64>,
+    /// steps (without a snap) where stepping a copy of the previous state did not give the state the playback reached
+    /// (must be 0, or the snap measurement does not measure the playback)
+    copy_mismatch: u64,
+}
+
+/// The largest distance on any axis between a particle and its rest place
+fn max_offset(c: &Cloth) -> f64 {
+    c.positions
+        .iter()
+        .zip(c.rest_positions())
+        .map(|(p, r)| {
+            let d = *p - *r;
+            d.x.abs()
+                .to_f64()
+                .max(d.y.abs().to_f64())
+                .max(d.z.abs().to_f64())
+        })
+        .fold(0.0, f64::max)
 }
 
 fn energy(c: &Cloth) -> f64 {
@@ -131,9 +162,8 @@ fn energy(c: &Cloth) -> f64 {
         .sum()
 }
 
-/// The closed-form steps after release from the state at release (max over particles), with the allowance
-fn closed_form_steps(c: &Cloth) -> u64 {
-    let eps = 1.0 / 65_536.0;
+/// The envelope amplitude `A` (max over particles and axes) of the state at release
+fn envelope_amplitude(c: &Cloth) -> f64 {
     let sq = (1.0 - ZETA * ZETA).sqrt();
     let wd = OMEGA * sq;
     let mut a_max: f64 = 0.0;
@@ -149,6 +179,14 @@ fn closed_form_steps(c: &Cloth) -> u64 {
             a_max = a_max.max(a);
         }
     }
+    a_max
+}
+
+/// The closed-form steps after release from the state at release (max over particles), with the allowance
+fn closed_form_steps(c: &Cloth) -> u64 {
+    let eps = 1.0 / 65_536.0;
+    let sq = (1.0 - ZETA * ZETA).sqrt();
+    let a_max = envelope_amplitude(c);
     if a_max == 0.0 {
         return 0;
     }
@@ -157,7 +195,12 @@ fn closed_form_steps(c: &Cloth) -> u64 {
 }
 
 fn run(amp: i64, drag: u64) -> Run {
+    run_with(amp, drag, rest_tolerance())
+}
+
+fn run_with(amp: i64, drag: u64, tolerance: Fix128) -> Run {
     let (log, release) = drag_log(amp, drag);
+    let mut before: Option<Cloth> = None;
     let hand = Hand::new(Fix128::from_ratio(4, 10));
     let mut out = Run {
         release,
@@ -166,12 +209,14 @@ fn run(amp: i64, drag: u64) -> Run {
         energy_release: 0.0,
         energy_end: 0.0,
         rest_with_speed: None,
+        snap_jump: None,
+        copy_mismatch: 0,
     };
     replay_with(
         &[sheet()],
         &hand,
         &[log],
-        config(),
+        config_with(tolerance),
         |step, bodies: &TouchBodies| {
             let c = bodies.cloth(0).expect("one sheet");
             if step == release {
@@ -191,7 +236,23 @@ fn run(amp: i64, drag: u64) -> Run {
             }
             if step > release && out.settled_at.is_none() && bodies.active().is_empty() && at_rest {
                 out.settled_at = Some(step);
+                // the released sheet is stepped alone (no hand pulls it), so stepping a copy of the previous state
+                // gives the state the snap replaced
+                if let Some(mut b) = before.take() {
+                    b.step(dt());
+                    out.snap_jump = Some(max_offset(&b));
+                }
             }
+            if let Some(b) = before.as_ref() {
+                if step > release && !bodies.active().is_empty() {
+                    let mut b = b.clone();
+                    b.step(dt());
+                    if b.positions != c.positions || b.velocities != c.velocities {
+                        out.copy_mismatch += 1;
+                    }
+                }
+            }
+            before = (!bodies.active().is_empty()).then(|| c.clone());
             out.energy_end = energy(c);
         },
     )
@@ -199,8 +260,10 @@ fn run(amp: i64, drag: u64) -> Run {
     out
 }
 
+/// Settled inside the closed-form bound, and put at rest by a snap no wider than the rest tolerance
 fn settles_in_bound(r: &Run) -> bool {
     r.settled_at.is_some_and(|s| s - r.release <= r.bound)
+        && r.snap_jump.is_some_and(|j| j <= rest_tolerance().to_f64())
 }
 
 /// Control (green): a slow, small drag settles well inside the closed-form bound, so the bound is not vacuous
@@ -288,4 +351,151 @@ fn the_energy_of_a_released_sheet_decays() {
         r.energy_end,
         ceiling
     );
+}
+
+/// The snap measurement has teeth: a playback that snaps from a wider tolerance (2^-6) puts the slow scene at rest
+/// from further away, and the measured jump says so (and the bound check refuses it)
+#[test]
+fn a_wider_snap_is_seen_by_the_jump_measurement() {
+    let r = run_with(10, 70, Fix128::from_ratio(1, 64));
+    let jump = r.snap_jump.expect("the wide snap puts the sheet at rest");
+    assert!(jump > rest_tolerance().to_f64(), "jump {jump:e}: {r:?}");
+    assert!(!settles_in_bound(&r), "{r:?}");
+    let exact = run(10, 70);
+    assert!(
+        exact
+            .snap_jump
+            .is_some_and(|j| j <= rest_tolerance().to_f64()),
+        "{exact:?}"
+    );
+    assert_eq!(
+        exact.copy_mismatch, 0,
+        "stepping a copy must reproduce the playback: {exact:?}"
+    );
+}
+
+/// A row of 6 sheets touched one after another within 5 s: each grabbed at (-0.4, -0.4) em from its centre, dragged
+/// `amp` per cent of (0.70, 0.35) em over `drag` steps and released on the next step; the next grab follows at once.
+/// With 5 bodies allowed to move, the sixth grab puts the earliest released body that still moves exactly at rest.
+#[derive(Debug)]
+struct Row {
+    /// the step of the sixth grab
+    sixth: u64,
+    /// bodies moving (and not held) just before the sixth grab
+    moving_before_sixth: usize,
+    /// every eviction: (body, steps since its release, the most its decay envelope allows at that time (with the
+    /// allowance), the jump in em)
+    evictions: Vec<(usize, u64, f64, f64)>,
+}
+
+fn row(amp: i64, drag: u64) -> Row {
+    let mut log = InputLog::new();
+    let span = drag + 2;
+    let mut releases = Vec::new();
+    let mut grabs = Vec::new();
+    for g in 0..6u64 {
+        let start = 5 + g * span;
+        grabs.push(start);
+        let gi = i64::try_from(g).expect("small");
+        let base = |dx: i64, dz: i64| {
+            at(dx, dz) + Vec3Fix::new(Fix128::from_ratio(6 * gi, 5), Fix128::ZERO, Fix128::ZERO)
+        };
+        log.record(
+            start,
+            Touch::grab(u32::try_from(g).expect("small"), base(-400, -400)),
+        )
+        .expect("grab");
+        let d = i64::try_from(drag).expect("small");
+        for s in start + 1..=start + drag {
+            let k = i64::try_from(s - start).expect("small");
+            log.record(
+                s,
+                Touch::drag(base(
+                    -400 + 700 * amp * k / (100 * d),
+                    -400 + 350 * amp * k / (100 * d),
+                )),
+            )
+            .expect("drag");
+        }
+        releases.push(start + drag + 1);
+        log.record(start + drag + 1, Touch::Release)
+            .expect("release");
+    }
+    let sixth = 5 + 5 * span;
+    let cloths: Vec<Cloth> = (0..6).map(sheet_at).collect();
+    let hand = Hand::new(Fix128::from_ratio(4, 10));
+    let mut out = Row {
+        sixth,
+        moving_before_sixth: 0,
+        evictions: Vec::new(),
+    };
+    let mut prev: Option<(Vec<usize>, Vec<Cloth>)> = None;
+    let mut amplitude = vec![0.0f64; 6];
+    replay_with(
+        &cloths,
+        &hand,
+        &[log],
+        config(),
+        |step, bodies: &TouchBodies| {
+            for (g, &r) in releases.iter().enumerate() {
+                if step == r {
+                    amplitude[g] = envelope_amplitude(bodies.cloth(g).expect("sheet"));
+                }
+            }
+            if let Some((active, states)) = prev.as_ref() {
+                if step == sixth {
+                    out.moving_before_sixth = active.len();
+                }
+                for &b in active {
+                    // left the list without a step: the grab put it at rest from where it was
+                    let now = bodies.cloth(b).expect("sheet");
+                    let left = !bodies.active().contains(&b);
+                    let jump = max_offset(&states[b]);
+                    if grabs.contains(&step)
+                        && left
+                        && jump > rest_tolerance().to_f64()
+                        && now.positions == now.rest_positions()
+                    {
+                        let since = step.saturating_sub(releases[b]);
+                        let t = since as f64 / RATE;
+                        let allowed = amplitude[b] * (-ZETA * OMEGA * t / ALLOWANCE).exp()
+                            + rest_tolerance().to_f64();
+                        out.evictions.push((b, since, allowed, jump));
+                    }
+                }
+            }
+            prev = Some((
+                bodies.active().to_vec(),
+                (0..6)
+                    .map(|g| bodies.cloth(g).expect("sheet").clone())
+                    .collect(),
+            ));
+        },
+    )
+    .expect("replay");
+    out
+}
+
+/// Reported (run with --nocapture): bodies still moving at the sixth grab and the eviction jumps, for an ordinary,
+/// a quick and a large drag per sheet
+#[test]
+fn a_row_of_six_reports_the_moving_bodies_and_eviction_jumps() {
+    for (amp, drag) in [(10, 35), (50, 10), (100, 35)] {
+        let r = row(amp, drag);
+        println!("row amp {amp} drag {drag}: {r:?}");
+        assert!(r.sixth < STEPS && r.sixth <= 300, "{r:?}");
+    }
+}
+
+/// An eviction may only move a body by what its decay envelope still allows at that time (`A e^{-ζ ω t / 1.5}` plus the
+/// rest tolerance): a body that decays as the tether says is evicted from close to rest; how many evictions a row
+/// forces is a budget rule (reported above), how far they jump is physics
+#[test]
+#[ignore = "known defect: touch-release-does-not-settle: after a large drag the released sheet never comes to rest, so the sixth grab of the row puts it at rest from where it circulates (0.483 em, 149 steps after release); measured on 7d7b429b"]
+fn every_eviction_moves_a_body_no_further_than_its_decay_envelope() {
+    for (amp, drag) in [(10, 35), (50, 10), (100, 35)] {
+        let r = row(amp, drag);
+        let late: Vec<_> = r.evictions.iter().filter(|e| e.3 > e.2).collect();
+        assert!(late.is_empty(), "amp {amp} drag {drag}: {late:?} in {r:?}");
+    }
 }
