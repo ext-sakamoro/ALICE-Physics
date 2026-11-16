@@ -209,6 +209,21 @@ class FilterTest(Case):
         moved = f"src/a.rs:4:11: {MUT}"
         self.assertEqual(self.filtered(moved, MISSED), ([moved, MISSED], []))
 
+    def test_filtering_a_missing_file_is_an_error_not_zero_missed(self) -> None:
+        # cargo-mutants writes mutants.out/mutants.out/missed.txt; the in-diff step read
+        # mutants.out/missed.txt, found nothing and reported 0 missed (2026-11-16)
+        self.write_list(entry())
+        absent = self.root / "mutants.out" / "missed.txt"
+        rc = me.main(["--filter", str(absent), "--list", str(self.list), "--root", str(self.root)])
+        self.assertEqual(rc, 2)
+
+    def test_filtering_an_empty_file_is_zero_missed(self) -> None:
+        self.write_list(entry())
+        empty = self.root / "missed.txt"
+        empty.write_text("", encoding="utf-8")
+        rc = me.main(["--filter", str(empty), "--list", str(self.list), "--root", str(self.root)])
+        self.assertEqual(rc, 0)
+
     def test_a_stale_entry_does_not_filter(self) -> None:
         self.write_list(entry())
         self.write_src(SRC.replace("s + x", "s + y"))
