@@ -195,6 +195,27 @@ struct BendConstraint {
     i3: usize,
     /// Rest dihedral angle
     rest_angle: Fix128,
+    /// Rest signed angle between the face normals about the shared edge (the face-normal formula,
+    /// [`BendFormula::SignedFaceNormal`]): 0 when flat, ±π folded onto itself
+    rest_signed: Fix128,
+}
+
+/// How the bending constraint measures and corrects a hinge ([`Cloth::set_bend_formula`])
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum BendFormula {
+    /// The unsigned angle between the face normals with the position-based dihedral gradients
+    /// (Müller et al. 2007): the gradient vanishes at the flat angle and at the fully folded one,
+    /// so a hinge folded onto itself (or within rounding of it) is not corrected
+    #[default]
+    UnsignedAngle,
+    /// [`Self::UnsignedAngle`], and where its correction rounds to zero on a hinge that is
+    /// folded past a right angle and away from its rest angle, the hinge is solved by
+    /// [`Self::SignedFaceNormal`] instead
+    UnsignedWithFoldBranch,
+    /// The signed angle `θ = atan2((n̂₁ × n̂₂) · ê, n̂₁ · n̂₂)` with the face-normal gradients
+    /// (Bridson et al. 2003: `u₁ = |E| N₁ / |N₁|²`, `u₂ = |E| N₂ / |N₂|²` and the edge terms), which
+    /// have no degenerate point between flat and folded; the error is wrapped to `(−π, π]`
+    SignedFaceNormal,
 }
 
 // ============================================================================
@@ -242,6 +263,11 @@ pub struct Cloth {
     grabs: Vec<Grab>,
     /// `dt` of the last step (the throw velocity divides by it); zero before any step.
     last_dt: Fix128,
+    /// Area floor ([`Cloth::set_area_floor`]): every triangle keeps at least this fraction of its rest area,
+    /// signed against its rest normal (`None` = off)
+    area_floor: Option<Fix128>,
+    /// The bending formula ([`Cloth::set_bend_formula`])
+    bend_formula: BendFormula,
 }
 
 /// A cloth's state and every input of `step`, kept when a `step` changed none of the state:
@@ -259,6 +285,8 @@ struct SleepSnapshot {
     config: ClothConfig,
     rest_tether: Option<RestTether>,
     rest_positions: Vec<Vec3Fix>,
+    area_floor: Option<Fix128>,
+    bend_formula: BendFormula,
     dt: Fix128,
 }
 
@@ -585,6 +613,8 @@ impl Cloth {
             sleeping: None,
             grabs: Vec::new(),
             last_dt: Fix128::ZERO,
+            area_floor: None,
+            bend_formula: BendFormula::UnsignedAngle,
         };
 
         cloth.build_constraints();
@@ -621,6 +651,8 @@ impl Cloth {
             sleeping: None,
             grabs: Vec::new(),
             last_dt: Fix128::ZERO,
+            area_floor: None,
+            bend_formula: BendFormula::UnsignedAngle,
         };
         cloth.build_constraints();
         cloth
@@ -757,6 +789,8 @@ impl Cloth {
             && s.config == self.config
             && s.rest_tether == self.rest_tether
             && s.rest_positions == self.rest_positions
+            && s.area_floor == self.area_floor
+            && s.bend_formula == self.bend_formula
     }
 
     fn take_snapshot(&self, dt: Fix128) -> SleepSnapshot {
@@ -771,6 +805,8 @@ impl Cloth {
             config: self.config,
             rest_tether: self.rest_tether,
             rest_positions: self.rest_positions.clone(),
+            area_floor: self.area_floor,
+            bend_formula: self.bend_formula,
             dt,
         }
     }
@@ -832,6 +868,32 @@ impl Cloth {
         self.rest_positions.clear();
         self.rest_positions.extend_from_slice(rest);
         Ok(())
+    }
+
+    /// Keep every triangle's area, signed against its rest normal, at or above `fraction` of its rest
+    /// area (measured on the rest positions): a one-sided constraint that lets a drag squash a triangle
+    /// down to the floor but never through it, so the sheet cannot turn a triangle over. `None` turns it
+    /// off; a negative fraction is treated as 0; the floor needs the rest positions
+    /// ([`Self::set_rest_positions`] or [`Self::set_rest_tether`]) and does nothing without them.
+    pub fn set_area_floor(&mut self, fraction: Option<Fix128>) {
+        self.area_floor = fraction.map(|f| if f.is_negative() { Fix128::ZERO } else { f });
+    }
+
+    /// Choose the bending formula ([`BendFormula`]); the default is [`BendFormula::UnsignedAngle`]
+    pub fn set_bend_formula(&mut self, formula: BendFormula) {
+        self.bend_formula = formula;
+    }
+
+    /// The bending formula ([`Self::set_bend_formula`]).
+    #[must_use]
+    pub fn bend_formula(&self) -> BendFormula {
+        self.bend_formula
+    }
+
+    /// The area floor's fraction, if set ([`Self::set_area_floor`]).
+    #[must_use]
+    pub fn area_floor(&self) -> Option<Fix128> {
+        self.area_floor
     }
 
     /// Turn the rest tether off (the rest positions are kept).
@@ -985,6 +1047,9 @@ impl Cloth {
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
+            if let Some(fraction) = self.area_floor {
+                self.solve_area_floor(fraction);
+            }
         }
 
         // 3. Update velocities
@@ -1055,6 +1120,49 @@ impl Cloth {
         self.wind
     }
 
+    /// The area floor: for triangle `(x0, x1, x2)` with rest normal `n` (unit, from the rest positions) and
+    /// twice its rest area `A0`, the twice signed area `A = n · ((x1 − x0) × (x2 − x0))` must stay at or above
+    /// `fraction · A0`. When it is below, the one-sided position projection
+    /// `Δx_i = −w_i C / (Σ w_j |∇_j A|²) · ∇_i A` with `C = A − fraction · A0`,
+    /// `∇_1 A = (x2 − x0) × n`, `∇_2 A = n × (x1 − x0)`, `∇_0 A = −(∇_1 A + ∇_2 A)` moves it onto the floor.
+    fn solve_area_floor(&mut self, fraction: Fix128) {
+        if self.rest_positions.len() != self.positions.len() {
+            return;
+        }
+        for k in 0..self.triangles.len() {
+            let [i0, i1, i2] = self.triangles[k];
+            let r0 = self.rest_positions[i0];
+            let rest_cross = (self.rest_positions[i1] - r0).cross(self.rest_positions[i2] - r0);
+            let rest_twice_area = rest_cross.length();
+            if rest_twice_area.is_zero() {
+                continue;
+            }
+            let n = rest_cross / rest_twice_area;
+            let (x0, x1, x2) = (self.positions[i0], self.positions[i1], self.positions[i2]);
+            let (a, b) = (x1 - x0, x2 - x0);
+            let c = n.dot(a.cross(b)) - fraction * rest_twice_area;
+            if !c.is_negative() {
+                continue;
+            }
+            let g1 = b.cross(n);
+            let g2 = n.cross(a);
+            let g0 = -(g1 + g2);
+            let (w0, w1, w2) = (
+                self.inv_masses[i0],
+                self.inv_masses[i1],
+                self.inv_masses[i2],
+            );
+            let denom = w0 * g0.dot(g0) + w1 * g1.dot(g1) + w2 * g2.dot(g2);
+            if denom.is_zero() {
+                continue;
+            }
+            let lambda = -c / denom;
+            self.positions[i0] = self.positions[i0] + g0 * (lambda * w0);
+            self.positions[i1] = self.positions[i1] + g1 * (lambda * w1);
+            self.positions[i2] = self.positions[i2] + g2 * (lambda * w2);
+        }
+    }
+
     /// Solve edge (stretch) constraints
     #[inline(always)]
     fn solve_edge_constraints(&mut self, dt: Fix128) {
@@ -1118,6 +1226,10 @@ impl Cloth {
 
         for c_idx in 0..self.bend_constraints.len() {
             let c = self.bend_constraints[c_idx];
+            if self.bend_formula == BendFormula::SignedFaceNormal {
+                self.solve_hinge_face_normal(c, compliance);
+                continue;
+            }
             let p0 = self.positions[c.i0];
             // Translate so that p0 is the origin (Appendix A convention p1 = 0)
             let p1 = self.positions[c.i1] - p0;
@@ -1163,23 +1275,84 @@ impl Cloth {
 
             // s = sin(angle) · C / denom (sqrt(1 - d²) == |n1 × n2|)
             let scale = sin_angle * error / denom;
+            let deltas = [
+                q0 * (w0 * scale),
+                q1 * (w1 * scale),
+                q2 * (w2 * scale),
+                q3 * (w3 * scale),
+            ];
+            // the correction rounded to nothing on a hinge folded past a right angle that is
+            // away from its rest angle: this formula cannot move it, the face-normal one can
+            if self.bend_formula == BendFormula::UnsignedWithFoldBranch
+                && d > Fix128::ZERO
+                && !error.is_zero()
+                && deltas.iter().all(|v| *v == Vec3Fix::ZERO)
+            {
+                self.solve_hinge_face_normal(c, compliance);
+                continue;
+            }
             if scale.is_zero() {
                 continue;
             }
 
             if !w0.is_zero() {
-                self.positions[c.i0] = self.positions[c.i0] - q0 * (w0 * scale);
+                self.positions[c.i0] = self.positions[c.i0] - deltas[0];
             }
             if !w1.is_zero() {
-                self.positions[c.i1] = self.positions[c.i1] - q1 * (w1 * scale);
+                self.positions[c.i1] = self.positions[c.i1] - deltas[1];
             }
             if !w2.is_zero() {
-                self.positions[c.i2] = self.positions[c.i2] - q2 * (w2 * scale);
+                self.positions[c.i2] = self.positions[c.i2] - deltas[2];
             }
             if !w3.is_zero() {
-                self.positions[c.i3] = self.positions[c.i3] - q3 * (w3 * scale);
+                self.positions[c.i3] = self.positions[c.i3] - deltas[3];
             }
         }
+    }
+
+    /// One hinge by the signed angle between the face normals and the face-normal gradients
+    /// (Bridson et al. 2003), which are defined from flat through folded onto itself. Edge
+    /// `(x3, x4) = (i0, i1)`, opposite vertices `x1 = i2`, `x2 = i3`, `E = x4 − x3`,
+    /// `N1 = (x1 − x3) × (x1 − x4)`, `N2 = (x2 − x4) × (x2 − x3)`,
+    /// `θ = atan2((N̂1 × N̂2) · Ê, N̂1 · N̂2)`, `C = θ − θ_rest` wrapped to `(−π, π]`, and
+    /// `Δx_i = −w_i C / (Σ w_j |u_j|² + α / dt²) · u_i` with `u1 = |E| N1 / |N1|²`,
+    /// `u2 = |E| N2 / |N2|²`, `u3 = ((x1 − x4)·E / |E|) N1 / |N1|² + ((x2 − x4)·E / |E|) N2 / |N2|²`,
+    /// `u4 = −((x1 − x3)·E / |E|) N1 / |N1|² − ((x2 − x3)·E / |E|) N2 / |N2|²` (`u_i = ∂θ / ∂x_i`).
+    fn solve_hinge_face_normal(&mut self, c: BendConstraint, compliance: Fix128) {
+        let (x3, x4) = (self.positions[c.i0], self.positions[c.i1]);
+        let (x1, x2) = (self.positions[c.i2], self.positions[c.i3]);
+        let Some((theta, [u1, u2, u3, u4])) = hinge_signed_angle(x1, x2, x3, x4) else {
+            return;
+        };
+        let mut err = theta - c.rest_signed;
+        let two_pi = Fix128::PI + Fix128::PI;
+        if err > Fix128::PI {
+            err = err - two_pi;
+        } else if err <= -Fix128::PI {
+            err = err + two_pi;
+        }
+        if err.is_zero() {
+            return;
+        }
+        let (w1, w2, w3, w4) = (
+            self.inv_masses[c.i2],
+            self.inv_masses[c.i3],
+            self.inv_masses[c.i0],
+            self.inv_masses[c.i1],
+        );
+        let denom = w1 * u1.length_squared()
+            + w2 * u2.length_squared()
+            + w3 * u3.length_squared()
+            + w4 * u4.length_squared()
+            + compliance;
+        if denom.is_zero() {
+            return;
+        }
+        let lambda = -err / denom;
+        self.positions[c.i2] = self.positions[c.i2] + u1 * (w1 * lambda);
+        self.positions[c.i3] = self.positions[c.i3] + u2 * (w2 * lambda);
+        self.positions[c.i0] = self.positions[c.i0] + u3 * (w3 * lambda);
+        self.positions[c.i1] = self.positions[c.i1] + u4 * (w4 * lambda);
     }
 
     /// Candidate (vertex, triangle) pairs for vertex-face self-contact.
@@ -2591,6 +2764,15 @@ impl Cloth {
             push_vec3(out, g.applied[1]);
         }
         push_fix(out, self.last_dt);
+        if let Some(f) = self.area_floor {
+            out.push(1);
+            push_fix(out, f);
+        }
+        match self.bend_formula {
+            BendFormula::UnsignedAngle => {}
+            BendFormula::UnsignedWithFoldBranch => out.extend_from_slice(&[2, 1]),
+            BendFormula::SignedFaceNormal => out.extend_from_slice(&[2, 2]),
+        }
     }
 
     /// [`Self::write_state`] as a new vector.
@@ -3367,6 +3549,39 @@ fn edge_pair_frame_contact(
     })
 }
 
+/// The signed angle between the face normals of hinge `(x3, x4)` with opposite vertices `x1`,
+/// `x2`, and its gradients `[∂θ/∂x1, ∂θ/∂x2, ∂θ/∂x3, ∂θ/∂x4]` (Bridson et al. 2003); `None` for a
+/// degenerate face or edge
+fn hinge_signed_angle(
+    x1: Vec3Fix,
+    x2: Vec3Fix,
+    x3: Vec3Fix,
+    x4: Vec3Fix,
+) -> Option<(Fix128, [Vec3Fix; 4])> {
+    let e = x4 - x3;
+    let e_len = e.length();
+    let big_n1 = (x1 - x3).cross(x1 - x4);
+    let big_n2 = (x2 - x4).cross(x2 - x3);
+    let l1 = big_n1.length_squared();
+    let l2 = big_n2.length_squared();
+    if e_len.is_zero() || l1.is_zero() || l2.is_zero() {
+        return None;
+    }
+    let n1 = big_n1 / big_n1.length();
+    let n2 = big_n2 / big_n2.length();
+    let e_hat = e / e_len;
+    let theta = Fix128::atan2(n1.cross(n2).dot(e_hat), n1.dot(n2));
+    let a1 = big_n1 / l1;
+    let a2 = big_n2 / l2;
+    let inv_e = Fix128::ONE / e_len;
+    let u1 = a1 * e_len;
+    let u2 = a2 * e_len;
+    let u3 = a1 * ((x1 - x4).dot(e) * inv_e) + a2 * ((x2 - x4).dot(e) * inv_e);
+    let u4 = -(a1 * ((x1 - x3).dot(e) * inv_e) + a2 * ((x2 - x3).dot(e) * inv_e));
+    // Bridson's modes point against the increase of this θ: the gradients are their negatives
+    Some((theta, [-u1, -u2, -u3, -u4]))
+}
+
 /// Find shared edge between two triangles and create a bending constraint
 fn find_shared_edge(
     tri_a: &[usize; 3],
@@ -3403,12 +3618,20 @@ fn find_shared_edge(
                     Fix128::atan2(sin_val, cos_val)
                 };
 
+                let rest_signed = hinge_signed_angle(
+                    positions[opposite_a],
+                    positions[opposite_b],
+                    positions[a0],
+                    positions[a1],
+                )
+                .map_or(Fix128::ZERO, |(theta, _)| theta);
                 return Some(BendConstraint {
                     i0: a0,
                     i1: a1,
                     i2: opposite_a,
                     i3: opposite_b,
                     rest_angle,
+                    rest_signed,
                 });
             }
         }
@@ -3503,6 +3726,283 @@ mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::format;
+
+    /// One hinge: shared edge (0, 1), opposite vertices 2 (z > 0) and 3 (z < 0), flat at rest in y = 0
+    fn hinge() -> Cloth {
+        let h = Fix128::from_ratio(1, 2);
+        let rest = vec![
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::new(h, Fix128::ZERO, Fix128::ONE),
+            Vec3Fix::new(h, Fix128::ZERO, -Fix128::ONE),
+        ];
+        Cloth::from_mesh(rest, vec![[0, 1, 2], [1, 0, 3]], Fix128::ONE)
+    }
+
+    /// The hinge folded exactly onto itself: vertex 3 mirrored to the side of vertex 2, `y` off
+    /// the plane by `y_off`
+    fn folded(y_off: Fix128) -> Cloth {
+        let mut c = hinge();
+        assert_eq!(c.bend_constraints.len(), 1, "one hinge");
+        c.positions[3] = Vec3Fix::new(
+            Fix128::from_ratio(1, 2),
+            y_off,
+            Fix128::ONE / Fix128::from_int(2),
+        );
+        c
+    }
+
+    /// One bend solve of the folded hinge (`y_off` off the plane) with `formula`; whether it moved
+    fn bend_once(y_off: Fix128, formula: BendFormula) -> (bool, Cloth) {
+        let mut c = folded(y_off);
+        c.set_bend_formula(formula);
+        let before = c.positions.clone();
+        c.solve_bend_constraints(Fix128::from_ratio(1, 60));
+        (c.positions != before, c)
+    }
+
+    /// Exactly folded flat: the unsigned-angle formula has a zero gradient there and leaves it;
+    /// the fold branch and the face-normal formula move it, out of the plane
+    #[test]
+    fn the_exact_fold_is_corrected_by_the_fold_branch_and_the_face_normal_formula() {
+        let (old, _) = bend_once(Fix128::ZERO, BendFormula::UnsignedAngle);
+        assert!(!old, "unsigned angle: no correction at the exact fold");
+        for f in [
+            BendFormula::UnsignedWithFoldBranch,
+            BendFormula::SignedFaceNormal,
+        ] {
+            let (moved, c) = bend_once(Fix128::ZERO, f);
+            assert!(moved, "{f:?}: the exact fold is projected");
+            assert!(
+                c.positions.iter().any(|p| !p.y.is_zero()),
+                "{f:?}: it leaves the plane"
+            );
+        }
+    }
+
+    /// One ulp (2^-64) off the fold: the unsigned-angle correction rounds to nothing (the band the
+    /// exact-fold branch alone missed); the fold branch and the face-normal formula move it, and
+    /// repeated solves open the hinge
+    #[test]
+    fn one_ulp_off_the_fold_is_corrected_by_the_fold_branch_and_the_face_normal_formula() {
+        let ulp = Fix128::from_raw(0, 1);
+        let (old, _) = bend_once(ulp, BendFormula::UnsignedAngle);
+        assert!(
+            !old,
+            "measured: the unsigned-angle correction underflows one ulp off the fold"
+        );
+        for f in [
+            BendFormula::UnsignedWithFoldBranch,
+            BendFormula::SignedFaceNormal,
+        ] {
+            let (moved, mut c) = bend_once(ulp, f);
+            assert!(moved, "{f:?}: one ulp off the fold is projected");
+            let start = folded(ulp).positions[3];
+            for _ in 0..400 {
+                c.solve_bend_constraints(Fix128::from_ratio(1, 60));
+            }
+            let opened = (c.positions[3] - start).length();
+            assert!(
+                opened > Fix128::from_ratio(1, 100),
+                "{f:?}: opened {}",
+                opened.to_f64()
+            );
+        }
+    }
+
+    /// Hinge angles from near flat through the fold: vertex 3 at `(1/2, y, z)` with `y` from 1/2
+    /// down to one ulp, on the folded side (z = 1/2) and on the flat side (z = −1); every hinge off
+    /// its rest angle must get a non-zero correction from the fold branch and the face-normal
+    /// formula on the folded side (nothing compared fails); the flat side is reported
+    #[test]
+    fn a_sweep_of_hinge_angles_to_the_fold_never_gives_a_zero_correction() {
+        let dt = Fix128::from_ratio(1, 60);
+        let mut compared = 0;
+        let mut zero_unsigned = 0;
+        for k in 1..=64u32 {
+            let y = Fix128::from_raw(0, 1u64 << (64 - k));
+            for f in [
+                BendFormula::UnsignedWithFoldBranch,
+                BendFormula::SignedFaceNormal,
+            ] {
+                let mut c = folded(y);
+                c.set_bend_formula(f);
+                let before = c.positions.clone();
+                c.solve_bend_constraints(dt);
+                assert_ne!(
+                    c.positions, before,
+                    "{f:?}: zero correction 2^-{k} off the fold"
+                );
+                compared += 1;
+            }
+            let (moved, _) = bend_once(y, BendFormula::UnsignedAngle);
+            if !moved {
+                zero_unsigned += 1;
+            }
+        }
+        assert_eq!(compared, 128, "compared");
+        // measured, reported: how many of the 64 angles next to the fold the unsigned formula leaves
+        assert!(
+            zero_unsigned > 0,
+            "the unsigned formula leaves a band next to the fold"
+        );
+    }
+
+    /// Away from the fold the face-normal formula is the same projection as the unsigned-angle
+    /// one: over a sample of non-degenerate hinges (opening from 20° to 160° off flat, both
+    /// sides) the positions after one solve agree to within a few ulps of the coordinates
+    #[test]
+    fn away_from_the_fold_the_face_normal_formula_agrees_with_the_unsigned_one() {
+        let dt = Fix128::from_ratio(1, 60);
+        let mut worst = 0.0f64;
+        let mut compared = 0;
+        for (y, z) in [
+            (1, -3),
+            (1, -1),
+            (3, -1),
+            (3, 1),
+            (1, 1),
+            (1, 3),
+            (-1, -2),
+            (-2, 1),
+        ] {
+            let mut a = hinge();
+            a.positions[3] = Vec3Fix::new(
+                Fix128::from_ratio(1, 2),
+                Fix128::from_ratio(y, 4),
+                Fix128::from_ratio(z, 4),
+            );
+            let mut b = a.clone();
+            b.set_bend_formula(BendFormula::SignedFaceNormal);
+            a.solve_bend_constraints(dt);
+            b.solve_bend_constraints(dt);
+            for (p, q) in a.positions.iter().zip(&b.positions) {
+                let d = *p - *q;
+                worst = worst
+                    .max(d.x.abs().to_f64())
+                    .max(d.y.abs().to_f64())
+                    .max(d.z.abs().to_f64());
+            }
+            compared += 1;
+        }
+        assert_eq!(compared, 8);
+        assert!(worst < 1e-15, "largest difference {worst:e}");
+    }
+
+    /// The face-normal gradients are the gradients of the signed angle: every vertex and axis
+    /// against a central difference (f64), on hinges near flat, in between, past a right angle and
+    /// near the fold
+    #[test]
+    fn the_face_normal_gradients_are_the_derivatives_of_the_signed_angle() {
+        let r = |n: i64, d: i64| Fix128::from_ratio(n, d);
+        let base = [
+            Vec3Fix::ZERO,
+            Vec3Fix::new(Fix128::ONE, Fix128::ZERO, r(1, 10)),
+        ];
+        let a = Vec3Fix::new(r(1, 2), r(1, 3), Fix128::ONE);
+        // vertex 2 (y, z): near flat, in between, past a right angle, near the fold
+        let cases = [
+            (r(1, 64), -Fix128::ONE),
+            (r(1, 2), -r(1, 2)),
+            (r(1, 2), r(1, 4)),
+            (r(1, 64), Fix128::ONE),
+        ];
+        let h = Fix128::from_ratio(1, 1 << 20);
+        let mut compared = 0;
+        for (y, z) in cases {
+            let p = [a, Vec3Fix::new(r(2, 5), y, z), base[0], base[1]];
+            let (_, grads) = hinge_signed_angle(p[0], p[1], p[2], p[3]).expect("hinge");
+            for (i, g) in grads.iter().enumerate() {
+                for axis in 0..3 {
+                    let shift = |s: Fix128| {
+                        let mut q = p;
+                        let d = match axis {
+                            0 => Vec3Fix::new(s, Fix128::ZERO, Fix128::ZERO),
+                            1 => Vec3Fix::new(Fix128::ZERO, s, Fix128::ZERO),
+                            _ => Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, s),
+                        };
+                        q[i] = q[i] + d;
+                        hinge_signed_angle(q[0], q[1], q[2], q[3])
+                            .expect("hinge")
+                            .0
+                            .to_f64()
+                    };
+                    let fd = (shift(h) - shift(-h)) / (2.0 * h.to_f64());
+                    let an = [g.x, g.y, g.z][axis].to_f64();
+                    let tol = 1e-6 * (1.0 + an.abs());
+                    assert!(
+                        (fd - an).abs() < tol,
+                        "case ({}, {}) x{i} axis {axis}: difference {fd} vs gradient {an}",
+                        y.to_f64(),
+                        z.to_f64()
+                    );
+                    compared += 1;
+                }
+            }
+        }
+        assert_eq!(compared, 48);
+    }
+
+    /// The fold branch has no gap and no overlap with the unsigned formula: on every hinge of the
+    /// 128-angle sweep and on both sides of the right-angle boundary, one solve with the branch
+    /// equals the unsigned solve when that moves anything, and the face-normal solve when it does
+    /// not (the branch condition as the code tests it: `d > 0`, error not zero, every correction
+    /// rounded to zero)
+    #[test]
+    fn the_fold_branch_has_no_gap_and_no_overlap() {
+        let mut configs: Vec<(Fix128, Fix128)> = Vec::new();
+        for k in 1..=64u32 {
+            configs.push((
+                Fix128::from_raw(0, 1u64 << (64 - k)),
+                Fix128::from_ratio(1, 2),
+            ));
+        }
+        // across the right angle (d = 0 when vertex 3 is straight above the edge): z just below and above 0
+        for k in [1u32, 8, 32, 63] {
+            let z = Fix128::from_raw(0, 1u64 << (64 - k));
+            configs.push((Fix128::from_ratio(1, 2), z));
+            configs.push((Fix128::from_ratio(1, 2), -z));
+        }
+        configs.push((Fix128::from_ratio(1, 2), Fix128::ZERO));
+        let mut by_unsigned = 0;
+        let mut by_face_normal = 0;
+        for (y, z) in configs {
+            let solve = |f: BendFormula| {
+                let mut c = hinge();
+                c.positions[3] = Vec3Fix::new(Fix128::from_ratio(1, 2), y, z);
+                c.set_bend_formula(f);
+                let before = c.positions.clone();
+                c.solve_bend_constraints(Fix128::from_ratio(1, 60));
+                (c.positions != before, c.positions)
+            };
+            let (old_moved, old) = solve(BendFormula::UnsignedAngle);
+            let (_, branch) = solve(BendFormula::UnsignedWithFoldBranch);
+            let (_, fnorm) = solve(BendFormula::SignedFaceNormal);
+            if old_moved {
+                assert_eq!(
+                    branch,
+                    old,
+                    "y {} z {}: the branch must not replace a working solve",
+                    y.to_f64(),
+                    z.to_f64()
+                );
+                by_unsigned += 1;
+            } else {
+                assert_eq!(
+                    branch,
+                    fnorm,
+                    "y {} z {}: the branch must take over where the solve rounds to nothing",
+                    y.to_f64(),
+                    z.to_f64()
+                );
+                by_face_normal += 1;
+            }
+        }
+        assert!(
+            by_unsigned > 0 && by_face_normal > 0,
+            "both sides compared: {by_unsigned} / {by_face_normal}"
+        );
+    }
 
     #[test]
     fn test_cloth_creation() {
