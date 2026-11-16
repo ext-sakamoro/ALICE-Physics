@@ -56,7 +56,7 @@
 //!   swaps the pair, which leaves the potential unchanged, so it never comes to rest. Measured
 //!   on a closed 8-cell groove: neighbours within 1 quantum, spread 6 quanta (1.4 nm).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source`
+//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only`
 //!
 //! Author: Moroya Sakamoto
 
@@ -483,8 +483,9 @@ pub fn pair_transfer(
 /// (two [`Fix128`] as `hi: i64, lo: u64`), the ledger (five `i64`), the last substep count
 /// `u32`, the quanta moved in the last substep `u64`, then per cell the depth `i64` and the
 /// substeps since it was last wet `u32`.
-/// [`Participant::check_state`] refuses another length ([`StateError::Length`]), version,
-/// digest or generation, or a negative depth ([`StateError::InvalidValue`]).
+/// [`Participant::check_state`] refuses another length ([`StateError::Length`]), version or
+/// digest (which covers the bed and its generation), or a negative depth
+/// ([`StateError::InvalidValue`]).
 #[derive(Clone, Debug)]
 pub struct WaterFilm {
     config: FilmConfig,
@@ -769,11 +770,9 @@ impl WaterFilm {
                 (Some(x), Some(y)) => (x, y),
                 _ => continue,
             };
-            let mut t = pair_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
-            // an open edge never pushes water in
-            if (a.is_none() && t > 0) || (b.is_none() && t < 0) {
-                t = 0;
-            }
+            // past an open edge the side is a dry cell on the inside bed, so its surface is
+            // never above the inside one and the transfer never brings water in
+            let t = pair_transfer(sa, sb, self.bed.cell, dt, cfg.gravity, cfg.viscosity);
             if t == 0 {
                 continue;
             }
@@ -896,10 +895,8 @@ impl Participant for WaterFilm {
                 found: bytes.len(),
             });
         }
-        if u32_at(bytes, 0) != STATE_VERSION
-            || u64_at(bytes, 4) != self.digest
-            || u64_at(bytes, 12) != self.bed.generation
-        {
+        // the digest covers the bed and its generation
+        if u32_at(bytes, 0) != STATE_VERSION || u64_at(bytes, 4) != self.digest {
             return Err(StateError::InvalidValue);
         }
         if (0..self.depth.len()).any(|c| i64_at(bytes, HEADER_LEN + c * 12) < 0) {
