@@ -1146,3 +1146,108 @@ fn a_filling_groove_is_accepted_and_levels() {
     }
     assert!(films >= 2, "compared {films} film faces");
 }
+
+/// oracle: steady flow along one straight stroke (floor 11.8 cm, 1 cm walls 3 cm deep,
+/// slope 1/200, 1.9e-6 m³/s: depth ≈ 1 mm, Re ≈ 16, Fr ≈ 0.17, drawdown length h/S ≈ 0.2 m
+/// against a 1.2 m channel). At the substep derived from the deepest film (1.5 mm) no face is
+/// capped and the depth at the middle equals the lubrication closed form over the sampled
+/// section, `Σ_columns g h_c³ S l / (3ν) = Q`, to the transfer rounding (flux error
+/// `ε = 2⁻³² l / (q Δt)`, depth `ε/3`), at 2 cm and at 1 cm cells. The continuous section is
+/// reported (the 2 cm grid samples the 11.8 cm floor as 10 cm).
+#[test]
+fn flow_along_a_stroke_has_the_lubrication_depth() {
+    let (w, wall, depth, slope, q_total) = (0.118_f64, 0.01_f64, 0.03_f64, 0.005_f64, 1.9e-6_f64);
+    for cm in [2i64, 1] {
+        let l = cm as f64 / 100.0;
+        let (nx, nz) = ((1.2 / l) as usize, (0.16 / l) as usize);
+        let cell = Fix128::from_ratio(cm, 100);
+        let bed = FilmBed::from_height_fn(
+            nx,
+            nz,
+            cell,
+            (Fix128::ZERO, Fix128::from_ratio(-8, 100)),
+            1,
+            move |x, z| {
+                let (a, x) = (f64::from(z).abs(), f64::from(x));
+                let cut = if x < 0.04 {
+                    0.0
+                } else if a <= w / 2.0 {
+                    depth
+                } else if a <= w / 2.0 + wall {
+                    depth * (1.0 - (a - w / 2.0) / wall)
+                } else {
+                    0.0
+                };
+                (-(slope * x) - cut) as f32
+            },
+        )
+        .expect("bed");
+        let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
+        // the deepest film 1.5 mm: the depth plus the feed's bump each step (0.26 mm at 1 cm)
+        cfg.film_depth_max = Fix128::from_ratio(15, 10_000);
+        let mut f = WaterFilm::new(cfg, bed).expect("film");
+        let im = (0.6 / l) as usize;
+        let beds: Vec<f64> = (0..nz)
+            .map(|k| quanta_to_metres(f.bed().heights()[im + k * nx]).to_f64())
+            .collect();
+        let kc = nz / 2;
+        let floor_bed = beds[kc];
+        let carried = |hf: f64| -> f64 {
+            beds.iter()
+                .map(|b| {
+                    let h = (hf - (b - floor_bed)).max(0.0);
+                    9.80665 * h * h * h * slope / 3.0e-6 * l
+                })
+                .sum()
+        };
+        let (mut lo, mut hi) = (0.0, 0.01);
+        for _ in 0..80 {
+            let m = 0.5 * (lo + hi);
+            if carried(m) < q_total {
+                lo = m;
+            } else {
+                hi = m;
+            }
+        }
+        let h_closed = 0.5 * (lo + hi);
+        // start at the closed-form depth everywhere in the channel, then let it run
+        for i in 0..nx {
+            for k in 0..nz {
+                let b = quanta_to_metres(f.bed().heights()[i + k * nx]).to_f64();
+                let surface = floor_bed + h_closed - slope * (i as f64 - im as f64) * l;
+                if surface > b {
+                    f.set_initial_depth(i, k, metres_to_quanta(Fix128::from_f64(surface - b)));
+                }
+            }
+        }
+        let i0 = (0.06 / l) as usize;
+        let floor_cells: Vec<usize> = (0..nz)
+            .filter(|&k| f.bed().centre(i0, k).1.to_f64().abs() <= w / 2.0)
+            .collect();
+        let step = Fix128::from_ratio(1, 6);
+        let per = Fix128::from_f64(q_total / floor_cells.len() as f64) * step;
+        let mut capped = 0u64;
+        for _ in 0..(6 * 40) {
+            for &k in &floor_cells {
+                let (x, z) = f.bed().centre(i0, k);
+                f.deposit(x, z, per);
+            }
+            f.advance(step).expect("advance");
+            capped += u64::from(f.last_cap_faces());
+        }
+        assert_eq!(capped, 0, "{cm} cm: lubrication faces were capped");
+        assert!(
+            f.last_pooled_cells().is_empty(),
+            "{cm} cm: the stroke pooled"
+        );
+        let h = f.depth_m(im, kc).to_f64();
+        let q_face = q_total / (floor_cells.len() as f64 * l);
+        let eps = QUANTUM_M * l / (q_face * f.substep().to_f64());
+        let rel = (h - h_closed) / h_closed;
+        println!("{cm} cm: depth {h:.5e} m, sampled-section closed form {h_closed:.5e} m ({rel:+.2e}), bound {:.2e}, substep {:.2e} s", eps, f.substep().to_f64());
+        assert!(
+            rel.abs() <= eps,
+            "{cm} cm: depth {h:.5e} vs {h_closed:.5e} ({rel:+.3e}, bound {eps:.2e})"
+        );
+    }
+}
