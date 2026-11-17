@@ -817,6 +817,8 @@ pub mod filter;
 pub mod flow_viz;
 pub mod fluid;
 #[cfg(feature = "std")]
+pub mod fluid_boundary_map;
+#[cfg(feature = "std")]
 pub mod fluid_netcode;
 pub mod force;
 #[cfg(feature = "std")]

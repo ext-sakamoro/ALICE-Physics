@@ -317,6 +317,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "fluid pbf",
+        "determinism_golden.rs",
+        "determinism_fluid_pbf",
+        "",
+    ),
+    (
         "secondary chain",
         "determinism_golden.rs",
         "determinism_secondary_chain",
@@ -414,6 +420,8 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("cloth", &["Cloth::"], 1),
     // a sheet dragged across itself and released, so that it folds: the bend term's fold branch
     ("cloth fold", &["move_grab(", "release_grab("], 1),
+    // the particle fluid with boundary particles and SDF solids as density maps
+    ("fluid pbf", &["box_boundary(", "with_sdf_body("], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
     // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
     ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),

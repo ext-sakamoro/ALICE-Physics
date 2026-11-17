@@ -188,7 +188,9 @@ fn default_mass_makes_the_rest_lattice_exactly_rho0() {
         if r2 >= h * h {
             0.0
         } else {
-            315.0 / (64.0 * std::f64::consts::PI * h.powi(9)) * (h * h - r2).powi(3)
+            let h3 = h * h * h;
+            let d = h * h - r2;
+            315.0 / (64.0 * std::f64::consts::PI * h3 * h3 * h3) * (d * d * d)
         }
     };
     let mut sum = 0.0;
@@ -360,5 +362,78 @@ fn settled_column_does_not_depend_on_the_substep_count() {
         (r.support - 1.0).abs() < 0.01,
         "floor reaction / weight {}",
         r.support
+    );
+}
+
+/// Archimedes (F091): a fixed solid in a resting tank is pushed up by the weight of the
+/// fluid it displaces, `rho_0 g V`. Scene at `s = 0.05` (settles within 300 frames,
+/// MODEL): a 6 x 10 x 6 lattice in the open box with a 2 x 2 x 2-cell cube of boundary
+/// particles at cells (2..4, 3..5, 2..4) in place of fluid, `V = 8 s^3` (the boundary
+/// plane sits half a spacing outside the particle centres, as for the box walls). The
+/// cube's readings sum to the force it exerts on the fluid, `-rho_0 g V` in y. Pass
+/// line: within 5 % (fixed before the run, the same discretisation as the side wall).
+/// Solids given by an SDF couple through density maps instead, and meet Archimedes
+/// (`analytic_fluid_sdf_body.rs`).
+#[test]
+#[ignore = "known defect: a cube of boundary particles in place of fluid is pushed up by 1.535 rho_0 g V (measured, s = 0.05, 300 frames); the cause is not measured"]
+fn submerged_cube_feels_the_archimedes_force() {
+    let s = Fix128::from_ratio(1, 20);
+    let h = s * Fix128::from_int(2);
+    let rest_density = Fix128::from_int(1000);
+    let config = FluidConfig {
+        rest_spacing: s,
+        kernel_radius: h,
+        particle_mass: FluidConfig::lattice_mass(rest_density, h, s),
+        ..FluidConfig::default()
+    };
+    let (nx, ny, nz) = (6i64, 10i64, 6i64);
+    let in_cube =
+        |i: i64, j: i64, k: i64| (2..4).contains(&i) && (3..5).contains(&j) && (2..4).contains(&k);
+    let centre = |i: i64| (Fix128::from_int(i) + Fix128::from_ratio(1, 2)) * s;
+    let mut fluid_points = Vec::new();
+    let mut cube = Vec::new();
+    for i in 0..nx {
+        for j in 0..ny {
+            for k in 0..nz {
+                let p = Vec3Fix::new(centre(i), centre(j), centre(k));
+                if in_cube(i, j, k) {
+                    cube.push(p);
+                } else {
+                    fluid_points.push(p);
+                }
+            }
+        }
+    }
+    assert_eq!(cube.len(), 8);
+    let mut boundary = Fluid::box_boundary(
+        Vec3Fix::ZERO,
+        Vec3Fix::new(
+            Fix128::from_int(nx) * s,
+            Fix128::from_int(2 * ny) * s,
+            Fix128::from_int(nz) * s,
+        ),
+        s,
+        2,
+    );
+    let first_cube = boundary.len();
+    boundary.extend(cube);
+    let mut fluid = Fluid::new(fluid_points, config).with_boundary(boundary);
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..300 {
+        fluid.step(dt);
+    }
+    let g = fluid.config.gravity.y.to_f64().abs();
+    let sf = s.to_f64();
+    let expected = rest_density.to_f64() * g * 8.0 * sf * sf * sf;
+    let on_fluid: f64 = fluid.boundary_forces()[first_cube..]
+        .iter()
+        .map(|f| f.y.to_f64())
+        .sum();
+    let ratio = -on_fluid / expected;
+    eprintln!("buoyancy / (rho_0 g V) = {ratio}");
+    assert!(
+        (ratio - 1.0).abs() < 0.05,
+        "buoyancy / (rho_0 g V) = {ratio} ({} N vs {expected} N)",
+        -on_fluid
     );
 }

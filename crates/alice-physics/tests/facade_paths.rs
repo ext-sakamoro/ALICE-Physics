@@ -455,6 +455,11 @@ use alice_physics::flow_viz::Streamlines as _;
 use alice_physics::fluid as _;
 use alice_physics::fluid::Fluid as _;
 use alice_physics::fluid::FluidConfig as _;
+use alice_physics::fluid_boundary_map as _;
+use alice_physics::fluid_boundary_map::split_two as _;
+use alice_physics::fluid_boundary_map::BoundaryMap as _;
+use alice_physics::fluid_boundary_map::FluidBody as _;
+use alice_physics::fluid_boundary_map::GRAM_MIN as _;
 use alice_physics::fluid_netcode as _;
 use alice_physics::fluid_netcode::FluidDelta as _;
 use alice_physics::fluid_netcode::FluidSnapshot as _;
@@ -1980,7 +1985,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1962 paths, checked at compile time
+    // 1967 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
