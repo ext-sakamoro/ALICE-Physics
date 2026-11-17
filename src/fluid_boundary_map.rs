@@ -26,6 +26,22 @@
 //! `lambda_i * grad rho_B / rho_0` (relaxation applied). Nothing in this module changes what
 //! the fluid feels.
 //!
+//! **Open: the map term in the constraint gradient.** Whether `grad rho_B / rho_0` belongs in
+//! the constraint gradient (the `lambda` denominator) is not settled. Without it the force
+//! oracles give the same answers (lying on the floor 0.9964, 2 h above it 1.0175), and the
+//! density next to the walls converges better. Mean `|rho / rho_0 - 1|` after `k` iterations,
+//! one substep from the rest lattice in a 0.8 m tank given by its SDF
+//! (`examples/fluid_sdf_wall_convergence.rs`), particles within `h` of a wall / interior:
+//!
+//! ```text
+//!   k        1      2      4      6      8      10
+//!   with   4.25   3.51   3.41   3.56   3.68   3.70  %  (walls)   4.77  7.06  6.96  7.81  8.40  8.34  % (interior)
+//!   without 4.25  3.57   3.26   3.17   3.16   3.21  %  (walls)   4.77  6.09  5.84  6.01  6.28  6.80  % (interior)
+//! ```
+//!
+//! The interior error rises with `k` in both, so the base PBF iteration itself does not
+//! converge here; the term is kept until it is measured again on a converging solver.
+//!
 //! **Force on the solids (normal-decomposed attribution).** The correction a particle gets
 //! from all solids together, `F = sum_B lambda_i grad rho_B / rho_0`, is the reaction of the
 //! solids (Newton 3: the solids receive `-F * m / dt^2` in total). It is shared out as:
