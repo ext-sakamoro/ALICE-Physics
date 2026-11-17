@@ -501,6 +501,10 @@ fn a_tampered_payload_is_refused() {
     let at = 112; // first cell's depth
     neg[at..at + 8].copy_from_slice(&(-1i64).to_le_bytes());
     assert_eq!(f.check_state(&neg), Err(StateError::InvalidValue));
+    // a negative deposit since the last advance (after the depth and the dry age)
+    let mut neg_fed = good.clone();
+    neg_fed[at + 12..at + 20].copy_from_slice(&(-1i64).to_le_bytes());
+    assert_eq!(f.check_state(&neg_fed), Err(StateError::InvalidValue));
     // a rebuilt bed (generation 2) refuses the payload written over generation 1
     let mut g = busy_film(FilmScheme::DiffusionWave);
     let mut bed2 = groove_bed(14, 4, 9, false);
@@ -1754,4 +1758,51 @@ fn a_pool_fed_by_rain_keeps_its_gradient() {
         compared += 1;
     }
     assert_eq!(compared, 2);
+}
+
+/// oracle: a new bed keeps the water. Replacing the bed (every third cell 3 µm lower, the next
+/// 2 µm higher: within the join step, so the pool stays a still pool) keeps every cell's
+/// depth, so no water is made or lost: the total and the ledger are unchanged, and stepping
+/// on the new bed keeps the ledger to the last quantum. (A bed change of millimetres under a
+/// deep pool leaves its surface in steps, an inertial flow the model refuses.)
+#[test]
+fn a_new_bed_keeps_every_cells_water() {
+    let mut f = busy_film(FilmScheme::DiffusionWave);
+    for _ in 0..30 {
+        f.advance(Fix128::from_ratio(1, 6)).expect("advance");
+    }
+    let (depths, total, ledger) = (f.depths().to_vec(), f.total(), f.ledger());
+    let old = f.bed().clone();
+    let heights: Vec<Fix128> = old
+        .heights()
+        .iter()
+        .enumerate()
+        .map(|(c, q)| {
+            let m = quanta_to_metres(*q);
+            match c % 3 {
+                0 => m - Fix128::from_ratio(3, 1_000_000),
+                1 => m + Fix128::from_ratio(2, 1_000_000),
+                _ => m,
+            }
+        })
+        .collect();
+    let new = FilmBed::from_heights(
+        old.nx(),
+        old.nz(),
+        old.cell(),
+        (Fix128::ZERO, Fix128::ZERO),
+        &heights,
+        2,
+    )
+    .expect("bed");
+    assert_ne!(new.heights(), old.heights());
+    f.set_bed(new).expect("set_bed");
+    assert_eq!(f.depths(), depths.as_slice());
+    assert_eq!(f.total(), total);
+    assert_eq!(f.ledger(), ledger);
+    for _ in 0..30 {
+        f.advance(Fix128::from_ratio(1, 6))
+            .expect("advance on the new bed");
+        assert_eq!(f.total(), f.ledger().expected());
+    }
 }
