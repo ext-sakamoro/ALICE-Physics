@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 128 |
+| standalone | a Rust API that only examples call | 129 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -190,6 +190,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
 | `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
+| `water_film` | standalone | 0 / 0 / 0 / 58 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone (binding 5 of 14 items) | 0 / 0 / 5 / 9 / 0 | C ABI, Python, WebAssembly |
 | `privacy` | unused (standalone 21 of 45 items) | 0 / 0 / 0 / 21 / 24 | — |

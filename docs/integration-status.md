@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2735 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2793 |
 | live | reached without examples (crate-internal roots or a binding) | 905 |
-| | **total** | **3671** |
+| | **total** | **3729** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2735)
+## L1 — example-only (2793)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -289,6 +289,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/vehicle_dynamics/tire.rs`: `BrushTire`, `BrushTire::passenger_car`, `MagicFormulaTire`, `MagicFormulaTire::passenger_car`, `TireForce`, `TireInput`, `TireModel`, `TireModel::force`, `TireModel::longitudinal_slope`
 - `src/vibration_wall.rs`: `ExcitationSource`, `WallResonanceReport`, `analyze_wall_resonance`, `default_excitation_sources`
 - `src/warp_risk.rs`: `EnvConditions`, `EnvConditions::enclosed_abs`, `EnvConditions::open_air_pla`, `Footprint`, `Footprint::rectangle`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`
+- `src/water_film.rs`: `DEPTH_QUANTUM_BITS`, `FilmBed`, `FilmBed::cell`, `FilmBed::centre`, `FilmBed::from_height_fn`, `FilmBed::from_heights`, `FilmBed::from_sdf`, `FilmBed::generation`, `FilmBed::heights`, `FilmBed::nx`, `FilmBed::nz`, `FilmBuildError`, `FilmConfig`, `FilmConfig::rain_mm_per_hour`, `FilmConfig::water`, `FilmEdge`, `FilmLedger`, `FilmLedger::expected`, `FilmScheme`, `FluxConstants`, `FluxConstants::new`, `MAX_FACE_DEPTH`, `MAX_LUBRICATION_DIVISOR`, `WATER_FILM_OBS_SUBCYCLES`, `WATER_FILM_OBS_VOLUME`, `WATER_FILM_OBS_WET_CELLS`, `WATER_FILM_PARTICIPANT_KIND`, `WaterFilm`, `WaterFilm::advance`, `WaterFilm::bed`, `WaterFilm::config`, `WaterFilm::deposit`, `WaterFilm::depth_m`, `WaterFilm::depths`, `WaterFilm::dry_ages`, `WaterFilm::last_band_cells`, `WaterFilm::last_cap_faces`, `WaterFilm::last_local_substeps`, `WaterFilm::last_moved`, `WaterFilm::last_pooled_cells`, `WaterFilm::ledger`, `WaterFilm::new`, `WaterFilm::set_bed`, `WaterFilm::set_initial_depth`, `WaterFilm::set_reverse_faces`, `WaterFilm::step_once`, `WaterFilm::steps`, `WaterFilm::subcycles`, `WaterFilm::substep`, `WaterFilm::total`, `face_depth`, `isqrt_u128`, `join_step`, `metres_to_quanta`, `quanta_to_metres`, `simultaneous_transfer`, `simultaneous_transfer_report`, `weir_transfer`
 - `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `ShipResponse`, `ShipResponse::advance`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
 - `src/wind_zone.rs`: `WIND_ZONE_OBS_BODIES`, `WIND_ZONE_OBS_TIME`, `WindZone::force_on`, `WindZone::force_on_particle`, `WindZone::instantaneous_wind_vector`, `WindZone::light_breeze`, `WindZone::storm`, `WindZoneParticipant::time`, `WindZoneParticipant::zone`
 - `src/world_character.rs`: `PhysicsWorld::move_character`, `PhysicsWorld::move_character_with_filter`
