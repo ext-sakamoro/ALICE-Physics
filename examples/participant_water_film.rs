@@ -62,9 +62,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pooled = film.last_pooled_cells().len();
     let dry = film.dry_ages().iter().filter(|a| **a > 0).count();
     println!(
-        "after 60 s: groove depth {:.3} mm, {pooled} pooled cells, {dry} dry cells, last substep moved {} quanta, {} capped faces, {} out-of-range cells",
+        "after 60 s: groove depth {:.3} mm, {pooled} pooled cells, {dry} dry cells, last substep moved {} quanta in {} local substeps, {} capped faces, {} out-of-range cells",
         film.depth_m(12, 4).to_f64() * 1000.0,
         film.last_moved(),
+        film.last_local_substeps(),
         film.last_cap_faces(),
         film.last_band_cells().len(),
     );

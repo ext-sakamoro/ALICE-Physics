@@ -1413,45 +1413,50 @@ fn walled_row(nx: usize, l_mm: i64, beds: &[Fix128], cfg: FilmConfig) -> WaterFi
 /// sill). The sill spills over the edge as a broad-crested weir, `q = (2/3)^{3/2} √g h^{3/2}`
 /// per unit width, so the head of the pool (area `11 l²`, the sill included) follows
 /// `h(t) = (h₀^{-1/2} + (2/3)^{3/2} √g t / (22 l))⁻²`, to the explicit step's error
-/// `(2/3)^{3/2} √(g h₀) Δt / (11 l)` (one substep's relative change).
+/// `(2/3)^{3/2} √(g h₀) Δt_local / (11 l)` (one local substep's relative change). Two cases:
+/// 1 cm cells at the film substep (one local substep), and 2 cm cells with a substep of
+/// 15 ms, where the weir moves more than `|Δη|/8` per substep and needs local substeps.
 #[test]
 fn a_free_overfall_drains_at_the_weir_rate() {
-    let mut beds = vec![mm(50)];
-    beds.extend(core::iter::repeat_n(mm(-30), 10));
-    beds.push(mm(-10));
-    let mut f = walled_row(
-        12,
-        CELL_MM,
-        &beds,
-        FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open),
-    );
-    let level = metres_to_quanta(mm(5));
-    for i in 1..12 {
-        f.set_initial_depth(i, 1, level - f.bed().heights()[12 + i]);
+    for (l_mm, max_substep, t_end, local_needed) in [
+        (CELL_MM, Fix128::from_ratio(1, 256), 0.125, false),
+        (20, Fix128::from_ratio(1, 64), 0.5, true),
+    ] {
+        let mut beds = vec![mm(50)];
+        beds.extend(core::iter::repeat_n(mm(-30), 10));
+        beds.push(mm(-10));
+        let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
+        cfg.max_substep = max_substep;
+        let mut f = walled_row(12, l_mm, &beds, cfg);
+        let level = metres_to_quanta(mm(5));
+        for i in 1..12 {
+            f.set_initial_depth(i, 1, level - f.bed().heights()[12 + i]);
+        }
+        let sill = f.bed().heights()[12 + 11];
+        let (g, l, h0) = (9.80665_f64, l_mm as f64 / 1000.0, 0.015_f64);
+        let cw = (8.0_f64 / 27.0).sqrt();
+        let dt = f.substep().to_f64();
+        let n = (t_end / dt).round() as u64;
+        let mut most = 0;
+        for _ in 0..n {
+            f.step_once(f.substep()).expect("substep");
+            most = most.max(f.last_local_substeps());
+        }
+        let t = n as f64 * dt;
+        let head = quanta_to_metres(f.bed().heights()[13] + f.depths()[13] - sill).to_f64();
+        let s = 1.0 / h0.sqrt() + cw * g.sqrt() * t / (22.0 * l);
+        let closed = 1.0 / (s * s);
+        let bound = cw * (g * h0).sqrt() * dt / f64::from(most) / (11.0 * l);
+        let rel = (head - closed) / closed;
+        println!("overfall at {l_mm} mm: head {head:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e}), local substeps up to {most}");
+        assert_eq!(most > 1, local_needed, "{l_mm} mm: local substeps {most}");
+        assert!(
+            rel.abs() <= bound,
+            "{l_mm} mm: head {head:.5e} vs {closed:.5e} ({rel:+.3e}, bound {bound:.2e})"
+        );
+        assert!(f.ledger().outflow > 0);
+        assert_eq!(f.total(), f.ledger().expected());
     }
-    let sill = f.bed().heights()[12 + 11];
-    let (g, l, h0) = (9.80665_f64, 0.01_f64, 0.015_f64);
-    let cw = (8.0_f64 / 27.0).sqrt();
-    let dt = f.substep().to_f64();
-    let n = (0.125 / dt).round() as u64;
-    let mut most = 0;
-    for _ in 0..n {
-        f.step_once(f.substep()).expect("substep");
-        most = most.max(f.last_local_substeps());
-    }
-    let t = n as f64 * dt;
-    let head = quanta_to_metres(f.bed().heights()[13] + f.depths()[13] - sill).to_f64();
-    let s = 1.0 / h0.sqrt() + cw * g.sqrt() * t / (22.0 * l);
-    let closed = 1.0 / (s * s);
-    let bound = cw * (g * h0).sqrt() * dt / (11.0 * l);
-    let rel = (head - closed) / closed;
-    println!("overfall: head {head:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e}), local substeps up to {most}");
-    assert!(
-        rel.abs() <= bound,
-        "head {head:.5e} vs {closed:.5e} ({rel:+.3e}, bound {bound:.2e})"
-    );
-    assert!(f.ledger().outflow > 0);
-    assert_eq!(f.total(), f.ledger().expected());
 }
 
 /// oracle: uniform flow inside the band. A channel at slope `S` (one walled row of 2 cm
@@ -1654,4 +1659,99 @@ fn a_letter_fills_from_its_runoff() {
         quanta_to_metres(held / 36).to_f64() * 1e3,
         quanta_to_metres(f.total() - held).to_f64() * 1e3
     );
+}
+
+/// The scheme's steady profile on a flat row draining to a brink at its last cell: `q[j]` is
+/// the flux (per unit width) across the face downstream of cell `j`; the brink cell carries
+/// `q` over its edge at the critical film depth `(q²/g)^{1/3}`, and each face upstream at
+/// its upstream depth, `q = g h_up³ (h_up − h_dn) / (3 ν l)` (bisection).
+fn steady_row(q: &[f64], l: f64) -> Vec<f64> {
+    let (g, nu) = (9.80665_f64, 1.0e-6_f64);
+    let bisect = |f: &dyn Fn(f64) -> bool, lo: f64| {
+        let (mut lo, mut hi) = (lo, lo + 0.01);
+        for _ in 0..200 {
+            let m = 0.5 * (lo + hi);
+            if f(m) {
+                lo = m;
+            } else {
+                hi = m;
+            }
+        }
+        0.5 * (lo + hi)
+    };
+    let n = q.len();
+    let mut h = vec![0.0; n];
+    let qb = q[n - 1];
+    h[n - 1] = bisect(&|m| m * m * m < qb * qb / g, 0.0);
+    for j in (0..n - 1).rev() {
+        let (dn, qj) = (h[j + 1], q[j]);
+        h[j] = bisect(&|m| g * m * m * m * (m - dn) / (3.0 * nu * l) < qj, dn);
+    }
+    h
+}
+
+/// oracle: rain inside a pool is inflow. A flat channel 0.8 m long (one row of 1 cm cells,
+/// closed at its head) drains over a drop into a deep sump at its foot, under 30 mm/h of
+/// rain: the flux grows with the rain caught upstream, `q = r (L − x)` with `x` from the
+/// brink and `L` = 0.8 m, so `h(x)⁴ = h_b⁴ + 12 ν r (L x − x²/2) / g`. Its deeper part (over 1 mm) is a pool whose only inflow is
+/// the rain on it: counted as throughflow it steps on its own and keeps its gradient (within
+/// 1 % of the scheme's steady profile at 0.6 m and 0.8 m from the brink, which lies within
+/// 3 % of the closed form); not counted, it would be levelled flat.
+#[test]
+fn a_pool_fed_by_rain_keeps_its_gradient() {
+    let n = 80;
+    let mut beds = vec![Fix128::ZERO; n];
+    beds.push(mm(-1000));
+    let bed = FilmBed::from_heights(
+        n + 1,
+        1,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &beds,
+        1,
+    )
+    .expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(30));
+    let r = cfg.rain.to_f64();
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    let l = 0.01_f64;
+    let q: Vec<f64> = (0..n).map(|j| r * l * (j + 1) as f64).collect();
+    let steady = steady_row(&q, l);
+    for (j, h) in steady.iter().enumerate() {
+        f.set_initial_depth(j, 0, metres_to_quanta(Fix128::from_f64(*h)));
+    }
+    let step = Fix128::from_ratio(1, 6);
+    let mut most = 0;
+    for _ in 0..(6 * 40) {
+        f.advance(step).expect("advance");
+        most = most.max(f.last_local_substeps());
+    }
+    let mut compared = 0;
+    for x_cm in [60usize, 80] {
+        let j = n - x_cm;
+        let x = x_cm as f64 * l - l / 2.0;
+        let want = (12.0e-6 * r * (0.8 * x - x * x / 2.0) / 9.80665)
+            .sqrt()
+            .sqrt();
+        let got = f.depth_m(j, 0).to_f64();
+        let scheme = steady[j];
+        let sampling = (scheme - want).abs() / want;
+        let rel = (got - scheme) / scheme;
+        println!("rain-fed pool at {x:.3} m: depth {got:.5e} m, scheme's steady profile {scheme:.5e} m ({rel:+.2e}), closed form {want:.5e} m (sampling {sampling:.2e}), local substeps up to {most}");
+        assert!(
+            got > 1.0e-3,
+            "x {x}: {got:.3e} m is not deeper than the film"
+        );
+        assert!(
+            rel.abs() <= 0.01,
+            "x {x}: depth {got:.5e} vs the steady profile {scheme:.5e} ({rel:+.3e})"
+        );
+        assert!(
+            sampling <= 0.03,
+            "x {x}: the steady profile is {sampling:.3e} from the closed form"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 2);
 }
