@@ -30,10 +30,13 @@ fn step() -> Fix128 {
     Fix128::from_ratio(STEP.0, STEP.1)
 }
 
-/// 8 × 16 × 8 cells of 1 cm, a 2 × 1 × 2 source at the floor's centre heating at 50 K/s and
+/// 8 × 16 × 8 cells of 1 cm, heat and soot diffusing, a 2 × 1 × 2 source at the floor's centre heating at 50 K/s and
 /// making 10⁻³ kg/(m³·s) of soot, and a warm, sooty puff above it.
 fn plume() -> SmokePlume {
-    let mut p = SmokePlume::new(8, 16, 8, Fix128::from_ratio(1, 100), config()).unwrap();
+    // soot diffuses too (the default is 0), so every oracle on this scene covers both fluxes
+    let mut c = config();
+    c.soot_diffusivity_m2_s = Fix128::from_ratio(1, 10_000);
+    let mut p = SmokePlume::new(8, 16, 8, Fix128::from_ratio(1, 100), c).unwrap();
     p.add_source(SmokeSource {
         cells: CellBox {
             lo: [3, 1, 3],
@@ -179,7 +182,7 @@ fn a_tampered_payload_is_refused() {
     p.advance(step()).unwrap();
     let good = state(&p);
     assert_eq!(p.check_state(&good), Ok(()));
-    let header = 4 + 8 + 8 + 8 + 8 * 4 + 4 + 4 + 8;
+    let header = 4 + 8 + 8 + 8 + 8 * 4 + 4 + 4 + 8 + 4;
     let mut neg = good.clone();
     neg[header..header + 8].copy_from_slice(&(-1i64).to_le_bytes());
     assert_eq!(p.check_state(&neg), Err(StateError::InvalidValue));
@@ -190,8 +193,11 @@ fn a_tampered_payload_is_refused() {
     whole[header + 8..header + 16].copy_from_slice(&1i64.to_le_bytes());
     assert_eq!(p.check_state(&whole), Err(StateError::InvalidValue));
     let mut soot_carry = good.clone();
-    soot_carry[header + 32..header + 40].copy_from_slice(&1i64.to_le_bytes());
+    soot_carry[header + 48..header + 56].copy_from_slice(&1i64.to_le_bytes());
     assert_eq!(p.check_state(&soot_carry), Err(StateError::InvalidValue));
+    let mut heat_dcarry = good.clone();
+    heat_dcarry[header + 24..header + 32].copy_from_slice(&1i64.to_le_bytes());
+    assert_eq!(p.check_state(&heat_dcarry), Err(StateError::InvalidValue));
     let mut digest = good.clone();
     digest[4] ^= 1;
     assert_eq!(p.check_state(&digest), Err(StateError::InvalidValue));
@@ -578,4 +584,80 @@ fn the_transport_substeps_keep_half_a_cell_per_substep() {
         assert_eq!(p.heat().total(), Some(p.ledger().heat_expected()));
     }
     assert!(most >= 2, "the scene never needed a second substep: {most}");
+}
+
+/// A soot puff in still air spreads as the diffusion equation says: the explicit scheme's
+/// second moment grows by exactly `2 d l²` per axis per substep (`d = κ Δt_s / l²`), so
+/// after one velocity step `σ² = 2 κ Δt` per axis while no quantum has reached a wall (the
+/// stencil reaches one cell per substep, the walls are 7.5 cells away), and the puff stays
+/// centred. Two diffusivities: one inside the explicit limit (`κ Δt / l² = 0.078`, one
+/// substep per step, four steps) and one 4.7 times past it (`0.78`, which needs five).
+#[test]
+fn a_puff_spreads_with_variance_two_kappa_t() {
+    for (kappa, steps, substeps) in [((1, 1000), 4, 1), ((1, 100), 1, 5)] {
+        let mut c = config();
+        c.soot_diffusivity_m2_s = Fix128::from_ratio(kappa.0, kappa.1);
+        let mut p = SmokePlume::new(16, 16, 16, Fix128::from_ratio(1, 100), c).unwrap();
+        p.set_initial(8, 8, 8, 0, 1 << 50).unwrap();
+        for _ in 0..steps {
+            p.advance(step()).unwrap();
+            assert_eq!(p.last_diffusion_substeps(), substeps);
+        }
+        assert_eq!(p.soot().total(), Some(1 << 50));
+        let f = p.soot();
+        let l = 0.01f64;
+        let (mut m0, mut m1, mut m2) = ([0f64; 3], [0f64; 3], [0f64; 3]);
+        for k in 0..16 {
+            for j in 0..16 {
+                for i in 0..16 {
+                    let q = f.quanta()[f.index(i, j, k)] as f64;
+                    for (a, x) in [i, j, k].into_iter().enumerate() {
+                        let x = (x as f64 - 8.0) * l;
+                        m0[a] += q;
+                        m1[a] += q * x;
+                        m2[a] += q * x * x;
+                    }
+                }
+            }
+        }
+        let t = steps as f64 / 128.0;
+        let expect = 2.0 * (kappa.0 as f64 / kappa.1 as f64) * t;
+        for a in 0..3 {
+            let mean = m1[a] / m0[a];
+            let var = m2[a] / m0[a] - mean * mean;
+            assert!(mean.abs() < 1e-9, "axis {a}: centre moved {mean:e} m");
+            assert!(
+                ((var - expect) / expect).abs() < 1e-9,
+                "axis {a}: {var:e} vs {expect:e}"
+            );
+        }
+        // nothing reached the walls
+        for k in 0..16 {
+            for j in 0..16 {
+                assert_eq!(f.quanta()[f.index(0, j, k)], 0);
+                assert_eq!(f.quanta()[f.index(15, j, k)], 0);
+            }
+        }
+    }
+}
+
+/// One quantum alone with two empty neighbours, at diffusion number 1/64: it sends nothing
+/// for 31 substeps (a face moves whole quanta) and the quantum on the 32nd, when its carried
+/// fraction `2 · 32/64` reaches one, so a gradient below one quantum per face does not
+/// freeze.
+#[test]
+fn a_gradient_below_one_quantum_still_diffuses() {
+    let mut f = QuantaField::new(16, 1, 1);
+    let c0 = f.index(4, 0, 0);
+    f.add(c0, 1).unwrap();
+    let d = Fix128::from_ratio(1, 64);
+    for _ in 0..31 {
+        f.diffuse(d, false);
+        assert_eq!(f.quanta()[c0], 1);
+    }
+    f.diffuse(d, false);
+    assert_eq!(f.quanta()[c0], 0);
+    assert_eq!(f.total(), Some(1));
+    // the tie goes to the earlier direction (−x)
+    assert_eq!(f.quanta()[f.index(3, 0, 0)], 1);
 }

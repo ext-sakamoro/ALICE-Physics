@@ -19150,6 +19150,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::smoke_plume::C
 pub struct alice_physics_core::smoke_plume::QuantaField
 impl alice_physics_core::smoke_plume::QuantaField
 pub fn alice_physics_core::smoke_plume::QuantaField::add(&mut self, usize, i64) -> core::option::Option<()>
+pub fn alice_physics_core::smoke_plume::QuantaField::diffuse(&mut self, alice_physics_core::math::Fix128, bool) -> alice_physics_core::smoke_plume::TransportReport
 pub fn alice_physics_core::smoke_plume::QuantaField::index(&self, usize, usize, usize) -> usize
 pub fn alice_physics_core::smoke_plume::QuantaField::max_out_courant(&alice_physics_core::eulerian_grid::MacGrid, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::smoke_plume::QuantaField::new(usize, usize, usize) -> Self
@@ -19177,9 +19178,11 @@ pub alice_physics_core::smoke_plume::SmokeConfig::beta_per_k: alice_physics_core
 pub alice_physics_core::smoke_plume::SmokeConfig::density_kg_m3: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::gravity_m_s2: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::heat_capacity_j_kg_k: alice_physics_core::math::Fix128
+pub alice_physics_core::smoke_plume::SmokeConfig::heat_diffusivity_m2_s: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::max_steps: u32
 pub alice_physics_core::smoke_plume::SmokeConfig::max_transport_substeps: u32
 pub alice_physics_core::smoke_plume::SmokeConfig::multigrid_cycles: u32
+pub alice_physics_core::smoke_plume::SmokeConfig::soot_diffusivity_m2_s: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::step_max: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::viscosity_pas: alice_physics_core::math::Fix128
 impl alice_physics_core::smoke_plume::SmokeConfig
@@ -19233,6 +19236,7 @@ pub fn alice_physics_core::smoke_plume::SmokePlume::advance(&mut self, alice_phy
 pub fn alice_physics_core::smoke_plume::SmokePlume::config(&self) -> &alice_physics_core::smoke_plume::SmokeConfig
 pub fn alice_physics_core::smoke_plume::SmokePlume::excess_k(&self, usize, usize, usize) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::smoke_plume::SmokePlume::heat(&self) -> &alice_physics_core::smoke_plume::QuantaField
+pub fn alice_physics_core::smoke_plume::SmokePlume::last_diffusion_substeps(&self) -> u32
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_moved(&self) -> u64
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_steps(&self) -> u32
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_transport_substeps(&self) -> u32
