@@ -71,6 +71,7 @@ D	src/bimaterial.rs
 D	src/bridging.rs
 D	src/buckling.rs
 D	src/cloth.rs
+D	src/cloth_participant.rs
 D	src/creep_longterm.rs
 D	src/cubic_elastic_fem.rs
 D	src/damping_rayleigh.rs

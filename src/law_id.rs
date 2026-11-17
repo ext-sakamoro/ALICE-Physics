@@ -450,6 +450,10 @@ impl PhysicsWorld {
                     e.fix(dt);
                 }
                 StepRule::Subcycle => e.bytes(b"subcycle"),
+                StepRule::PerFrame(m) => {
+                    e.bytes(b"per-frame");
+                    e.u32(m);
+                }
             }
             e.len(ports.len());
             for port in ports {
@@ -504,7 +508,7 @@ mod semantics_decoder {
     /// The published identifier decodes to the hex its documentation shows.
     #[test]
     fn the_identifier_matches_its_documented_hex() {
-        let doc = "8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df";
+        let doc = "af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09";
         assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
         assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
         // alice-det-math is folded per function (DET_MATH_PINS), not as a whole entry

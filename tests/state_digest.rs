@@ -239,21 +239,21 @@ fn hex(b: &[u8]) -> String {
 // its snapshot holds a lock count of 0 and an empty cloth section after the continuous collision
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
-// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID af519b7b… (the cloth damping rate and cloth resident pins): the identifier in the header moved
 const GOLDEN_STATE_DIGEST: &str =
-    "a248509e4209ff40f21e511dda21e331bdc497e83f7e735f4722d805e46bce7d";
+    "b38148ed2fbc9ca00cb21be04c7d89bb284491d6fe925662eb95e782c7b5a5e0";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
-// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): moved with the identifier only
-const GOLDEN_LAW_ID: &str = "a1ed234292f9572e0f732e01a88286ed5d6fbe1d21226e419ee6b342745abaae";
+// re-pinned under PHYSICS_SEMANTICS_ID af519b7b… (the cloth damping rate and cloth resident pins): moved with the identifier only
+const GOLDEN_LAW_ID: &str = "2060eade241d9443d6325548d1632bf34e894a2ff513138ed47ee104c73df208";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
-// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID af519b7b… (the cloth damping rate and cloth resident pins): the identifier in the header moved
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "d2f07d5ff85e4e6ca1bdf8f0972719ab02a2b671f0de7f264feb74493bf5dc7e";
+    "a812b9eea608a92c125e1166486a61ccfed0f5c5d8709c0dd4a4221460f7e1f5";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

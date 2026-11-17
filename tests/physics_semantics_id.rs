@@ -53,7 +53,7 @@ use sha2::{Digest, Sha256};
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, a peer moved, or an
 /// alice-det-math function this crate calls changed).
-const PINNED_ID_HEX: &str = "8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df";
+const PINNED_ID_HEX: &str = "af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -907,6 +907,8 @@ const SINCE: &[(&str, Since)] = &[
     ("cloth", Since::DetMath(DET_MATH_0_5_0)),
     ("cloth fold", Since::FunctionPins),
     ("fluid pbf", Since::FunctionPins),
+    ("cloth damping rate", Since::FunctionPins),
+    ("cloth resident", Since::FunctionPins),
     ("physics2d", Since::DetMath(DET_MATH_0_5_0)),
     ("secondary chain", Since::DetMath(DET_MATH_0_5_0)),
     (

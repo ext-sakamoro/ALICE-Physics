@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df
+//! af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09
 //! ```
 //!
 //! # Entries
@@ -194,6 +194,16 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "fluid pbf",
         hex32("bee62aa158808dcddf79c6f060fb9d1810776162fea30f8ed37c6ff3632a4a0a"),
+    ),
+    // the cloth's damping as a rate (a 120 Hz step keeps the square root of the 60 Hz retention)
+    (
+        "cloth damping rate",
+        hex32("2414b5abd7c8d5817a624b68e0f199d4f7cb0de4adf8726a1e76bf2527351c42"),
+    ),
+    // a cloth as a world resident: its steps placed per frame on the world's substeps
+    (
+        "cloth resident",
+        hex32("644fd2945b3461a080c64d09f1a0cc0d6ab7095c254259f996625f4d22a8e029"),
     ),
     (
         "physics2d",
@@ -1230,10 +1240,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df`.
+/// Hex: `af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df");
+    hex32("af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.

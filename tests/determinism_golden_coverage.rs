@@ -323,6 +323,18 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "cloth damping rate",
+        "determinism_golden.rs",
+        "determinism_cloth_damping_rate",
+        "",
+    ),
+    (
+        "cloth resident",
+        "determinism_golden.rs",
+        "determinism_cloth_resident",
+        "",
+    ),
+    (
         "secondary chain",
         "determinism_golden.rs",
         "determinism_secondary_chain",
@@ -422,6 +434,10 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("cloth fold", &["move_grab(", "release_grab("], 1),
     // the particle fluid with boundary particles and SDF solids as density maps
     ("fluid pbf", &["box_boundary(", "with_sdf_body("], 1),
+    // a cloth stepped at a width other than 1/60 s: the damping as a rate
+    ("cloth damping rate", &["damping_over("], 1),
+    // a cloth registered as a world resident, its steps placed per frame
+    ("cloth resident", &["ClothParticipant::new("], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
     // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
     ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),

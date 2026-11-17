@@ -485,6 +485,78 @@ fn determinism_cloth_fold() {
     assert_golden("cloth_fold", hash_cloth(&cloth), GOLDEN_CLOTH_FOLD);
 }
 
+/// **Cloth damping rate**: the drape of `determinism_cloth_drape` stepped at 120 Hz for 2 s.
+/// The damping is a retention per 1/60 s raised to `dt · 60`, so a 1/120 s step takes its square
+/// root (`damping_over`); a 60 Hz step keeps the value as it was, which is why the 60 Hz goldens
+/// did not move. The particle positions and velocities; the cloth's own bits, no world header.
+const GOLDEN_CLOTH_DAMPING_RATE: &str =
+    "2414b5abd7c8d5817a624b68e0f199d4f7cb0de4adf8726a1e76bf2527351c42";
+
+#[test]
+fn determinism_cloth_damping_rate() {
+    use alice_physics_core::cloth::damping_over;
+    let mut cloth = Cloth::new_grid(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(5), Fix128::ZERO),
+        Fix128::from_int(2),
+        Fix128::from_int(2),
+        5,
+        5,
+        Fix128::ONE,
+    );
+    cloth.pin_top_row(5);
+    let dt = Fix128::from_ratio(1, 120);
+    assert_eq!(
+        damping_over(cloth.config.damping, Fix128::from_ratio(1, 60)),
+        cloth.config.damping
+    );
+    for _ in 0..240 {
+        cloth.step(dt);
+    }
+    assert_golden(
+        "cloth_damping_rate",
+        hash_cloth(&cloth),
+        GOLDEN_CLOTH_DAMPING_RATE,
+    );
+}
+
+/// **Cloth resident**: the drape as a world resident (`ClothParticipant`), two cloth steps per
+/// frame placed on the world's 8 substeps by `StepRule::PerFrame`, 120 frames. The SHA-256 of the
+/// participant's own payload (its motion state), not the world digest (which holds the semantics
+/// identifier this golden is part of).
+const GOLDEN_CLOTH_RESIDENT: &str =
+    "644fd2945b3461a080c64d09f1a0cc0d6ab7095c254259f996625f4d22a8e029";
+
+#[test]
+fn determinism_cloth_resident() {
+    use alice_physics_core::cloth_participant::ClothParticipant;
+    let mut cloth = Cloth::new_grid(
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(5), Fix128::ZERO),
+        Fix128::from_int(2),
+        Fix128::from_int(2),
+        5,
+        5,
+        Fix128::ONE,
+    );
+    cloth.pin_top_row(5);
+    cloth.config.substeps = 2;
+    let mut world = PhysicsWorld::new(PhysicsConfig {
+        substeps: 8,
+        ..PhysicsConfig::default()
+    });
+    world
+        .add_participant(Box::new(ClothParticipant::new(cloth)))
+        .expect("register");
+    for _ in 0..120 {
+        world.step(Fix128::from_ratio(1, 60));
+    }
+    let payload = world.participant_state(0).expect("payload");
+    assert_golden(
+        "cloth_resident",
+        sha256_bytes(&payload),
+        GOLDEN_CLOTH_RESIDENT,
+    );
+}
+
 /// **Secondary chain**: four particles hanging from a moving anchor, one per limit kind (angle,
 /// hinge, polar, none; tight enough that each one acts), with gravity and its falloff, stiffness, an immobile share, a radius
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated

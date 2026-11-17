@@ -143,7 +143,10 @@ pub struct ClothConfig {
     pub substeps: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Velocity retention per frame (`step()` call), applied once per frame since 1.2.0
+    /// Velocity retention over one reference frame ([`damping_reference_dt`], 1/60 s): a
+    /// step of width `dt` keeps `damping^(dt / (1/60))` of the velocity (exactly `damping`
+    /// for a 1/60 s step, as before), so the decay per second does not depend on how the
+    /// time is cut into steps
     pub damping: Fix128,
     /// Stretch constraint compliance (0 = rigid edges)
     pub stretch_compliance: Fix128,
@@ -221,6 +224,28 @@ struct BendConstraint {
 // ============================================================================
 // Cloth
 // ============================================================================
+
+/// The step width [`ClothConfig::damping`] is stated for: 1/60 s.
+#[must_use]
+pub fn damping_reference_dt() -> Fix128 {
+    Fix128::from_ratio(1, 60)
+}
+
+/// The velocity retention over a step of width `dt` for the retention `damping` per
+/// [`damping_reference_dt`]: `damping^(dt / (1/60))`, exactly `damping` for a 1/60 s
+/// step and 1 for a zero-width step (a retention outside `(0, 1]` is used per step as
+/// it is, since a power of it has no meaning)
+#[must_use]
+pub fn damping_over(damping: Fix128, dt: Fix128) -> Fix128 {
+    let reference = damping_reference_dt();
+    if dt == reference || damping <= Fix128::ZERO || damping > Fix128::ONE {
+        return damping;
+    }
+    if dt <= Fix128::ZERO {
+        return Fix128::ONE;
+    }
+    damping.powf_pos(dt / reference)
+}
 
 /// Cloth simulation
 #[derive(Clone)]
@@ -911,7 +936,7 @@ impl Cloth {
         if let Some(start) = frame_start {
             self.resolve_self_contact_over_frame(&start, dt);
         }
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
     }
 
     /// Step with SDF collision
@@ -929,7 +954,7 @@ impl Cloth {
         if let Some(start) = frame_start {
             self.resolve_self_contact_over_frame(&start, dt);
         }
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
         self.record_grabs(dt);
     }
 
@@ -950,8 +975,8 @@ impl Cloth {
     /// 1.2.0: applied per substep before, which made the terminal velocity
     /// depend on `substeps` (`g·h·d/(1−d)`, `h = dt/substeps`) — the same
     /// defect as the rigid-body solver's frame damping fix.
-    fn apply_frame_damping(&mut self) {
-        let d = self.config.damping;
+    fn apply_frame_damping(&mut self, dt: Fix128) {
+        let d = damping_over(self.config.damping, dt);
         for v in &mut self.velocities {
             *v = *v * d;
         }

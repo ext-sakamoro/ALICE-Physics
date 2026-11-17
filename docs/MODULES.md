@@ -125,6 +125,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | world API (step 5 of 49 items) |
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |
 | `cloth_fluid` | two-way cloth and fluid coupling |  |  | standalone |
+| `cloth_participant` | a cloth as a world participant, its steps placed per frame on the world's substeps |  | [`cloth_resident_cost`](../examples/cloth_resident_cost.rs) | binding |
 | `fluid` | position-based fluids (PBF) |  | [`fluid_block_column`](../examples/fluid_block_column.rs) | standalone |
 | `fluid_boundary_map` | density maps of static SDF solids for PBF, and the split of the solids' push between two solids | std | [`fluid_sdf_body_frame_cost`](../examples/fluid_sdf_body_frame_cost.rs) | standalone |
 | `fluid_netcode` | fluid state for netcode with delta compression | std | [`fluid_netcode_roundtrip`](../examples/fluid_netcode_roundtrip.rs) | standalone |

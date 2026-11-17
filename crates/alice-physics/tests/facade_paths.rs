@@ -163,6 +163,8 @@ use alice_physics::character_state::CharacterState as _;
 use alice_physics::character_state::CharacterStateContext as _;
 use alice_physics::check_peer as _;
 use alice_physics::cloth as _;
+use alice_physics::cloth::damping_over as _;
+use alice_physics::cloth::damping_reference_dt as _;
 use alice_physics::cloth::Cloth as _;
 use alice_physics::cloth::ClothConfig as _;
 use alice_physics::cloth::Grab as _;
@@ -176,6 +178,9 @@ use alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid_with_residual as _
 use alice_physics::cloth_fluid::apply_fluid_forces_to_cloth as _;
 use alice_physics::cloth_fluid::apply_fluid_forces_to_cloth_with_residual as _;
 use alice_physics::cloth_fluid::ClothFluidCoupling as _;
+use alice_physics::cloth_participant as _;
+use alice_physics::cloth_participant::ClothParticipant as _;
+use alice_physics::cloth_participant::CLOTH_PARTICIPANT_KIND as _;
 use alice_physics::collider as _;
 use alice_physics::collider::contact as _;
 use alice_physics::collider::epa as _;
@@ -2006,7 +2011,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1988 paths, checked at compile time
+    // 1993 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

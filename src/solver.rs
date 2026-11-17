@@ -4417,7 +4417,8 @@ impl PhysicsWorld {
             self.sdf_contact_substep = i;
             // Participants run before the substep body (not inside `substep`,
             // which the unit tests call on its own).
-            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
+            let overflow_at_start =
+                self.participants_begin_substep(i, n, substep_dt, dt, &mut frozen);
             self.substep(substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }
@@ -5454,7 +5455,8 @@ impl PhysicsWorld {
                         tgs_to_body(state, body);
                     }
                     let flag = with_participants
-                        && self.participants_begin_substep(s as usize, substeps, sub_dt, frozen);
+                        && self
+                            .participants_begin_substep(s as usize, substeps, sub_dt, dt, frozen);
                     self.axis_lock_begin();
                     for (state, body) in tgs_bodies.iter_mut().zip(self.bodies.iter()) {
                         state.linear_velocity = [body.velocity.x, body.velocity.y, body.velocity.z];
@@ -5668,7 +5670,8 @@ impl PhysicsWorld {
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
             self.sdf_contact_substep = i;
-            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
+            let overflow_at_start =
+                self.participants_begin_substep(i, n, substep_dt, dt, &mut frozen);
             self.substep_batched(substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }
@@ -7214,7 +7217,8 @@ impl PhysicsWorld {
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
             self.sdf_contact_substep = i;
-            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
+            let overflow_at_start =
+                self.participants_begin_substep(i, n, substep_dt, dt, &mut frozen);
             self.substep_with_bridge_unchecked(bridge, substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }

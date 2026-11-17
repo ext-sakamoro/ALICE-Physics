@@ -2093,6 +2093,8 @@ impl core::marker::Unpin for alice_physics_core::cloth::RestPositionsMismatch
 impl core::marker::UnsafeUnpin for alice_physics_core::cloth::RestPositionsMismatch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::RestPositionsMismatch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::RestPositionsMismatch
+pub fn alice_physics_core::cloth::damping_over(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::cloth::damping_reference_dt() -> alice_physics_core::math::Fix128
 pub mod alice_physics_core::cloth_fluid
 pub struct alice_physics_core::cloth_fluid::ClothFluidCoupling
 pub alice_physics_core::cloth_fluid::ClothFluidCoupling::buoyancy_factor: alice_physics_core::math::Fix128
@@ -2120,6 +2122,28 @@ pub fn alice_physics_core::cloth_fluid::apply_cloth_boundary_to_fluid(&[alice_ph
 pub fn alice_physics_core::cloth_fluid::apply_cloth_boundary_to_fluid_with_residual(&[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::cloth_fluid::apply_fluid_forces_to_cloth(&alice_physics_core::cloth_fluid::ClothFluidCoupling, &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth_fluid::apply_fluid_forces_to_cloth_with_residual(&alice_physics_core::cloth_fluid::ClothFluidCoupling, &[alice_physics_core::math::Vec3Fix], &mut [alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
+pub mod alice_physics_core::cloth_participant
+pub struct alice_physics_core::cloth_participant::ClothParticipant
+impl alice_physics_core::cloth_participant::ClothParticipant
+pub fn alice_physics_core::cloth_participant::ClothParticipant::new(alice_physics_core::cloth::Cloth) -> Self
+impl alice_physics_core::world_participant::Participant for alice_physics_core::cloth_participant::ClothParticipant
+pub fn alice_physics_core::cloth_participant::ClothParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::cloth_participant::ClothParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::cloth_participant::ClothParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::cloth_participant::ClothParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::cloth_participant::ClothParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::cloth_participant::ClothParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::marker::Freeze for alice_physics_core::cloth_participant::ClothParticipant
+impl core::marker::Send for alice_physics_core::cloth_participant::ClothParticipant
+impl core::marker::Sync for alice_physics_core::cloth_participant::ClothParticipant
+impl core::marker::Unpin for alice_physics_core::cloth_participant::ClothParticipant
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth_participant::ClothParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth_participant::ClothParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth_participant::ClothParticipant
+pub const alice_physics_core::cloth_participant::CLOTH_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
 pub mod alice_physics_core::collider
 pub struct alice_physics_core::collider::AABB
 pub alice_physics_core::collider::AABB::max: alice_physics_core::math::Vec3Fix
@@ -22501,6 +22525,9 @@ pub alice_physics_core::world_participant::RegisterError::Order(alice_physics_co
 pub alice_physics_core::world_participant::RegisterError::StepRuleMismatch
 pub alice_physics_core::world_participant::RegisterError::StepRuleMismatch::step: alice_physics_core::math::Fix128
 pub alice_physics_core::world_participant::RegisterError::StepRuleMismatch::substep: alice_physics_core::math::Fix128
+pub alice_physics_core::world_participant::RegisterError::StepsPerFrameAboveSubsteps
+pub alice_physics_core::world_participant::RegisterError::StepsPerFrameAboveSubsteps::steps: u32
+pub alice_physics_core::world_participant::RegisterError::StepsPerFrameAboveSubsteps::substeps: usize
 impl core::clone::Clone for alice_physics_core::world_participant::RegisterError
 pub fn alice_physics_core::world_participant::RegisterError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::world_participant::RegisterError
@@ -22600,7 +22627,10 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::world_particip
 #[non_exhaustive] pub enum alice_physics_core::world_participant::StepRule
 pub alice_physics_core::world_participant::StepRule::Fixed(alice_physics_core::math::Fix128)
 pub alice_physics_core::world_participant::StepRule::FollowSubstep
+pub alice_physics_core::world_participant::StepRule::PerFrame(u32)
 pub alice_physics_core::world_participant::StepRule::Subcycle
+impl alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::world_participant::StepRule::covers(self, usize, usize) -> core::option::Option<usize>
 impl alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::world_participant::StepRule::steps_per_substep(self, alice_physics_core::math::Fix128) -> core::result::Result<u64, alice_physics_core::world_participant::RegisterError>
 impl core::clone::Clone for alice_physics_core::world_participant::StepRule
@@ -22931,6 +22961,16 @@ pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::semantics_id(
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::buoyancy_zone::BuoyancyZoneParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::cloth_participant::ClothParticipant
+pub fn alice_physics_core::cloth_participant::ClothParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::cloth_participant::ClothParticipant::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::cloth_participant::ClothParticipant::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::cloth_participant::ClothParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics_core::cloth_participant::ClothParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::cloth_participant::ClothParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::cloth_participant::ClothParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::coupling_medium::DragMedium
 pub fn alice_physics_core::coupling_medium::DragMedium::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::coupling_medium::DragMedium::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
