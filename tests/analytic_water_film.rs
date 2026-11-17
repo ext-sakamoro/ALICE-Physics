@@ -875,12 +875,13 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
 /// backwards. Re-pinned when the step gained pools (faces deeper than the film levelled
 /// exactly) and the derived substep, and the scene moved inside the model's range (thin
 /// initial films, 200 mm/h), and again when pools joined only across steps within the join
-/// step and deep spills over a step became out of range: the bytes moved, every validation
-/// oracle passes.
+/// step and deep spills over a step became out of range, and again when pools carrying
+/// throughflow stepped at local substeps and free overfalls became weirs: the bytes moved,
+/// every validation oracle passes.
 #[test]
 fn the_mixed_scene_digest_is_pinned() {
-    const CLOSED: &str = "0bb99874049bfd820dc8df56b1a0a1a88d90b45083fd13c3228392095f9145ae";
-    const OPEN: &str = "5e4c71df9464943b17914dbb50c88587463a55d6a3144855137af85194095c89";
+    const CLOSED: &str = "3dc2f732c2eeb8e62f321146c34cfa7a260c8a02ff3ce8b18589a38d7c41e471";
+    const OPEN: &str = "cb143677a13a1c92ac9adc4d032bcbc70929fd19929f7fab09a918324bcc7c98";
     for rev in [false, true] {
         assert_eq!(
             mixed_scene(FilmEdge::Closed, rev),
@@ -1027,14 +1028,15 @@ impl SqrtApprox for f64 {
     }
 }
 
-/// The band is refused, not levelled silently: water 3 mm deep flowing down a channel at
-/// slope 1/1000 (Re ≈ 88, Fr ≈ 0.17: lubrication is the right closure) is deeper than the
-/// declared deepest film of 1.5 mm, so its faces pool; a level pool cannot carry the flow:
-/// it needs a surface fall of about 1.2 mm along the 1.2 m channel, against an accepted
-/// error of 1 % of the 3 mm depth. The advance must return
-/// out of range, name channel cells in `last_band_cells`, and leave the state unchanged.
+/// The band is stepped, not levelled: water 3 mm deep flowing down a channel at slope
+/// 1/1000 (Re ≈ 88, Fr ≈ 0.17: lubrication is the right closure) is deeper than the declared
+/// deepest film of 1.5 mm, so its faces would pool; a level pool cannot carry the flow (it
+/// needs a surface fall of about 1.2 mm along the 1.2 m channel, against 1 % of the 3 mm
+/// depth), so its cells step on their own at local substeps and the surface keeps a gradient
+/// to carry the flow: over the middle 20 cells it falls far more than the rest band of a
+/// levelled pool (7 quanta per cell).
 #[test]
-fn a_flowing_channel_deeper_than_the_film_is_refused() {
+fn a_flowing_channel_deeper_than_the_film_is_stepped_not_levelled() {
     let (nx, nz) = (60usize, 3usize);
     let cell = mm(20);
     let wall = Fix128::from_ratio(1, 10);
@@ -1047,35 +1049,32 @@ fn a_flowing_channel_deeper_than_the_film_is_refused() {
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
     cfg.film_depth_max = Fix128::from_ratio(15, 10_000);
     let mut f = WaterFilm::new(cfg, bed).expect("film");
-    // start the channel at the uniform 3 mm it would carry and keep feeding the top
     for i in 0..nx {
         f.set_initial_depth(i, 1, metres_to_quanta(mm(3)));
     }
-    let q = Fix128::from_ratio(88, 1_000_000) * cell; // q ≈ 8.8e-5 m²/s over one cell width
-    let step = Fix128::from_ratio(1, 6);
-    let (x0, z0) = f.bed().centre(0, 1);
-    let mut refused = None;
-    for n in 0..60 {
+    let q = Fix128::from_ratio(88, 1_000_000) * cell;
+    let step = f.substep();
+    let (x0, z0) = f.bed().centre(1, 1);
+    let mut most = 0;
+    for _ in 0..((10.0 / step.to_f64()) as usize) {
         f.deposit(x0, z0, q * step);
-        let before = state(&f);
-        match f.advance(step) {
-            Ok(_) => {}
-            Err(e) => {
-                assert_eq!(e, ParticipantFault::OutOfRange);
-                assert_eq!(state(&f), before, "a refused advance changed the state");
-                refused = Some(n);
-                break;
-            }
-        }
+        f.advance(step).expect("advance");
+        most = most.max(f.last_local_substeps());
     }
-    assert!(
-        refused.is_some(),
-        "the flowing 3 mm channel was levelled, not refused"
+    assert!(most > 1, "the channel never took local substeps");
+    let eta = |i: usize| f.bed().heights()[i + nx] + f.depths()[i + nx];
+    let fall = quanta_to_metres(eta(20) - eta(40)).to_f64();
+    // a levelled pool stands within its rest band (7 quanta per cell); the stepped channel
+    // keeps a fall far above it (its uniform-flow depth is checked against the closed form in
+    // flow_in_the_band_has_the_lubrication_depth)
+    let rest = 7 * 20;
+    println!(
+        "flowing channel: surface fell {fall:.3e} m over 20 cells (rest band {:.1e} m), local substeps up to {most}",
+        quanta_to_metres(rest).to_f64()
     );
-    let band = f.last_band_cells();
     assert!(
-        band.iter().any(|c| c / nx == 1),
-        "band cells {band:?} miss the channel"
+        eta(20) - eta(40) > 100 * rest,
+        "the channel stood level: fall {fall:.3e} m"
     );
 }
 
@@ -1261,11 +1260,12 @@ fn sill_scene(rain_mm_h: i64) -> WaterFilm {
     WaterFilm::new(cfg, bed).expect("film")
 }
 
-/// Water standing 15 mm over the sill against a dry right basin would spill as an inertial
-/// weir, which the model does not carry: the advance is refused, names the cells on both
-/// sides of the sill, and changes nothing.
+/// Water standing 15 mm over the sill spills into the dry right basin as a free overfall (a
+/// weir, inside the model), but the water it drops then runs over the basin's dry flat floor
+/// as a dam-break front, an inertial flow outside the model: the advance is refused, names
+/// the cells at the front, and changes nothing.
 #[test]
-fn a_deep_spill_over_a_sill_is_refused() {
+fn a_dam_break_front_below_a_spill_is_refused() {
     let mut f = sill_scene(0);
     let level = metres_to_quanta(mm(5));
     for i in 0..=10 {
@@ -1277,7 +1277,7 @@ fn a_deep_spill_over_a_sill_is_refused() {
         Err(ParticipantFault::OutOfRange)
     );
     assert!(
-        f.last_band_cells().contains(&10) && f.last_band_cells().contains(&11),
+        f.last_band_cells().contains(&11) && f.last_band_cells().contains(&12),
         "band {:?}",
         f.last_band_cells()
     );
@@ -1397,4 +1397,261 @@ fn the_join_step_is_one_percent_of_the_shallower_side() {
         compared += 2;
     }
     assert_eq!(compared, 4);
+}
+
+/// A row of cells between two dry rims 50 mm high (rows 0 and 2), open edges.
+fn walled_row(nx: usize, l_mm: i64, beds: &[Fix128], cfg: FilmConfig) -> WaterFilm {
+    let mut h = vec![mm(50); nx * 3];
+    h[nx..2 * nx].copy_from_slice(beds);
+    let bed =
+        FilmBed::from_heights(nx, 3, mm(l_mm), (Fix128::ZERO, Fix128::ZERO), &h, 1).expect("bed");
+    WaterFilm::new(cfg, bed).expect("film")
+}
+
+/// oracle: a free overfall. A basin (10 cells, floor −30 mm) behind a sill (bed −10 mm) at an
+/// open edge, walled on its other sides, starts level at +5 mm (head `h₀` = 15 mm over the
+/// sill). The sill spills over the edge as a broad-crested weir, `q = (2/3)^{3/2} √g h^{3/2}`
+/// per unit width, so the head of the pool (area `11 l²`, the sill included) follows
+/// `h(t) = (h₀^{-1/2} + (2/3)^{3/2} √g t / (22 l))⁻²`, to the explicit step's error
+/// `(2/3)^{3/2} √(g h₀) Δt / (11 l)` (one substep's relative change).
+#[test]
+fn a_free_overfall_drains_at_the_weir_rate() {
+    let mut beds = vec![mm(50)];
+    beds.extend(core::iter::repeat_n(mm(-30), 10));
+    beds.push(mm(-10));
+    let mut f = walled_row(
+        12,
+        CELL_MM,
+        &beds,
+        FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open),
+    );
+    let level = metres_to_quanta(mm(5));
+    for i in 1..12 {
+        f.set_initial_depth(i, 1, level - f.bed().heights()[12 + i]);
+    }
+    let sill = f.bed().heights()[12 + 11];
+    let (g, l, h0) = (9.80665_f64, 0.01_f64, 0.015_f64);
+    let cw = (8.0_f64 / 27.0).sqrt();
+    let dt = f.substep().to_f64();
+    let n = (0.125 / dt).round() as u64;
+    let mut most = 0;
+    for _ in 0..n {
+        f.step_once(f.substep()).expect("substep");
+        most = most.max(f.last_local_substeps());
+    }
+    let t = n as f64 * dt;
+    let head = quanta_to_metres(f.bed().heights()[13] + f.depths()[13] - sill).to_f64();
+    let s = 1.0 / h0.sqrt() + cw * g.sqrt() * t / (22.0 * l);
+    let closed = 1.0 / (s * s);
+    let bound = cw * (g * h0).sqrt() * dt / (11.0 * l);
+    let rel = (head - closed) / closed;
+    println!("overfall: head {head:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e}), local substeps up to {most}");
+    assert!(
+        rel.abs() <= bound,
+        "head {head:.5e} vs {closed:.5e} ({rel:+.3e}, bound {bound:.2e})"
+    );
+    assert!(f.ledger().outflow > 0);
+    assert_eq!(f.total(), f.ledger().expected());
+}
+
+/// oracle: uniform flow inside the band. A channel at slope `S` (one walled row of 2 cm
+/// cells), fed `q` per unit width at its head and spilling over an open edge at its foot,
+/// starts at the lubrication depth `h = (3 ν q / (g S))^{1/3}`. The depth is deeper than the
+/// film, so its faces step at local substeps; at its middle the depth stays at `h` to the
+/// transfer rounding at the local substep, `ε = 2⁻³² l / (q Δt_local)` (depth `ε/3`), plus
+/// `10⁻⁴` for the drawdown from the brink, read 3 to 4.5 backwater lengths `h/S` away.
+#[test]
+fn flow_in_the_band_has_the_lubrication_depth() {
+    // the channel is long against the drawdown from the brink, which decays over h/S
+    // (0.5 m and 3 m); the depth is read 1.5 m and 9 m from it
+    for (s_num, s_den, h_um, nx, at) in [
+        (1i64, 200i64, 2_500i64, 151usize, 75usize),
+        (1, 1_000, 3_000, 601, 150),
+    ] {
+        let slope = s_num as f64 / s_den as f64;
+        let mut beds = vec![mm(50)];
+        beds.extend((1..nx).map(|i| -Fix128::from_ratio(s_num * 20 * i as i64, s_den * 1000)));
+        let mut f = walled_row(
+            nx,
+            20,
+            &beds,
+            FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open),
+        );
+        let h = h_um as f64 * 1e-6;
+        let q = 9.80665 * h * h * h * slope / 3.0e-6;
+        for i in 1..nx {
+            f.set_initial_depth(i, 1, metres_to_quanta(Fix128::from_f64(h)));
+        }
+        // fed once per substep (a whole 1/6 s of feed at once would be a 2 mm surge at the
+        // head, an inertial front outside the model)
+        let step = f.substep();
+        let (x0, z0) = f.bed().centre(1, 1);
+        let mut most = 0;
+        for _ in 0..((20.0 / step.to_f64()) as usize) {
+            f.deposit(x0, z0, Fix128::from_f64(q * 0.02) * step);
+            if f.advance(step).is_err() {
+                let c = f.last_band_cells().to_vec();
+                let d: Vec<f64> = c
+                    .iter()
+                    .map(|c| quanta_to_metres(f.depths()[*c]).to_f64() * 1e3)
+                    .collect();
+                panic!("S {slope}: refused, cells {c:?} depths mm {d:?}");
+            }
+            most = most.max(f.last_local_substeps());
+        }
+        let got = f.depth_m(at, 1).to_f64();
+        let local = f.substep().to_f64() / f64::from(most);
+        let eps = QUANTUM_M * 0.02 / (q * local) / 3.0 + 1.0e-4;
+        let rel = (got - h) / h;
+        println!("band channel S {slope}: depth {got:.6e} m vs {h:.6e} m ({rel:+.2e}, bound {eps:.2e}), local substeps up to {most}");
+        assert!(most > 1, "S {slope}: no local substeps");
+        assert!(
+            rel.abs() <= eps,
+            "S {slope}: depth {got:.6e} vs {h:.6e} ({rel:+.3e})"
+        );
+    }
+}
+
+/// oracle: a source inside a pool is inflow. A flat channel (40 cells of 1 cm, walled) fed
+/// `q` per unit width at its head and spilling over an open edge at its foot carries a
+/// lubrication gradient: `q = g h³ (dη/dx)/(3ν)`, so `h(x)⁴ = h_b⁴ + 12 ν q x / g` with `x`
+/// from the brink. Its deeper part is a pool (steps between cells within the join step)
+/// whose only inflow is the water deposited into it: counted as throughflow it is stepped on
+/// its own and keeps the gradient, at 0.3 m and 0.4 m from the brink within 1 % of the
+/// scheme's steady profile (which samples the gradient at the upstream face depth and lies
+/// within 3 % of the closed form); not counted, it would be levelled flat.
+#[test]
+fn a_pool_fed_from_inside_keeps_its_gradient() {
+    let nx = 42;
+    let mut beds = vec![mm(50)];
+    beds.extend(core::iter::repeat_n(Fix128::ZERO, nx - 1));
+    let mut f = walled_row(
+        nx,
+        CELL_MM,
+        &beds,
+        FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open),
+    );
+    let (q, g, nu, l) = (5.0e-6_f64, 9.80665_f64, 1.0e-6_f64, 0.01_f64);
+    let profile = |x: f64| (12.0 * nu * q * x / g).sqrt().sqrt();
+    for i in 1..nx {
+        let x = (nx - i) as f64 * l - l / 2.0;
+        f.set_initial_depth(i, 1, metres_to_quanta(Fix128::from_f64(profile(x))));
+    }
+    let step = Fix128::from_ratio(1, 6);
+    let (x0, z0) = f.bed().centre(1, 1);
+    let mut freed = 0;
+    for _ in 0..(6 * 40) {
+        f.deposit(x0, z0, Fix128::from_f64(q * l) * step);
+        f.advance(step).expect("advance");
+        freed = freed.max(f.last_local_substeps());
+    }
+    // the scheme's own steady profile: from the brink (the critical film, q = h √(g h)),
+    // each face upstream carries q at its upstream depth, q = g h_up³ (h_up − h_dn) / (3 ν l);
+    // it differs from the continuous closed form by the face sampling (reported)
+    let brink = {
+        let (mut lo, mut hi) = (0.0_f64, 0.01_f64);
+        for _ in 0..200 {
+            let m = 0.5 * (lo + hi);
+            if m * m * m < q * q / g {
+                lo = m;
+            } else {
+                hi = m;
+            }
+        }
+        0.5 * (lo + hi)
+    };
+    let mut discrete = vec![brink];
+    for _ in 0..nx {
+        let dn = discrete[discrete.len() - 1];
+        let (mut lo, mut hi) = (dn, dn + 0.01);
+        for _ in 0..200 {
+            let m = 0.5 * (lo + hi);
+            if g * m * m * m * (m - dn) / (3.0 * nu * l) < q {
+                lo = m;
+            } else {
+                hi = m;
+            }
+        }
+        discrete.push(0.5 * (lo + hi));
+    }
+    let mut compared = 0;
+    for x_cm in [30usize, 40] {
+        let i = nx - x_cm;
+        let x = x_cm as f64 * l - l / 2.0;
+        let (got, want, scheme) = (f.depth_m(i, 1).to_f64(), profile(x), discrete[x_cm - 1]);
+        let sampling = (scheme - want).abs() / want;
+        let rel = (got - scheme) / scheme;
+        println!("fed pool at {x:.3} m: depth {got:.5e} m, scheme's steady profile {scheme:.5e} m ({rel:+.2e}), closed form {want:.5e} m (sampling {sampling:.2e})");
+        assert!(
+            rel.abs() <= 0.01,
+            "x {x}: depth {got:.5e} vs the steady profile {scheme:.5e} ({rel:+.3e})"
+        );
+        assert!(
+            sampling <= 0.03,
+            "x {x}: the steady profile is {sampling:.3e} from the closed form"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 2);
+    assert!(freed >= 1);
+}
+
+/// The site's letter: a groove 3 cm deep (12 × 3 cells of 1 cm) cut in flat ground (24 × 9),
+/// closed, under 20 mm/h of rain for 120 s. The ground's runoff (five times the groove's own
+/// rain) fills the groove through the band (a pool 1–5 mm deep carrying inflow), which is
+/// stepped at local substeps: no advance is refused, the groove stands level, the volume
+/// ledger holds, and the groove holds at least its own rain.
+#[test]
+fn a_letter_fills_from_its_runoff() {
+    let (nx, nz) = (24, 9);
+    let groove = |x: f32, z: f32| -> f32 {
+        if (0.06..0.18).contains(&x) && (0.03..0.06).contains(&z) {
+            -0.03
+        } else {
+            0.0
+        }
+    };
+    let bed = FilmBed::from_height_fn(nx, nz, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), 1, groove)
+        .expect("bed");
+    let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(20));
+    let mut f = WaterFilm::new(cfg, bed).expect("film");
+    let step = Fix128::from_ratio(1, 6);
+    let mut most = 0;
+    for n in 0..(6 * 120) {
+        if f.advance(step).is_err() {
+            panic!("refused at step {n}: cells {:?}", f.last_band_cells());
+        }
+        most = most.max(f.last_local_substeps());
+        assert_eq!(f.total(), f.ledger().expected());
+    }
+    let cells: Vec<usize> = (0..nx * nz).filter(|c| f.bed().heights()[*c] < 0).collect();
+    assert_eq!(cells.len(), 36);
+    let s: Vec<i64> = cells
+        .iter()
+        .map(|c| f.bed().heights()[*c] + f.depths()[*c])
+        .collect();
+    let spread = s.iter().max().unwrap_or(&0) - s.iter().min().unwrap_or(&0);
+    let held: i64 = cells.iter().map(|c| f.depths()[*c]).sum();
+    // the groove carries its runoff Q (the ground's rain) to the far end at most: a
+    // lubrication gradient across its length L = 12 cm, ΔH = 3 ν Q L² / (g h̄³ A)
+    let r = cfg.rain.to_f64();
+    let q_in = 180.0 * r * 1.0e-4;
+    let h_bar = quanta_to_metres(held / 36).to_f64();
+    let dh = 3.0e-6 * q_in * 0.12 * 0.12 / (9.80665 * h_bar * h_bar * h_bar * 36.0e-4);
+    let bound = (dh / QUANTUM_M).ceil() as i64 + 7 * 12;
+    assert!(
+        spread <= bound,
+        "groove spread {spread} quanta, gradient bound {bound}"
+    );
+    let rain_per_cell = f.ledger().rain / (nx * nz) as i64;
+    assert!(
+        held >= 36 * rain_per_cell,
+        "the groove holds less than its own rain"
+    );
+    println!(
+        "letter: groove {:.3} mm deep, spread {spread} quanta (bound {bound}), ground holds {:.3} mm·cell, local substeps up to {most}",
+        quanta_to_metres(held / 36).to_f64() * 1e3,
+        quanta_to_metres(f.total() - held).to_f64() * 1e3
+    );
 }
