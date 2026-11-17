@@ -7,8 +7,8 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 39 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2785 |
+| L0 | not reached by any non-test code, examples included | 34 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2790 |
 | live | reached without examples (crate-internal roots or a binding) | 905 |
 | | **total** | **3729** |
 
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (37)
+### L0 here but not in the baseline (32)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -52,11 +52,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
-- `src/water_film.rs::FilmBed::cell`
-- `src/water_film.rs::FilmBed::from_sdf`
-- `src/water_film.rs::FilmBed::generation`
-- `src/water_film.rs::FilmBed::nx`
-- `src/water_film.rs::FilmBed::nz`
 - `src/water_film.rs::WaterFilm::config`
 - `src/water_film.rs::WaterFilm::steps`
 - `src/water_film.rs::WaterFilm::substep`
@@ -67,7 +62,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (39)
+## L0 — unreached (34)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
@@ -100,11 +95,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::XorShift64::next_u64`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
-- `src/water_film.rs::FilmBed::cell`
-- `src/water_film.rs::FilmBed::from_sdf`
-- `src/water_film.rs::FilmBed::generation`
-- `src/water_film.rs::FilmBed::nx`
-- `src/water_film.rs::FilmBed::nz`
 - `src/water_film.rs::WaterFilm::config`
 - `src/water_film.rs::WaterFilm::steps`
 - `src/water_film.rs::WaterFilm::substep`
@@ -124,7 +114,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2785)
+## L1 — example-only (2790)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -305,7 +295,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/vehicle_dynamics/tire.rs`: `BrushTire`, `BrushTire::passenger_car`, `MagicFormulaTire`, `MagicFormulaTire::passenger_car`, `TireForce`, `TireInput`, `TireModel`, `TireModel::force`, `TireModel::longitudinal_slope`
 - `src/vibration_wall.rs`: `ExcitationSource`, `WallResonanceReport`, `analyze_wall_resonance`, `default_excitation_sources`
 - `src/warp_risk.rs`: `EnvConditions`, `EnvConditions::enclosed_abs`, `EnvConditions::open_air_pla`, `Footprint`, `Footprint::rectangle`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`
-- `src/water_film.rs`: `DEPTH_QUANTUM_BITS`, `FilmBed`, `FilmBed::centre`, `FilmBed::from_height_fn`, `FilmBed::from_heights`, `FilmBed::heights`, `FilmBuildError`, `FilmConfig`, `FilmConfig::rain_mm_per_hour`, `FilmConfig::water`, `FilmEdge`, `FilmLedger`, `FilmLedger::expected`, `FilmScheme`, `FluxConstants`, `FluxConstants::new`, `MAX_FACE_DEPTH`, `MAX_LUBRICATION_DIVISOR`, `WATER_FILM_OBS_SUBCYCLES`, `WATER_FILM_OBS_VOLUME`, `WATER_FILM_OBS_WET_CELLS`, `WATER_FILM_PARTICIPANT_KIND`, `WaterFilm`, `WaterFilm::advance`, `WaterFilm::bed`, `WaterFilm::deposit`, `WaterFilm::depth_m`, `WaterFilm::depths`, `WaterFilm::dry_ages`, `WaterFilm::last_band_cells`, `WaterFilm::last_cap_faces`, `WaterFilm::last_local_substeps`, `WaterFilm::last_moved`, `WaterFilm::last_pooled_cells`, `WaterFilm::ledger`, `WaterFilm::new`, `WaterFilm::set_bed`, `WaterFilm::set_initial_depth`, `WaterFilm::set_reverse_faces`, `WaterFilm::step_once`, `WaterFilm::subcycles`, `WaterFilm::total`, `face_depth`, `isqrt_u128`, `join_step`, `metres_to_quanta`, `quanta_to_metres`, `simultaneous_transfer`, `simultaneous_transfer_report`, `weir_transfer`
+- `src/water_film.rs`: `DEPTH_QUANTUM_BITS`, `FilmBed`, `FilmBed::cell`, `FilmBed::centre`, `FilmBed::from_height_fn`, `FilmBed::from_heights`, `FilmBed::from_sdf`, `FilmBed::generation`, `FilmBed::heights`, `FilmBed::nx`, `FilmBed::nz`, `FilmBuildError`, `FilmConfig`, `FilmConfig::rain_mm_per_hour`, `FilmConfig::water`, `FilmEdge`, `FilmLedger`, `FilmLedger::expected`, `FilmScheme`, `FluxConstants`, `FluxConstants::new`, `MAX_FACE_DEPTH`, `MAX_LUBRICATION_DIVISOR`, `WATER_FILM_OBS_SUBCYCLES`, `WATER_FILM_OBS_VOLUME`, `WATER_FILM_OBS_WET_CELLS`, `WATER_FILM_PARTICIPANT_KIND`, `WaterFilm`, `WaterFilm::advance`, `WaterFilm::bed`, `WaterFilm::deposit`, `WaterFilm::depth_m`, `WaterFilm::depths`, `WaterFilm::dry_ages`, `WaterFilm::last_band_cells`, `WaterFilm::last_cap_faces`, `WaterFilm::last_local_substeps`, `WaterFilm::last_moved`, `WaterFilm::last_pooled_cells`, `WaterFilm::ledger`, `WaterFilm::new`, `WaterFilm::set_bed`, `WaterFilm::set_initial_depth`, `WaterFilm::set_reverse_faces`, `WaterFilm::step_once`, `WaterFilm::subcycles`, `WaterFilm::total`, `face_depth`, `isqrt_u128`, `join_step`, `metres_to_quanta`, `quanta_to_metres`, `simultaneous_transfer`, `simultaneous_transfer_report`, `weir_transfer`
 - `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `ShipResponse`, `ShipResponse::advance`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
 - `src/wind_zone.rs`: `WIND_ZONE_OBS_BODIES`, `WIND_ZONE_OBS_TIME`, `WindZone::force_on`, `WindZone::force_on_particle`, `WindZone::instantaneous_wind_vector`, `WindZone::light_breeze`, `WindZone::storm`, `WindZoneParticipant::time`, `WindZoneParticipant::zone`
 - `src/world_character.rs`: `PhysicsWorld::move_character`, `PhysicsWorld::move_character_with_filter`
