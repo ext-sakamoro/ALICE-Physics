@@ -233,6 +233,18 @@ fn spiky_grad(r: Fix128, h: Fix128) -> Fix128 {
     -coeff * diff * diff
 }
 
+/// The poly6 kernel, for the boundary density maps
+#[cfg(feature = "std")]
+pub(crate) fn poly6_kernel(r_sq: Fix128, h: Fix128) -> Fix128 {
+    poly6(r_sq, h)
+}
+
+/// The spiky kernel gradient magnitude, for the boundary density maps
+#[cfg(feature = "std")]
+pub(crate) fn spiky_grad_kernel(r: Fix128, h: Fix128) -> Fix128 {
+    spiky_grad(r, h)
+}
+
 // ============================================================================
 // Fluid Simulation
 // ============================================================================
@@ -267,6 +279,12 @@ pub struct Fluid {
     boundary_force: Vec3Fix,
     /// Per boundary particle: the force it exerted on the fluid in the last substep
     boundary_forces: Vec<Vec3Fix>,
+    /// Static solids given by their SDF, coupled through density maps
+    /// (see [`crate::fluid_boundary_map`])
+    #[cfg(feature = "std")]
+    bodies: Vec<crate::fluid_boundary_map::FluidBody>,
+    /// Per solid: the force the fluid exerted on it in the last substep
+    body_forces: Vec<Vec3Fix>,
 }
 
 impl Fluid {
@@ -306,6 +324,75 @@ impl Fluid {
             negative_weights: vec![Fix128::ONE; n],
             boundary_force: Vec3Fix::ZERO,
             boundary_forces: Vec::new(),
+            #[cfg(feature = "std")]
+            bodies: Vec::new(),
+            body_forces: Vec::new(),
+        }
+    }
+
+    /// Add a static solid given by its SDF: its boundary density map is built over the box
+    /// `[lo, hi]` (world space; it must contain every point within the kernel radius of the
+    /// solid that fluid can reach) with grid step `rest_spacing / 4`. The solid then adds to
+    /// the density and constraint gradient of nearby fluid particles, and the force the fluid
+    /// exerts on it is read with [`Fluid::body_forces`] (see the MODEL of
+    /// [`crate::fluid_boundary_map`]).
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn with_sdf_body(mut self, sdf: SdfCollider, lo: Vec3Fix, hi: Vec3Fix) -> Self {
+        let step = self.config.rest_spacing / Fix128::from_int(4);
+        let map = crate::fluid_boundary_map::BoundaryMap::from_sdf(
+            &sdf,
+            lo,
+            hi,
+            step,
+            self.config.rest_density,
+            self.config.kernel_radius,
+        );
+        self.bodies
+            .push(crate::fluid_boundary_map::FluidBody::new(sdf, map));
+        self
+    }
+
+    /// Force (N) the fluid exerted on each solid added with [`Fluid::with_sdf_body`] during
+    /// the last substep, in the order they were added. Their sum is minus the solids' part of
+    /// [`Fluid::boundary_force`]. Empty before the first step.
+    #[must_use]
+    pub fn body_forces(&self) -> &[Vec3Fix] {
+        &self.body_forces
+    }
+
+    /// Number of solids added with [`Fluid::with_sdf_body`]
+    #[must_use]
+    pub fn body_count(&self) -> usize {
+        #[cfg(feature = "std")]
+        {
+            self.bodies.len()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            0
+        }
+    }
+
+    /// `rho_B` and `grad rho_B` of every solid at `p`, appended to `out`
+    #[allow(unused_variables)]
+    fn sample_bodies(&self, p: Vec3Fix, out: &mut Vec<(Fix128, Vec3Fix)>) {
+        #[cfg(feature = "std")]
+        for body in &self.bodies {
+            out.push(body.map().sample(p));
+        }
+    }
+
+    /// Unit outward normal of solid `k` at `p`
+    #[allow(unused_variables)]
+    fn body_normal(&self, k: usize, p: Vec3Fix) -> Vec3Fix {
+        #[cfg(feature = "std")]
+        {
+            crate::fluid_boundary_map::sdf_normal(self.bodies[k].sdf(), p)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            Vec3Fix::ZERO
         }
     }
 
@@ -462,6 +549,8 @@ impl Fluid {
         }
         self.grid.build();
         let mut neighbors_buf = Vec::new();
+        let mut body_buf: Vec<(Fix128, Vec3Fix)> = Vec::new();
+        let n_bodies = self.body_count();
         let cutoff = self.config.surface_gradient_cutoff;
         for i in 0..n {
             if cutoff <= Fix128::ZERO {
@@ -482,6 +571,11 @@ impl Fluid {
                 }
                 let r = r_sq.sqrt();
                 gradient = gradient + delta / r * (spiky_grad(r, h) * vol);
+            }
+            body_buf.clear();
+            self.sample_bodies(self.positions[i], &mut body_buf);
+            for &(_, g_b) in &body_buf {
+                gradient = gradient + g_b * self.inv_rest_density;
             }
             let g = gradient.length() * h;
             let w = Fix128::ONE - g / cutoff;
@@ -517,6 +611,8 @@ impl Fluid {
         let mut corrections = vec![Vec3Fix::ZERO; n];
         let mut total_correction = Vec3Fix::ZERO;
         let mut wall_corrections = vec![Vec3Fix::ZERO; self.boundary.len()];
+        let mut body_corrections = vec![Vec3Fix::ZERO; n_bodies];
+        let mut body_samples = vec![(Fix128::ZERO, Vec3Fix::ZERO); n * n_bodies];
         for _ in 0..self.config.iterations {
             for i in 0..n {
                 self.grid
@@ -536,6 +632,16 @@ impl Fluid {
                         let grad = delta / r * (spiky_grad(r, h) * vol);
                         grad_i = grad_i + grad;
                         sum_grad_sq = sum_grad_sq + grad.length_squared();
+                    }
+                }
+
+                if n_bodies > 0 {
+                    body_buf.clear();
+                    self.sample_bodies(self.predicted[i], &mut body_buf);
+                    for (k, &(r_b, g_b)) in body_buf.iter().enumerate() {
+                        density = density + r_b;
+                        grad_i = grad_i + g_b * self.inv_rest_density;
+                        body_samples[i * n_bodies + k] = (r_b, g_b);
                     }
                 }
 
@@ -585,7 +691,53 @@ impl Fluid {
                     }
                     correction = correction + grad * lambda_sum;
                 }
-                *slot = correction * vol * self.config.relaxation;
+                let mut correction = correction * vol * self.config.relaxation;
+                if n_bodies > 0 {
+                    let scale = self.lambdas[i] * self.inv_rest_density * self.config.relaxation;
+                    let samples = &body_samples[i * n_bodies..(i + 1) * n_bodies];
+                    let mut total = Vec3Fix::ZERO;
+                    let mut near = [usize::MAX; 2];
+                    let mut near_count = 0usize;
+                    for (k, &(r_b, g_b)) in samples.iter().enumerate() {
+                        total = total + g_b * scale;
+                        if !r_b.is_zero() {
+                            if near_count < 2 {
+                                near[near_count] = k;
+                            }
+                            near_count += 1;
+                        }
+                    }
+                    correction = correction + total;
+                    // share the solids' push (see the fluid_boundary_map MODEL); the last
+                    // share is the total minus the others, so the shares sum to it exactly
+                    let mut split = None;
+                    if near_count == 2 {
+                        let (a, b) = (near[0], near[1]);
+                        let (r_a, _) = samples[a];
+                        let (r_b, _) = samples[b];
+                        let share_b = r_b / (r_a + r_b);
+                        let n_a = self.body_normal(a, self.predicted[i]);
+                        let n_b = self.body_normal(b, self.predicted[i]);
+                        if let Some(to_b) =
+                            crate::fluid_boundary_map::split_two(total, n_a, n_b, share_b)
+                        {
+                            split = Some((a, b, to_b));
+                        }
+                    }
+                    if let Some((a, b, to_b)) = split {
+                        body_corrections[b] = body_corrections[b] + to_b;
+                        body_corrections[a] = body_corrections[a] + (total - to_b);
+                    } else {
+                        let mut credited = Vec3Fix::ZERO;
+                        let last = samples.len() - 1;
+                        for (k, &(_, g_b)) in samples.iter().enumerate() {
+                            let own = if k == last { total - credited } else { g_b * scale };
+                            credited = credited + own;
+                            body_corrections[k] = body_corrections[k] + own;
+                        }
+                    }
+                }
+                *slot = correction;
             }
             for (p, c) in self.predicted.iter_mut().zip(&corrections) {
                 *p = *p + *c;
@@ -601,6 +753,11 @@ impl Fluid {
         self.boundary_forces = wall_corrections
             .into_iter()
             .map(|c| c * force_per_correction)
+            .collect();
+        // the solids receive the reaction of the corrections they gave the fluid
+        self.body_forces = body_corrections
+            .into_iter()
+            .map(|c| -(c * force_per_correction))
             .collect();
 
         // 4. Update velocities and positions
@@ -850,6 +1007,7 @@ impl core::fmt::Debug for Fluid {
             .field("config", &self.config)
             .field("inv_rest_density", &self.inv_rest_density)
             .field("boundary", &format_args!("[{} items]", self.boundary.len()))
+            .field("bodies", &self.bodies.len())
             .field("reference_gradient_sq", &self.reference_gradient_sq)
             .finish()
     }

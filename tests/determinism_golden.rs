@@ -661,6 +661,55 @@ fn determinism_fluid_step() {
     assert_golden("fluid_step", hash, GOLDEN_FLUID_STEP);
 }
 
+/// **PBF fluid**: the particle fluid's own bits, no world header. Two scenes in one hash:
+/// a 4 x 8 x 4 column in an open box of boundary particles under gravity for 60 frames
+/// (boundary particles in the density, the surface weights, XSPH) and a free 5 x 5 x 5
+/// block laid out 15 % wider than the rest spacing, without gravity, for 60 frames (the
+/// two-sided interior pulling it in). Positions, velocities and the floor reaction.
+const GOLDEN_FLUID_PBF: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+#[test]
+fn determinism_fluid_pbf() {
+    use alice_physics_core::fluid::{Fluid, FluidConfig};
+    let config = FluidConfig::default();
+    let s = config.rest_spacing;
+    let half = s / Fix128::from_int(2);
+    let n = |k: i64| Fix128::from_int(k) * s;
+    let mut column = Fluid::new_block(
+        Vec3Fix::new(half, half, half),
+        Vec3Fix::new(n(4) - half, n(8) - half, n(4) - half),
+        s,
+        config,
+    )
+    .with_boundary(Fluid::box_boundary(
+        Vec3Fix::ZERO,
+        Vec3Fix::new(n(4), n(16), n(4)),
+        s,
+        2,
+    ));
+    let free = FluidConfig {
+        gravity: Vec3Fix::ZERO,
+        ..config
+    };
+    let wide = s * Fix128::from_ratio(115, 100);
+    let w = |k: i64| Fix128::from_int(k) * wide;
+    let mut block = Fluid::new_block(Vec3Fix::ZERO, Vec3Fix::new(w(4), w(4), w(4)), wide, free);
+    let dt = Fix128::from_ratio(1, 60);
+    for _ in 0..60 {
+        column.step(dt);
+        block.step(dt);
+    }
+    let mut bytes = Vec::new();
+    for fluid in [&column, &block] {
+        for (p, v) in fluid.positions.iter().zip(&fluid.velocities) {
+            write_vec3(&mut bytes, *p);
+            write_vec3(&mut bytes, *v);
+        }
+        write_vec3(&mut bytes, fluid.boundary_force());
+    }
+    assert_golden("fluid_pbf", sha256_bytes(&bytes), GOLDEN_FLUID_PBF);
+}
+
 /// **Scenario 7**: dynamic body glancing past a static SDF sphere with
 /// speculative CCD enabled, 90 steps. Exercises the SDF collision path
 /// with continuous collision detection.
