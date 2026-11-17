@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2793 |
+| L0 | not reached by any non-test code, examples included | 34 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2837 |
 | live | reached without examples (crate-internal roots or a binding) | 905 |
-| | **total** | **3729** |
+| | **total** | **3776** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (32)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -52,6 +52,9 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/smoke_plume.rs::SmokePlume::last_moved`
+- `src/smoke_plume.rs::SmokePlume::last_steps`
+- `src/smoke_plume.rs::SmokePlume::velocity`
 
 ### In the baseline but reached here (0)
 
@@ -59,7 +62,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (34)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
@@ -90,6 +93,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/smoke_plume.rs::SmokePlume::last_moved`
+- `src/smoke_plume.rs::SmokePlume::last_steps`
+- `src/smoke_plume.rs::SmokePlume::velocity`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
 
@@ -108,7 +114,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2793)
+## L1 — example-only (2837)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -260,6 +266,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch2048x7`, `CountMinSketch4096x5`, `CountMinSketchN`, `CountMinSketchN::DEPTH`, `CountMinSketchN::WIDTH`, `CountMinSketchN::clear`, `CountMinSketchN::confidence`, `CountMinSketchN::error_bound`, `CountMinSketchN::estimate`, `CountMinSketchN::estimate_bytes`, `CountMinSketchN::estimate_hash`, `CountMinSketchN::insert`, `CountMinSketchN::insert_bytes`, `CountMinSketchN::insert_hash`, `CountMinSketchN::new`, `CountMinSketchN::total`, `DDSketch`, `DDSketch1024`, `DDSketch128`, `DDSketch2048`, `DDSketch256`, `DDSketch512`, `DDSketchN`, `DDSketchN::BINS`, `DDSketchN::alpha`, `DDSketchN::clear`, `DDSketchN::count`, `DDSketchN::insert`, `DDSketchN::max`, `DDSketchN::mean`, `DDSketchN::min`, `DDSketchN::new`, `DDSketchN::quantile`, `DDSketchN::sum`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters20`, `HeavyHitters5`, `HeavyHittersN`, `HeavyHittersN::K`, `HeavyHittersN::clear`, `HeavyHittersN::cms`, `HeavyHittersN::insert_hash`, `HeavyHittersN::new`, `HeavyHittersN::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog12`, `HyperLogLog14`, `HyperLogLog16`, `HyperLogLogN`, `HyperLogLogN::M`, `HyperLogLogN::P`, `HyperLogLogN::cardinality`, `HyperLogLogN::clear`, `HyperLogLogN::insert`, `HyperLogLogN::insert_bytes`, `HyperLogLogN::insert_hash`, `HyperLogLogN::new`, `HyperLogLogN::registers`, `Mergeable`, `splitmix64`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
+- `src/smoke_plume.rs`: `CellBox`, `HEAT_QUANTUM_BITS`, `MAX_CELL_QUANTA`, `QuantaField`, `QuantaField::add`, `QuantaField::index`, `QuantaField::max_out_courant`, `QuantaField::new`, `QuantaField::quanta`, `QuantaField::step`, `QuantaField::total`, `SMOKE_OBS_HEAT`, `SMOKE_OBS_MAX_EXCESS`, `SMOKE_OBS_SOOT`, `SMOKE_OBS_TRANSPORT_SUBSTEPS`, `SMOKE_PLUME_PARTICIPANT_KIND`, `SOOT_QUANTUM_BITS`, `SmokeBuildError`, `SmokeConfig`, `SmokeConfig::air`, `SmokeLedger`, `SmokeLedger::heat_expected`, `SmokeLedger::soot_expected`, `SmokePlume`, `SmokePlume::add_source`, `SmokePlume::advance`, `SmokePlume::config`, `SmokePlume::excess_k`, `SmokePlume::heat`, `SmokePlume::last_transport_substeps`, `SmokePlume::ledger`, `SmokePlume::new`, `SmokePlume::set_initial`, `SmokePlume::set_reverse_cells`, `SmokePlume::soot`, `SmokePlume::step_count`, `SmokePlume::step_once`, `SmokePlume::steps`, `SmokeSource`, `SourceKind`, `TransportReport`, `from_quanta`, `minmod`, `source_rates`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
 - `src/solver.rs`: `BodyAttachments`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_attachments`, `PhysicsWorld::add_body_with_radius`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint_motor`, `PhysicsWorld::add_joint_motor_3d`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::batches_keep_body_order`, `PhysicsWorld::begin_frame`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::disable_joint_motor`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::end_frame`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::has_cloth_grab`, `PhysicsWorld::joint_motor_3d_mut`, `PhysicsWorld::joint_motor_mut`, `PhysicsWorld::last_step_sdf_contacts`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_body_with_attachments`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_joint_motor_3d_rotation_target`, `PhysicsWorld::set_joint_motor_velocity_target`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::set_sleep_skip`, `PhysicsWorld::sleep_skip`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::stage_work`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping_rate`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping_rate`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`, `TgsCacheStats::new`, `solid_sphere_inv_inertia`
 - `src/solver/participants.rs`: `DeclareFieldError`, `PhysicsWorld::clear_fault`, `PhysicsWorld::declare_field`, `PhysicsWorld::observe_body_checked`, `PhysicsWorld::observe_participant`, `PhysicsWorld::participant_count`, `PhysicsWorld::set_field`, `PhysicsWorld::try_step_parallel`

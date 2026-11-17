@@ -1450,6 +1450,27 @@ use alice_physics::smoke_fire::heat_release_j_per_m3_s as _;
 use alice_physics::smoke_fire::reaction_rate_kg_per_m3_s as _;
 use alice_physics::smoke_fire::soot_generation_kg_per_m3_s as _;
 use alice_physics::smoke_fire::ArrheniusReaction as _;
+use alice_physics::smoke_plume as _;
+use alice_physics::smoke_plume::from_quanta as _;
+use alice_physics::smoke_plume::minmod as _;
+use alice_physics::smoke_plume::source_rates as _;
+use alice_physics::smoke_plume::CellBox as _;
+use alice_physics::smoke_plume::QuantaField as _;
+use alice_physics::smoke_plume::SmokeBuildError as _;
+use alice_physics::smoke_plume::SmokeConfig as _;
+use alice_physics::smoke_plume::SmokeLedger as _;
+use alice_physics::smoke_plume::SmokePlume as _;
+use alice_physics::smoke_plume::SmokeSource as _;
+use alice_physics::smoke_plume::SourceKind as _;
+use alice_physics::smoke_plume::TransportReport as _;
+use alice_physics::smoke_plume::HEAT_QUANTUM_BITS as _;
+use alice_physics::smoke_plume::MAX_CELL_QUANTA as _;
+use alice_physics::smoke_plume::SMOKE_OBS_HEAT as _;
+use alice_physics::smoke_plume::SMOKE_OBS_MAX_EXCESS as _;
+use alice_physics::smoke_plume::SMOKE_OBS_SOOT as _;
+use alice_physics::smoke_plume::SMOKE_OBS_TRANSPORT_SUBSTEPS as _;
+use alice_physics::smoke_plume::SMOKE_PLUME_PARTICIPANT_KIND as _;
+use alice_physics::smoke_plume::SOOT_QUANTUM_BITS as _;
 use alice_physics::soft_body_cut as _;
 use alice_physics::soft_body_cut::cut_cloth as _;
 use alice_physics::soft_body_cut::cut_deformable as _;
@@ -1980,7 +2001,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1962 paths, checked at compile time
+    // 1983 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
