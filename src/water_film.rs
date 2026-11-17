@@ -90,7 +90,7 @@
 //!   step bounds the jump when two pools meet: they join only when their surfaces are within
 //!   `J` of each other, so levelling at the join moves at most `J`.
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::piled_deep_water_is_refused::the_potential_never_rises_without_a_source::a_column_spilling_four_ways_never_goes_negative::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::a_tampered_payload_is_refused::degenerate_inputs_are_refused::the_film_steps_and_rewinds_inside_a_world::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds::a_cell_drains_over_its_edges_at_the_critical_rate::a_flowing_channel_deeper_than_the_film_is_stepped_not_levelled::a_filling_groove_is_accepted_and_levels::flow_along_a_stroke_has_the_lubrication_depth::a_dam_break_front_below_a_spill_is_refused::two_basins_join_over_a_sill_without_a_jump::the_join_step_is_one_percent_of_the_shallower_side::a_free_overfall_drains_at_the_weir_rate::flow_in_the_band_has_the_lubrication_depth::a_pool_fed_from_inside_keeps_its_gradient::a_pool_fed_by_rain_keeps_its_gradient::a_letter_fills_from_its_runoff::a_new_bed_keeps_every_cells_water`
+//! - **Validation**: `tests/analytic_water_film.rs::piled_deep_water_is_refused::the_potential_never_rises_without_a_source::a_column_spilling_four_ways_never_goes_negative::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::a_tampered_payload_is_refused::degenerate_inputs_are_refused::the_film_steps_and_rewinds_inside_a_world::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds::a_cell_drains_over_its_edges_at_the_critical_rate::a_flowing_channel_deeper_than_the_film_is_stepped_not_levelled::a_filling_groove_is_accepted_and_levels::flow_along_a_stroke_has_the_lubrication_depth::a_dam_break_front_below_a_spill_is_refused::two_basins_join_over_a_sill_without_a_jump::the_join_step_is_one_percent_of_the_shallower_side::a_free_overfall_drains_at_the_weir_rate::flow_in_the_band_has_the_lubrication_depth::a_pool_fed_from_inside_keeps_its_gradient::a_pool_fed_by_rain_keeps_its_gradient::a_letter_fills_from_its_runoff::a_new_bed_keeps_every_cells_water::a_face_deeper_than_the_law_accepts_is_refused::a_drowned_sill_is_refused`
 //!
 //! Author: Moroya Sakamoto
 
@@ -769,6 +769,9 @@ pub struct WaterFilm {
     // as its inflow through every substep of the advance
     fed: Vec<i64>,
     last_local_substeps: u32,
+    // the substeps of the advance in progress, over which a deposit's inflow is spread (1
+    // outside an advance)
+    fed_share: u32,
     // the faces of the grid (x faces then z faces) as cell pairs, `NO_CELL` past an edge;
     // built once from the grid's shape and shared by every copy
     faces: Arc<[(u32, u32)]>,
@@ -876,6 +879,7 @@ impl WaterFilm {
             last_cap_faces: 0,
             fed: vec_of(n, 0),
             last_local_substeps: 0,
+            fed_share: 1,
             faces: Arc::from(Vec::new()),
         };
         film.faces = build_faces(film.bed.nx, film.bed.nz);
@@ -1159,8 +1163,11 @@ impl WaterFilm {
         }
         let n = self.subcycles(h).ok_or(ParticipantFault::OutOfRange)?;
         let dt = h.div_int(i64::from(n));
-        let mut next = self.clone();
         self.last_band_cells.clear();
+        let mut next = self.clone();
+        // a deposit is spread over the advance it fed: each substep counts its share as a
+        // pool's inflow, so the throughflow is the deposit's rate
+        next.fed_share = n;
         for _ in 0..n {
             if let Err(e) = next.step_once(dt) {
                 // keep the report of a refused substep (the band), not its state
@@ -1169,8 +1176,8 @@ impl WaterFilm {
             }
         }
         next.last_subcycles = n;
-        // a deposit counts as a pool's inflow through every substep of the advance it fed
         next.fed.iter_mut().for_each(|d| *d = 0);
+        next.fed_share = 1;
         *self = next;
         Ok(n)
     }
@@ -1272,7 +1279,9 @@ impl WaterFilm {
         }
         for c in 0..ncell {
             if pool[c] != NOT_POOLED {
-                pool_in[pool[c] as usize] += self.fed[c] + rained;
+                // deposits are never negative: the ceiling of fed / share in integers
+                let share = i64::from(self.fed_share.max(1));
+                pool_in[pool[c] as usize] += (self.fed[c] + share - 1) / share + rained;
             }
         }
         // the band: a pool carrying throughflow Q needs a lubrication gradient across its
@@ -1315,6 +1324,9 @@ impl WaterFilm {
             }
             let hf = face_depth(sa.0, sa.1, sb.0, sb.1);
             let near_free = a.is_some_and(|c| free[c]) || b.is_some_and(|c| free[c]);
+            if hf.unsigned_abs() > MAX_FACE_DEPTH {
+                return Err(ParticipantFault::OutOfRange);
+            }
             let h3 = u128::from(hf.unsigned_abs()).pow(3);
             if hf <= h_film && !near_free {
                 let (t, capped) =
@@ -1623,3 +1635,9 @@ impl Participant for WaterFilm {
         }
     }
 }
+
+// The film's oracles compile as lib tests too, so the film's lines count in the `--lib`
+// coverage (the same file runs as the integration test `analytic_water_film`).
+#[cfg(test)]
+#[path = "../tests/analytic_water_film.rs"]
+mod analytic_water_film_oracle;

@@ -4,12 +4,48 @@
 //!
 //! Run: `cargo run --example participant_water_film`
 
+use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::water_film::{
     metres_to_quanta, quanta_to_metres, FilmBed, FilmConfig, FilmEdge, FilmScheme, WaterFilm,
+    WATER_FILM_OBS_VOLUME,
 };
+use alice_physics_core::world_participant::Observed;
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
 
+/// The ground near the groove as a signed distance field: a plane falling 1 in 100 along x.
+struct Slope;
+
+impl SdfField for Slope {
+    fn distance(&self, x: f32, y: f32, _z: f32) -> f32 {
+        // exact distance to y = −x/100: (y + x/100) / √(1 + 1/10 000)
+        (y + 0.01 * x) * 0.999_95
+    }
+    fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+        (0.009_999_5, 0.999_95, 0.0)
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // a bed can also come from a signed distance field (the height where it changes sign)
+    let slope = FilmBed::from_sdf(
+        8,
+        2,
+        Fix128::from_ratio(1, 100),
+        (Fix128::ZERO, Fix128::ZERO),
+        1,
+        &Slope,
+        (-1.0, 1.0),
+    )
+    .map_err(|e| format!("sdf bed: {e:?}"))?;
+    println!(
+        "sdf bed: {} x {} cells of {:.3} m, generation {}, fall over the row {:.4} m",
+        slope.nx(),
+        slope.nz(),
+        slope.cell().to_f64(),
+        slope.generation(),
+        quanta_to_metres(slope.heights()[0] - slope.heights()[slope.nx() - 1]).to_f64(),
+    );
+
     let (nx, nz) = (24, 9);
     let cell = Fix128::from_ratio(1, 100);
     // the groove: 3 cm deep, cells 6..18 along x, rows 3..6 across
@@ -70,6 +106,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         film.last_band_cells().len(),
     );
     println!(
+        "{} substeps of {:.2e} s, rain {:.1} mm/h",
+        film.steps(),
+        film.substep().to_f64(),
+        film.config().rain.to_f64() * 3.6e6,
+    );
+    println!(
         "water {:.3e} m·cell (rain {:.3e}, deposits {:.3e})",
         quanta_to_metres(film.total()).to_f64(),
         quanta_to_metres(ledger.rain).to_f64(),
@@ -85,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         ..PhysicsConfig::default()
     });
-    world
+    let index = world
         .add_participant(Box::new(film))
         .map_err(|e| format!("register: {e:?}"))?;
     for _ in 0..60 {
@@ -93,6 +135,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .try_step(Fix128::from_ratio(1, 60))
             .map_err(|e| format!("step: {e:?}"))?;
     }
-    println!("stepped one more second inside a world");
+    if let Some(Observed::Exact(sink)) = world.observe_participant(index) {
+        for &(channel, value) in sink.values() {
+            if channel == WATER_FILM_OBS_VOLUME {
+                println!(
+                    "after one more second inside a world: {:.6e} m³ of water",
+                    value.to_f64()
+                );
+            }
+        }
+    }
     Ok(())
 }

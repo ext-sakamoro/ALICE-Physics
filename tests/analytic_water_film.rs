@@ -1,7 +1,9 @@
-//! Oracles for the water film (`water_film`): a closed groove levels to the surface the
+//! Oracles for the water film (`water_film`): still water stands level at the height its
 //! volume fixes, volume is conserved to the last quantum, a groove holds water up to its rim
-//! and no lower, a groove fills in the time the rain rate gives, a rewound run and a rerun
-//! are bit identical, and the order the faces are visited does not change the state.
+//! and no lower and fills in the time the rain rate gives, films and deeper flow carry the
+//! lubrication flux, a free overfall drains at the weir rate, inertial flows are refused, a
+//! rewound run and a rerun are bit identical, and the order the faces are visited does not
+//! change the state.
 //!
 //! Every expected value here comes from a closed form or a ledger written independently of
 //! the stepping code; none is taken from a run of the film.
@@ -1417,26 +1419,32 @@ fn walled_row(nx: usize, l_mm: i64, beds: &[Fix128], cfg: FilmConfig) -> WaterFi
 /// sill). The sill spills over the edge as a broad-crested weir, `q = (2/3)^{3/2} √g h^{3/2}`
 /// per unit width, so the head of the pool (area `11 l²`, the sill included) follows
 /// `h(t) = (h₀^{-1/2} + (2/3)^{3/2} √g t / (22 l))⁻²`, to the explicit step's error
-/// `(2/3)^{3/2} √(g h₀) Δt_local / (11 l)` (one local substep's relative change). Two cases:
-/// 1 cm cells at the film substep (one local substep), and 2 cm cells with a substep of
-/// 15 ms, where the weir moves more than `|Δη|/8` per substep and needs local substeps.
+/// `(2/3)^{3/2} √(g h₀) Δt_local / (11 l)` (one local substep's relative change). Three
+/// cases: the sill at the open edge with 1 cm cells at the film substep (one local substep),
+/// and with 2 cm cells and a substep of 15 ms (the weir moves more than `|Δη|/8` per substep
+/// and needs local substeps); and the sill over an interior drop into a sump 1 m deep.
 #[test]
 fn a_free_overfall_drains_at_the_weir_rate() {
-    for (l_mm, max_substep, t_end, local_needed) in [
-        (CELL_MM, Fix128::from_ratio(1, 256), 0.125, false),
-        (20, Fix128::from_ratio(1, 64), 0.5, true),
+    for (l_mm, max_substep, t_end, local_needed, sump) in [
+        (CELL_MM, Fix128::from_ratio(1, 256), 0.125, false, false),
+        (20, Fix128::from_ratio(1, 64), 0.5, true, false),
+        (CELL_MM, Fix128::from_ratio(1, 256), 0.125, false, true),
     ] {
         let mut beds = vec![mm(50)];
         beds.extend(core::iter::repeat_n(mm(-30), 10));
         beds.push(mm(-10));
+        if sump {
+            beds.push(mm(-1000));
+        }
+        let nx = beds.len();
         let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
         cfg.max_substep = max_substep;
-        let mut f = walled_row(12, l_mm, &beds, cfg);
+        let mut f = walled_row(nx, l_mm, &beds, cfg);
         let level = metres_to_quanta(mm(5));
         for i in 1..12 {
-            f.set_initial_depth(i, 1, level - f.bed().heights()[12 + i]);
+            f.set_initial_depth(i, 1, level - f.bed().heights()[nx + i]);
         }
-        let sill = f.bed().heights()[12 + 11];
+        let sill = f.bed().heights()[nx + 11];
         let (g, l, h0) = (9.80665_f64, l_mm as f64 / 1000.0, 0.015_f64);
         let cw = (8.0_f64 / 27.0).sqrt();
         let dt = f.substep().to_f64();
@@ -1447,12 +1455,12 @@ fn a_free_overfall_drains_at_the_weir_rate() {
             most = most.max(f.last_local_substeps());
         }
         let t = n as f64 * dt;
-        let head = quanta_to_metres(f.bed().heights()[13] + f.depths()[13] - sill).to_f64();
+        let head = quanta_to_metres(f.bed().heights()[nx + 1] + f.depths()[nx + 1] - sill).to_f64();
         let s = 1.0 / h0.sqrt() + cw * g.sqrt() * t / (22.0 * l);
         let closed = 1.0 / (s * s);
         let bound = cw * (g * h0).sqrt() * dt / f64::from(most) / (11.0 * l);
         let rel = (head - closed) / closed;
-        println!("overfall at {l_mm} mm: head {head:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e}), local substeps up to {most}");
+        println!("overfall at {l_mm} mm (sump {sump}): head {head:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e}), local substeps up to {most}");
         assert_eq!(most > 1, local_needed, "{l_mm} mm: local substeps {most}");
         assert!(
             rel.abs() <= bound,
@@ -1805,4 +1813,67 @@ fn a_new_bed_keeps_every_cells_water() {
             .expect("advance on the new bed");
         assert_eq!(f.total(), f.ledger().expected());
     }
+}
+
+/// A face deeper than the flux law accepts (4 m) is refused before its depth is cubed: the
+/// advance returns out of range and changes nothing.
+#[test]
+fn a_face_deeper_than_the_law_accepts_is_refused() {
+    let bed = FilmBed::from_heights(
+        2,
+        1,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &[Fix128::ZERO; 2],
+        1,
+    )
+    .expect("bed");
+    let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
+    assert!(f.set_initial_depth(0, 0, 1i64 << 44));
+    let before = state(&f);
+    assert_eq!(
+        f.advance(Fix128::from_ratio(1, 256)),
+        Err(ParticipantFault::OutOfRange)
+    );
+    assert_eq!(state(&f), before);
+}
+
+/// A drowned sill: water 28 mm deep (surface −2 mm) beside a sill 20 mm higher than its bed
+/// holding water whose surface (−8 mm) stands over the sill's crest. The face is deeper than
+/// the film, its step (6 mm) is above the join step, the lower side is submerged and the flux
+/// is at critical: inertial, outside the model. The advance is refused, names both cells, and
+/// changes nothing.
+#[test]
+fn a_drowned_sill_is_refused() {
+    let beds = [mm(50), mm(-30), mm(-10), mm(50)];
+    let mut f = walled_row(
+        4,
+        CELL_MM,
+        &beds,
+        FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed),
+    );
+    let (b1, b2) = (f.bed().heights()[5], f.bed().heights()[6]);
+    f.set_initial_depth(1, 1, metres_to_quanta(mm(-2)) - b1);
+    f.set_initial_depth(2, 1, metres_to_quanta(mm(-8)) - b2);
+    let before = state(&f);
+    assert_eq!(
+        f.advance(Fix128::from_ratio(1, 20)),
+        Err(ParticipantFault::OutOfRange)
+    );
+    assert!(
+        f.last_band_cells().contains(&5) && f.last_band_cells().contains(&6),
+        "band {:?}",
+        f.last_band_cells()
+    );
+    assert_eq!(state(&f), before);
+    // and a later advance that is accepted clears the report
+    f.set_initial_depth(1, 1, metres_to_quanta(mm(-11)) - b1);
+    f.set_initial_depth(2, 1, 0);
+    f.advance(Fix128::from_ratio(1, 20))
+        .expect("still water below the crest");
+    assert!(
+        f.last_band_cells().is_empty(),
+        "stale report {:?}",
+        f.last_band_cells()
+    );
 }
