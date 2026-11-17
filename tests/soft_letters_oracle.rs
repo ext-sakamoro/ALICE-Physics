@@ -602,8 +602,8 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 // back exactly from today's blob with the header ids and without the lock count of 0; the
 // letters did not move
 // re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
-// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): the identifier in the header moved
-const THROW_DIGEST_600: &str = "a3c680e8194aeffb3f9c493bb793a6b402f05a52a39d1fce58431bb126195ad4";
+// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
+const THROW_DIGEST_600: &str = "f51177796d9af9a47dd40f3ede8dd30cd0e444bc42f8bfb7d4204c2c3b4fb26d";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -738,9 +738,9 @@ fn rollback_blob_carries_the_letters() {
 // back exactly from today's blob with the header ids and without the lock count of 0; the
 // letters did not move; re-pinned again with the bend term's fold branch (the thrown letter's
 // fold is unfolded)
-// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "18d46a30eb0ecbdb0b406025b3cee227bc4546fa2e6301d4b5a5c1f689843d4c";
+    "2103c91c2c84131eca2c85f3a43adf939642c03675cf8d24da9d08f4da4913ba";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {

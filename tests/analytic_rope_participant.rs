@@ -714,9 +714,9 @@ fn swing_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): the identifier in the header moved
-const SWING_XPBD: &str = "bdf090ed9df25d13eff64b928cec822ece1c7a77bdf89625973a8e35bf7f2157";
-const SWING_TGS: &str = "20be2f9777a843a25bf8dde06b8e8eecd0a4d452747463bc244b71604d206dc5";
+// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
+const SWING_XPBD: &str = "7e4b035241cc354b689e8f9da242ceaba862da8b2e23770c7466a80bec2066b2";
+const SWING_TGS: &str = "a8bf220e449eeb0acc5162e36c41f53f4e79a2eeba2b96ee50a38d6207144991";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene
 /// after 256 frames, for each backend, printed so the log shows the bits.
