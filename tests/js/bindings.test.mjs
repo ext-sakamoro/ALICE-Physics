@@ -348,8 +348,8 @@ test("the jointed scene's digest and law id are the golden the native platforms 
   const w = jointedScene();
   for (let i = 0; i < 120; i++) w.step(DT);
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  assert.equal(hex(w.stateDigest()), "e725ec26be37c3ec79e2b822da92b7a42888c105bb8d421835a4c04930f45c4b");
-  assert.equal(hex(w.lawId()), "35f73f67596823c31e1fd5890e6352b91c52c575470ebb3a01f332844b27c5e2");
+  assert.equal(hex(w.stateDigest()), "07f34b6c12a0c6a8e14b7d1279ea47370ea4072a36082ba6a2585cede1e44505");
+  assert.equal(hex(w.lawId()), "88143005271b099c299fe8d11a537d6034ad59fdbb5223651daf9d57e59d5d16");
 });
 
 test("setRotation normalises, refuses the zero quaternion and a bad id, and is saved by snapshotWorld", () => {

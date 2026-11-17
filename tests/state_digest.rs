@@ -239,18 +239,21 @@ fn hex(b: &[u8]) -> String {
 // its snapshot holds a lock count of 0 and an empty cloth section after the continuous collision
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
+// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): the identifier in the header moved
 const GOLDEN_STATE_DIGEST: &str =
-    "e725ec26be37c3ec79e2b822da92b7a42888c105bb8d421835a4c04930f45c4b";
+    "07f34b6c12a0c6a8e14b7d1279ea47370ea4072a36082ba6a2585cede1e44505";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
-const GOLDEN_LAW_ID: &str = "35f73f67596823c31e1fd5890e6352b91c52c575470ebb3a01f332844b27c5e2";
+// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): moved with the identifier only
+const GOLDEN_LAW_ID: &str = "88143005271b099c299fe8d11a537d6034ad59fdbb5223651daf9d57e59d5d16";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
+// re-pinned under PHYSICS_SEMANTICS_ID 22601794… (the cloth fold pin): the identifier in the header moved
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "d6cadd954f795529b0a182a424c84e3f6105d4b0e78808a5c7eabc78855b7fff";
+    "65f5b73f471137fb438ee134b08479bdd126b5d6b8e8a08a04d98a2ac0836970";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

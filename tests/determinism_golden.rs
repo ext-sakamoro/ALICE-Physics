@@ -423,6 +423,68 @@ fn determinism_cloth_drape() {
     assert_golden("cloth_drape", hash, GOLDEN_CLOTH_DRAPE);
 }
 
+/// **Cloth fold**: an E-shaped letter lying flat (no gravity, a tether to its rest) whose corner is
+/// grabbed, dragged across the sheet for 30 frames and released, then stepped to 300 frames. The
+/// drag folds triangles over in the plane, which the bend term's fold branch unfolds (a drape
+/// never folds, so `determinism_cloth_drape` does not reach that branch). The particle positions
+/// and velocities after 300 steps; the cloth's own bits, no world header.
+const GOLDEN_CLOTH_FOLD: &str = "0171621f0d1bd1502695bb6a6cab8dbd39fcf3f8b00c22433eaaadb25f408c4b";
+
+#[test]
+fn determinism_cloth_fold() {
+    use alice_physics_core::cloth::{ClothConfig, GrabId, OutlineDesc};
+    let r = |n: i64, d: i64| Fix128::from_ratio(n, d);
+    let p = |x: i64, y: i64| [r(x, 10), r(y, 10)];
+    let at = |x: f32, z: f32| Vec3Fix::from_f32(x, 0.0, z);
+    let omega = Fix128::from_f32(core::f32::consts::TAU / 0.5);
+    let mut cloth = Cloth::from_outline(&OutlineDesc {
+        origin: Vec3Fix::ZERO,
+        u: Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+        v: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+        contours: vec![vec![
+            p(0, 0),
+            p(10, 0),
+            p(10, 2),
+            p(2, 2),
+            p(2, 4),
+            p(10, 4),
+            p(10, 6),
+            p(2, 6),
+            p(2, 8),
+            p(10, 8),
+            p(10, 10),
+            p(0, 10),
+        ]],
+        spacing: r(1, 10),
+        mass_per_particle: Fix128::ONE,
+        config: ClothConfig {
+            iterations: 4,
+            substeps: 1,
+            gravity: Vec3Fix::ZERO,
+            damping: r(985, 1000),
+            stretch_compliance: r(1, 100),
+            bend_compliance: r(1, 4),
+            ..ClothConfig::default()
+        },
+        tether: Some((omega * omega, omega * Fix128::from_f32(2.0 * 0.42))),
+    })
+    .expect("the E keeps triangles");
+    let id = GrabId(7);
+    cloth
+        .grab(id, at(0.0, 0.0), r(34, 100))
+        .expect("corner in reach");
+    let dt = r(1, 60);
+    for f in 0..300 {
+        if f < 30 {
+            cloth.move_grab(id, at(-0.9 + 0.01 * f as f32, -0.5));
+        } else if f == 30 {
+            cloth.release_grab(id);
+        }
+        cloth.step(dt);
+    }
+    assert_golden("cloth_fold", hash_cloth(&cloth), GOLDEN_CLOTH_FOLD);
+}
+
 /// **Secondary chain**: four particles hanging from a moving anchor, one per limit kind (angle,
 /// hinge, polar, none; tight enough that each one acts), with gravity and its falloff, stiffness, an immobile share, a radius
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated

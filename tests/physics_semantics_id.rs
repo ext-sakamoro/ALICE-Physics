@@ -53,7 +53,7 @@ use sha2::{Digest, Sha256};
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, a peer moved, or an
 /// alice-det-math function this crate calls changed).
-const PINNED_ID_HEX: &str = "07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439";
+const PINNED_ID_HEX: &str = "22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -863,12 +863,156 @@ fn ignored() { assert_eq!("", A); }
 
 // ── (f) one identifier per alice-det-math generation ───────────────────────
 
+/// alice-det-math 0.5.0, the oldest generation with a row in `PHYSICS_SEMANTICS_BY_DET_MATH`
+const DET_MATH_0_5_0: &str = "135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000";
+
+/// The first generation an entry of `PHYSICS_SEMANTICS_PINS` belongs to
+#[derive(Clone, Copy, Debug)]
+enum Since {
+    /// The generation whose row of `PHYSICS_SEMANTICS_BY_DET_MATH` has this det-math identifier
+    /// (hex), and every later one
+    DetMath(&'static str),
+    /// Only builds that fold the det-math functions one by one (this build): no recorded row of an
+    /// earlier generation holds it
+    FunctionPins,
+}
+
+/// The first generation of every entry, so that an entry added later never changes the identifier
+/// recorded for an earlier generation: `pins_under` keeps an entry only under the generations from
+/// its own on. A new entry is one more row here (a missing row fails
+/// `every_entry_names_the_generation_it_was_added_in`).
+const SINCE: &[(&str, Since)] = &[
+    ("alice-analytics", Since::DetMath(DET_MATH_0_5_0)),
+    ("alice-ml", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd step", Since::DetMath(DET_MATH_0_5_0)),
+    ("joint break", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd step_n", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd try_step", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd step_parallel", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd try_step_parallel", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd step_with_bridge", Since::DetMath(DET_MATH_0_5_0)),
+    ("Xpbd substep_with_bridge", Since::DetMath(DET_MATH_0_5_0)),
+    ("Tgs step", Since::DetMath(DET_MATH_0_5_0)),
+    ("Tgs step_n", Since::DetMath(DET_MATH_0_5_0)),
+    ("Tgs try_step", Since::DetMath(DET_MATH_0_5_0)),
+    ("contacts", Since::DetMath(DET_MATH_0_5_0)),
+    ("distance constraint", Since::DetMath(DET_MATH_0_5_0)),
+    ("joint", Since::DetMath(DET_MATH_0_5_0)),
+    ("continuous collision", Since::DetMath(DET_MATH_0_5_0)),
+    ("sleeping", Since::DetMath(DET_MATH_0_5_0)),
+    ("broadphase Bvh", Since::DetMath(DET_MATH_0_5_0)),
+    ("broadphase DynamicTree", Since::DetMath(DET_MATH_0_5_0)),
+    ("broadphase Hybrid", Since::DetMath(DET_MATH_0_5_0)),
+    ("participant", Since::DetMath(DET_MATH_0_5_0)),
+    ("cloth", Since::DetMath(DET_MATH_0_5_0)),
+    ("cloth fold", Since::FunctionPins),
+    ("physics2d", Since::DetMath(DET_MATH_0_5_0)),
+    ("secondary chain", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "step_parallel shared-body order",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+    ("installed bridge", Since::DetMath(DET_MATH_0_5_0)),
+    ("sleep by time", Since::DetMath(DET_MATH_0_5_0)),
+    ("overflow flag", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: anomaly", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "law output: convex_decompose",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+    ("law output: erosion", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: fracture", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: heatmap", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: phase_change", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: pressure", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: privacy", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: sdf_character", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: sdf_collider", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "law output: sdf_destruction",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+    ("law output: sdf_fem_mesh", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: sdf_sph", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: sdf_wind_field", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: shape", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: sim_field", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "law output: sim_modifier observe",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+    ("law output: sketch", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "law output: tgs oriented 6dof hooks",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+    ("law output: thermal", Since::DetMath(DET_MATH_0_5_0)),
+    ("law output: thin_wall", Since::DetMath(DET_MATH_0_5_0)),
+    (
+        "law output: transient_thermal",
+        Since::DetMath(DET_MATH_0_5_0),
+    ),
+];
+
+/// Position of a generation in time: the row index in `PHYSICS_SEMANTICS_BY_DET_MATH`, or after
+/// every row for the per-function builds
+fn order(since: Since) -> usize {
+    match since {
+        Since::DetMath(h) => PHYSICS_SEMANTICS_BY_DET_MATH
+            .iter()
+            .position(|(d, _)| *d == unhex32(h))
+            .unwrap_or_else(|| panic!("det-math {h} has no row")),
+        Since::FunctionPins => PHYSICS_SEMANTICS_BY_DET_MATH.len(),
+    }
+}
+
+fn since_of(name: &str) -> Since {
+    SINCE
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, s)| *s)
+        .unwrap_or_else(|| panic!("{name} has no row in SINCE"))
+}
+
+/// Every entry names the generation it was added in, the names are exactly the entries, each
+/// generation is a known row, and an entry of this build only is left out of every earlier row
+#[test]
+fn every_entry_names_the_generation_it_was_added_in() {
+    let entries: BTreeSet<&str> = PHYSICS_SEMANTICS_PINS.iter().map(|(n, _)| *n).collect();
+    let named: BTreeSet<&str> = SINCE.iter().map(|(n, _)| *n).collect();
+    assert_eq!(named.len(), SINCE.len(), "an entry is in SINCE twice");
+    assert_eq!(
+        named, entries,
+        "SINCE names the entries of PHYSICS_SEMANTICS_PINS"
+    );
+    let mut compared = 0;
+    for (name, since) in SINCE {
+        let at = order(*since);
+        for (i, (det, _)) in PHYSICS_SEMANTICS_BY_DET_MATH.iter().enumerate() {
+            let held = pins_under(*det).iter().any(|(n, _)| n == name);
+            assert_eq!(held, i >= at, "{name} under row {i}");
+            compared += 1;
+        }
+    }
+    assert!(compared > 0, "no (entry, generation) compared");
+    assert_eq!(
+        order(since_of("cloth fold")),
+        PHYSICS_SEMANTICS_BY_DET_MATH.len()
+    );
+}
+
 /// The pins of an earlier generation: its whole det-math identifier as the `alice-det-math`
-/// entry (those generations folded alice-det-math as a whole), and the values recorded under it.
+/// entry (those generations folded alice-det-math as a whole), the values recorded under it, and
+/// only the entries that generation had (`SINCE`).
 fn pins_under(det_math: [u8; 32]) -> Vec<(&'static str, [u8; 32])> {
+    let at = PHYSICS_SEMANTICS_BY_DET_MATH
+        .iter()
+        .position(|(d, _)| *d == det_math)
+        .expect("an earlier generation with a row");
     PHYSICS_SEMANTICS_PINS
         .iter()
         .copied()
+        .filter(|(n, _)| order(since_of(n)) <= at)
         .chain([(DET_MATH, det_math)])
         .map(|(n, d)| {
             if n == DET_MATH {
