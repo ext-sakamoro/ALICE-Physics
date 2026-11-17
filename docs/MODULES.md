@@ -232,6 +232,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `turbulence` | Smagorinsky LES, k-ε, k-ω and wall functions |  | [`wall_model`](../examples/wall_model.rs) | standalone |
 | `fsi_advanced` | fluid-structure coupling for deformables and articulations | std | [`fsi_advanced_forces`](../examples/fsi_advanced_forces.rs) | standalone |
 | `smoke_fire` | Arrhenius combustion, soot and buoyancy |  | [`smoke_fire_combustion`](../examples/smoke_fire_combustion.rs) | standalone |
+| `water_film` | thin water film on a height or SDF bed as a world participant: still pools level exactly in integers, overflow at a rim, films and deeper flow run downhill (lubrication capped by critical, local substeps), spills over a drop as a broad-crested weir, evaporation; volume exact to the depth quantum, inertial flows (dam-break fronts, drowned sills) refused |  | [`participant_water_film`](../examples/participant_water_film.rs) | standalone |
 | `wave_ship` | JONSWAP ocean waves and Froude-Krylov ship forces |  | [`wave_ship_spectrum`](../examples/wave_ship_spectrum.rs) | standalone |
 | `aeroelasticity` | vortex-induced vibration of slender structures |  | [`aeroelasticity_viv_lock_in`](../examples/aeroelasticity_viv_lock_in.rs) | standalone |
 | `atmosphere` | U.S. Standard Atmosphere 1976 up to 20 km: temperature, pressure, density, speed of sound |  | [`aero_glider`](../examples/aero_glider.rs) | standalone |
