@@ -116,7 +116,7 @@ fn main() {
         let pushing = (frame as f64) * FRAME < PUSH_TIME;
         #[allow(
             clippy::disallowed_methods,
-            reason = "example: the wall time of a frame, printed, never fed back"
+            reason = "timing harness: the wall time of a frame, printed, never fed back"
         )]
         let clock = std::time::Instant::now();
         for _ in 0..per_frame {
