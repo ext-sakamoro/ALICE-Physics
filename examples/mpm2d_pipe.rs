@@ -3,8 +3,9 @@
 //!
 //! The pipe is the set of points within `RADIUS` of an L-shaped line (a level run, a corner, a
 //! rise) that opens into free space at the top. The body starts in the level run; a force
-//! shared over the particles of its tail pushes it round the corner for `PUSH_TIME`, then
-//! lets go. Printed per sampled frame: the body's extent, the wall time of the frame, and at
+//! shared over the particles of its tail pushes it along the pipe until its head is out of the mouth (or
+//! `PUSH_TIME` has passed), then lets go. The tail is the body's last point by distance along the pipe's line, and the push
+//! points along the line there, so it follows the body round the corner. Printed per sampled frame: the body's extent, the wall time of the frame, and at
 //! the end the digest (the same on every machine and every run).
 //!
 //! ```bash
@@ -38,6 +39,19 @@ fn nearest(x: [f32; 2], p: [f32; 2], q: [f32; 2]) -> [f32; 2] {
     let t = (((x[0] - p[0]) * d[0] + (x[1] - p[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1]))
         .clamp(0.0, 1.0);
     [p[0] + t * d[0], p[1] + t * d[1]]
+}
+
+/// where `x` is along the pipe's line (metres from `A`) and the line's direction there
+fn along(x: [f32; 2]) -> (f32, [f32; 2]) {
+    let run = B[0] - A[0];
+    let level = nearest(x, A, B);
+    let rise = [B[0], x[1].max(B[1])];
+    let d = |c: [f32; 2]| (c[0] - x[0]) * (c[0] - x[0]) + (c[1] - x[1]) * (c[1] - x[1]);
+    if d(level) <= d(rise) {
+        (level[0] - A[0], [1.0, 0.0])
+    } else {
+        (run + rise[1] - B[1], [0.0, 1.0])
+    }
 }
 
 /// the free space as a distance (positive in it) and the direction further into it: the pipe
@@ -79,7 +93,7 @@ fn main() {
         Mpm2dConfig {
             origin: [Fix128::ZERO, Fix128::ZERO],
             cell: fx(CELL),
-            nodes: [128, 180],
+            nodes: [128, 240],
             gravity: [Fix128::ZERO, fx(-9.81)],
             dt: fx(dt),
             ground: None,
@@ -123,26 +137,35 @@ fn main() {
     let frames = (RUN_TIME / FRAME).round() as usize;
     let mut worst = 0.0f64;
     for frame in 0..frames {
-        let pushing = (frame as f64) * FRAME < PUSH_TIME;
+        let mut pushing = (frame as f64) * FRAME < PUSH_TIME;
         #[allow(
             clippy::disallowed_methods,
             reason = "timing harness: the wall time of a frame, printed, never fed back"
         )]
         let clock = std::time::Instant::now();
         for _ in 0..per_frame {
-            let result = if pushing {
-                // the tail: the particles within a pipe radius of the body's last point along
-                // the level run
-                let tail = world
+            // the body's ends by distance along the pipe's line
+            let ends =
+                world
                     .particles()
                     .iter()
-                    .min_by_key(|p| p.x[0])
-                    .map(|p| p.x)
-                    .expect("particles");
+                    .fold(None::<((f32, V2, [f32; 2]), f32)>, |ends, p| {
+                        let (at, way) = along([p.x[0].to_f64() as f32, p.x[1].to_f64() as f32]);
+                        Some(match ends {
+                            Some((tail, head)) if tail.0 <= at => (tail, head.max(at)),
+                            Some((_, head)) => ((at, p.x, way), head.max(at)),
+                            None => ((at, p.x, way), at),
+                        })
+                    });
+            let ((_, tail, way), head) = ends.expect("particles");
+            // the head is out of the mouth: let go
+            pushing = pushing && head < B[0] - A[0] + MOUTH - B[1];
+            let result = if pushing {
+                // the tail: the particles within a pipe radius of the body's last point along
+                // the pipe's line, pushed along the line there
                 let patch = world.particles_within(tail, fx(f64::from(RADIUS)));
-                let loads = world
-                    .shared_loads(&patch, [fx(PUSH), Fix128::ZERO])
-                    .expect("a patch with area");
+                let push = [fx(PUSH * f64::from(way[0])), fx(PUSH * f64::from(way[1]))];
+                let loads = world.shared_loads(&patch, push).expect("a patch with area");
                 world.step_with_loads(&loads)
             } else {
                 world.step()
@@ -152,6 +175,10 @@ fn main() {
                 return;
             }
         }
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: the wall time of a frame, printed, never fed back"
+        )]
         let secs = clock.elapsed().as_secs_f64();
         worst = worst.max(secs);
         if frame % 6 == 5 || frame + 1 == frames {
