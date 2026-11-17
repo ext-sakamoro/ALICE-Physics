@@ -246,6 +246,8 @@ pub mod character;
 pub mod character_state;
 pub mod cloth;
 pub mod cloth_fluid;
+/// A cloth stepped by the world's substeps through the participant contract
+pub mod cloth_participant;
 pub mod collider;
 pub mod collision_mesh_gen;
 pub mod compound;

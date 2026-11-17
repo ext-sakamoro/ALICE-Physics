@@ -136,6 +136,17 @@ impl PhysicsWorld {
         &mut self,
         participant: Box<dyn Participant>,
     ) -> Result<usize, RegisterError> {
+        if let StepRule::PerFrame(steps) = participant.step_rule() {
+            if steps == 0 {
+                return Err(RegisterError::NonPositiveStep);
+            }
+            if steps as usize > self.config.substeps {
+                return Err(RegisterError::StepsPerFrameAboveSubsteps {
+                    steps,
+                    substeps: self.config.substeps,
+                });
+            }
+        }
         if let StepRule::Fixed(step) = participant.step_rule() {
             if step <= Fix128::ZERO {
                 return Err(RegisterError::NonPositiveStep);
@@ -505,9 +516,20 @@ impl PhysicsWorld {
             let list = self.lock_participants();
             if !list.is_empty() {
                 for (index, p) in list.iter().enumerate() {
-                    p.step_rule()
-                        .steps_per_substep(h)
+                    let rule = p.step_rule();
+                    rule.steps_per_substep(h)
                         .map_err(|error| StepError::Rule { index, error })?;
+                    if let StepRule::PerFrame(steps) = rule {
+                        if steps as usize > self.config.substeps {
+                            return Err(StepError::Rule {
+                                index,
+                                error: RegisterError::StepsPerFrameAboveSubsteps {
+                                    steps,
+                                    substeps: self.config.substeps,
+                                },
+                            });
+                        }
+                    }
                 }
                 for field in self.fields.ids() {
                     if let Some(FieldLayout::PerBody { .. }) = self.fields.layout(field) {
@@ -572,6 +594,7 @@ impl PhysicsWorld {
         index: usize,
         count: usize,
         h: Fix128,
+        frame: Fix128,
         frozen: &mut [bool],
     ) -> bool {
         let at_start = self.overflow_detected;
@@ -594,6 +617,7 @@ impl PhysicsWorld {
                     &mut self.fields,
                     &mut forces,
                     SubstepTime { index, count, h },
+                    Some(frame),
                     &self.sdf_contact_log,
                     Some(WorldReads {
                         radii: &self.body_collision_radii,

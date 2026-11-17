@@ -363,6 +363,21 @@ pub enum StepRule {
     /// One call per world substep with `h`; the participant splits `h`
     /// itself, deterministically from its own state (e.g. a CFL limit).
     Subcycle,
+    /// `m` calls per frame, spread evenly over the world's `n` substeps
+    /// whatever `n` is: substep `i` (from 0) calls the participant when
+    /// `⌊(i+1)·m/n⌋ > ⌊i·m/n⌋` (every substep when `m ≥ n`). A call advances
+    /// by the width of the substeps since the participant's previous call in
+    /// the frame (`k·h` for `k` substeps), so the calls of a frame cover the
+    /// frame and the participant's own step does not depend on how the world
+    /// cuts the frame. The bodies it reads are those at the start of the
+    /// substep of the call, and a force it stages acts in that substep (an
+    /// impulse `F·h`). `m = 0` is refused at registration
+    /// ([`RegisterError::NonPositiveStep`]); `m` above the world's substeps is
+    /// refused at registration and at every step
+    /// ([`RegisterError::StepsPerFrameAboveSubsteps`], a step then runs
+    /// nothing), since a substep calls a participant at most once and the
+    /// participant would take fewer steps than it declares.
+    PerFrame(u32),
 }
 
 impl StepRule {
@@ -381,6 +396,8 @@ impl StepRule {
         }
         match self {
             Self::FollowSubstep | Self::Subcycle => Ok(1),
+            Self::PerFrame(0) => Err(RegisterError::NonPositiveStep),
+            Self::PerFrame(_) => Ok(1),
             Self::Fixed(step) => {
                 if step <= Fix128::ZERO {
                     return Err(RegisterError::NonPositiveStep);
@@ -397,6 +414,35 @@ impl StepRule {
     }
 }
 
+impl StepRule {
+    /// Whether the participant is called at substep `index` of `count`, and
+    /// then how many substeps the call covers: always `Some(1)` except for
+    /// [`Self::PerFrame`], which gives `Some(k)` at the substeps it is called
+    /// at (`k` substeps since its previous call in the frame) and `None` at
+    /// the others. `None` for `PerFrame(0)` and for `count = 0`.
+    #[must_use]
+    pub fn covers(self, index: usize, count: usize) -> Option<usize> {
+        let Self::PerFrame(m) = self else {
+            return Some(1);
+        };
+        let m = m as usize;
+        if m == 0 || count == 0 || index >= count {
+            return None;
+        }
+        let calls_before = |i: usize| i * m / count;
+        if calls_before(index + 1) == calls_before(index) {
+            return None;
+        }
+        // the substeps since the previous call: back to the last substep that
+        // made a call (or the start of the frame)
+        let mut start = index;
+        while start > 0 && calls_before(start) == calls_before(start - 1) {
+            start -= 1;
+        }
+        Some(index + 1 - start)
+    }
+}
+
 /// Why a participant could not be registered.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -409,6 +455,15 @@ pub enum RegisterError {
         substep: Fix128,
         /// The participant's fixed step.
         step: Fix128,
+    },
+    /// `StepRule::PerFrame(steps)` asks for more calls per frame than the
+    /// world has substeps: a substep calls a participant at most once, so the
+    /// cloth (or any participant) would take fewer steps than it declares.
+    StepsPerFrameAboveSubsteps {
+        /// The participant's steps per frame.
+        steps: u32,
+        /// The world's substeps per frame.
+        substeps: usize,
     },
     /// With the new participant the declared ports form a loop
     /// ([`execution_order`]); the participant was not registered.
@@ -605,6 +660,10 @@ impl core::fmt::Display for RegisterError {
             Self::StepRuleMismatch { substep, step } => {
                 write!(f, "the fixed step {step} does not divide the substep {substep}")
             }
+            Self::StepsPerFrameAboveSubsteps { steps, substeps } => write!(
+                f,
+                "{steps} steps per frame need at least {steps} world substeps, the world has {substeps}"
+            ),
             Self::Order(OrderError::Cycle { members }) => {
                 write!(f, "the declared ports form a loop through participants {members:?}")
             }
@@ -1867,6 +1926,7 @@ pub fn run_substep_with_sdf_contacts(
         board,
         forces,
         time,
+        None,
         sdf_contacts,
         None,
         &mut None,
@@ -1888,6 +1948,7 @@ pub(crate) fn run_substep_tracked(
     board: &mut FieldBoard,
     forces: &mut ForceAccumulator,
     time: SubstepTime,
+    frame: Option<Fix128>,
     sdf_contacts: &[crate::sdf_collider::SdfContact],
     world: Option<WorldReads<'_>>,
     running: &mut Option<usize>,
@@ -1928,10 +1989,23 @@ pub(crate) fn run_substep_tracked(
         if frozen[i] {
             continue;
         }
+        let Some(covered) = participants[i].step_rule().covers(time.index, time.count) else {
+            continue;
+        };
+        // a call covering several substeps advances by its share of the frame,
+        // `dt·k/n` (exact: `dt·k` is an exact multiple), not `k` copies of the
+        // rounded `h`; without the frame width (the free functions) it is `k·h`
+        let h = match (covered, frame) {
+            (1, _) => time.h,
+            (k, Some(dt)) => {
+                (dt * Fix128::from_int(k as i64)) / Fix128::from_int(time.count as i64)
+            }
+            (k, None) => time.h * Fix128::from_int(k as i64),
+        };
         let mut staged_forces = ForceAccumulator::new(bodies.len());
         let mut stage = FieldStage::new();
         let result = {
-            let ctx = SubstepCtx::new(bodies, &mut staged_forces, time.index, time.count, time.h)
+            let ctx = SubstepCtx::new(bodies, &mut staged_forces, time.index, time.count, h)
                 .map_err(ExchangeError::Accumulate)?;
             let mut ctx = ctx
                 .with_fields(board, &mut stage, &plan.ports[i])
@@ -1942,7 +2016,7 @@ pub(crate) fn run_substep_tracked(
                     .with_gravity(world.gravity);
             }
             *running = Some(i);
-            let result = participants[i].substep(&mut ctx, time.h);
+            let result = participants[i].substep(&mut ctx, h);
             *running = None;
             result
         };

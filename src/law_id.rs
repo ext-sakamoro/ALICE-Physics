@@ -450,6 +450,10 @@ impl PhysicsWorld {
                     e.fix(dt);
                 }
                 StepRule::Subcycle => e.bytes(b"subcycle"),
+                StepRule::PerFrame(m) => {
+                    e.bytes(b"per-frame");
+                    e.u32(m);
+                }
             }
             e.len(ports.len());
             for port in ports {
