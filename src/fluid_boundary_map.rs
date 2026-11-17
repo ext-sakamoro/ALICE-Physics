@@ -51,6 +51,16 @@
 //! exactly in fixed point on every branch; the oracle `the_solids_carry_the_fluid's_reaction`
 //! checks the per-solid forces against the fluid-side total, which is accumulated separately.
 //!
+//! **Cost.** One map per solid, built when the solid is added: one `Fix128` and one `Vec3Fix`
+//! per grid node over the given box. Measured (release, arm64 desktop, s = 0.1 m): the box
+//! around a 0.4 m cube is 68,921 nodes, 302 ms, 4.4 MB. Interior and far nodes are constant
+//! but stored; a band-only store is not implemented. Per frame (same machine, 1984 particles,
+//! 2 substeps x 10 iterations, a tank and a cube): the map lookups take 11.8 ms and the SDF
+//! normals at most 3.6 ms, against 692 ms for the base PBF frame without solids, measured
+//! while other work shared the machine (`examples/fluid_sdf_body_frame_cost.rs`). The working
+//! frame budget for a fluid resident is 4 ms on the target device's CPU at 60 Hz, an
+//! assumption until the per-element budget is set: the base PBF dominates.
+//!
 //! **Range and open limitation.** The coupling is verified at s = 0.1 m, h = 2 s for a cube of
 //! 4 spacings: lying on the floor (vertical force within 5 % of the top-only closed form) and
 //! 2 h above it (Archimedes within 5 %). With only 1 h of fluid between the floor and the
