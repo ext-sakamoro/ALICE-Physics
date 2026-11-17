@@ -311,6 +311,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "cloth fold",
+        "determinism_golden.rs",
+        "determinism_cloth_fold",
+        "",
+    ),
+    (
         "secondary chain",
         "determinism_golden.rs",
         "determinism_secondary_chain",
@@ -406,6 +412,8 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("sleeping", &["is_sleeping("], 1),
     ("participant", &["add_participant("], 1),
     ("cloth", &["Cloth::"], 1),
+    // a sheet dragged across itself and released, so that it folds: the bend term's fold branch
+    ("cloth fold", &["move_grab(", "release_grab("], 1),
     ("secondary chain", &["SecondaryChain::"], 1),
     // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
     ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),

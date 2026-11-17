@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439
+//! 22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478
 //! ```
 //!
 //! # Entries
@@ -183,6 +183,11 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "cloth",
         hex32("e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb"),
+    ),
+    // a dragged letter that folds: the bend term's fold branch (a drape never folds)
+    (
+        "cloth fold",
+        hex32("0171621f0d1bd1502695bb6a6cab8dbd39fcf3f8b00c22433eaaadb25f408c4b"),
     ),
     (
         "physics2d",
@@ -1219,10 +1224,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439`.
+/// Hex: `22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("07462b6ae2c158c5ffb3825d48e946344d89b9709a287a781029ba66cf054439");
+    hex32("22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
