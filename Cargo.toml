@@ -244,6 +244,10 @@ name = "cfd_smoke_plume"
 required-features = ["std"]
 
 [[example]]
+name = "participant_smoke_plume"
+required-features = ["std"]
+
+[[example]]
 name = "structural_pla_shelf_creep"
 required-features = ["std"]
 

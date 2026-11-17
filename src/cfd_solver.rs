@@ -870,6 +870,7 @@ enum Projection {
 }
 
 /// Complete CFD solver state.
+#[derive(Clone, Debug)]
 pub struct CfdSolver {
     /// Velocity + pressure MAC grid.
     pub grid: MacGrid,

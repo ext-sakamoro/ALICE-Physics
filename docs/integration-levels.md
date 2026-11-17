@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 129 |
+| standalone | a Rust API that only examples call | 130 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -172,6 +172,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone | 0 / 0 / 0 / 70 / 0 | — |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `smoke_plume` | standalone | 0 / 0 / 0 / 47 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `spherical_terrain` | standalone (step 1 of 10 items) | 1 / 0 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
