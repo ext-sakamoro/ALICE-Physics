@@ -104,7 +104,11 @@ use crate::world_participant::{
 use core::hash::Hasher;
 
 #[cfg(not(feature = "std"))]
+use alloc::sync::Arc;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::sync::Arc;
 
 /// Snapshot tag of [`WaterFilm`]: the ASCII code `FILM`, big endian.
 pub const WATER_FILM_PARTICIPANT_KIND: ParticipantKind =
@@ -574,6 +578,88 @@ pub fn isqrt_u128(n: u128) -> u128 {
     root
 }
 
+/// Whether the critical transfer `⌊⌊√(H³)⌋ · N_c / 2⁶⁴⌋` is below `m`, without the square
+/// root: it is iff `⌊√(H³)⌋ < T` with `T = ⌈m · 2⁶⁴ / N_c⌉`, iff `H³ < T²` (exact).
+fn critical_below(hf: u64, h3: u128, m: u128, n_c: u128) -> bool {
+    if n_c == 0 {
+        return m > 0;
+    }
+    // a cheap lower bound first: ⌊√(H³)⌋ ≥ H ⌊√H⌋, so the critical transfer is at least
+    // ⌊H ⌊√H⌋ N_c / 2⁶⁴⌋; when that already reaches m, it is not below m
+    let low = (u128::from(hf) * u128::from(isqrt_u64(hf)))
+        .checked_mul(n_c)
+        .map_or(u128::MAX, |v| v >> 64);
+    if low >= m {
+        return false;
+    }
+    if m >= 1 << 63 {
+        return critical(h3, n_c) < m;
+    }
+    let t = (m << 64).div_ceil(n_c);
+    match t.checked_mul(t) {
+        Some(t2) => h3 < t2,
+        None => true,
+    }
+}
+
+/// `⌊√n⌋` for a `u64`, by bits from the highest set pair (exact).
+fn isqrt_u64(n: u64) -> u64 {
+    if n == 0 {
+        return 0;
+    }
+    let mut rem = n;
+    let mut root = 0u64;
+    let mut bit = 1u64 << ((63 - n.leading_zeros()) & !1);
+    while bit != 0 {
+        if rem >= root + bit {
+            rem -= root + bit;
+            root = (root >> 1) + bit;
+        } else {
+            root >>= 1;
+        }
+        bit >>= 2;
+    }
+    root
+}
+
+/// The critical transfer `⌊⌊√(H³)⌋ · N_c / 2⁶⁴⌋` (saturating).
+fn critical(h3: u128, n_c: u128) -> u128 {
+    isqrt_u128(h3)
+        .checked_mul(n_c)
+        .map_or(u128::MAX, |v| v >> 64)
+}
+
+/// The film transfer of a face and whether a stability cap held it below the lubrication
+/// flux while that flux was below the critical one, computed once.
+fn film_transfer(first: (i64, i64), second: (i64, i64), k: FluxConstants) -> Option<(i64, bool)> {
+    let d_eta = (first.0 + first.1) - (second.0 + second.1);
+    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
+    if hf > MAX_FACE_DEPTH {
+        return None;
+    }
+    let e = d_eta.unsigned_abs();
+    if hf == 0 || e == 0 {
+        return Some((0, false));
+    }
+    let caps = u128::from((e / 8).min(hf / 4));
+    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
+    let lub = h3
+        .checked_mul(u128::from(e))
+        .map_or(u128::MAX, |v| v / k.lubrication);
+    // the critical transfer is computed only where it binds
+    let crit_below_lub = critical_below(hf, h3, lub, k.critical);
+    let t = if caps == 0 {
+        0
+    } else if crit_below_lub && critical_below(hf, h3, caps, k.critical) {
+        critical(h3, k.critical)
+    } else {
+        lub.min(caps)
+    };
+    let capped = !crit_below_lub && t < lub;
+    let t = t as i64;
+    Some((if d_eta > 0 { t } else { -t }, capped))
+}
+
 /// The water (quanta) a face moves in a substep when every face moves at once from the same
 /// state, in integers: with `H = h_f` and `E = |Δη|` in quanta,
 /// `t = min(⌊H³E / D_l⌋, ⌊⌊√(H³)⌋·N_c / 2⁶⁴⌋, ⌊E/8⌋, ⌊H/4⌋)` with the sign of `Δη`
@@ -586,25 +672,7 @@ pub fn simultaneous_transfer(
     second: (i64, i64),
     k: FluxConstants,
 ) -> Option<i64> {
-    let d_eta = (first.0 + first.1) - (second.0 + second.1);
-    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
-    if hf > MAX_FACE_DEPTH {
-        return None;
-    }
-    let e = d_eta.unsigned_abs();
-    let caps = (e / 8).min(hf / 4);
-    if caps == 0 {
-        return Some(0);
-    }
-    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
-    let lub = h3
-        .checked_mul(u128::from(e))
-        .map_or(u128::MAX, |v| v / k.lubrication);
-    let crit = isqrt_u128(h3)
-        .checked_mul(k.critical)
-        .map_or(u128::MAX, |v| v >> 64);
-    let t = lub.min(crit).min(u128::from(caps)) as i64;
-    Some(if d_eta > 0 { t } else { -t })
+    film_transfer(first, second, k).map(|(t, _)| t)
 }
 
 /// [`simultaneous_transfer`] and whether a stability cap (`⌊|Δη|/8⌋` or `⌊h_f/4⌋`) held the
@@ -616,22 +684,7 @@ pub fn simultaneous_transfer_report(
     second: (i64, i64),
     k: FluxConstants,
 ) -> Option<(i64, bool)> {
-    let t = simultaneous_transfer(first, second, k)?;
-    let d_eta = (first.0 + first.1) - (second.0 + second.1);
-    let hf = face_depth(first.0, first.1, second.0, second.1).unsigned_abs();
-    let e = d_eta.unsigned_abs();
-    if hf == 0 || e == 0 {
-        return Some((t, false));
-    }
-    let h3 = u128::from(hf) * u128::from(hf) * u128::from(hf);
-    let lub = h3
-        .checked_mul(u128::from(e))
-        .map_or(u128::MAX, |v| v / k.lubrication);
-    let crit = isqrt_u128(h3)
-        .checked_mul(k.critical)
-        .map_or(u128::MAX, |v| v >> 64);
-    let capped = lub <= crit && u128::from(t.unsigned_abs()) < lub;
-    Some((t, capped))
+    film_transfer(first, second, k)
 }
 
 /// The water (quanta) a free overfall moves in a substep: the side with the higher surface
@@ -716,6 +769,68 @@ pub struct WaterFilm {
     // as its inflow through every substep of the advance
     fed: Vec<i64>,
     last_local_substeps: u32,
+    // the faces of the grid (x faces then z faces) as cell pairs, `NO_CELL` past an edge;
+    // built once from the grid's shape and shared by every copy
+    faces: Arc<[(u32, u32)]>,
+}
+
+/// A face side past the edge of the grid.
+const NO_CELL: u32 = u32::MAX;
+
+// x faces then z faces, each as (cell on the low side, cell on the high side)
+fn build_faces(nx: usize, nz: usize) -> Arc<[(u32, u32)]> {
+    let mut faces = Vec::with_capacity((nx + 1) * nz + nx * (nz + 1));
+    let cell = |i: usize, k: usize| (i + k * nx) as u32;
+    for k in 0..nz {
+        for i in 0..=nx {
+            faces.push((
+                if i > 0 { cell(i - 1, k) } else { NO_CELL },
+                if i < nx { cell(i, k) } else { NO_CELL },
+            ));
+        }
+    }
+    for k in 0..=nz {
+        for i in 0..nx {
+            faces.push((
+                if k > 0 { cell(i, k - 1) } else { NO_CELL },
+                if k < nz { cell(i, k) } else { NO_CELL },
+            ));
+        }
+    }
+    faces.into()
+}
+
+fn side_cell(c: u32) -> Option<usize> {
+    if c == NO_CELL {
+        None
+    } else {
+        Some(c as usize)
+    }
+}
+
+// the cells of each pool with more than one cell, grouped (pools in order of their root,
+// cells ascending)
+fn pool_groups(pool: &[u32]) -> Vec<Vec<usize>> {
+    let mut pairs: Vec<(u32, usize)> = pool
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| **p != NOT_POOLED)
+        .map(|(c, p)| (*p, c))
+        .collect();
+    pairs.sort_unstable();
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut last = NOT_POOLED;
+    for (p, c) in pairs {
+        if p != last {
+            groups.push(Vec::new());
+            last = p;
+        }
+        if let Some(g) = groups.last_mut() {
+            g.push(c);
+        }
+    }
+    groups.retain(|g| g.len() > 1);
+    groups
 }
 
 impl WaterFilm {
@@ -761,7 +876,9 @@ impl WaterFilm {
             last_cap_faces: 0,
             fed: vec_of(n, 0),
             last_local_substeps: 0,
+            faces: Arc::from(Vec::new()),
         };
+        film.faces = build_faces(film.bed.nx, film.bed.nz);
         film.digest = film.config_digest();
         let l = film.bed.cell;
         let h = film.config.film_depth_max;
@@ -927,14 +1044,7 @@ impl WaterFilm {
     // Σ max(η* − b, 0) ≤ V over its cells, and the r quanta left over go one each to the r
     // lowest-index cells whose bed is at or below η*
     fn level_pools(&mut self, pool: &[u32]) -> Result<(), ParticipantFault> {
-        let n = self.depth.len();
-        let mut members: Vec<Vec<usize>> = vec_of(n, Vec::new());
-        for c in 0..n {
-            if pool[c] != NOT_POOLED {
-                members[pool[c] as usize].push(c);
-            }
-        }
-        for cells in members.iter().filter(|m| m.len() > 1) {
+        for cells in &pool_groups(pool) {
             let volume: i128 = cells.iter().map(|c| i128::from(self.depth[*c])).sum();
             let fill = |eta: i64| -> i128 {
                 cells
@@ -976,21 +1086,12 @@ impl WaterFilm {
 
     // the cells of every pool whose throughflow needs a surface gradient beyond the rest band
     fn pool_band(&self, pool: &[u32], inflow: &[i64], outflow: &[i64], dt: Fix128) -> Vec<usize> {
-        let n = self.depth.len();
         let nx = self.bed.nx;
         let l = self.bed.cell;
         let cfg = self.config;
         let mut band = Vec::new();
-        let mut members: Vec<Vec<usize>> = vec_of(n, Vec::new());
-        for c in 0..n {
-            if pool[c] != NOT_POOLED {
-                members[pool[c] as usize].push(c);
-            }
-        }
-        for (id, cells) in members.iter().enumerate() {
-            if cells.len() < 2 {
-                continue;
-            }
+        for cells in &pool_groups(pool) {
+            let id = pool[cells[0]] as usize;
             let through = inflow[id].min(outflow[id]);
             if through <= 0 {
                 continue;
@@ -1102,24 +1203,11 @@ impl WaterFilm {
                 rained = k;
             }
         }
-        let (nx, nz) = (self.bed.nx, self.bed.nz);
-        let nfx = (nx + 1) * nz;
-        let nf = nfx + nx * (nz + 1);
+        let faces = Arc::clone(&self.faces);
+        let nf = faces.len();
         let face = |f: usize| -> (Option<usize>, Option<usize>) {
-            if f < nfx {
-                let (i, k) = (f % (nx + 1), f / (nx + 1));
-                (
-                    if i > 0 { Some(i - 1 + k * nx) } else { None },
-                    if i < nx { Some(i + k * nx) } else { None },
-                )
-            } else {
-                let g = f - nfx;
-                let (i, k) = (g % nx, g / nx);
-                (
-                    if k > 0 { Some(i + (k - 1) * nx) } else { None },
-                    if k < nz { Some(i + k * nx) } else { None },
-                )
-            }
+            let (a, b) = faces[f];
+            (side_cell(a), side_cell(b))
         };
         // pools: faces whose depth over the higher bed exceeds the deepest film and whose
         // surface step is within the join step join their cells
@@ -1232,8 +1320,6 @@ impl WaterFilm {
             let hf = face_depth(sa.0, sa.1, sb.0, sb.1);
             let near_free = a.is_some_and(|c| free[c]) || b.is_some_and(|c| free[c]);
             let h3 = u128::from(hf.unsigned_abs()).pow(3);
-            // local substeps a lubrication face needs: 8 h_f³ / D_l (its diffusion number)
-            let slope = h3.saturating_mul(8).div_ceil(k.lubrication);
             if hf <= h_film && !near_free {
                 let (t, capped) =
                     simultaneous_transfer_report(sa, sb, k).ok_or(ParticipantFault::OutOfRange)?;
@@ -1254,7 +1340,8 @@ impl WaterFilm {
             }
             if hf <= h_film {
                 local.push((f, FaceLaw::Film));
-                need = need.max(slope);
+                // local substeps a lubrication face needs: 8 h_f³ / D_l (its diffusion number)
+                need = need.max(h3.saturating_mul(8).div_ceil(k.lubrication));
                 continue;
             }
             // deeper than the film: a free overfall (the lower side's surface at or below the
@@ -1280,14 +1367,12 @@ impl WaterFilm {
             }
             let e = u128::from(((sa.0 + sa.1) - (sb.0 + sb.1)).unsigned_abs());
             let lub = h3.checked_mul(e).map_or(u128::MAX, |v| v / k.lubrication);
-            let crit = isqrt_u128(h3)
-                .checked_mul(k.critical)
-                .map_or(u128::MAX, |v| v >> 64);
+            let crit_below_lub = critical_below(hf.unsigned_abs(), h3, lub, k.critical);
             // a front onto a dry or lower floor of the same height (a dam break), or a step in
             // the bed taller than the film with the lower side submerged and the flux at
             // critical (a drowned sill): inertial flows, outside the model
             let front = lo.0 + lo.1 <= crest;
-            let drowned_sill = (sa.0 - sb.0).abs() > h_film && crit < lub;
+            let drowned_sill = (sa.0 - sb.0).abs() > h_film && crit_below_lub;
             if front || drowned_sill {
                 steep.extend(a.into_iter().chain(b));
                 continue;
@@ -1296,7 +1381,12 @@ impl WaterFilm {
             // substeps that it never meets the ⌊|Δη|/8⌋ cap
             local.push((f, FaceLaw::Film));
             if e > 0 {
-                need = need.max(lub.min(crit).saturating_mul(8).div_ceil(e));
+                let moved = if crit_below_lub {
+                    critical(h3, k.critical)
+                } else {
+                    lub
+                };
+                need = need.max(moved.saturating_mul(8).div_ceil(e));
             }
         }
         if !steep.is_empty() {
