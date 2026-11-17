@@ -92,12 +92,18 @@ fn world(gravity: [f64; 2], ground: Option<f64>) -> Mpm2d {
 /// 2 × 2 particles per cell over the rectangle with corner `corner`, `W` along the unit
 /// vector `t` and `H` along `n`, moving at `v`
 fn block(world: &mut Mpm2d, corner: [f64; 2], t: [f64; 2], n: [f64; 2], v: [f64; 2]) {
-    let (na, nb) = ((W / CELL).round() as usize * 2, (H / CELL).round() as usize * 2);
+    let (na, nb) = (
+        (W / CELL).round() as usize * 2,
+        (H / CELL).round() as usize * 2,
+    );
     for i in 0..na {
         for j in 0..nb {
             let (s, h) = ((i as f64 + 0.5) * CELL / 2.0, (j as f64 + 0.5) * CELL / 2.0);
             world.add_particle(
-                [fx(corner[0] + s * t[0] + h * n[0]), fx(corner[1] + s * t[1] + h * n[1])],
+                [
+                    fx(corner[0] + s * t[0] + h * n[0]),
+                    fx(corner[1] + s * t[1] + h * n[1]),
+                ],
                 [fx(v[0]), fx(v[1])],
                 fx(CELL * CELL / 4.0),
             );
@@ -144,9 +150,15 @@ fn a_flat_frictionless_wall_is_the_ground() {
         .fold(f64::INFINITY, f64::min);
     // (a particle stops within its stencil's reach of the row, 1.5 cells, and the block
     // rebounds from there; free fall would be `g t` by now)
-    assert!(lowest < row + 2.0 * CELL, "the block reached the wall: {lowest}");
+    assert!(
+        lowest < row + 2.0 * CELL,
+        "the block reached the wall: {lowest}"
+    );
     let vy = wall.momentum()[1].to_f64() / wall.mass().to_f64();
-    assert!(vy > -G * 600.0 * dt() / 2.0, "the wall stopped the fall: {vy}");
+    assert!(
+        vy > -G * 600.0 * dt() / 2.0,
+        "the wall stopped the fall: {vy}"
+    );
 }
 
 #[test]
@@ -174,7 +186,10 @@ fn a_block_rests_on_a_flat_wall_without_drift() {
     // it stands on the wall: within the static compression below the start, doubled for the
     // load applied at once, and one cell for the base
     let sink = 2.0 * RHO * G * (H + CELL).powi(2) / (3.0 * p_modulus()) + CELL;
-    assert!(start[1] - end[1] <= sink && end[1] <= start[1] + 1e-12, "height {end:?}");
+    assert!(
+        start[1] - end[1] <= sink && end[1] <= start[1] + 1e-12,
+        "height {end:?}"
+    );
 }
 
 /// the block on a slope of angle `theta`: the travel of the centre of mass down the slope and
@@ -186,7 +201,10 @@ fn slope_run(theta: f64, mu: f64, times: &[f64]) -> Vec<(f64, f64)> {
     let mut w = world([0.0, -G], None);
     w.set_walls(half_plane(p0, n), fx(mu)).expect("valid walls");
     // the block's lower edge on the wall, its middle 0.06 m up the slope from `p0`
-    let corner = [p0[0] + (0.06 - W / 2.0) * t[0], p0[1] + (0.06 - W / 2.0) * t[1]];
+    let corner = [
+        p0[0] + (0.06 - W / 2.0) * t[0],
+        p0[1] + (0.06 - W / 2.0) * t[1],
+    ];
     block(&mut w, corner, t, n, [0.0, 0.0]);
     let start = centre_of_mass(&w);
     let mut done = 0usize;
@@ -223,7 +241,10 @@ fn settled_acceleration(theta: f64, mu: f64) -> (f64, f64) {
     let h = 0.05;
     let s = slope_run(theta, mu, &[0.1, 0.1 + h, 0.1 + 2.0 * h]);
     let a = (s[2].0 - 2.0 * s[1].0 + s[0].0) / (h * h);
-    (a, 4.0 * (shear_wobble(theta) + mu * normal_wobble(theta)) / (h * h))
+    (
+        a,
+        4.0 * (shear_wobble(theta) + mu * normal_wobble(theta)) / (h * h),
+    )
 }
 
 #[test]
@@ -255,7 +276,10 @@ fn a_block_above_the_friction_angle_slides_by_coulomb() {
         "accelerates at {a} m/s², Coulomb gives {expected} ± {bound}"
     );
     // friction matters in this scene: `g sin θ` is further than the bound
-    assert!(G * theta.sin() - expected > 2.0 * bound, "the scene separates μ from no friction");
+    assert!(
+        G * theta.sin() - expected > 2.0 * bound,
+        "the scene separates μ from no friction"
+    );
 }
 
 #[test]
@@ -280,7 +304,13 @@ fn no_particle_passes_a_wall_and_the_block_leaves_it() {
     let mut w = world([0.0, 0.0], None);
     w.set_walls(half_plane([at, 0.0], [-1.0, 0.0]), fx(MU))
         .expect("valid walls");
-    block(&mut w, [at - 0.05 - H, 0.28], [0.0, 1.0], [1.0, 0.0], [speed, 0.0]);
+    block(
+        &mut w,
+        [at - 0.05 - H, 0.28],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [speed, 0.0],
+    );
     let mut deepest = f64::INFINITY;
     let mut touched = false;
     for _ in 0..(0.3 / dt()).round() as usize {
@@ -292,7 +322,10 @@ fn no_particle_passes_a_wall_and_the_block_leaves_it() {
         }
     }
     assert!(touched, "the block reached the wall");
-    assert!(deepest >= -1.5 * CELL, "a particle went {deepest} m into the wall");
+    assert!(
+        deepest >= -1.5 * CELL,
+        "a particle went {deepest} m into the wall"
+    );
     let v = w.momentum()[0].to_f64() / w.mass().to_f64();
     assert!(v < 0.0, "the block left the wall: normal speed {v}");
     assert!(v.abs() <= speed, "it left no faster than it came: {v}");
@@ -309,7 +342,10 @@ fn invalid_walls_are_refused_and_change_nothing() {
         Err(Mpm2dError::Invalid("walls: friction"))
     );
     assert_eq!(
-        w.set_walls(|_x: V2| (Fix128::ZERO, [Fix128::ZERO, Fix128::ZERO]), fx(MU)),
+        w.set_walls(
+            |_x: V2| (Fix128::ZERO, [Fix128::ZERO, Fix128::ZERO]),
+            fx(MU)
+        ),
         Err(Mpm2dError::Invalid("walls: normal"))
     );
     assert_eq!(w, before);
@@ -343,7 +379,11 @@ fn the_walls_are_part_of_the_state() {
     assert_ne!(a.state_digest(), other.state_digest(), "μ is in the digest");
     let mut bare = a.clone();
     bare.clear_walls();
-    assert_ne!(a.state_digest(), bare.state_digest(), "the walls are in the digest");
+    assert_ne!(
+        a.state_digest(),
+        bare.state_digest(),
+        "the walls are in the digest"
+    );
     for _ in 0..200 {
         a.step().expect("step");
         b.step().expect("step");
@@ -376,7 +416,10 @@ fn measure_the_slope_runs_in_time() {
             );
         }
         if a > 0.0 {
-            println!("  settled acceleration {:?}, Coulomb {a}", settled_acceleration(theta, mu));
+            println!(
+                "  settled acceleration {:?}, Coulomb {a}",
+                settled_acceleration(theta, mu)
+            );
         }
     }
 }

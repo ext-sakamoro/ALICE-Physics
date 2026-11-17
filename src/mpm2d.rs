@@ -1029,7 +1029,10 @@ impl Mpm2d {
         let count = usize::try_from(u(&tail[19..27])?).ok()?;
         // with walls: the friction and two numbers a node
         let wall_numbers = if has_walls {
-            nodes[0].checked_mul(nodes[1])?.checked_mul(2)?.checked_add(1)?
+            nodes[0]
+                .checked_mul(nodes[1])?
+                .checked_mul(2)?
+                .checked_add(1)?
         } else {
             0
         };

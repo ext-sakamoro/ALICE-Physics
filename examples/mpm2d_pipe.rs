@@ -52,7 +52,14 @@ fn free_space(x: f32, y: f32) -> (f32, [f32; 2]) {
         let d = RADIUS - len;
         if d > best.0 {
             // on the line itself any direction serves: such a point is not in a wall
-            best = (d, if len > 0.0 { [dx / len, dy / len] } else { [0.0, 1.0] });
+            best = (
+                d,
+                if len > 0.0 {
+                    [dx / len, dy / len]
+                } else {
+                    [0.0, 1.0]
+                },
+            );
         }
     }
     let open = y - MOUTH;
@@ -101,7 +108,10 @@ fn main() {
     let half = f64::from(RADIUS) - 1.5 * CELL;
     let count = world.seed(
         |x: V2| {
-            let (dx, dy) = ((x[0].to_f64() - 0.22).abs() - 0.1, (x[1].to_f64() - 0.15).abs() - half);
+            let (dx, dy) = (
+                (x[0].to_f64() - 0.22).abs() - 0.1,
+                (x[1].to_f64() - 0.15).abs() - half,
+            );
             fx(dx.max(dy))
         },
         2,
@@ -172,7 +182,10 @@ fn main() {
     println!(
         "worst frame {:.1} ms; digest {}",
         worst * 1e3,
-        digest.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        digest
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     );
     // without the walls the same world is the plain one
     world.clear_walls();
