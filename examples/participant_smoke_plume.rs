@@ -77,9 +77,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max()
         .unwrap_or(0);
     println!(
-        "after 0.5 s: {} velocity steps, {} transport substeps in the last, plume top at {:.2} m, burner cell {:.0} K above the air",
+        "after 0.5 s: {} velocity steps, {} transport and {} diffusion substeps in the last, plume top at {:.2} m, burner cell {:.0} K above the air",
         plume.steps(),
         plume.last_transport_substeps(),
+        plume.last_diffusion_substeps(),
         (top as f64 + 0.5) * dx.to_f64(),
         plume.excess_k(7, 1, 7).to_f64(),
     );
