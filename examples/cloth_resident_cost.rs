@@ -14,6 +14,27 @@ use alice_physics_core::cloth::{Cloth, ClothConfig, OutlineDesc};
 use alice_physics_core::cloth_participant::ClothParticipant;
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
+
+/// A participant that does nothing: the cost of the participant path alone.
+struct Idle;
+
+impl Participant for Idle {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(7)
+    }
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, _h: Fix128) -> Result<(), ParticipantFault> {
+        Ok(())
+    }
+    fn observe(&self, _out: &mut ObservationSink) {}
+    fn write_state(&self, _out: &mut Vec<u8>) {}
+    fn check_state(&self, _bytes: &[u8]) -> Result<(), StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _bytes: &[u8]) {}
+}
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -91,6 +112,14 @@ fn main() {
             "[cloth cost] substeps {n}: today (1 step x 4 it) {:.3} ms/frame",
             ms_per_frame(today)
         );
+        let mut idle = world(n);
+        idle.add_cloth(letter(1, 4));
+        idle.add_participant(Box::new(Idle)).expect("register");
+        println!(
+            "[cloth cost] substeps {n}: today + an idle participant {:.3} ms/frame",
+            ms_per_frame(idle)
+        );
+        println!("[cloth cost] substeps {n}: empty world {:.3} ms/frame", ms_per_frame(world(n)));
         for (m, it) in [(1usize, 4usize), (2, 2), (2, 4)] {
             let mut w = world(n);
             w.add_participant(Box::new(ClothParticipant::new(letter(m, it))))

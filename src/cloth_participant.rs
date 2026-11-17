@@ -15,10 +15,22 @@
 //! - **Conservation**: as [`Cloth::step`]; the participant adds nothing and takes
 //!   nothing.
 //! - **Range**: as [`Cloth::step`].
-//! - **Approximations**: the cloth reads no body and stages no force (no contact
-//!   with the rigid bodies yet); its own `gravity` is used. A body moving relative to
-//!   the cloth can cross `|v_rel| · dt / m` between two cloth steps, so contact
-//!   between them (not wired yet) needs `|v_rel| · dt / m` below the cloth thickness.
+//! - **Contact with the bodies**: after each cloth step every body is a sphere of
+//!   the world's collision radius `r` for it ([`SubstepCtx::body_radius`]); a particle
+//!   closer than `R = r + thickness` to its centre is pushed out along the centre line
+//!   by the depth `p`, the correction shared by inverse mass (`w_p` particle, `w_b`
+//!   body, 0 for a static or kinematic body), its velocity relative to the body loses
+//!   the inward normal part (inelastic, no friction), and a dynamic body is given the
+//!   reaction `F = −n · p / ((w_p + w_b) · h²)` with `h` the width of the call, so it
+//!   moves by its share `p · w_b / (w_p + w_b)` over the step.
+//! - **Coupling limit**: the bodies are read at the start of the cloth's step, so a
+//!   body crossing the cloth faster than the contact band can pass through it: a step
+//!   catches a body moving at `|v_rel|` relative to the cloth while
+//!   `|v_rel| · dt / m < 2 R` (the band is `2 R` thick at a particle); above that a
+//!   body can go from one side to the other between two steps.
+//! - **Approximations**: bodies are spheres of their collision radius (no box or
+//!   mesh shapes), no friction, contact only with particles (not with the triangle
+//!   faces between them); its own `gravity` is used.
 //! - **Tiers**: L0 only.
 //! - **Validation**: `tests/cloth_resident_compare.rs` (bit equality with the
 //!   world's own cloth step at one step per frame for any world substeps, the settle
@@ -33,7 +45,8 @@
 use alloc::vec::Vec;
 
 use crate::cloth::{Cloth, Cursor};
-use crate::math::Fix128;
+use crate::math::{Fix128, Vec3Fix};
+use crate::solver::BodyType;
 use crate::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
     SubstepCtx,
@@ -83,11 +96,23 @@ impl Participant for ClothParticipant {
         StepRule::PerFrame(self.steps_per_frame)
     }
 
-    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
         if h <= Fix128::ZERO {
             return Err(ParticipantFault::InvalidState);
         }
-        self.cloth.step_by_its_own(h);
+        if ctx.bodies().is_empty() {
+            self.cloth.step_by_its_own(h);
+            return Ok(());
+        }
+        // work the contact out on a copy first: a fault leaves the cloth unchanged
+        let mut next = self.cloth.clone();
+        next.step_by_its_own(h);
+        let reactions = contact(&mut next, ctx, h).ok_or(ParticipantFault::OutOfRange)?;
+        for (body, force) in reactions {
+            ctx.add_force(body, force)
+                .map_err(|_| ParticipantFault::InvalidState)?;
+        }
+        self.cloth = next;
         Ok(())
     }
 
@@ -121,4 +146,51 @@ impl Participant for ClothParticipant {
         // check_state accepted these bytes, so the read cannot fail
         let _ = self.cloth.read_rollback(&mut cur, true);
     }
+}
+
+/// Push the cloth's particles out of every body (a sphere of the world's collision
+/// radius) and return the reaction each dynamic body gets; `None` when a value
+/// leaves the range of [`Fix128`].
+fn contact(cloth: &mut Cloth, ctx: &SubstepCtx<'_>, h: Fix128) -> Option<Vec<(usize, Vec3Fix)>> {
+    let thickness = cloth.config.thickness;
+    let h_sq = h.checked_mul(h)?;
+    let mut reactions = Vec::new();
+    for (b, body) in ctx.bodies().iter().enumerate() {
+        let radius = ctx.body_radius(b)?;
+        let reach = radius.checked_add(thickness)?;
+        let wb = if body.body_type == BodyType::Dynamic {
+            body.inv_mass
+        } else {
+            Fix128::ZERO
+        };
+        let mut push = Vec3Fix::ZERO;
+        for i in 0..cloth.positions.len() {
+            let wp = cloth.inv_masses[i];
+            let weight = wp.checked_add(wb)?;
+            if weight <= Fix128::ZERO {
+                continue;
+            }
+            let d = cloth.positions[i] - body.position;
+            let dist = d.checked_length()?;
+            if dist >= reach || dist.is_zero() {
+                continue;
+            }
+            let n = d / dist;
+            let depth = reach - dist;
+            let share = depth.checked_mul(wp)?.checked_div(weight)?;
+            cloth.positions[i] = cloth.positions[i] + n * share;
+            let vn = (cloth.velocities[i] - body.velocity).dot(n);
+            if vn < Fix128::ZERO {
+                cloth.velocities[i] = cloth.velocities[i] - n * vn;
+            }
+            if !wb.is_zero() {
+                let f = depth.checked_div(weight.checked_mul(h_sq)?)?;
+                push = push - n * f;
+            }
+        }
+        if push != Vec3Fix::ZERO {
+            reactions.push((b, push));
+        }
+    }
+    Some(reactions)
 }
