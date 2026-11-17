@@ -11,18 +11,64 @@
 //! 4. Apply viscosity and vorticity confinement
 //! 5. Update velocities
 //!
-// LIMITATION(COV-CFD-088): Known limitation: the density constraint is nearly inert
-//! # Known limitation: the density constraint is nearly inert
+//! # MODEL
 //!
-//! The constraint multiplier `lambda = -C / (sum |grad W|^2 + eps)` divides by the raw kernel
-//! gradients, whereas Macklin & Muller (2013) use `grad C = (1/rho_0) sum grad W`, so
-//! `lambda` here is `rho_0^2` times smaller than the published one. With the default
-//! `rho_0 = 1000` a block at the rest spacing perturbed to `C = +2.14` keeps its RMS radius
-//! unchanged over 20 frames: the solver mostly integrates gravity, XSPH viscosity and the
-//! cohesion / vorticity terms. Dividing by `rho_0^2` changes the behaviour a lot (a 6x6x6
-//! block collapses to 0.12x, a sparser one diverges), so it is left as is until the
-//! relaxation / epsilon are redesigned together. The kernels themselves are normalised
-//! (`integral W dV = 1`).
+//! Equations (Macklin & Muller 2013, with the changes listed under "departures"):
+//!
+//! - density `rho_i = sum_j m W(x_i - x_j)` over fluid neighbours and fixed boundary
+//!   particles (Akinci et al. 2012), poly6 kernel normalised to `integral W dV = 1`
+//! - constraint `C_i = rho_i / rho_0 - 1`, gradient `grad_k C_i = (m / rho_0) grad W_ik`
+//! - multiplier `lambda_i = -C_i / (S_i + eps * S_ref)`, `S_i = sum_k |grad_k C_i|^2`,
+//!   `S_ref` = the same sum on the rest lattice (`rest_spacing`), so `eps` is unit-free
+//! - correction `dx_i = (m / rho_0) sum_j (lambda_i + lambda_j) grad W_ij` (boundary
+//!   particles contribute `lambda_j = 0`), applied Jacobi-style after every particle's
+//!   `lambda` is known
+//! - XSPH viscosity `v_i += c sum_j (m / rho_0) W_ij (v_j - v_i)` over fluid neighbours,
+//!   an added kinematic viscosity of order `nu = c h^2 / dt`
+//!
+//! Units: SI (m, s, kg). Conserved: total fluid momentum under the pairwise corrections
+//! (boundary particles are fixed and take momentum out, as a wall does).
+//!
+//! Departures from the paper, each measured on a 4x8x4 column at `h = 2 s` with the
+//! default iteration and substep counts:
+//!
+//! - **lattice-calibrated mass**: the default `particle_mass` makes the rest lattice
+//!   exactly `rho_0` (`m s^3 = rho_0 s^3` gives `1.010 rho_0` at `h = 2 s`, and that 1 %
+//!   pushes a free block upward without bound); see [`FluidConfig::lattice_mass`]
+//! - **two-sided interior, one-sided surface**: the paper clamps `C >= 0` everywhere,
+//!   which leaves interior particles with no restoring force for `C < 0` and makes a
+//!   column under gravity chatter. Here the negative branch is kept and weighted by
+//!   `w_i = max(0, 1 - g_i / g_cut)^2`, where `g_i = h |sum_j (m / rho_0) grad W_ij|` is
+//!   the colour-field gradient on the start-of-substep positions (interior `~0`, free
+//!   surface `~0.8-0.95`); `w -> 0` recovers the paper's clamp at the surface. The
+//!   negative branch uses its own `eps_neg`. A neighbour count is not used: walls taller
+//!   than the fluid make the top layer next to them look interior.
+//! - **XSPH strength `c = 0.3`** (paper `0.01`): measured as the largest speed over the
+//!   last 60 of 300 frames of a column under gravity, `c = 0.1` gives 0.03-0.13 m/s and
+//!   bursts to 0.5 m/s over 900 frames, `c = 0.2` gives 0.04-0.13 m/s, `c = 0.3` gives
+//!   0.024 m/s (`s = 0.05`). More iterations (20) or substeps (4, 8) did not remove the
+//!   chatter at `c = 0.1`.
+//! - **settling time grows with the scale** at `c = 0.3`, `h = 2 s`, 2 substeps: largest
+//!   speed over the last 60 frames of the 4x8x4 column after 300 / 600 / 900 frames is
+//!   0.003 / 0.0000 / 0.0000 m/s at `s = 0.05`, 0.22 / 0.026 / 0.036 at `s = 0.075`,
+//!   0.16 / 0.13 / 0.025 at `s = 0.1` (the default). Density error (0.2-0.3 %) and the
+//!   floor reaction (weight to 0.3 %) do not depend on it.
+//! - **artificial pressure off by default**: `s_corr` pushes every pair apart and makes a
+//!   free block expand (1.68x its height in 60 frames); kept as `artificial_pressure`
+//!   (`k`, with `n = 4` and `dq = 0.2 h`, in `lambda` units).
+//!
+//! Validity: weakly compressible water-like fluids at `h ~ 2 s`, frame `dt` up to 1/60 s
+//! with two substeps; density error of a resting column under gravity is ~0.3 %. Not
+//! valid for free surfaces without boundary particles below them (particles near an
+//! unsupported wall see too few neighbours and sink).
+//!
+//! Verified by `tests/analytic_fluid_pbf_density.rs`: hydrostatics two ways, the floor
+//! reaction against the weight `M g` (1.00006 at 900 frames) and the force on a side
+//! wall against the integral of the linear pressure, `rho_0 g H^2 D / 2` with
+//! `H = M / (rho_0 W D)` (1.035; the floor balance holds for any pressure profile, the
+//! wall force only for a linear one); column density; a resting block staying at rest;
+//! a block laid out 15 % wide contracting to `rho_0`; the same answer at 4 substeps and
+//! at 2.5x the mass.
 //!
 //! Author: Moroya Sakamoto
 
@@ -63,28 +109,95 @@ pub struct FluidConfig {
     /// Surface tension / cohesion coefficient κ
     /// (`Δv_i = κ · dt · Σ_j (m_j/ρ₀) (x_j − x_i)/r · W_ij`)
     pub surface_tension: Fix128,
-    /// Particle mass
+    /// Particle mass (default: [`FluidConfig::lattice_mass`] of the rest lattice)
     pub particle_mass: Fix128,
-    /// Constraint relaxation parameter
+    /// Constraint relaxation parameter (scales the position correction)
     pub relaxation: Fix128,
+    /// Rest particle spacing `s`: sets the reference `S_ref` that makes the constraint
+    /// softening unit-free (default `h / 2`)
+    pub rest_spacing: Fix128,
+    /// Constraint softening for `C >= 0`, relative to `S_ref`
+    pub epsilon: Fix128,
+    /// Constraint softening for `C < 0` (two-sided interior), relative to `S_ref`
+    pub epsilon_negative: Fix128,
+    /// Colour-field gradient `h |sum_j (m/rho_0) grad W_ij|` at which the negative branch
+    /// is switched off (surface); `0` clamps `C >= 0` everywhere as in the paper
+    pub surface_gradient_cutoff: Fix128,
+    /// Artificial pressure `k` of `s_corr = -k (W(r) / W(0.2 h))^4`, in units of the
+    /// reference multiplier `1 / S_ref`; `0` (default) disables it
+    pub artificial_pressure: Fix128,
+}
+
+impl FluidConfig {
+    /// Particle mass that makes a simple cubic lattice of spacing `spacing` exactly
+    /// `rest_density`: `rho_0 / sum_k W(|k| spacing)` over the lattice points within
+    /// `kernel_radius` (the origin included).
+    ///
+    /// Returns `rest_density * spacing^3` when the sum is zero (a kernel radius of
+    /// zero) or `spacing` is not positive.
+    #[must_use]
+    pub fn lattice_mass(rest_density: Fix128, kernel_radius: Fix128, spacing: Fix128) -> Fix128 {
+        if spacing <= Fix128::ZERO {
+            return rest_density * spacing * spacing * spacing;
+        }
+        let sum = lattice_sum(kernel_radius, spacing, |r_sq| poly6(r_sq, kernel_radius));
+        if sum.is_zero() {
+            rest_density * spacing * spacing * spacing
+        } else {
+            rest_density / sum
+        }
+    }
 }
 
 impl Default for FluidConfig {
     fn default() -> Self {
+        let rest_density = Fix128::from_int(1000);
+        let kernel_radius = Fix128::from_ratio(1, 5); // 0.2
+        let rest_spacing = Fix128::from_ratio(1, 10); // h / 2
         Self {
-            rest_density: Fix128::from_int(1000),
-            kernel_radius: Fix128::from_ratio(1, 5), // 0.2
-            iterations: 4,
+            rest_density,
+            kernel_radius,
+            iterations: 10,
             substeps: 2,
             gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
             damping: Fix128::from_ratio(99, 100),
-            viscosity: Fix128::from_ratio(1, 100),
+            viscosity: Fix128::from_ratio(3, 10),
             vorticity_strength: Fix128::from_ratio(1, 1000),
             surface_tension: Fix128::from_ratio(1, 100),
-            particle_mass: Fix128::from_ratio(1, 100),
+            particle_mass: Self::lattice_mass(rest_density, kernel_radius, rest_spacing),
             relaxation: Fix128::ONE,
+            rest_spacing,
+            epsilon: Fix128::from_ratio(1, 100),
+            epsilon_negative: Fix128::from_ratio(3, 10),
+            surface_gradient_cutoff: Fix128::from_ratio(2, 5),
+            artificial_pressure: Fix128::ZERO,
         }
     }
+}
+
+/// `sum_k f(|k|^2 spacing^2)` over the integer lattice points `k` with
+/// `|k| spacing < radius` (the origin included).
+fn lattice_sum(radius: Fix128, spacing: Fix128, f: impl Fn(Fix128) -> Fix128) -> Fix128 {
+    if spacing <= Fix128::ZERO || radius <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    let r_sq = radius * radius;
+    let mut reach: i64 = 0;
+    while Fix128::from_int(reach + 1) * spacing < radius {
+        reach += 1;
+    }
+    let mut sum = Fix128::ZERO;
+    for a in -reach..=reach {
+        for b in -reach..=reach {
+            for c in -reach..=reach {
+                let d_sq = Fix128::from_int(a * a + b * b + c * c) * spacing * spacing;
+                if d_sq < r_sq {
+                    sum = sum + f(d_sq);
+                }
+            }
+        }
+    }
+    sum
 }
 
 // ============================================================================
@@ -143,6 +256,17 @@ pub struct Fluid {
     pub config: FluidConfig,
     /// Cached reciprocal of `rest_density` to avoid repeated division in hot loops
     inv_rest_density: Fix128,
+    /// Fixed boundary particles (Akinci et al. 2012): they add to the density and the
+    /// constraint gradients of fluid particles near a wall but never move
+    pub boundary: Vec<Vec3Fix>,
+    /// `S_ref`: the constraint-gradient sum on the rest lattice
+    reference_gradient_sq: Fix128,
+    /// Per-particle weight of the negative constraint branch (1 interior, 0 surface)
+    negative_weights: Vec<Fix128>,
+    /// Force the boundary particles exerted on the fluid in the last substep
+    boundary_force: Vec3Fix,
+    /// Per boundary particle: the force it exerted on the fluid in the last substep
+    boundary_forces: Vec<Vec3Fix>,
 }
 
 impl Fluid {
@@ -156,6 +280,17 @@ impl Fluid {
         } else {
             Fix128::ONE / config.rest_density
         };
+        let h = config.kernel_radius;
+        let vol = config.particle_mass * inv_rest_density;
+        let reference_gradient_sq = lattice_sum(h, config.rest_spacing, |r_sq| {
+            if r_sq.is_zero() {
+                Fix128::ZERO
+            } else {
+                let g = spiky_grad(r_sq.sqrt(), h);
+                g * g
+            }
+        }) * vol
+            * vol;
 
         Self {
             predicted: positions.clone(),
@@ -166,7 +301,85 @@ impl Fluid {
             positions,
             config,
             inv_rest_density,
+            boundary: Vec::new(),
+            reference_gradient_sq,
+            negative_weights: vec![Fix128::ONE; n],
+            boundary_force: Vec3Fix::ZERO,
+            boundary_forces: Vec::new(),
         }
+    }
+
+    /// Force (N) the boundary particles exerted on the fluid during the last substep:
+    /// `sum_i m (dx_i) / dt^2` over the constraint corrections. Fluid-fluid corrections
+    /// are pairwise antisymmetric and cancel, so only the wall terms remain; for fluid at
+    /// rest in a box this is the floor reaction, `-M g` (the integral of `rho g h` over
+    /// the floor). Zero before the first step.
+    #[must_use]
+    pub fn boundary_force(&self) -> Vec3Fix {
+        self.boundary_force
+    }
+
+    /// Force (N) each boundary particle exerted on the fluid during the last substep,
+    /// in the order of [`Fluid::boundary`]: `sum_i m (dx_i from that particle) / dt^2`.
+    /// Summing a wall's entries gives the pressure force on that wall (for fluid at rest,
+    /// `1/2 rho g H^2 D` on a side wall of depth `D`); the sum over all entries is
+    /// [`Fluid::boundary_force`] up to rounding. Empty before the first step.
+    #[must_use]
+    pub fn boundary_forces(&self) -> &[Vec3Fix] {
+        &self.boundary_forces
+    }
+
+    /// Replace the fixed boundary particles (see [`Fluid::box_boundary`])
+    #[must_use]
+    pub fn with_boundary(mut self, boundary: Vec<Vec3Fix>) -> Self {
+        self.boundary = boundary;
+        self
+    }
+
+    /// Boundary particles for an open-topped box `[min, max]` filled on the lattice
+    /// `min + (i + 1/2) spacing`: `layers` shells of lattice points outside the box on
+    /// the floor and the four walls, up to `max.y` (no lid).
+    ///
+    /// Returns no particles when `spacing` is not positive, `layers` is zero or the box
+    /// is inverted on some axis.
+    #[must_use]
+    pub fn box_boundary(
+        min: Vec3Fix,
+        max: Vec3Fix,
+        spacing: Fix128,
+        layers: usize,
+    ) -> Vec<Vec3Fix> {
+        let mut out = Vec::new();
+        if spacing <= Fix128::ZERO || layers == 0 || min.x > max.x || min.y > max.y || min.z > max.z
+        {
+            return out;
+        }
+        let cells = |lo: Fix128, hi: Fix128| -> i64 {
+            let mut k: i64 = 0;
+            while lo + Fix128::from_int(k + 1) * spacing <= hi {
+                k += 1;
+            }
+            k
+        };
+        let (nx, ny, nz) = (
+            cells(min.x, max.x),
+            cells(min.y, max.y),
+            cells(min.z, max.z),
+        );
+        let l = layers as i64;
+        let half = Fix128::from_ratio(1, 2);
+        let at = |o: Fix128, i: i64| o + (Fix128::from_int(i) + half) * spacing;
+        for i in -l..nx + l {
+            for j in -l..ny {
+                for k in -l..nz + l {
+                    let inside = (0..nx).contains(&i) && j >= 0 && (0..nz).contains(&k);
+                    if !inside {
+                        out.push(Vec3Fix::new(at(min.x, i), at(min.y, j), at(min.z, k)));
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// Create a block of fluid particles on a regular lattice
@@ -236,6 +449,48 @@ impl Fluid {
         let n = self.particle_count();
         let h = self.config.kernel_radius;
         let h_sq = h * h;
+        let vol = self.particle_volume();
+
+        // 0. Surface weights of the negative branch from the colour-field gradient on the
+        //    start-of-substep positions (fluid + boundary)
+        self.grid.clear();
+        for i in 0..n {
+            self.grid.insert(i, self.positions[i]);
+        }
+        for (k, b) in self.boundary.iter().enumerate() {
+            self.grid.insert(n + k, *b);
+        }
+        self.grid.build();
+        let mut neighbors_buf = Vec::new();
+        let cutoff = self.config.surface_gradient_cutoff;
+        for i in 0..n {
+            if cutoff <= Fix128::ZERO {
+                self.negative_weights[i] = Fix128::ZERO;
+                continue;
+            }
+            self.grid
+                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
+            let mut gradient = Vec3Fix::ZERO;
+            for &j in &neighbors_buf {
+                if j == i {
+                    continue;
+                }
+                let delta = self.positions[i] - self.point(j);
+                let r_sq = delta.length_squared();
+                if r_sq.is_zero() || r_sq >= h_sq {
+                    continue;
+                }
+                let r = r_sq.sqrt();
+                gradient = gradient + delta / r * (spiky_grad(r, h) * vol);
+            }
+            let g = gradient.length() * h;
+            let w = Fix128::ONE - g / cutoff;
+            self.negative_weights[i] = if w <= Fix128::ZERO {
+                Fix128::ZERO
+            } else {
+                w * w
+            };
+        }
 
         // 1. Predict positions (damping is applied once per frame in `step`,
         //    1.2.0 — per substep it made the terminal velocity depend on
@@ -245,17 +500,24 @@ impl Fluid {
             self.predicted[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
-        // 2. Build spatial grid
+        // 2. Build spatial grid on the predicted fluid positions and the boundary
         self.grid.clear();
         for i in 0..n {
             self.grid.insert(i, self.predicted[i]);
         }
+        for (k, b) in self.boundary.iter().enumerate() {
+            self.grid.insert(n + k, *b);
+        }
         self.grid.build();
 
-        // 3. Density constraint iterations
-        let mut neighbors_buf = Vec::new();
+        // 3. Density constraint iterations (Jacobi: every lambda, then every correction)
+        let s_ref = self.reference_gradient_sq;
+        let artificial = self.config.artificial_pressure;
+        let w_dq = poly6(h_sq * Fix128::from_ratio(1, 25), h);
+        let mut corrections = vec![Vec3Fix::ZERO; n];
+        let mut total_correction = Vec3Fix::ZERO;
+        let mut wall_corrections = vec![Vec3Fix::ZERO; self.boundary.len()];
         for _ in 0..self.config.iterations {
-            // Compute densities and lambdas
             for i in 0..n {
                 self.grid
                     .query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
@@ -264,66 +526,82 @@ impl Fluid {
                 let mut grad_i = Vec3Fix::ZERO;
 
                 for &j in &neighbors_buf {
-                    let delta = self.predicted[i] - self.predicted[j];
+                    let delta = self.predicted[i] - self.predicted_point(j);
                     let r_sq = delta.length_squared();
 
                     density = density + self.config.particle_mass * poly6(r_sq, h);
 
-                    if i != j && r_sq < h_sq {
+                    if j != i && r_sq < h_sq && !r_sq.is_zero() {
                         let r = r_sq.sqrt();
-                        let grad_mag = spiky_grad(r, h);
-                        if !r.is_zero() {
-                            let grad = delta / r * grad_mag;
-                            grad_i = grad_i + grad;
-                            sum_grad_sq = sum_grad_sq + grad.length_squared();
-                        }
+                        let grad = delta / r * (spiky_grad(r, h) * vol);
+                        grad_i = grad_i + grad;
+                        sum_grad_sq = sum_grad_sq + grad.length_squared();
                     }
                 }
 
                 self.densities[i] = density;
-
-                // Constraint: C = density / rest_density - 1
-                // Use precomputed reciprocal to avoid repeated division
-                let constraint = density * self.inv_rest_density - Fix128::ONE;
                 sum_grad_sq = sum_grad_sq + grad_i.length_squared();
 
-                let epsilon = Fix128::from_ratio(1, 10000);
-                self.lambdas[i] = if sum_grad_sq.is_zero() {
+                let mut constraint = density * self.inv_rest_density - Fix128::ONE;
+                let mut softening = self.config.epsilon;
+                if constraint < Fix128::ZERO {
+                    constraint = constraint * self.negative_weights[i];
+                    softening = self.config.epsilon_negative;
+                }
+                let denom = sum_grad_sq + softening * s_ref;
+                self.lambdas[i] = if sum_grad_sq.is_zero() || denom.is_zero() {
                     Fix128::ZERO
                 } else {
-                    -constraint / (sum_grad_sq + epsilon)
+                    -constraint / denom
                 };
             }
 
-            // Apply position corrections
-            for i in 0..n {
+            for (i, slot) in corrections.iter_mut().enumerate() {
                 self.grid
                     .query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
                 let mut correction = Vec3Fix::ZERO;
-
                 for &j in &neighbors_buf {
-                    if i == j {
+                    if j == i {
                         continue;
                     }
-                    let delta = self.predicted[i] - self.predicted[j];
+                    let delta = self.predicted[i] - self.predicted_point(j);
                     let r_sq = delta.length_squared();
                     if r_sq >= h_sq || r_sq.is_zero() {
                         continue;
                     }
-
                     let r = r_sq.sqrt();
-                    let grad_mag = spiky_grad(r, h);
-                    let grad = delta / r * grad_mag;
-
-                    let lambda_sum = self.lambdas[i] + self.lambdas[j];
+                    let grad = delta / r * spiky_grad(r, h);
+                    let mut lambda_sum = self.lambdas[i];
+                    if j < n {
+                        lambda_sum = lambda_sum + self.lambdas[j];
+                    } else {
+                        wall_corrections[j - n] = wall_corrections[j - n]
+                            + grad * self.lambdas[i] * vol * self.config.relaxation;
+                    }
+                    if !artificial.is_zero() && !w_dq.is_zero() && !s_ref.is_zero() {
+                        let ratio = poly6(r_sq, h) / w_dq;
+                        let r2 = ratio * ratio;
+                        lambda_sum = lambda_sum - artificial * r2 * r2 / s_ref;
+                    }
                     correction = correction + grad * lambda_sum;
                 }
-
-                // Reuse precomputed reciprocal of rest_density
-                self.predicted[i] =
-                    self.predicted[i] + correction * self.inv_rest_density * self.config.relaxation;
+                *slot = correction * vol * self.config.relaxation;
+            }
+            for (p, c) in self.predicted.iter_mut().zip(&corrections) {
+                *p = *p + *c;
+                total_correction = total_correction + *c;
             }
         }
+        let force_per_correction = if dt.is_zero() {
+            Fix128::ZERO
+        } else {
+            self.config.particle_mass / (dt * dt)
+        };
+        self.boundary_force = total_correction * force_per_correction;
+        self.boundary_forces = wall_corrections
+            .into_iter()
+            .map(|c| c * force_per_correction)
+            .collect();
 
         // 4. Update velocities and positions
         let inv_dt = Fix128::ONE / dt;
@@ -346,6 +624,28 @@ impl Fluid {
         }
     }
 
+    /// Current position of grid entry `j` (fluid particle or boundary particle)
+    #[inline]
+    fn point(&self, j: usize) -> Vec3Fix {
+        let n = self.positions.len();
+        if j < n {
+            self.positions[j]
+        } else {
+            self.boundary[j - n]
+        }
+    }
+
+    /// Predicted position of grid entry `j` (boundary particles do not move)
+    #[inline]
+    fn predicted_point(&self, j: usize) -> Vec3Fix {
+        let n = self.predicted.len();
+        if j < n {
+            self.predicted[j]
+        } else {
+            self.boundary[j - n]
+        }
+    }
+
     /// `damping` once per frame (velocity retention per `step()` call).
     fn apply_frame_damping(&mut self) {
         let d = self.config.damping;
@@ -363,12 +663,13 @@ impl Fluid {
         self.config.particle_mass * self.inv_rest_density
     }
 
-    /// XSPH viscosity smoothing
+    /// XSPH viscosity: `v_i += c * sum_j (m/rho_0) W_ij (v_j - v_i)` over fluid
+    /// neighbours (paper eq. 17 with the SPH volume, so `c` is unit-free)
     fn apply_viscosity(&mut self) {
         let n = self.particle_count();
         let h = self.config.kernel_radius;
         let h_sq = h * h;
-        let c = self.config.viscosity;
+        let c = self.config.viscosity * self.particle_volume();
 
         let velocities_copy: Vec<Vec3Fix> = self.velocities.clone();
         let mut neighbors_buf = Vec::new();
@@ -376,23 +677,19 @@ impl Fluid {
         for i in 0..n {
             self.grid
                 .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
-            let mut avg_vel = Vec3Fix::ZERO;
-            let mut weight_sum = Fix128::ZERO;
+            let mut sum = Vec3Fix::ZERO;
 
             for &j in &neighbors_buf {
-                if i == j {
+                if i == j || j >= n {
                     continue;
                 }
                 let delta = self.positions[i] - self.positions[j];
                 let r_sq = delta.length_squared();
                 let w = poly6(r_sq, h);
-                avg_vel = avg_vel + (velocities_copy[j] - velocities_copy[i]) * w;
-                weight_sum = weight_sum + w;
+                sum = sum + (velocities_copy[j] - velocities_copy[i]) * w;
             }
 
-            if !weight_sum.is_zero() {
-                self.velocities[i] = self.velocities[i] + avg_vel * (c / weight_sum);
-            }
+            self.velocities[i] = self.velocities[i] + sum * c;
         }
     }
 
@@ -418,7 +715,7 @@ impl Fluid {
             let mut force = Vec3Fix::ZERO;
 
             for &j in &neighbors_buf {
-                if i == j {
+                if i == j || j >= n {
                     continue;
                 }
                 let delta = self.positions[j] - self.positions[i];
@@ -458,7 +755,7 @@ impl Fluid {
                 .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
             let mut curl = Vec3Fix::ZERO;
             for &j in &neighbors_buf {
-                if i == j {
+                if i == j || j >= n {
                     continue;
                 }
                 let delta = self.positions[j] - self.positions[i];
@@ -482,7 +779,7 @@ impl Fluid {
                 .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
             let mut grad_mag_curl = Vec3Fix::ZERO;
             for &j in &neighbors_buf {
-                if i == j {
+                if i == j || j >= n {
                     continue;
                 }
                 let delta = self.positions[j] - self.positions[i];
@@ -552,6 +849,8 @@ impl core::fmt::Debug for Fluid {
             .field("grid", &"<SpatialGrid>")
             .field("config", &self.config)
             .field("inv_rest_density", &self.inv_rest_density)
+            .field("boundary", &format_args!("[{} items]", self.boundary.len()))
+            .field("reference_gradient_sq", &self.reference_gradient_sq)
             .finish()
     }
 }
@@ -575,6 +874,91 @@ mod tests {
         );
 
         assert!(fluid.particle_count() > 0, "Should create particles");
+    }
+
+    /// Small boxed block for the branch tests below (`n`^3 at the rest spacing, 2 wall
+    /// layers, walls twice the block height)
+    fn small_boxed(config: FluidConfig, n: i64) -> Fluid {
+        let sp = config.rest_spacing;
+        let half = sp / Fix128::from_int(2);
+        let side = Fix128::from_int(n) * sp;
+        Fluid::new_block(
+            Vec3Fix::new(half, half, half),
+            Vec3Fix::new(side - half, side - half, side - half),
+            sp,
+            config,
+        )
+        .with_boundary(Fluid::box_boundary(
+            Vec3Fix::ZERO,
+            Vec3Fix::new(side, side + side, side),
+            sp,
+            2,
+        ))
+    }
+
+    #[test]
+    fn boxed_block_under_gravity_is_carried_by_the_floor() {
+        // oracle: a fluid at rest on a floor is carried by its weight M g
+        let config = FluidConfig::default();
+        let mut f = small_boxed(config, 3);
+        for _ in 0..240 {
+            f.step(Fix128::from_ratio(1, 60));
+        }
+        let weight = f.particle_count() as f64 * config.particle_mass.to_f64() * 10.0;
+        let support = f.boundary_force().y.to_f64() / weight;
+        assert!(
+            (support - 1.0).abs() < 0.05,
+            "floor reaction / weight {support}"
+        );
+        assert!(
+            f.positions.iter().all(|p| p.y > Fix128::ZERO),
+            "fell through the floor"
+        );
+    }
+
+    #[test]
+    fn surface_cutoff_zero_clamps_and_artificial_pressure_pushes_apart() {
+        // cutoff 0: C >= 0 everywhere (paper); s_corr adds a pairwise repulsion
+        let a = FluidConfig {
+            gravity: Vec3Fix::ZERO,
+            surface_gradient_cutoff: Fix128::ZERO,
+            ..FluidConfig::default()
+        };
+        let mut b = a;
+        b.artificial_pressure = Fix128::from_ratio(1, 10);
+        let mut fa = small_boxed(a, 2);
+        let mut fb = small_boxed(b, 2);
+        for _ in 0..10 {
+            fa.step(Fix128::from_ratio(1, 60));
+            fb.step(Fix128::from_ratio(1, 60));
+        }
+        let top = |f: &Fluid| {
+            f.positions
+                .iter()
+                .map(|p| p.y.to_f64())
+                .fold(f64::MIN, f64::max)
+        };
+        assert!(
+            top(&fb) > top(&fa),
+            "s_corr must lift the free top: {} vs {}",
+            top(&fb),
+            top(&fa)
+        );
+    }
+
+    #[test]
+    fn lattice_mass_falls_back_on_degenerate_inputs() {
+        let rho = Fix128::from_int(1000);
+        let s = Fix128::from_ratio(1, 10);
+        assert_eq!(
+            FluidConfig::lattice_mass(rho, Fix128::ZERO, s),
+            rho * s * s * s
+        );
+        assert_eq!(
+            FluidConfig::lattice_mass(rho, Fix128::ONE, Fix128::ZERO),
+            Fix128::ZERO
+        );
+        assert!(FluidConfig::lattice_mass(rho, Fix128::from_ratio(1, 5), s) > Fix128::ZERO);
     }
 
     #[test]
