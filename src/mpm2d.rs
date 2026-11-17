@@ -21,7 +21,10 @@
 //!   settles by `u = ρ g / κ` as a whole, and anchors `X_p − ρ g / κ` hold it at `X_p`. In the
 //!   transfer `A_p = m_p C_p − Δt A⁰_p (4 / Δx²) τ_p` (`A⁰_p` the particle's rest
 //!   area, `τ = P Fᵀ` the Kirchhoff stress). Grid: `v_i = (m v)_i / m_i + Δt g`, then the
-//!   ground. Grid to particle: `v_p = Σ_i w_ip v_i`, `C_p = (4 / Δx²) Σ_i w_ip v_i (x_i −
+//!   ground, then the walls ([`Mpm2d::set_walls`], `wall_rule`): a node in or on a wall with
+//!   unit normal `n` out of it and `v·n < 0` gets `v ← max(0, 1 − μ |v·n| / |v_t|) v_t`,
+//!   `v_t = v − (v·n) n` (the impulse along the wall is at most `μ` times the impulse off it:
+//!   Coulomb). Grid to particle: `v_p = Σ_i w_ip v_i`, `C_p = (4 / Δx²) Σ_i w_ip v_i (x_i −
 //!   x_p)ᵀ`, `x_p += Δt v_p`, `F_p ← (I + Δt C_p) F_p`. Weights: quadratic B-splines,
 //!   `w(f) = ½(1.5 − f)², ¾ − (f − 1)², ½(f − ½)²` per axis. Material: fixed co-rotated,
 //!   `P = 2μ (F − R) + λ (J − 1) J F⁻ᵀ`, energy density `μ |F − R|² + λ (J − 1)² / 2`, `R` the
@@ -64,7 +67,9 @@
 //!   Euler's amplitude factor `1 / √(1 + (ωΔt)²)` per step), so a step of a frame settles a
 //!   soft body quasi-statically; it converges at first order to the explicit run as the step
 //!   shrinks. A solve that does not reach the tolerance is refused
-//!   ([`Mpm2dError::NotConverged`]). Cost (measured, a 0.91 m square block, E 2e6 Pa,
+//!   ([`Mpm2dError::NotConverged`]). The implicit step refuses a world with walls
+//!   ([`Mpm2dError::Invalid`], `"implicit: walls"`, nothing changed): the walls are in the
+//!   explicit step only. Cost (measured, a 0.91 m square block, E 2e6 Pa,
 //!   Jacobi preconditioner): about 10 times the explicit step's per frame at cells 0.02 and
 //!   0.04 m (`tests/analytic_mpm2d_implicit.rs::measure_the_cost_per_frame_of_a_letter_sized_block`).
 //! - **Approximations.** Plane strain (no out-of-plane strain). The fixed co-rotated model
@@ -78,12 +83,29 @@
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
 //!   the grid's (they stick where their stencils overlap).
-//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles::a_damped_foundation_decays_by_the_logarithmic_decrement::a_patch_takes_the_particles_within_its_radius::a_shared_force_adds_up_to_the_force_exactly`, `tests/analytic_mpm2d_implicit.rs::a_free_blob_falls_on_the_discrete_parabola::a_column_at_frame_steps_settles_by_the_plane_strain_bar_value::backward_euler_does_not_create_energy::the_implicit_run_approaches_the_explicit_one_as_the_step_shrinks::a_viscoelastic_column_at_frame_steps_creeps_like_the_standard_linear_solid::a_spinning_free_blob_keeps_its_momentum_within_the_tolerance::implicit_runs_are_deterministic_and_replay_from_a_snapshot::a_solve_that_cannot_converge_is_refused_and_changes_nothing`, `tests/analytic_mpm2d_mass.rs::every_step_keeps_each_particle_mass_and_the_total_exactly`
+//! - **Validation.** `tests/analytic_mpm2d.rs::a_free_blob_falls_on_the_discrete_parabola::a_spinning_free_blob_keeps_its_momenta::a_column_settles_by_the_plane_strain_bar_value::a_column_oscillates_with_the_quarter_wave_period::the_energy_of_the_column_never_grows::two_runs_end_in_the_same_state::invalid_worlds_are_refused::a_refused_step_changes_nothing::a_seeded_disk_has_the_disk_area::a_restored_snapshot_replays_bit_for_bit::a_viscoelastic_column_creeps_like_the_standard_linear_solid::a_zero_fraction_branch_is_the_elastic_material::a_force_on_some_particles_moves_the_centre_of_mass_by_newtons_law::no_loads_is_the_plain_step::a_load_on_no_particle_is_refused::a_uniform_load_on_a_foundation_moves_the_body_by_load_over_stiffness::anchors_at_the_hanging_equilibrium_hold_the_body_at_rest::foundation_anchors_must_match_the_particles::a_damped_foundation_decays_by_the_logarithmic_decrement::a_patch_takes_the_particles_within_its_radius::a_shared_force_adds_up_to_the_force_exactly`, `tests/analytic_mpm2d_implicit.rs::a_free_blob_falls_on_the_discrete_parabola::a_column_at_frame_steps_settles_by_the_plane_strain_bar_value::backward_euler_does_not_create_energy::the_implicit_run_approaches_the_explicit_one_as_the_step_shrinks::a_viscoelastic_column_at_frame_steps_creeps_like_the_standard_linear_solid::a_spinning_free_blob_keeps_its_momentum_within_the_tolerance::implicit_runs_are_deterministic_and_replay_from_a_snapshot::a_solve_that_cannot_converge_is_refused_and_changes_nothing`, `tests/analytic_mpm2d_mass.rs::every_step_keeps_each_particle_mass_and_the_total_exactly`, `tests/analytic_mpm2d_walls.rs::a_flat_frictionless_wall_is_the_ground::a_block_rests_on_a_flat_wall_without_drift::a_block_below_the_friction_angle_holds::a_block_above_the_friction_angle_slides_by_coulomb::friction_is_read_from_the_walls::no_particle_passes_a_wall_and_the_block_leaves_it::invalid_walls_are_refused_and_change_nothing::the_walls_are_part_of_the_state`
 //!   (in order: the centre of mass on symplectic Euler's discrete parabola to 1e-12 m; momenta
 //!   within the rounding budget; the time-averaged settlement of a self-weight column within
 //!   5 % of `ρ g H² (1 − ν²) / (2 E)`; its first axial period within 5 % of `4 H / c`; each
 //!   period's largest energy at most the previous one's; two runs give the same digest;
 //!   invalid worlds refused; a refused step leaves every particle as it was; a seeded disk has the disk's area; a snapshot restored mid-run replays bit for bit; the viscoelastic column's settlement within 5 % of `δ∞ (1 − g e^(−t/τc))` at four times; a branch of fraction 0 is bit for bit the elastic material; a force on part of a free blob gives the momentum `n Δt F` and the centre of mass `c0 + Δt² (F / M) n (n + 1) / 2` to 1e-12, loads on one particle add; no loads is the plain step bit for bit; a load on no particle is refused; a body on a foundation under gravity settles by `ρ g / κ` on average over four periods of `√(κ / ρ)` within 2 %, unstrained; anchors at the hanging equilibrium hold it within 1e-9 m; anchors not one a particle are refused; with damping, the free decay's logarithmic decrement is `2π ζ / √(1 − ζ²)` within 3 %; a patch takes exactly the particles within its radius; a shared force's parts are in proportion to area and add up to the force bit for bit); each particle keeps the mass `ρ A⁰` it was added with, and the total stays `ρ Σ A⁰` bit for bit, through explicit, loaded, viscoelastic and implicit steps, a restored snapshot and a refused step.
+//!   Walls (in order): a flat wall with `μ = 0` gives the particles of the `ground` run bit
+//!   for bit over 600 steps; a block on a flat wall with friction keeps its place sideways
+//!   within the rounding budget; on a slope of 20° with `μ = 0.5` a settled block creeps less
+//!   than the shear column's wobble; on a slope of 33° the settled acceleration is
+//!   `g (sin θ − μ cos θ)` for `μ = 0.5`, `0.25`, `0`, read as the second difference of the
+//!   travel at three times `h = 0.05 s` apart. The bound is derived, not fitted: the block (height
+//!   `H`, on a base up to a cell `Δx` off the wall) is a shear column under `ρ g sin θ` and a
+//!   bar under `ρ g cos θ`, whose centre of mass sits `ρ g sin θ (H + Δx)² / (3 G)` along the
+//!   wall and `ρ g cos θ (H + Δx)² / (3 M)` along the normal from the rigid place at rest
+//!   (`G` the shear modulus, `M = λ + 2 G`); a load put on at once swings to twice that; a
+//!   sample is off the rigid travel by at most `w = 2 ρ g (H + Δx)² (sin θ / G + μ cos θ / M) / 3`
+//!   (the normal part counts `μ` times: the friction impulse is `μ` times the normal one), and
+//!   the second difference sums four samples, so `|a − g (sin θ − μ cos θ)| ≤ 4 w / h²`
+//!   (0.37 to 0.45 m/s² in the oracle's scene; measured 0.05 to 0.08 m/s² under Coulomb's value); a block thrown at a wall at
+//!   1 m/s has no particle deeper than `1.5 Δx` in it and leaves it no faster than it came;
+//!   a negative friction, a zero normal and the implicit step on walls are refused; the walls
+//!   are in the digest and a restored snapshot replays bit for bit.
 //! - **Tiers.** L0 only.
 //!
 

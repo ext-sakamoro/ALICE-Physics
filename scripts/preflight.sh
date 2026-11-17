@@ -452,7 +452,7 @@ step "ci.yml / test: Test (ALICE-Law G4 goldens and G8 snapshot form, zero execu
 scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
 
 step "ci.yml / test: Test (mpm2d feature, zero executed is red)"
-scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass
+scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1,analytic_mpm2d_walls=8 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass --test analytic_mpm2d_walls
 scripts/run_tests.sh lib=1 -- cargo test --profile ci-test --features mpm2d --lib mpm2d::
 
 step "cargo test --lib (native feature set)"

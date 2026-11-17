@@ -208,6 +208,10 @@ name = "mpm2d_mochi"
 required-features = ["mpm2d"]
 
 [[example]]
+name = "mpm2d_pipe"
+required-features = ["mpm2d"]
+
+[[example]]
 name = "cloth_simulation"
 required-features = ["std"]
 

@@ -391,7 +391,7 @@ jobs:
       - name: Test (mpm2d feature, zero executed is red)
         shell: bash
         run: |
-          scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass
+          scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1,analytic_mpm2d_walls=8 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass --test analytic_mpm2d_walls
           scripts/run_tests.sh lib=1 -- cargo test --profile ci-test --features mpm2d --lib mpm2d::
 
       # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
