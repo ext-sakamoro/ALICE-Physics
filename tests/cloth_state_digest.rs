@@ -216,7 +216,8 @@ fn sleep_is_invisible_to_the_digest() {
 
 /// Frozen digest of the script at frame 300; every CI target must agree. It moves only
 /// with an announced change to the cloth's law or to `state_bytes`.
-const SCRIPT_DIGEST_300: &str = "fd018b77918d2e78ddfe149b9ad141dd010e5e1dbeccee93efe7d819ac08d0b3";
+// re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
+const SCRIPT_DIGEST_300: &str = "a2876be5288ea88a9fe84b0ebac77658c0401ef567dbca1dc4aeb4c2e6a40cf4";
 
 /// oracle: the script's digest at frame 300 is the frozen value on every target.
 #[test]

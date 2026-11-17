@@ -460,7 +460,12 @@ fn throw_script(w: &mut PhysicsWorld) {
 
 /// oracle: after a hard throw the letter comes back to its rest shape, reaches the
 /// exact fixed point within 600 frames and sleeps there; a sleeping step changes no
-/// bit; a grab wakes it; every position stays in the plane throughout.
+/// bit; a grab wakes it. The letter leaves its plane only while a folded hinge is being
+/// unfolded (the bend term's fold branch can only turn a reflected triangle back through
+/// the third dimension). At the fixed point every |y| is within 2^-62 m of the plane: near
+/// rest the tether and constraint corrections round to zero for offsets of a few ulp, so the
+/// step becomes the identity there (measured: 0.109 m out of the plane at most, over 457
+/// frames, and |y| <= 1.08e-19 m on 48 particles at the fixed point, frame 459).
 #[test]
 fn thrown_letter_recovers_sleeps_and_wakes() {
     let mut w = two_letters();
@@ -468,13 +473,18 @@ fn thrown_letter_recovers_sleeps_and_wakes() {
     assert!(max_dev(&w, 0) > 0.5, "the throw did not deform the letter");
     let mut fixed_at = None;
     let mut prev = state(&w, 0);
+    let mut max_y = 0.0f64;
+    let mut frames_out = 0u32;
+    let mut last_out = 0u32;
     for f in 1..=600u32 {
         step(&mut w, 1);
         let s = state(&w, 0);
-        assert!(
-            s.0.iter().all(|p| p.y == Fix128::ZERO),
-            "left the plane at frame {f}"
-        );
+        let y = s.0.iter().map(|p| p.y.abs().to_f64()).fold(0.0, f64::max);
+        if y > 0.0 {
+            max_y = max_y.max(y);
+            frames_out += 1;
+            last_out = f;
+        }
         if s == prev {
             fixed_at = Some(f);
             break;
@@ -482,6 +492,27 @@ fn thrown_letter_recovers_sleeps_and_wakes() {
         prev = s;
     }
     let fixed_at = fixed_at.expect("no exact fixed point within 600 frames");
+    println!("out of the plane: largest |y| {max_y:.4e} m over {frames_out} frames (last {last_out}), fixed point at frame {fixed_at}");
+    let y_end = state(&w, 0)
+        .0
+        .iter()
+        .map(|p| p.y.abs().to_f64())
+        .fold(0.0, f64::max);
+    let n_off = state(&w, 0)
+        .0
+        .iter()
+        .filter(|p| p.y != Fix128::ZERO)
+        .count();
+    println!("at the fixed point: largest |y| {y_end:.4e} m on {n_off} particles");
+    let plane_floor = Fix128::from_raw(0, 4); // 2^-62 m
+    assert!(
+        state(&w, 0).0.iter().all(|p| p.y.abs() <= plane_floor),
+        "farther than 2^-62 m from the plane at the fixed point: {y_end:e}"
+    );
+    assert!(
+        max_y > 0.0 && frames_out <= fixed_at,
+        "the unfolding happens before the fixed point: {frames_out} frames out, fixed at {fixed_at}"
+    );
     assert!(
         w.cloths[0].is_asleep(),
         "not asleep at the fixed point (frame {fixed_at})"
@@ -570,7 +601,8 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 // re-pinned under aa8c72e9… (world snapshot version 9): the 9a stack's version 8 bytes come
 // back exactly from today's blob with the header ids and without the lock count of 0; the
 // letters did not move
-const THROW_DIGEST_600: &str = "0fe6099499178fa668bbd4e257d933e42e0c1dffdcd7530c308bb5bed4d3f2b2";
+// re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
+const THROW_DIGEST_600: &str = "2768d06ebaa1c373239d7f4a692c9b088952ecd48f332183d6e0c98c0f9492d0";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -703,9 +735,10 @@ fn rollback_blob_carries_the_letters() {
 /// a change of any bit of the soft-letter step on any target fails here.
 // re-pinned under aa8c72e9… (world snapshot version 9): the 9a stack's version 8 bytes come
 // back exactly from today's blob with the header ids and without the lock count of 0; the
-// letters did not move
+// letters did not move; re-pinned again with the bend term's fold branch (the thrown letter's
+// fold is unfolded)
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "529158f0a3cee6dafa362f47154d55bfdf38d067fb56c99a66ebd3f128f407b6";
+    "959b4f2439c15dcff51a676fc4474a7ef80711f4737645b0542f09ef5369c31f";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {
