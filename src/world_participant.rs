@@ -65,6 +65,7 @@
 //! | `EUFV` | `0x4555_4656` | `euler_fv::EulerFv1dParticipant` |
 //! | `FEMD` | `0x4645_4d44` | `dynamic_fem::TransientFemParticipant` |
 //! | `FILM` | `0x4649_4c4d` | `water_film::WaterFilm` |
+//! | `SMOK` | `0x534d_4f4b` | `smoke_plume::SmokePlume` |
 //!
 //! # Coupling through ports
 //!
