@@ -21513,6 +21513,232 @@ impl core::marker::UnsafeUnpin for alice_physics_core::warp_risk::WarpRiskReport
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::warp_risk::WarpRiskReport
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::warp_risk::WarpRiskReport
 pub fn alice_physics_core::warp_risk::analyze_warp_risk(&alice_physics_core::warp_risk::Footprint, &alice_physics_core::filament_db::MaterialProperties, &alice_physics_core::warp_risk::EnvConditions) -> alice_physics_core::warp_risk::WarpRiskReport
+pub mod alice_physics_core::water_film
+pub enum alice_physics_core::water_film::FilmBuildError
+pub alice_physics_core::water_film::FilmBuildError::BadConfig
+pub alice_physics_core::water_film::FilmBuildError::BadGrid
+pub alice_physics_core::water_film::FilmBuildError::CellOutOfRange
+pub alice_physics_core::water_film::FilmBuildError::NoSurface
+impl core::clone::Clone for alice_physics_core::water_film::FilmBuildError
+pub fn alice_physics_core::water_film::FilmBuildError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmBuildError
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmBuildError
+pub fn alice_physics_core::water_film::FilmBuildError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FilmBuildError
+pub fn alice_physics_core::water_film::FilmBuildError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FilmBuildError
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmBuildError
+impl core::marker::Freeze for alice_physics_core::water_film::FilmBuildError
+impl core::marker::Send for alice_physics_core::water_film::FilmBuildError
+impl core::marker::Sync for alice_physics_core::water_film::FilmBuildError
+impl core::marker::Unpin for alice_physics_core::water_film::FilmBuildError
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmBuildError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmBuildError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmBuildError
+pub enum alice_physics_core::water_film::FilmEdge
+pub alice_physics_core::water_film::FilmEdge::Closed
+pub alice_physics_core::water_film::FilmEdge::Open
+impl core::clone::Clone for alice_physics_core::water_film::FilmEdge
+pub fn alice_physics_core::water_film::FilmEdge::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmEdge
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmEdge
+pub fn alice_physics_core::water_film::FilmEdge::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FilmEdge
+pub fn alice_physics_core::water_film::FilmEdge::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FilmEdge
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmEdge
+impl core::marker::Freeze for alice_physics_core::water_film::FilmEdge
+impl core::marker::Send for alice_physics_core::water_film::FilmEdge
+impl core::marker::Sync for alice_physics_core::water_film::FilmEdge
+impl core::marker::Unpin for alice_physics_core::water_film::FilmEdge
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmEdge
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmEdge
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmEdge
+#[non_exhaustive] pub enum alice_physics_core::water_film::FilmScheme
+pub alice_physics_core::water_film::FilmScheme::DiffusionWave
+impl core::clone::Clone for alice_physics_core::water_film::FilmScheme
+pub fn alice_physics_core::water_film::FilmScheme::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmScheme
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmScheme
+pub fn alice_physics_core::water_film::FilmScheme::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FilmScheme
+pub fn alice_physics_core::water_film::FilmScheme::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FilmScheme
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmScheme
+impl core::marker::Freeze for alice_physics_core::water_film::FilmScheme
+impl core::marker::Send for alice_physics_core::water_film::FilmScheme
+impl core::marker::Sync for alice_physics_core::water_film::FilmScheme
+impl core::marker::Unpin for alice_physics_core::water_film::FilmScheme
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmScheme
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmScheme
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmScheme
+pub struct alice_physics_core::water_film::FilmBed
+impl alice_physics_core::water_film::FilmBed
+pub fn alice_physics_core::water_film::FilmBed::cell(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::FilmBed::centre(&self, usize, usize) -> (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
+pub fn alice_physics_core::water_film::FilmBed::from_height_fn(usize, usize, alice_physics_core::math::Fix128, (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128), u64, impl core::ops::function::Fn(f32, f32) -> f32) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
+pub fn alice_physics_core::water_film::FilmBed::from_heights(usize, usize, alice_physics_core::math::Fix128, (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128), &[alice_physics_core::math::Fix128], u64) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
+pub fn alice_physics_core::water_film::FilmBed::from_sdf(usize, usize, alice_physics_core::math::Fix128, (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128), u64, &dyn alice_physics_core::sdf_collider::SdfField, (f32, f32)) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
+pub fn alice_physics_core::water_film::FilmBed::generation(&self) -> u64
+pub fn alice_physics_core::water_film::FilmBed::heights(&self) -> &[i64]
+pub fn alice_physics_core::water_film::FilmBed::nx(&self) -> usize
+pub fn alice_physics_core::water_film::FilmBed::nz(&self) -> usize
+impl core::clone::Clone for alice_physics_core::water_film::FilmBed
+pub fn alice_physics_core::water_film::FilmBed::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmBed
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmBed
+pub fn alice_physics_core::water_film::FilmBed::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FilmBed
+pub fn alice_physics_core::water_film::FilmBed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmBed
+impl core::marker::Freeze for alice_physics_core::water_film::FilmBed
+impl core::marker::Send for alice_physics_core::water_film::FilmBed
+impl core::marker::Sync for alice_physics_core::water_film::FilmBed
+impl core::marker::Unpin for alice_physics_core::water_film::FilmBed
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmBed
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmBed
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmBed
+#[non_exhaustive] pub struct alice_physics_core::water_film::FilmConfig
+pub alice_physics_core::water_film::FilmConfig::edge: alice_physics_core::water_film::FilmEdge
+pub alice_physics_core::water_film::FilmConfig::evaporation: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::film_depth_max: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::gravity: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::max_local_substeps: u32
+pub alice_physics_core::water_film::FilmConfig::max_subcycles: u32
+pub alice_physics_core::water_film::FilmConfig::max_substep: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::pool_join_step: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::pool_level_tolerance: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::rain: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::scheme: alice_physics_core::water_film::FilmScheme
+pub alice_physics_core::water_film::FilmConfig::viscosity: alice_physics_core::math::Fix128
+pub alice_physics_core::water_film::FilmConfig::wet_threshold: i64
+impl alice_physics_core::water_film::FilmConfig
+pub fn alice_physics_core::water_film::FilmConfig::rain_mm_per_hour(alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::FilmConfig::water(alice_physics_core::water_film::FilmScheme, alice_physics_core::water_film::FilmEdge) -> Self
+impl core::clone::Clone for alice_physics_core::water_film::FilmConfig
+pub fn alice_physics_core::water_film::FilmConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmConfig
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmConfig
+pub fn alice_physics_core::water_film::FilmConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FilmConfig
+pub fn alice_physics_core::water_film::FilmConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FilmConfig
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmConfig
+impl core::marker::Freeze for alice_physics_core::water_film::FilmConfig
+impl core::marker::Send for alice_physics_core::water_film::FilmConfig
+impl core::marker::Sync for alice_physics_core::water_film::FilmConfig
+impl core::marker::Unpin for alice_physics_core::water_film::FilmConfig
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmConfig
+pub struct alice_physics_core::water_film::FilmLedger
+pub alice_physics_core::water_film::FilmLedger::deposits: i64
+pub alice_physics_core::water_film::FilmLedger::evaporated: i64
+pub alice_physics_core::water_film::FilmLedger::initial: i64
+pub alice_physics_core::water_film::FilmLedger::outflow: i64
+pub alice_physics_core::water_film::FilmLedger::rain: i64
+impl alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::FilmLedger::expected(&self) -> i64
+impl core::clone::Clone for alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::FilmLedger::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FilmLedger
+impl core::cmp::PartialEq for alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::FilmLedger::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::FilmLedger::default() -> Self
+impl core::fmt::Debug for alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::FilmLedger::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FilmLedger
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FilmLedger
+impl core::marker::Freeze for alice_physics_core::water_film::FilmLedger
+impl core::marker::Send for alice_physics_core::water_film::FilmLedger
+impl core::marker::Sync for alice_physics_core::water_film::FilmLedger
+impl core::marker::Unpin for alice_physics_core::water_film::FilmLedger
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FilmLedger
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FilmLedger
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FilmLedger
+pub struct alice_physics_core::water_film::FluxConstants
+pub alice_physics_core::water_film::FluxConstants::critical: u128
+pub alice_physics_core::water_film::FluxConstants::lubrication: u128
+pub alice_physics_core::water_film::FluxConstants::weir: u128
+impl alice_physics_core::water_film::FluxConstants
+pub fn alice_physics_core::water_film::FluxConstants::new(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::option::Option<Self>
+impl core::clone::Clone for alice_physics_core::water_film::FluxConstants
+pub fn alice_physics_core::water_film::FluxConstants::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::water_film::FluxConstants
+impl core::cmp::PartialEq for alice_physics_core::water_film::FluxConstants
+pub fn alice_physics_core::water_film::FluxConstants::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::water_film::FluxConstants
+pub fn alice_physics_core::water_film::FluxConstants::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::water_film::FluxConstants
+impl core::marker::StructuralPartialEq for alice_physics_core::water_film::FluxConstants
+impl core::marker::Freeze for alice_physics_core::water_film::FluxConstants
+impl core::marker::Send for alice_physics_core::water_film::FluxConstants
+impl core::marker::Sync for alice_physics_core::water_film::FluxConstants
+impl core::marker::Unpin for alice_physics_core::water_film::FluxConstants
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::FluxConstants
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::FluxConstants
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::FluxConstants
+pub struct alice_physics_core::water_film::WaterFilm
+impl alice_physics_core::water_film::WaterFilm
+pub fn alice_physics_core::water_film::WaterFilm::advance(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<u32, alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::water_film::WaterFilm::bed(&self) -> &alice_physics_core::water_film::FilmBed
+pub fn alice_physics_core::water_film::WaterFilm::config(&self) -> &alice_physics_core::water_film::FilmConfig
+pub fn alice_physics_core::water_film::WaterFilm::deposit(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> i64
+pub fn alice_physics_core::water_film::WaterFilm::depth_m(&self, usize, usize) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::WaterFilm::depths(&self) -> &[i64]
+pub fn alice_physics_core::water_film::WaterFilm::dry_ages(&self) -> &[u32]
+pub fn alice_physics_core::water_film::WaterFilm::last_band_cells(&self) -> &[usize]
+pub fn alice_physics_core::water_film::WaterFilm::last_cap_faces(&self) -> u32
+pub fn alice_physics_core::water_film::WaterFilm::last_local_substeps(&self) -> u32
+pub fn alice_physics_core::water_film::WaterFilm::last_moved(&self) -> u64
+pub fn alice_physics_core::water_film::WaterFilm::last_pooled_cells(&self) -> &[usize]
+pub fn alice_physics_core::water_film::WaterFilm::ledger(&self) -> alice_physics_core::water_film::FilmLedger
+pub fn alice_physics_core::water_film::WaterFilm::new(alice_physics_core::water_film::FilmConfig, alice_physics_core::water_film::FilmBed) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
+pub fn alice_physics_core::water_film::WaterFilm::set_bed(&mut self, alice_physics_core::water_film::FilmBed) -> core::result::Result<(), alice_physics_core::water_film::FilmBuildError>
+pub fn alice_physics_core::water_film::WaterFilm::set_initial_depth(&mut self, usize, usize, i64) -> bool
+pub fn alice_physics_core::water_film::WaterFilm::set_reverse_faces(&mut self, bool)
+pub fn alice_physics_core::water_film::WaterFilm::step_once(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::water_film::WaterFilm::steps(&self) -> u64
+pub fn alice_physics_core::water_film::WaterFilm::subcycles(&self, alice_physics_core::math::Fix128) -> core::option::Option<u32>
+pub fn alice_physics_core::water_film::WaterFilm::substep(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::WaterFilm::total(&self) -> i64
+impl alice_physics_core::world_participant::Participant for alice_physics_core::water_film::WaterFilm
+pub fn alice_physics_core::water_film::WaterFilm::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::water_film::WaterFilm::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::water_film::WaterFilm::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::water_film::WaterFilm::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::water_film::WaterFilm::read_state(&mut self, &[u8])
+pub fn alice_physics_core::water_film::WaterFilm::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::water_film::WaterFilm::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::water_film::WaterFilm::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::water_film::WaterFilm::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics_core::water_film::WaterFilm
+pub fn alice_physics_core::water_film::WaterFilm::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics_core::water_film::WaterFilm
+pub fn alice_physics_core::water_film::WaterFilm::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::water_film::WaterFilm
+impl core::marker::Send for alice_physics_core::water_film::WaterFilm
+impl core::marker::Sync for alice_physics_core::water_film::WaterFilm
+impl core::marker::Unpin for alice_physics_core::water_film::WaterFilm
+impl core::marker::UnsafeUnpin for alice_physics_core::water_film::WaterFilm
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::water_film::WaterFilm
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::WaterFilm
+pub const alice_physics_core::water_film::DEPTH_QUANTUM_BITS: u32
+pub const alice_physics_core::water_film::MAX_FACE_DEPTH: u64
+pub const alice_physics_core::water_film::MAX_LUBRICATION_DIVISOR: u128
+pub const alice_physics_core::water_film::WATER_FILM_OBS_SUBCYCLES: u32
+pub const alice_physics_core::water_film::WATER_FILM_OBS_VOLUME: u32
+pub const alice_physics_core::water_film::WATER_FILM_OBS_WET_CELLS: u32
+pub const alice_physics_core::water_film::WATER_FILM_PARTICIPANT_KIND: alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::water_film::face_depth(i64, i64, i64, i64) -> i64
+pub fn alice_physics_core::water_film::isqrt_u128(u128) -> u128
+pub fn alice_physics_core::water_film::join_step(alice_physics_core::math::Fix128, i64, i64) -> i64
+pub fn alice_physics_core::water_film::metres_to_quanta(alice_physics_core::math::Fix128) -> i64
+pub fn alice_physics_core::water_film::quanta_to_metres(i64) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::simultaneous_transfer((i64, i64), (i64, i64), alice_physics_core::water_film::FluxConstants) -> core::option::Option<i64>
+pub fn alice_physics_core::water_film::simultaneous_transfer_report((i64, i64), (i64, i64), alice_physics_core::water_film::FluxConstants) -> core::option::Option<(i64, bool)>
+pub fn alice_physics_core::water_film::weir_transfer((i64, i64), (i64, i64), alice_physics_core::water_film::FluxConstants) -> core::option::Option<i64>
 pub mod alice_physics_core::wave_ship
 pub struct alice_physics_core::wave_ship::Jonswap
 pub alice_physics_core::wave_ship::Jonswap::gamma: alice_physics_core::math::Fix128
@@ -22530,6 +22756,16 @@ pub fn alice_physics_core::vehicle::VehicleParticipant::semantics_id(&self) -> c
 pub fn alice_physics_core::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics_core::world_participant::StepRule
 pub fn alice_physics_core::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics_core::world_participant::Participant for alice_physics_core::water_film::WaterFilm
+pub fn alice_physics_core::water_film::WaterFilm::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
+pub fn alice_physics_core::water_film::WaterFilm::kind(&self) -> alice_physics_core::world_participant::ParticipantKind
+pub fn alice_physics_core::water_film::WaterFilm::observe(&self, &mut alice_physics_core::world_participant::ObservationSink)
+pub fn alice_physics_core::water_film::WaterFilm::ports(&self) -> &[alice_physics_core::world_participant::Port]
+pub fn alice_physics_core::water_film::WaterFilm::read_state(&mut self, &[u8])
+pub fn alice_physics_core::water_film::WaterFilm::semantics_id(&self) -> core::option::Option<[u8; 32]>
+pub fn alice_physics_core::water_film::WaterFilm::step_rule(&self) -> alice_physics_core::world_participant::StepRule
+pub fn alice_physics_core::water_film::WaterFilm::substep(&mut self, &mut alice_physics_core::world_participant::SubstepCtx<'_>, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
+pub fn alice_physics_core::water_film::WaterFilm::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::world_participant::Participant for alice_physics_core::wind_zone::WindZoneParticipant
 pub fn alice_physics_core::wind_zone::WindZoneParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics_core::world_participant::StateError>
 pub fn alice_physics_core::wind_zone::WindZoneParticipant::kind(&self) -> alice_physics_core::world_participant::ParticipantKind

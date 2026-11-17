@@ -1649,6 +1649,30 @@ use alice_physics::warp_risk::EnvConditions as _;
 use alice_physics::warp_risk::Footprint as _;
 use alice_physics::warp_risk::WarpRiskCategory as _;
 use alice_physics::warp_risk::WarpRiskReport as _;
+use alice_physics::water_film as _;
+use alice_physics::water_film::face_depth as _;
+use alice_physics::water_film::isqrt_u128 as _;
+use alice_physics::water_film::join_step as _;
+use alice_physics::water_film::metres_to_quanta as _;
+use alice_physics::water_film::quanta_to_metres as _;
+use alice_physics::water_film::simultaneous_transfer as _;
+use alice_physics::water_film::simultaneous_transfer_report as _;
+use alice_physics::water_film::weir_transfer as _;
+use alice_physics::water_film::FilmBed as _;
+use alice_physics::water_film::FilmBuildError as _;
+use alice_physics::water_film::FilmConfig as _;
+use alice_physics::water_film::FilmEdge as _;
+use alice_physics::water_film::FilmLedger as _;
+use alice_physics::water_film::FilmScheme as _;
+use alice_physics::water_film::FluxConstants as _;
+use alice_physics::water_film::WaterFilm as _;
+use alice_physics::water_film::DEPTH_QUANTUM_BITS as _;
+use alice_physics::water_film::MAX_FACE_DEPTH as _;
+use alice_physics::water_film::MAX_LUBRICATION_DIVISOR as _;
+use alice_physics::water_film::WATER_FILM_OBS_SUBCYCLES as _;
+use alice_physics::water_film::WATER_FILM_OBS_VOLUME as _;
+use alice_physics::water_film::WATER_FILM_OBS_WET_CELLS as _;
+use alice_physics::water_film::WATER_FILM_PARTICIPANT_KIND as _;
 use alice_physics::wave_ship as _;
 use alice_physics::wave_ship::free_surface_elevation as _;
 use alice_physics::wave_ship::froude_krylov_vertical_n as _;
@@ -1956,7 +1980,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1938 paths, checked at compile time
+    // 1962 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
