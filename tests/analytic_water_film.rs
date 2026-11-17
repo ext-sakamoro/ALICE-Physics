@@ -127,15 +127,12 @@ fn state(f: &WaterFilm) -> Vec<u8> {
     out
 }
 
-/// oracle: hydrostatics. Water piled at one end of a closed groove comes to rest level:
-/// (1) across every face between two wet cells the surfaces differ by at most 7 quanta
-/// (the rest set of the model: a face moves `⌊|Δη|/8⌋` in the pool regime);
-/// (2) so every wet surface lies within `7(L − 1)` quanta of the closed form `η*` that holds
-/// the volume over the sampled bed (`L` = wet cells on the path), and every cell whose bed is
-/// above `η* + 7L` is dry. The levelling time is reported against the gravity-wave time
-/// `L/√(g h)`: under this model it is a relaxation set by `Δt_max`, not a wave crossing.
+/// Water piled 40 mm deep at one end of a closed groove collapses as a dam break (an
+/// inertial flow deeper than the film): the model does not carry it, so the advance is
+/// refused, names the piled cells, and changes nothing. A still surface levelling to the
+/// closed form is checked where the model holds it (a groove filled by rain).
 #[test]
-fn a_closed_groove_levels_to_the_closed_form_surface() {
+fn piled_deep_water_is_refused() {
     let mut f = film(
         groove_bed(12, 3, 8, true),
         FilmScheme::DiffusionWave,
@@ -145,48 +142,14 @@ fn a_closed_groove_levels_to_the_closed_form_surface() {
     for i in 3..6 {
         assert!(f.set_initial_depth(i, 0, pile));
     }
-    let substeps = settle(&mut f, 10_000_000);
-    let beds = f.bed().heights().to_vec();
-    let d = f.depths().to_vec();
-    let eta = level_for(&beds, f.total());
-    let wet: Vec<usize> = (0..d.len()).filter(|c| d[*c] > 0).collect();
-    let l = wet.len() as i64;
-    let mut faces = 0;
-    for c in 0..d.len() - 1 {
-        if d[c] > 0 && d[c + 1] > 0 {
-            let diff = (beds[c] + d[c] - beds[c + 1] - d[c + 1]).abs();
-            assert!(
-                diff <= 7,
-                "face {c}|{}: surfaces differ by {diff} quanta",
-                c + 1
-            );
-            faces += 1;
-        }
-    }
-    for &c in &wet {
-        let off = (beds[c] + d[c] - eta).abs();
-        assert!(
-            off <= 7 * (l - 1),
-            "cell {c}: surface {off} quanta from η* (L = {l})"
-        );
-    }
-    for c in 0..d.len() {
-        if beds[c] > eta + 7 * l {
-            assert_eq!(d[c], 0, "cell {c} above the level holds water");
-        }
-    }
+    let before = state(&f);
+    assert_eq!(f.step_once(f.substep()), Err(ParticipantFault::OutOfRange));
     assert!(
-        faces >= 5 && l >= 6,
-        "compared {faces} faces over {l} wet cells"
+        f.last_band_cells().contains(&5),
+        "band {:?}",
+        f.last_band_cells()
     );
-    let spread = wet.iter().map(|c| beds[*c] + d[*c]).max().unwrap_or(0)
-        - wet.iter().map(|c| beds[*c] + d[*c]).min().unwrap_or(0);
-    let t = substeps as f64 * f.config().max_substep.to_f64();
-    let depth = quanta_to_metres(eta).to_f64() - FLOOR_MM as f64 / 1000.0;
-    let wave = 0.06 / (9.80665 * depth).sqrt();
-    println!(
-        "rest: spread {spread} quanta over {l} wet cells; levelled in {t:.3} s ({substeps} substeps); gravity-wave time over the floor {wave:.3} s"
-    );
+    assert_eq!(state(&f), before);
 }
 
 /// oracle: without a source the potential `Σ g(η² − b²)/2` never rises: every substep of a
@@ -196,11 +159,10 @@ fn the_potential_never_rises_without_a_source() {
     let mut compared = 0;
     for edge in [FilmEdge::Closed, FilmEdge::Open] {
         let mut f = film(groove_bed(14, 4, 9, false), FilmScheme::DiffusionWave, edge);
-        // a still pool in the groove, plateau films running into it, and one 3 mm cell (a
-        // face deeper than the film with a large step: explicit)
+        // a still pool in the groove, plateau films running into it, and one 0.9 mm cell
         fill_level(&mut f, 1, metres_to_quanta(mm(-10)));
         wet_plateau(&mut f, metres_to_quanta(Fix128::from_ratio(8, 10_000)));
-        f.set_initial_depth(0, 0, metres_to_quanta(mm(3)));
+        f.set_initial_depth(0, 0, metres_to_quanta(Fix128::from_ratio(9, 10_000)));
         let dt = f.config().max_substep;
         let mut last = potential(&f);
         let mut fell = 0;
@@ -219,7 +181,7 @@ fn the_potential_never_rises_without_a_source() {
         assert!(fell > 100, "{edge:?}: the potential fell only {fell} times");
     }
     // a deep flat pool (four wet neighbours per cell) with a bump of 8 quanta and a bump of
-    // 4 mm: the cap `⌊|Δη|/8⌋` is what keeps four simultaneous moves from overshooting
+    // 0.15 mm, both within the join step: the pool takes them in and stands level
     let bed = FilmBed::from_heights(
         9,
         9,
@@ -237,7 +199,12 @@ fn the_potential_never_rises_without_a_source() {
         }
     }
     f.set_initial_depth(4, 4, base + 8);
-    f.set_initial_depth(2, 6, base + metres_to_quanta(mm(4)));
+    // within the join step (1 % of 20 mm): a deeper bump would be a wave, outside the model
+    f.set_initial_depth(
+        2,
+        6,
+        base + metres_to_quanta(Fix128::from_ratio(15, 100_000)),
+    );
     let dt = f.config().max_substep;
     let mut last = potential(&f);
     let mut fell = 0;
@@ -314,7 +281,7 @@ fn volume_is_conserved_to_the_last_quantum() {
         for n in 0..600 {
             if n % 7 == 0 {
                 let (x, z) = f.bed().centre(n % 14, 1);
-                f.deposit(x, z, Fix128::from_ratio(3, 10_000_000));
+                f.deposit(x, z, Fix128::from_ratio(1, 100_000_000));
             }
             f.advance(Fix128::from_ratio(1, 20)).expect("advance");
             assert_eq!(f.total(), f.ledger().expected(), "{scheme:?} after {n}");
@@ -342,10 +309,7 @@ fn a_groove_overflows_at_its_rim_height() {
         let rim = metres_to_quanta(mm(RIM_MM));
         // (1) below the rim
         let mut f = film(groove_bed(14, 4, 9, false), scheme, FilmEdge::Open);
-        let below = metres_to_quanta(mm(25));
-        for i in 4..=9 {
-            f.set_initial_depth(i, 1, below);
-        }
+        fill_level(&mut f, 1, rim - metres_to_quanta(mm(5)));
         settle(&mut f, 10_000_000);
         assert_eq!(f.ledger().outflow, 0, "{scheme:?}");
         let nx = f.bed().nx();
@@ -895,7 +859,7 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
     for n in 0..400 {
         if n % 9 == 0 {
             let (x, z) = f.bed().centre(n % nx, (n / 3) % nz);
-            f.deposit(x, z, Fix128::from_ratio(3, 10_000_000));
+            f.deposit(x, z, Fix128::from_ratio(1, 100_000_000));
         }
         f.advance(Fix128::from_ratio(1, 20)).unwrap();
     }
@@ -910,11 +874,13 @@ fn mixed_scene(edge: FilmEdge, rev: bool) -> String {
 /// golden (determinism): the state of the mixed scene, closed and open, visited forwards and
 /// backwards. Re-pinned when the step gained pools (faces deeper than the film levelled
 /// exactly) and the derived substep, and the scene moved inside the model's range (thin
-/// initial films, 200 mm/h): the bytes moved, every validation oracle passes.
+/// initial films, 200 mm/h), and again when pools joined only across steps within the join
+/// step and deep spills over a step became out of range: the bytes moved, every validation
+/// oracle passes.
 #[test]
 fn the_mixed_scene_digest_is_pinned() {
-    const CLOSED: &str = "be0203fb97a8894360f3c4572ab41193f521bdd0eb35c4fd919c67817d7e6f6a";
-    const OPEN: &str = "ff7994786486c06c776b2bf779816247028e12f3004916fe82d7113b5a97ac3a";
+    const CLOSED: &str = "0bb99874049bfd820dc8df56b1a0a1a88d90b45083fd13c3228392095f9145ae";
+    const OPEN: &str = "5e4c71df9464943b17914dbb50c88587463a55d6a3144855137af85194095c89";
     for rev in [false, true] {
         assert_eq!(
             mixed_scene(FilmEdge::Closed, rev),
@@ -999,12 +965,14 @@ fn the_flux_law_holds_at_its_bounds() {
     assert_eq!(state(&f), before);
 }
 
-/// oracle: critical outflow over a free edge. A single cell, open on all four edges, empties
+/// oracle: critical outflow over a free edge. A single cell holding a film 0.9 mm deep
+/// (thinner than the deepest film; a deeper spill over an edge is outside the model), open
+/// on all four edges, empties
 /// over them at the critical flux `q = h √(g h)` per unit width (the lubrication flux of a
 /// fall the depth of the cell is far larger), so `dh/dt = −4 √g h^(3/2) / l` and
 /// `h(t) = (h₀^(−1/2) + 2 √g t / l)^(−2)`. The step is explicit, so the depth follows the
 /// closed form to a relative error of the order of one substep's change, `4 √(g h₀) Δt / l`
-/// (the bound used), measured at the time the closed form halves the depth.
+/// (the bound used), measured at the time the closed form reaches 0.7 mm.
 #[test]
 fn a_cell_drains_over_its_edges_at_the_critical_rate() {
     let bed = FilmBed::from_heights(
@@ -1019,13 +987,15 @@ fn a_cell_drains_over_its_edges_at_the_critical_rate() {
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Open);
     cfg.max_substep = Fix128::from_ratio(1, 4096);
     let mut f = WaterFilm::new(cfg, bed).expect("film");
-    let h0 = 0.02;
-    f.set_initial_depth(0, 0, metres_to_quanta(mm(20)));
+    let h0 = 0.0009;
+    f.set_initial_depth(0, 0, metres_to_quanta(Fix128::from_ratio(9, 10_000)));
     let (g, l) = (9.80665_f64, 0.01_f64);
     let sqrt_g = 3.131_557_121_916_5_f64; // √9.80665
-    let h0_inv_sqrt = 7.071_067_811_865_475_f64; // 1/√0.02
-                                                 // closed form halving time: (√2 − 1)/√h₀ · l / (2 √g)
-    let t_half = (core::f64::consts::SQRT_2 - 1.0) * h0_inv_sqrt * l / (2.0 * sqrt_g);
+    let h0_inv_sqrt = 33.333_333_333_333_336_f64; // 1/√0.0009
+                                                  // the time the closed form reaches 0.7 mm (below 0.62 mm the lubrication flux of the
+                                                  // fall becomes the smaller one and the drain is no longer critical)
+    let h1_inv_sqrt = 37.796_447_300_922_72_f64; // 1/√0.0007
+    let t_half = (h1_inv_sqrt - h0_inv_sqrt) * l / (2.0 * sqrt_g);
     let dt = f.config().max_substep.to_f64();
     let steps = (t_half / dt).round() as u64;
     for _ in 0..steps {
@@ -1274,20 +1244,9 @@ fn flow_along_a_stroke_has_the_lubrication_depth() {
     }
 }
 
-/// oracle: two basins joined over a sill (1 cm cells, one row, closed). The left basin (10
-/// cells, floor −30 mm) and the sill (bed −10 mm) start level at +5 mm; the right basin (10
-/// cells, floor −15 mm) is dry.
-/// (1) While the right side is below the sill, water leaves over the sill as critical flow,
-/// `q = √g h^{3/2}` per unit width with `h` the head over the sill, so the head of the left
-/// pool (area `11 l²`) follows `h(t) = (h₀^{-1/2} + √g t / (22 l))⁻²`, to the explicit
-/// step's error `Δt √(g h₀) / (11 l)`.
-/// (2) The two sides join into one pool only when the step across the sill is within the
-/// join step, so the levelling at the join moves the left level by at most that step.
-/// (3) At rest the common level is the level of the whole volume over all 21 beds (±1 quantum
-/// per cell).
-#[test]
-fn two_basins_join_over_a_sill_without_a_jump() {
-    let l = 0.01_f64;
+/// The sill scene: one row of 1 cm cells, closed: a left basin (10 cells, floor −30 mm), a
+/// sill (bed −10 mm) and a right basin (10 cells, floor −15 mm).
+fn sill_scene(rain_mm_h: i64) -> WaterFilm {
     let beds: Vec<Fix128> = (0..21)
         .map(|i| match i {
             0..=9 => mm(-30),
@@ -1298,66 +1257,102 @@ fn two_basins_join_over_a_sill_without_a_jump() {
     let bed = FilmBed::from_heights(21, 1, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &beds, 1)
         .expect("bed");
     let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
-    // a substep short enough that the critical transfer, not `⌊|Δη|/8⌋`, sets the weir flow
-    cfg.max_substep = Fix128::from_ratio(1, 1024);
-    let frac = cfg.pool_join_step;
-    let mut f = WaterFilm::new(cfg, bed).expect("film");
-    let start = metres_to_quanta(mm(5));
+    cfg.rain = FilmConfig::rain_mm_per_hour(Fix128::from_int(rain_mm_h));
+    WaterFilm::new(cfg, bed).expect("film")
+}
+
+/// Water standing 15 mm over the sill against a dry right basin would spill as an inertial
+/// weir, which the model does not carry: the advance is refused, names the cells on both
+/// sides of the sill, and changes nothing.
+#[test]
+fn a_deep_spill_over_a_sill_is_refused() {
+    let mut f = sill_scene(0);
+    let level = metres_to_quanta(mm(5));
     for i in 0..=10 {
-        f.set_initial_depth(i, 0, start - f.bed().heights()[i]);
+        f.set_initial_depth(i, 0, level - f.bed().heights()[i]);
     }
+    let before = state(&f);
+    assert_eq!(
+        f.advance(Fix128::from_ratio(1, 20)),
+        Err(ParticipantFault::OutOfRange)
+    );
+    assert!(
+        f.last_band_cells().contains(&10) && f.last_band_cells().contains(&11),
+        "band {:?}",
+        f.last_band_cells()
+    );
+    assert_eq!(state(&f), before);
+}
+
+/// oracle: two basins joined over a sill by rain (200 mm/h). The left basin starts 3.5 mm
+/// below the sill, the right one dry, so the right basin is 3.5 mm deep (past the band where
+/// a pool carrying inflow is refused) when the left one starts to spill.
+/// (1) From then the left basin's rain crosses the sill as a film (its depth over the sill
+/// stays below the deepest film), so the right basin reaches the sill when the rain on all
+/// 21 cells has filled the rest of its 50 mm·cell deficit:
+/// `t = x/r + (0.05 − 10x) / (21 r)` with `x` = 3.5 mm, later by at most the water the films
+/// over the left basin and the sill hold (`11 h_film / (21 r)`).
+/// (2) The two sides join into one pool only when the step across the sill is within the
+/// join step, so at the join the left level moves by at most that step (besides the rain).
+/// (3) After the join the surface is the level of the whole volume over all 21 beds.
+#[test]
+fn two_basins_join_over_a_sill_without_a_jump() {
+    let mut f = sill_scene(200);
     let sill = f.bed().heights()[10];
-    let total = f.total();
+    let x = metres_to_quanta(Fix128::from_ratio(35, 10_000));
+    for i in 0..=9 {
+        f.set_initial_depth(i, 0, sill - x - f.bed().heights()[i]);
+    }
+    let cfg = *f.config();
+    let r = cfg.rain.to_f64();
     let dt = f.substep().to_f64();
-    let g = 9.80665_f64;
-    let h0 = quanta_to_metres(start - sill).to_f64();
-    let bound = dt * (g * h0).sqrt() / (11.0 * l);
+    let rain_q = (r * dt / QUANTUM_M).ceil() as i64;
+    let h_film = cfg.film_depth_max.to_f64();
+    let xm = quanta_to_metres(x).to_f64();
+    let t_fill = xm / r + (0.05 - 10.0 * xm) / (21.0 * r);
+    let late = 11.0 * h_film / (21.0 * r);
     let surface = |f: &WaterFilm, c: usize| f.bed().heights()[c] + f.depths()[c];
-    let mut checked = 0;
-    let mut joined_at = None;
+    let (mut reached, mut joined) = (None, None);
     let mut n = 0u64;
-    while n < 1_000_000 {
+    while joined.is_none() && n < 2_000_000 {
         let before = (surface(&f, 0), f.depths()[10], f.depths()[11]);
         f.step_once(f.substep()).expect("substep");
         n += 1;
         let t = n as f64 * dt;
-        // (1) free weir flow while the right side is 2 mm or more below the sill
-        if surface(&f, 20) < sill - metres_to_quanta(mm(2)) && n % 128 == 0 {
-            let h = quanta_to_metres(surface(&f, 0) - sill).to_f64();
-            let closed = (h0.powf(-0.5) + g.sqrt() * t / (22.0 * l)).powi(-2);
-            let rel = (h - closed) / closed;
+        if reached.is_none() && surface(&f, 20) >= sill {
+            reached = Some(t);
+        }
+        let pooled = f.last_pooled_cells();
+        if [0usize, 9, 10, 11, 20].iter().all(|c| pooled.contains(c))
+            && (surface(&f, 0) - surface(&f, 20)).abs() <= 1
+        {
+            let j = join_step(cfg.pool_join_step, before.1, before.2);
+            let jump = (surface(&f, 0) - before.0).abs();
             assert!(
-                rel.abs() <= bound,
-                "t {t:.3} s: head {h:.5e} m, closed form {closed:.5e} m ({rel:+.2e}, bound {bound:.2e})"
+                jump <= j + rain_q,
+                "join at t {t:.2} s: left level moved {jump} quanta, join step {j} + rain {rain_q}"
             );
-            checked += 1;
-        }
-        // (2) the join: the first substep in which cells 0 and 20 are one pool
-        if joined_at.is_none() {
-            let pooled = f.last_pooled_cells();
-            if pooled.contains(&0) && pooled.contains(&20) {
-                let j = join_step(frac, before.1, before.2);
-                let jump = (surface(&f, 0) - before.0).abs();
+            joined = Some(t);
+            // (3) one level over all 21 beds
+            let all: Vec<i64> = f.bed().heights().to_vec();
+            let eta = level_for(&all, f.total());
+            for c in 0..21 {
+                let off = (surface(&f, c) - eta).abs();
                 assert!(
-                    jump <= j,
-                    "join at t {t:.3} s: left level moved {jump} quanta, join step {j}"
+                    off <= 1,
+                    "cell {c}: {off} quanta from the level after the join"
                 );
-                joined_at = Some(t);
-                println!("joined at {t:.3} s: left level moved {jump} quanta (join step {j})");
             }
-        }
-        if joined_at.is_some() && f.last_moved() == 0 {
-            break;
+            println!(
+                "join at {t:.2} s: left level moved {jump} quanta (join step {j}, rain {rain_q})"
+            );
         }
     }
-    assert!(checked >= 4, "compared the weir flow {checked} times");
-    assert!(joined_at.is_some(), "the basins never joined");
-    // (3) rest: one level over all 21 beds
-    let all: Vec<i64> = f.bed().heights().to_vec();
-    let eta = level_for(&all, total);
-    for c in 0..21 {
-        let off = (surface(&f, c) - eta).abs();
-        assert!(off <= 21, "cell {c}: {off} quanta from the level at rest");
-    }
-    println!("weir compared {checked} times (bound {bound:.2e}); rest after {n} substeps");
+    let reached = reached.expect("the right basin never reached the sill");
+    assert!(joined.is_some(), "the basins never joined");
+    assert!(
+        reached >= t_fill - dt && reached <= t_fill + late + dt,
+        "right basin at the sill at {reached:.3} s, closed form {t_fill:.3} s (+ at most {late:.3} s)"
+    );
+    println!("right basin at the sill at {reached:.3} s (closed form {t_fill:.3} s, + at most {late:.3} s)");
 }

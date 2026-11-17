@@ -1071,6 +1071,9 @@ impl WaterFilm {
         let mut moved = 0u64;
         let mut edge_out = 0i64;
         let mut cap_faces = 0u32;
+        // faces deeper than the film with a surface step above the join step: water spilling
+        // over a sill (inertial weir flow), outside the model
+        let mut steep: Vec<usize> = Vec::new();
         // pool throughflow (quanta): water entering and leaving each pool over its rim
         let mut pool_in: Vec<i64> = vec_of(ncell, 0);
         let mut pool_out: Vec<i64> = vec_of(ncell, 0);
@@ -1094,6 +1097,13 @@ impl WaterFilm {
                 _ => continue,
             };
             if sa.1 == 0 && sb.1 == 0 {
+                continue;
+            }
+            let hf = face_depth(sa.0, sa.1, sb.0, sb.1);
+            if hf > h_film
+                && ((sa.0 + sa.1) - (sb.0 + sb.1)).abs() > join_step(cfg.pool_join_step, sa.1, sb.1)
+            {
+                steep.extend(a.into_iter().chain(b));
                 continue;
             }
             let (t, capped) =
@@ -1128,7 +1138,10 @@ impl WaterFilm {
         // the band: a pool carrying throughflow Q needs a lubrication gradient across its
         // length L, ΔH = 3 ν Q L² / (g h̄³ A) (A its area, h̄ its mean depth); a level pool is
         // right only while ΔH stays within the rest band (7 quanta per cell of length)
-        let band = self.pool_band(&pool, &pool_in, &pool_out, dt);
+        let mut band = self.pool_band(&pool, &pool_in, &pool_out, dt);
+        band.extend_from_slice(&steep);
+        band.sort_unstable();
+        band.dedup();
         if !band.is_empty() {
             self.last_band_cells = band;
             return Err(ParticipantFault::OutOfRange);
