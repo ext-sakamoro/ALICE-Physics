@@ -70,7 +70,10 @@
 //! - **Approximations.** Plane strain (no out-of-plane strain). The fixed co-rotated model
 //!   is linear elasticity under rotation at small strain and its own large-strain law beyond
 //!   it. One material per world. The ground is frictionless and only stops downward motion
-//!   (no adhesion); there are no side walls. No plasticity. The viscosity is one Maxwell
+//!   (no adhesion). Walls ([`Mpm2d::set_walls`]) are a signed distance field sampled on the
+//!   nodes: the wall's surface is resolved to a cell, a body rests up to a cell off it, and
+//!   friction acts through the nodes in the wall (Coulomb with one coefficient, static and
+//!   kinetic alike; [`wall_rule`]); the backward Euler step refuses a world with walls. No plasticity. The viscosity is one Maxwell
 //!   branch that relaxes shear and volume alike (Poisson's ratio stays fixed); several
 //!   branches (a Prony series) are not offered. The energy reported for a viscoelastic
 //!   material leaves out the branch's stored part. Contact between two bodies of particles is
@@ -205,6 +208,35 @@ pub struct Mpm2d {
     config: Mpm2dConfig,
     material: Mpm2dMaterial,
     particles: Vec<MpmParticle2>,
+    walls: Option<Walls>,
+}
+
+/// The walls on the grid: Coulomb's coefficient and, per node (`i * ny + j`), the wall's unit
+/// normal out of the wall where the node is in or on it, `[0, 0]` where it is free.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Walls {
+    friction: Fix128,
+    normals: Vec<V2>,
+}
+
+/// The wall rule on one node's velocity ([`Mpm2d::set_walls`]): the part into the wall is
+/// removed, and the part along it loses `μ` times what was removed, down to rest.
+fn wall_rule(v: V2, n: V2, friction: Fix128) -> V2 {
+    let vn = v[0] * n[0] + v[1] * n[1];
+    if vn >= Fix128::ZERO {
+        return v;
+    }
+    let t = [v[0] - vn * n[0], v[1] - vn * n[1]];
+    if friction == Fix128::ZERO {
+        return t;
+    }
+    let speed = (t[0] * t[0] + t[1] * t[1]).sqrt();
+    let cut = friction * (-vn);
+    if speed <= cut {
+        return [Fix128::ZERO; 2];
+    }
+    let keep = (speed - cut) / speed;
+    [t[0] * keep, t[1] * keep]
 }
 
 /// The 3×3 quadratic B-spline stencil of one particle: the lower-left node and the weights
@@ -340,7 +372,93 @@ impl Mpm2d {
             config,
             material,
             particles: Vec::new(),
+            walls: None,
         })
+    }
+
+    /// Walls from a signed distance field: `field(x)` gives the distance from `x` to the wall's
+    /// surface (m, negative inside the wall) and the surface's normal out of the wall (any
+    /// length; only its direction is read). The field is sampled once, on the grid's nodes; a
+    /// node in or on the wall (`distance <= 0`) keeps the unit normal. Each step, after gravity
+    /// and the ground, such a node's velocity `v` with `v·n < 0` loses its part into the wall,
+    /// and its part along the wall loses `friction · |v·n|` of speed, down to rest (Coulomb,
+    /// `friction` the coefficient `μ >= 0`; no adhesion: a node moving out of the wall is
+    /// free). Walls replace the walls set before; they are part of the snapshot and the digest.
+    ///
+    /// # Errors
+    ///
+    /// [`Mpm2dError::Invalid`] for a negative `friction` or a zero normal at a node in the
+    /// wall; the world is then unchanged.
+    pub fn set_walls<F: Fn(V2) -> (Fix128, V2)>(
+        &mut self,
+        field: F,
+        friction: Fix128,
+    ) -> Result<(), Mpm2dError> {
+        if friction < Fix128::ZERO {
+            return Err(Mpm2dError::Invalid("walls: friction"));
+        }
+        let cfg = &self.config;
+        let (nx, ny) = (cfg.nodes[0], cfg.nodes[1]);
+        let mut normals = Vec::with_capacity(nx * ny);
+        for i in 0..nx {
+            for j in 0..ny {
+                let x = [
+                    cfg.origin[0] + cfg.cell * Fix128::from_int(i as i64),
+                    cfg.origin[1] + cfg.cell * Fix128::from_int(j as i64),
+                ];
+                let (distance, n) = field(x);
+                if distance > Fix128::ZERO {
+                    normals.push([Fix128::ZERO; 2]);
+                    continue;
+                }
+                let len = (n[0] * n[0] + n[1] * n[1]).sqrt();
+                if len == Fix128::ZERO {
+                    return Err(Mpm2dError::Invalid("walls: normal"));
+                }
+                normals.push([n[0] / len, n[1] / len]);
+            }
+        }
+        self.walls = Some(Walls { friction, normals });
+        Ok(())
+    }
+
+    /// [`Self::set_walls`] from a 3D signed distance field cut by the plane `z = 0`: the
+    /// distance at `(x, y, 0)` and the in-plane part of the normal there. The field answers in
+    /// `f32`; the walls kept are the `Q64.64` values of its answers at the nodes, so two
+    /// machines agree on the walls when the field's `f32` answers agree (the digest tells).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::set_walls`]; a normal with no in-plane part at a node in the wall is a zero
+    /// normal.
+    #[cfg(feature = "std")]
+    pub fn set_walls_from_sdf<Q: crate::sdf_collider::SdfQuery + ?Sized>(
+        &mut self,
+        sdf: &Q,
+        friction: Fix128,
+    ) -> Result<(), Mpm2dError> {
+        self.set_walls(
+            |x: V2| {
+                let (px, py) = (x[0].to_f32(), x[1].to_f32());
+                let n = sdf.query_normal(px, py, 0.0);
+                (
+                    Fix128::from_f32(sdf.query_distance(px, py, 0.0)),
+                    [Fix128::from_f32(n.0), Fix128::from_f32(n.1)],
+                )
+            },
+            friction,
+        )
+    }
+
+    /// Removes the walls ([`Self::set_walls`]).
+    pub fn clear_walls(&mut self) {
+        self.walls = None;
+    }
+
+    /// Coulomb's coefficient of the walls, or `None` without walls
+    #[must_use]
+    pub fn wall_friction(&self) -> Option<Fix128> {
+        self.walls.as_ref().map(|w| w.friction)
     }
 
     /// The configuration
@@ -627,6 +745,12 @@ impl Mpm2d {
                         v[1] = Fix128::ZERO;
                     }
                 }
+                if let Some(walls) = &self.walls {
+                    let n = walls.normals[idx];
+                    if n != [Fix128::ZERO; 2] {
+                        v = wall_rule(v, n, walls.friction);
+                    }
+                }
                 gv[idx] = v;
             }
         }
@@ -761,7 +885,9 @@ impl Mpm2d {
         })
     }
 
-    /// The first bytes of [`Mpm2d::snapshot`]. The layout, little endian: magic `b"AMP2"`,
+    /// The first bytes of [`Mpm2d::snapshot`]. The layout (version 1; a world with walls writes
+    /// version 2, the same with, between the particles and the tail, the walls' friction and two
+    /// `Fix128` a node, the unit normal or zeros), little endian: magic `b"AMP2"`,
     /// version `u16`; twelve `Fix128` (`hi: i64`, `lo: u64`): origin x and y, cell, gravity x
     /// and y, dt, ground (0 when none), Young's modulus, Poisson's ratio, density, the Maxwell
     /// fraction and relaxation time (0 when none); per particle twenty-two `Fix128`: x, v,
@@ -771,6 +897,8 @@ impl Mpm2d {
     pub const SNAPSHOT_MAGIC: [u8; 4] = *b"AMP2";
     /// The snapshot format version
     pub const SNAPSHOT_VERSION: u16 = 1;
+    /// The snapshot format version of a world with walls
+    pub const SNAPSHOT_VERSION_WALLS: u16 = 2;
 
     /// The whole world as bytes: [`Self::restore`] makes a world that steps on bit for bit
     /// as this one.
@@ -778,7 +906,12 @@ impl Mpm2d {
     pub fn snapshot(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&Self::SNAPSHOT_MAGIC);
-        out.extend_from_slice(&Self::SNAPSHOT_VERSION.to_le_bytes());
+        let version = if self.walls.is_some() {
+            Self::SNAPSHOT_VERSION_WALLS
+        } else {
+            Self::SNAPSHOT_VERSION
+        };
+        out.extend_from_slice(&version.to_le_bytes());
         let mut put = |x: Fix128| {
             out.extend_from_slice(&x.hi.to_le_bytes());
             out.extend_from_slice(&x.lo.to_le_bytes());
@@ -809,6 +942,13 @@ impl Mpm2d {
                 }
             }
         }
+        if let Some(walls) = &self.walls {
+            put(walls.friction);
+            for n in &walls.normals {
+                put(n[0]);
+                put(n[1]);
+            }
+        }
         // the fixed-size tail holds the integers and the count that sizes the particle block
         let mut tail = Vec::new();
         tail.extend_from_slice(&(c.nodes[0] as u64).to_le_bytes());
@@ -836,9 +976,11 @@ impl Mpm2d {
         if data.len() < HEAD + NUMS * 16 + TAIL || data[0..4] != Self::SNAPSHOT_MAGIC {
             return None;
         }
-        if u16::from_le_bytes([data[4], data[5]]) != Self::SNAPSHOT_VERSION {
-            return None;
-        }
+        let has_walls = match u16::from_le_bytes([data[4], data[5]]) {
+            Self::SNAPSHOT_VERSION => false,
+            Self::SNAPSHOT_VERSION_WALLS => true,
+            _ => return None,
+        };
         let tail = &data[data.len() - TAIL..];
         // a slice of the wrong length (it cannot be one after the length checks above) is a
         // refused blob, not a panic
@@ -863,8 +1005,15 @@ impl Mpm2d {
             _ => return None,
         };
         let count = usize::try_from(u(&tail[19..27])?).ok()?;
+        // with walls: the friction and two numbers a node
+        let wall_numbers = if has_walls {
+            nodes[0].checked_mul(nodes[1])?.checked_mul(2)?.checked_add(1)?
+        } else {
+            0
+        };
         let want = count
             .checked_mul(PER * 16)?
+            .checked_add(wall_numbers.checked_mul(16)?)?
             .checked_add(HEAD + NUMS * 16 + TAIL)?;
         if data.len() != want {
             return None;
@@ -923,6 +1072,20 @@ impl Mpm2d {
                 f: [[fix(k + 10), fix(k + 11)], [fix(k + 12), fix(k + 13)]],
                 branch: [[fix(k + 14), fix(k + 15)], [fix(k + 16), fix(k + 17)]],
                 branch_ref: [[fix(k + 18), fix(k + 19)], [fix(k + 20), fix(k + 21)]],
+            });
+        }
+        if has_walls {
+            let k = NUMS + PER * count;
+            let friction = fix(k);
+            if friction < Fix128::ZERO {
+                return None;
+            }
+            world.walls = Some(Walls {
+                friction,
+                normals: numbers[k + 1..]
+                    .chunks_exact(2)
+                    .map(|n| [n[0], n[1]])
+                    .collect(),
             });
         }
         Some(world)

@@ -161,6 +161,10 @@ name = "analytic_mpm2d_mass"
 required-features = ["mpm2d"]
 
 [[test]]
+name = "analytic_mpm2d_walls"
+required-features = ["mpm2d"]
+
+[[test]]
 name = "mpm2d_step_cost"
 required-features = ["mpm2d"]
 

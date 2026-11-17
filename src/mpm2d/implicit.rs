@@ -500,6 +500,9 @@ impl Mpm2d {
         solve: &ImplicitSolve,
         loads: &[(usize, V2)],
     ) -> Result<ImplicitReport, Mpm2dError> {
+        if self.walls.is_some() {
+            return Err(Mpm2dError::Invalid("implicit: walls"));
+        }
         let mut force = vec![[Fix128::ZERO; 2]; self.particles.len()];
         for &(k, f) in loads {
             let at = force
