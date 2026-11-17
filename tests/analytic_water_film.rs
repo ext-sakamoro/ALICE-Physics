@@ -1877,3 +1877,47 @@ fn a_drowned_sill_is_refused() {
         f.last_band_cells()
     );
 }
+
+/// A deposit is a rate, not a burst: a flat pool 3 mm deep (19 cells of 1 cm, walled) fed
+/// 5·10⁻⁶ m²/s at its head and spilling over a crest into a sump at its foot needs a fall of
+/// `ΔH = 3 ν q L / (g h̄³)` ≈ 11 µm to carry it, within its 1 % level tolerance (30 µm), so it
+/// stays a still pool, levelled. (Counting each 1/6 s deposit as inflow in every one of the
+/// advance's substeps would make it 43 times larger, beyond the tolerance.)
+#[test]
+fn a_gently_fed_pool_stays_level() {
+    let nx = 22;
+    let mut beds = vec![mm(50)];
+    beds.extend(core::iter::repeat_n(Fix128::ZERO, nx - 3));
+    // a crest 2.8 mm high before a drop into a sump: the feed leaves over it as a film about
+    // 0.2 mm deep, so the pool stands near 3 mm
+    beds.push(Fix128::from_ratio(28, 10_000));
+    beds.push(mm(-1000));
+    let mut f = walled_row(
+        nx,
+        CELL_MM,
+        &beds,
+        FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed),
+    );
+    for i in 1..nx - 2 {
+        f.set_initial_depth(i, 1, metres_to_quanta(mm(3)));
+    }
+    f.set_initial_depth(nx - 2, 1, metres_to_quanta(Fix128::from_ratio(2, 10_000)));
+    let (q, l) = (5.0e-6_f64, 0.01_f64);
+    let step = Fix128::from_ratio(1, 6);
+    let (x0, z0) = f.bed().centre(1, 1);
+    let mut levelled = 0;
+    for _ in 0..30 {
+        f.deposit(x0, z0, Fix128::from_f64(q * l) * step);
+        f.advance(step).expect("advance");
+        let interior = (3..nx - 3).map(|i| i + nx);
+        if interior.clone().all(|c| f.last_pooled_cells().contains(&c)) {
+            levelled += 1;
+        }
+    }
+    assert_eq!(
+        levelled,
+        30,
+        "the pool was freed in {} of 30 advances",
+        30 - levelled
+    );
+}
