@@ -2,71 +2,84 @@
 //!
 //! - **Equations**: a thin water layer of depth `h ≥ 0` over a fixed bed `b` on a square grid
 //!   of cells of side `l`, gravity along −y. Mass: `∂h/∂t + ∇·q = r − e`, with `r` the rain
-//!   rate and `e` the evaporation rate (both m/s) ([`WaterFilm::step_once`]). The flux `q`
-//!   (m²/s, per unit width) across a face is the diffusion-wave flux driven by the difference
-//!   of the free-surface elevation `η = b + h`: `q = sign(Δη)·min(g h_f³ |Δη| / (3ν l),
-//!   h_f √(g h_f))`, the lubrication (viscous, Nusselt) flux capped by the critical flux
-//!   ([`simultaneous_transfer`]). It is evaluated in integers: with `H = h_f` and `E = |Δη|` in
-//!   quanta, the lubrication transfer is `⌊H³E / D_l⌋` and the critical transfer
+//!   rate and `e` the evaporation rate (both m/s) ([`WaterFilm::step_once`]). Three regimes,
+//!   chosen per face from the declared deepest film `h_film` ([`FilmConfig::film_depth_max`])
+//!   and join step `J` ([`FilmConfig::pool_join_step`], [`join_step`]):
+//!
+//!   | regime | where | treated by | holds exactly |
+//!   |---|---|---|---|
+//!   | film | `h_f ≤ h_film` | explicit flux `q = sign(Δη)·min(g h_f³ \|Δη\| / (3ν l), h_f √(g h_f))`, lubrication (viscous, Nusselt) capped by critical | steady film depth (Nusselt, a stroke's sampled section), critical outflow over a free edge |
+//!   | pool | `h_f > h_film` and `\|Δη\| ≤ J` | the faces' cells are joined (union-find) and levelled exactly in integers | level surface, overflow at the rim height, fill level against volume |
+//!   | out of range | `h_f > h_film` and `\|Δη\| > J` (water spilling over a step, a dam break, a deep bump), or a pool carrying throughflow whose lubrication gradient `ΔH = 3 ν Q L² / (g h̄³ A)` exceeds its tolerance | [`ParticipantFault::OutOfRange`], the state unchanged, the cells in [`WaterFilm::last_band_cells`] | — |
+//!
+//!   `η = b + h`; `h_f = max(η_L, η_R) − max(b_L, b_R)` (zero or above) is the depth over the
+//!   higher bed of the two cells ([`face_depth`]), so no water crosses a face while the
+//!   surface stands below the higher bed: a basin holds water until its surface passes the
+//!   rim. On a steady incline of angle `α` the film flux is the Nusselt flux
+//!   `q = g h³ sinα / (3ν)`. The film flux is evaluated in integers: with `H = h_f` and
+//!   `E = |Δη|` in quanta, the lubrication transfer is `⌊H³E / D_l⌋` and the critical transfer
 //!   `⌊⌊√(H³)⌋ · N_c / 2⁶⁴⌋`, both floored, with `D_l = 3 ν l² 2⁹⁶ / (g Δt)` and
 //!   `N_c = √g Δt / l · 2⁴⁸` taken once per substep as the raw bits of their [`Fix128`] values
 //!   ([`FluxConstants`]); a product past 128 bits saturates, which is exact because it then
-//!   exceeds the `⌊h_f/4⌋` cap ([`MAX_LUBRICATION_DIVISOR`], [`MAX_FACE_DEPTH`]). `h_f = max(η_L, η_R) − max(b_L, b_R)` (zero or above) is the
-//!   depth over the higher bed of the two cells ([`face_depth`]), so no water crosses a face
-//!   while the surface stands below the higher bed: a basin holds water until its surface
-//!   passes the rim. On a steady incline of angle `α` the flux is the Nusselt film flux
-//!   `q = g h³ sinα / (3ν)`.
-//! - **Discretisation**: every substep moves water across every face at once, each face read
-//!   from the state at the start of the substep: `t = min(⌊|q|·Δt/l⌋, ⌊|Δη|/8⌋, ⌊h_f/4⌋)` with
-//!   the sign of `Δη` ([`simultaneous_transfer`]), the moves summed per cell, so the result does
-//!   not depend on the order the faces are visited and no cell gives more than it holds (four
-//!   faces of at most `h_f/4`, `h_f ≤ h`). The potential `P = Σ (η² − b²)` falls with every move:
-//!   with `δ` the change per cell, `ΔP = −2 Σ_f t_f Δη_f + Σ_c δ_c²`; `t ≤ Δη/8` gives
-//!   `Σ t Δη ≥ 8 Σ t²` and four faces per cell give `Σ δ² ≤ 8 Σ t²`, so `ΔP ≤ −8 Σ t² < 0` when
-//!   anything moves; the state is integer, so without rain the film reaches rest (every
-//!   transfer zero) in finitely many substeps. On a uniform steady film every face reads the
-//!   same state, so the scheme carries the Nusselt flux exactly at any `Δt` (measured: depth
-//!   error below 10⁻⁴ at `Δt` = 1/256, 1/1024 and 1/4096 s; an earlier variant that moved
-//!   disjoint face sets in turn was first order, depth error ≈ −5.2·uΔt/l).
+//!   exceeds the `⌊h_f/4⌋` cap ([`MAX_LUBRICATION_DIVISOR`], [`MAX_FACE_DEPTH`]).
+//!
+//!   Discretisation: each substep (1) adds rain and removes evaporation, (2) joins pools
+//!   and levels each exactly: the common surface `η*` is the largest with
+//!   `Σ max(η* − b, 0) ≤ V` over its cells (bisection on integers), the remainder one quantum
+//!   each to the lowest-index cells with `b ≤ η*`, (3) moves water across every other face
+//!   at once, each face read from the same state:
+//!   `t = min(⌊|q|·Δt/l⌋, ⌊|Δη|/8⌋, ⌊h_f/4⌋)` with the sign of `Δη`
+//!   ([`simultaneous_transfer`]), the moves summed per cell, so the result does not depend on
+//!   the order the faces are visited and no cell gives more than it holds. The potential
+//!   `P = Σ (η² − b²)` falls with every film move: with `δ` the change per cell,
+//!   `ΔP = −2 Σ_f t_f Δη_f + Σ_c δ_c²`; `t ≤ Δη/8` gives `Σ t Δη ≥ 8 Σ t²` and four faces per
+//!   cell give `Σ δ² ≤ 8 Σ t²`, so `ΔP ≤ −8 Σ t² < 0` when anything moves; levelling a pool
+//!   never raises it. The substep is `Δt = h / ⌈h / Δt_s⌉` with
+//!   `Δt_s = min(Δt_max, 3 ν l² / (8 g h_film³))` ([`WaterFilm::substep`],
+//!   [`WaterFilm::subcycles`]), from declared inputs only: no film face then meets the
+//!   `⌊|Δη|/8⌋` cap ([`WaterFilm::last_cap_faces`] counts any that does).
 //! - **Units**: SI. Lengths and depths m, time s, `q` m²/s, `g` m/s², `ν` m²/s, rates m/s
 //!   (rain given in mm/h converts with [`FilmConfig::rain_mm_per_hour`]). The depth is held
 //!   as an integer number of quanta of `2⁻³²` m ([`DEPTH_QUANTUM_BITS`],
-//!   [`metres_to_quanta`]); fluxes and rates are [`Fix128`].
+//!   [`metres_to_quanta`]); fluxes and rates are [`Fix128`]. `h_film` m, `J` and the pool
+//!   tolerance as fractions of a depth.
 //! - **Conservation**: volume is conserved exactly, as integers: a transfer leaves one cell
-//!   and enters the other ([`WaterFilm::step_once`]); the ledger `Σ depth = initial + rain +
-//!   deposits − evaporation − outflow over open edges` holds to the last quantum
-//!   ([`FilmLedger::expected`]). Momentum is not modelled (no inertia).
-//! - **Range**: cell side `l` from 1 mm to 1 m ([`FilmBed::from_heights`]). The substep is
-//!   `Δt = h / ⌈h / Δt_max⌉` with `Δt_max` declared in [`FilmConfig::max_substep`]
-//!   ([`WaterFilm::subcycles`]): a function of the step and the configuration only, never of
-//!   the water. The film flux is resolved while `u Δt ≤ l/4` (u the film speed, the `⌊h_f/4⌋`
-//!   cap); above it flow is slower than the model (at `l` = 1 cm and `Δt` = 1/256 s: films up
-//!   to 0.64 m/s, which a 1 mm film reaches only beyond a slope of about 11°).
-//!   **Deep pools (`h ≳ 1` mm, where the critical cap binds) level at a relaxation rate set
-//!   by `Δt`, not at the gravity-wave speed**: their steady states (a level surface, overflow
-//!   at the rim) are physical, their levelling time is not
-//!   (`a_closed_groove_levels_to_the_closed_form_surface` reports it against `L/√(g h)`).
-//!   More than [`FilmConfig::max_subcycles`] substeps, a depth leaving the integer range, a
-//!   face depth above 4 m ([`MAX_FACE_DEPTH`]) or a substep so short that `D_l` passes 2⁹⁸
-//!   (`3 ν l² / (g Δt) > 4`: below 7.6·10⁻⁸ s for water at `l` = 1 m) is
-//!   [`ParticipantFault::OutOfRange`] and changes nothing ([`WaterFilm::advance`]).
+//!   and enters the other, levelling redistributes a pool's own volume
+//!   ([`WaterFilm::step_once`]); the ledger `Σ depth = initial + rain + deposits − evaporation
+//!   − outflow over open edges` holds to the last quantum ([`FilmLedger::expected`]). Momentum
+//!   is not modelled (no inertia).
+//! - **Range**: cell side `l` from 1 mm to 1 m ([`FilmBed::from_heights`]). The lubrication
+//!   flux holds for `Re ≤ 500` and `Fr < 1`; at `Fr ≥ 1` the critical cap gives the critical
+//!   depth `(q²/g)^{1/3}`. The film regime is resolved at the derived substep (a stroke of
+//!   1 mm at slope 1/200 matches the sampled-section closed form to `5·10⁻⁶` at 1 cm cells,
+//!   one notch longer `Δt` misses by +9 % at 2 cm and −20 % at 1 cm). Measured on 2 cm cells:
+//!   between the deepest film the substep serves and the depth where a flowing pool stays
+//!   within 1 % of level lies a band (1.6–5.4 mm at slope 1/1000, 1.6–3.1 mm at 1/200, none at
+//!   1/50 where the flow is supercritical) that the model refuses; covering it would cost
+//!   330–1 650 substeps per step. A pool is accepted while its throughflow needs
+//!   `ΔH ≤ max(tolerance · h̄, 7 quanta per cell of length)`
+//!   ([`FilmConfig::pool_level_tolerance`], default 1 %): a level pool stands in for that
+//!   gradient, and the tolerance is the error accepted. Water spilling over a step deeper
+//!   than the film is inertial weir flow, outside the model: measured, its rate under the
+//!   cap depends on `Δt` (+20 % at 1/256 s, +8 % at 1/1024 s, +2.5 % at 1/4096 s against
+//!   the broad-crested weir) because every submerged law is stiff near level; local
+//!   substeps on those faces would serve it. More than [`FilmConfig::max_subcycles`]
+//!   substeps, a depth leaving the integer range, a face depth above 4 m ([`MAX_FACE_DEPTH`])
+//!   or a substep so short that `D_l` passes 2⁹⁸ is [`ParticipantFault::OutOfRange`] and
+//!   changes nothing ([`WaterFilm::advance`]).
 //! - **Approximations**: 2.5D, one depth per column, the bed a height field sampled once per
 //!   cell centre ([`FilmBed::from_height_fn`], [`FilmBed::from_sdf`]); gravity along −y only;
 //!   no inertia, surface tension, contact angle or infiltration ([`simultaneous_transfer`]);
-//!   rain uniform over the grid and evaporation at a fixed rate on wet cells
-//!   ([`WaterFilm::step_once`]); the bed is fixed while the film steps, a new one is set with
-//!   [`WaterFilm::set_bed`], which needs a larger generation. Rest is reached when every face
-//!   moves less than one quantum: in the pool regime two neighbouring wet cells then differ by
-//!   at most 7 quanta (`⌊|Δη|/8⌋ = 0`), so a pool of `L` cells along its longest path is level
-//!   to within `7(L − 1)` quanta, and a thin film on a slope stops once its flux moves less
-//!   than a quantum per substep. The band cannot be one quantum for any rule of this kind
-//!   (local, independent of face order, integer, potential strictly falling): a staircase of
-//!   unit steps `η, η + 1, η + 2, …` is at rest under every rule that moves nothing across
-//!   `|Δη| ≤ 1`, and a rule that moves a quantum across `|Δη| = 1` only swaps the pair, which
-//!   leaves the potential unchanged, so it never comes to rest.
-//!   Measured on a closed 8-cell groove: spread 48 quanta at rest (11 nm, bound 49).
+//!   rain uniform over the grid and evaporation at a fixed rate on wet cells; a pool rises
+//!   everywhere at once (no waves, surges or sloshing: a 7 m groove 3 cm deep would take
+//!   13 s for a gravity wave to cross); the bed is fixed while the film steps, a new one is
+//!   set with [`WaterFilm::set_bed`]. Rest: pools are level to one quantum; a film stops
+//!   where its lubrication transfer rounds to zero, `H³E < D_l`, so a flat film rests at
+//!   about `D_l^{1/4}` (37 µm at `l` = 1 cm and `Δt` = 1/256 s, measured 38 µm). The join
+//!   step bounds the jump when two pools meet: they join only when their surfaces are within
+//!   `J` of each other, so levelling at the join moves at most `J`.
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_water_film.rs::a_closed_groove_levels_to_the_closed_form_surface::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::the_potential_never_rises_without_a_source::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::a_column_spilling_four_ways_never_goes_negative::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds::a_cell_drains_over_its_edges_at_the_critical_rate`
+//! - **Validation**: `tests/analytic_water_film.rs::piled_deep_water_is_refused::the_potential_never_rises_without_a_source::a_column_spilling_four_ways_never_goes_negative::volume_is_conserved_to_the_last_quantum::a_groove_overflows_at_its_rim_height::a_groove_fills_in_the_closed_form_time::rewind_and_rerun_are_bit_identical::face_order_does_not_change_the_state::a_tampered_payload_is_refused::degenerate_inputs_are_refused::the_film_steps_and_rewinds_inside_a_world::a_steady_film_on_an_incline_has_the_nusselt_depth::a_wet_cell_dries_in_the_closed_form_time::an_sdf_bed_and_a_height_bed_agree::the_substep_count_depends_on_declared_inputs_only::the_mixed_scene_digest_is_pinned::the_integer_square_root_is_exact::the_flux_law_holds_at_its_bounds::a_cell_drains_over_its_edges_at_the_critical_rate::a_flowing_channel_deeper_than_the_film_is_refused::a_filling_groove_is_accepted_and_levels::flow_along_a_stroke_has_the_lubrication_depth::a_deep_spill_over_a_sill_is_refused::two_basins_join_over_a_sill_without_a_jump::the_join_step_is_one_percent_of_the_shallower_side`
 //!
 //! Author: Moroya Sakamoto
 

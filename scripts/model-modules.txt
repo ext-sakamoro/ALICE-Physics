@@ -18,6 +18,7 @@ A	src/sdf_sph.rs
 A	src/smoke_fire.rs
 A	src/surface_tension_csf.rs
 A	src/turbulence.rs
+A	src/water_film.rs
 A	src/wave_ship.rs
 B	src/aeroelasticity.rs
 B	src/atmosphere.rs
