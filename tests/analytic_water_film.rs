@@ -1356,3 +1356,45 @@ fn two_basins_join_over_a_sill_without_a_jump() {
     );
     println!("right basin at the sill at {reached:.3} s (closed form {t_fill:.3} s, + at most {late:.3} s)");
 }
+
+/// The join step, at its edges. Two deep cells side by side (beds 10 mm apart, depths 20 mm
+/// and 30 mm, so the shallower side is 20 mm) whose surfaces differ by `s`: with the default
+/// fraction (1 %) the join step is `⌊0.01 · 20 mm⌋` in quanta; at `s` equal to it the two
+/// join and stand level, one quantum more is a step outside the model and the advance is
+/// refused. With the fraction 0 the step is the floor of 7 quanta.
+#[test]
+fn the_join_step_is_one_percent_of_the_shallower_side() {
+    let run = |fraction: Fix128, s: i64| {
+        let beds = [Fix128::ZERO, mm(-10)];
+        let bed = FilmBed::from_heights(2, 1, mm(CELL_MM), (Fix128::ZERO, Fix128::ZERO), &beds, 1)
+            .expect("bed");
+        let mut cfg = FilmConfig::water(FilmScheme::DiffusionWave, FilmEdge::Closed);
+        cfg.pool_join_step = fraction;
+        let mut f = WaterFilm::new(cfg, bed).expect("film");
+        let d = metres_to_quanta(mm(20));
+        f.set_initial_depth(0, 0, d);
+        let (b0, b1) = (f.bed().heights()[0], f.bed().heights()[1]);
+        f.set_initial_depth(1, 0, b0 + d + s - b1);
+        let r = f.step_once(f.substep());
+        let level = r.is_ok() && {
+            let e: Vec<i64> = (0..2)
+                .map(|c| f.bed().heights()[c] + f.depths()[c])
+                .collect();
+            (e[0] - e[1]).abs() <= 1 && f.last_pooled_cells() == [0, 1]
+        };
+        (r, level)
+    };
+    let j = metres_to_quanta(mm(20)) / 100;
+    let mut compared = 0;
+    for (fraction, step) in [(Fix128::from_ratio(1, 100), j), (Fix128::ZERO, 7)] {
+        let (r, level) = run(fraction, step);
+        assert!(
+            r.is_ok() && level,
+            "step {step}: {r:?}, joined and level {level}"
+        );
+        let (r, _) = run(fraction, step + 1);
+        assert_eq!(r, Err(ParticipantFault::OutOfRange), "step {}", step + 1);
+        compared += 2;
+    }
+    assert_eq!(compared, 4);
+}
