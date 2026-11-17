@@ -279,7 +279,7 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | `privacy-crypto` | | `privacy` が `alice-crypto` の差分プライバシー (`SecureRng`、`DpNoise`、`dp_int`、`randomized_response` など) を再 export し、`KeyedRappor` を足す 既定で off なので `std` だけでは entropy 源を引かない この feature では `alice-crypto` が公開依存になり、その破壊的な版は本 crate の破壊的な版になる `wasm32-unknown-unknown` では `wasm` と併せて有効にする (`--features std,wasm,privacy-crypto`、browser の entropy を与える) `std,privacy-crypto` だけでは getrandom の「"js" feature を有効にせよ」の error で compile できない |
 | `neural` | | [`alice-ml`](https://crates.io/crates/alice-ml) を使う決定論的ニューラルコントローラー |
 | `analytics` | | [`alice-analytics`](https://crates.io/crates/alice-analytics) を使うシミュレーションのプロファイリング |
-| `mpm2d` | | `mpm2d`: 柔らかい固体の 2D の material point method (MLS-MPM、APIC、平面ひずみ、陽的・陰的 step、粘弾性、外力と弾性床) 既定で off なので、使わない build はその code を含まない no_std で動く |
+| `mpm2d` | | `mpm2d`: 柔らかい固体の 2D の material point method (MLS-MPM、APIC、平面ひずみ、陽的・陰的 step、粘弾性、外力と弾性床、陽的 step では距離場の壁と Coulomb 摩擦) 既定で off なので、使わない build はその code を含まない no_std で動く |
 
 ## バインディング
 
