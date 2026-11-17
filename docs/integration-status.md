@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2793 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2798 |
 | live | reached without examples (crate-internal roots or a binding) | 905 |
-| | **total** | **3729** |
+| | **total** | **3734** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2793)
+## L1 — example-only (2798)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -208,7 +208,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
 - `src/molecular_dynamics.rs`: `MD_OBS_KINETIC`, `MD_OBS_POTENTIAL`, `MD_OBS_TEMPERATURE`, `MD_OBS_TOTAL`, `MD_PARTICIPANT_KIND`, `MdError`, `MdParticipant`, `MdParticipant::boltzmann_constant`, `MdParticipant::new`, `MdParticipant::system`, `MdStepError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::try_step`, `VelocityVerlet::velocities`, `checked_quotient`, `checked_sub`, `pair_forces_all_pairs`, `pair_forces_cell_list`
 - `src/motor.rs`: `JointMotor::new`, `MotorError`, `PdController3D::max_torque`, `PdController3D::new`, `PdController3D::set_max_torque`, `PdController3D::set_rotation_target`, `PdController3D::target_rotation`, `PdController::disable`, `PdController::max_force`, `PdController::new`, `PdController::set_max_force`, `PdController::set_position_target`, `PdController::set_velocity_target`
-- `src/mpm2d.rs`: `M2`, `Maxwell`, `Mpm2d`, `Mpm2d::SNAPSHOT_MAGIC`, `Mpm2d::SNAPSHOT_VERSION`, `Mpm2d::add_particle`, `Mpm2d::angular_momentum`, `Mpm2d::config`, `Mpm2d::elastic_energy`, `Mpm2d::foundation_loads`, `Mpm2d::kinetic_energy`, `Mpm2d::mass`, `Mpm2d::material`, `Mpm2d::momentum`, `Mpm2d::new`, `Mpm2d::particles`, `Mpm2d::particles_within`, `Mpm2d::restore`, `Mpm2d::seed`, `Mpm2d::shared_loads`, `Mpm2d::snapshot`, `Mpm2d::state_digest`, `Mpm2d::step`, `Mpm2d::step_with_loads`, `Mpm2dConfig`, `Mpm2dError`, `Mpm2dMaterial`, `Mpm2dModel`, `MpmParticle2`, `V2`
+- `src/mpm2d.rs`: `M2`, `Maxwell`, `Mpm2d`, `Mpm2d::SNAPSHOT_MAGIC`, `Mpm2d::SNAPSHOT_VERSION`, `Mpm2d::SNAPSHOT_VERSION_WALLS`, `Mpm2d::add_particle`, `Mpm2d::angular_momentum`, `Mpm2d::clear_walls`, `Mpm2d::config`, `Mpm2d::elastic_energy`, `Mpm2d::foundation_loads`, `Mpm2d::kinetic_energy`, `Mpm2d::mass`, `Mpm2d::material`, `Mpm2d::momentum`, `Mpm2d::new`, `Mpm2d::particles`, `Mpm2d::particles_within`, `Mpm2d::restore`, `Mpm2d::seed`, `Mpm2d::set_walls`, `Mpm2d::set_walls_from_sdf`, `Mpm2d::shared_loads`, `Mpm2d::snapshot`, `Mpm2d::state_digest`, `Mpm2d::step`, `Mpm2d::step_with_loads`, `Mpm2d::wall_friction`, `Mpm2dConfig`, `Mpm2dError`, `Mpm2dMaterial`, `Mpm2dModel`, `MpmParticle2`, `V2`
 - `src/mpm2d/implicit.rs`: `ImplicitReport`, `ImplicitSolve`, `Mpm2d::step_implicit`, `Mpm2d::step_implicit_with_loads`, `psi`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
 - `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBODY_OBS_BODIES`, `NBODY_OBS_POTENTIAL`, `NBODY_PARTICIPANT_KIND`, `NBodyError`, `NBodyParticipant`, `NBodyParticipant::law`, `NBodyParticipant::new`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
