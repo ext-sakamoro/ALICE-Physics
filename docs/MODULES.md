@@ -126,6 +126,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |
 | `cloth_fluid` | two-way cloth and fluid coupling |  |  | standalone |
 | `fluid` | position-based fluids (PBF) |  | [`fluid_block_column`](../examples/fluid_block_column.rs) | standalone |
+| `fluid_boundary_map` | density maps of static SDF solids for PBF, and the split of the solids' push between two solids | std | [`fluid_sdf_body_frame_cost`](../examples/fluid_sdf_body_frame_cost.rs) | standalone |
 | `fluid_netcode` | fluid state for netcode with delta compression | std | [`fluid_netcode_roundtrip`](../examples/fluid_netcode_roundtrip.rs) | standalone |
 | `deformable` | FEM-XPBD tetrahedral deformable bodies |  | [`deformable_cube_impact`](../examples/deformable_cube_impact.rs) | standalone |
 | `soft_body_cut` | cutting deformables and cloth along a plane |  | [`soft_body_cutting`](../examples/soft_body_cutting.rs) | standalone |

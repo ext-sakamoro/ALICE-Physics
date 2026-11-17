@@ -10,7 +10,7 @@ crate has today.
 | `docs/coverage/am.toml` | 93 | 11 | 0 | 6 | 76 | 0 |
 | `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
 | `docs/coverage/bio.toml` | 141 | 0 | 4 | 0 | 137 | 0 |
-| `docs/coverage/cfd.toml` | 121 | 39 | 2 | 6 | 74 | 0 |
+| `docs/coverage/cfd.toml` | 121 | 40 | 2 | 5 | 74 | 0 |
 | `docs/coverage/chem.toml` | 140 | 8 | 1 | 0 | 131 | 0 |
 | `docs/coverage/couple.toml` | 123 | 11 | 3 | 4 | 105 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
@@ -41,7 +41,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4293 | 583 | 74 | 104 | 3520 | 12 |
+| **total** | 4293 | 584 | 74 | 103 | 3520 | 12 |
 
 ## `docs/coverage/acous.toml`
 
@@ -126,7 +126,7 @@ crate has today.
 | boundary condition | 9 | 5 | 0 | 0 | 4 | 0 |
 | discretisation | 10 | 3 | 0 | 0 | 7 | 0 |
 | output | 4 | 1 | 0 | 0 | 3 | 0 |
-| particle method | 15 | 7 | 0 | 1 | 7 | 0 |
+| particle method | 15 | 8 | 0 | 0 | 7 | 0 |
 | physics | 14 | 3 | 0 | 0 | 11 | 0 |
 | pressure solver | 9 | 4 | 0 | 2 | 3 | 0 |
 | pressure-velocity coupling | 6 | 1 | 0 | 0 | 5 | 0 |

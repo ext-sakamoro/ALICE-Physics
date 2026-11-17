@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478
+//! 8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df
 //! ```
 //!
 //! # Entries
@@ -188,6 +188,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "cloth fold",
         hex32("0171621f0d1bd1502695bb6a6cab8dbd39fcf3f8b00c22433eaaadb25f408c4b"),
+    ),
+    // the particle fluid's own bits: boundary particles, a free block pulled in, and SDF
+    // solids as density maps with the force on each solid (the normal split at a foot)
+    (
+        "fluid pbf",
+        hex32("bee62aa158808dcddf79c6f060fb9d1810776162fea30f8ed37c6ff3632a4a0a"),
     ),
     (
         "physics2d",
@@ -1224,10 +1230,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478`.
+/// Hex: `8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("22601794bdf384ce1bce77508eade7065924b5fe2a3626d202ae26c867a89478");
+    hex32("8b71c956d92afa7163cf4d3c240f99668e3e4138919f70f8ded64b26a58a43df");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
