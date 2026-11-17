@@ -13,7 +13,7 @@
 //!
 //! # MODEL
 //!
-//! Equations (Macklin & Muller 2013, with the changes listed under "departures"):
+//! **Equations.** Macklin & Muller 2013, with the changes listed under "approximations":
 //!
 //! - density `rho_i = sum_j m W(x_i - x_j)` over fluid neighbours and fixed boundary
 //!   particles (Akinci et al. 2012), poly6 kernel normalised to `integral W dV = 1`
@@ -26,16 +26,21 @@
 //! - XSPH viscosity `v_i += c sum_j (m / rho_0) W_ij (v_j - v_i)` over fluid neighbours,
 //!   an added kinematic viscosity of order `nu = c h^2 / dt`
 //!
-//! Units: SI (m, s, kg). Conserved: total fluid momentum under the pairwise corrections
-//! (boundary particles are fixed and take momentum out, as a wall does).
+//! **Units.** SI (m, s, kg); `eps` and the surface weights are unit-free.
 //!
-//! Departures from the paper, each measured on a 4x8x4 column at `h = 2 s` with the
-//! default iteration and substep counts:
+//! **Conservation.** Total fluid momentum is conserved by the pairwise corrections; boundary
+//! particles and density-map solids are fixed and take momentum out, as a wall does (the
+//! force they take is reported by [`Fluid::boundary_force`] and [`Fluid::body_forces`]).
+//! Mass is conserved exactly (particles are neither made nor removed). Kinetic energy is not
+//! conserved: XSPH dissipates it at the rate of the added viscosity below.
 //!
-//! - **lattice-calibrated mass**: the default `particle_mass` makes the rest lattice
+//! **Approximations.** Departures from the paper, each measured on a 4x8x4 column at
+//! `h = 2 s` with the default iteration and substep counts:
+//!
+//! - lattice-calibrated mass: the default `particle_mass` makes the rest lattice
 //!   exactly `rho_0` (`m s^3 = rho_0 s^3` gives `1.010 rho_0` at `h = 2 s`, and that 1 %
 //!   pushes a free block upward without bound); see [`FluidConfig::lattice_mass`]
-//! - **two-sided interior, one-sided surface**: the paper clamps `C >= 0` everywhere,
+//! - two-sided interior, one-sided surface: the paper clamps `C >= 0` everywhere,
 //!   which leaves interior particles with no restoring force for `C < 0` and makes a
 //!   column under gravity chatter. Here the negative branch is kept and weighted by
 //!   `w_i = max(0, 1 - g_i / g_cut)^2`, where `g_i = h |sum_j (m / rho_0) grad W_ij|` is
@@ -43,32 +48,37 @@
 //!   surface `~0.8-0.95`); `w -> 0` recovers the paper's clamp at the surface. The
 //!   negative branch uses its own `eps_neg`. A neighbour count is not used: walls taller
 //!   than the fluid make the top layer next to them look interior.
-//! - **XSPH strength `c = 0.3`** (paper `0.01`): measured as the largest speed over the
+//! - XSPH strength `c = 0.3` (paper `0.01`): measured as the largest speed over the
 //!   last 60 of 300 frames of a column under gravity, `c = 0.1` gives 0.03-0.13 m/s and
 //!   bursts to 0.5 m/s over 900 frames, `c = 0.2` gives 0.04-0.13 m/s, `c = 0.3` gives
 //!   0.024 m/s (`s = 0.05`). More iterations (20) or substeps (4, 8) did not remove the
 //!   chatter at `c = 0.1`.
-//! - **settling time grows with the scale** at `c = 0.3`, `h = 2 s`, 2 substeps: largest
+//! - settling time grows with the scale at `c = 0.3`, `h = 2 s`, 2 substeps: largest
 //!   speed over the last 60 frames of the 4x8x4 column after 300 / 600 / 900 frames is
 //!   0.003 / 0.0000 / 0.0000 m/s at `s = 0.05`, 0.22 / 0.026 / 0.036 at `s = 0.075`,
 //!   0.16 / 0.13 / 0.025 at `s = 0.1` (the default). Density error (0.2-0.3 %) and the
 //!   floor reaction (weight to 0.3 %) do not depend on it.
-//! - **artificial pressure off by default**: `s_corr` pushes every pair apart and makes a
+//! - artificial pressure off by default: `s_corr` pushes every pair apart and makes a
 //!   free block expand (1.68x its height in 60 frames); kept as `artificial_pressure`
 //!   (`k`, with `n = 4` and `dq = 0.2 h`, in `lambda` units).
 //!
-//! Validity: weakly compressible water-like fluids at `h ~ 2 s`, frame `dt` up to 1/60 s
+//! **Range.** Weakly compressible water-like fluids at `h ~ 2 s`, frame `dt` up to 1/60 s
 //! with two substeps; density error of a resting column under gravity is ~0.3 %. Not
 //! valid for free surfaces without boundary particles below them (particles near an
 //! unsupported wall see too few neighbours and sink).
 //!
-//! Verified by `tests/analytic_fluid_pbf_density.rs`: hydrostatics two ways, the floor
-//! reaction against the weight `M g` (1.00006 at 900 frames) and the force on a side
-//! wall against the integral of the linear pressure, `rho_0 g H^2 D / 2` with
-//! `H = M / (rho_0 W D)` (1.035; the floor balance holds for any pressure profile, the
+//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_to_the_rest_density::floor_reaction_scales_with_the_particle_mass::side_wall_carries_the_hydrostatic_force::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
+//! reaction against the weight M g (1.00006 at 900 frames) and the force on a side
+//! wall against the integral of the linear pressure, rho_0 g H^2 D / 2 with
+//! H = M / (rho_0 W D) (1.035; the floor balance holds for any pressure profile, the
 //! wall force only for a linear one); column density; a resting block staying at rest;
-//! a block laid out 15 % wide contracting to `rho_0`; the same answer at 4 substeps and
+//! a block laid out 15 % wide contracting to rho_0; the same answer at 4 substeps and
 //! at 2.5x the mass.
+//!
+//! **Tiers.** L0 only.
+//!
+//! **Known defects.** `tests/analytic_fluid_pbf_density.rs::submerged_cube_feels_the_archimedes_force`:
+//! a cube of boundary particles in place of fluid is pushed up by 1.535 rho_0 g V.
 //!
 //! Author: Moroya Sakamoto
 
@@ -233,6 +243,18 @@ fn spiky_grad(r: Fix128, h: Fix128) -> Fix128 {
     -coeff * diff * diff
 }
 
+/// The poly6 kernel, for the boundary density maps
+#[cfg(feature = "std")]
+pub(crate) fn poly6_kernel(r_sq: Fix128, h: Fix128) -> Fix128 {
+    poly6(r_sq, h)
+}
+
+/// The spiky kernel gradient magnitude, for the boundary density maps
+#[cfg(feature = "std")]
+pub(crate) fn spiky_grad_kernel(r: Fix128, h: Fix128) -> Fix128 {
+    spiky_grad(r, h)
+}
+
 // ============================================================================
 // Fluid Simulation
 // ============================================================================
@@ -267,6 +289,12 @@ pub struct Fluid {
     boundary_force: Vec3Fix,
     /// Per boundary particle: the force it exerted on the fluid in the last substep
     boundary_forces: Vec<Vec3Fix>,
+    /// Static solids given by their SDF, coupled through density maps
+    /// (see [`crate::fluid_boundary_map`])
+    #[cfg(feature = "std")]
+    bodies: Vec<crate::fluid_boundary_map::FluidBody>,
+    /// Per solid: the force the fluid exerted on it in the last substep
+    body_forces: Vec<Vec3Fix>,
 }
 
 impl Fluid {
@@ -306,6 +334,98 @@ impl Fluid {
             negative_weights: vec![Fix128::ONE; n],
             boundary_force: Vec3Fix::ZERO,
             boundary_forces: Vec::new(),
+            #[cfg(feature = "std")]
+            bodies: Vec::new(),
+            body_forces: Vec::new(),
+        }
+    }
+
+    /// Add a static solid given by its SDF: its boundary density map is built over the box
+    /// `[lo, hi]` (world space; it must contain every point within the kernel radius of the
+    /// solid that fluid can reach) with grid step `rest_spacing / 4`. The solid then adds to
+    /// the density and constraint gradient of nearby fluid particles, and the force the fluid
+    /// exerts on it is read with [`Fluid::body_forces`] (see the MODEL of
+    /// [`crate::fluid_boundary_map`]).
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn with_sdf_body(mut self, sdf: SdfCollider, lo: Vec3Fix, hi: Vec3Fix) -> Self {
+        let step = self.config.rest_spacing / Fix128::from_int(4);
+        let map = crate::fluid_boundary_map::BoundaryMap::from_sdf(
+            &sdf,
+            lo,
+            hi,
+            step,
+            self.config.rest_density,
+            self.config.kernel_radius,
+        );
+        self.bodies
+            .push(crate::fluid_boundary_map::FluidBody::new(sdf, map));
+        self
+    }
+
+    /// Force (N) the fluid exerted on each solid added with [`Fluid::with_sdf_body`] during
+    /// the last substep, in the order they were added. Their sum is minus the solids' part of
+    /// [`Fluid::boundary_force`]. Empty before the first step.
+    #[must_use]
+    pub fn body_forces(&self) -> &[Vec3Fix] {
+        &self.body_forces
+    }
+
+    /// Number of solids added with [`Fluid::with_sdf_body`]
+    #[must_use]
+    pub fn body_count(&self) -> usize {
+        #[cfg(feature = "std")]
+        {
+            self.bodies.len()
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            0
+        }
+    }
+
+    /// `rho_B` and `grad rho_B` of every solid at `p`, appended to `out`
+    #[allow(
+        unused_variables,
+        reason = "the arguments are read only with feature `std`, which holds the solids"
+    )]
+    fn sample_bodies(&self, p: Vec3Fix, out: &mut Vec<(Fix128, Vec3Fix)>) {
+        #[cfg(feature = "std")]
+        for body in &self.bodies {
+            out.push(body.map().sample(p));
+        }
+    }
+
+    /// Unit outward normal of solid `k` at `p`
+    #[allow(
+        unused_variables,
+        reason = "the arguments are read only with feature `std`, which holds the solids"
+    )]
+    fn body_normal(&self, k: usize, p: Vec3Fix) -> Vec3Fix {
+        #[cfg(feature = "std")]
+        {
+            crate::fluid_boundary_map::sdf_normal(self.bodies[k].sdf(), p)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            Vec3Fix::ZERO
+        }
+    }
+
+    /// The share of `total` that solid `b` takes when two solids are near a particle (see
+    /// [`crate::fluid_boundary_map::split_two`]); `None` keeps each solid's own push
+    #[allow(
+        unused_variables,
+        reason = "the arguments are read only with feature `std`, which holds the solids"
+    )]
+    fn split_pair(total: Vec3Fix, n_a: Vec3Fix, n_b: Vec3Fix, share_b: Fix128) -> Option<Vec3Fix> {
+        #[cfg(feature = "std")]
+        {
+            crate::fluid_boundary_map::split_two(total, n_a, n_b, share_b)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            None
         }
     }
 
@@ -462,6 +582,8 @@ impl Fluid {
         }
         self.grid.build();
         let mut neighbors_buf = Vec::new();
+        let mut body_buf: Vec<(Fix128, Vec3Fix)> = Vec::new();
+        let n_bodies = self.body_count();
         let cutoff = self.config.surface_gradient_cutoff;
         for i in 0..n {
             if cutoff <= Fix128::ZERO {
@@ -482,6 +604,11 @@ impl Fluid {
                 }
                 let r = r_sq.sqrt();
                 gradient = gradient + delta / r * (spiky_grad(r, h) * vol);
+            }
+            body_buf.clear();
+            self.sample_bodies(self.positions[i], &mut body_buf);
+            for &(_, g_b) in &body_buf {
+                gradient = gradient + g_b * self.inv_rest_density;
             }
             let g = gradient.length() * h;
             let w = Fix128::ONE - g / cutoff;
@@ -517,6 +644,8 @@ impl Fluid {
         let mut corrections = vec![Vec3Fix::ZERO; n];
         let mut total_correction = Vec3Fix::ZERO;
         let mut wall_corrections = vec![Vec3Fix::ZERO; self.boundary.len()];
+        let mut body_corrections = vec![Vec3Fix::ZERO; n_bodies];
+        let mut body_samples = vec![(Fix128::ZERO, Vec3Fix::ZERO); n * n_bodies];
         for _ in 0..self.config.iterations {
             for i in 0..n {
                 self.grid
@@ -536,6 +665,16 @@ impl Fluid {
                         let grad = delta / r * (spiky_grad(r, h) * vol);
                         grad_i = grad_i + grad;
                         sum_grad_sq = sum_grad_sq + grad.length_squared();
+                    }
+                }
+
+                if n_bodies > 0 {
+                    body_buf.clear();
+                    self.sample_bodies(self.predicted[i], &mut body_buf);
+                    for (k, &(r_b, g_b)) in body_buf.iter().enumerate() {
+                        density = density + r_b;
+                        grad_i = grad_i + g_b * self.inv_rest_density;
+                        body_samples[i * n_bodies + k] = (r_b, g_b);
                     }
                 }
 
@@ -585,7 +724,55 @@ impl Fluid {
                     }
                     correction = correction + grad * lambda_sum;
                 }
-                *slot = correction * vol * self.config.relaxation;
+                let mut correction = correction * vol * self.config.relaxation;
+                if n_bodies > 0 {
+                    let scale = self.lambdas[i] * self.inv_rest_density * self.config.relaxation;
+                    let samples = &body_samples[i * n_bodies..(i + 1) * n_bodies];
+                    let mut total = Vec3Fix::ZERO;
+                    let mut near = [usize::MAX; 2];
+                    let mut near_count = 0usize;
+                    for (k, &(r_b, g_b)) in samples.iter().enumerate() {
+                        total = total + g_b * scale;
+                        if !r_b.is_zero() {
+                            if near_count < 2 {
+                                near[near_count] = k;
+                            }
+                            near_count += 1;
+                        }
+                    }
+                    correction = correction + total;
+                    // share the solids' push (see the fluid_boundary_map MODEL); the last
+                    // share is the total minus the others, so the shares sum to it exactly
+                    let mut split = None;
+                    if near_count == 2 {
+                        let (a, b) = (near[0], near[1]);
+                        let (r_a, _) = samples[a];
+                        let (r_b, _) = samples[b];
+                        let share_b = r_b / (r_a + r_b);
+                        let n_a = self.body_normal(a, self.predicted[i]);
+                        let n_b = self.body_normal(b, self.predicted[i]);
+                        if let Some(to_b) = Self::split_pair(total, n_a, n_b, share_b) {
+                            split = Some((a, b, to_b));
+                        }
+                    }
+                    if let Some((a, b, to_b)) = split {
+                        body_corrections[b] = body_corrections[b] + to_b;
+                        body_corrections[a] = body_corrections[a] + (total - to_b);
+                    } else {
+                        let mut credited = Vec3Fix::ZERO;
+                        let last = samples.len() - 1;
+                        for (k, &(_, g_b)) in samples.iter().enumerate() {
+                            let own = if k == last {
+                                total - credited
+                            } else {
+                                g_b * scale
+                            };
+                            credited = credited + own;
+                            body_corrections[k] = body_corrections[k] + own;
+                        }
+                    }
+                }
+                *slot = correction;
             }
             for (p, c) in self.predicted.iter_mut().zip(&corrections) {
                 *p = *p + *c;
@@ -601,6 +788,11 @@ impl Fluid {
         self.boundary_forces = wall_corrections
             .into_iter()
             .map(|c| c * force_per_correction)
+            .collect();
+        // the solids receive the reaction of the corrections they gave the fluid
+        self.body_forces = body_corrections
+            .into_iter()
+            .map(|c| -(c * force_per_correction))
             .collect();
 
         // 4. Update velocities and positions
@@ -850,6 +1042,7 @@ impl core::fmt::Debug for Fluid {
             .field("config", &self.config)
             .field("inv_rest_density", &self.inv_rest_density)
             .field("boundary", &format_args!("[{} items]", self.boundary.len()))
+            .field("bodies", &self.body_count())
             .field("reference_gradient_sq", &self.reference_gradient_sq)
             .finish()
     }
@@ -1084,6 +1277,106 @@ mod tests {
             Vec3Fix::ZERO,
             crate::math::QuatFix::IDENTITY,
         )
+    }
+
+    /// Static solid from an exact SDF and its unit normal, both in world space
+    #[cfg(feature = "std")]
+    fn static_solid(
+        d: impl Fn(f32, f32, f32) -> f32 + Send + Sync + 'static,
+        n: impl Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync + 'static,
+    ) -> crate::sdf_collider::SdfCollider {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        SdfCollider::new_static(
+            Box::new(ClosureSdf::new(d, n)),
+            Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        )
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_floor_and_walls_as_two_solids_carry_the_weight_and_balance_the_fluid_side() {
+        // oracle: a block at rest in a square well, its floor one density-map solid and its
+        // four side walls another, is carried by its weight M g (the walls carry no vertical
+        // load at rest); the solids' forces sum to minus the fluid-side total (Newton 3, the
+        // particles at the foot of a wall go through the two-solid split); no particle
+        // goes deeper into a solid than the map's indicator band
+        let config = FluidConfig {
+            iterations: 4,
+            ..FluidConfig::default()
+        };
+        let sp = config.rest_spacing;
+        let h = config.kernel_radius;
+        let half = sp / Fix128::from_int(2);
+        let side = Fix128::from_int(3) * sp;
+        let w = side.to_f64() as f32;
+        let floor = static_solid(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+        // distance to the nearest side wall of the well [0, w]^2 in x and z
+        let walls = static_solid(
+            move |x, _, z| x.min(w - x).min(z).min(w - z),
+            move |x, _, z| {
+                let m = x.min(w - x).min(z).min(w - z);
+                if m == x {
+                    (1.0, 0.0, 0.0)
+                } else if m == w - x {
+                    (-1.0, 0.0, 0.0)
+                } else if m == z {
+                    (0.0, 0.0, 1.0)
+                } else {
+                    (0.0, 0.0, -1.0)
+                }
+            },
+        );
+        let lo = Vec3Fix::new(-h, -h, -h);
+        let hi = Vec3Fix::new(side + h, side + h, side + h);
+        let mut f = Fluid::new_block(
+            Vec3Fix::new(half, half, half),
+            Vec3Fix::new(side - half, side - half, side - half),
+            sp,
+            config,
+        )
+        .with_sdf_body(floor, lo, hi)
+        .with_sdf_body(walls, lo, hi);
+        assert_eq!(f.body_count(), 2);
+        assert!(f.body_forces().is_empty(), "no force before the first step");
+        let frames = 240;
+        let mut carried = 0.0;
+        let mut newton = 0.0_f64;
+        for frame in 0..frames {
+            f.step(Fix128::from_ratio(1, 60));
+            let bf = f.body_forces();
+            assert_eq!(bf.len(), 2);
+            let sum = bf[0] + bf[1] + f.boundary_force();
+            let scale = f.boundary_force().length().to_f64().max(1e-30);
+            newton = newton.max(sum.length().to_f64() / scale);
+            if frame >= frames - 60 {
+                carried += -(bf[0].y + bf[1].y).to_f64() / 60.0;
+            }
+        }
+        let weight = f.particle_count() as f64 * config.particle_mass.to_f64() * 10.0;
+        assert!(newton < 1e-9, "solids vs fluid-side total: {newton}");
+        assert!(
+            (carried / weight - 1.0).abs() < 0.05,
+            "weight carried by the solids / M g = {}",
+            carried / weight
+        );
+        // the map smooths each solid's indicator over half a grid step either side of its
+        // surface (grid step rest_spacing / 4), so no centre goes deeper than that
+        let w = side.to_f64();
+        let deepest = f
+            .positions
+            .iter()
+            .map(|p| {
+                let (x, y, z) = (p.x.to_f64(), p.y.to_f64(), p.z.to_f64());
+                y.min(x).min(z).min(w - x).min(w - z)
+            })
+            .fold(f64::MAX, f64::min);
+        let band = sp.to_f64() / 8.0;
+        assert!(
+            deepest > -band,
+            "a particle went {} m into a solid (band {band} m)",
+            -deepest
+        );
     }
 
     /// 単位球からの符号付き距離 (f32 oracle)

@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 130 |
+| standalone | a Rust API that only examples call | 131 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -107,7 +107,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `filter` | standalone (step 3, binding 1 of 18 items) | 3 / 0 / 1 / 14 / 0 | C ABI, Python, WebAssembly |
 | `flow_viz` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `fluid` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `fluid` | standalone | 0 / 0 / 0 / 17 / 0 | — |
+| `fluid_boundary_map` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `fluid_netcode` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `fracture` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fsi_advanced` | standalone | 0 / 0 / 0 / 5 / 0 | — |

@@ -9,6 +9,7 @@ A	src/eulerian_grid.rs
 A	src/eulerian_grid/multigrid_decomposed.rs
 A	src/eulerian_grid/rank_threads.rs
 A	src/fluid.rs
+A	src/fluid_boundary_map.rs
 A	src/fsi_advanced.rs
 A	src/interface_capture.rs
 A	src/multiphase.rs

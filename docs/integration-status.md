@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2845 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2867 |
 | live | reached without examples (crate-internal roots or a binding) | 905 |
-| | **total** | **3781** |
+| | **total** | **3803** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2845)
+## L1 — example-only (2867)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -168,7 +168,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/fillet_stress.rs`: `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`, `kt_shaft_shoulder_bending`, `kt_u_notch_axial`, `recommended_fillet_radius_mm`
 - `src/filter.rs`: `ALL`, `CollisionFilter::ALL`, `CollisionFilter::new`, `CollisionFilter::with_group`, `DEBRIS`, `DEFAULT`, `ENEMY`, `KINEMATIC`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`
 - `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `Streamlines::is_empty`, `Streamlines::len`, `Streamlines::line`, `generate_flow_arrows`, `generate_streamlines`
-- `src/fluid.rs`: `Fluid`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `Fluid::step_with_sdf`, `FluidConfig`
+- `src/fluid.rs`: `Fluid`, `Fluid::body_count`, `Fluid::body_forces`, `Fluid::boundary_force`, `Fluid::boundary_forces`, `Fluid::box_boundary`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `Fluid::step_with_sdf`, `Fluid::with_boundary`, `Fluid::with_sdf_body`, `FluidConfig`, `FluidConfig::lattice_mass`, `poly6_kernel`, `spiky_grad_kernel`
+- `src/fluid_boundary_map.rs`: `BoundaryMap`, `BoundaryMap::from_sdf`, `BoundaryMap::node_count`, `BoundaryMap::sample`, `FluidBody`, `FluidBody::map`, `FluidBody::new`, `FluidBody::sdf`, `GRAM_MIN`, `sdf_distance`, `sdf_normal`, `split_two`
 - `src/fluid_netcode.rs`: `FluidDelta`, `FluidDelta::apply`, `FluidDelta::changed_count`, `FluidDelta::compression_ratio`, `FluidDelta::compute`, `FluidSnapshot`, `FluidSnapshot::capture`, `FluidSnapshot::restore`, `FluidSnapshot::size_bytes`, `FluidSnapshot::verify`
 - `src/force.rs`: `ForceFieldInstance::with_affected_bodies`
 - `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `FractureModifier::PARTICIPANT_KIND`, `FractureModifier::active_crack_count`, `FractureModifier::apply_stress_at`, `FractureModifier::new`, `FractureModifier::stress_at`
