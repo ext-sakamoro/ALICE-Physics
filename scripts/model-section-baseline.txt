@@ -29,7 +29,6 @@ src/eulerian_grid/multigrid_decomposed.rs
 src/eulerian_grid/rank_threads.rs
 src/fatigue.rs
 src/fillet_stress.rs
-src/fluid.rs
 src/force.rs
 src/fracture.rs
 src/fsi_advanced.rs
