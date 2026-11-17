@@ -28,8 +28,10 @@ const RES: usize = 7;
 /// `(−2⁻⁶⁴, 0)` became `−2⁻⁶⁴` and never vanished, and the sheet's first identity step was
 /// frame 480; with the product rounded to nearest, every correction within `±2⁻⁶⁵` is zero,
 /// and the sheet reaches it at frame 485 (measured; the change of the product alone gives
-/// the same frame, the contact solve plays no part in a free sheet).
-const FIRST_IDENTITY_STEP: u32 = 485;
+/// the same frame, the contact solve plays no part in a free sheet). With the bend term's fold
+/// branch (a hinge folded onto itself is unfolded instead of kept) the dragged corner's fold
+/// is undone and the sheet reaches it at frame 494 (measured).
+const FIRST_IDENTITY_STEP: u32 = 494;
 
 fn sheet() -> Cloth {
     let mut c = Cloth::new_grid(
@@ -295,4 +297,5 @@ fn trajectory_digest_with_sleep_is_pinned() {
 
 // from Physics main bc76ee2d without any sleep code: the same scene never slept (release by
 // restoring the inverse mass by hand), 540 frames
-const TRAJECTORY_DIGEST: &str = "2d99d5f030cf87123f5098985ec8fe6bbc63ddd7ecc5464f5fb997785bcfa9a9";
+// re-pinned with the bend term's fold branch (the dragged sheet's fold is unfolded)
+const TRAJECTORY_DIGEST: &str = "0d2896d4ef6a7cad9dbe54ab2adf1086207bbf3ca54145dccd829ed7090a55e0";

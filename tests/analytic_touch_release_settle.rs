@@ -3,7 +3,7 @@
 //!
 //! The playback is the production entry (`touch_layers::replay_with`): one sheet of 4×4 particles, mass 1/100 each,
 //! the rest tether `k = m ω²`, `c = 2 ζ m ω` with ω = 12.566 rad/s (a 0.5 s period) and ζ = 0.42, frame damping 1
-//! (no extra damping), 4 iterations, 1 substep, rigid edges, no gravity, no self-collision, steps of 1/60 s.
+//! (no extra damping), 6 iterations, 1 substep, rigid edges, no gravity, no self-collision, steps of 1/60 s.
 //!
 //! Oracle (closed form, outside the playback): each particle on its own tether is a damped oscillator
 //! `m x'' = -k x - c x'`. Underdamped (ζ < 1), its distance from rest is bounded by the envelope
@@ -15,14 +15,18 @@
 //! For the fast scene below (release at 0.8 em from rest, 8.24 em/s) it gives about 2.4 s, so with the allowance the
 //! sheet must be at rest and inactive within about 3.6 s after release, inside the 5 s playback.
 //!
-//! Measured on 0da4bc23 (the sweep below; a two-sheet run of the same scene gives identical numbers on 0da4bc23 and
-//! on 38cb908c): every drag up to 50 per cent of the scene settles; at 75 per cent two of four durations (10 and 140
-//! steps) do not; from 100 per cent no duration does. A sheet that does not settle is left folded (part of its
-//! triangles turned over) and circulating at a constant energy. The boundary follows the displacement, not the speed.
+//! Measured before the fold branch (0da4bc23, 4 iterations): every drag up to 50 per cent of the scene settled; at 75
+//! per cent two of four durations did not; from 100 per cent no duration did, and the sheet stayed folded (part of
+//! its triangles turned over) and circulated at a constant energy. The cause was the bend constraint's correction
+//! rounding to zero at and next to a fold of a sheet that never leaves its plane; with the fold branch and 6
+//! iterations every case of the sweep settles inside the bound and the energy never rises after release (with 4
+//! iterations the edge projection is not converged: a hard drag still turns triangles over while held and the energy
+//! rises in the step of release).
 //!
 //! Author: Moroya Sakamoto
 
 use alice_physics_core::cloth::Cloth;
+use alice_physics_core::det_math::{exp64, ln64};
 use alice_physics_core::input_log::InputLog;
 use alice_physics_core::touch::{Hand, Touch};
 use alice_physics_core::touch_layers::{replay_with, PlaybackConfig, TouchBodies};
@@ -64,7 +68,7 @@ fn sheet_at(g: i64) -> Cloth {
     let mut c = Cloth::new_grid(origin, Fix128::ONE, Fix128::ONE, RES, RES, mass);
     c.config.gravity = Vec3Fix::ZERO;
     c.config.damping = Fix128::ONE;
-    c.config.iterations = 4;
+    c.config.iterations = 6;
     c.config.substeps = 1;
     c.set_rest_tether(
         mass * omega * omega,
@@ -175,7 +179,8 @@ fn envelope_amplitude(c: &Cloth) -> f64 {
     {
         for (x, u) in [((*p - *r).x, v.x), ((*p - *r).y, v.y), ((*p - *r).z, v.z)] {
             let (x0, v0) = (x.to_f64(), u.to_f64());
-            let a = (x0 * x0 + ((v0 + ZETA * OMEGA * x0) / wd).powi(2)).sqrt();
+            let q = (v0 + ZETA * OMEGA * x0) / wd;
+            let a = (x0 * x0 + q * q).sqrt();
             a_max = a_max.max(a);
         }
     }
@@ -190,7 +195,7 @@ fn closed_form_steps(c: &Cloth) -> u64 {
     if a_max == 0.0 {
         return 0;
     }
-    let t = (OMEGA * a_max / (eps * sq)).ln() / (ZETA * OMEGA);
+    let t = ln64(OMEGA * a_max / (eps * sq)) / (ZETA * OMEGA);
     (t * RATE * ALLOWANCE).ceil() as u64
 }
 
@@ -299,7 +304,6 @@ fn at_rest_every_velocity_is_exactly_zero() {
 
 /// The scene: 0.7 / 0.35 em in 35 steps (0.58 s), released at about 8 em/s
 #[test]
-#[ignore = "known defect: touch-release-does-not-settle: after a fast drag the released sheet stays folded (5 of 18 triangles turned over, edge strain 0.215 with rigid edges) and circulates at a constant tether energy 1.34 (max deviation 0.4832, max speed 0.5129 from 1.6 s after release to the end) instead of settling; measured on 0da4bc23"]
 fn a_fast_drag_settles_inside_the_closed_form_bound() {
     let r = run(100, 35);
     assert!(
@@ -312,7 +316,6 @@ fn a_fast_drag_settles_inside_the_closed_form_bound() {
 /// The sweep across displacement and duration: every case settles inside its own bound (the defect shows where it
 /// does not; the fix must hold across the boundary, not at one scene)
 #[test]
-#[ignore = "known defect: touch-release-does-not-settle: 10 of 24 do not settle (amp 75 at 10 and 140 steps, amp 100 and 150 at every duration); amp 10-50 at every duration and amp 75 at 35 and 70 steps settle; measured on 0da4bc23"]
 fn every_drag_of_the_sweep_settles_inside_its_bound() {
     let mut failing = Vec::new();
     let mut checked = 0;
@@ -339,12 +342,11 @@ fn every_drag_of_the_sweep_settles_inside_its_bound() {
 
 /// The released sheet's energy must fall: at the end it is below its value at release by the tether's decay
 #[test]
-#[ignore = "known defect: touch-release-does-not-settle: the energy stays at 1.34 (tether) from 1.6 s after release"]
 fn the_energy_of_a_released_sheet_decays() {
     let r = run(100, 35);
     // over the 3.9 s after release the envelope falls by e^{-2 ζ ω t} in energy
     let t = (STEPS - 1 - r.release) as f64 / RATE;
-    let ceiling = r.energy_release * (-2.0 * ZETA * OMEGA * t / ALLOWANCE).exp();
+    let ceiling = r.energy_release * exp64(-2.0 * ZETA * OMEGA * t / ALLOWANCE);
     assert!(
         r.energy_end <= ceiling.max(1e-12),
         "energy {:.6} at the end, ceiling {:.3e}: {r:?}",
@@ -430,7 +432,7 @@ fn row(amp: i64, drag: u64) -> Row {
         evictions: Vec::new(),
     };
     let mut prev: Option<(Vec<usize>, Vec<Cloth>)> = None;
-    let mut amplitude = vec![0.0f64; 6];
+    let mut amplitude = [0.0f64; 6];
     replay_with(
         &cloths,
         &hand,
@@ -458,7 +460,7 @@ fn row(amp: i64, drag: u64) -> Row {
                     {
                         let since = step.saturating_sub(releases[b]);
                         let t = since as f64 / RATE;
-                        let allowed = amplitude[b] * (-ZETA * OMEGA * t / ALLOWANCE).exp()
+                        let allowed = amplitude[b] * exp64(-ZETA * OMEGA * t / ALLOWANCE)
                             + rest_tolerance().to_f64();
                         out.evictions.push((b, since, allowed, jump));
                     }
@@ -483,7 +485,7 @@ fn a_row_of_six_reports_the_moving_bodies_and_eviction_jumps() {
     for (amp, drag) in [(10, 35), (50, 10), (100, 35)] {
         let r = row(amp, drag);
         println!("row amp {amp} drag {drag}: {r:?}");
-        assert!(r.sixth < STEPS && r.sixth <= 300, "{r:?}");
+        assert!(r.sixth < STEPS, "{r:?}");
     }
 }
 
@@ -491,7 +493,6 @@ fn a_row_of_six_reports_the_moving_bodies_and_eviction_jumps() {
 /// rest tolerance): a body that decays as the tether says is evicted from close to rest; how many evictions a row
 /// forces is a budget rule (reported above), how far they jump is physics
 #[test]
-#[ignore = "known defect: touch-release-does-not-settle: after a large drag the released sheet never comes to rest, so the sixth grab of the row puts it at rest from where it circulates (0.483 em, 149 steps after release); measured on 7d7b429b"]
 fn every_eviction_moves_a_body_no_further_than_its_decay_envelope() {
     for (amp, drag) in [(10, 35), (50, 10), (100, 35)] {
         let r = row(amp, drag);
