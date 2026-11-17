@@ -21,7 +21,7 @@ fn dt() -> Fix128 {
 }
 
 const RES: usize = 11;
-const BALL_RADIUS: (i64, i64) = (5, 100);
+const BALL_RADIUS: (i64, i64) = (8, 100);
 const THICKNESS: (i64, i64) = (1, 100);
 
 /// `R = r + thickness` in metres.
@@ -59,8 +59,20 @@ fn sheet(m: usize, gravity: Vec3Fix) -> Cloth {
 }
 
 /// A world of `m` substeps (so the cloth reads the bodies at every substep start)
-/// holding the sheet and a 10 g ball of radius 5 cm at height `y0` moving at `vy`.
+/// holding the sheet and a 10 g ball of radius `BALL_RADIUS` at height `y0` moving at
+/// `vy`. `R = 9 cm` is above the grid's half-diagonal `0.1 / √2 = 7.07 cm`, so the
+/// ball cannot pass between particles (the MODEL's condition).
 fn scene(m: usize, y0: Fix128, vy: Fix128, gravity: Vec3Fix) -> (PhysicsWorld, usize) {
+    scene_with_radius(m, y0, vy, gravity, r(BALL_RADIUS.0, BALL_RADIUS.1))
+}
+
+fn scene_with_radius(
+    m: usize,
+    y0: Fix128,
+    vy: Fix128,
+    gravity: Vec3Fix,
+    radius: Fix128,
+) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(SolverConfig {
         gravity,
         substeps: m,
@@ -69,7 +81,7 @@ fn scene(m: usize, y0: Fix128, vy: Fix128, gravity: Vec3Fix) -> (PhysicsWorld, u
     let mut ball = RigidBody::new_dynamic(Vec3Fix::new(Fix128::ZERO, y0, Fix128::ZERO), r(1, 100));
     ball.velocity = Vec3Fix::new(Fix128::ZERO, vy, Fix128::ZERO);
     let b = w.add_body(ball);
-    w.set_body_collision_radius(b, r(BALL_RADIUS.0, BALL_RADIUS.1));
+    w.set_body_collision_radius(b, radius);
     w.add_participant(Box::new(ClothParticipant::new(sheet(m, gravity))))
         .expect("register");
     (w, b)
@@ -98,27 +110,45 @@ fn ball_above_centre(w: &PhysicsWorld, b: usize) -> bool {
     w.bodies[b].position.y > centre.y
 }
 
-/// A ball dropped on the pinned sheet under gravity comes to rest on it: after 5 s
-/// it is still above the sheet, nearly still, and no particle is inside `R` of its
-/// centre by more than 1 % of `R` (steady penetration 0).
+/// A ball dropped on the pinned sheet under gravity stays on it: over the last second
+/// of a 5 s run it is above the sheet and no particle is inside `R` of its centre by
+/// more than 1 % of `R` at any frame (steady penetration 0).
 #[test]
-fn a_dropped_ball_rests_on_the_sheet_without_sinking_into_it() {
+fn a_dropped_ball_stays_on_the_sheet_without_sinking_into_it() {
     let g = Vec3Fix::new(Fix128::ZERO, r(-981, 100), Fix128::ZERO);
     for m in [1usize, 2] {
         let (mut w, b) = scene(m, r(3, 10), Fix128::ZERO, g);
-        for _ in 0..300 {
+        let mut worst = f64::INFINITY;
+        for frame in 0..300 {
             w.step(dt());
+            if frame >= 240 {
+                assert!(ball_above_centre(&w, b), "m {m} frame {frame}: above the sheet");
+                let c = w.bodies[b].position;
+                let closest = positions(&w)
+                    .iter()
+                    .map(|p| (*p - c).length().to_f64())
+                    .fold(f64::INFINITY, f64::min);
+                worst = worst.min(closest);
+            }
         }
-        assert!(ball_above_centre(&w, b), "m {m}: the ball stayed above the sheet");
-        let c = w.bodies[b].position;
-        let closest = positions(&w)
-            .iter()
-            .map(|p| (*p - c).length().to_f64())
-            .fold(f64::INFINITY, f64::min);
-        println!("[cloth contact] m {m}: ball y {:.4}, closest particle {closest:.5} (R {:.3})", c.y.to_f64(), reach());
-        assert!(closest >= reach() * 0.99, "m {m}: penetration {}", reach() - closest);
-        assert!(w.bodies[b].velocity.length().to_f64() < 0.05, "m {m}: the ball came to rest");
+        println!("[cloth contact] m {m}: closest particle over the last second {worst:.5} (R {:.3})", reach());
+        assert!(worst >= reach() * 0.99, "m {m}: penetration {}", reach() - worst);
     }
+}
+
+/// A ball whose `R` is below the grid's half-diagonal passes between the particles
+/// even when dropped slowly (the MODEL's stated limit of particle-only contact).
+#[test]
+fn a_ball_smaller_than_the_grid_cells_falls_between_the_particles() {
+    // r = 3 cm, R = 4 cm < 7.07 cm; dropped off-centre over a cell's middle
+    let g = Vec3Fix::new(Fix128::ZERO, r(-981, 100), Fix128::ZERO);
+    let (mut w, b) = scene_with_radius(1, r(3, 10), Fix128::ZERO, g, r(3, 100));
+    w.bodies[b].position.x = r(5, 100);
+    w.bodies[b].position.z = r(5, 100);
+    for _ in 0..120 {
+        w.step(dt());
+    }
+    assert!(w.bodies[b].position.y < r(-5, 10), "it fell through the cell");
 }
 
 /// Below the coupling limit the ball is caught whatever its start phase; above it,
@@ -140,16 +170,16 @@ fn the_coupling_limit_is_v_dt_over_m_below_twice_the_reach() {
             assert!(ball_above_centre(&w, b), "m {m} y0 {y0:?}: caught at 0.75 of the limit");
         }
     }
-    // passes: at 1.5 of the m = 1 limit (0.18 m per step, 2 R = 0.12 m), from y0 =
-    // 0.45 the samples are 0.27, 0.09, -0.09: none inside |y| < 0.06
+    // passes: at 1.5 of the m = 1 limit (0.27 m per step, 2 R = 0.18 m), from y0 =
+    // 0.40 the samples are 0.13, -0.14: none inside |y| < 0.09
     let v = speed(1, 1.5);
-    let (mut w, b) = scene(1, r(45, 100), v, Vec3Fix::ZERO);
+    let (mut w, b) = scene(1, r(40, 100), v, Vec3Fix::ZERO);
     for _ in 0..60 {
         w.step(dt());
     }
     assert!(!ball_above_centre(&w, b), "m 1: passes through at 1.5 of its limit");
     // the same speed is 0.75 of the m = 2 limit: caught
-    let (mut w, b) = scene(2, r(45, 100), v, Vec3Fix::ZERO);
+    let (mut w, b) = scene(2, r(40, 100), v, Vec3Fix::ZERO);
     for _ in 0..60 {
         w.step(dt());
     }

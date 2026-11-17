@@ -17,8 +17,10 @@
 //! - **Range**: as [`Cloth::step`].
 //! - **Contact with the bodies**: after each cloth step every body is a sphere of
 //!   the world's collision radius `r` for it ([`SubstepCtx::body_radius`]); a particle
-//!   closer than `R = r + thickness` to its centre is pushed out along the centre line
-//!   by the depth `p`, the correction shared by inverse mass (`w_p` particle, `w_b`
+//!   closer than `R = r + thickness` to its centre is pushed out to `R` along the
+//!   direction it lay in from the centre at the start of the step (so a particle the
+//!   cloth's constraints pulled past the centre goes back to its own side) by the
+//!   depth `p` measured along that direction, the correction shared by inverse mass (`w_p` particle, `w_b`
 //!   body, 0 for a static or kinematic body), its velocity relative to the body loses
 //!   the inward normal part (inelastic, no friction), and a dynamic body is given the
 //!   reaction `F = −n · p / ((w_p + w_b) · h²)` with `h` the width of the call, so it
@@ -30,7 +32,10 @@
 //!   body can go from one side to the other between two steps.
 //! - **Approximations**: bodies are spheres of their collision radius (no box or
 //!   mesh shapes), no friction, contact only with particles (not with the triangle
-//!   faces between them); its own `gravity` is used.
+//!   faces between them), so a body holds on the cloth only while `R` is above the
+//!   largest distance from a point of the cloth to its nearest particle (for a square
+//!   grid of spacing `s`, `s / √2`); a smaller body can pass between particles. Its
+//!   own `gravity` is used.
 //! - **Tiers**: L0 only.
 //! - **Validation**: `tests/cloth_resident_compare.rs` (bit equality with the
 //!   world's own cloth step at one step per frame for any world substeps, the settle
@@ -106,8 +111,9 @@ impl Participant for ClothParticipant {
         }
         // work the contact out on a copy first: a fault leaves the cloth unchanged
         let mut next = self.cloth.clone();
+        let start = self.cloth.positions.clone();
         next.step_by_its_own(h);
-        let reactions = contact(&mut next, ctx, h).ok_or(ParticipantFault::OutOfRange)?;
+        let reactions = contact(&mut next, &start, ctx, h).ok_or(ParticipantFault::OutOfRange)?;
         for (body, force) in reactions {
             ctx.add_force(body, force)
                 .map_err(|_| ParticipantFault::InvalidState)?;
@@ -151,7 +157,12 @@ impl Participant for ClothParticipant {
 /// Push the cloth's particles out of every body (a sphere of the world's collision
 /// radius) and return the reaction each dynamic body gets; `None` when a value
 /// leaves the range of [`Fix128`].
-fn contact(cloth: &mut Cloth, ctx: &SubstepCtx<'_>, h: Fix128) -> Option<Vec<(usize, Vec3Fix)>> {
+fn contact(
+    cloth: &mut Cloth,
+    start: &[Vec3Fix],
+    ctx: &SubstepCtx<'_>,
+    h: Fix128,
+) -> Option<Vec<(usize, Vec3Fix)>> {
     let thickness = cloth.config.thickness;
     let h_sq = h.checked_mul(h)?;
     let mut reactions = Vec::new();
@@ -175,8 +186,17 @@ fn contact(cloth: &mut Cloth, ctx: &SubstepCtx<'_>, h: Fix128) -> Option<Vec<(us
             if dist >= reach || dist.is_zero() {
                 continue;
             }
-            let n = d / dist;
-            let depth = reach - dist;
+            // the side the particle was on at the start of the step: the cloth's
+            // constraints can pull a particle past the body's centre within one
+            // step, and the normal of where it ended would then push it through
+            let d0 = start[i] - body.position;
+            let dist0 = d0.checked_length()?;
+            let n = if dist0.is_zero() { d / dist } else { d0 / dist0 };
+            // depth along `n`: how far the particle is inside the band on its side
+            let depth = reach - d.dot(n);
+            if depth <= Fix128::ZERO {
+                continue;
+            }
             let share = depth.checked_mul(wp)?.checked_div(weight)?;
             cloth.positions[i] = cloth.positions[i] + n * share;
             let vn = (cloth.velocities[i] - body.velocity).dot(n);
