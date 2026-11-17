@@ -16,6 +16,7 @@ A	src/non_newtonian.rs
 A	src/pressure.rs
 A	src/sdf_sph.rs
 A	src/smoke_fire.rs
+A	src/smoke_plume.rs
 A	src/surface_tension_csf.rs
 A	src/turbulence.rs
 A	src/water_film.rs

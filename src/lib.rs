@@ -947,6 +947,9 @@ pub mod surface_tension_csf;
 pub mod thin_wall;
 pub mod vibration_wall;
 pub mod warp_risk;
+// 閉じた箱の中の浮力で上がる煙 (熱と煤は整数で厳密、速度は cfd_solver)
+#[cfg(feature = "std")]
+pub mod smoke_plume;
 // 窪みに溜まる・縁で溢れる・勾配を流れる・蒸発する薄い水の層 (体積は整数で厳密)
 pub mod water_film;
 pub mod wave_ship;
