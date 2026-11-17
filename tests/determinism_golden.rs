@@ -666,7 +666,8 @@ fn determinism_fluid_step() {
 /// (boundary particles in the density, the surface weights, XSPH) and a free 5 x 5 x 5
 /// block laid out 15 % wider than the rest spacing, without gravity, for 60 frames (the
 /// two-sided interior pulling it in). Positions, velocities and the floor reaction.
-const GOLDEN_FLUID_PBF: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+const GOLDEN_FLUID_PBF: &str =
+    "bee62aa158808dcddf79c6f060fb9d1810776162fea30f8ed37c6ff3632a4a0a";
 
 #[test]
 fn determinism_fluid_pbf() {
@@ -706,6 +707,68 @@ fn determinism_fluid_pbf() {
             write_vec3(&mut bytes, *v);
         }
         write_vec3(&mut bytes, fluid.boundary_force());
+    }
+    // SDF solids as density maps: a 4 x 3 x 4 block on an SDF floor beside an SDF cube lying
+    // on that floor, so the fluid at the cube's foot has both solids in its kernel (the
+    // normal split), 30 frames; positions, velocities and the force on each solid
+    let floor = SdfCollider::new_static(
+        Box::new(ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0))),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    );
+    let (c0, c1) = (n(4) + half, n(6) + half);
+    let (lo, hi) = (c0.to_f32(), c1.to_f32());
+    let height = n(2).to_f32();
+    let cube_sdf = move |x: f32, y: f32, z: f32| {
+        let q = [
+            (lo - x).max(x - hi),
+            (0.0 - y).max(y - height),
+            (lo - z).max(z - hi),
+        ];
+        let outside = q.iter().map(|v| v.max(0.0) * v.max(0.0)).sum::<f32>().sqrt();
+        outside + q[0].max(q[1]).max(q[2]).min(0.0)
+    };
+    let cube = SdfCollider::new_static(
+        Box::new(ClosureSdf::new(cube_sdf, move |x, y, z| {
+            let e = 1e-3_f32;
+            let g = [
+                cube_sdf(x + e, y, z) - cube_sdf(x - e, y, z),
+                cube_sdf(x, y + e, z) - cube_sdf(x, y - e, z),
+                cube_sdf(x, y, z + e) - cube_sdf(x, y, z - e),
+            ];
+            let l = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt().max(1e-12);
+            (g[0] / l, g[1] / l, g[2] / l)
+        })),
+        Vec3Fix::ZERO,
+        QuatFix::IDENTITY,
+    );
+    let h = config.kernel_radius;
+    let pad = h + s;
+    let mut on_floor = Fluid::new_block(
+        Vec3Fix::new(half, half, half),
+        Vec3Fix::new(n(4) - half, n(3) - half, n(4) - half),
+        s,
+        config,
+    )
+    .with_sdf_body(
+        floor,
+        Vec3Fix::new(-n(6) - pad, -pad, -n(6) - pad),
+        Vec3Fix::new(n(13) + pad, n(4) + pad, n(13) + pad),
+    )
+    .with_sdf_body(
+        cube,
+        Vec3Fix::new(c0 - pad, -pad, c0 - pad),
+        Vec3Fix::new(c1 + pad, n(2) + pad, c1 + pad),
+    );
+    for _ in 0..30 {
+        on_floor.step(dt);
+    }
+    for (p, v) in on_floor.positions.iter().zip(&on_floor.velocities) {
+        write_vec3(&mut bytes, *p);
+        write_vec3(&mut bytes, *v);
+    }
+    for f in on_floor.body_forces() {
+        write_vec3(&mut bytes, *f);
     }
     assert_golden("fluid_pbf", sha256_bytes(&bytes), GOLDEN_FLUID_PBF);
 }
