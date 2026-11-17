@@ -1838,6 +1838,39 @@ fn a_face_deeper_than_the_law_accepts_is_refused() {
     assert_eq!(state(&f), before);
 }
 
+/// A pool deeper than the law accepts: two cells side by side, both 2⁴⁴ quanta (4 096 m)
+/// deep and level, join as one still pool, so their face is levelled and never stepped by
+/// the flux law. The depth limit still holds there (a pool's band sums `h̄³` in fixed point,
+/// which wraps far above it): the advance is refused and changes nothing. Both cells at the
+/// limit itself (the depth a face accepts) step.
+#[test]
+fn a_pool_deeper_than_the_law_accepts_is_refused() {
+    let bed = FilmBed::from_heights(
+        2,
+        1,
+        mm(CELL_MM),
+        (Fix128::ZERO, Fix128::ZERO),
+        &[Fix128::ZERO; 2],
+        1,
+    )
+    .expect("bed");
+    let mut f = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
+    assert!(f.set_initial_depth(0, 0, 1i64 << 44));
+    assert!(f.set_initial_depth(1, 0, 1i64 << 44));
+    let before = state(&f);
+    assert_eq!(
+        f.advance(Fix128::from_ratio(1, 256)),
+        Err(ParticipantFault::OutOfRange)
+    );
+    assert_eq!(state(&f), before);
+    let at_limit = MAX_FACE_DEPTH as i64;
+    let bed = f.bed().clone();
+    let mut g = film(bed, FilmScheme::DiffusionWave, FilmEdge::Closed);
+    assert!(g.set_initial_depth(0, 0, at_limit));
+    assert!(g.set_initial_depth(1, 0, at_limit));
+    assert!(g.advance(Fix128::from_ratio(1, 256)).is_ok());
+}
+
 /// A drowned sill: water 28 mm deep (surface −2 mm) beside a sill 20 mm higher than its bed
 /// holding water whose surface (−8 mm) stands over the sill's crest. The face is deeper than
 /// the film, its step (6 mm) is above the join step, the lower side is submerged and the flux
