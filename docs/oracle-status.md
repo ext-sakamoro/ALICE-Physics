@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6400 |
+| 🟢 Not ignored (run by CI) | 6418 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 36 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6508** |
+| **Total** | **6526** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -170,7 +170,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6400)
+## 🟢 Not ignored (6418)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -450,6 +450,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sleep_spring_creep.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
 | `analytic_thick_chain.rs` | 10 |
+| `analytic_thick_chain_anchor.rs` | 10 |
 | `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
@@ -582,6 +583,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
 | `analytic_state_rollback_contact_memory.rs` | 5 |
 | `analytic_state_rollback_outside_writes.rs` | 5 |
+| `analytic_thick_chain_neo_hookean.rs` | 5 |
 | `analytic_transient_fem_participant.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
@@ -657,6 +659,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sphere_inertia.rs` | 3 |
 | `analytic_static_hit_events.rs` | 3 |
 | `analytic_static_target.rs` | 3 |
+| `analytic_thick_chain_entry.rs` | 3 |
 | `analytic_world_query_round_solids.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
