@@ -68,6 +68,15 @@
 //!   instead, a run of held links rests short of its walls' length by a part that goes with
 //!   the substep squared (measured: up to 4.6e-4 of `l0` at 1/960 s, a quarter of that at
 //!   half the substep), and the stated energy is then not the state's.
+//!   What is left under the conforming rule is a term of the time step: in a pass every
+//!   link takes its energy step in the links' order before the walls are solved; a link's
+//!   own step shortens it and its two neighbours' steps lengthen it back, equally to first
+//!   order in `(ω h)²`, and beside an end link (half the mass at its end, and first in the
+//!   order) a second-order part of one sign remains, so that link rests a little longer
+//!   than its walls ask and the walls' force is short by a part of `(ω h)²` (measured, six
+//!   links of 10 mm held from 100 to 54 mm wide: the excess length 8.6e-6, 3.0e-7 and 5.4e-9
+//!   of the length and the force 0.9919, 0.9978 and 0.9994 of `T l / c` at 8, 16 and 32
+//!   substeps of 1/60 s; more passes do not change it).
 //! - **Units.** SI: m, s, kg, N; planar, so masses, forces and the compliance are per metre
 //!   of depth (kg/m, N/m, `α` in m²/N); `k` in 1/s.
 //! - **Conservation.** A link's area is `2 r l` by the definition of `r`, exactly, down to
@@ -101,6 +110,10 @@
 //!   of no length, a field value that is not a number
 //!   and an invalid argument are refused; a refused step changes nothing. The distance field
 //!   must not overstate the distance (Lipschitz constant at most 1); it is read in `f32`.
+//!   The chain's own arithmetic is `Fix128`; the field is the caller's and is read in `f32`,
+//!   so a run is the same bits on every machine when the field is made of the basic IEEE
+//!   operations (`+ − × ÷ √`, comparisons), and not when it calls a platform's mathematical
+//!   library. Across machines this is stated, not yet tested.
 //! - **Approximations.** A link has one radius along its length (the outline steps between
 //!   links). The body has no bending stiffness and no shear; its thickness follows its
 //!   length at once (no inertia across the link). Between samples the outline may be in a

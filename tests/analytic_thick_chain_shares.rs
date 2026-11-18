@@ -223,62 +223,103 @@ fn the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it() {
 fn held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension() {
     // links laid as the channel holds them, no friction, no drag, no speed. After 10 frames
     // for the solver's own rest state, nothing moves for 20: no particle has a speed and no
-    // link changes its length. The walls carry T(λc) l / c for each link, less what solving
-    // the stretch and the walls in turn leaves (a share that goes with (ω h)², here 0.13
-    // with 4 passes: the disc rule's measured floor at these settings is 0.88 for one link
-    // and 0.93 for six, and in a straight channel the conforming rule does what it does).
+    // link changes its length. No link is shorter than the walls make it, and the walls
+    // carry T(λc) l / c for each link.
+    //
+    // What is left is a term of the time step. In a pass every link takes its energy step in
+    // the links' order, then the walls are solved. A link's own step shortens it and its two
+    // neighbours' steps lengthen it back, equally to first order in (ω h)²; beside the end
+    // link (whose end particle has half the mass, and whose step comes first) a second-order
+    // part of one sign is left, and that link rests a hair longer than the walls ask, with
+    // the walls' force short by a part of (ω h)². So:
+    //  - at 32 substeps the links are at the walls' length to the f32 of the walls (2^-22)
+    //    and the walls' force is within 1e-3 of the closed form;
+    //  - from 8 to 16 to 32 substeps the excess length falls at least as h² (a quarter per
+    //    halving) and the force's shortfall by at least a third per halving (a first-order
+    //    scheme would give a half; measured 3.7);
+    //  - at any substep a link is longer than the walls ask by no more than a pass's energy
+    //    step can move it, 2 s C μ h² / (ρ l0) with C = λc − 1/λc and s = 1 + λc⁻²: a loose
+    //    bound (4e-2 of the length at 8 substeps against 8.6e-6 found), kept as the range
+    //    of the claim; the rates above are what bite.
     let (l0, r0, shear, c) = (0.01, 0.05, 500.0, 0.027f32);
     let held = r0 * l0 / f64::from(c);
     let at = held / l0;
     let expect = shear * 2.0 * r0 * pull(at) * held / f64::from(c);
     let walls = channel(c);
-    for (links, floor) in [(1usize, 0.88), (6, 0.93)] {
-        let mut cfg = config(shear, ThickChainFit::Conforming);
-        cfg.substeps = 8;
-        let mut chain =
-            ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
-        for i in 0..chain.particle_count() {
-            chain.set_position(i, [fx(held * i as f64), Fix128::ZERO]);
-        }
-        for _ in 0..10 {
-            chain.step_in(frame(), &walls, &[]).expect("a step");
-        }
-        let lengths: Vec<Fix128> = (0..links).map(|k| chain.length(k)).collect();
-        for n in 0..20 {
-            chain.step_in(frame(), &walls, &[]).expect("a step");
-            for (i, v) in chain.velocities().iter().enumerate() {
-                assert!(
-                    f(v[0]).abs() < 1.0e-9 && f(v[1]).abs() < 1.0e-9,
-                    "{links} links: frame {n}: particle {i} moves at {:e}, {:e}",
-                    f(v[0]),
-                    f(v[1])
-                );
+    for links in [1usize, 6] {
+        let mut rows: Vec<(f64, f64)> = Vec::new();
+        for substeps in [8u32, 16, 32] {
+            let mut cfg = config(shear, ThickChainFit::Conforming);
+            cfg.substeps = substeps;
+            let mut chain =
+                ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
+            for i in 0..chain.particle_count() {
+                chain.set_position(i, [fx(held * i as f64), Fix128::ZERO]);
             }
-            for (k, before) in lengths.iter().enumerate() {
-                assert!(
-                    (f(chain.length(k)) - f(*before)).abs() < 1.0e-9,
-                    "{links} links: frame {n}: link {k} changed its length"
-                );
+            for _ in 0..10 {
+                chain.step_in(frame(), &walls, &[]).expect("a step");
             }
-        }
-        assert_eq!(
-            chain.walls_unsettled(),
-            0,
-            "a pass left its walls unsettled"
-        );
-        for k in 0..links {
-            let share = f(chain.wall_force(k)) / expect;
+            let lengths: Vec<Fix128> = (0..links).map(|k| chain.length(k)).collect();
+            for n in 0..20 {
+                chain.step_in(frame(), &walls, &[]).expect("a step");
+                for (i, v) in chain.velocities().iter().enumerate() {
+                    assert!(
+                        f(v[0]).abs() < 1.0e-9 && f(v[1]).abs() < 1.0e-9,
+                        "{links} links, {substeps} substeps: frame {n}: particle {i} moves at {:e}, {:e}",
+                        f(v[0]),
+                        f(v[1])
+                    );
+                }
+                for (k, before) in lengths.iter().enumerate() {
+                    assert!(
+                        (f(chain.length(k)) - f(*before)).abs() < 1.0e-9,
+                        "{links} links, {substeps} substeps: frame {n}: link {k} changed its length"
+                    );
+                }
+            }
+            assert_eq!(
+                chain.walls_unsettled(),
+                0,
+                "a pass left its walls unsettled"
+            );
+            let h = 1.0 / (60.0 * f64::from(substeps));
+            let (stretch, slope) = (at - 1.0 / at, 1.0 + at.powi(-2));
+            let loose = 2.0 * slope * stretch * shear * h * h / (DENSITY * l0) / held;
+            let (mut longest, mut least) = (0.0f64, f64::INFINITY);
+            for k in 0..links {
+                let share = f(chain.wall_force(k)) / expect;
+                let over = f(chain.length(k)) / held - 1.0;
+                assert!(
+                    over >= -(2.0f64.powi(-22)) && over <= loose,
+                    "{links} links, {substeps} substeps: link {k} is {over:e} over the walls' length (at most {loose:e})"
+                );
+                assert!(
+                    share <= 1.0 + 1.0e-6,
+                    "{links} links, {substeps} substeps: the walls carry {share} of T l / c for link {k}"
+                );
+                longest = longest.max(over);
+                least = least.min(share);
+            }
             println!(
-                "conforming, {links} links: the walls carry {share:.4} of T l / c for link {k}"
+                "conforming, {links} links, {substeps} substeps: longest {longest:e} over, least share {least:.5}"
+            );
+            rows.push((longest, 1.0 - least));
+        }
+        let (fine_over, fine_short) = rows[2];
+        assert!(
+            fine_over <= 2.0f64.powi(-22) && fine_short <= 1.0e-3,
+            "{links} links at 32 substeps: {fine_over:e} over, the force {fine_short:e} short"
+        );
+        for pair in rows.windows(2) {
+            let ((over, short), (next_over, next_short)) = (pair[0], pair[1]);
+            // an excess already at the walls' f32 has nowhere to fall to
+            assert!(
+                next_over <= (over / 4.0).max(2.0f64.powi(-22)),
+                "{links} links: the excess length goes from {over:e} to {next_over:e} at half the substep"
             );
             assert!(
-                share >= floor && share <= 1.0 + 1.0e-6,
-                "{links} links: the walls carry {share} of T l / c for link {k} (floor {floor})"
-            );
-            let l = f(chain.length(k)) / held;
-            assert!(
-                l <= 1.0 + 2.0f64.powi(-22) && l >= 0.99,
-                "{links} links: link {k} is {l} of the walls' length"
+                next_short <= (short / 3.0).max(1.0e-6),
+                "{links} links: the force's shortfall goes from {short:e} to {next_short:e} at half the substep"
             );
         }
     }
