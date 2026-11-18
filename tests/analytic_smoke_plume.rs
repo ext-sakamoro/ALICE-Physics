@@ -685,9 +685,174 @@ fn the_laminar_plume_scene_starts_rising_with_its_declared_heat() {
     assert_eq!(p.ledger().heat_expected(), (8 * per_cell) as i64);
     // the source spans cells 15..17 on x and z and 1..3 on y: the air just above its top rises
     let w = p.velocity().cell_velocity(16, 3, 16).1;
-    assert!(w > Fix128::ZERO, "the air over the source must rise, got {}", w.to_f64());
+    assert!(
+        w > Fix128::ZERO,
+        "the air over the source must rise, got {}",
+        w.to_f64()
+    );
     let mut state = Vec::new();
     p.write_state(&mut state);
-    let digest: String = Sha256::digest(&state).iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(digest, "7221c60fb6bdf5341a6e9bc5bd662833b48bd66ab9cc239638ca566d1d2e7c02");
+    let digest: String = Sha256::digest(&state)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(
+        digest,
+        "7221c60fb6bdf5341a6e9bc5bd662833b48bd66ab9cc239638ca566d1d2e7c02"
+    );
+}
+
+/// A column of `n` cells of 1 m with walls, and the velocity `c` (m/s, so the Courant
+/// number at a step of 1 s) on every interior y face and on the top face; the floor face
+/// stays a wall.
+fn column(n: usize, c: Fix128, top: Fix128) -> (MacGrid, QuantaField) {
+    let mut g = MacGrid::new(1, n, 1, Fix128::ONE);
+    g.set_closed_box_walls();
+    for j in 1..n {
+        g.v[j] = c;
+    }
+    g.v[n] = top;
+    (g, QuantaField::new(1, n, 1))
+}
+
+/// The open top is upwind: the top cell sends `⌊c q⌋` out at Courant number `c`, whatever
+/// the cell below holds (oracle: `⌊1000 / 4⌋ = 250`). A slope across the top face would
+/// change it: a zero ghost outside with 2000 below gives the MUSCL face value
+/// `1000 + 3/8 · minmod(−1000, −1000) = 625`, i.e. 156 out; a linear ghost with 500 below
+/// gives `1000 + 3/8 · 500 = 1187`, i.e. 296 out. A closed top or a top face pointing in
+/// lets nothing out, and the quanta in the column plus the quanta out are the quanta it
+/// started with.
+#[test]
+fn the_open_top_sends_the_upwind_share_out() {
+    let quarter = Fix128::from_ratio(1, 4);
+    for below in [2000i64, 500] {
+        let (g, mut f) = column(4, quarter, quarter);
+        f.add(f.index(0, 3, 0), 1000).unwrap();
+        f.add(f.index(0, 2, 0), below).unwrap();
+        let (_, left) = f.step_open_top(&g, Fix128::ONE, false, true);
+        assert_eq!(left, 250, "below {below}");
+        assert_eq!(f.total().unwrap() + left, 1000 + below);
+        // the same column closed: the top face's velocity is not used
+        let (g, mut f) = column(4, quarter, quarter);
+        f.add(f.index(0, 3, 0), 1000).unwrap();
+        f.add(f.index(0, 2, 0), below).unwrap();
+        let (_, left) = f.step_open_top(&g, Fix128::ONE, false, false);
+        assert_eq!(left, 0);
+        assert_eq!(f.total(), Some(1000 + below));
+    }
+    // air coming in through the top brings no excess and takes none out
+    let (g, mut f) = column(4, quarter, Fix128::ZERO - quarter);
+    f.add(f.index(0, 3, 0), 1000).unwrap();
+    let (_, left) = f.step_open_top(&g, Fix128::ONE, false, true);
+    assert_eq!(left, 0);
+    assert_eq!(f.total(), Some(1000));
+    // and the quanta leave whole, with the cell's carried fraction: c = 1/64 on one quantum
+    let (g, mut f) = column(4, Fix128::ZERO, Fix128::from_ratio(1, 64));
+    f.add(f.index(0, 3, 0), 1).unwrap();
+    let mut out = 0;
+    for n in 1..=64 {
+        out += f.step_open_top(&g, Fix128::ONE, false, true).1;
+        assert_eq!(out, i64::from(n == 64), "after {n}");
+    }
+    assert_eq!(f.total(), Some(0));
+}
+
+/// The plume of [`plume`] with its top open: heat and soot leave through the top, and what
+/// the cells hold equals what they were given less what left, to the last quantum, at
+/// every step; the same plume closed keeps everything.
+#[test]
+fn an_open_top_lets_heat_out_and_the_ledger_still_closes() {
+    let mut open = plume();
+    open.set_open_top().unwrap();
+    assert!(open.open_top());
+    let mut closed = plume();
+    for n in 0..384 {
+        open.advance(step()).unwrap();
+        assert_eq!(
+            open.heat().total(),
+            Some(open.heat_held_expected()),
+            "step {n}"
+        );
+        assert_eq!(
+            open.soot().total(),
+            Some(open.soot_held_expected()),
+            "step {n}"
+        );
+        if n % 64 == 63 {
+            closed.advance(step() * Fix128::from_int(64)).unwrap();
+        }
+    }
+    let out = open.outflow();
+    assert!(
+        out.heat_left > 0 && out.soot_left > 0,
+        "nothing left: {out:?}"
+    );
+    assert_eq!(
+        open.ledger().heat_expected(),
+        open.heat().total().unwrap() + out.heat_left
+    );
+    assert_eq!(closed.outflow().heat_left, 0);
+    assert_eq!(closed.heat().total(), Some(closed.ledger().heat_expected()));
+    // the top really is open: air leaves through some top face
+    let g = open.velocity();
+    let top = (0..g.nz)
+        .flat_map(|k| (0..g.nx).map(move |i| (i, k)))
+        .map(|(i, k)| g.v[i + g.nx * (g.ny + (g.ny + 1) * k)])
+        .fold(Fix128::ZERO, |m, v| if v > m { v } else { m });
+    assert!(top > Fix128::ZERO, "no air leaves through the top");
+}
+
+/// Opening the top is refused once the plume has stepped; an open plume's state carries
+/// its outflow, rereads to the same bytes, and a closed plume refuses it (and the other way),
+/// by its digest even when the lengths agree.
+#[test]
+fn an_open_plume_state_round_trips_and_is_told_apart() {
+    let mut p = plume();
+    p.advance(step()).unwrap();
+    assert_eq!(p.set_open_top(), Err(SmokeBuildError::BadConfig));
+    let mut open = plume();
+    open.set_open_top().unwrap();
+    for _ in 0..4 {
+        open.advance(step() * Fix128::from_int(64)).unwrap();
+    }
+    assert!(open.outflow().heat_left > 0);
+    let bytes = state(&open);
+    let mut again = plume();
+    again.set_open_top().unwrap();
+    again.check_state(&bytes).unwrap();
+    again.read_state(&bytes);
+    assert_eq!(state(&again), bytes);
+    assert_eq!(again.outflow(), open.outflow());
+    assert!(plume().check_state(&bytes).is_err());
+    assert!(again.check_state(&state(&plume())).is_err());
+    // the open state without its outflow bytes has a closed plume's length: only the digest,
+    // which names the open top, tells them apart
+    let cut = &bytes[..bytes.len() - 16];
+    assert_eq!(plume().check_state(cut), Err(StateError::InvalidValue));
+}
+
+/// The open plume of [`plume`] comes to a steady state in which the heat leaving through the
+/// top balances the source: the declared 50 K/s on 4 cells is `4 · 25 · 2²⁶` quanta per step
+/// exactly, and the outflow over each half second from 7 to 12 s is that within 2 %, their
+/// mean within 0.5 % (measured: each within 0.0093, the mean 1.000; the first outflow comes
+/// at 2.5 s and overshoots to 1.27 at 3.5 s; after about 15 s heat collects in the narrow box
+/// again and the ratio falls to 0.96 by 20 s, so the window is where the store is steady).
+#[test]
+fn the_open_top_carries_the_source_away_at_steady_state() {
+    let mut p = plume();
+    p.set_open_top().unwrap();
+    let per_window = 64 * 4 * 25 * (1i64 << 26);
+    let mut ratios = Vec::new();
+    let mut last = 0;
+    for w in 0..24 {
+        p.advance(step() * Fix128::from_int(64)).unwrap();
+        let out = p.outflow().heat_left;
+        if w >= 14 {
+            ratios.push((out - last) as f64 / per_window as f64);
+        }
+        last = out;
+    }
+    assert!(ratios.iter().all(|r| (r - 1.0).abs() < 0.02), "{ratios:?}");
+    let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
+    assert!((mean - 1.0).abs() < 0.005, "mean {mean}, {ratios:?}");
 }
