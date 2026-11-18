@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6410 |
+| 🟢 Not ignored (run by CI) | 6413 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 36 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6518** |
+| **Total** | **6521** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -170,7 +170,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6410)
+## 🟢 Not ignored (6413)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -225,6 +225,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
 | `analytic_kepler.rs` | 23 |
+| `analytic_smoke_plume.rs` | 23 |
 | `audit_fluid_netcode.rs` | 23 |
 | `audit_pipeline.rs` | 23 |
 | `audit_torus.rs` | 23 |
@@ -253,7 +254,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_fluid_netcode_wiring.rs` | 20 |
 | `analytic_joint_extra_wiring.rs` | 20 |
 | `analytic_linear_solver.rs` | 20 |
-| `analytic_smoke_plume.rs` | 20 |
 | `analytic_wave_ship_wiring.rs` | 20 |
 | `audit_print_pipeline_solver.rs` | 20 |
 | `audit_sdf_destruction.rs` | 20 |
