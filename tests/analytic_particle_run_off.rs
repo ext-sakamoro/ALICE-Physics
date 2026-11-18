@@ -54,6 +54,8 @@ fn run_off(drag: f64, drip_cos: f64) -> RunOff {
     RunOff {
         drag: Fix128::from_f64(drag),
         drip_cos: Fix128::from_f64(drip_cos),
+        // no hysteresis: these drops are not held by the surface
+        retention: Fix128::ZERO,
     }
 }
 

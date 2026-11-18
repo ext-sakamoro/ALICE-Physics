@@ -39,6 +39,8 @@ fn run_off() -> RunOff {
     RunOff {
         drag: Fix128::from_int(6),
         drip_cos: Fix128::from_ratio(1, 2),
+        // no hysteresis: these drops are not held by the surface
+        retention: Fix128::ZERO,
     }
 }
 

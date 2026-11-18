@@ -25,7 +25,22 @@
 //! ([`ParticleSystem::step_with_run_off`]) the particle feels gravity less its normal part,
 //! `g_t = g − n (g·n)`, and a viscous drag `c` along the surface, integrated implicitly:
 //! `v ← (v_t + g_t·dt) / (1 + c·dt)`. On a plane this converges to the terminal speed
-//! `|g_t| / c = |g| sin α / c` (α the incline) for every `dt > 0`. The step's move `v·dt`
+//! `|g_t| / c = |g| sin α / c` (α the incline) for every `dt > 0`. Contact-angle hysteresis
+//! holds the drop with the Furmidge (1962) force `F = γ w (cos θ_r − cos θ_a)` (γ the surface
+//! tension, `w` the drop's contact width, `θ_a` and `θ_r` the advancing and receding angles),
+//! per unit mass `a_r = F / (ρ V)` ([`RunOff::retention`], [`retention_acceleration`]). It
+//! opposes the motion along the surface as dry friction does: with `u = v_t + g_t·dt`, a step
+//! with `|u| ≤ a_r·dt` stops the drop, which is pinned ([`RunOffEvents::pinned`]: it is no
+//! longer a particle, its water is the caller's to hand on, [`FilmHandOff`]); otherwise
+//! `v ← (u − a_r·dt·û) / (1 + c·dt)`. So a drop pins on an incline with `g sin α ≤ a_r` (the
+//! critical angle `sin α_c = a_r / g`), and above it slides to `(g sin α − a_r) / c`; on level
+//! ground a drop sliding at `v₀` stops within `v₀² / (2 a_r)`. In a crease (below) only the
+//! motion along the crease line `l` is left, and the same rule is applied to `u = v·l + g·l dt`
+//! along it. The time a drop takes to leave a straight face of length `L` it slides on is at
+//! most `L c / (g sin α − a_r)` once at its end speed: it has no finite bound as `α → α_c` from
+//! above, so a bound on the time drops stay on a set of surfaces is a property of that set's
+//! shape (faces either clearly steeper than `α_c` or level, edges that steepen as a drop moves
+//! on), which the caller checks for its surfaces. The step's move `v·dt`
 //! is made along the surface in pieces of at most `max_travel`, each in the tangent plane
 //! where it starts, and after each piece the particle is projected back onto the surface,
 //! again while a projection still moves it more than `max_travel / 2^24` (at most
@@ -80,15 +95,19 @@
 //! velocity (a perfectly inelastic impact). Momentum is not conserved: the surface is an
 //! external constraint.
 //!
-//! **Valid range.** Rain-sized drops on rigid surfaces given as an SDF, with `c > 0` and
-//! `0 ≤ drip_cos ≤ 1`. The SDF must be close to a true distance within `max_travel`, so
+//! **Valid range.** Rain-sized drops on rigid surfaces given as an SDF, with `c > 0`,
+//! `0 ≤ drip_cos ≤ 1` and `a_r ≥ 0` (zero: no hysteresis, the run-off as without retention,
+//! bit for bit). The SDF must be close to a true distance within `max_travel`, so
 //! that the projection lands on the surface. A [`LandingTarget::Query`] gives occupancy
 //! only, so a particle on it is held where it landed.
 //!
-//! **Approximations.** No particle-particle interaction (no coalescence, no film). No
-//! contact angle or hysteresis: a drop on a gentle slope always moves (pinning by
-//! `ρ V g sin α < γ w (cos θ_r − cos θ_a)` is not modelled). No splash or bounce. The drag
-//! is linear (a viscous film), not inertial.
+//! **Approximations.** No particle-particle interaction (no coalescence; a pinned drop's water
+//! joins the water film, where films merge). The retention is the Furmidge force with a
+//! constant contact width `w` given by the caller (a drop's width changes as it deforms on a
+//! slope, which is not followed) and the same magnitude moving and at rest (the static and
+//! the sliding retention are taken as one; measured sliding drops follow
+//! `Ca ∝ sin α − sin α_c`, which this gives with the linear drag). No splash or bounce. The
+//! drag is linear (a viscous film), not inertial.
 //!
 //! **Validation.** `tests/analytic_particle_run_off.rs`:
 //! - `on_an_incline_the_speed_reaches_the_closed_form` (`|g| sin α / c` at steps of
@@ -121,6 +140,16 @@
 //!   `2 max_travel / 2^24` + 8 f32 ulps of the surface)
 //! - `a_slide_round_a_curve_does_not_cut_across_it` (round a cylinder each step's arc is at
 //!   least `|v| dt (1 − (max_travel / r)² / 3)` and at most `|v| dt`)
+//! - `tests/analytic_particle_run_off_pinning.rs`: `the_retention_is_the_furmidge_force_per_unit_mass`
+//!   (`γ w (cos θ_r − cos θ_a) / (ρ V)`, zero without hysteresis or with the angles reversed);
+//!   `a_drop_pins_below_the_critical_angle_and_slides_above_it` (sin α at 0.98 and 1.02 of the
+//!   retention over g, level, 0.5 and 3 times, at steps of 1/60, 1/240 and 1/960 s, the end
+//!   speed (g sin α − a_r) / c); `without_hysteresis_a_drop_on_a_tilt_slides` (g sin α / c);
+//!   `a_drop_sliding_onto_level_ground_stops_and_pins` (within v₀² / (2 a_r), that distance
+//!   without drag); `in_a_crease_the_pull_along_it_decides` (a level crease and one pulling at
+//!   half the retention pin, twice it runs on); `a_pinned_drop_hands_all_its_water_to_the_film` (the water
+//!   born equals deposited + held below a quantum + off the bed + in the air, exactly, and no drop
+//!   reaches its lifetime)
 //!
 //! `tests/analytic_particle_landing.rs`:
 //! - `a_landing_is_on_the_surface_at_faces_edges_and_corners` (7262 landings of wind-blown
@@ -138,6 +167,7 @@ use crate::rng::DeterministicRng;
 use crate::sdf_collider::SdfField;
 #[cfg(feature = "std")]
 use crate::sdf_collider::{collide_point_sdf, SdfCollider};
+use crate::water_film::{quanta_to_metres, WaterFilm};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -355,6 +385,118 @@ pub struct RunOff {
     /// The particle drips when the surface normal, against the direction of gravity, reaches
     /// this cosine: 0 is a vertical wall, 1 the very underside of a surface.
     pub drip_cos: Fix128,
+    /// The retention of the drop by the surface per unit mass, m/s² (contact-angle hysteresis,
+    /// [`retention_acceleration`]): it opposes the motion along the surface like dry friction,
+    /// and a drop whose step would leave it slower than `retention · dt` stops and is pinned
+    /// ([`RunOffEvents::pinned`]). Zero for a surface without hysteresis.
+    pub retention: Fix128,
+}
+
+/// The retention per unit mass of a drop on a surface, m/s²: the Furmidge (1962) force
+/// `F = γ w (cos θ_r − cos θ_a)` over the drop's mass `ρ V`. `surface_tension` γ (N/m),
+/// `density` ρ (kg/m³), `volume` V (m³), `contact_width` w (m, across the slope), and the
+/// cosines of the receding and advancing contact angles. Zero when `cos θ_r ≤ cos θ_a` (no
+/// hysteresis, or the angles given the wrong way round) or when any input is not positive.
+#[must_use]
+pub fn retention_acceleration(
+    surface_tension: Fix128,
+    density: Fix128,
+    volume: Fix128,
+    contact_width: Fix128,
+    cos_receding: Fix128,
+    cos_advancing: Fix128,
+) -> Fix128 {
+    let hysteresis = cos_receding - cos_advancing;
+    if hysteresis <= Fix128::ZERO
+        || surface_tension <= Fix128::ZERO
+        || density <= Fix128::ZERO
+        || volume <= Fix128::ZERO
+        || contact_width <= Fix128::ZERO
+    {
+        return Fix128::ZERO;
+    }
+    surface_tension * contact_width * hysteresis / (density * volume)
+}
+
+/// A drop that stopped on a surface in [`ParticleSystem::step_with_run_off`]: the surface's
+/// retention held it. It is no longer alive; its water is the caller's to hand on (to a water
+/// film, [`FilmHandOff`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PinnedEvent {
+    /// Index of the particle
+    pub particle: usize,
+    /// Index of the target it stopped on
+    pub target: usize,
+    /// Where it stopped
+    pub position: Vec3Fix,
+}
+
+/// Hands the water of pinned drops ([`RunOffEvents::pinned`]) to a water film, keeping every
+/// bit of it: each drop's volume goes to the film cell under the point it stopped at
+/// ([`WaterFilm::deposit`]); the film takes whole depth quanta, and the part below one quantum is
+/// held for that cell's next drop; a drop that stopped off the film's bed keeps its water here,
+/// off the bed. So the water handed in is always `deposited + held + off_bed`, exactly.
+#[derive(Clone, Debug, Default)]
+pub struct FilmHandOff {
+    held: Vec<Fix128>,
+    off_bed: Fix128,
+    deposited: Fix128,
+    quanta: i64,
+}
+
+impl FilmHandOff {
+    /// Hands the water of `pinned`, `volume` m³ a drop, to `film`; returns how many drops
+    pub fn hand_off(
+        &mut self,
+        film: &mut WaterFilm,
+        pinned: &[PinnedEvent],
+        volume: Fix128,
+    ) -> usize {
+        let (nx, nz, cell) = (film.bed().nx(), film.bed().nz(), film.bed().cell());
+        if self.held.len() != nx * nz {
+            self.held.resize(nx * nz, Fix128::ZERO);
+        }
+        for p in pinned {
+            let (x, z) = (p.position.x, p.position.z);
+            match film.bed().cell_at(x, z) {
+                None => self.off_bed = self.off_bed + volume,
+                Some((i, k)) => {
+                    let c = i + k * nx;
+                    let water = self.held[c] + volume;
+                    let q = film.deposit(x, z, water);
+                    let moved = quanta_to_metres(q) * cell * cell;
+                    self.held[c] = water - moved;
+                    self.deposited = self.deposited + moved;
+                    self.quanta += q;
+                }
+            }
+        }
+        pinned.len()
+    }
+
+    /// The water the film took (m³): its whole quanta
+    #[must_use]
+    pub fn deposited(&self) -> Fix128 {
+        self.deposited
+    }
+
+    /// The quanta the film took
+    #[must_use]
+    pub fn quanta(&self) -> i64 {
+        self.quanta
+    }
+
+    /// The water below one quantum each cell still holds (m³)
+    #[must_use]
+    pub fn held(&self) -> Fix128 {
+        self.held.iter().fold(Fix128::ZERO, |a, b| a + *b)
+    }
+
+    /// The water of drops that stopped off the bed (m³)
+    #[must_use]
+    pub fn off_bed(&self) -> Fix128 {
+        self.off_bed
+    }
 }
 
 /// What happened in one [`ParticleSystem::step_with_run_off`].
@@ -364,6 +506,8 @@ pub struct RunOffEvents {
     pub landed: Vec<LandingEvent>,
     /// Indices of the particles that left their surface in this step.
     pub dripped: Vec<usize>,
+    /// Particles the surface's retention stopped in this step (no longer alive).
+    pub pinned: Vec<PinnedEvent>,
 }
 
 /// Which target a particle ran down, and where and at what age the run-off step left it.
@@ -665,8 +809,29 @@ impl ParticleSystem {
                 let surface = targets[t].surface(particle.position, max_travel);
                 let normal = surface.map_or(down, |(_, n)| n);
                 let pull = gravity - normal * gravity.dot(normal);
+                let before = particle.velocity;
                 let along = particle.velocity - normal * particle.velocity.dot(normal);
-                particle.velocity = (along + pull * dt) * slowing;
+                // the retention opposes the motion like dry friction: a step that would leave the drop slower than it
+                // stops the drop, which is pinned (its water is handed on by the caller, it is no longer a particle)
+                let next = along + pull * dt;
+                let hold = run_off.retention * dt;
+                if run_off.retention > Fix128::ZERO {
+                    let speed = next.length();
+                    if speed <= hold {
+                        events.pinned.push(PinnedEvent {
+                            particle: index,
+                            target: t,
+                            position: particle.position,
+                        });
+                        particle.alive = false;
+                        particle.velocity = Vec3Fix::ZERO;
+                        self.on_surface[index] = None;
+                        continue;
+                    }
+                    particle.velocity = (next - next * (hold / speed)) * slowing;
+                } else {
+                    particle.velocity = next * slowing;
+                }
                 let travel = particle.velocity * dt;
                 let moved = particle.position + travel;
                 // it leaves the surface when the step's straight move ends further than `max_travel` outside it (it ran
@@ -698,7 +863,28 @@ impl ParticleSystem {
                         // held by two faces at a crease, it keeps only the velocity along the line where they meet
                         // (each face takes the part into it, as a single face does on landing)
                         if let Some(l) = line {
-                            particle.velocity = l * particle.velocity.dot(l);
+                            if run_off.retention > Fix128::ZERO {
+                                // held in a crease, the faces take the motion into them and only the motion along the
+                                // crease is left: gravity along it drives it and the retention opposes it there. Too
+                                // slow for the retention to let it move (a level crease, the bottom of a counter, or
+                                // one tilted less than the critical angle) it is pinned
+                                let u = before.dot(l) + gravity.dot(l) * dt;
+                                if u.abs() <= hold {
+                                    events.pinned.push(PinnedEvent {
+                                        particle: index,
+                                        target: t,
+                                        position: particle.position,
+                                    });
+                                    particle.alive = false;
+                                    particle.velocity = Vec3Fix::ZERO;
+                                    self.on_surface[index] = None;
+                                    continue;
+                                }
+                                let slower = if u.is_negative() { u + hold } else { u - hold };
+                                particle.velocity = l * (slower * slowing);
+                            } else {
+                                particle.velocity = l * particle.velocity.dot(l);
+                            }
                         }
                         still_on = Some(t);
                     }
@@ -1662,6 +1848,8 @@ mod tests {
             RunOff {
                 drag: Fix128::from_f64(drag),
                 drip_cos: Fix128::from_f64(drip_cos),
+                // no hysteresis: these drops are not held by the surface
+                retention: Fix128::ZERO,
             }
         }
 
