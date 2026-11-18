@@ -53,6 +53,7 @@ fn config(shear: f64) -> ThickChainConfig {
         splits: 0,
         relaxation: Fix128::ZERO,
         fit: ThickChainFit::Disc,
+        reach: Fix128::ONE,
     }
 }
 

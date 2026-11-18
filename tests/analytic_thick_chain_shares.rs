@@ -49,6 +49,8 @@ fn f(v: Fix128) -> f64 {
 const ZERO2: P2 = [Fix128::ZERO, Fix128::ZERO];
 const DENSITY: f64 = 1000.0;
 const LEAST: f64 = 0.005;
+/// the longest a link is sampled for, over its rest length
+const REACH: f64 = 8.0;
 const SUBSTEPS: u32 = 16;
 
 fn config(shear: f64, fit: ThickChainFit) -> ThickChainConfig {
@@ -63,6 +65,7 @@ fn config(shear: f64, fit: ThickChainFit) -> ThickChainConfig {
         splits: 8,
         relaxation: Fix128::ZERO,
         fit,
+        reach: fx(REACH),
     }
 }
 
@@ -310,8 +313,7 @@ fn step_distance(c: f32, wide: f32, x: f32, y: f32) -> f32 {
 /// of the mouth: the weights and the stretches the walls ask for, as the MODEL section
 /// states them (the samples at most half the least radius apart, one more interval than the
 /// length asks for)
-fn shares(x0: f64, l: f64, rest_radius: f64, c: f32, wide: f32) -> (Vec<f64>, Vec<f64>) {
-    let n = (2.0 * l / LEAST).ceil() as usize + 1;
+fn shares(x0: f64, l: f64, n: usize, rest_radius: f64, c: f32, wide: f32) -> (Vec<f64>, Vec<f64>) {
     let mut weights = Vec::new();
     let mut asked = Vec::new();
     for j in 0..=n {
@@ -364,7 +366,9 @@ fn the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth() {
         chain.set_position(0, [fx(x0), Fix128::ZERO]);
         chain.set_position(1, [fx(x0 + l), Fix128::ZERO]);
         let got = f(chain.free_stretch(0, &walls).expect("a link"));
-        let (weights, asked) = shares(x0, l, r0, c, wide);
+        // the chain's own count (a ceiling taken in Q64.64; pinned at a whole number below)
+        let spans = usize::try_from(chain.spans(0).expect("a count")).expect("a count");
+        let (weights, asked) = shares(x0, l, spans, r0, c, wide);
         match free_stretch(l / l0, &weights, &asked) {
             None => {
                 // no longer than the walls ask: the least stretch they ask of a share
@@ -477,5 +481,33 @@ fn the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links() {
     assert_eq!(
         ThickChain::new(cfg, &points, fx(0.02), fx(DENSITY)).err(),
         Some(ThickChainError::Invalid("fit"))
+    );
+}
+
+#[test]
+fn a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated() {
+    // lengths that are exact in binary: l0 = 1/64, r_min = 1/128, reach 8, so
+    // 2 l0 reach / r_min = 32 exactly and the spans are ceil(32) + 1 = 33; a reach one part in
+    // 2^20 longer asks for one more
+    let count = |reach: f64, stretch: f64| {
+        let mut cfg = config(500.0, ThickChainFit::Conforming);
+        cfg.min_radius = fx(1.0 / 128.0);
+        cfg.reach = fx(reach);
+        let l0 = 1.0 / 64.0;
+        let mut chain =
+            ThickChain::new(cfg, &row(0.0, l0, 1), fx(0.02), fx(DENSITY)).expect("a chain");
+        chain.set_position(1, [fx(l0 * stretch), Fix128::ZERO]);
+        chain.spans(0)
+    };
+    assert_eq!(count(8.0, 1.0), Ok(33));
+    assert_eq!(count(8.0 + 1.0 / 1_048_576.0, 1.0), Ok(34));
+    assert_eq!(count(4.0, 1.0), Ok(17));
+    // the count does not follow the link's length
+    assert_eq!(count(8.0, 0.5), Ok(33));
+    assert_eq!(count(8.0, 8.0), Ok(33));
+    // beyond its reach the link is refused
+    assert_eq!(
+        count(8.0, 8.0 + 1.0 / 1024.0),
+        Err(ThickChainError::Stretched { link: 0 })
     );
 }

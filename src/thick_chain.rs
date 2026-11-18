@@ -170,6 +170,12 @@ pub struct ThickChainConfig {
     pub relaxation: Fix128,
     /// How a link meets the walls
     pub fit: ThickChainFit,
+    /// The largest stretch (length over rest length) a conforming link is sampled for: its
+    /// samples are laid out once for that length (`ceil(2 l0 reach / r_min)` spans), so their
+    /// number does not follow the link's length and the link's energy has no jumps in it. A
+    /// link longer than `l0 reach` is refused as stretched. At least 1; not read by the disc
+    /// rule
+    pub reach: Fix128,
 }
 
 /// How a link answers a stretch.
@@ -369,6 +375,9 @@ impl ThickChain {
             && !matches!(config.stretch, ThickChainStretch::NeoHookean { .. })
         {
             return Err(ThickChainError::Invalid("fit"));
+        }
+        if config.fit == ThickChainFit::Conforming && config.reach < Fix128::ONE {
+            return Err(ThickChainError::Invalid("reach"));
         }
         if points.len() < 2 {
             return Err(ThickChainError::Invalid("points"));
@@ -713,12 +722,7 @@ impl ThickChain {
         let mut samples: Vec<i64> = Vec::with_capacity(links);
         if walls.is_some() {
             for k in 0..links {
-                let l = self.length(k);
-                let n = ((l + l) / c.min_radius).ceil();
-                if n > Fix128::from_int(MAX_SAMPLES) {
-                    return Err(ThickChainError::Stretched { link: k });
-                }
-                samples.push(n.hi + 1);
+                samples.push(self.spans(k)?);
             }
         }
         let mut lambda = vec![Fix128::ZERO; links];
@@ -905,22 +909,35 @@ impl ThickChain {
         // `l ≥ l0 Σ ω_j μ_j`. Its push is the walls' answer to the link's tension
         let lack = rest * need - l;
         let (u, l) = if wall && lack > Fix128::ZERO {
-            let mut g0 = scale(u, -Fix128::ONE);
-            let mut g1 = u;
+            // the slope's part along the link is one vector, taken from one end and given to
+            // the other (so the link's own pull moves no momentum); the walls' part is each
+            // end's own
+            let (mut off0, mut off1) = (ZERO2, ZERO2);
             let mut by_walls = Fix128::ZERO;
             let mut leaning = ZERO2;
             for j in 0..count {
                 let by_wall = rest * weight[j] * turn(j);
-                g0 = add(g0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
-                g1 = add(g1, scale(slope[j], by_wall * place[j]));
+                off0 = add(off0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
+                off1 = add(off1, scale(slope[j], by_wall * place[j]));
                 by_walls = by_walls + by_wall;
                 leaning = add(leaning, scale(slope[j], by_wall));
             }
+            let (g0, g1) = (sub(off0, u), add(off1, u));
             let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
             if !denom.is_zero() {
                 let push = lack / denom;
-                self.x[k] = add(self.x[k], scale(g0, w0 * push));
-                self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
+                // the move per unit inverse mass first (a length times a mass, rounded once),
+                // then each end's share: an end's move is then within a unit of the last
+                // place of the other's whatever the size of the slope
+                let shift = scale(u, push);
+                self.x[k] = add(
+                    sub(self.x[k], scale(shift, w0)),
+                    scale(scale(off0, push), w0),
+                );
+                self.x[k + 1] = add(
+                    add(self.x[k + 1], scale(shift, w1)),
+                    scale(scale(off1, push), w1),
+                );
                 press = press + push * by_walls;
                 lean = add(lean, scale(leaning, push));
             }
@@ -958,8 +975,10 @@ impl ThickChain {
             if !value.is_zero() {
                 // dS/2 = Σ_held ω_j (m̃_j s_j − m̃* s*) dμ_j + m̃* s* d(l / l0)
                 let pull_by_length = free_value * free_rise / (value * rest);
-                let mut g0 = scale(u, -pull_by_length);
-                let mut g1 = scale(u, pull_by_length);
+                // the slope's part along the link is one vector, taken from one end and
+                // given to the other; the walls' part is each end's own
+                let axial = scale(u, pull_by_length);
+                let (mut off0, mut off1) = (ZERO2, ZERO2);
                 let mut by_walls = Fix128::ZERO;
                 let mut leaning = ZERO2;
                 for j in 0..count {
@@ -968,13 +987,14 @@ impl ThickChain {
                         let by_wall = weight[j] * (held_value * held_rise - free_value * free_rise)
                             / value
                             * turn(j);
-                        g0 = sub(g0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
-                        g1 = sub(g1, scale(slope[j], by_wall * place[j]));
+                        off0 = sub(off0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
+                        off1 = sub(off1, scale(slope[j], by_wall * place[j]));
                         by_walls = by_walls + by_wall;
                         leaning = add(leaning, scale(slope[j], by_wall));
                     }
                 }
                 let softness = Fix128::ONE / (shear * area * h * h);
+                let (g0, g1) = (sub(off0, axial), add(off1, axial));
                 let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
                 let dl = if c.relaxation.is_zero() {
                     (-value - softness * *held) / (denom + softness)
@@ -986,8 +1006,15 @@ impl ThickChain {
                         / ((Fix128::ONE + rate) * denom + softness)
                 };
                 *held = *held + dl;
-                self.x[k] = add(self.x[k], scale(g0, w0 * dl));
-                self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * dl));
+                // as above: near the walls' own length the slope is large and the step
+                // small, and their product is the quantity to round, not the step times an
+                // inverse mass
+                let shift = scale(axial, dl);
+                self.x[k] = add(sub(self.x[k], scale(shift, w0)), scale(scale(off0, dl), w0));
+                self.x[k + 1] = add(
+                    add(self.x[k + 1], scale(shift, w1)),
+                    scale(scale(off1, dl), w1),
+                );
                 // the held shares press on the walls with what they carry above the tension
                 press = press - dl * by_walls;
                 lean = add(lean, scale(leaning, -dl));
@@ -1012,6 +1039,38 @@ impl ThickChain {
             lean = add(lean, scale(slope[j], push));
         }
         Ok((press, lean))
+    }
+
+    /// The spans between the samples of link `k`. The disc rule lays them out for the link's
+    /// length now (at most `r_min / 2` apart); the conforming rule for the longest the link
+    /// may be (`l0 reach`), so the number is the same at every length:
+    /// `ceil(2 l0 reach / r_min) + 1`, the ceiling taken in Q64.64.
+    ///
+    /// # Errors
+    ///
+    /// [`ThickChainError::Stretched`] for a link beyond `l0 reach` (conforming) or beyond the
+    /// samples a link may have.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not a link.
+    pub fn spans(&self, k: usize) -> Result<i64, ThickChainError> {
+        let c = &self.config;
+        let l = self.length(k);
+        let sampled = if c.fit == ThickChainFit::Conforming {
+            let most = self.rest_length[k] * c.reach;
+            if l > most {
+                return Err(ThickChainError::Stretched { link: k });
+            }
+            most
+        } else {
+            l
+        };
+        let n = ((sampled + sampled) / c.min_radius).ceil();
+        if n > Fix128::from_int(MAX_SAMPLES) {
+            return Err(ThickChainError::Stretched { link: k });
+        }
+        Ok(n.hi + 1)
     }
 
     /// The shares of link `k` at `n + 1` samples between `walls`: trapezoid weights that add
@@ -1089,11 +1148,7 @@ impl ThickChain {
         if l.is_zero() {
             return Err(ThickChainError::Degenerate { link: k });
         }
-        let n = ((l + l) / self.config.min_radius).ceil();
-        if n > Fix128::from_int(MAX_SAMPLES) {
-            return Err(ThickChainError::Stretched { link: k });
-        }
-        let shares = self.shares_of(k, n.hi + 1, walls)?;
+        let shares = self.shares_of(k, self.spans(k)?, walls)?;
         let (_, _, stretch) = held_shares(
             l / self.rest_length[k],
             shares.need,
@@ -1188,6 +1243,7 @@ impl ThickChain {
                 ThickChainFit::Disc => Fix128::ZERO,
                 ThickChainFit::Conforming => Fix128::ONE,
             },
+            c.reach,
         ] {
             put(x);
         }
