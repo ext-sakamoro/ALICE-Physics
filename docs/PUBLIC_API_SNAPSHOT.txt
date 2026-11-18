@@ -19156,6 +19156,7 @@ pub fn alice_physics_core::smoke_plume::QuantaField::max_out_courant(&alice_phys
 pub fn alice_physics_core::smoke_plume::QuantaField::new(usize, usize, usize) -> Self
 pub fn alice_physics_core::smoke_plume::QuantaField::quanta(&self) -> &[i64]
 pub fn alice_physics_core::smoke_plume::QuantaField::step(&mut self, &alice_physics_core::eulerian_grid::MacGrid, alice_physics_core::math::Fix128, bool) -> alice_physics_core::smoke_plume::TransportReport
+pub fn alice_physics_core::smoke_plume::QuantaField::step_open_top(&mut self, &alice_physics_core::eulerian_grid::MacGrid, alice_physics_core::math::Fix128, bool, bool) -> (alice_physics_core::smoke_plume::TransportReport, i64)
 pub fn alice_physics_core::smoke_plume::QuantaField::total(&self) -> core::option::Option<i64>
 impl core::clone::Clone for alice_physics_core::smoke_plume::QuantaField
 pub fn alice_physics_core::smoke_plume::QuantaField::clone(&self) -> Self
@@ -19229,6 +19230,27 @@ impl core::marker::Unpin for alice_physics_core::smoke_plume::SmokeLedger
 impl core::marker::UnsafeUnpin for alice_physics_core::smoke_plume::SmokeLedger
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::smoke_plume::SmokeLedger
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::smoke_plume::SmokeLedger
+#[non_exhaustive] pub struct alice_physics_core::smoke_plume::SmokeOutflow
+pub alice_physics_core::smoke_plume::SmokeOutflow::heat_left: i64
+pub alice_physics_core::smoke_plume::SmokeOutflow::soot_left: i64
+impl core::clone::Clone for alice_physics_core::smoke_plume::SmokeOutflow
+pub fn alice_physics_core::smoke_plume::SmokeOutflow::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::cmp::PartialEq for alice_physics_core::smoke_plume::SmokeOutflow
+pub fn alice_physics_core::smoke_plume::SmokeOutflow::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::smoke_plume::SmokeOutflow
+pub fn alice_physics_core::smoke_plume::SmokeOutflow::default() -> Self
+impl core::fmt::Debug for alice_physics_core::smoke_plume::SmokeOutflow
+pub fn alice_physics_core::smoke_plume::SmokeOutflow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::StructuralPartialEq for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::Freeze for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::Send for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::Sync for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::Unpin for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::marker::UnsafeUnpin for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::smoke_plume::SmokeOutflow
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::smoke_plume::SmokeOutflow
 pub struct alice_physics_core::smoke_plume::SmokePlume
 impl alice_physics_core::smoke_plume::SmokePlume
 pub fn alice_physics_core::smoke_plume::SmokePlume::add_source(&mut self, alice_physics_core::smoke_plume::SmokeSource) -> core::result::Result<(), alice_physics_core::smoke_plume::SmokeBuildError>
@@ -19236,15 +19258,20 @@ pub fn alice_physics_core::smoke_plume::SmokePlume::advance(&mut self, alice_phy
 pub fn alice_physics_core::smoke_plume::SmokePlume::config(&self) -> &alice_physics_core::smoke_plume::SmokeConfig
 pub fn alice_physics_core::smoke_plume::SmokePlume::excess_k(&self, usize, usize, usize) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::smoke_plume::SmokePlume::heat(&self) -> &alice_physics_core::smoke_plume::QuantaField
+pub fn alice_physics_core::smoke_plume::SmokePlume::heat_held_expected(&self) -> i64
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_diffusion_substeps(&self) -> u32
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_moved(&self) -> u64
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_steps(&self) -> u32
 pub fn alice_physics_core::smoke_plume::SmokePlume::last_transport_substeps(&self) -> u32
 pub fn alice_physics_core::smoke_plume::SmokePlume::ledger(&self) -> alice_physics_core::smoke_plume::SmokeLedger
 pub fn alice_physics_core::smoke_plume::SmokePlume::new(usize, usize, usize, alice_physics_core::math::Fix128, alice_physics_core::smoke_plume::SmokeConfig) -> core::result::Result<Self, alice_physics_core::smoke_plume::SmokeBuildError>
+pub fn alice_physics_core::smoke_plume::SmokePlume::open_top(&self) -> bool
+pub fn alice_physics_core::smoke_plume::SmokePlume::outflow(&self) -> alice_physics_core::smoke_plume::SmokeOutflow
 pub fn alice_physics_core::smoke_plume::SmokePlume::set_initial(&mut self, usize, usize, usize, i64, i64) -> core::result::Result<(), alice_physics_core::smoke_plume::SmokeBuildError>
+pub fn alice_physics_core::smoke_plume::SmokePlume::set_open_top(&mut self) -> core::result::Result<(), alice_physics_core::smoke_plume::SmokeBuildError>
 pub fn alice_physics_core::smoke_plume::SmokePlume::set_reverse_cells(&mut self, bool)
 pub fn alice_physics_core::smoke_plume::SmokePlume::soot(&self) -> &alice_physics_core::smoke_plume::QuantaField
+pub fn alice_physics_core::smoke_plume::SmokePlume::soot_held_expected(&self) -> i64
 pub fn alice_physics_core::smoke_plume::SmokePlume::step_count(&self, alice_physics_core::math::Fix128) -> core::option::Option<u32>
 pub fn alice_physics_core::smoke_plume::SmokePlume::step_once(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::world_participant::ParticipantFault>
 pub fn alice_physics_core::smoke_plume::SmokePlume::steps(&self) -> u64
