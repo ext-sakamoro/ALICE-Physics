@@ -14,7 +14,10 @@
 //! and the window sums so far) every few seconds of simulated time and resumes from it.
 //!
 //! Run: `cargo run --release --example smoke_laminar_plume -- <dx_mm> <nu_um2> <heat_k_per_s>
-//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint]`
+//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint] [coarse checkpoint]`
+//! With a coarse checkpoint (a run of the same scene at twice the cell) and no checkpoint of
+//! its own yet, the run starts from that state prolonged to this cell
+//! (`SmokePlume::prolonged`) instead of from rest; the window should start a while after it.
 //! e.g. `-- 10 200 100 20 12 0.10 0.30 open /tmp/plume10.ckpt` (`open`: the top is an outflow,
 //! so the box does not fill)
 
@@ -90,6 +93,23 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     std::fs::rename(&tmp, path)
 }
 
+/// The plume's state and step from a checkpoint of any format, the window sums left out
+/// (for a coarser run's state to prolong).
+fn load_state(path: &str, plume: &mut SmokePlume) -> Result<u64, String> {
+    let b = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    if !(MAGIC_OLD.iter().any(|m| &b[..8] == *m) || &b[..8] == MAGIC) {
+        return Err(format!("{path}: not a laminar plume checkpoint"));
+    }
+    let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
+    let len = u64_at(16) as usize;
+    let state = &b[24..24 + len];
+    plume
+        .check_state(state)
+        .map_err(|e| format!("{path}: the coarse scene refuses it: {e:?}"))?;
+    plume.read_state(state);
+    Ok(u64_at(8))
+}
+
 fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
     let b = std::fs::read(path).ok()?;
     let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
@@ -142,6 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         other => return Err(format!("the top is closed or open, not {other}").into()),
     };
     let ckpt = a.get(8).cloned();
+    let coarse_ckpt = a.get(9).cloned();
 
     let mut plume = scene::scene(dx_mm, nu, heat);
     if open {
@@ -187,6 +208,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s as f64 / per_second as f64
             );
             n = s;
+        }
+    }
+    if n == 0 {
+        if let Some(c) = &coarse_ckpt {
+            let mut coarse = scene::scene(2 * dx_mm, nu, heat);
+            if open {
+                coarse
+                    .set_open_top()
+                    .map_err(|e| format!("open the coarse top: {e:?}"))?;
+            }
+            let s = load_state(c, &mut coarse)?;
+            let config = *plume.config();
+            plume = coarse
+                .prolonged(config)
+                .map_err(|e| format!("prolong: {e:?}"))?;
+            // a coarse step is two of this cell's
+            n = 2 * s;
+            println!(
+                "prolonged from {c} at {:.2} s ({} cells to {} per axis)",
+                n as f64 / per_second as f64,
+                coarse.velocity().nx,
+                plume.velocity().nx
+            );
+            assert_eq!(
+                plume.heat().total(),
+                Some(plume.heat_held_expected()),
+                "prolonged heat"
+            );
         }
     }
 
