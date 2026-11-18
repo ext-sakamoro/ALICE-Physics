@@ -52,8 +52,10 @@
 //!   (`(ω h)² = (w_i + w_j) |∇C|² h² / α` at its length then), is taken in halves, again as
 //!   needed up to `splits` times, and refused beyond that. Between walls the stretch and the
 //!   walls are solved in turn, and what a pass leaves unsolved grows with `(ω h)²`: with
-//!   `splits = 0` the caller keeps it small (measured: a chain at `(ω h)² = 0.96` entered a
-//!   narrower channel under a push 10 % below the least possible, at 0.015 it did not). Entering a
+//!   `splits = 0` the caller keeps it small (measured, with the largest `(ω h)²` of the
+//!   chain's links, pushed 5 and 10 % below the least push that can feed it into a narrower
+//!   channel: not fed at 0.50 and 0.69, a chain of 80 links creeping in at 1.0 and fed at
+//!   1.44 and above, a chain of 40 links not fed up to 1.44). Entering a
 //!   passage: a chain of rest width `w0` is fed into a frictionless channel of half-width
 //!   `c < r0` only by a push that pays for the energy of the squeeze. Pushed on its tail by
 //!   `F` (neo-Hookean law), the part outside is shortened to `λ_F` with `T(λ_F) = −F`, and

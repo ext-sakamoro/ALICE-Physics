@@ -169,6 +169,24 @@ fn a_run_that_needs_no_split_is_the_same_bits_with_and_without() {
         (chain.positions().to_vec(), chain.velocities().to_vec())
     };
     assert_eq!(run(0), run(8));
+    // the two settings are part of the state all the same: a snapshot tells them apart
+    let made = |splits: u32, relaxation: f64| {
+        let mut cfg = config(neo());
+        cfg.splits = splits;
+        cfg.relaxation = fx(relaxation);
+        ThickChain::new(cfg, &row(0.0, LINK, 2), fx(RADIUS), fx(DENSITY))
+            .expect("a chain")
+            .snapshot()
+    };
+    assert_ne!(made(0, 0.0), made(8, 0.0));
+    assert_ne!(made(0, 0.0), made(0, 0.004));
+    // and a retardation time below 0 is refused by name
+    let mut cfg = config(neo());
+    cfg.relaxation = fx(-0.001);
+    assert_eq!(
+        ThickChain::new(cfg, &row(0.0, LINK, 2), fx(RADIUS), fx(DENSITY)).err(),
+        Some(ThickChainError::Invalid("relaxation"))
+    );
 }
 
 #[test]
