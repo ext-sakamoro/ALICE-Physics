@@ -856,3 +856,243 @@ fn the_open_top_carries_the_source_away_at_steady_state() {
     let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
     assert!((mean - 1.0).abs() < 0.005, "mean {mean}, {ratios:?}");
 }
+
+/// The net outflow of cell `(i, j, k)`, `Σ_faces (u_out − u_in)` (the divergence times the
+/// cell's side).
+fn net_out(g: &MacGrid, i: usize, j: usize, k: usize) -> Fix128 {
+    let (nx, ny) = (g.nx, g.ny);
+    (g.u[i + 1 + (nx + 1) * (j + ny * k)] - g.u[i + (nx + 1) * (j + ny * k)])
+        + (g.v[i + nx * (j + 1 + (ny + 1) * k)] - g.v[i + nx * (j + (ny + 1) * k)])
+        + (g.w[i + nx * (j + ny * (k + 1))] - g.w[i + nx * (j + ny * k)])
+}
+
+/// [`plume`] after half a second, prolonged to 16 × 32 × 16 cells of 5 mm: every quantum
+/// is kept (each coarse cell's 8 children sum to it and differ by at most one), the ledger
+/// carries over, a fine face that coincides with a coarse face has its velocity, every
+/// fine cell has its parent's divergence (its net outflow is half the parent's, the cell
+/// being half as wide: oracle, the linear-along-the-normal rule written here, to the two
+/// units of the last place its halvings round away), and the fine
+/// plume steps on with its ledger closed, the doubled source cells adding
+/// `32 · ⌊50 · 2³² / 256⌋ = 32 · 50 · 2²⁴` quanta per step of 1/256 s.
+#[test]
+fn prolongation_keeps_every_quantum_and_each_parents_divergence() {
+    let mut coarse = plume();
+    coarse.advance(step() * Fix128::from_int(64)).unwrap();
+    let mut c = config();
+    c.soot_diffusivity_m2_s = Fix128::from_ratio(1, 10_000);
+    c.step_max = Fix128::from_ratio(1, 256);
+    let mut fine = coarse.prolonged(c).unwrap();
+    assert_eq!(fine.ledger(), coarse.ledger());
+    assert_eq!(fine.steps(), coarse.steps());
+    for (cf, ff) in [(coarse.heat(), fine.heat()), (coarse.soot(), fine.soot())] {
+        assert_eq!(ff.total(), cf.total());
+        for k in 0..8 {
+            for j in 0..16 {
+                for i in 0..8 {
+                    let kids: Vec<i64> = (0..8)
+                        .map(|n| {
+                            ff.quanta()[ff.index(
+                                2 * i + (n & 1),
+                                2 * j + ((n >> 1) & 1),
+                                2 * k + (n >> 2),
+                            )]
+                        })
+                        .collect();
+                    assert_eq!(kids.iter().sum::<i64>(), cf.quanta()[cf.index(i, j, k)]);
+                    let (lo, hi) = (kids.iter().min().unwrap(), kids.iter().max().unwrap());
+                    assert!(hi - lo <= 1, "children {kids:?}");
+                }
+            }
+        }
+    }
+    let (cg, fg) = (coarse.velocity(), fine.velocity());
+    assert!(
+        cg.v.iter().any(|v| !v.is_zero()),
+        "the coarse plume did not move"
+    );
+    for k in 0..16 {
+        for j in 0..32 {
+            for i in 0..=16 {
+                if i % 2 == 0 {
+                    assert_eq!(
+                        fg.u[i + 17 * (j + 32 * k)],
+                        cg.u[i / 2 + 9 * (j / 2 + 16 * (k / 2))]
+                    );
+                }
+            }
+        }
+    }
+    let half = Fix128::from_ratio(1, 2);
+    let mut worst = 0f64;
+    for k in 0..16 {
+        for j in 0..32 {
+            for i in 0..16 {
+                let parent = net_out(cg, i / 2, j / 2, k / 2) * half;
+                worst = worst.max((net_out(fg, i, j, k) - parent).to_f64().abs());
+            }
+        }
+    }
+    // rounding only: each axis's mean face loses at most half a unit of the last place (2⁻⁶⁴)
+    // when halved, three axes, and halving the parent's another half: at most 2 · 2⁻⁶⁴
+    let ulp = 1.0 / (1u128 << 64) as f64;
+    assert!(
+        worst > 0.0 && worst <= 2.0 * ulp,
+        "a child's divergence differs from its parent's by {worst:e}"
+    );
+    let added = fine.ledger().heat_added;
+    fine.advance(Fix128::from_ratio(1, 256)).unwrap();
+    assert_eq!(fine.ledger().heat_added - added, 32 * 50 * (1i64 << 24));
+    assert_eq!(fine.heat().total(), Some(fine.heat_held_expected()));
+    assert_eq!(fine.soot().total(), Some(fine.soot_held_expected()));
+}
+
+/// An open plume prolongs open, with its outflow; a grid past 256 cells or cells below 1 mm
+/// is refused.
+#[test]
+fn prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be() {
+    let mut open = plume();
+    open.set_open_top().unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    assert!(open.outflow().heat_left > 0);
+    let mut c = config();
+    c.step_max = Fix128::from_ratio(1, 256);
+    let fine = open.prolonged(c).unwrap();
+    assert!(fine.open_top());
+    assert_eq!(fine.outflow(), open.outflow());
+    assert_eq!(fine.heat().total(), Some(fine.heat_held_expected()));
+    let tall = SmokePlume::new(4, 256, 4, Fix128::from_ratio(1, 100), config()).unwrap();
+    assert_eq!(
+        tall.prolonged(config()).err(),
+        Some(SmokeBuildError::BadGrid)
+    );
+    let small = SmokePlume::new(4, 4, 4, Fix128::from_ratio(1, 1000), config()).unwrap();
+    assert_eq!(
+        small.prolonged(config()).err(),
+        Some(SmokeBuildError::BadGrid)
+    );
+}
+
+/// The laminar scene is one physical scene at every cell: at 10, 5 and 2.5 mm its box and its
+/// source span the same lengths (oracle, in micrometres: the box 320 000 wide and 640 000 tall,
+/// the source from 150 000 to 170 000 across and from 10 000 to 30 000 up), and the 10 mm scene
+/// prolonged to 5 mm is the 5 mm scene, so the 5 mm scene accepts its state (a source placed a
+/// fixed number of cells up, not a fixed height, would sit lower on the finer grid and both
+/// fail).
+#[test]
+fn the_laminar_scene_has_the_same_lengths_at_every_cell() {
+    for dx_um in [10_000i64, 5_000, 2_500] {
+        let g = laminar_scene::geometry(dx_um);
+        let at = |cells: usize| cells as i64 * dx_um;
+        assert_eq!(
+            (at(g.n_xz), at(g.n_y)),
+            (320_000, 640_000),
+            "box at {dx_um} µm"
+        );
+        for axis in [0, 2] {
+            assert_eq!(
+                (at(g.source.lo[axis]), at(g.source.hi[axis])),
+                (150_000, 170_000),
+                "source across at {dx_um} µm"
+            );
+        }
+        assert_eq!(
+            (at(g.source.lo[1]), at(g.source.hi[1])),
+            (10_000, 30_000),
+            "source height at {dx_um} µm"
+        );
+    }
+    let fine_scene = laminar_scene::scene(5, 200, 400);
+    let fine = laminar_scene::scene(10, 200, 400)
+        .prolonged(*fine_scene.config())
+        .unwrap();
+    let mut bytes = Vec::new();
+    fine.write_state(&mut bytes);
+    fine_scene.check_state(&bytes).unwrap();
+}
+
+/// The averaging window of the laminar plume run opens only on an outflow that has stayed
+/// steady for a transit (oracle: the means of the declared ratios, computed outside the rule):
+/// (1) the recorded outflow of [`plume`] with its top open (outflow / source per half second,
+/// 0 to 6.5 s: 0, 0, 0, 0, 0.0206, 1.0078, 1.2689, 1.1009, 1.0529, 1.0361, 1.0182, 1.0105, 1.0060,
+/// 1.0024, 1.0005, 1.0002, the overshoot of the first arrival at the top, then 1.0000): over a
+/// span of 4 s the two-sided test first holds at 8 s (1.0159), a one-sided `left >= 0.95 · added`
+/// at 7 s inside the overshoot (1.0618), and the sustained rule opens at 11 s, the first second
+/// with 8, 9, 10 and 11 s all inside the band; (2) an outflow passing through the band while the
+/// box fills (per second 0, 0.2, 0.5, 0.8, 0.95, 1.02, 1.09, 1.16, 1.18, 1.14, 1.08, 1.03, 1.01,
+/// then 1.00): the two-sided test alone holds at 7 s (0.965) and leaves the band at 8 s (1.055),
+/// the sustained rule waits to 17 s; (3) the span is the box's height at the plume's speed in
+/// whole seconds rounded up: 0.64 m at 0.27 m/s is 3 s, at 0.16 m/s 4 s, at 0.64 m/s 1 s, and no
+/// span without an upward speed.
+#[test]
+fn the_plume_window_opens_on_a_sustained_steady_outflow() {
+    // one (left, added) pair per whole second
+    type History = [(i64, i64)];
+    let opens = |hist: &History, rule: &dyn Fn(&History) -> bool| {
+        (1..=hist.len()).find(|&s| rule(&hist[..s])).map(|s| s - 1)
+    };
+    // (1) the ratios per half second in units of 10⁻⁴, against 10⁶ quanta of source each
+    let mut halves = vec![
+        0i64, 0, 0, 0, 206, 10078, 12689, 11009, 10529, 10361, 10182, 10105, 10060, 10024, 10005,
+        10002,
+    ];
+    halves.extend([10_000; 12]);
+    let (mut left, mut added) = (0i64, 0i64);
+    let mut hist = vec![(0i64, 0i64)];
+    for (h, r) in halves.iter().enumerate() {
+        added += 1_000_000;
+        left += r * 100;
+        if h % 2 == 1 {
+            hist.push((left, added));
+        }
+    }
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::outflow_steady(h, 4)),
+        Some(8)
+    );
+    let one_sided = |h: &History| {
+        h.len() > 4 && {
+            let (now, then) = (h[h.len() - 1], h[h.len() - 5]);
+            now.1 > then.1 && (now.0 - then.0) * 100 >= 95 * (now.1 - then.1)
+        }
+    };
+    assert_eq!(opens(&hist, &one_sided), Some(7));
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::sustained_steady(h, 4)),
+        Some(11)
+    );
+    // (2) per second, in units of 10⁻⁴
+    let seconds = [
+        0i64, 2000, 5000, 8000, 9500, 10200, 10900, 11600, 11800, 11400, 10800, 10300, 10100,
+        10000, 10000, 10000, 10000, 10000, 10000, 10000,
+    ];
+    let (mut left, mut added) = (0i64, 0i64);
+    let mut hist = vec![(0i64, 0i64)];
+    for r in seconds {
+        added += 1_000_000;
+        left += r * 100;
+        hist.push((left, added));
+    }
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::outflow_steady(h, 4)),
+        Some(7)
+    );
+    assert!(
+        !laminar_scene::outflow_steady(&hist[..9], 4),
+        "it leaves the band at 8 s"
+    );
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::sustained_steady(h, 4)),
+        Some(17)
+    );
+    // (3)
+    assert_eq!(laminar_scene::transit_span_s(0.27), Some(3));
+    assert_eq!(laminar_scene::transit_span_s(0.16), Some(4));
+    assert_eq!(laminar_scene::transit_span_s(0.64), Some(1));
+    assert_eq!(laminar_scene::transit_span_s(0.0), None);
+    assert_eq!(laminar_scene::transit_span_s(-0.1), None);
+}
