@@ -87,7 +87,12 @@
 //!   off the cells the grid was built on, a pair near a cell edge was found from one side
 //!   only, and the sum was 0 to 3.3e-9 of the fluid-side total depending on the initial
 //!   placement (3.4e-5 N of 2.98e4 N, about 1e6 times this bound on the cube scene); rebuilt
-//!   every iteration, the sum stays within the bound, at no measurable cost.
+//!   every iteration, the sum stays within the bound, at no measurable cost. The check that
+//!   sees a grid built once per substep is the cube two kernel radii above the floor
+//!   (`tests/analytic_fluid_sdf_body.rs`, 900 frames, about 3000 particles): there the largest
+//!   `|sum|` reaches 1.45e6 times the bound (measured 2026-11-19); the two small scenes of the
+//!   unit tests do not move a particle across a cell inside the iterations and stay
+//!   bit-identical either way.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
 //!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
 //!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
