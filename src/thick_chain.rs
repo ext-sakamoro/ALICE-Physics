@@ -463,9 +463,9 @@ impl ThickChain {
             }
         }
         let rate = Fix128::ONE / h;
-        for i in 0..self.x.len() {
+        for (i, &from) in start.iter().enumerate() {
             if !self.inv_mass[i].is_zero() {
-                self.v[i] = scale(sub(self.x[i], start[i]), rate);
+                self.v[i] = scale(sub(self.x[i], from), rate);
             }
         }
         // friction, on each link as a whole: the velocity of its centre of mass across the
