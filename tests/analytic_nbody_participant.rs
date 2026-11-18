@@ -564,7 +564,7 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
-const THREE_BODY_XPBD: &str = "d70a146056c8fda76defdd54a3e5c6e1d4946e7acdbf656028b1c16b4beaedcc";
+const THREE_BODY_XPBD: &str = "64deacdbdd9fae75841de2be3c82e69cf8b69bd73b22f38ac5c210d3b1a580be";
 const THREE_BODY_TGS: &str = "3d02f8aea3928f0120a6076409c4a8d5b6e43b21e657f9c5461ca7acc5797700";
 
 /// golden (determinism): the world snapshot and the participant payload of

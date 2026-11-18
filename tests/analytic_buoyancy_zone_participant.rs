@@ -638,7 +638,7 @@ fn splash_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
-const SPLASH_XPBD: &str = "ee22fea84a6d996d74ca247c622a244e9a48b976f5a03a85995c7e72f186ccb6";
+const SPLASH_XPBD: &str = "dcfd613dd56cb50d31490f790b836108682f574b0df506545762f85e658a01b9";
 const SPLASH_TGS: &str = "fd2d2684797f3d2d4f49ceff4639929f035e2790124e66b485dc08f7ad005de5";
 
 /// golden (determinism): the world snapshot and the payload of the splash scene

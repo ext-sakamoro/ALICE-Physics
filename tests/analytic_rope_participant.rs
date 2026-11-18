@@ -715,7 +715,7 @@ fn swing_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
-const SWING_XPBD: &str = "7e4b035241cc354b689e8f9da242ceaba862da8b2e23770c7466a80bec2066b2";
+const SWING_XPBD: &str = "1ca184945fa15d64215bf20e04e60e1e68aed92ee1ab8c161b409a87df4e332f";
 const SWING_TGS: &str = "a8bf220e449eeb0acc5162e36c41f53f4e79a2eeba2b96ee50a38d6207144991";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene

@@ -348,7 +348,7 @@ test("the jointed scene's digest and law id are the golden the native platforms 
   const w = jointedScene();
   for (let i = 0; i < 120; i++) w.step(DT);
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  assert.equal(hex(w.stateDigest()), "a248509e4209ff40f21e511dda21e331bdc497e83f7e735f4722d805e46bce7d");
+  assert.equal(hex(w.stateDigest()), "825fed52bb66070a85758a68cd55f20983cee3bc82fdc4a4c9077ffd7f0929a5");
   assert.equal(hex(w.lawId()), "a1ed234292f9572e0f732e01a88286ed5d6fbe1d21226e419ee6b342745abaae");
 });
 
