@@ -33,8 +33,8 @@ use crate::eulerian_grid::{
     g2p_velocity, p2g_normalized_with, project_pressure, project_pressure_banded,
     project_pressure_bicgstab, project_pressure_decomposed, project_pressure_jacobi,
     project_pressure_multigrid, project_pressure_multigrid_decomposed, sample_u_range,
-    sample_u_trilinear, sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear,
-    BicgstabStats, FaceBc, HaloSchedule, MacGrid, ParticleScatter,
+    sample_u_trilinear_scaled, sample_v_range, sample_v_trilinear_scaled, sample_w_range,
+    sample_w_trilinear_scaled, BicgstabStats, FaceBc, HaloSchedule, MacGrid, ParticleScatter,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -2002,6 +2002,12 @@ impl CfdSolver {
     /// This scheme is first-order in time and diffusive on coarse grids;
     /// higher-order variants (BFECC, MacCormack, RK3) are future upgrades.
     fn advect_velocity(&mut self, dt_s: Fix128) {
+        // 1 / dx once per advection, not per sample (the samplers compute the same quotient)
+        let inv_dx = if self.grid.dx.is_zero() {
+            Fix128::ZERO
+        } else {
+            Fix128::ONE / self.grid.dx
+        };
         let old = self.grid.clone();
         let dx = self.grid.dx;
         let half = Fix128::from_ratio(1, 2);
@@ -2020,7 +2026,7 @@ impl CfdSolver {
                         pos.y - dt_s * vel.y,
                         pos.z - dt_s * vel.z,
                     );
-                    let new_u = sample_u_trilinear(&old, back);
+                    let new_u = sample_u_trilinear_scaled(&old, back, inv_dx);
                     let ix = self.grid.idx_u(i, j, k);
                     if ix < self.grid.u.len() {
                         self.grid.u[ix] = new_u;
@@ -2043,7 +2049,7 @@ impl CfdSolver {
                         pos.y - dt_s * vel.y,
                         pos.z - dt_s * vel.z,
                     );
-                    let new_v = sample_v_trilinear(&old, back);
+                    let new_v = sample_v_trilinear_scaled(&old, back, inv_dx);
                     let ix = self.grid.idx_v(i, j, k);
                     if ix < self.grid.v.len() {
                         self.grid.v[ix] = new_v;
@@ -2066,7 +2072,7 @@ impl CfdSolver {
                         pos.y - dt_s * vel.y,
                         pos.z - dt_s * vel.z,
                     );
-                    let new_w = sample_w_trilinear(&old, back);
+                    let new_w = sample_w_trilinear_scaled(&old, back, inv_dx);
                     let ix = self.grid.idx_w(i, j, k);
                     if ix < self.grid.w.len() {
                         self.grid.w[ix] = new_w;
@@ -2094,6 +2100,12 @@ impl CfdSolver {
     /// injects super-linear vorticity growth on the paper's
     /// axisymmetric swirl setup and diverges within tens of steps.
     fn advect_velocity_maccormack(&mut self, dt_s: Fix128) {
+        // 1 / dx once per advection, not per sample (the samplers compute the same quotient)
+        let inv_dx = if self.grid.dx.is_zero() {
+            Fix128::ZERO
+        } else {
+            Fix128::ONE / self.grid.dx
+        };
         let u_n = self.grid.clone();
 
         // Predictor: reuse the existing semi-Lagrangian pass.
@@ -2124,7 +2136,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_u(i, j, k);
                     if ix < u_tilde.len() {
-                        u_tilde[ix] = sample_u_trilinear(&phi_hat, forward);
+                        u_tilde[ix] = sample_u_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2145,7 +2157,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_v(i, j, k);
                     if ix < v_tilde.len() {
-                        v_tilde[ix] = sample_v_trilinear(&phi_hat, forward);
+                        v_tilde[ix] = sample_v_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2166,7 +2178,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_w(i, j, k);
                     if ix < w_tilde.len() {
-                        w_tilde[ix] = sample_w_trilinear(&phi_hat, forward);
+                        w_tilde[ix] = sample_w_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2388,6 +2400,12 @@ impl CfdSolver {
     /// pass but removes the phase-error residual on the compensator,
     /// giving cleaner spectra on smooth flow.
     fn advect_velocity_bfecc(&mut self, dt_s: Fix128) {
+        // 1 / dx once per advection, not per sample (the samplers compute the same quotient)
+        let inv_dx = if self.grid.dx.is_zero() {
+            Fix128::ZERO
+        } else {
+            Fix128::ONE / self.grid.dx
+        };
         let u_n = self.grid.clone();
         let dx = self.grid.dx;
         let half = Fix128::from_ratio(1, 2);
@@ -2416,7 +2434,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_u(i, j, k);
                     if ix < u_tilde.len() {
-                        u_tilde[ix] = sample_u_trilinear(&phi_hat, forward);
+                        u_tilde[ix] = sample_u_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2436,7 +2454,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_v(i, j, k);
                     if ix < v_tilde.len() {
-                        v_tilde[ix] = sample_v_trilinear(&phi_hat, forward);
+                        v_tilde[ix] = sample_v_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2456,7 +2474,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_w(i, j, k);
                     if ix < w_tilde.len() {
-                        w_tilde[ix] = sample_w_trilinear(&phi_hat, forward);
+                        w_tilde[ix] = sample_w_trilinear_scaled(&phi_hat, forward, inv_dx);
                     }
                 }
             }
@@ -2491,7 +2509,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_u(i, j, k);
                     if ix < self.grid.u.len() {
-                        self.grid.u[ix] = sample_u_trilinear(&phi_star, back);
+                        self.grid.u[ix] = sample_u_trilinear_scaled(&phi_star, back, inv_dx);
                     }
                 }
             }
@@ -2511,7 +2529,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_v(i, j, k);
                     if ix < self.grid.v.len() {
-                        self.grid.v[ix] = sample_v_trilinear(&phi_star, back);
+                        self.grid.v[ix] = sample_v_trilinear_scaled(&phi_star, back, inv_dx);
                     }
                 }
             }
@@ -2531,7 +2549,7 @@ impl CfdSolver {
                     );
                     let ix = self.grid.idx_w(i, j, k);
                     if ix < self.grid.w.len() {
-                        self.grid.w[ix] = sample_w_trilinear(&phi_star, back);
+                        self.grid.w[ix] = sample_w_trilinear_scaled(&phi_star, back, inv_dx);
                     }
                 }
             }
