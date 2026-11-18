@@ -253,4 +253,21 @@ fn main() {
         forces[1].y.to_f64(),
         sum.length().to_f64()
     );
+    // the same force on the cube (it rests on the floor), particle by particle, split above
+    // / below / beside it
+    let per = with_bodies.body_particle_forces();
+    let nb = with_bodies.body_count();
+    let (mut above, mut below, mut beside) = (0.0, 0.0, 0.0);
+    for (i, p) in with_bodies.positions.iter().enumerate() {
+        let fy = per[i * nb + 1].y.to_f64();
+        let y = p.y.to_f64();
+        if y > CUBE {
+            above += fy;
+        } else if y < 0.0 {
+            below += fy;
+        } else {
+            beside += fy;
+        }
+    }
+    println!("cube by face (y): above {above:.1} N, below {below:.1} N, beside {beside:.1} N");
 }

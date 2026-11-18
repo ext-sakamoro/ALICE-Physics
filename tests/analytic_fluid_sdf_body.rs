@@ -213,6 +213,65 @@ fn cube_on_the_floor(default_frames: usize) {
     assert!((ratio - 1.0).abs() < 0.05, "F_y / closed form = {ratio}");
 }
 
+/// The cube's vertical force by face over the same window as [`settle`]: top, bottom and
+/// side faces (the particle above, below or beside the cube), and the bottom face in four
+/// x-bins, from [`Fluid::body_particle_forces`]
+struct Faces {
+    top: f64,
+    bottom: f64,
+    side: f64,
+    bottom_bins: [f64; 4],
+}
+
+fn settle_with_faces(sc: &mut Scene, bottom: f64, default_frames: usize) -> (f64, f64, Faces) {
+    let dt = Fix128::from_ratio(1, 60);
+    let total = frames(default_frames);
+    let lo = (W - CUBE) / 2.0;
+    let (mut cube_y, mut newton) = (0.0, 0.0_f64);
+    let mut faces = Faces {
+        top: 0.0,
+        bottom: 0.0,
+        side: 0.0,
+        bottom_bins: [0.0; 4],
+    };
+    for f in 0..total {
+        sc.fluid.step(dt);
+        let bf = sc.fluid.body_forces();
+        let sum = bf[0] + bf[1] + sc.fluid.boundary_force();
+        let scale = sc.fluid.boundary_force().length().to_f64().max(1e-30);
+        newton = newton.max(sum.length().to_f64() / scale);
+        if f + 60 < total {
+            continue;
+        }
+        cube_y += bf[1].y.to_f64() / 60.0;
+        let per = sc.fluid.body_particle_forces();
+        for (i, p) in sc.fluid.positions.iter().enumerate() {
+            let fy = per[i * 2 + 1].y.to_f64() / 60.0;
+            let (x, y) = (p.x.to_f64(), p.y.to_f64());
+            if y > bottom + CUBE {
+                faces.top += fy;
+            } else if y < bottom {
+                faces.bottom += fy;
+                let bin = (((x - lo) / S).floor().max(0.0) as usize).min(3);
+                faces.bottom_bins[bin] += fy;
+            } else {
+                faces.side += fy;
+            }
+        }
+    }
+    (cube_y, newton, faces)
+}
+
+/// The cube two kernel radii above the floor carries the Archimedes force, and its faces are
+/// read one by one so the total cannot pass through cancellation alone. Closed forms with
+/// `H = (N s^3 + CUBE^3) / W^2`: the bottom face is pushed up by `rho_0 g (H - y_b) A`, the
+/// top face down by `rho_0 g (H - y_b - CUBE) A`, the side faces carry no vertical load; the
+/// bottom face in four bins, each `rho_0 g (H - y_b) A / 4`. The faces are stated rows at the
+/// values measured with C >= 0 clamped and inelastic contact (2026-11-18, 900 frames, mean of
+/// the last 60): top 0.791, bottom 0.798 of their closed forms, sides +121.8 N, bottom bins
+/// 0.639 / 1.107 / 0.853 / 0.593; bounds 0.01 of the face's closed form from them, and they
+/// may only tighten (the structural row of the fluid MODEL: the face loads are not hydrostatic
+/// at the edges of a solid).
 #[test]
 fn the_cube_two_kernel_radii_above_the_floor_feels_archimedes() {
     cube_two_kernel_radii_up(FRAMES);
@@ -227,15 +286,49 @@ fn the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames() 
 fn cube_two_kernel_radii_up(default_frames: usize) {
     let bottom = 0.4;
     let mut sc = scene(bottom, bottom + 0.8);
-    let (fy, newton) = settle(&mut sc, default_frames);
+    let (fy, newton, faces) = settle_with_faces(&mut sc, bottom, default_frames);
     let closed = RHO0 * g() * CUBE * CUBE * CUBE;
     let ratio = fy / closed;
-    eprintln!("cube 2h up: F_y / (rho g V) = {ratio}, newton {newton}");
+    let h = (sc.n as f64 * S * S * S + CUBE * CUBE * CUBE) / (W * W);
+    let bottom_closed = RHO0 * g() * (h - bottom) * CUBE * CUBE;
+    let top_closed = RHO0 * g() * (h - bottom - CUBE) * CUBE * CUBE;
+    let bins: Vec<f64> = faces
+        .bottom_bins
+        .iter()
+        .map(|b| b / (bottom_closed / 4.0))
+        .collect();
+    eprintln!(
+        "cube 2h up: F_y / (rho g V) = {ratio}, newton {newton}; top {} / bottom {} of closed, sides {} N, bottom bins {bins:?}",
+        -faces.top / top_closed,
+        faces.bottom / bottom_closed,
+        faces.side
+    );
     assert!(
         newton < 1e-9,
         "the solids' forces sum to the fluid-side total: {newton}"
     );
     assert!((ratio - 1.0).abs() < 0.05, "F_y / (rho g V) = {ratio}");
+    assert!(
+        -faces.top / top_closed >= 0.781,
+        "top face {} of closed (measured 0.791)",
+        -faces.top / top_closed
+    );
+    assert!(
+        faces.bottom / bottom_closed >= 0.788,
+        "bottom face {} of closed (measured 0.798)",
+        faces.bottom / bottom_closed
+    );
+    assert!(
+        faces.side.abs() <= 121.8 + 12.8,
+        "side faces carry {} N vertically (measured 121.8)",
+        faces.side
+    );
+    for (b, (got, measured)) in bins.iter().zip([0.639, 1.107, 0.853, 0.593]).enumerate() {
+        assert!(
+            (got - 1.0).abs() <= (measured - 1.0_f64).abs() + 0.01,
+            "bottom bin {b}: {got} (measured {measured})"
+        );
+    }
 }
 
 #[test]
