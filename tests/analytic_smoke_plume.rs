@@ -856,3 +856,123 @@ fn the_open_top_carries_the_source_away_at_steady_state() {
     let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
     assert!((mean - 1.0).abs() < 0.005, "mean {mean}, {ratios:?}");
 }
+
+/// The net outflow of cell `(i, j, k)`, `Σ_faces (u_out − u_in)` (the divergence times the
+/// cell's side).
+fn net_out(g: &MacGrid, i: usize, j: usize, k: usize) -> Fix128 {
+    let (nx, ny) = (g.nx, g.ny);
+    (g.u[i + 1 + (nx + 1) * (j + ny * k)] - g.u[i + (nx + 1) * (j + ny * k)])
+        + (g.v[i + nx * (j + 1 + (ny + 1) * k)] - g.v[i + nx * (j + (ny + 1) * k)])
+        + (g.w[i + nx * (j + ny * (k + 1))] - g.w[i + nx * (j + ny * k)])
+}
+
+/// [`plume`] after half a second, prolonged to 16 × 32 × 16 cells of 5 mm: every quantum
+/// is kept (each coarse cell's 8 children sum to it and differ by at most one), the ledger
+/// carries over, a fine face that coincides with a coarse face has its velocity, every
+/// fine cell has its parent's divergence (its net outflow is half the parent's, the cell
+/// being half as wide: oracle, the linear-along-the-normal rule written here, to the two
+/// units of the last place its halvings round away), and the fine
+/// plume steps on with its ledger closed, the doubled source cells adding
+/// `32 · ⌊50 · 2³² / 256⌋ = 32 · 50 · 2²⁴` quanta per step of 1/256 s.
+#[test]
+fn prolongation_keeps_every_quantum_and_each_parents_divergence() {
+    let mut coarse = plume();
+    coarse.advance(step() * Fix128::from_int(64)).unwrap();
+    let mut c = config();
+    c.soot_diffusivity_m2_s = Fix128::from_ratio(1, 10_000);
+    c.step_max = Fix128::from_ratio(1, 256);
+    let mut fine = coarse.prolonged(c).unwrap();
+    assert_eq!(fine.ledger(), coarse.ledger());
+    assert_eq!(fine.steps(), coarse.steps());
+    for (cf, ff) in [(coarse.heat(), fine.heat()), (coarse.soot(), fine.soot())] {
+        assert_eq!(ff.total(), cf.total());
+        for k in 0..8 {
+            for j in 0..16 {
+                for i in 0..8 {
+                    let kids: Vec<i64> = (0..8)
+                        .map(|n| {
+                            ff.quanta()[ff.index(
+                                2 * i + (n & 1),
+                                2 * j + ((n >> 1) & 1),
+                                2 * k + (n >> 2),
+                            )]
+                        })
+                        .collect();
+                    assert_eq!(kids.iter().sum::<i64>(), cf.quanta()[cf.index(i, j, k)]);
+                    let (lo, hi) = (kids.iter().min().unwrap(), kids.iter().max().unwrap());
+                    assert!(hi - lo <= 1, "children {kids:?}");
+                }
+            }
+        }
+    }
+    let (cg, fg) = (coarse.velocity(), fine.velocity());
+    assert!(
+        cg.v.iter().any(|v| !v.is_zero()),
+        "the coarse plume did not move"
+    );
+    for k in 0..16 {
+        for j in 0..32 {
+            for i in 0..=16 {
+                if i % 2 == 0 {
+                    assert_eq!(
+                        fg.u[i + 17 * (j + 32 * k)],
+                        cg.u[i / 2 + 9 * (j / 2 + 16 * (k / 2))]
+                    );
+                }
+            }
+        }
+    }
+    let half = Fix128::from_ratio(1, 2);
+    let mut worst = 0f64;
+    for k in 0..16 {
+        for j in 0..32 {
+            for i in 0..16 {
+                let parent = net_out(cg, i / 2, j / 2, k / 2) * half;
+                worst = worst.max((net_out(fg, i, j, k) - parent).to_f64().abs());
+            }
+        }
+    }
+    // rounding only: each axis's mean face loses at most half a unit of the last place (2⁻⁶⁴)
+    // when halved, three axes, and halving the parent's another half: at most 2 · 2⁻⁶⁴
+    let ulp = 1.0 / (1u128 << 64) as f64;
+    assert!(
+        worst > 0.0 && worst <= 2.0 * ulp,
+        "a child's divergence differs from its parent's by {worst:e}"
+    );
+    let added = fine.ledger().heat_added;
+    fine.advance(Fix128::from_ratio(1, 256)).unwrap();
+    assert_eq!(fine.ledger().heat_added - added, 32 * 50 * (1i64 << 24));
+    assert_eq!(fine.heat().total(), Some(fine.heat_held_expected()));
+    assert_eq!(fine.soot().total(), Some(fine.soot_held_expected()));
+}
+
+/// An open plume prolongs open, with its outflow; a grid past 256 cells or cells below 1 mm
+/// is refused.
+#[test]
+fn prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be() {
+    let mut open = plume();
+    open.set_open_top().unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    open.advance(step() * Fix128::from_int(64)).unwrap();
+    assert!(open.outflow().heat_left > 0);
+    let mut c = config();
+    c.step_max = Fix128::from_ratio(1, 256);
+    let fine = open.prolonged(c).unwrap();
+    assert!(fine.open_top());
+    assert_eq!(fine.outflow(), open.outflow());
+    assert_eq!(fine.heat().total(), Some(fine.heat_held_expected()));
+    let tall = SmokePlume::new(4, 256, 4, Fix128::from_ratio(1, 100), config()).unwrap();
+    assert_eq!(
+        tall.prolonged(config()).err(),
+        Some(SmokeBuildError::BadGrid)
+    );
+    let small = SmokePlume::new(4, 4, 4, Fix128::from_ratio(1, 1000), config()).unwrap();
+    assert_eq!(
+        small.prolonged(config()).err(),
+        Some(SmokeBuildError::BadGrid)
+    );
+}
