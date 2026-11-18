@@ -453,8 +453,119 @@ fn a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time() {
         "conforming slow feed: work {work:.5} gain {gain:.5} (within {tol:.5}); over F* way {:.4}",
         gain / (limit * way)
     );
+    assert_eq!(
+        chain.walls_unsettled(),
+        0,
+        "a pass left its walls unsettled"
+    );
     assert!(
         (work - gain).abs() <= tol,
         "the push worked {work:e}, the shares took {gain:e}, within {tol:e}"
     );
+}
+
+/// what the walls ask of link `k`'s length over its rest length, `Σ ω_j μ_j` over the chain's
+/// own layout: the shares as stretched as the walls make them, `μ = r_rest / d`
+fn walls_ask(chain: &ThickChain, k: usize) -> f64 {
+    let (a, b) = (chain.positions()[k], chain.positions()[k + 1]);
+    let n = usize::try_from(chain.spans(k).expect("a count")).expect("a count");
+    (0..=n)
+        .map(|j| {
+            let t = j as f64 / n as f64;
+            let x = f(a[0]) * (1.0 - t) + f(b[0]) * t;
+            let y = f(a[1]) * (1.0 - t) + f(b[1]) * t;
+            let d = f64::from(mouth(x as f32, y as f32)).max(0.005);
+            let weight = if j == 0 || j == n { 0.5 } else { 1.0 } / n as f64;
+            weight * RADIUS / d
+        })
+        .sum()
+}
+
+#[test]
+fn at_rest_no_link_is_shorter_than_its_walls_make_it() {
+    // a body that keeps its area between walls is as long as they make it, and no shorter:
+    // `l >= l0 Σ ω_j μ_j` for every link, the hard condition of the conforming rule. A chain
+    // pushed into the taper by 0.9 of the feeding push and left to rest has a run of links
+    // side by side on that condition; each is on it, not below it. The walls are f32 (2^-23
+    // of a distance), the sum here f64 against the chain's Q64.64, and the rest is to
+    // 1e-5 m/s: 1e-6 of the length the walls ask covers them.
+    let limit = threshold().0 * SHEAR * 2.0 * RADIUS;
+    let links = 20;
+    let stalled = pushed(
+        chain_of(SHEAR, DRAG, links, ThickChainFit::Conforming),
+        0.9 * limit,
+        0.0,
+    );
+    let mut chain = chain_of(SHEAR, 24.0, links, ThickChainFit::Conforming);
+    for (i, p) in stalled.positions().iter().enumerate() {
+        chain.set_position(i, *p);
+    }
+    chain.pin(0);
+    let walls = walls();
+    let mut rested = false;
+    for _ in 0..900 {
+        chain
+            .step_in(Fix128::from_ratio(1, 60), &walls, &[])
+            .expect("a step");
+        if chain
+            .velocities()
+            .iter()
+            .all(|v| f(v[0]).abs() < 1.0e-5 && f(v[1]).abs() < 1.0e-5)
+        {
+            rested = true;
+            break;
+        }
+    }
+    assert!(rested, "the chain does not come to rest");
+    let link = BODY / links as f64;
+    let mut on_the_walls = 0;
+    for k in 0..links {
+        let (ratio, ask) = (f(chain.length(k)) / link, walls_ask(&chain, k));
+        assert!(
+            ratio >= ask * (1.0 - 1.0e-6),
+            "link {k} is {ratio} of its rest length, the walls make it {ask}: short by {:e}",
+            ask - ratio
+        );
+        if ratio <= ask * (1.0 + 1.0e-6) {
+            on_the_walls += 1;
+        }
+    }
+    // the scene has what it is about: several links side by side on the condition
+    assert!(on_the_walls >= 3, "{on_the_walls} links on their walls");
+    assert_eq!(
+        chain.walls_unsettled(),
+        0,
+        "a pass left its walls unsettled"
+    );
+    // and the rest state is the least of the stated energy among the states the walls allow:
+    // one particle moved a micrometre either way along the pipe, the others where they are.
+    // A move that makes a link shorter than its walls allow is not one of those states; any
+    // other must not lower the energy. The walls are f32: of the 0.1 J/m here that is
+    // 1e-8; the force left at rest (below 1e-3 N) over a micrometre is 1e-9.
+    let energy = stored_in_shares(&chain);
+    let (way, mut tried) = (1.0e-6, 0);
+    for i in 1..=links {
+        for side in [-1.0, 1.0] {
+            let mut moved = chain_of(SHEAR, 24.0, links, ThickChainFit::Conforming);
+            for (j, p) in chain.positions().iter().enumerate() {
+                moved.set_position(j, *p);
+            }
+            let at = chain.positions()[i];
+            moved.set_position(i, [fx(f(at[0]) + side * way), at[1]]);
+            let allowed = (0..links)
+                .all(|k| f(moved.length(k)) / link >= walls_ask(&moved, k) * (1.0 - 1.0e-6));
+            if !allowed {
+                continue;
+            }
+            tried += 1;
+            let after = stored_in_shares(&moved);
+            assert!(
+                after >= energy - 2.0e-8,
+                "particle {i} moved by {:e}: the energy goes from {energy:e} to {after:e}",
+                side * way
+            );
+        }
+    }
+    // the free links' particles can go both ways, the held ones one way or neither
+    assert!(tried >= 20, "{tried} moves tried");
 }

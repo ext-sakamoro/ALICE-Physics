@@ -53,8 +53,21 @@
 //!   hard wall (its radius at most the harmonic mean of the distances). At that length `λ*`
 //!   is the least `μ_j` (its limit from above), so the tension has no jump there: the link
 //!   pulls, the hard wall answers, and that push is the walls' force, `T l / c` in a
-//!   channel as under the disc rule. A pass takes every link's energy step, then every
-//!   link's walls. The middle line stays `r_min` off the walls.
+//!   channel as under the disc rule. The samples of a link are laid out once, for the
+//!   longest it may be (`l0 reach`, `ceil(2 l0 reach / r_min) + 1` spans): their number does
+//!   not follow the link's length, so the energy has no jump as the link stretches; a link
+//!   beyond `l0 reach` is refused. A pass takes every link's energy step, then the hard
+//!   walls of all links at once, then keeps each middle line `r_min` off the walls. The hard
+//!   walls are solved together because links side by side share a particle: a push on one
+//!   changes its neighbours' lengths. With each condition made linear where the links are,
+//!   the pushes `p` satisfy `p ≥ 0`, no link left short, and a push only on a link exactly
+//!   at its walls' length; the links on their walls form runs, each run one tridiagonal
+//!   system solved directly, a link whose push would pull taken off and a link the others
+//!   would leave short put on, at most 8 rounds in the links' order. A pass whose rounds end
+//!   unsettled is counted ([`ThickChain::walls_unsettled`]). Solved one link after another
+//!   instead, a run of held links rests short of its walls' length by a part that goes with
+//!   the substep squared (measured: up to 4.6e-4 of `l0` at 1/960 s, a quarter of that at
+//!   half the substep), and the stated energy is then not the state's.
 //! - **Units.** SI: m, s, kg, N; planar, so masses, forces and the compliance are per metre
 //!   of depth (kg/m, N/m, `α` in m²/N); `k` in 1/s.
 //! - **Conservation.** A link's area is `2 r l` by the definition of `r`, exactly, down to
@@ -84,7 +97,8 @@
 //!   most `r_min / 2` in a substep before the constraints
 //!   ([`ThickChainError::TooFast`]), which with the sample spacing keeps a wall from passing
 //!   between samples; a passage narrower than `2 r_min` is closed to the chain. A link
-//!   stretched beyond 2048 samples, a link of no length, a field value that is not a number
+//!   stretched beyond 2048 samples (or, under the conforming rule, beyond `l0 reach`), a link
+//!   of no length, a field value that is not a number
 //!   and an invalid argument are refused; a refused step changes nothing. The distance field
 //!   must not overstate the distance (Lipschitz constant at most 1); it is read in `f32`.
 //! - **Approximations.** A link has one radius along its length (the outline steps between
@@ -127,6 +141,9 @@ const ZERO2: P2 = [Fix128::ZERO, Fix128::ZERO];
 
 /// The most samples a link may need (its length over half the least radius).
 const MAX_SAMPLES: i64 = 2048;
+/// The most times the walls of a run of links are solved in a pass (a link whose wall would
+/// pull is taken off it each time).
+const WALL_ROUNDS: usize = 8;
 
 fn add(a: P2, b: P2) -> P2 {
     [a[0] + b[0], a[1] + b[1]]
@@ -238,6 +255,16 @@ pub enum ThickChainError {
 }
 
 /// The shares of one link under the conforming rule (see `ThickChain::shares_of`).
+/// The hard wall of one link, made linear where the link is.
+struct WallTerm {
+    lack: Fix128,
+    u: P2,
+    off0: P2,
+    off1: P2,
+    by_walls: Fix128,
+    leaning: P2,
+}
+
 struct Shares {
     weight: Vec<Fix128>,
     place: Vec<Fix128>,
@@ -245,6 +272,106 @@ struct Shares {
     short: Vec<Fix128>,
     asked: Vec<Fix128>,
     need: Fix128,
+}
+
+/// The pushes of the walls on a row of links, each condition made linear: link `k` is short
+/// of its walls' length by `lack[k]` (not short when that is not above 0), its own push
+/// lengthens it by `diag[k]` per unit, and the push of the link before or after changes its
+/// length by `next[k − 1]` or `next[k]` per unit through the particle they share. Finds
+/// pushes `p` with `p ≥ 0`, no link left short (`diag p + next p' − lack ≥ 0`), and a push
+/// only on a link exactly at its walls' length: the links that are short start on their
+/// walls; each run of links on their walls is one tridiagonal system, solved directly; a
+/// link whose push comes out pulling is taken off, a link the others' pushes would leave
+/// short is put on, and the systems are solved again, at most `rounds` times, in the links'
+/// order. `able[k]` false keeps link `k` off (no condition of its own). Returns the pushes,
+/// which links ended on their walls, and whether the last round changed nothing.
+///
+/// Between straight walls a push on a link shortens its neighbours (`next < 0`), every short
+/// link then gets a push and none comes out pulling; where the walls turn or narrow along a
+/// link the walls' part of the slopes can make `next` positive, and a short link beside a
+/// strongly pushed one can come out pulling: it is then held up by its neighbour, not by its
+/// own walls.
+fn settle_walls(
+    diag: &[Fix128],
+    next: &[Fix128],
+    lack: &[Fix128],
+    able: &[bool],
+    rounds: usize,
+) -> (Vec<Fix128>, Vec<bool>, bool) {
+    let links = diag.len();
+    let mut on: Vec<bool> = (0..links)
+        .map(|k| able[k] && lack[k] > Fix128::ZERO)
+        .collect();
+    let mut push = vec![Fix128::ZERO; links];
+    let mut carry = vec![Fix128::ZERO; links];
+    let mut partial = vec![Fix128::ZERO; links];
+    let mut settled = false;
+    for _ in 0..rounds {
+        push.fill(Fix128::ZERO);
+        let mut dropped = false;
+        let mut k = 0;
+        while k < links {
+            if !on[k] {
+                k += 1;
+                continue;
+            }
+            let first = k;
+            // forward
+            let mut pivot = diag[k];
+            carry[k] = next[k] / pivot;
+            partial[k] = lack[k] / pivot;
+            k += 1;
+            while k < links && on[k] {
+                pivot = diag[k] - next[k - 1] * carry[k - 1];
+                if pivot <= Fix128::ZERO {
+                    // not a condition of its own beside its neighbour: off its wall
+                    on[k] = false;
+                    dropped = true;
+                    break;
+                }
+                carry[k] = next[k] / pivot;
+                partial[k] = (lack[k] - next[k - 1] * partial[k - 1]) / pivot;
+                k += 1;
+            }
+            // back
+            let mut i = k - 1;
+            push[i] = partial[i];
+            while i > first {
+                i -= 1;
+                push[i] = partial[i] - carry[i] * push[i + 1];
+            }
+        }
+        for k in 0..links {
+            if on[k] && push[k] < Fix128::ZERO {
+                on[k] = false;
+                dropped = true;
+            }
+        }
+        // a link not on its wall that the others' pushes would leave shorter than its walls
+        // allow (they move the particles it shares) comes onto it
+        let mut joined = false;
+        for k in 0..links {
+            if on[k] || !able[k] {
+                continue;
+            }
+            let mut after = -lack[k];
+            if k > 0 && on[k - 1] {
+                after = after + next[k - 1] * push[k - 1];
+            }
+            if k + 1 < links && on[k + 1] {
+                after = after + next[k] * push[k + 1];
+            }
+            if after < Fix128::ZERO {
+                on[k] = true;
+                joined = true;
+            }
+        }
+        if !dropped && !joined {
+            settled = true;
+            break;
+        }
+    }
+    (push, on, settled)
 }
 
 /// Which shares the walls hold, the weight of the others, and their stretch `λ*`:
@@ -319,6 +446,8 @@ pub struct ThickChain {
     area: Vec<Fix128>,
     /// the walls' press on each link in the last substep taken (read out, not state)
     wall_force: Vec<Fix128>,
+    /// the passes whose hard walls were not settled within their rounds (read out, not state)
+    walls_unsettled: u64,
 }
 
 impl ThickChain {
@@ -414,6 +543,7 @@ impl ThickChain {
             v: vec![ZERO2; points.len()],
             inv_mass: mass.iter().map(|&m| Fix128::ONE / m).collect(),
             wall_force: vec![zero; rest_length.len()],
+            walls_unsettled: 0,
             rest_length,
             area,
         })
@@ -509,6 +639,16 @@ impl ThickChain {
     #[must_use]
     pub fn wall_force(&self, k: usize) -> Fix128 {
         self.wall_force[k]
+    }
+
+    /// How many passes of the conforming rule, since the chain was made, ended their rounds
+    /// with the hard walls not settled: a link still pulling on its wall, or one left
+    /// shorter than its walls allow by the others' pushes (see `walls_together`). 0 in a run
+    /// whose walls were solved as stated; anything else says the bound on the rounds was
+    /// met. Read out of the steps, not part of the state.
+    #[must_use]
+    pub fn walls_unsettled(&self) -> u64 {
+        self.walls_unsettled
     }
 
     /// The length of link `k` now.
@@ -734,13 +874,15 @@ impl ThickChain {
             if let (true, Some(walls)) = (conforming, walls) {
                 // every link's energy, then every link's walls (as the disc rule: a pass
                 // ends with the links on the walls)
-                for wall in [false, true] {
-                    for k in 0..links {
-                        let (press, lean) =
-                            self.conform(k, samples[k], h, walls, &start, &mut lambda[k], wall)?;
-                        pressed[k] = pressed[k] + press;
-                        leaned[k] = add(leaned[k], lean);
-                    }
+                for k in 0..links {
+                    self.conform(k, samples[k], h, walls, &start, &mut lambda[k], false)?;
+                }
+                self.walls_together(&samples, walls, &mut pressed, &mut leaned)?;
+                for k in 0..links {
+                    let (press, lean) =
+                        self.conform(k, samples[k], h, walls, &start, &mut lambda[k], true)?;
+                    pressed[k] = pressed[k] + press;
+                    leaned[k] = add(leaned[k], lean);
                 }
                 continue;
             }
@@ -828,6 +970,147 @@ impl ThickChain {
         Ok(())
     }
 
+    /// The wall's slope over ±e at `p` (central differences of the distance), for link `k`.
+    fn slope_of(&self, k: usize, p: P2, walls: &dyn SdfQuery) -> Result<P2, ThickChainError> {
+        let e = self.config.min_radius.shr_bits(3);
+        let over = Fix128::ONE / (e + e);
+        let field = |q: P2| -> Result<Fix128, ThickChainError> {
+            let d = walls.query_distance(q[0].to_f32(), q[1].to_f32(), 0.0);
+            if d.is_finite() {
+                Ok(Fix128::from_f32(d))
+            } else {
+                Err(ThickChainError::Field { link: k })
+            }
+        };
+        Ok([
+            (field([p[0] + e, p[1]])? - field([p[0] - e, p[1]])?) * over,
+            (field([p[0], p[1] + e])? - field([p[0], p[1] - e])?) * over,
+        ])
+    }
+
+    /// The hard wall of link `k` as it is now: how far the link is short of the length its
+    /// walls make it, `l0 Σ ω_j μ_j − l`, and the slope of that condition in its two ends
+    /// (`∓u` along the link plus the walls' part of each end). None for a link with both
+    /// ends held.
+    fn wall_term(
+        &self,
+        k: usize,
+        n: i64,
+        walls: &dyn SdfQuery,
+    ) -> Result<Option<WallTerm>, ThickChainError> {
+        if (self.inv_mass[k] + self.inv_mass[k + 1]).is_zero() {
+            return Ok(None);
+        }
+        let along = sub(self.x[k + 1], self.x[k]);
+        let l = dot(along, along).sqrt();
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let u = scale(along, Fix128::ONE / l);
+        let rest = self.rest_length[k];
+        let rest_radius = self.area[k] / (rest + rest);
+        let Shares {
+            weight,
+            place,
+            room,
+            need,
+            ..
+        } = self.shares_of(k, n, walls)?;
+        let (mut off0, mut off1) = (ZERO2, ZERO2);
+        let mut by_walls = Fix128::ZERO;
+        let mut leaning = ZERO2;
+        for j in 0..weight.len() {
+            let t = place[j];
+            let p = add(scale(self.x[k], Fix128::ONE - t), scale(self.x[k + 1], t));
+            let slope = self.slope_of(k, p, walls)?;
+            // a held share's stretch changes by −(r_rest / d²) G per metre of its sample's way
+            let by_wall = rest * weight[j] * (rest_radius / (room[j] * room[j]));
+            off0 = add(off0, scale(slope, by_wall * (Fix128::ONE - t)));
+            off1 = add(off1, scale(slope, by_wall * t));
+            by_walls = by_walls + by_wall;
+            leaning = add(leaning, scale(slope, by_wall));
+        }
+        Ok(Some(WallTerm {
+            lack: rest * need - l,
+            u,
+            off0,
+            off1,
+            by_walls,
+            leaning,
+        }))
+    }
+
+    /// The hard walls of all links at once: no link is shorter than its shares held by the
+    /// walls, `l ≥ l0 Σ ω_j μ_j`. Links side by side share a particle, so each one's push
+    /// moves its neighbours' lengths: the pushes of a run of links on their walls are the
+    /// solution of one tridiagonal system (the conditions made linear at the positions now),
+    /// solved directly. A wall only pushes, and a link off its wall is no shorter than it
+    /// allows: a link whose push comes out pulling is taken off its wall, a link the others'
+    /// pushes would leave too short is put on it, and the system is solved again, at most
+    /// [`WALL_ROUNDS`] times, in the links' order; a link still pulling then gets no push in
+    /// this pass. Adds each link's press
+    /// and its sum by slope.
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "a link's index reads the rows of the system and its two particles"
+    )]
+    fn walls_together(
+        &mut self,
+        samples: &[i64],
+        walls: &dyn SdfQuery,
+        pressed: &mut [Fix128],
+        leaned: &mut [P2],
+    ) -> Result<(), ThickChainError> {
+        let links = self.rest_length.len();
+        let mut terms = Vec::with_capacity(links);
+        for k in 0..links {
+            terms.push(self.wall_term(k, samples[k], walls)?);
+        }
+        // the system's rows: a link's own answer to its push, and what its push does to the
+        // next link's length through the particle they share
+        let mut diag = vec![Fix128::ZERO; links];
+        let mut next = vec![Fix128::ZERO; links];
+        let mut lack = vec![Fix128::ZERO; links];
+        let mut able = vec![false; links];
+        for k in 0..links {
+            let Some(t) = &terms[k] else { continue };
+            let (g0, g1) = (sub(t.off0, t.u), add(t.off1, t.u));
+            diag[k] = self.inv_mass[k] * dot(g0, g0) + self.inv_mass[k + 1] * dot(g1, g1);
+            lack[k] = t.lack;
+            able[k] = !diag[k].is_zero();
+            if let Some(Some(after)) = terms.get(k + 1) {
+                next[k] = self.inv_mass[k + 1] * dot(g1, sub(after.off0, after.u));
+            }
+        }
+        let (push, on, settled) = settle_walls(&diag, &next, &lack, &able, WALL_ROUNDS);
+        if !settled {
+            self.walls_unsettled += 1;
+        }
+        for k in 0..links {
+            let Some(t) = &terms[k] else { continue };
+            if !on[k] || push[k] <= Fix128::ZERO {
+                continue;
+            }
+            let p = push[k];
+            let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
+            // the move per unit inverse mass first (a length times a mass, rounded once),
+            // then each end's share: along the link one vector, taken from one end and given
+            // to the other
+            let shift = scale(t.u, p);
+            self.x[k] = add(
+                sub(self.x[k], scale(shift, w0)),
+                scale(scale(t.off0, p), w0),
+            );
+            self.x[k + 1] = add(
+                add(self.x[k + 1], scale(shift, w1)),
+                scale(scale(t.off1, p), w1),
+            );
+            pressed[k] = pressed[k] + p * t.by_walls;
+            leaned[k] = add(leaned[k], scale(t.leaning, p));
+        }
+        Ok(())
+    }
+
     /// One pass of the conforming rule over link `k` with `n + 1` samples: the link's shares
     /// (trapezoid weights along it) are each as long as the wall there makes them,
     /// `μ_j = r_rest / d_j`, or as the link's tension does, `λ*`, whichever is more, with
@@ -905,51 +1188,6 @@ impl ThickChain {
         // what a held share's stretch changes by per metre of its sample's way along the
         // wall's slope: dμ/dp = −(r_rest / d²) G
         let turn = |j: usize| rest_radius / (room[j] * room[j]);
-        // the hard wall: the link is not shorter than its shares held by the walls,
-        // `l ≥ l0 Σ ω_j μ_j`. Its push is the walls' answer to the link's tension
-        let lack = rest * need - l;
-        let (u, l) = if wall && lack > Fix128::ZERO {
-            // the slope's part along the link is one vector, taken from one end and given to
-            // the other (so the link's own pull moves no momentum); the walls' part is each
-            // end's own
-            let (mut off0, mut off1) = (ZERO2, ZERO2);
-            let mut by_walls = Fix128::ZERO;
-            let mut leaning = ZERO2;
-            for j in 0..count {
-                let by_wall = rest * weight[j] * turn(j);
-                off0 = add(off0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
-                off1 = add(off1, scale(slope[j], by_wall * place[j]));
-                by_walls = by_walls + by_wall;
-                leaning = add(leaning, scale(slope[j], by_wall));
-            }
-            let (g0, g1) = (sub(off0, u), add(off1, u));
-            let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
-            if !denom.is_zero() {
-                let push = lack / denom;
-                // the move per unit inverse mass first (a length times a mass, rounded once),
-                // then each end's share: an end's move is then within a unit of the last
-                // place of the other's whatever the size of the slope
-                let shift = scale(u, push);
-                self.x[k] = add(
-                    sub(self.x[k], scale(shift, w0)),
-                    scale(scale(off0, push), w0),
-                );
-                self.x[k + 1] = add(
-                    add(self.x[k + 1], scale(shift, w1)),
-                    scale(scale(off1, push), w1),
-                );
-                press = press + push * by_walls;
-                lean = add(lean, scale(leaning, push));
-            }
-            let along = sub(self.x[k + 1], self.x[k]);
-            let l = dot(along, along).sqrt();
-            if l.is_zero() {
-                return Err(ThickChainError::Degenerate { link: k });
-            }
-            (scale(along, Fix128::ONE / l), l)
-        } else {
-            (u, l)
-        };
         if !wall {
             // the link's energy over μ A / 2 is S = Σ ω_j (m_j − 1/m_j)², m_j the held share's
             // μ_j or the free shares' λ*: one constraint C = √S with the compliance 1 / (μ A),
@@ -1288,3 +1526,142 @@ mod analytic_thick_chain_oracle;
 #[cfg(test)]
 #[path = "../tests/analytic_thick_chain_shares.rs"]
 mod analytic_thick_chain_shares_oracle;
+
+#[cfg(test)]
+mod wall_solve {
+    //! The walls' pushes on a row of links against all the ways of choosing which links are
+    //! on their walls, each solved by elimination in f64: the one choice with no pull and no
+    //! link left short.
+    #![allow(
+        clippy::float_arithmetic,
+        clippy::cast_precision_loss,
+        clippy::needless_range_loop,
+        reason = "the reference solve is f64 over a few rows"
+    )]
+    use super::{settle_walls, Fix128};
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    /// every subset of links on their walls, the pushes of each by elimination; the subset
+    /// whose pushes do not pull and leave no other link short
+    fn by_trying_all(diag: &[f64], next: &[f64], lack: &[f64]) -> (Vec<f64>, Vec<bool>) {
+        let n = diag.len();
+        let entry = |i: usize, j: usize| {
+            if i == j {
+                diag[i]
+            } else if i + 1 == j {
+                next[i]
+            } else if j + 1 == i {
+                next[j]
+            } else {
+                0.0
+            }
+        };
+        let mut found = Vec::new();
+        for set in 0u32..(1 << n) {
+            let rows: Vec<usize> = (0..n).filter(|k| set >> k & 1 == 1).collect();
+            let m = rows.len();
+            let mut a = vec![vec![0.0f64; m + 1]; m];
+            for (r, &i) in rows.iter().enumerate() {
+                for (c, &j) in rows.iter().enumerate() {
+                    a[r][c] = entry(i, j);
+                }
+                a[r][m] = lack[i];
+            }
+            for c in 0..m {
+                let pivot = (c..m)
+                    .max_by(|x, y| a[*x][c].abs().total_cmp(&a[*y][c].abs()))
+                    .expect("a row");
+                a.swap(c, pivot);
+                for r in 0..m {
+                    if r != c {
+                        let by = a[r][c] / a[c][c];
+                        for q in c..=m {
+                            a[r][q] -= by * a[c][q];
+                        }
+                    }
+                }
+            }
+            let mut p = vec![0.0f64; n];
+            for (r, &i) in rows.iter().enumerate() {
+                p[i] = a[r][m] / a[r][r];
+            }
+            let fits = (0..n).all(|i| {
+                let after: f64 = (0..n).map(|j| entry(i, j) * p[j]).sum::<f64>() - lack[i];
+                if set >> i & 1 == 1 {
+                    p[i] >= 0.0
+                } else {
+                    after >= 0.0
+                }
+            });
+            if fits {
+                found.push((p, (0..n).map(|k| set >> k & 1 == 1).collect()));
+            }
+        }
+        assert_eq!(found.len(), 1, "one choice fits");
+        found.remove(0)
+    }
+
+    fn check(diag: &[f64], next: &[f64], lack: &[f64], rounds_needed: usize) {
+        let (want, want_on) = by_trying_all(diag, next, lack);
+        let to = |v: &[f64]| v.iter().map(|x| fx(*x)).collect::<Vec<_>>();
+        let able = vec![true; diag.len()];
+        let (push, on, settled) = settle_walls(&to(diag), &to(next), &to(lack), &able, 8);
+        assert!(settled, "not settled in 8 rounds");
+        assert_eq!(on, want_on);
+        for k in 0..diag.len() {
+            let got = if on[k] { push[k].to_f64() } else { 0.0 };
+            assert!(
+                (got - want[k]).abs() <= 1.0e-12,
+                "link {k}: push {got}, expected {}",
+                want[k]
+            );
+        }
+        // one round fewer than the choice takes is reported, not passed off as settled
+        if rounds_needed > 1 {
+            let (_, _, early) =
+                settle_walls(&to(diag), &to(next), &to(lack), &able, rounds_needed - 1);
+            assert!(!early, "settled in fewer rounds than the choice takes");
+        }
+    }
+
+    #[test]
+    fn short_links_side_by_side_are_pushed_together() {
+        // a push on a link shortens its neighbours: every short link gets a push, each more
+        // than it would alone (alone: 0.5 each)
+        check(&[2.0, 2.0, 2.0], &[-1.0, -1.0, 0.0], &[1.0, 1.0, 1.0], 1);
+    }
+
+    #[test]
+    fn a_link_its_neighbours_would_leave_short_comes_onto_its_wall() {
+        // the second link is longer than its walls ask by 0.2; the first's push (0.5 alone)
+        // would shorten it by 0.5: it comes on, and the two are solved together (0.6, 0.2)
+        check(&[2.0, 2.0], &[-1.0, 0.0], &[1.0, -0.2], 2);
+    }
+
+    #[test]
+    fn a_short_link_held_up_by_its_neighbour_is_taken_off_its_wall() {
+        // where a neighbour's push lengthens a link (a positive coupling), the three solved
+        // together give the middle one a pull (−0.4): it is taken off, the outer two are
+        // solved alone (0.5 each) and leave it 0.3 longer than its walls ask
+        check(&[2.0, 2.0, 2.0], &[1.5, -0.5, 0.0], &[1.0, 0.2, 1.0], 2);
+    }
+
+    #[test]
+    fn a_link_with_no_condition_of_its_own_stays_off() {
+        let to = |v: &[f64]| v.iter().map(|x| fx(*x)).collect::<Vec<_>>();
+        let (push, on, settled) = settle_walls(
+            &to(&[2.0, 0.0, 2.0]),
+            &to(&[0.0, 0.0, 0.0]),
+            &to(&[1.0, 1.0, 1.0]),
+            &[true, false, true],
+            8,
+        );
+        assert!(settled);
+        assert_eq!(on, [true, false, true]);
+        assert_eq!(push[1], Fix128::ZERO);
+        assert!((push[0].to_f64() - 0.5).abs() <= 1.0e-12);
+    }
+}
