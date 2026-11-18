@@ -59,7 +59,20 @@
 //!   resolve, so its width comes from the scheme's diffusion and narrows with the cell
 //!   (measured without molecular diffusion at 10 and 5 mm cells over 0.15–0.35 m in a 0.64 m box:
 //!   `d ln R²/d ln z` 1.03 → 0.48, `d ln w_c/d ln z` 0.27 → 0.22, `d ln ΔT_c/d ln z`
-//!   −0.26 → −0.18, against the laminar 1, 0, −1); neither plume law is claimed yet. More
+//!   −0.26 → −0.18, against the laminar 1, 0, −1; the source of that scene sat one cell above
+//!   the floor, so 5 mm lower on the 5 mm grid); neither plume law is claimed yet. The
+//!   laminar closed form (`R² ∝ z`, `w_c` constant, `ΔT_c ∝ 1/z`) holds only where its own
+//!   conditions hold, and `examples/smoke_laminar_plume.rs` checks them on the scene before it
+//!   reports exponents (a scene that fails one is reported invalid, not passed): the plume's
+//!   reach (the radius where its excess falls to 1 % of the centreline's) lies inside the box,
+//!   the far field beyond it is unstratified (`N · t_window < 0.1`), and the heat leaving an
+//!   open top over the window matches the source within 5 % (a closed box fills from the top
+//!   down and never qualifies). The window opens only once that has held for one transit of the
+//!   box (its height at the plume's fastest centreline speed, in whole seconds) at each second of
+//!   a transit, the plume's own time scale; a window that turns out unsteady is dropped and the
+//!   rule looks again. Measured at 10 mm, `ν = κ = 2·10⁻⁴` m²/s, 0.32 m box, open top,
+//!   window 12–20 s: a 2 cm source at 400 K/s reaches 13 of 16 cells (valid in this box), at
+//!   100 K/s it reaches 15 and needs a 0.34 m box (outside the scene's validity). More
 //!   than [`SmokeConfig::max_steps`] velocity steps in an advance, more than
 //!   [`SmokeConfig::max_transport_substeps`] transport substeps, a quantum count leaving the
 //!   integer range or a cell past [`MAX_CELL_QUANTA`], or a cell giving more than it holds is
@@ -71,7 +84,7 @@
 //!   warms from the top down, so a plume in it rises into a stratifying ambient,
 //!   `N² = g β dT∞/dz`) or open (no inflow of excess, a zero-gradient top for diffusion).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses::the_open_top_sends_the_upwind_share_out::an_open_top_lets_heat_out_and_the_ledger_still_closes::an_open_plume_state_round_trips_and_is_told_apart::the_open_top_carries_the_source_away_at_steady_state`
+//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses::the_open_top_sends_the_upwind_share_out::an_open_top_lets_heat_out_and_the_ledger_still_closes::an_open_plume_state_round_trips_and_is_told_apart::the_open_top_carries_the_source_away_at_steady_state::prolongation_keeps_every_quantum_and_each_parents_divergence::prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be::the_laminar_scene_has_the_same_lengths_at_every_cell::the_plume_window_opens_on_a_sustained_steady_outflow`
 //!
 //! Author: Moroya Sakamoto
 
@@ -847,6 +860,110 @@ impl SmokePlume {
     #[must_use]
     pub fn soot_held_expected(&self) -> i64 {
         self.ledger.soot_expected() - self.outflow.soot_left
+    }
+
+    /// The same plume on a grid twice as fine (`2n` cells of `l/2` per axis), with `config`
+    /// (its step limits are the caller's: a finer grid usually steps shorter). Heat and soot
+    /// stay exact: each cell's quanta are split among its 8 children, `⌊q/8⌋` each and the
+    /// remainder one more to the first children in the order `x`, then `y`, then `z` (so
+    /// children differ by at most one quantum, and the totals and the ledger are unchanged);
+    /// the carried fractions (below a quantum) restart at 0. A face that coincides with a
+    /// coarse face takes its velocity, a face between two coarse faces takes their mean
+    /// (linear along the normal, constant across it), so every fine cell has its parent's
+    /// divergence; the pressure is copied into the children (only the solver's first guess).
+    /// The sources cover the same physical boxes, the open top stays open, and the steps
+    /// taken so far are kept (a velocity step of `l/2` counts as one).
+    ///
+    /// # Errors
+    ///
+    /// [`SmokeBuildError::BadGrid`] when the fine grid would be past 256 cells on an axis or
+    /// its cells below 1 mm; [`SmokeBuildError::BadConfig`] for a `config` the fine grid
+    /// refuses.
+    pub fn prolonged(&self, config: SmokeConfig) -> Result<SmokePlume, SmokeBuildError> {
+        let g = &self.solver.grid;
+        let (nx, ny, nz) = (g.nx, g.ny, g.nz);
+        let mut fine = SmokePlume::new(2 * nx, 2 * ny, 2 * nz, g.dx.div_int(2), config)?;
+        for s in &self.sources {
+            let mut cells = s.cells;
+            for a in 0..3 {
+                cells.lo[a] *= 2;
+                cells.hi[a] *= 2;
+            }
+            fine.add_source(SmokeSource {
+                cells,
+                kind: s.kind,
+            })?;
+        }
+        if self.open_top {
+            fine.set_open_top()?;
+        }
+        for (coarse, f) in [(&self.heat, &mut fine.heat), (&self.soot, &mut fine.soot)] {
+            for k in 0..nz {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let q = coarse.q[coarse.index(i, j, k)];
+                        let (base, rem) = (q / 8, q % 8);
+                        for c in 0..8i64 {
+                            let (di, dj, dk) =
+                                ((c & 1) as usize, ((c >> 1) & 1) as usize, (c >> 2) as usize);
+                            let at = f.index(2 * i + di, 2 * j + dj, 2 * k + dk);
+                            f.q[at] = base + i64::from(c < rem);
+                        }
+                    }
+                }
+            }
+        }
+        let (fx, fy, fz) = (2 * nx, 2 * ny, 2 * nz);
+        let half = Fix128::from_ratio(1, 2);
+        // the coarse face on the normal axis for fine face index `n` (even: the coarse face
+        // n/2; odd: the mean of n/2 and n/2 + 1)
+        let along = |n: usize, at: &dyn Fn(usize) -> Fix128| {
+            if n % 2 == 0 {
+                at(n / 2)
+            } else {
+                (at(n / 2) + at(n / 2 + 1)) * half
+            }
+        };
+        let fg = &mut fine.solver.grid;
+        for k in 0..fz {
+            for j in 0..fy {
+                for i in 0..=fx {
+                    let (cj, ck) = (j / 2, k / 2);
+                    fg.u[i + (fx + 1) * (j + fy * k)] =
+                        along(i, &|ci| g.u[ci + (nx + 1) * (cj + ny * ck)]);
+                }
+            }
+        }
+        for k in 0..fz {
+            for j in 0..=fy {
+                for i in 0..fx {
+                    let (ci, ck) = (i / 2, k / 2);
+                    fg.v[i + fx * (j + (fy + 1) * k)] =
+                        along(j, &|cj| g.v[ci + nx * (cj + (ny + 1) * ck)]);
+                }
+            }
+        }
+        for k in 0..=fz {
+            for j in 0..fy {
+                for i in 0..fx {
+                    let (ci, cj) = (i / 2, j / 2);
+                    fg.w[i + fx * (j + fy * k)] = along(k, &|ck| g.w[ci + nx * (cj + ny * ck)]);
+                }
+            }
+        }
+        for k in 0..fz {
+            for j in 0..fy {
+                for i in 0..fx {
+                    fg.pressure[i + fx * (j + fy * k)] =
+                        g.pressure[i / 2 + nx * (j / 2 + ny * (k / 2))];
+                }
+            }
+        }
+        fine.ledger = self.ledger;
+        fine.outflow = self.outflow;
+        fine.steps = self.steps;
+        fine.solver.step_count = self.solver.step_count;
+        Ok(fine)
     }
 
     /// Add a source.
