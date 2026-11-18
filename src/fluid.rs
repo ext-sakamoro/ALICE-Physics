@@ -40,14 +40,16 @@
 //! - lattice-calibrated mass: the default `particle_mass` makes the rest lattice
 //!   exactly `rho_0` (`m s^3 = rho_0 s^3` gives `1.010 rho_0` at `h = 2 s`, and that 1 %
 //!   pushes a free block upward without bound); see [`FluidConfig::lattice_mass`]
-//! - two-sided interior, one-sided surface: the paper clamps `C >= 0` everywhere,
-//!   which leaves interior particles with no restoring force for `C < 0` and makes a
-//!   column under gravity chatter. Here the negative branch is kept and weighted by
-//!   `w_i = max(0, 1 - g_i / g_cut)^2`, where `g_i = h |sum_j (m / rho_0) grad W_ij|` is
-//!   the colour-field gradient on the start-of-substep positions (interior `~0`, free
-//!   surface `~0.8-0.95`); `w -> 0` recovers the paper's clamp at the surface. The
-//!   negative branch uses its own `eps_neg`. A neighbour count is not used: walls taller
-//!   than the fluid make the top layer next to them look interior.
+//! - `C >= 0` clamped everywhere by default, as in the paper (`surface_gradient_cutoff = 0`):
+//!   a liquid carries no tension beyond its cohesion, so a stretched region is pulled
+//!   together only by the cohesion term, never by a projection of `C < 0`. Measured
+//!   2026-11-18: projecting `C < 0` on a block laid out 15 % wide gave it a kinetic energy
+//!   of 239 J after one frame, 5e4 times the 0.0047 J that the cohesion potential can
+//!   release, and threw particles out at up to 4.5 m/s; with the clamp the kinetic energy
+//!   stays below the cohesion energy released at every frame and the block contracts
+//!   monotonically. The weighted two-sided branch is still available
+//!   (`surface_gradient_cutoff > 0`: `w_i = max(0, 1 - g_i / g_cut)^2` on the colour-field
+//!   gradient `g_i = h |sum_j (m / rho_0) grad W_ij|`, softened by `eps_neg`).
 //! - XSPH strength `c = 0.3` (paper `0.01`): measured as the largest speed over the
 //!   last 60 of 300 frames of a column under gravity, `c = 0.1` gives 0.03-0.13 m/s and
 //!   bursts to 0.5 m/s over 900 frames, `c = 0.2` gives 0.04-0.13 m/s, `c = 0.3` gives
@@ -61,13 +63,30 @@
 //! - artificial pressure off by default: `s_corr` pushes every pair apart and makes a
 //!   free block expand (1.68x its height in 60 frames); kept as `artificial_pressure`
 //!   (`k`, with `n = 4` and `dq = 0.2 h`, in `lambda` units).
+//! - the side-wall load is not isotropic at the floor/wall junction and under the free
+//!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
+//!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
+//!   1.203 / 1.136 in the bottom two bins, 1.00-1.01 at 0.2-0.5 m and 0.899 / 0.804 / 0.488
+//!   under the surface (with the weighted two-sided branch: 1.150 / 1.130, 0.99-1.01,
+//!   0.876 / 0.766 / 0.480). 4x the iterations cut the bottom density residual 6x and 2x the
+//!   substeps 4x while the ratios stay within 0.05 of these values, so it is a property of
+//!   the converged projection (one-sided support under the surface, the junction at the
+//!   floor), not of convergence. The total over the wall (1.054; 1.035 two-sided) is read
+//!   as a sum of these and hides the profile; the per-bin oracle reads the bins. The boundary itself is complete: two
+//!   layers fill the kernel support at walls, edges and corners
+//!   (`tests/analytic_fluid_boundary_support.rs`).
+//! - frame damping is an artificial drag: `damping` (0.99 per frame) removes 1 % of the
+//!   velocity every frame. Where the only driving force is weak (cohesion pulling a stretched
+//!   block together, about 1e-3 m/s^2) it sets the speed (terminal drift `a dt / (1 - d)`,
+//!   about 2e-3 m/s) and the time scale (a 0.05 m contraction takes about 3000 frames instead
+//!   of about 560 under cohesion alone).
 //!
 //! **Range.** Weakly compressible water-like fluids at `h ~ 2 s`, frame `dt` up to 1/60 s
 //! with two substeps; density error of a resting column under gravity is ~0.3 %. Not
 //! valid for free surfaces without boundary particles below them (particles near an
 //! unsupported wall see too few neighbours and sink).
 //!
-//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_to_the_rest_density::floor_reaction_scales_with_the_particle_mass::side_wall_carries_the_hydrostatic_force::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
+//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_under_cohesion_within_its_energy_budget::stretched_block_drift_without_xsph_follows_the_damped_closed_form::floor_reaction_scales_with_the_particle_mass::side_wall_load_per_height_bin_matches_the_hydrostatic_profile::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
 //! reaction against the weight M g (1.00006 at 900 frames) and the force on a side
 //! wall against the integral of the linear pressure, rho_0 g H^2 D / 2 with
 //! H = M / (rho_0 W D) (1.035; the floor balance holds for any pressure profile, the
@@ -131,7 +150,8 @@ pub struct FluidConfig {
     /// Constraint softening for `C < 0` (two-sided interior), relative to `S_ref`
     pub epsilon_negative: Fix128,
     /// Colour-field gradient `h |sum_j (m/rho_0) grad W_ij|` at which the negative branch
-    /// is switched off (surface); `0` clamps `C >= 0` everywhere as in the paper
+    /// is switched off (surface); `0` (the default) clamps `C >= 0` everywhere as in the
+    /// paper, so tension comes from the cohesion term only
     pub surface_gradient_cutoff: Fix128,
     /// Artificial pressure `k` of `s_corr = -k (W(r) / W(0.2 h))^4`, in units of the
     /// reference multiplier `1 / S_ref`; `0` (default) disables it
@@ -179,7 +199,7 @@ impl Default for FluidConfig {
             rest_spacing,
             epsilon: Fix128::from_ratio(1, 100),
             epsilon_negative: Fix128::from_ratio(3, 10),
-            surface_gradient_cutoff: Fix128::from_ratio(2, 5),
+            surface_gradient_cutoff: Fix128::ZERO,
             artificial_pressure: Fix128::ZERO,
         }
     }
