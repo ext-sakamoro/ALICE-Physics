@@ -205,10 +205,11 @@ fn held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tensi
     // so it is given 10 frames; then nothing moves: no particle has a speed and no link
     // changes its length for 20 frames. The walls carry T(λc) l / c for each link (a strip
     // squeezed to λc with free ends presses each side with μ (λc² − λc⁻²) l), less what the
-    // turn-taking leaves: a share that goes with (ω h)². This run is at (ω h)² = 0.13 with 4
-    // passes, where the walls' force was measured at 0.888 of the closed form for one link
-    // and 0.937 to 0.967 for six: the floor below is a ratchet at that measure (it may only
-    // be raised), the closed form is the ceiling.
+    // turn-taking leaves: a share that goes with (ω h)² and that more passes do not remove
+    // (one link: 0.888 with 4 passes, 0.889 with 8 and with 16). This run is at
+    // (ω h)² = 0.13 with 4 passes, where the walls' force was measured at 0.888 of the closed
+    // form for one link and 0.937 to 0.967 for six: the floor below is a ratchet at that
+    // measure (it may only be raised), the closed form is the ceiling.
     let (l0, r0, shear, c) = (0.01, 0.05, 500.0, 0.027f32);
     let held = r0 * l0 / f64::from(c);
     let at = held / l0;
