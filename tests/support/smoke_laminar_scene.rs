@@ -80,6 +80,10 @@ pub fn geometry(dx_um: i64) -> Geometry {
 /// The scene at a cell of `dx_mm` millimetres (10 or 5; 2.5 mm through [`scene_um`]), with
 /// kinematic viscosity and heat diffusivity both `nu_um2` · 10⁻⁶ m²/s and the source heating at
 /// `heat_k_per_s`. The velocity step is at most 1/120 s at 10 mm and shrinks with the cell.
+#[allow(
+    dead_code,
+    reason = "the push-time guard builds the scene by millimetres; the long run by micrometres"
+)]
 pub fn scene(dx_mm: i64, nu_um2: i64, heat_k_per_s: i64) -> SmokePlume {
     scene_um(dx_mm * 1000, nu_um2, heat_k_per_s)
 }
@@ -111,6 +115,10 @@ pub fn scene_um(dx_um: i64, nu_um2: i64, heat_k_per_s: i64) -> SmokePlume {
 }
 
 /// The velocity step of the scene at `dx_mm` (s): 1/120 s at 10 mm, in proportion to the cell.
+#[allow(
+    dead_code,
+    reason = "the push-time guard steps by millimetres; the long run by micrometres"
+)]
 pub fn step(dx_mm: i64) -> Fix128 {
     step_um(dx_mm * 1000)
 }
