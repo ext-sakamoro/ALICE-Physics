@@ -53,8 +53,7 @@ fn main() {
     let mass = fluid.particle_count() as f64 * config.particle_mass.to_f64();
     let hgt = mass / (rho0 * w * d);
     println!(
-        "surface_gradient_cutoff {} relaxation {} | H {hgt:.4} m, closed-form side force {:.2} N",
-        config.surface_gradient_cutoff.to_f64(),
+        "relaxation {} | H {hgt:.4} m, closed-form side force {:.2} N",
         config.relaxation.to_f64(),
         0.5 * rho0 * g * hgt * hgt * d
     );
