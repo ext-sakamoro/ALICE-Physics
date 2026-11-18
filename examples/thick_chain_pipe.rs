@@ -127,7 +127,7 @@ fn main() {
                 tail[1].to_f64(),
                 head[0].to_f64(),
                 head[1].to_f64(),
-                (speed[0].to_f64().powi(2) + speed[1].to_f64().powi(2)).sqrt(),
+                (speed[0] * speed[0] + speed[1] * speed[1]).sqrt().to_f64(),
                 thin,
                 wide,
                 length / rest,
