@@ -347,6 +347,55 @@ fn side_wall_carries_the_hydrostatic_force() {
     );
 }
 
+/// The side-wall load read bin by bin, so a wrong profile cannot pass through cancellation
+/// (the total above is 1.035 because the bottom is 15 % high and the top 50 % low). Each
+/// 0.1 m bin of the x+ wall carries `K = F_bin / integral_bin rho_0 g (H - y) D dy`.
+/// Interior bins (0.2-0.5 m) are hydrostatic within 5 % at the default solver settings.
+/// The floor/wall junction and the bins under the free surface are structural (measured
+/// 2026-11-18: 4x the iterations cut the bottom residual 6x and left K unchanged), stated
+/// here as their measured values with bounds that may only tighten.
+#[test]
+fn side_wall_load_per_height_bin_matches_the_hydrostatic_profile() {
+    let fluid = settled(FluidConfig::default(), 900);
+    let s = fluid.config.rest_spacing.to_f64();
+    let rho0 = fluid.config.rest_density.to_f64();
+    let g = fluid.config.gravity.y.to_f64().abs();
+    let (w, d) = (NX as f64 * s, NZ as f64 * s);
+    let mass = fluid.particle_count() as f64 * fluid.config.particle_mass.to_f64();
+    let height = mass / (rho0 * w * d);
+    let wall = Fix128::from_int(NX) * fluid.config.rest_spacing;
+    let mut load = [0.0_f64; NY as usize];
+    let mut counted = 0usize;
+    for (p, f) in fluid.boundary.iter().zip(fluid.boundary_forces()) {
+        if p.x > wall && p.y > Fix128::ZERO {
+            let bin = ((p.y.to_f64() / s).floor() as usize).min(NY as usize - 1);
+            load[bin] += -f.x.to_f64();
+            counted += 1;
+        }
+    }
+    assert!(counted > 0, "no x+ wall particles selected");
+    let k: Vec<f64> = (0..NY as usize)
+        .map(|b| {
+            let (lo, hi) = (
+                (b as f64 * s).min(height),
+                ((b as f64 + 1.0) * s).min(height),
+            );
+            let closed = rho0 * g * d * (height * (hi - lo) - 0.5 * (hi * hi - lo * lo));
+            load[b] / closed
+        })
+        .collect();
+    eprintln!("side wall K per 0.1 m bin, floor up: {k:.3?}");
+    for (b, kb) in k.iter().enumerate().take(5).skip(2) {
+        assert!((kb - 1.0).abs() < 0.05, "interior bin {b}: K = {kb}");
+    }
+    // stated rows (measured 1.150 / 0.876 / 0.766 / 0.480): the floor/wall junction and the
+    // three bins under the free surface
+    assert!(k[0] < 1.20, "floor/wall junction bin: K = {}", k[0]);
+    assert!(k[5] > 0.85, "bin 0.5-0.6 m: K = {}", k[5]);
+    assert!(k[6] > 0.72, "bin 0.6-0.7 m: K = {}", k[6]);
+    assert!(k[7] > 0.40, "surface bin 0.7-0.8 m: K = {}", k[7]);
+}
+
 /// Substeps, not iterations, set the accuracy (S154); the settled answer must not
 /// depend on them: at 4 substeps the column still carries its weight within 1 % and
 /// stays within 2 % of `rho_0`.

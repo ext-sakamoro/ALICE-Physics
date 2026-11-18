@@ -61,13 +61,29 @@
 //! - artificial pressure off by default: `s_corr` pushes every pair apart and makes a
 //!   free block expand (1.68x its height in 60 frames); kept as `artificial_pressure`
 //!   (`k`, with `n = 4` and `dq = 0.2 h`, in `lambda` units).
+//! - the side-wall load is not isotropic at the floor/wall junction and under the free
+//!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
+//!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
+//!   1.150 / 1.130 in the bottom two bins, 0.99-1.01 at 0.2-0.5 m and 0.876 / 0.766 / 0.480
+//!   under the surface. 4x the iterations cut the bottom density residual 6x and 2x the
+//!   substeps 4x while the ratios stay within 0.05 of these values, so it is a property of
+//!   the converged projection (one-sided support under the surface, the junction at the
+//!   floor), not of convergence. The total over the wall (1.035) passes only because the
+//!   two cancel; the per-bin oracle reads the bins. The boundary itself is complete: two
+//!   layers fill the kernel support at walls, edges and corners
+//!   (`tests/analytic_fluid_boundary_support.rs`).
+//! - frame damping is an artificial drag: `damping` (0.99 per frame) removes 1 % of the
+//!   velocity every frame. Where the only driving force is weak (cohesion pulling a stretched
+//!   block together, about 1e-3 m/s^2) it sets the speed (terminal drift `a dt / (1 - d)`,
+//!   about 2e-3 m/s) and the time scale (a 0.05 m contraction takes about 3000 frames instead
+//!   of about 560 under cohesion alone).
 //!
 //! **Range.** Weakly compressible water-like fluids at `h ~ 2 s`, frame `dt` up to 1/60 s
 //! with two substeps; density error of a resting column under gravity is ~0.3 %. Not
 //! valid for free surfaces without boundary particles below them (particles near an
 //! unsupported wall see too few neighbours and sink).
 //!
-//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_to_the_rest_density::floor_reaction_scales_with_the_particle_mass::side_wall_carries_the_hydrostatic_force::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
+//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_to_the_rest_density::floor_reaction_scales_with_the_particle_mass::side_wall_carries_the_hydrostatic_force::side_wall_load_per_height_bin_matches_the_hydrostatic_profile::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
 //! reaction against the weight M g (1.00006 at 900 frames) and the force on a side
 //! wall against the integral of the linear pressure, rho_0 g H^2 D / 2 with
 //! H = M / (rho_0 W D) (1.035; the floor balance holds for any pressure profile, the
