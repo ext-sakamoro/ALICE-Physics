@@ -40,16 +40,13 @@
 //! - lattice-calibrated mass: the default `particle_mass` makes the rest lattice
 //!   exactly `rho_0` (`m s^3 = rho_0 s^3` gives `1.010 rho_0` at `h = 2 s`, and that 1 %
 //!   pushes a free block upward without bound); see [`FluidConfig::lattice_mass`]
-//! - `C >= 0` clamped everywhere by default, as in the paper (`surface_gradient_cutoff = 0`):
-//!   a liquid carries no tension beyond its cohesion, so a stretched region is pulled
-//!   together only by the cohesion term, never by a projection of `C < 0`. Measured
-//!   2026-11-18: projecting `C < 0` on a block laid out 15 % wide gave it a kinetic energy
-//!   of 239 J after one frame, 5e4 times the 0.0047 J that the cohesion potential can
-//!   release, and threw particles out at up to 4.5 m/s; with the clamp the kinetic energy
-//!   stays below the cohesion energy released at every frame and the block contracts
-//!   monotonically. The weighted two-sided branch is still available
-//!   (`surface_gradient_cutoff > 0`: `w_i = max(0, 1 - g_i / g_cut)^2` on the colour-field
-//!   gradient `g_i = h |sum_j (m / rho_0) grad W_ij|`, softened by `eps_neg`).
+//! - `C >= 0` clamped everywhere, as in the paper: a liquid carries no tension beyond its
+//!   cohesion, so a stretched region is pulled together only by the cohesion term, never by
+//!   a projection of `C < 0`. Measured 2026-11-18 with a weighted two-sided branch (since
+//!   removed): projecting `C < 0` on a block laid out 15 % wide gave it a kinetic energy of
+//!   239 J after one frame, 5e4 times the 0.0047 J the cohesion potential can release, and
+//!   threw particles out at up to 4.5 m/s; with the clamp the kinetic energy stays below the
+//!   cohesion energy released at every frame and the block contracts monotonically.
 //! - XSPH strength `c = 0.3` (paper `0.01`): measured as the largest speed over the
 //!   last 60 of 300 frames of a column under gravity, `c = 0.1` gives 0.03-0.13 m/s and
 //!   bursts to 0.5 m/s over 900 frames, `c = 0.2` gives 0.04-0.13 m/s, `c = 0.3` gives
@@ -147,12 +144,6 @@ pub struct FluidConfig {
     pub rest_spacing: Fix128,
     /// Constraint softening for `C >= 0`, relative to `S_ref`
     pub epsilon: Fix128,
-    /// Constraint softening for `C < 0` (two-sided interior), relative to `S_ref`
-    pub epsilon_negative: Fix128,
-    /// Colour-field gradient `h |sum_j (m/rho_0) grad W_ij|` at which the negative branch
-    /// is switched off (surface); `0` (the default) clamps `C >= 0` everywhere as in the
-    /// paper, so tension comes from the cohesion term only
-    pub surface_gradient_cutoff: Fix128,
     /// Artificial pressure `k` of `s_corr = -k (W(r) / W(0.2 h))^4`, in units of the
     /// reference multiplier `1 / S_ref`; `0` (default) disables it
     pub artificial_pressure: Fix128,
@@ -198,8 +189,6 @@ impl Default for FluidConfig {
             relaxation: Fix128::ONE,
             rest_spacing,
             epsilon: Fix128::from_ratio(1, 100),
-            epsilon_negative: Fix128::from_ratio(3, 10),
-            surface_gradient_cutoff: Fix128::ZERO,
             artificial_pressure: Fix128::ZERO,
         }
     }
@@ -303,8 +292,6 @@ pub struct Fluid {
     pub boundary: Vec<Vec3Fix>,
     /// `S_ref`: the constraint-gradient sum on the rest lattice
     reference_gradient_sq: Fix128,
-    /// Per-particle weight of the negative constraint branch (1 interior, 0 surface)
-    negative_weights: Vec<Fix128>,
     /// Force the boundary particles exerted on the fluid in the last substep
     boundary_force: Vec3Fix,
     /// Per boundary particle: the force it exerted on the fluid in the last substep
@@ -351,7 +338,6 @@ impl Fluid {
             inv_rest_density,
             boundary: Vec::new(),
             reference_gradient_sq,
-            negative_weights: vec![Fix128::ONE; n],
             boundary_force: Vec3Fix::ZERO,
             boundary_forces: Vec::new(),
             #[cfg(feature = "std")]
@@ -591,53 +577,9 @@ impl Fluid {
         let h_sq = h * h;
         let vol = self.particle_volume();
 
-        // 0. Surface weights of the negative branch from the colour-field gradient on the
-        //    start-of-substep positions (fluid + boundary)
-        self.grid.clear();
-        for i in 0..n {
-            self.grid.insert(i, self.positions[i]);
-        }
-        for (k, b) in self.boundary.iter().enumerate() {
-            self.grid.insert(n + k, *b);
-        }
-        self.grid.build();
         let mut neighbors_buf = Vec::new();
         let mut body_buf: Vec<(Fix128, Vec3Fix)> = Vec::new();
         let n_bodies = self.body_count();
-        let cutoff = self.config.surface_gradient_cutoff;
-        for i in 0..n {
-            if cutoff <= Fix128::ZERO {
-                self.negative_weights[i] = Fix128::ZERO;
-                continue;
-            }
-            self.grid
-                .query_neighbors_into(self.positions[i], h_sq, &mut neighbors_buf);
-            let mut gradient = Vec3Fix::ZERO;
-            for &j in &neighbors_buf {
-                if j == i {
-                    continue;
-                }
-                let delta = self.positions[i] - self.point(j);
-                let r_sq = delta.length_squared();
-                if r_sq.is_zero() || r_sq >= h_sq {
-                    continue;
-                }
-                let r = r_sq.sqrt();
-                gradient = gradient + delta / r * (spiky_grad(r, h) * vol);
-            }
-            body_buf.clear();
-            self.sample_bodies(self.positions[i], &mut body_buf);
-            for &(_, g_b) in &body_buf {
-                gradient = gradient + g_b * self.inv_rest_density;
-            }
-            let g = gradient.length() * h;
-            let w = Fix128::ONE - g / cutoff;
-            self.negative_weights[i] = if w <= Fix128::ZERO {
-                Fix128::ZERO
-            } else {
-                w * w
-            };
-        }
 
         // 1. Predict positions (damping is applied once per frame in `step`,
         //    1.2.0 — per substep it made the terminal velocity depend on
@@ -701,13 +643,12 @@ impl Fluid {
                 self.densities[i] = density;
                 sum_grad_sq = sum_grad_sq + grad_i.length_squared();
 
+                // `C >= 0` (a liquid carries no tension beyond its cohesion)
                 let mut constraint = density * self.inv_rest_density - Fix128::ONE;
-                let mut softening = self.config.epsilon;
                 if constraint < Fix128::ZERO {
-                    constraint = constraint * self.negative_weights[i];
-                    softening = self.config.epsilon_negative;
+                    constraint = Fix128::ZERO;
                 }
-                let denom = sum_grad_sq + softening * s_ref;
+                let denom = sum_grad_sq + self.config.epsilon * s_ref;
                 self.lambdas[i] = if sum_grad_sq.is_zero() || denom.is_zero() {
                     Fix128::ZERO
                 } else {
@@ -833,17 +774,6 @@ impl Fluid {
         // 7. Vorticity confinement (re-inject rotational energy lost to damping)
         if !self.config.vorticity_strength.is_zero() {
             self.apply_vorticity_confinement(dt);
-        }
-    }
-
-    /// Current position of grid entry `j` (fluid particle or boundary particle)
-    #[inline]
-    fn point(&self, j: usize) -> Vec3Fix {
-        let n = self.positions.len();
-        if j < n {
-            self.positions[j]
-        } else {
-            self.boundary[j - n]
         }
     }
 
@@ -1130,11 +1060,10 @@ mod tests {
     }
 
     #[test]
-    fn surface_cutoff_zero_clamps_and_artificial_pressure_pushes_apart() {
-        // cutoff 0: C >= 0 everywhere (paper); s_corr adds a pairwise repulsion
+    fn artificial_pressure_pushes_apart() {
+        // C >= 0 everywhere (paper); s_corr adds a pairwise repulsion
         let a = FluidConfig {
             gravity: Vec3Fix::ZERO,
-            surface_gradient_cutoff: Fix128::ZERO,
             ..FluidConfig::default()
         };
         let mut b = a;

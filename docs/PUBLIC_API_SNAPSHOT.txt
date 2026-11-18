@@ -5228,7 +5228,6 @@ pub struct alice_physics_core::fluid::FluidConfig
 pub alice_physics_core::fluid::FluidConfig::artificial_pressure: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::damping: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::epsilon: alice_physics_core::math::Fix128
-pub alice_physics_core::fluid::FluidConfig::epsilon_negative: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::fluid::FluidConfig::iterations: usize
 pub alice_physics_core::fluid::FluidConfig::kernel_radius: alice_physics_core::math::Fix128
@@ -5237,7 +5236,6 @@ pub alice_physics_core::fluid::FluidConfig::relaxation: alice_physics_core::math
 pub alice_physics_core::fluid::FluidConfig::rest_density: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::rest_spacing: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::substeps: usize
-pub alice_physics_core::fluid::FluidConfig::surface_gradient_cutoff: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::surface_tension: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::viscosity: alice_physics_core::math::Fix128
 pub alice_physics_core::fluid::FluidConfig::vorticity_strength: alice_physics_core::math::Fix128
@@ -13056,7 +13054,6 @@ pub struct alice_physics_core::prelude::FluidConfig
 pub alice_physics_core::prelude::FluidConfig::artificial_pressure: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::damping: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::epsilon: alice_physics_core::math::Fix128
-pub alice_physics_core::prelude::FluidConfig::epsilon_negative: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::prelude::FluidConfig::iterations: usize
 pub alice_physics_core::prelude::FluidConfig::kernel_radius: alice_physics_core::math::Fix128
@@ -13065,7 +13062,6 @@ pub alice_physics_core::prelude::FluidConfig::relaxation: alice_physics_core::ma
 pub alice_physics_core::prelude::FluidConfig::rest_density: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::rest_spacing: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::substeps: usize
-pub alice_physics_core::prelude::FluidConfig::surface_gradient_cutoff: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::surface_tension: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::viscosity: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::FluidConfig::vorticity_strength: alice_physics_core::math::Fix128
@@ -25789,7 +25785,6 @@ pub struct alice_physics_core::FluidConfig
 pub alice_physics_core::FluidConfig::artificial_pressure: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::damping: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::epsilon: alice_physics_core::math::Fix128
-pub alice_physics_core::FluidConfig::epsilon_negative: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::gravity: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::FluidConfig::iterations: usize
 pub alice_physics_core::FluidConfig::kernel_radius: alice_physics_core::math::Fix128
@@ -25798,7 +25793,6 @@ pub alice_physics_core::FluidConfig::relaxation: alice_physics_core::math::Fix12
 pub alice_physics_core::FluidConfig::rest_density: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::rest_spacing: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::substeps: usize
-pub alice_physics_core::FluidConfig::surface_gradient_cutoff: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::surface_tension: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::viscosity: alice_physics_core::math::Fix128
 pub alice_physics_core::FluidConfig::vorticity_strength: alice_physics_core::math::Fix128
