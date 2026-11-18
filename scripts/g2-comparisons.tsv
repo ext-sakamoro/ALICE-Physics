@@ -49,7 +49,8 @@ src/erosion.rs	compute_exposure_from_normals	dist < surface_threshold	1	f32	pred
 src/erosion.rs	compute_exposure_from_normals	flow_len > 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/erosion.rs	update	exp > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/erosion.rs	update	self . config . smoothing > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
-src/fluid.rs	resolve_sdf_boundary	dist > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fluid.rs	sdf_contact	dist < 0.0	1	f32	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/fluid.rs	sdf_contact	dist > 0.0	1	f32	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
 src/fracture.rs	check_fracture_seeds	(dx * dx + dy * dy + dz * dz) . sqrt () < self . config . crack_width * 10.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
 src/fracture.rs	check_fracture_seeds	clen > 1e-5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/fracture.rs	check_fracture_seeds	glen > 1e-5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison

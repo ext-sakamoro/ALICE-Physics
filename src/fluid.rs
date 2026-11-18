@@ -763,6 +763,12 @@ impl Fluid {
             self.positions[i] = self.predicted[i];
         }
 
+        // 4b. Contact with the density-map solids: a centre inside a solid is put back on its
+        //     surface with the contact rule of the container colliders; the fluid's momentum
+        //     change is the solid's reaction (Newton 3, credited per solid)
+        #[cfg(feature = "std")]
+        self.resolve_body_contacts(inv_dt);
+
         // 5. Apply viscosity (XSPH)
         self.apply_viscosity();
 
@@ -948,24 +954,89 @@ impl Fluid {
     fn resolve_sdf_boundary(&mut self, sdf_colliders: &[SdfCollider]) {
         for i in 0..self.particle_count() {
             for sdf in sdf_colliders {
-                let (lx, ly, lz) = sdf.world_to_local(self.positions[i]);
-                let dist = sdf.field.distance(lx, ly, lz) * sdf.scale_f32;
-
                 // For containment: push particles inside if they escape
-                if dist > 0.0 {
-                    let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
-                    let normal = sdf.local_normal_to_world(nx, ny, nz);
-                    let push = Fix128::from_f32(-dist);
-                    self.positions[i] = self.positions[i] + normal * push;
-                    self.predicted[i] = self.positions[i];
-
-                    // Reflect velocity
-                    let vn = normal * self.velocities[i].dot(normal);
-                    self.velocities[i] = self.velocities[i] - vn * Fix128::from_ratio(15, 10);
+                if let Some((p, v)) = sdf_contact(
+                    sdf,
+                    self.positions[i],
+                    self.velocities[i],
+                    ContactSide::Container,
+                ) {
+                    self.positions[i] = p;
+                    self.predicted[i] = p;
+                    self.velocities[i] = v;
                 }
             }
         }
     }
+
+    /// Contact with the solids added by [`Fluid::with_sdf_body`]: a centre inside a solid
+    /// (`SDF < 0`) goes back to its surface along the solid's normal and its normal velocity
+    /// is reflected as for a container collider; `m dv / dt` of each contact is added to the
+    /// force on the fluid and taken from that solid's force
+    #[cfg(feature = "std")]
+    fn resolve_body_contacts(&mut self, inv_dt: Fix128) {
+        let m = self.config.particle_mass;
+        for k in 0..self.bodies.len() {
+            let mut on_fluid = Vec3Fix::ZERO;
+            for i in 0..self.particle_count() {
+                let sdf = self.bodies[k].sdf();
+                if let Some((p, v)) = sdf_contact(
+                    sdf,
+                    self.positions[i],
+                    self.velocities[i],
+                    ContactSide::Solid,
+                ) {
+                    on_fluid = on_fluid + (v - self.velocities[i]) * (m * inv_dt);
+                    self.positions[i] = p;
+                    self.predicted[i] = p;
+                    self.velocities[i] = v;
+                }
+            }
+            if !on_fluid.length_squared().is_zero() {
+                self.boundary_force = self.boundary_force + on_fluid;
+                if let Some(f) = self.body_forces.get_mut(k) {
+                    *f = *f - on_fluid;
+                }
+            }
+        }
+    }
+}
+
+/// Which side of an SDF the fluid keeps to
+#[cfg(feature = "std")]
+#[derive(Clone, Copy)]
+enum ContactSide {
+    /// Inside (`d <= 0`): a container
+    Container,
+    /// Outside (`d >= 0`): a solid
+    Solid,
+}
+
+/// The contact rule shared by container colliders and solids: a centre on the wrong side
+/// of the surface is moved back onto it along the normal (by `-d`) and its normal velocity
+/// is reflected with restitution 0.5 (`v - 1.5 (v . n) n`); `None` when the centre is on its
+/// side
+#[cfg(feature = "std")]
+fn sdf_contact(
+    sdf: &SdfCollider,
+    p: Vec3Fix,
+    v: Vec3Fix,
+    side: ContactSide,
+) -> Option<(Vec3Fix, Vec3Fix)> {
+    let (lx, ly, lz) = sdf.world_to_local(p);
+    let dist = sdf.field.distance(lx, ly, lz) * sdf.scale_f32;
+    let wrong_side = match side {
+        ContactSide::Container => dist > 0.0,
+        ContactSide::Solid => dist < 0.0,
+    };
+    if !wrong_side {
+        return None;
+    }
+    let (nx, ny, nz) = sdf.field.normal(lx, ly, lz);
+    let normal = sdf.local_normal_to_world(nx, ny, nz);
+    let p = p + normal * Fix128::from_f32(-dist);
+    let vn = normal * v.dot(normal);
+    Some((p, v - vn * Fix128::from_ratio(15, 10)))
 }
 
 impl core::fmt::Debug for Fluid {
@@ -1248,8 +1319,8 @@ mod tests {
         // oracle: a block at rest in a square well, its floor one density-map solid and its
         // four side walls another, is carried by its weight M g (the walls carry no vertical
         // load at rest); the solids' forces sum to minus the fluid-side total (Newton 3, the
-        // particles at the foot of a wall go through the two-solid split); no particle
-        // goes deeper into a solid than the map's indicator band
+        // particles at the foot of a wall go through the two-solid split); at no frame is a
+        // particle centre inside a solid (the contact with the map solids)
         let config = FluidConfig {
             iterations: 4,
             ..FluidConfig::default()
@@ -1291,10 +1362,26 @@ mod tests {
         let frames = 240;
         let mut carried = 0.0;
         let mut newton = 0.0_f64;
+        let wd = side.to_f64();
         for frame in 0..frames {
             f.step(Fix128::from_ratio(1, 60));
             let bf = f.body_forces();
             assert_eq!(bf.len(), 2);
+            // no centre inside either solid at any frame (the contact puts it back on the
+            // surface; 1e-6 m covers the f32 distance the contact reads)
+            let deepest = f
+                .positions
+                .iter()
+                .map(|p| {
+                    let (x, y, z) = (p.x.to_f64(), p.y.to_f64(), p.z.to_f64());
+                    y.min(x).min(z).min(wd - x).min(wd - z)
+                })
+                .fold(f64::MAX, f64::min);
+            assert!(
+                deepest > -1e-6,
+                "frame {frame}: a particle is {} m inside a solid",
+                -deepest
+            );
             let sum = bf[0] + bf[1] + f.boundary_force();
             let scale = f.boundary_force().length().to_f64().max(1e-30);
             newton = newton.max(sum.length().to_f64() / scale);
@@ -1309,23 +1396,95 @@ mod tests {
             "weight carried by the solids / M g = {}",
             carried / weight
         );
-        // the map smooths each solid's indicator over half a grid step either side of its
-        // surface (grid step rest_spacing / 4), so no centre goes deeper than that
-        let w = side.to_f64();
-        let deepest = f
-            .positions
-            .iter()
-            .map(|p| {
-                let (x, y, z) = (p.x.to_f64(), p.y.to_f64(), p.z.to_f64());
-                y.min(x).min(z).min(w - x).min(w - z)
-            })
-            .fold(f64::MAX, f64::min);
-        let band = sp.to_f64() / 8.0;
-        assert!(
-            deepest > -band,
-            "a particle went {} m into a solid (band {band} m)",
-            -deepest
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn the_contact_with_a_map_solid_is_its_reaction() {
+        // oracle: momentum balance of the fluid over one frame with one substep, no damping
+        // and no vorticity confinement (the other velocity terms are pairwise and cancel):
+        // sum m dv = M g dt + F dt, F the force the solids exerted on the fluid
+        // (`boundary_force`, corrections and contacts); a block dropped onto a floor solid,
+        // so the contact acts in the first frames
+        let config = FluidConfig {
+            substeps: 1,
+            damping: Fix128::ONE,
+            vorticity_strength: Fix128::ZERO,
+            ..FluidConfig::default()
+        };
+        let sp = config.rest_spacing;
+        let h = config.kernel_radius;
+        let lift = sp * Fix128::from_int(2);
+        let floor = static_solid(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));
+        let mut f = Fluid::new_block(
+            Vec3Fix::new(Fix128::ZERO, lift, Fix128::ZERO),
+            Vec3Fix::new(
+                sp * Fix128::from_int(2),
+                lift + sp * Fix128::from_int(2),
+                sp * Fix128::from_int(2),
+            ),
+            sp,
+            config,
+        )
+        .with_sdf_body(
+            floor,
+            Vec3Fix::new(-h, -h, -h),
+            Vec3Fix::new(sp * Fix128::from_int(4), h, sp * Fix128::from_int(4)),
         );
+        let m = config.particle_mass.to_f64();
+        let dt = 1.0 / 60.0;
+        let mut contacts = 0;
+        for frame in 0..90 {
+            let before: Vec<Vec3Fix> = f.velocities.clone();
+            let lowest_before = f
+                .positions
+                .iter()
+                .map(|p| p.y.to_f64())
+                .fold(f64::MAX, f64::min);
+            f.step(Fix128::from_ratio(1, 60));
+            let mut dp = [0.0; 3];
+            for (a, b) in f.velocities.iter().zip(&before) {
+                let d = *a - *b;
+                dp[0] += m * d.x.to_f64();
+                dp[1] += m * d.y.to_f64();
+                dp[2] += m * d.z.to_f64();
+            }
+            let fb = f.boundary_force();
+            let weight = f.particle_count() as f64 * m * config.gravity.y.to_f64();
+            let expect = [
+                fb.x.to_f64() * dt,
+                (weight + fb.y.to_f64()) * dt,
+                fb.z.to_f64() * dt,
+            ];
+            let scale = (weight * dt).abs();
+            for k in 0..3 {
+                assert!(
+                    (dp[k] - expect[k]).abs() <= 1e-6 * scale,
+                    "frame {frame} axis {k}: dp {} vs {}",
+                    dp[k],
+                    expect[k]
+                );
+            }
+            // the solid's force is minus the fluid-side total
+            let sum = f.body_forces()[0] + fb;
+            assert!(
+                sum.length().to_f64() <= 1e-9 * fb.length().to_f64().max(1e-30),
+                "frame {frame}: Newton 3 {sum:?}"
+            );
+            let lowest = f
+                .positions
+                .iter()
+                .map(|p| p.y.to_f64())
+                .fold(f64::MAX, f64::min);
+            assert!(
+                lowest > -1e-6,
+                "frame {frame}: a centre at y = {lowest} is inside the floor"
+            );
+            if lowest_before > 1e-6 && lowest < 1e-5 {
+                contacts += 1;
+            }
+        }
+        assert!(contacts > 0, "the block never reached the floor");
     }
 
     /// 単位球からの符号付き距離 (f32 oracle)
