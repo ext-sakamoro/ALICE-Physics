@@ -1,50 +1,63 @@
-//! The laminar point plume, measured: a 2 cm cube heating the floor of a closed box of air
-//! (0.32 × 0.64 × 0.32 m, `ν = κ`), run until the plume is steady, then averaged over a window.
-//! A laminar point plume is self-similar: its width grows as `R² ∝ z`, its centreline speed is
-//! the same at every height, and its centreline excess temperature falls as `1/z` (Fujii 1963,
-//! Pr = 1). This run prints the three exponents fitted over a band of heights, and how many
-//! cells the plume's radius spans there; the oracle compares the exponents at two cells
-//! (10 mm and 5 mm) and asks that they converge to (1, 0, −1).
+//! The laminar point plume, measured: a 2 cm cube heating the floor of a box of air
+//! (0.32 × 0.64 × 0.32 m, `ν = κ`, the top open as an outflow), run until the plume is steady,
+//! then averaged over a window. A laminar point plume is self-similar: its width grows as
+//! `R² ∝ z`, its centreline speed is the same at every height, and its centreline excess
+//! temperature falls as `1/z` (Fujii 1963, Pr = 1). This run prints the three exponents fitted
+//! over a band of heights and how many cells the plume's radius spans there; the oracle compares
+//! the exponents as the cell shrinks (10, 5, 2.5 mm) and asks that they converge to (1, 0, −1).
 //!
-//! The box is closed, so the plume's heat fills it from the top down; every layer's width and
-//! centreline temperature are measured on the excess over that layer's far field (the mean on the
-//! box's outer ring of cells), which the table prints beside them.
+//! The closed form holds only in an unbounded, unstratified ambient around a steady plume, so the
+//! run checks its own scene against that before it reports exponents, and fails as "scene
+//! invalid" (never as a pass) when one of the three does not hold:
+//! - **reach inside the box**: per layer, the window-mean radial profile `P(r)` falls to the far
+//!   field, the first radius where `P − P_min ≤ f · (P(0) − P_min)` (`f` = 1 %), and a plateau of
+//!   at least two radii at that level lies inside the box's inscribed circle;
+//! - **far field unstratified**: the far field (the plateau's mean) changes with height so little
+//!   that `N · t_window < 0.1`, `N² = g β dT∞/dz`;
+//! - **outflow steady**: over the window the heat leaving through the top equals the heat the
+//!   source adds, within 5 % (a closed box fills from the top down and is never valid).
 //!
-//! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state
-//! and the window sums so far) every few seconds of simulated time and resumes from it.
+//! The width and the centreline excess are measured on the excess over that far field.
+//!
+//! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state and
+//! the window sums so far) every 2 s of simulated time and resumes from it.
 //!
 //! Run: `cargo run --release --example smoke_laminar_plume -- <dx_mm> <nu_um2> <heat_k_per_s>
-//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint] [coarse checkpoint]`
-//! With a coarse checkpoint (a run of the same scene at twice the cell) and no checkpoint of
-//! its own yet, the run starts from that state prolonged to this cell
-//! (`SmokePlume::prolonged`) instead of from rest; the window should start a while after it.
-//! e.g. `-- 10 200 100 20 12 0.10 0.30 open /tmp/plume10.ckpt` (`open`: the top is an outflow,
-//! so the box does not fill)
+//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint] [coarse checkpoint]`,
+//! e.g. `-- 10 200 400 20 12 0.10 0.40 open /tmp/plume10.ckpt`. With a coarse checkpoint (a run
+//! of the same scene at twice the cell) and no checkpoint of its own yet, the run starts from that
+//! state prolonged to this cell (`SmokePlume::prolonged`) instead of from rest; the window should
+//! start a while after it.
 
 #[path = "../tests/support/smoke_laminar_scene.rs"]
 mod scene;
 
-use alice_physics_core::smoke_plume::{from_quanta, SmokePlume, HEAT_QUANTUM_BITS};
+use alice_physics_core::smoke_plume::{from_quanta, SmokeConfig, SmokePlume, HEAT_QUANTUM_BITS};
 use alice_physics_core::world_participant::Participant;
 use std::io::Write;
 use std::time::Instant;
 
-const MAGIC: &[u8; 8] = b"SMKLAM03";
-/// Earlier formats (no ambient sums, no radial profile): their state still resumes a run that
-/// had not reached the window.
-const MAGIC_OLD: [&[u8; 8]; 2] = [b"SMKLAM01", b"SMKLAM02"];
+const MAGIC: &[u8; 8] = b"SMKLAM04";
+/// Earlier formats: their state still resumes a run that had not reached the window, and a
+/// coarse run's state prolongs from any of them.
+const MAGIC_OLD: [&[u8; 8]; 3] = [b"SMKLAM01", b"SMKLAM02", b"SMKLAM03"];
 /// The far field is where the window-mean excess is within this fraction of the centreline's
 /// excess over the layer's coolest radius.
 const FAR_FIELD_FRACTION: f64 = 0.01;
+/// The largest `N · t_window` of the far field for which the scene counts as unstratified.
+const MAX_N_T: f64 = 0.1;
+/// The heat leaving over the window may differ from the heat added by this fraction.
+const STEADY_TOLERANCE: f64 = 0.05;
 
-/// The sums over the averaging window, per layer `j`.
+/// The sums over the averaging window.
 struct Window {
     samples: u64,
-    r2: Vec<f64>,
+    /// The heat that had left through the top, and the heat the source had added, when the
+    /// window began.
+    out0: i64,
+    added0: i64,
+    /// The centreline speed summed per layer `j`.
     w: Vec<f64>,
-    t: Vec<f64>,
-    /// The layer's far field: the mean excess temperature on the box's outer ring of cells.
-    amb: Vec<f64>,
     /// The excess temperature summed per layer and radius bin (`j · bins + b`, bin `b` holds
     /// the cells whose centre is `b..b+1` cells from the box's axis).
     prof: Vec<f64>,
@@ -77,14 +90,9 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     out.extend_from_slice(&(state.len() as u64).to_le_bytes());
     out.extend_from_slice(&state);
     out.extend_from_slice(&win.samples.to_le_bytes());
-    for v in win
-        .r2
-        .iter()
-        .chain(&win.w)
-        .chain(&win.t)
-        .chain(&win.amb)
-        .chain(&win.prof)
-    {
+    out.extend_from_slice(&win.out0.to_le_bytes());
+    out.extend_from_slice(&win.added0.to_le_bytes());
+    for v in win.w.iter().chain(&win.prof) {
         out.extend_from_slice(&v.to_bits().to_le_bytes());
     }
     // write beside, then rename: a run stopped mid-write keeps the previous checkpoint
@@ -93,63 +101,59 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     std::fs::rename(&tmp, path)
 }
 
-/// The plume's state and step from a checkpoint of any format, the window sums left out
-/// (for a coarser run's state to prolong).
-fn load_state(path: &str, plume: &mut SmokePlume) -> Result<u64, String> {
-    let b = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-    if !(MAGIC_OLD.iter().any(|m| &b[..8] == *m) || &b[..8] == MAGIC) {
-        return Err(format!("{path}: not a laminar plume checkpoint"));
+/// The step and the plume's state of a checkpoint of any format, read into `plume` after it
+/// accepts them; the rest of the bytes is returned.
+fn read_plume<'a>(b: &'a [u8], plume: &mut SmokePlume) -> Result<(u64, bool, &'a [u8]), String> {
+    let old = MAGIC_OLD.iter().any(|m| &b[..8] == *m);
+    if !(old || &b[..8] == MAGIC) {
+        return Err("not a laminar plume checkpoint".into());
     }
     let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
     let len = u64_at(16) as usize;
     let state = &b[24..24 + len];
     plume
         .check_state(state)
-        .map_err(|e| format!("{path}: the coarse scene refuses it: {e:?}"))?;
+        .map_err(|e| format!("the scene refuses the state: {e:?}"))?;
     plume.read_state(state);
-    Ok(u64_at(8))
+    Ok((u64_at(8), old, &b[24 + len..]))
 }
 
-fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
-    let b = std::fs::read(path).ok()?;
-    let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
-    let v1 = MAGIC_OLD.iter().any(|m| &b[..8] == *m);
-    assert!(v1 || &b[..8] == MAGIC, "not a laminar plume checkpoint");
-    let step = u64_at(8);
-    let len = u64_at(16) as usize;
-    plume.read_state(&b[24..24 + len]);
-    let mut o = 24 + len;
-    win.samples = u64_at(o);
-    o += 8;
-    if v1 {
-        // its window sums lack the later ones: resume only before the window
-        assert_eq!(
-            win.samples, 0,
-            "an earlier-format checkpoint inside the window cannot resume"
-        );
-        return Some(step);
+fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u64>, String> {
+    let Ok(b) = std::fs::read(path) else {
+        return Ok(None);
+    };
+    let (step, old, rest) = read_plume(&b, plume).map_err(|e| format!("{path}: {e}"))?;
+    let at = |o: usize| u64::from_le_bytes(rest[o..o + 8].try_into().unwrap());
+    win.samples = at(0);
+    if old {
+        // its window sums are not this format's: resume only before the window
+        if win.samples != 0 {
+            return Err(format!(
+                "{path}: an earlier format inside the window cannot resume"
+            ));
+        }
+        return Ok(Some(step));
     }
-    let n = win.r2.len();
-    for v in win
-        .r2
-        .iter_mut()
-        .chain(win.w.iter_mut())
-        .chain(win.t.iter_mut())
-        .chain(win.amb.iter_mut())
-        .chain(win.prof.iter_mut())
-    {
-        *v = f64::from_bits(u64_at(o));
+    win.out0 = at(8) as i64;
+    win.added0 = at(16) as i64;
+    let mut o = 24;
+    for v in win.w.iter_mut().chain(win.prof.iter_mut()) {
+        *v = f64::from_bits(at(o));
         o += 8;
     }
-    assert_eq!(o, b.len(), "checkpoint length for {n} layers");
-    Some(step)
+    if o != rest.len() {
+        return Err(format!("{path}: checkpoint length"));
+    }
+    Ok(Some(step))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<String> = std::env::args().skip(1).collect();
     if a.len() < 8 {
         return Err(
-            "args: dx_mm nu_um2 heat_k_per_s seconds window_from_s z_lo_m z_hi_m closed|open [checkpoint]".into(),
+            "args: dx_mm nu_um2 heat_k_per_s seconds window_from_s z_lo_m z_hi_m \
+                    closed|open [checkpoint] [coarse checkpoint]"
+                .into(),
         );
     }
     let int = |i: usize| a[i].parse::<i64>();
@@ -194,15 +198,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut win = Window {
         samples: 0,
-        r2: vec![0.0; ny],
+        out0: 0,
+        added0: 0,
         w: vec![0.0; ny],
-        t: vec![0.0; ny],
-        amb: vec![0.0; ny],
         prof: vec![0.0; ny * bins],
     };
     let mut n = 0u64;
     if let Some(p) = &ckpt {
-        if let Some(s) = load(p, &mut plume, &mut win) {
+        if let Some(s) = load(p, &mut plume, &mut win)? {
             println!(
                 "resumed at step {s} ({:.2} s)",
                 s as f64 / per_second as f64
@@ -218,7 +221,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .set_open_top()
                     .map_err(|e| format!("open the coarse top: {e:?}"))?;
             }
-            let s = load_state(c, &mut coarse)?;
+            let b = std::fs::read(c).map_err(|e| format!("{c}: {e}"))?;
+            let (s, _, _) = read_plume(&b, &mut coarse).map_err(|e| format!("{c}: {e}"))?;
             let config = *plume.config();
             plume = coarse
                 .prolonged(config)
@@ -256,6 +260,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         n += 1;
         max_sub = max_sub.max(plume.last_transport_substeps());
         if n > window_from {
+            if win.samples == 0 {
+                win.out0 = plume.outflow().heat_left;
+                win.added0 = plume.ledger().heat_added;
+            }
             win.samples += 1;
             let f = plume.heat();
             let g = plume.velocity();
@@ -263,44 +271,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64()
             };
             for j in 0..ny {
-                // the closed box warms its own air: the plume is the excess over the layer's far field
-                let (mut ring, mut ring_n) = (0.0, 0.0);
-                for k in 0..nz {
-                    for i in 0..nx {
-                        if i == 0 || k == 0 || i == nx - 1 || k == nz - 1 {
-                            ring += temp(i, j, k);
-                            ring_n += 1.0;
-                        }
-                    }
-                }
-                let amb = ring / ring_n;
-                win.amb[j] += amb;
                 for k in 0..nz {
                     for i in 0..nx {
                         win.prof[j * bins + bin_of(i, k)] += temp(i, j, k);
                     }
                 }
-                let (mut m0, mut m2) = (0.0, 0.0);
-                for k in 0..nz {
-                    for i in 0..nx {
-                        let q = (temp(i, j, k) - amb).max(0.0);
-                        let x = (i as f64 + 0.5) * dx - 0.5 * nx as f64 * dx;
-                        let z = (k as f64 + 0.5) * dx - 0.5 * nz as f64 * dx;
-                        m0 += q;
-                        m2 += q * (x * x + z * z);
-                    }
-                }
-                if m0 > 0.0 {
-                    win.r2[j] += m2 / m0;
-                }
                 // the centreline: the four cells around the box's axis
-                let (mut w, mut t) = (0.0, 0.0);
-                for (i, k) in [(ci - 1, ck - 1), (ci, ck - 1), (ci - 1, ck), (ci, ck)] {
-                    w += g.cell_velocity(i, j, k).1.to_f64() / 4.0;
-                    t += (temp(i, j, k) - amb) / 4.0;
-                }
+                let w: f64 = [(ci - 1, ck - 1), (ci, ck - 1), (ci - 1, ck), (ci, ck)]
+                    .iter()
+                    .map(|&(i, k)| g.cell_velocity(i, j, k).1.to_f64() / 4.0)
+                    .sum();
                 win.w[j] += w;
-                win.t[j] += t;
             }
         }
         if n % (2 * per_second) == 0 {
@@ -328,70 +309,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(plume.soot_held_expected()),
         "soot ledger"
     );
-    if open {
-        let l = plume.ledger();
-        println!(
-            "OUTFLOW heat_left_over_heat_added {:.4}",
-            plume.outflow().heat_left as f64 / l.heat_added.max(1) as f64
-        );
-    }
     if win.samples == 0 {
         return Err("the window holds no samples".into());
     }
 
     let s = win.samples as f64;
     let z0 = scene::source_top_m(dx_mm);
-    let (mut pr, mut pw, mut pt, mut min_cells) = (vec![], vec![], vec![], f64::INFINITY);
-    // the far field over the band: its gradient, the plume's centreline excess at the band's top
-    let (mut pa, mut t_top) = (vec![], 0.0);
-    println!(" j   z (m)   R (cells)  R²/z (m)   w_c (m/s)   ΔT_c·z (K·m)  far field (K)");
-    for j in 0..ny {
-        let z = (j as f64 + 0.5) * dx - z0;
-        if z <= 0.0 {
-            continue;
-        }
-        let (r2, w, t, amb) = (win.r2[j] / s, win.w[j] / s, win.t[j] / s, win.amb[j] / s);
-        let cells = r2.sqrt() / dx;
-        println!(
-            "{j:3} {z:7.4} {cells:9.2} {:11.4e} {w:11.4e} {:11.4e} {amb:11.4e}",
-            r2 / z,
-            t * z
-        );
-        if z >= z_lo && z <= z_hi && r2 > 0.0 && w > 0.0 && t > 0.0 {
-            pr.push((ln(z), ln(r2)));
-            pw.push((ln(z), ln(w)));
-            pt.push((ln(z), ln(t)));
-            pa.push((z, amb));
-            t_top = t;
-            min_cells = min_cells.min(cells);
-        }
-    }
-    if pr.len() < 3 {
-        return Err(format!("only {} layers in the band {z_lo}..{z_hi} m", pr.len()).into());
-    }
-    // A closed box fills from the top down, so its air is stratified, N² = g β dT∞/dz; that bends
-    // the plume itself (it stops at a finite height). The laminar closed form needs it negligible:
-    // N·t over the window ≪ 1, and the far field's change across the band ≪ the plume's excess.
-    let cfg = alice_physics_core::smoke_plume::SmokeConfig::air();
-    let grad = slope(&pa);
-    let n2 = cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * grad;
-    let window_s = (seconds - from) as f64;
-    let span = pa.last().unwrap().1 - pa[0].1;
-    println!(
-        "STRATIFICATION dTinf_dz_K_per_m {grad:.4} N2_per_s2 {n2:.4e} N_t_window {:.3} \
-         far_field_change_over_band_K {span:.4} centreline_excess_at_top_K {t_top:.4} ratio {:.3}",
-        n2.max(0.0).sqrt() * window_s,
-        span / t_top
-    );
-    // The far field from the plume's own reach: per layer, the window-mean radial profile P(r);
-    // the reach r_f is the first radius where P − P_min ≤ f·(P(0) − P_min), and the far field
-    // is the mean over the radii from r_f on that stay within that fraction (the plateau, before
-    // any warming at the walls). It exists only if the plateau lies inside the box's inscribed
-    // circle (radius n/2 cells); the box must be at least 2·(r_f + 2) cells wide for it.
     let inscribed = nx.min(nz) / 2;
-    let (mut reach_max, mut missing, mut fr, mut ft, mut fa) =
-        (0usize, 0usize, vec![], vec![], vec![]);
-    println!(" j   z (m)   reach (cells)  plateau  far field (K)  R (cells)  ΔT_c (K)");
+    let (mut reach_max, mut missing, mut min_cells) = (0usize, 0usize, f64::INFINITY);
+    let (mut pr, mut pw, mut pt, mut pa) = (vec![], vec![], vec![], vec![]);
+    println!(" j   z (m)  reach (cells)  plateau  far field (K)  R (cells)   w_c (m/s)   ΔT_c (K)");
     for j in 0..ny {
         let z = (j as f64 + 0.5) * dx - z0;
         if z < z_lo || z > z_hi {
@@ -408,16 +335,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect();
         let inside = &pm[..=inscribed.min(bins - 1)];
         let p0 = pm[0];
-        let pmin = inside.iter().cloned().fold(f64::INFINITY, f64::min);
+        let pmin = inside.iter().copied().fold(f64::INFINITY, f64::min);
         let cut = pmin + FAR_FIELD_FRACTION * (p0 - pmin);
-        let reach = inside.iter().position(|&v| v <= cut);
-        let Some(r_f) = reach else {
+        let Some(r_f) = inside.iter().position(|&v| v <= cut) else {
             missing += 1;
             continue;
         };
         let plateau: Vec<f64> = inside[r_f..]
             .iter()
-            .cloned()
+            .copied()
             .take_while(|&v| v <= cut)
             .collect();
         if plateau.len() < 2 {
@@ -436,51 +362,79 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             m0 += e;
             m2 += e * r * r;
         }
-        let tc = p0 - far;
+        let (tc, w) = (p0 - far, win.w[j] / s);
+        let cells = (m2 / m0).sqrt() / dx;
         if j % 4 == 0 {
             println!(
-                "{j:3} {z:7.4} {r_f:10} {:8} {far:13.4e} {:9.2} {tc:11.4e}",
-                plateau.len(),
-                (m2 / m0).sqrt() / dx
+                "{j:3} {z:7.4} {r_f:10} {:8} {far:13.4e} {cells:10.2} {w:11.4e} {tc:11.4e}",
+                plateau.len()
             );
         }
-        if m0 > 0.0 && tc > 0.0 {
-            fr.push((ln(z), ln(m2 / m0)));
-            ft.push((ln(z), ln(tc)));
-            fa.push((z, far));
+        if m0 > 0.0 && tc > 0.0 && w > 0.0 {
+            pr.push((ln(z), ln(m2 / m0)));
+            pw.push((ln(z), ln(w)));
+            pt.push((ln(z), ln(tc)));
+            pa.push((z, far));
+            min_cells = min_cells.min(cells);
         }
     }
-    if fr.len() >= 3 {
-        let g2 = slope(&fa);
-        println!(
-            "FARFIELD fraction {FAR_FIELD_FRACTION} reach_max_cells {reach_max} box_half_width_cells {inscribed} \
-             needed_width_m {:.3} layers_without_far_field {missing} exp_R2 {:.4} exp_T {:.4} \
-             dTinf_dz_K_per_m {g2:.4} N_t_window {:.3}",
-            2.0 * (reach_max + 2) as f64 * dx,
-            slope(&fr),
-            slope(&ft),
-            (cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * g2).max(0.0).sqrt() * window_s
-        );
-    } else {
-        println!(
-            "FARFIELD fraction {FAR_FIELD_FRACTION} none inside the box: {missing} of the band's layers \
-             have no plateau within {inscribed} cells (reach_max_cells {reach_max})"
-        );
+
+    // the scene's validity for the closed form, each checked before the exponents count
+    let mut invalid = vec![];
+    if missing > 0 || pr.len() < 3 {
+        invalid.push(format!(
+            "reach: {missing} of the band's layers have no far field within {inscribed} cells \
+             (the plume needs a box at least {:.3} m wide)",
+            2.0 * (reach_max + 2) as f64 * dx
+        ));
     }
+    let cfg = SmokeConfig::air();
+    let window_s = (seconds - from) as f64;
+    let grad = if pa.len() >= 2 { slope(&pa) } else { f64::NAN };
+    let n_t = (cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * grad)
+        .max(0.0)
+        .sqrt()
+        * window_s;
+    if n_t.is_nan() || n_t >= MAX_N_T {
+        invalid.push(format!(
+            "far field stratified: N·t {n_t:.3} (at most {MAX_N_T})"
+        ));
+    }
+    let out = (plume.outflow().heat_left - win.out0) as f64;
+    let added = (plume.ledger().heat_added - win.added0) as f64;
+    let steady = out / added.max(1.0);
+    if !open {
+        invalid.push("outflow: the top is closed, so the box fills".into());
+    } else if steady.is_nan() || (steady - 1.0).abs() > STEADY_TOLERANCE {
+        invalid.push(format!(
+            "outflow not steady: out / added {steady:.4} over the window (within {STEADY_TOLERANCE})"
+        ));
+    }
+    println!(
+        "SCENE reach_max_cells {reach_max} of {inscribed} needed_width_m {:.3} far_field_dT_dz_K_per_m {grad:.4} \
+         N_t_window {n_t:.3} outflow_over_added {steady:.4} {}",
+        2.0 * (reach_max + 2) as f64 * dx,
+        if invalid.is_empty() { "valid" } else { "INVALID" }
+    );
     #[allow(
         clippy::disallowed_methods,
         reason = "timing harness: the time per velocity step that this run prints"
     )]
     let ms_per_step = clock.elapsed().as_secs_f64() * 1e3 / (total - first).max(1) as f64;
-    println!(
-        "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} top {} band {z_lo}..{z_hi} layers {} min_radius_cells {min_cells:.2} \
-         exp_R2 {:.4} exp_w {:.4} exp_T {:.4} (laminar 1 0 -1) ms_per_step {:.1}",
-        if open { "open" } else { "closed" },
-        pr.len(),
-        slope(&pr),
-        slope(&pw),
-        slope(&pt),
-        ms_per_step,
-    );
+    if pr.len() >= 3 {
+        println!(
+            "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} top {} band {z_lo}..{z_hi} layers {} \
+             min_radius_cells {min_cells:.2} exp_R2 {:.4} exp_w {:.4} exp_T {:.4} (laminar 1 0 -1) \
+             ms_per_step {ms_per_step:.1}",
+            if open { "open" } else { "closed" },
+            pr.len(),
+            slope(&pr),
+            slope(&pw),
+            slope(&pt),
+        );
+    }
+    if !invalid.is_empty() {
+        return Err(format!("scene invalid: {}", invalid.join("; ")).into());
+    }
     Ok(())
 }
