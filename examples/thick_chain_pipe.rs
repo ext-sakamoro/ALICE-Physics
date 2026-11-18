@@ -12,7 +12,7 @@
 
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
-use alice_physics_core::thick_chain::{ThickChain, ThickChainConfig, P2};
+use alice_physics_core::thick_chain::{ThickChain, ThickChainConfig, ThickChainStretch, P2};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -62,10 +62,14 @@ fn main() {
         substeps: 16,
         iterations: 4,
         gravity: [Fix128::ZERO; 2],
-        compliance: fx(1.0e-4),
+        stretch: ThickChainStretch::Linear {
+            compliance: fx(1.0e-4),
+        },
         drag: fx(40.0),
         friction: fx(0.05),
         min_radius: fx(0.005),
+        splits: 0,
+        relaxation: Fix128::ZERO,
     };
     let links = 20;
     let start = [f64::from(A[0]) + 0.02, f64::from(A[1])];
