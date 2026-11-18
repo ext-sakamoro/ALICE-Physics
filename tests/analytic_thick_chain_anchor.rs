@@ -41,7 +41,7 @@
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
 use alice_physics_core::thick_chain::{
-    ThickChain, ThickChainConfig, ThickChainError, ThickChainStretch, P2,
+    ThickChain, ThickChainConfig, ThickChainError, ThickChainFit, ThickChainStretch, P2,
 };
 
 fn fx(v: f64) -> Fix128 {
@@ -81,6 +81,7 @@ fn config(stretch: ThickChainStretch) -> ThickChainConfig {
         min_radius: fx(0.002),
         splits: 0,
         relaxation: Fix128::ZERO,
+        fit: ThickChainFit::Disc,
     }
 }
 

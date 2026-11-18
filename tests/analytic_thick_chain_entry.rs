@@ -30,7 +30,9 @@
 
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
-use alice_physics_core::thick_chain::{ThickChain, ThickChainConfig, ThickChainStretch, P2};
+use alice_physics_core::thick_chain::{
+    ThickChain, ThickChainConfig, ThickChainFit, ThickChainStretch, P2,
+};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -103,6 +105,10 @@ fn threshold() -> (f64, f64) {
 }
 
 fn chain(shear: f64, drag: f64, links: usize) -> ThickChain {
+    chain_of(shear, drag, links, ThickChainFit::Disc)
+}
+
+fn chain_of(shear: f64, drag: f64, links: usize, fit: ThickChainFit) -> ThickChain {
     let cfg = ThickChainConfig {
         substeps: 16,
         iterations: 4,
@@ -113,6 +119,7 @@ fn chain(shear: f64, drag: f64, links: usize) -> ThickChain {
         min_radius: fx(0.005),
         splits: 8,
         relaxation: Fix128::ZERO,
+        fit,
     };
     let link = BODY / links as f64;
     let points: Vec<P2> = (0..=links)
@@ -324,4 +331,127 @@ fn fed_every_link_is_as_long_as_the_channel_makes_it() {
             "link {k}: {l:e}, expected {held:e}"
         );
     }
+}
+
+/// the conforming rule's energy of the chain, J per metre of depth, from its definition:
+/// per link the samples' shares (at most half the least radius apart, one interval more than
+/// the length asks for; trapezoid weights), each as stretched as the wall asks,
+/// `μ = r_rest / d`, or as the free stretch `λ*`, whichever is more, with
+/// `l / l0 = Σ ω max(λ*, μ)`
+fn stored_in_shares(chain: &ThickChain) -> f64 {
+    let least = 0.005;
+    let mut total = 0.0;
+    for k in 0..chain.link_count() {
+        let (a, b) = (chain.positions()[k], chain.positions()[k + 1]);
+        let (l, rest) = (f(chain.length(k)), f(chain.rest_length(k)));
+        let n = (2.0 * l / least).ceil() as usize + 1;
+        let mut weights = Vec::new();
+        let mut asked = Vec::new();
+        for j in 0..=n {
+            let t = j as f64 / n as f64;
+            let x = f(a[0]) * (1.0 - t) + f(b[0]) * t;
+            let y = f(a[1]) * (1.0 - t) + f(b[1]) * t;
+            let d = f64::from(mouth(x as f32, y as f32)).max(least);
+            weights.push(if j == 0 || j == n { 0.5 } else { 1.0 } / n as f64);
+            asked.push(RADIUS / d);
+        }
+        let ratio = l / rest;
+        let need: f64 = weights.iter().zip(&asked).map(|(w, m)| w * m).sum();
+        // the free stretch by bisection (the sum grows with it); 0 when every share is held
+        let (mut lo, mut hi) = (0.0f64, ratio * 4.0);
+        if ratio > need {
+            for _ in 0..200 {
+                let mid = (lo + hi) / 2.0;
+                let sum: f64 = weights
+                    .iter()
+                    .zip(&asked)
+                    .map(|(w, m)| w * m.max(mid))
+                    .sum();
+                if sum < ratio {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+        }
+        let energy = |stretch: f64| SHEAR / 2.0 * (stretch - 1.0 / stretch).powi(2);
+        total += f(chain.area(k))
+            * weights
+                .iter()
+                .zip(&asked)
+                .map(|(w, m)| w * energy(m.max(lo)))
+                .sum::<f64>();
+    }
+    total
+}
+
+#[test]
+fn a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time() {
+    let limit = threshold().0 * SHEAR * 2.0 * RADIUS;
+    let links = 20;
+    let fed = |share: f64| {
+        let chain = chain_of(SHEAR, DRAG, links, ThickChainFit::Conforming);
+        f(pushed(chain, share * limit, 0.0).positions()[0][0]) > 0.0
+    };
+    // not below the closed form; and at 1.1 of it, where the disc rule's 10 mm links stall
+    // on their lumps (the first test of this file)
+    assert!(!fed(0.95), "fed below the limit");
+    assert!(fed(1.1), "not fed at 1.1 of the limit");
+    // moved slowly by its tail from where 0.9 of the limit left it: the push's work is the
+    // energy the shares took, both ways
+    let stalled = pushed(
+        chain_of(SHEAR, DRAG, links, ThickChainFit::Conforming),
+        0.9 * limit,
+        0.0,
+    );
+    assert!(f(stalled.positions()[0][0]) < 0.0, "not stalled");
+    let link = BODY / links as f64;
+    let mut chain = chain_of(SHEAR, 24.0, links, ThickChainFit::Conforming);
+    for (i, p) in stalled.positions().iter().enumerate() {
+        chain.set_position(i, *p);
+    }
+    chain.pin(0);
+    let walls = walls();
+    let rest = |chain: &mut ThickChain| {
+        for _ in 0..900 {
+            chain
+                .step_in(Fix128::from_ratio(1, 60), &walls, &[])
+                .expect("a step");
+            let still = chain
+                .velocities()
+                .iter()
+                .all(|v| f(v[0]).abs() < 1.0e-5 && f(v[1]).abs() < 1.0e-5);
+            if still {
+                return;
+            }
+        }
+        panic!("the chain does not come to rest");
+    };
+    let push = |chain: &ThickChain| -SHEAR * 2.0 * RADIUS * pull(f(chain.length(0)) / link);
+    rest(&mut chain);
+    let (first, mut before) = (stored_in_shares(&chain), push(&chain));
+    let (step, count) = (2.5e-4, 100);
+    let (mut work, mut variation) = (0.0, 0.0);
+    let at = f(chain.positions()[0][0]);
+    for n in 1..=count {
+        chain.set_position(0, [fx(at + step * f64::from(n)), Fix128::ZERO]);
+        rest(&mut chain);
+        let now = push(&chain);
+        work += (before + now) / 2.0 * step;
+        variation += (now - before).abs();
+        before = now;
+    }
+    let gain = stored_in_shares(&chain) - first;
+    let way = step * f64::from(count);
+    // the trapezoid sum of a push of bounded variation is within half a step of its
+    // variation; at rest to 1e-5 m/s the drag's force is below 1e-3 N
+    let tol = step * variation / 2.0 + 1.0e-3 * way;
+    println!(
+        "conforming slow feed: work {work:.5} gain {gain:.5} (within {tol:.5}); over F* way {:.4}",
+        gain / (limit * way)
+    );
+    assert!(
+        (work - gain).abs() <= tol,
+        "the push worked {work:e}, the shares took {gain:e}, within {tol:e}"
+    );
 }
