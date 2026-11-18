@@ -63,7 +63,11 @@
 //! - contact with solids: a particle centre inside a density-map solid
 //!   ([`Fluid::with_sdf_body`]) is put back on the solid's surface along its SDF normal and
 //!   loses its normal velocity (inelastic; a liquid at a wall does not bounce), and the
-//!   momentum change is credited to that solid. Without it the map density alone left the
+//!   momentum change is credited to that solid (each pass to its own solid). A centre inside
+//!   two solids, or in a concave corner of one, is resolved one axis per pass: the passes
+//!   repeat until no centre is inside, at most 4 per substep (2 resolve an orthogonal corner,
+//!   one axis each; 4 cover a corner where two solids meet a wall), and
+//!   [`Fluid::contact_left_inside`] counts what the cap leaves. Without it the map density alone left the
 //!   layer next to a wall 0.013-0.015 m inside it at rest (measured 2026-11-18). Container
 //!   colliders ([`Fluid::step_with_sdf`]) keep their restitution 0.5 for now. Measured: with
 //!   restitution 0.5 on the solids too, the bounce during settling changes the packing and
@@ -314,6 +318,8 @@ pub struct Fluid {
     /// Per particle and solid (`i * body_count + k`): the force the particle exerted on the
     /// solid in the last substep
     body_particle_forces: Vec<Vec3Fix>,
+    /// Particle centres still inside a density-map solid after the last substep's contact
+    contact_left_inside: usize,
 }
 
 impl Fluid {
@@ -356,6 +362,7 @@ impl Fluid {
             bodies: Vec::new(),
             body_forces: Vec::new(),
             body_particle_forces: Vec::new(),
+            contact_left_inside: 0,
         }
     }
 
@@ -397,6 +404,14 @@ impl Fluid {
     #[must_use]
     pub fn body_particle_forces(&self) -> &[Vec3Fix] {
         &self.body_particle_forces
+    }
+
+    /// Particle centres still inside a solid added with [`Fluid::with_sdf_body`] after the
+    /// contact of the last substep: the contact repeats its passes until no centre is inside,
+    /// at most a fixed number of times, and this is 0 unless that cap ran out
+    #[must_use]
+    pub fn contact_left_inside(&self) -> usize {
+        self.contact_left_inside
     }
 
     /// Number of solids added with [`Fluid::with_sdf_body`]
@@ -1009,36 +1024,67 @@ impl Fluid {
     #[cfg(feature = "std")]
     fn resolve_body_contacts(&mut self, inv_dt: Fix128) {
         let m = self.config.particle_mass;
-        for k in 0..self.bodies.len() {
-            let mut on_fluid = Vec3Fix::ZERO;
-            for i in 0..self.particle_count() {
-                let sdf = self.bodies[k].sdf();
-                if let Some((p, v)) = sdf_contact(
-                    sdf,
+        let n_bodies = self.bodies.len();
+        // a centre inside two solids at once (a concave corner, or where two solids meet)
+        // leaves one projection on its other side; passes repeat until no centre is inside,
+        // at most CONTACT_PASSES times (a fixed count, so the result is deterministic)
+        for _ in 0..CONTACT_PASSES {
+            let mut moved = false;
+            for k in 0..n_bodies {
+                let mut on_fluid = Vec3Fix::ZERO;
+                for i in 0..self.particle_count() {
+                    let sdf = self.bodies[k].sdf();
+                    if let Some((p, v)) = sdf_contact(
+                        sdf,
+                        self.positions[i],
+                        self.velocities[i],
+                        ContactSide::Solid,
+                    ) {
+                        let push = (v - self.velocities[i]) * (m * inv_dt);
+                        on_fluid = on_fluid + push;
+                        if let Some(f) = self.body_particle_forces.get_mut(i * n_bodies + k) {
+                            *f = *f - push;
+                        }
+                        self.positions[i] = p;
+                        self.predicted[i] = p;
+                        self.velocities[i] = v;
+                        moved = true;
+                    }
+                }
+                if !on_fluid.length_squared().is_zero() {
+                    self.boundary_force = self.boundary_force + on_fluid;
+                    if let Some(f) = self.body_forces.get_mut(k) {
+                        *f = *f - on_fluid;
+                    }
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+        // what the passes left: 0 unless the cap ran out (read by `contact_left_inside`)
+        let mut left = 0;
+        for i in 0..self.particle_count() {
+            let inside = self.bodies.iter().any(|b| {
+                sdf_contact(
+                    b.sdf(),
                     self.positions[i],
                     self.velocities[i],
                     ContactSide::Solid,
-                ) {
-                    let push = (v - self.velocities[i]) * (m * inv_dt);
-                    on_fluid = on_fluid + push;
-                    let slot = i * self.bodies.len() + k;
-                    if let Some(f) = self.body_particle_forces.get_mut(slot) {
-                        *f = *f - push;
-                    }
-                    self.positions[i] = p;
-                    self.predicted[i] = p;
-                    self.velocities[i] = v;
-                }
-            }
-            if !on_fluid.length_squared().is_zero() {
-                self.boundary_force = self.boundary_force + on_fluid;
-                if let Some(f) = self.body_forces.get_mut(k) {
-                    *f = *f - on_fluid;
-                }
+                )
+                .is_some()
+            });
+            if inside {
+                left += 1;
             }
         }
+        self.contact_left_inside = left;
     }
 }
+
+/// Contact passes over the density-map solids per substep (see `resolve_body_contacts`)
+#[cfg(feature = "std")]
+const CONTACT_PASSES: usize = 4;
 
 /// Which side of an SDF the fluid keeps to
 #[cfg(feature = "std")]
@@ -1420,6 +1466,11 @@ mod tests {
                     y.min(x).min(z).min(wd - x).min(wd - z)
                 })
                 .fold(f64::MAX, f64::min);
+            assert_eq!(
+                f.contact_left_inside(),
+                0,
+                "frame {frame}: the contact passes ran out"
+            );
             assert!(
                 deepest > -1e-6,
                 "frame {frame}: a particle is {} m inside a solid",
