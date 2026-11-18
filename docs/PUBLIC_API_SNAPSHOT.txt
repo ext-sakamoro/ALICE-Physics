@@ -19267,6 +19267,7 @@ pub fn alice_physics_core::smoke_plume::SmokePlume::ledger(&self) -> alice_physi
 pub fn alice_physics_core::smoke_plume::SmokePlume::new(usize, usize, usize, alice_physics_core::math::Fix128, alice_physics_core::smoke_plume::SmokeConfig) -> core::result::Result<Self, alice_physics_core::smoke_plume::SmokeBuildError>
 pub fn alice_physics_core::smoke_plume::SmokePlume::open_top(&self) -> bool
 pub fn alice_physics_core::smoke_plume::SmokePlume::outflow(&self) -> alice_physics_core::smoke_plume::SmokeOutflow
+pub fn alice_physics_core::smoke_plume::SmokePlume::prolonged(&self, alice_physics_core::smoke_plume::SmokeConfig) -> core::result::Result<alice_physics_core::smoke_plume::SmokePlume, alice_physics_core::smoke_plume::SmokeBuildError>
 pub fn alice_physics_core::smoke_plume::SmokePlume::set_initial(&mut self, usize, usize, usize, i64, i64) -> core::result::Result<(), alice_physics_core::smoke_plume::SmokeBuildError>
 pub fn alice_physics_core::smoke_plume::SmokePlume::set_open_top(&mut self) -> core::result::Result<(), alice_physics_core::smoke_plume::SmokeBuildError>
 pub fn alice_physics_core::smoke_plume::SmokePlume::set_reverse_cells(&mut self, bool)
