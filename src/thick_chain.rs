@@ -34,7 +34,7 @@
 //!   the proportion of the gradients; between two walls only the second is left, and the link
 //!   settles at `l = A / (2 c)` in a channel of half-width `c`. The walls press on the link
 //!   with the sum of the multipliers: in that channel `T l / c` for both walls together,
-//!   `T` the link's tension. Then `v ← (x − x_start) / h`, and friction (Coulomb, per link): the
+//!   `T` the link's tension ([`ThickChain::wall_force`]). Then `v ← (x − x_start) / h`, and friction (Coulomb, per link): the
 //!   velocity of the link's centre of mass across the walls' mean slope `Σ Δλ G / Σ Δλ` drops
 //!   by at most `μ Σ Δλ / (h (m_i + m_j))`, both ends alike; the lengthening itself meets no
 //!   friction.
@@ -83,8 +83,14 @@
 //!   the energy taken over the way equal to the closed form to four digits). The wall's slope is
 //!   taken over `±r_min / 8`, so the chain is centred between two walls to that width. The
 //!   wall projections are not accumulated: what the last pass of an iteration leaves is
-//!   carried to the next substep.
-//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy::moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length::fed_every_link_is_as_long_as_the_channel_makes_it`
+//!   carried to the next substep. The stretch and the walls are solved in turn, so at rest
+//!   between walls a link is left a little short of the walls' length and the walls carry
+//!   a little less than `T l / c`, by a share that goes with `(ω h)²` and falls with the
+//!   passes (measured, links of 10 mm held from 100 to 54 mm wide at `(ω h)² = 0.13`: the
+//!   walls' force 0.89 of `T l / c` for one link and 0.94 to 0.97 for six with 4 passes,
+//!   0.96 to 0.98 with 16; the links up to 0.46 % short with 4 passes, 0.012 % with 16).
+//!   The squeeze friction is low by the same share.
+//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state::held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy::moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length::fed_every_link_is_as_long_as_the_channel_makes_it`
 //! - **Tiers.** L0 only.
 
 use crate::math::Fix128;
@@ -202,6 +208,8 @@ pub struct ThickChain {
     inv_mass: Vec<Fix128>,
     rest_length: Vec<Fix128>,
     area: Vec<Fix128>,
+    /// the walls' press on each link in the last substep taken (read out, not state)
+    wall_force: Vec<Fix128>,
 }
 
 impl ThickChain {
@@ -288,6 +296,7 @@ impl ThickChain {
             x: points.to_vec(),
             v: vec![ZERO2; points.len()],
             inv_mass: mass.iter().map(|&m| Fix128::ONE / m).collect(),
+            wall_force: vec![zero; rest_length.len()],
             rest_length,
             area,
         })
@@ -369,6 +378,20 @@ impl ThickChain {
     #[must_use]
     pub fn area(&self, k: usize) -> Fix128 {
         self.area[k]
+    }
+
+    /// The walls' press on link `k` in the last substep taken, N per metre of depth (the sum
+    /// of the walls' forces across them, whatever their sides): `T l / c` for a link held in
+    /// a channel of half-width `c`, less the substep's share stated in the MODEL section. 0
+    /// before the first step and without walls. It is read out of the step, not part of the
+    /// state: a chain made from a snapshot has 0 until it is stepped.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not a link.
+    #[must_use]
+    pub fn wall_force(&self, k: usize) -> Fix128 {
+        self.wall_force[k]
     }
 
     /// The length of link `k` now.
@@ -633,6 +656,10 @@ impl ThickChain {
                     }
                 }
             }
+        }
+        // a multiplier is a force times h²
+        for (force, press) in self.wall_force.iter_mut().zip(&pressed) {
+            *force = *press / (h * h);
         }
         let rate = Fix128::ONE / h;
         for (i, &from) in start.iter().enumerate() {
