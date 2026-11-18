@@ -59,7 +59,16 @@
 //!   resolve, so its width comes from the scheme's diffusion and narrows with the cell
 //!   (measured without molecular diffusion at 10 and 5 mm cells over 0.15–0.35 m in a 0.64 m box:
 //!   `d ln R²/d ln z` 1.03 → 0.48, `d ln w_c/d ln z` 0.27 → 0.22, `d ln ΔT_c/d ln z`
-//!   −0.26 → −0.18, against the laminar 1, 0, −1); neither plume law is claimed yet. More
+//!   −0.26 → −0.18, against the laminar 1, 0, −1); neither plume law is claimed yet. The
+//!   laminar closed form (`R² ∝ z`, `w_c` constant, `ΔT_c ∝ 1/z`) holds only where its own
+//!   conditions hold, and `examples/smoke_laminar_plume.rs` checks them on the scene before it
+//!   reports exponents (a scene that fails one is reported invalid, not passed): the plume's
+//!   reach (the radius where its excess falls to 1 % of the centreline's) lies inside the box,
+//!   the far field beyond it is unstratified (`N · t_window < 0.1`), and the heat leaving an
+//!   open top over the window matches the source within 5 % (a closed box fills from the top
+//!   down and never qualifies). Measured at 10 mm, `ν = κ = 2·10⁻⁴` m²/s, 0.32 m box, open top,
+//!   window 12–20 s: a 2 cm source at 400 K/s reaches 13 of 16 cells (valid in this box), at
+//!   100 K/s it reaches 15 and needs a 0.34 m box (outside the scene's validity). More
 //!   than [`SmokeConfig::max_steps`] velocity steps in an advance, more than
 //!   [`SmokeConfig::max_transport_substeps`] transport substeps, a quantum count leaving the
 //!   integer range or a cell past [`MAX_CELL_QUANTA`], or a cell giving more than it holds is

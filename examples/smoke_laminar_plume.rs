@@ -10,8 +10,9 @@
 //! run checks its own scene against that before it reports exponents, and fails as "scene
 //! invalid" (never as a pass) when one of the three does not hold:
 //! - **reach inside the box**: per layer, the window-mean radial profile `P(r)` falls to the far
-//!   field, the first radius where `P − P_min ≤ f · (P(0) − P_min)` (`f` = 1 %), and a plateau of
-//!   at least two radii at that level lies inside the box's inscribed circle;
+//!   field, the first radius where `P − P_min ≤ f · (P(0) − P_min)` (`f` = 1 %), and at least two
+//!   cells of far field lie between that radius and the wall (the box is at least
+//!   `2 (reach + 2)` cells wide);
 //! - **far field unstratified**: the far field (the plateau's mean) changes with height so little
 //!   that `N · t_window < 0.1`, `N² = g β dT∞/dz`;
 //! - **outflow steady**: over the window the heat leaving through the top equals the heat the
@@ -381,11 +382,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // the scene's validity for the closed form, each checked before the exponents count
     let mut invalid = vec![];
-    if missing > 0 || pr.len() < 3 {
+    // the reach must leave two cells of far field before the wall on every layer: the box must
+    // be at least 2 (reach + 2) cells wide
+    let needed = 2.0 * (reach_max + 2) as f64 * dx;
+    if missing > 0 || pr.len() < 3 || reach_max + 2 > inscribed {
         invalid.push(format!(
-            "reach: {missing} of the band's layers have no far field within {inscribed} cells \
-             (the plume needs a box at least {:.3} m wide)",
-            2.0 * (reach_max + 2) as f64 * dx
+            "reach: {reach_max} cells of the {inscribed} to the wall ({missing} of the band's layers \
+             without a far field); the plume needs a box at least {needed:.3} m wide"
         ));
     }
     let cfg = SmokeConfig::air();
@@ -411,9 +414,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     println!(
-        "SCENE reach_max_cells {reach_max} of {inscribed} needed_width_m {:.3} far_field_dT_dz_K_per_m {grad:.4} \
+        "SCENE reach_max_cells {reach_max} of {inscribed} needed_width_m {needed:.3} far_field_dT_dz_K_per_m {grad:.4} \
          N_t_window {n_t:.3} outflow_over_added {steady:.4} {}",
-        2.0 * (reach_max + 2) as f64 * dx,
         if invalid.is_empty() { "valid" } else { "INVALID" }
     );
     #[allow(
