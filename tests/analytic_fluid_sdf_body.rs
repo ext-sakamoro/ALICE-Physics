@@ -144,6 +144,28 @@ fn scene(bottom: f64, top: f64) -> Scene {
     Scene { fluid, n }
 }
 
+/// The rounding bound on Newton 3 between the fluid and the solids, per component, in N
+/// (the fluid MODEL "Newton 3"): each particle correction is rounded twice (by the particle
+/// volume and by the relaxation, round to nearest), at most one ulp `2^-64` m in all, for
+/// every particle on every constraint iteration of the last substep; the fluid-side total and
+/// each solid's share are then multiplied by `m / dt^2` once each (half an ulp of force
+/// apiece). The pair terms cancel exactly, so nothing else separates the two sides.
+fn newton_bound(f: &Fluid, frame_dt: f64) -> f64 {
+    let ulp = 2.0_f64.powi(-64);
+    let dt = frame_dt / f.config.substeps as f64;
+    let force_per_correction = f.config.particle_mass.to_f64() / (dt * dt);
+    let count = (f.particle_count() * f.config.iterations) as f64;
+    (count * force_per_correction + f.body_count() as f64 + 1.0) * ulp
+}
+
+/// The largest component of `v`, in N
+fn largest(v: Vec3Fix) -> f64 {
+    v.x.to_f64()
+        .abs()
+        .max(v.y.to_f64().abs())
+        .max(v.z.to_f64().abs())
+}
+
 /// The frames of a run that is checked every time: the force is the mean over its last 60.
 /// The lattice the fluid starts on is close to hydrostatic, and the mean wanders by 2 to 4 %
 /// whatever the length (measured 2026-11-19, floor cube / cube 2 h up: 0.983 / 1.018 at 120
@@ -170,10 +192,14 @@ fn settle(sc: &mut Scene, default_frames: usize) -> (f64, f64) {
         assert_eq!(bf.len(), 2, "both solids report a force");
         // Newton 3 on every frame: the solids' forces sum to minus their push on the fluid
         let sum = bf[0] + bf[1] + sc.fluid.boundary_force();
-        // Newton 3 exactly: the solids' forces sum to minus their push on the fluid
-        assert_eq!(sum, Vec3Fix::ZERO, "frame {f}: Newton 3");
-        let scale = sc.fluid.boundary_force().length().to_f64().max(1e-30);
-        newton = newton.max(sum.length().to_f64() / scale);
+        // Newton 3: the solids' forces sum to minus their push on the fluid, to rounding
+        let bound = newton_bound(&sc.fluid, 1.0 / 60.0);
+        assert!(
+            largest(sum) <= bound,
+            "frame {f}: Newton 3 {} N over the rounding bound {bound} N",
+            largest(sum)
+        );
+        newton = newton.max(largest(sum) / bound);
         if f + 60 >= total {
             cube_y += bf[1].y.to_f64() / 60.0;
         }
@@ -206,7 +232,7 @@ fn cube_on_the_floor(default_frames: usize) {
     let closed = -RHO0 * g() * (ys - CUBE) * CUBE * CUBE;
     let ratio = fy / closed;
     eprintln!(
-        "cube on the floor: F_y / closed form = {ratio} ({fy} N vs {closed} N), newton {newton}"
+        "cube on the floor: F_y / closed form = {ratio} ({fy} N vs {closed} N), Newton 3 |sum| / rounding bound {newton}"
     );
     assert!((ratio - 1.0).abs() < 0.05, "F_y / closed form = {ratio}");
 }
@@ -236,10 +262,14 @@ fn settle_with_faces(sc: &mut Scene, bottom: f64, default_frames: usize) -> (f64
         sc.fluid.step(dt);
         let bf = sc.fluid.body_forces();
         let sum = bf[0] + bf[1] + sc.fluid.boundary_force();
-        // Newton 3 exactly: the solids' forces sum to minus their push on the fluid
-        assert_eq!(sum, Vec3Fix::ZERO, "frame {f}: Newton 3");
-        let scale = sc.fluid.boundary_force().length().to_f64().max(1e-30);
-        newton = newton.max(sum.length().to_f64() / scale);
+        // Newton 3: the solids' forces sum to minus their push on the fluid, to rounding
+        let bound = newton_bound(&sc.fluid, 1.0 / 60.0);
+        assert!(
+            largest(sum) <= bound,
+            "frame {f}: Newton 3 {} N over the rounding bound {bound} N",
+            largest(sum)
+        );
+        newton = newton.max(largest(sum) / bound);
         if f + 60 < total {
             continue;
         }
@@ -298,7 +328,7 @@ fn cube_two_kernel_radii_up(default_frames: usize) {
         .map(|b| b / (bottom_closed / 4.0))
         .collect();
     eprintln!(
-        "cube 2h up: F_y / (rho g V) = {ratio}, newton {newton}; top {} / bottom {} of closed, sides {} N, bottom bins {bins:?}",
+        "cube 2h up: F_y / (rho g V) = {ratio}, Newton 3 |sum| / rounding bound {newton}; top {} / bottom {} of closed, sides {} N, bottom bins {bins:?}",
         -faces.top / top_closed,
         faces.bottom / bottom_closed,
         faces.side

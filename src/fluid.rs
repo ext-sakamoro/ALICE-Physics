@@ -73,15 +73,21 @@
 //!   restitution 0.5 on the solids too, the bounce during settling changes the packing and
 //!   the cube two kernel radii above the floor reads `F_y / (rho_0 g V)` = 0.924; inelastic,
 //!   0.995.
-//! - Newton 3 between the fluid and the solids holds exactly: the neighbour grid is rebuilt
-//!   on the predicted positions at the start of every constraint iteration, so every pair
-//!   is found from both sides and its push is equal and opposite; the fluid-side total
-//!   ([`Fluid::boundary_force`]) and the solids' forces ([`Fluid::body_forces`]) then sum to
-//!   zero in `Fix128`, on every frame. Measured (2026-11-18): with the grid built once per
-//!   substep, the corrections moved the particles off the cells the grid was built on, a
-//!   pair near a cell edge was found from one side only, and the sum was 0 to 3.3e-9 of the
-//!   fluid-side total depending on the initial placement (3.4e-5 N of 2.98e4 N); rebuilt
-//!   every iteration, exactly 0 on all 900 frames, at no measurable cost.
+//! - Newton 3 between the fluid and the solids holds to rounding: the neighbour grid is
+//!   rebuilt on the predicted positions at the start of every constraint iteration, so every
+//!   pair is found from both sides, and its two pushes are exact negatives (the `Fix128`
+//!   products round to nearest and are sign-symmetric), so the pair terms cancel exactly.
+//!   What separates the fluid-side total ([`Fluid::boundary_force`]) from the solids' forces
+//!   ([`Fluid::body_forces`]) is then only rounding: each particle correction is rounded
+//!   twice (by the particle volume and the relaxation), at most `2^-64` m in all, for `n`
+//!   particles on each of the `iterations`, and the two sides are multiplied by `m / dt^2`
+//!   separately (half an ulp of force each, `dt` the substep), so per component
+//!   `|sum| <= (n iterations m / dt^2 + bodies + 1) 2^-64` N on every frame. Measured
+//!   (2026-11-18): with the grid built once per substep, the corrections moved the particles
+//!   off the cells the grid was built on, a pair near a cell edge was found from one side
+//!   only, and the sum was 0 to 3.3e-9 of the fluid-side total depending on the initial
+//!   placement (3.4e-5 N of 2.98e4 N, about 1e6 times this bound on the cube scene); rebuilt
+//!   every iteration, the sum stays within the bound, at no measurable cost.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
 //!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
 //!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
@@ -1203,6 +1209,28 @@ mod tests {
 
     /// Small boxed block for the branch tests below (`n`^3 at the rest spacing, 2 wall
     /// layers, walls twice the block height)
+    /// The rounding bound on Newton 3 between the fluid and the solids, per component, in N
+    /// (MODEL "Newton 3"): each particle correction is rounded twice (by the particle volume and
+    /// by the relaxation, round to nearest), at most one ulp `2^-64` m in all, for every particle
+    /// on every constraint iteration of the last substep; the fluid-side total and each solid's
+    /// share are then multiplied by `m / dt^2` once each (half an ulp of force apiece). The pair
+    /// terms cancel exactly (the products are sign-symmetric), so nothing else separates the sides.
+    fn newton_bound(f: &Fluid, frame_dt: f64) -> f64 {
+        let ulp = 2.0_f64.powi(-64);
+        let dt = frame_dt / f.config.substeps as f64;
+        let force_per_correction = f.config.particle_mass.to_f64() / (dt * dt);
+        let count = (f.particle_count() * f.config.iterations) as f64;
+        (count * force_per_correction + f.body_count() as f64 + 1.0) * ulp
+    }
+
+    /// The largest component of `v`, in N
+    fn largest(v: Vec3Fix) -> f64 {
+        v.x.to_f64()
+            .abs()
+            .max(v.y.to_f64().abs())
+            .max(v.z.to_f64().abs())
+    }
+
     fn small_boxed(config: FluidConfig, n: i64) -> Fluid {
         let sp = config.rest_spacing;
         let half = sp / Fix128::from_int(2);
@@ -1472,6 +1500,7 @@ mod tests {
         assert!(f.body_forces().is_empty(), "no force before the first step");
         let frames = 240;
         let mut carried = 0.0;
+        let mut newton = 0.0_f64;
         let wd = side.to_f64();
         for frame in 0..frames {
             f.step(Fix128::from_ratio(1, 60));
@@ -1498,11 +1527,18 @@ mod tests {
                 -deepest
             );
             let sum = bf[0] + bf[1] + f.boundary_force();
-            assert_eq!(sum, Vec3Fix::ZERO, "frame {frame}: Newton 3");
+            let bound = newton_bound(&f, 1.0 / 60.0);
+            assert!(
+                largest(sum) <= bound,
+                "frame {frame}: Newton 3 {} N over the rounding bound {bound} N",
+                largest(sum)
+            );
+            newton = newton.max(largest(sum) / bound);
             if frame >= frames - 60 {
                 carried += -(bf[0].y + bf[1].y).to_f64() / 60.0;
             }
         }
+        eprintln!("two solids: Newton 3 largest |sum| / rounding bound = {newton}");
         let weight = f.particle_count() as f64 * config.particle_mass.to_f64() * 10.0;
         assert!(
             (carried / weight - 1.0).abs() < 0.05,
@@ -1547,6 +1583,7 @@ mod tests {
         let m = config.particle_mass.to_f64();
         let dt = 1.0 / 60.0;
         let mut contacts = 0;
+        let mut newton = 0.0_f64;
         for frame in 0..90 {
             let before: Vec<Vec3Fix> = f.velocities.clone();
             let lowest_before = f
@@ -1580,7 +1617,13 @@ mod tests {
             }
             // the solid's force is minus the fluid-side total
             let sum = f.body_forces()[0] + fb;
-            assert_eq!(sum, Vec3Fix::ZERO, "frame {frame}: Newton 3");
+            let bound = newton_bound(&f, dt);
+            assert!(
+                largest(sum) <= bound,
+                "frame {frame}: Newton 3 {} N over the rounding bound {bound} N",
+                largest(sum)
+            );
+            newton = newton.max(largest(sum) / bound);
             let lowest = f
                 .positions
                 .iter()
@@ -1594,6 +1637,7 @@ mod tests {
                 contacts += 1;
             }
         }
+        eprintln!("contact: Newton 3 largest |sum| / rounding bound = {newton}");
         assert!(contacts > 0, "the block never reached the floor");
     }
 
