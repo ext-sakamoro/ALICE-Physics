@@ -109,6 +109,7 @@
 //!
 //! ## Soft Body & Simulation
 //! - [`rope`]: XPBD distance chain rope and cable simulation
+//! - [`thick_chain`]: A chain of links of fixed area in 2D that thins as it stretches, squeezed by walls given as a signed distance field
 //! - [`cloth`]: XPBD triangle mesh cloth with self-collision
 //! - [`fluid`]: Position-Based Fluids (PBF) with spatial hash grid
 //! - [`deformable`]: FEM-XPBD deformable body simulation

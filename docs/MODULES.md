@@ -120,6 +120,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `rope` | XPBD rope and cable |  | [`rope_pin_constraints`](../examples/rope_pin_constraints.rs) | standalone (binding 6 of 13 items) |
+| `thick_chain` | planar chain of links of fixed area between walls of a signed distance field (a soft body that cannot tear: thinner when stretched, longer when squeezed) |  | [`thick_chain_pipe`](../examples/thick_chain_pipe.rs) | standalone |
 | `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | binding |
 | `rope_attach` | ropes attached to rigid bodies, with compliance and break force |  | [`rope_body_attachment`](../examples/rope_body_attachment.rs) | standalone |
 | `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | world API (step 5 of 51 items) |
