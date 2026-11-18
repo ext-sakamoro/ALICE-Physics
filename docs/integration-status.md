@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2867 |
-| live | reached without examples (crate-internal roots or a binding) | 905 |
-| | **total** | **3803** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2870 |
+| live | reached without examples (crate-internal roots or a binding) | 908 |
+| | **total** | **3809** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2867)
+## L1 — example-only (2870)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -135,6 +135,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/character_state.rs`: `CharacterState`, `CharacterState::accepts_locomotion`, `CharacterState::name`, `CharacterStateContext`, `CharacterStateContext::standing`, `transition`
 - `src/cloth.rs`: `Cloth::clear_rest_tether`, `Cloth::compute_normals`, `Cloth::grab_particle`, `Cloth::grabs`, `Cloth::has_grab`, `Cloth::last_dt`, `Cloth::new_grid`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::sleep_enabled`, `Cloth::step_with_sdf`
 - `src/cloth_fluid.rs`: `ClothFluidCoupling`, `apply_cloth_boundary_to_fluid`, `apply_cloth_boundary_to_fluid_with_residual`, `apply_fluid_forces_to_cloth`, `apply_fluid_forces_to_cloth_with_residual`
+- `src/cloth_participant.rs`: `CLOTH_PARTICIPANT_KIND`, `ClothParticipant`, `ClothParticipant::new`
 - `src/collider.rs`: `AABB::from_metric_ball`, `ScaledShape`, `ScaledShape::new`, `gjk`
 - `src/collision_mesh_gen.rs`: `CollisionMesh`, `CollisionMesh::to_static_collider`, `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`, `simplify_collision_mesh`
 - `src/compound.rs`: `CompoundShape::add_box`, `CompoundShape::add_capsule`, `CompoundShape::add_convex_hull`, `CompoundShape::add_sphere`, `CompoundShape::compute_aabb`, `CompoundShape::from_decomposition`, `CompoundShape::from_sdf`, `CompoundShape::is_empty`, `CompoundShape::len`, `CompoundShape::mass_properties`, `CompoundShape::support_world`, `ShapeRef::aabb`, `TransformedCompound`

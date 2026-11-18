@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 131 |
+| standalone | a Rust API that only examples call | 132 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -43,9 +43,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 7 / 7 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 44 / 22 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 45 / 22 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
-| `cloth` | world API (step 5 of 49 items) | 5 / 27 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
+| `cloth` | world API (step 5 of 51 items) | 5 / 29 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
@@ -85,6 +85,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `cloth_fluid` | standalone | 0 / 0 / 0 / 5 / 0 | — |
+| `cloth_participant` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `collision_mesh_gen` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `compressible` | standalone | 0 / 0 / 0 / 14 / 0 | — |
