@@ -735,10 +735,10 @@ fn determinism_fluid_step() {
 
 /// **PBF fluid**: the particle fluid's own bits, no world header. Two scenes in one hash:
 /// a 4 x 8 x 4 column in an open box of boundary particles under gravity for 60 frames
-/// (boundary particles in the density, the surface weights, XSPH) and a free 5 x 5 x 5
-/// block laid out 15 % wider than the rest spacing, without gravity, for 60 frames (the
-/// two-sided interior pulling it in). Positions, velocities and the floor reaction.
-const GOLDEN_FLUID_PBF: &str = "bee62aa158808dcddf79c6f060fb9d1810776162fea30f8ed37c6ff3632a4a0a";
+/// (boundary particles in the density, XSPH) and a free 5 x 5 x 5 block laid out 15 %
+/// wider than the rest spacing, without gravity, for 60 frames (`C >= 0` clamped, cohesion
+/// pulling it in). Positions, velocities and the floor reaction.
+const GOLDEN_FLUID_PBF: &str = "8c0a8249d35143e2fc3a3f2dcd3f44ee08917246e19d7b92be91b345e76886d8";
 
 #[test]
 fn determinism_fluid_pbf() {

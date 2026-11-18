@@ -448,6 +448,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cfd_flow_bc.rs` | 10 |
 | `analytic_cloth_rest_tether.rs` | 10 |
 | `analytic_cubic_hyperelastic.rs` | 10 |
+| `analytic_fluid_pbf_density.rs` | 10 |
 | `analytic_fsi_advanced_wiring.rs` | 10 |
 | `analytic_linear_elastic_fem_wiring_additional.rs` | 10 |
 | `analytic_molecular_dynamics.rs` | 10 |
@@ -470,7 +471,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_forces.rs` | 9 |
 | `analytic_event_sleeping_wiring.rs` | 9 |
 | `analytic_flip_scatter.rs` | 9 |
-| `analytic_fluid_pbf_density.rs` | 9 |
 | `analytic_laminate_failure_wiring.rs` | 9 |
 | `analytic_magnet_induced_dipole.rs` | 9 |
 | `analytic_magnet_world.rs` | 9 |
@@ -659,6 +659,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
 | `analytic_displaced_overlap.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
+| `analytic_fluid_boundary_support.rs` | 3 |
 | `analytic_joint_break_transmits_nothing.rs` | 3 |
 | `analytic_joint_compliance_xpbd.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
