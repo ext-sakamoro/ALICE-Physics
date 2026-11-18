@@ -604,18 +604,17 @@ fn pocket(
 
 #[test]
 fn between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls() {
-    // thirteen links in a channel that holds them at λc = r0 / c, the head fixed, the tail pushed
+    // sixteen links in a channel that holds them at λc = r0 / c, the head fixed, the tail pushed
     // with 9 N; no friction. The channel has a pocket wide enough to leave a link free. At
     // rest the links wholly in the channel are at the walls' length (they cannot be shorter,
-    // and the push keeps them from being longer), and the links wholly in the pocket's flat
-    // part are not on their walls: each is longer than the pocket's walls would make it and
-    // has no press on them. The two runs of held links are solved with the free links between
+    // and the push keeps them from being longer), and the links in the pocket whose
+    // every sample asks less than their stretch are free of their walls: no press on them. The two runs of held links are solved with the free links between
     // them off the condition, and no pass leaves its walls unsettled. (How short the pocket's
     // links are is not asserted: they carry the push and what the two mouths add, a squeezed
     // link at a mouth being pushed towards the wide side.)
     let (l0, r0, shear, c, wide) = (0.01, 0.02, 500.0, 0.012f32, 0.03f32);
-    let (links, push) = (13usize, 9.0);
-    let (from, to, ramp) = (0.04f32, 0.10f32, 0.02f32);
+    let (links, push) = (16usize, 9.0);
+    let (from, to, ramp) = (0.04f32, 0.12f32, 0.02f32);
     let held = r0 * l0 / f64::from(c);
     let walls = pocket(c, wide, from, to, ramp);
     let mut cfg = config(shear, ThickChainFit::Conforming);
@@ -624,7 +623,7 @@ fn between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls() {
         ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
     for i in 0..=links {
         // laid from the fixed head back, as long as the channel holds them
-        chain.set_position(i, [fx(0.15 - held * (links - i) as f64), Fix128::ZERO]);
+        chain.set_position(i, [fx(0.17 - held * (links - i) as f64), Fix128::ZERO]);
     }
     chain.pin(links);
     let mut accel = vec![ZERO2; links + 1];
@@ -655,19 +654,24 @@ fn between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls() {
         0,
         "a pass left its walls unsettled"
     );
-    let (flat_from, flat_to) = (f64::from(from + ramp), f64::from(to - ramp));
+    // a link is free of its walls when every one of its samples asks less than its stretch
+    // (the nearest wall of a sample near a mouth is the mouth's slope, not the pocket's flat
+    // wall, so this is read from the field, not from the pocket's drawing)
     let (mut in_pocket, mut before, mut after) = (0, 0, 0);
     for k in 0..links {
         let (a, b) = (f(chain.positions()[k][0]), f(chain.positions()[k + 1][0]));
         let ratio = f(chain.length(k)) / l0;
-        if a >= flat_from && b <= flat_to {
-            assert!(
-                ratio > r0 / f64::from(wide) * 1.05,
-                "link {k} in the pocket is {ratio} of its rest length: on the pocket's walls"
-            );
+        let spans = usize::try_from(chain.spans(k).expect("a count")).expect("a count");
+        let most_asked = (0..=spans)
+            .map(|j| {
+                let x = a + (b - a) * j as f64 / spans as f64;
+                r0 / f64::from(pocket_distance(c, wide, from, to, ramp, x as f32, 0.0)).max(LEAST)
+            })
+            .fold(0.0f64, f64::max);
+        if most_asked < ratio * (1.0 - 1.0e-3) {
             assert!(
                 chain.wall_force(k).is_zero(),
-                "link {k} in the pocket presses on its walls"
+                "link {k} is free of its walls and presses on them"
             );
             in_pocket += 1;
         } else if b <= f64::from(from) || a >= f64::from(to) {
@@ -746,8 +750,8 @@ fn the_walls_of_these_tests_are_fields_the_chain_can_be_given() {
     );
     assert_no_faster_than_the_way(
         "the pocket",
-        &|x, y| pocket_distance(0.012, 0.03, 0.04, 0.10, 0.02, x, y),
-        (-0.08, 0.18),
+        &|x, y| pocket_distance(0.012, 0.03, 0.04, 0.12, 0.02, x, y),
+        (-0.12, 0.20),
         (-0.04, 0.04),
         0.0005,
     );
@@ -779,4 +783,173 @@ fn the_walls_of_these_tests_are_fields_the_chain_can_be_given() {
         }));
         assert!(refused.is_err(), "{what} passed the check");
     }
+}
+
+#[test]
+fn the_reach_is_part_of_the_state() {
+    // two chains alike but for the reach their links are sampled for: their snapshots
+    // differ, and each reports its own
+    let make = |reach: f64| {
+        let mut cfg = config(500.0, ThickChainFit::Conforming);
+        cfg.reach = fx(reach);
+        ThickChain::new(cfg, &row(0.0, 0.01, 3), fx(0.02), fx(DENSITY)).expect("a chain")
+    };
+    let (short, long) = (make(4.0), make(8.0));
+    assert_ne!(short.snapshot(), long.snapshot());
+    assert_ne!(short.state_digest(), long.state_digest());
+    assert_eq!(short.config().reach, fx(4.0));
+    assert_eq!(long.config().reach, fx(8.0));
+    assert_eq!(make(8.0).snapshot(), long.snapshot());
+}
+
+#[test]
+fn walls_that_take_more_rounds_than_a_pass_has_are_counted() {
+    // links come onto their walls one per round when only the first is short and each of the
+    // others is a hair longer than its walls ask: the first's push shortens the second, the
+    // two's pushes the third, and so on. A pass has 8 rounds, so a run of 12 such links is
+    // left unsettled and counted, and a run of 6 is not. (The links are made soft enough
+    // that their energy steps, 1e-12 of a length, do not change which links are short.)
+    let (l0, r0, c) = (0.01, 0.02, 0.012f32);
+    let held = r0 * l0 / f64::from(c);
+    let walls = channel(c);
+    let unsettled = |links: usize| {
+        let cfg = config(1.0e-6, ThickChainFit::Conforming);
+        let mut chain =
+            ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
+        // the first link at 0.9 of the walls' length, the others 1e-6 of it longer than it
+        let mut x = 0.0;
+        chain.set_position(0, [fx(x), Fix128::ZERO]);
+        for k in 0..links {
+            x += held * if k == 0 { 0.9 } else { 1.0 + 1.0e-6 };
+            chain.set_position(k + 1, [fx(x), Fix128::ZERO]);
+        }
+        chain.step_in(frame(), &walls, &[]).expect("a step");
+        chain.walls_unsettled()
+    };
+    assert_eq!(unsettled(6), 0);
+    assert!(unsettled(12) > 0, "12 links settled within a pass's rounds");
+}
+
+#[test]
+fn a_link_partly_held_presses_on_its_walls_with_what_its_held_shares_carry_above_its_tension() {
+    // a strip of the gel at the stretch m along the channel, pulled with the tension T, has
+    // the stress T m / w0 along it and μ (m² − m⁻²) less than that across it (plane strain,
+    // no volume change). A share the walls hold at m = μ_j therefore presses on each wall
+    // with μ (μ_j² − μ_j⁻²) − T μ_j / w0 per metre of its length ω_j l0 μ_j; a free share
+    // (m = λ*) presses with nothing, which is what T = μ w0 (λ* − λ*⁻³) says. The walls'
+    // force on a link is the sum over its held shares, both walls.
+    //
+    // Two links between fixed ends across a mouth (a channel of half-width 12 mm opening
+    // into a wide one), left to rest: for a link longer than its walls ask (the energy alone
+    // holds it) the read-out is that sum, with the shares and λ* worked out here in f64 from
+    // the positions. The read-out is the multiplier of a substep, short of the force by a
+    // term of the substep squared: at 64 substeps it is within 5e-3 of the sum, and each
+    // halving of the substep from 8 divides what is missing by at least 3.5 (second order:
+    // 4 in the limit; found 3.8, 4.0, 4.0).
+    let (l0, r0, shear, c, wide) = (0.02, 0.02, 500.0, 0.012f32, 0.2f32);
+    let walls = step(c, wide);
+    let mut seen = 0;
+    for (tail, head) in [(-0.045, 0.02), (-0.03, 0.03)] {
+        let mut missing: Vec<f64> = Vec::new();
+        let mut which = None;
+        for substeps in [8u32, 16, 32, 64] {
+            let mut cfg = config(shear, ThickChainFit::Conforming);
+            cfg.drag = fx(30.0);
+            cfg.substeps = substeps;
+            let mut chain =
+                ThickChain::new(cfg, &row(0.0, l0, 2), fx(r0), fx(DENSITY)).expect("a chain");
+            chain.set_position(0, [fx(tail), Fix128::ZERO]);
+            chain.set_position(1, [fx((tail + head) / 2.0), Fix128::ZERO]);
+            chain.set_position(2, [fx(head), Fix128::ZERO]);
+            chain.pin(0);
+            chain.pin(2);
+            let mut rested = false;
+            for _ in 0..3600 {
+                chain.step_in(frame(), &walls, &[]).expect("a step");
+                if f(chain.velocities()[1][0]).abs() < 1.0e-9 {
+                    rested = true;
+                    break;
+                }
+            }
+            assert!(
+                rested,
+                "tail {tail}, {substeps} substeps: the chain does not come to rest"
+            );
+            assert_eq!(
+                chain.walls_unsettled(),
+                0,
+                "a pass left its walls unsettled"
+            );
+            for k in 0..2 {
+                let (a, l) = (f(chain.positions()[k][0]), f(chain.length(k)));
+                let spans = usize::try_from(chain.spans(k).expect("a count")).expect("a count");
+                let (weights, asked) = shares(a, l, spans, r0, c, wide);
+                // a link at the walls' length (to the f32 of the walls) is on its hard wall:
+                // the wall's own push is then part of the force, and not this sum
+                let need: f64 = weights.iter().zip(&asked).map(|(w, m)| w * m).sum();
+                if l / l0 <= need * (1.0 + 1.0e-4) {
+                    continue;
+                }
+                let Some((star, _)) = free_stretch(l / l0, &weights, &asked) else {
+                    continue;
+                };
+                let tension = shear * (star - star.powi(-3));
+                let held = asked.iter().filter(|m| **m > star).count();
+                let expect: f64 = weights
+                    .iter()
+                    .zip(&asked)
+                    .filter(|(_, m)| **m > star)
+                    .map(|(w, m)| 2.0 * w * l0 * m * (shear * (m * m - m.powi(-2)) - tension * m))
+                    .sum();
+                let got = f(chain.wall_force(k));
+                println!(
+                    "tail {tail}, {substeps} substeps, link {k}: l/l0 {:.4}, free stretch {star:.4}, {held} of {} shares held: the walls' force {got:.4}, the sum {expect:.4}",
+                    l / l0,
+                    asked.len()
+                );
+                if held == 0 {
+                    assert!(
+                        got.abs() <= 1.0e-9,
+                        "a link with no held share presses {got}"
+                    );
+                    continue;
+                }
+                // a share held and a share free: the case this test is about
+                assert!(
+                    held < asked.len() && expect > 1.0,
+                    "the scene has no partly held link"
+                );
+                assert!(
+                    which.is_none() || which == Some(k),
+                    "another link at this substep"
+                );
+                which = Some(k);
+                assert!(
+                    got <= expect * (1.0 + 1.0e-6),
+                    "the walls' force {got} above the sum {expect}"
+                );
+                missing.push(1.0 - got / expect);
+            }
+        }
+        assert_eq!(
+            missing.len(),
+            4,
+            "tail {tail}: a partly held link at every substep"
+        );
+        assert!(
+            missing[3] <= 5.0e-3,
+            "tail {tail}: {:e} missing at 64 substeps",
+            missing[3]
+        );
+        for pair in missing.windows(2) {
+            assert!(
+                pair[1] <= pair[0] / 3.5,
+                "tail {tail}: what is missing goes from {:e} to {:e} at half the substep",
+                pair[0],
+                pair[1]
+            );
+        }
+        seen += 1;
+    }
+    assert_eq!(seen, 2);
 }
