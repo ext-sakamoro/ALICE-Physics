@@ -254,22 +254,25 @@ fn cohesion_energy(positions: &[[f64; 3]], config: &FluidConfig) -> f64 {
     e
 }
 
-/// A free block laid out on a lattice 15 % wider than the rest spacing (interior density
-/// `rho_0 / 1.15^3 = 0.66 rho_0`, `C < 0`, no gravity). With `C >= 0` clamped the density
-/// constraint never acts on it: the block contracts under cohesion alone, slowed by the
-/// frame damping. Over 900 frames, sampled every 30:
-/// 1. energy budget: the kinetic energy never exceeds the cohesion energy released so far,
-///    `KE(t) <= E_coh(0) - E_coh(t)` (closed-form pair potential above; measured 1.1e-5 J
-///    against 5.8e-4 J at frame 900);
-/// 2. monotone: the densest-quarter `|rho / rho_0 - 1|` does not rise from one sample to the
-///    next (tolerance 1e-4; measured 0.3804 -> 0.3362);
-/// 3. model time scale: the corner moves inward at the damping-limited drift
-///    `a_coh dt / (1 - damping)` within a factor of 2 at frame 300, with `a_coh` the
-///    closed-form cohesion acceleration of the corner on the stretched lattice;
-/// 4. no overshoot: the densest quarter stays below `1.003 rho_0`.
-#[test]
-fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
-    let config = no_gravity();
+/// One 30-frame sample of the stretched block
+struct StretchedSample {
+    frame: usize,
+    corner_inward: f64,
+    kinetic: f64,
+    released: f64,
+    quarter_err: f64,
+    densest: f64,
+}
+
+/// The block laid out 15 % wide (5 x 5 x 5, no gravity) with the given XSPH strength, sampled
+/// every 30 frames for 900 frames, and the closed-form drift of its corner: the cohesion
+/// acceleration `a_coh` of the corner on the stretched lattice, damped once per frame, gives
+/// `v(n) = a_coh dt (1 - d^n) / (1 - d)` after `n` frames (`d` the frame damping)
+fn stretched_block(viscosity: Fix128) -> (Vec<StretchedSample>, f64, f64) {
+    let config = FluidConfig {
+        viscosity,
+        ..no_gravity()
+    };
     let s = config.rest_spacing * Fix128::from_ratio(115, 100);
     let n = 5i64;
     let mut fluid = Fluid::new_block(
@@ -289,7 +292,7 @@ fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
     let p3 = |v: &Vec3Fix| [v.x.to_f64(), v.y.to_f64(), v.z.to_f64()];
     let start: Vec<[f64; 3]> = fluid.positions.iter().map(p3).collect();
     let e0 = cohesion_energy(&start, &config);
-    // the corner at the origin and its closed-form cohesion acceleration
+    // the corner at the origin; inward is along (1, 1, 1)
     let corner = start
         .iter()
         .position(|p| p.iter().all(|x| x.abs() < 1e-12))
@@ -306,65 +309,137 @@ fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
         }
     }
     let a_coh = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let dt = 1.0 / 60.0;
-    let drift = a_coh * dt / (1.0 - config.damping.to_f64());
-    let quarter = |f: &Fluid| {
-        let mut d: Vec<f64> = f.densities.iter().map(|d| d.to_f64() / rho0).collect();
-        d.sort_by(f64::total_cmp);
-        let q = &d[3 * d.len() / 4..];
-        (
-            q.iter().map(|x| (x - 1.0).abs()).sum::<f64>() / q.len() as f64,
-            q.iter().copied().fold(0.0, f64::max),
-        )
-    };
-    let mut last_err = f64::INFINITY;
-    let mut corner_speed = f64::NAN;
+    let mut samples = Vec::new();
     for frame in 1..=900 {
         fluid.step(Fix128::from_ratio(1, 60));
         if frame % 30 != 0 {
             continue;
         }
         let now: Vec<[f64; 3]> = fluid.positions.iter().map(p3).collect();
-        let released = e0 - cohesion_energy(&now, &config);
-        let ke: f64 = fluid
-            .velocities
-            .iter()
-            .map(|v| 0.5 * m * v.length_squared().to_f64())
-            .sum();
-        assert!(
-            ke <= released,
-            "frame {frame}: KE {ke} J above the cohesion energy released {released} J"
-        );
-        let (err, densest) = quarter(&fluid);
-        assert!(
-            err <= last_err + 1e-4,
-            "frame {frame}: quarter error rose {last_err} -> {err}"
-        );
-        assert!(
-            densest < 1.003,
-            "frame {frame}: densest quarter at {densest} rho_0"
-        );
-        last_err = err;
-        let cp = p3(&fluid.positions[corner]);
-        let cv = fluid.velocities[corner];
-        eprintln!(
-            "frame {frame}: corner inward displacement {} m, inward speed {} m/s, KE {ke} J, released {released} J, quarter err {err}",
-            (cp[0] + cp[1] + cp[2]) / 3f64.sqrt(),
-            -(cv.x.to_f64() + cv.y.to_f64() + cv.z.to_f64()) / 3f64.sqrt()
-        );
-        if frame == 300 {
-            let v = fluid.velocities[corner];
-            let inward = -(v.x.to_f64() + v.y.to_f64() + v.z.to_f64()) / 3f64.sqrt();
-            eprintln!("frame 300: corner inward {inward} m/s, damping-limited drift {drift} m/s");
-            corner_speed = inward;
-        }
+        let mut d: Vec<f64> = fluid.densities.iter().map(|x| x.to_f64() / rho0).collect();
+        d.sort_by(f64::total_cmp);
+        let q = &d[3 * d.len() / 4..];
+        let v = fluid.velocities[corner];
+        samples.push(StretchedSample {
+            frame,
+            corner_inward: (v.x.to_f64() + v.y.to_f64() + v.z.to_f64()) / 3f64.sqrt(),
+            kinetic: fluid
+                .velocities
+                .iter()
+                .map(|v| 0.5 * m * v.length_squared().to_f64())
+                .sum(),
+            released: e0 - cohesion_energy(&now, &config),
+            quarter_err: q.iter().map(|x| (x - 1.0).abs()).sum::<f64>() / q.len() as f64,
+            densest: q.iter().copied().fold(0.0, f64::max),
+        });
     }
-    eprintln!("stretched block: quarter error {last_err} at frame 900");
+    (samples, a_coh, config.damping.to_f64())
+}
+
+/// A free block laid out on a lattice 15 % wider than the rest spacing (interior density
+/// `rho_0 / 1.15^3 = 0.66 rho_0`, `C < 0`, no gravity). With `C >= 0` clamped the density
+/// constraint never acts on it: the block contracts under cohesion alone, slowed by the
+/// frame damping and XSPH. Over 900 frames at the default config, sampled every 30:
+/// 1. energy budget: the kinetic energy never exceeds the cohesion energy released so far,
+///    `KE(t) <= E_coh(0) - E_coh(t)` (closed-form pair potential; measured 1.1e-5 J against
+///    5.4e-4 J at frame 840);
+/// 2. monotone: the densest-quarter `|rho / rho_0 - 1|` does not rise from one sample to the
+///    next (tolerance 1e-4; measured 0.3799 -> 0.3362);
+/// 3b. terminal drift: from frame 300 on the corner moves inward at a steady speed (spread
+///    below 3 %, measured 0.295-0.301 of the bound), below the XSPH-free drift
+///    `a_coh dt / (1 - d)` (XSPH only removes speed), at a stated ratio to it: measured 0.30
+///    at the default `c = 0.3`, bound 0.25 (tighten only; the XSPH-coupled closed form is
+///    open). `stretched_block_drift_without_xsph_follows_the_damped_closed_form` checks the
+///    bound itself;
+/// 4. no overshoot: the densest quarter stays below `1.003 rho_0`.
+#[test]
+fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
+    let (samples, a_coh, d) = stretched_block(FluidConfig::default().viscosity);
+    let bound = a_coh / 60.0 / (1.0 - d);
+    let mut last_err = f64::INFINITY;
+    for s in &samples {
+        eprintln!(
+            "frame {}: corner inward {} m/s ({} of the bound), KE {} J, released {} J, quarter err {}",
+            s.frame,
+            s.corner_inward,
+            s.corner_inward / bound,
+            s.kinetic,
+            s.released,
+            s.quarter_err
+        );
+        assert!(
+            s.kinetic <= s.released,
+            "frame {}: KE {} J above the cohesion energy released {} J",
+            s.frame,
+            s.kinetic,
+            s.released
+        );
+        assert!(
+            s.quarter_err <= last_err + 1e-4,
+            "frame {}: quarter error rose {last_err} -> {}",
+            s.frame,
+            s.quarter_err
+        );
+        assert!(
+            s.densest < 1.003,
+            "frame {}: densest quarter at {} rho_0",
+            s.frame,
+            s.densest
+        );
+        last_err = s.quarter_err;
+    }
+    let late: Vec<f64> = samples
+        .iter()
+        .filter(|s| s.frame >= 300)
+        .map(|s| s.corner_inward)
+        .collect();
+    let (lo, hi) = late.iter().fold((f64::INFINITY, 0.0_f64), |(lo, hi), v| {
+        (lo.min(*v), hi.max(*v))
+    });
     assert!(
-        corner_speed > drift / 2.0 && corner_speed < drift * 2.0,
-        "corner inward {corner_speed} m/s vs drift {drift} m/s at frame 300"
+        hi / lo - 1.0 < 0.03,
+        "corner speed not steady from frame 300: {lo} .. {hi} m/s"
+    );
+    assert!(
+        hi < bound,
+        "corner speed {hi} m/s above the XSPH-free drift {bound} m/s"
+    );
+    assert!(
+        lo / bound >= 0.25,
+        "corner speed {lo} m/s is {} of the drift (measured 0.30)",
+        lo / bound
     );
     assert!(last_err < 0.3804, "the block did not contract: {last_err}");
+}
+
+/// The closed form of the corner drift where its premise holds: with XSPH off the corner
+/// follows `v(n) = a_coh dt (1 - d^n) / (1 - d)`, `a_coh` the cohesion acceleration on the
+/// initial (stretched) lattice. Measured 2026-11-18 against it, every 30 frames: 30 -0.9 %,
+/// 60 -0.6 %, 90 0.0 %, 120 +0.8 %, 150 +1.7 %, 180 +2.9 %, 210 +4.3 %, 240 +5.9 %,
+/// 270 +7.7 %, 300 +9.7 %. Past the first frames the block contracts, the pairs come closer,
+/// `W` and so `a_coh` grow, and the closed form (the initial-lattice drift) no longer
+/// describes it. Window rule: the frames up to the last one whose measured deviation is at
+/// most half the bound (5 %), here 30-210; each within 10 %.
+#[test]
+fn stretched_block_drift_without_xsph_follows_the_damped_closed_form() {
+    let (samples, a_coh, d) = stretched_block(Fix128::ZERO);
+    let mut compared = 0;
+    for s in samples.iter().filter(|s| s.frame <= 210) {
+        let closed = a_coh / 60.0 * (1.0 - d.powi(s.frame as i32)) / (1.0 - d);
+        let dev = s.corner_inward / closed - 1.0;
+        eprintln!(
+            "frame {}: corner inward {} m/s, closed form {closed} m/s, {dev:+.4}",
+            s.frame, s.corner_inward
+        );
+        assert!(
+            dev.abs() <= 0.10,
+            "frame {}: {} m/s vs closed form {closed} m/s",
+            s.frame,
+            s.corner_inward
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 7, "frames 30-210 compared");
 }
 
 /// The floor reaction carries the weight at any mass, not only near the default

@@ -86,7 +86,7 @@
 //! valid for free surfaces without boundary particles below them (particles near an
 //! unsupported wall see too few neighbours and sink).
 //!
-//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_under_cohesion_within_its_energy_budget::floor_reaction_scales_with_the_particle_mass::side_wall_load_per_height_bin_matches_the_hydrostatic_profile::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
+//! **Validation.** `tests/analytic_fluid_pbf_density.rs::rest_block_without_gravity_stays_at_rest::column_under_gravity_settles_and_the_floor_carries_its_weight::floor_reaction_is_zero_without_boundary_particles::default_mass_makes_the_rest_lattice_exactly_rho0::box_boundary_counts_match_the_closed_form::stretched_block_contracts_under_cohesion_within_its_energy_budget::stretched_block_drift_without_xsph_follows_the_damped_closed_form::floor_reaction_scales_with_the_particle_mass::side_wall_load_per_height_bin_matches_the_hydrostatic_profile::settled_column_does_not_depend_on_the_substep_count`: hydrostatics two ways, the floor
 //! reaction against the weight M g (1.00006 at 900 frames) and the force on a side
 //! wall against the integral of the linear pressure, rho_0 g H^2 D / 2 with
 //! H = M / (rho_0 W D) (1.035; the floor balance holds for any pressure profile, the
