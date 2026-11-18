@@ -10,9 +10,9 @@
 //! run checks its own scene against that before it reports exponents, and fails as "scene
 //! invalid" (never as a pass) when one of the three does not hold:
 //! - **reach inside the box**: per layer, the window-mean radial profile `P(r)` falls to the far
-//!   field, the first radius where `P − P_min ≤ f · (P(0) − P_min)` (`f` = 1 %), and at least two
-//!   cells of far field lie between that radius and the wall (the box is at least
-//!   `2 (reach + 2)` cells wide);
+//!   field, the first radius where `P − P_min ≤ f · (P(0) − P_min)` (`f` = 1 %), and at least
+//!   2 cm of far field lie between that radius and the wall (the box is at least
+//!   `2 (reach + 2 cm)` wide, a length whatever the cell);
 //! - **far field unstratified**: the far field (the plateau's mean) changes with height so little
 //!   that `N · t_window < 0.1`, `N² = g β dT∞/dz`;
 //! - **outflow steady**: over the window the heat leaving through the top equals the heat the
@@ -59,6 +59,9 @@ const FAR_FIELD_FRACTION: f64 = 0.01;
 const MAX_N_T: f64 = 0.1;
 /// The heat leaving over the window may differ from the heat added by this fraction.
 const STEADY_TOLERANCE: f64 = 0.05;
+/// The far field must reach this far (m) between the plume's reach and the wall: a length, so
+/// it is the same whatever the cell.
+const FAR_FIELD_MARGIN_M: f64 = 0.02;
 
 /// The outflow history and the sums over the averaging window.
 struct Window {
@@ -184,7 +187,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let int = |i: usize| a[i].parse::<i64>();
     let real = |i: usize| a[i].parse::<f64>();
-    let (dx_mm, nu, heat, seconds) = (int(0)?, int(1)?, int(2)?, int(3)?);
+    // the cell in millimetres (10, 5, 2.5): held in micrometres, exactly
+    let dx_um = (real(0)? * 1000.0).round() as i64;
+    let dx_mm = dx_um as f64 / 1000.0;
+    let (nu, heat, seconds) = (int(1)?, int(2)?, int(3)?);
     let (z_lo, z_hi) = (real(4)?, real(5)?);
     let open = match a[6].as_str() {
         "open" => true,
@@ -194,15 +200,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ckpt = a.get(7).cloned();
     let coarse_ckpt = a.get(8).cloned();
 
-    let mut plume = scene::scene(dx_mm, nu, heat);
+    let mut plume = scene::scene_um(dx_um, nu, heat);
     if open {
         plume
             .set_open_top()
             .map_err(|e| format!("open the top: {e:?}"))?;
     }
     assert_eq!(plume.open_top(), open);
-    let step = scene::step(dx_mm);
-    let per_second = (1200 / dx_mm) as u64;
+    let step = scene::step_um(dx_um);
+    let per_second = (1_200_000 / dx_um) as u64;
     let total = seconds as u64 * per_second;
     let window_steps = WINDOW_S * per_second;
     let (nx, ny, nz) = {
@@ -244,7 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if n == 0 {
         if let Some(c) = &coarse_ckpt {
-            let mut coarse = scene::scene(2 * dx_mm, nu, heat);
+            let mut coarse = scene::scene_um(2 * dx_um, nu, heat);
             if open {
                 coarse
                     .set_open_top()
@@ -272,7 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let dx = dx_mm as f64 / 1000.0;
+    let dx = dx_um as f64 / 1e6;
     let (ci, ck) = (nx / 2, nz / 2);
     #[allow(
         clippy::disallowed_methods,
@@ -368,7 +374,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let s = win.samples as f64;
-    let z0 = scene::source_top_m(dx_mm);
+    let z0 = scene::source_top_m();
     let inscribed = nx.min(nz) / 2;
     let (mut reach_max, mut missing, mut min_cells) = (0usize, 0usize, f64::INFINITY);
     let (mut pr, mut pw, mut pt, mut pa) = (vec![], vec![], vec![], vec![]);
@@ -400,7 +406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .copied()
             .take_while(|&v| v <= cut)
             .collect();
-        if plateau.len() < 2 {
+        if (plateau.len() as f64) * dx < FAR_FIELD_MARGIN_M - 1e-9 {
             missing += 1;
             continue;
         }
@@ -435,10 +441,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // the scene's validity for the closed form, each checked before the exponents count
     let mut invalid = vec![];
-    // the reach must leave two cells of far field before the wall on every layer: the box must
-    // be at least 2 (reach + 2) cells wide
-    let needed = 2.0 * (reach_max + 2) as f64 * dx;
-    if missing > 0 || pr.len() < 3 || reach_max + 2 > inscribed {
+    // the reach must leave FAR_FIELD_MARGIN_M of far field before the wall on every layer: the
+    // box must be at least 2 (reach + margin) wide
+    let needed = 2.0 * (reach_max as f64 * dx + FAR_FIELD_MARGIN_M);
+    if missing > 0 || pr.len() < 3 || needed > 2.0 * inscribed as f64 * dx + 1e-9 {
         invalid.push(format!(
             "reach: {reach_max} cells of the {inscribed} to the wall ({missing} of the band's layers \
              without a far field); the plume needs a box at least {needed:.3} m wide"

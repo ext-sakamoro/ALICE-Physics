@@ -976,3 +976,41 @@ fn prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be() {
         Some(SmokeBuildError::BadGrid)
     );
 }
+
+/// The laminar scene is one physical scene at every cell: at 10, 5 and 2.5 mm its box and its
+/// source span the same lengths (oracle, in micrometres: the box 320 000 wide and 640 000 tall,
+/// the source from 150 000 to 170 000 across and from 10 000 to 30 000 up), and the 10 mm scene
+/// prolonged to 5 mm is the 5 mm scene, so the 5 mm scene accepts its state (a source placed a
+/// fixed number of cells up, not a fixed height, would sit lower on the finer grid and both
+/// fail).
+#[test]
+fn the_laminar_scene_has_the_same_lengths_at_every_cell() {
+    for dx_um in [10_000i64, 5_000, 2_500] {
+        let g = laminar_scene::geometry(dx_um);
+        let at = |cells: usize| cells as i64 * dx_um;
+        assert_eq!(
+            (at(g.n_xz), at(g.n_y)),
+            (320_000, 640_000),
+            "box at {dx_um} µm"
+        );
+        for axis in [0, 2] {
+            assert_eq!(
+                (at(g.source.lo[axis]), at(g.source.hi[axis])),
+                (150_000, 170_000),
+                "source across at {dx_um} µm"
+            );
+        }
+        assert_eq!(
+            (at(g.source.lo[1]), at(g.source.hi[1])),
+            (10_000, 30_000),
+            "source height at {dx_um} µm"
+        );
+    }
+    let fine_scene = laminar_scene::scene(5, 200, 400);
+    let fine = laminar_scene::scene(10, 200, 400)
+        .prolonged(*fine_scene.config())
+        .unwrap();
+    let mut bytes = Vec::new();
+    fine.write_state(&mut bytes);
+    fine_scene.check_state(&bytes).unwrap();
+}
