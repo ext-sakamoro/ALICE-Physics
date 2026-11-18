@@ -194,9 +194,10 @@ fn a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths() {
             "link {k}: {l:e}, expected {held:e} within {tol:e}"
         );
     }
-    // on the middle line, to the width the wall's slope is taken over (an eighth of the least
-    // radius)
-    let band = f(cfg.min_radius) / 8.0;
+    // on the middle line: the wall's slope is a central difference over ±e (an eighth of the
+    // least radius), which pulls a link towards the middle from either side and is zero only
+    // on it; a slope taken to one side would settle e / 2 off. Within e / 4.
+    let band = f(cfg.min_radius) / 32.0;
     for (i, p) in chain.positions().iter().enumerate() {
         assert!(f(p[1]).abs() <= band, "particle {i}: y {:e}", f(p[1]));
     }
@@ -528,8 +529,7 @@ fn a_refused_chain_or_step_changes_nothing() {
         chain.step_in(dt, &broken, &[]),
         Err(ThickChainError::Field { link: 0 })
     );
-    // faster than half the least radius a substep: the second particle first, in the second
-    // substep of the frame at the earliest, and the first substep is not kept either
+    // faster than half the least radius a substep, in the first substep
     chain.set_velocity(2, [fx(10.0), Fix128::ZERO]);
     let fast = chain.snapshot();
     assert_ne!(fast, before);
@@ -538,6 +538,18 @@ fn a_refused_chain_or_step_changes_nothing() {
         Err(ThickChainError::TooFast { particle: 2 })
     );
     assert_eq!(chain.snapshot(), fast);
+    // and in the second: a drive of 400 m/s² moves a particle 1.7 mm in the first substep
+    // (h = 1/480 s) and 3.5 mm in the second, past the 2.5 mm; the first substep, which
+    // moved every particle, is not kept
+    chain.set_velocity(2, ZERO2);
+    let rest = chain.snapshot();
+    let drive = vec![[fx(400.0), Fix128::ZERO]; chain.particle_count()];
+    assert_eq!(
+        chain.step_in(dt, &walls, &drive),
+        Err(ThickChainError::TooFast { particle: 0 })
+    );
+    assert_eq!(chain.snapshot(), rest);
+    let fast = rest;
     assert_eq!(chain.state_digest(), {
         use sha2::{Digest, Sha256};
         let d: [u8; 32] = Sha256::digest(&fast).into();
