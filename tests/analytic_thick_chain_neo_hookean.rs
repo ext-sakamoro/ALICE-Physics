@@ -17,6 +17,9 @@
 //! 5. Entering a narrower channel: `tests/analytic_thick_chain_entry.rs`.
 //! 6. The law is part of the state: the snapshot tells the two laws apart, and a run repeats
 //!    bit for bit.
+//! 7. Held by a channel with nothing out of balance, a chain comes to rest and stays, and
+//!    the walls carry `T(λc) l / c` for each link less the substep's share (a ratchet at
+//!    the measured share).
 #![allow(
     clippy::disallowed_methods,
     reason = "analytic reference: closed forms are evaluated in f64, never by the code under test"
@@ -193,6 +196,78 @@ fn a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance() {
         (got - expect).abs() <= tol,
         "travel {got:e}, expected {expect:e} within {tol:e}"
     );
+}
+
+#[test]
+fn held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension() {
+    // links laid as the channel holds them, no friction, no drag, no speed. The solver's own
+    // rest state is a little off the laid one (the stretch and the walls are solved in turn),
+    // so it is given 10 frames; then nothing moves: no particle has a speed and no link
+    // changes its length for 20 frames. The walls carry T(λc) l / c for each link (a strip
+    // squeezed to λc with free ends presses each side with μ (λc² − λc⁻²) l), less what the
+    // turn-taking leaves: a share that goes with (ω h)². This run is at (ω h)² = 0.13 with 4
+    // passes, where the walls' force was measured at 0.888 of the closed form for one link
+    // and 0.937 to 0.967 for six: the floor below is a ratchet at that measure (it may only
+    // be raised), the closed form is the ceiling.
+    let (l0, r0, shear, c) = (0.01, 0.05, 500.0, 0.027f32);
+    let held = r0 * l0 / f64::from(c);
+    let at = held / l0;
+    let expect = shear * 2.0 * r0 * pull(at) * held / f64::from(c);
+    let walls = channel(c);
+    for (links, floor) in [(1usize, 0.88), (6, 0.93)] {
+        let mut cfg = config(shear);
+        cfg.substeps = 8;
+        cfg.min_radius = fx(0.005);
+        let mut chain =
+            ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
+        for i in 0..chain.particle_count() {
+            chain.set_position(i, [fx(held * i as f64), Fix128::ZERO]);
+        }
+        for _ in 0..10 {
+            chain
+                .step_in(Fix128::from_ratio(1, 60), &walls, &[])
+                .expect("a step");
+        }
+        let lengths: Vec<Fix128> = (0..links).map(|k| chain.length(k)).collect();
+        for n in 0..20 {
+            chain
+                .step_in(Fix128::from_ratio(1, 60), &walls, &[])
+                .expect("a step");
+            for (i, v) in chain.velocities().iter().enumerate() {
+                assert!(
+                    f(v[0]).abs() < 1.0e-9 && f(v[1]).abs() < 1.0e-9,
+                    "{links} links: frame {n}: particle {i} moves at {:e}, {:e}",
+                    f(v[0]),
+                    f(v[1])
+                );
+            }
+            for (k, before) in lengths.iter().enumerate() {
+                // at rest to 1e-9 m/s over 20 frames: under 1e-9 m
+                assert!(
+                    (f(chain.length(k)) - f(*before)).abs() < 1.0e-9,
+                    "{links} links: frame {n}: link {k} changed its length"
+                );
+            }
+        }
+        for k in 0..links {
+            let share = f(chain.wall_force(k)) / expect;
+            assert!(
+                share >= floor && share <= 1.0 + 1.0e-6,
+                "{links} links: the walls carry {share} of T l / c for link {k} (floor {floor})"
+            );
+            // and the link is no longer than the walls make it, and not 1 % shorter
+            let l = f(chain.length(k)) / held;
+            assert!(
+                l <= 1.0 + 2.0f64.powi(-22) && l >= 0.99,
+                "{links} links: link {k} is {l} of the walls' length"
+            );
+        }
+    }
+    // without walls there is no press
+    let mut free =
+        ThickChain::new(config(shear), &row(0.0, l0, 2), fx(r0), fx(DENSITY)).expect("a chain");
+    free.step(Fix128::from_ratio(1, 60)).expect("a step");
+    assert_eq!(free.wall_force(0), Fix128::ZERO);
 }
 
 const LINK: f64 = 0.01;
