@@ -947,6 +947,7 @@ pub mod structural_solver;
 #[cfg(feature = "std")]
 pub mod support_volume;
 pub mod surface_tension_csf;
+pub mod thick_chain;
 #[cfg(feature = "std")]
 pub mod thin_wall;
 pub mod vibration_wall;

@@ -94,6 +94,7 @@ D	src/prestressed.rs
 D	src/quadratic_elastic_fem.rs
 D	src/soft_body_cut.rs
 D	src/structural_solver.rs
+D	src/thick_chain.rs
 D	src/thin_wall.rs
 D	src/touch.rs
 D	src/touch_layers.rs
