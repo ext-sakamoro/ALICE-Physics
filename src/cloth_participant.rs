@@ -31,8 +31,8 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use crate::cloth::{Cloth, Cursor};
-use crate::math::Fix128;
+use crate::cloth::{Cloth, ContactSphere, Cursor};
+use crate::math::{Fix128, Vec3Fix};
 use crate::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
     SubstepCtx,
@@ -67,6 +67,45 @@ impl ClothParticipant {
     }
 }
 
+impl ClothParticipant {
+    /// The world's bodies as contact spheres for a step of width `h`: each body of a
+    /// known collision radius, its centre at the step start and predicted over the
+    /// step under the world's gravity (`x + (v + g h) h`), the reach its radius plus
+    /// the cloth's thickness, the inverse mass its own when it is dynamic (a static or
+    /// kinematic body is not moved). Returns the spheres and, per sphere, the body
+    /// index and the predicted centre the reaction is measured from.
+    fn spheres(
+        &self,
+        ctx: &SubstepCtx<'_>,
+        h: Fix128,
+    ) -> (Vec<ContactSphere>, Vec<(usize, Vec3Fix)>) {
+        let g = ctx.gravity().unwrap_or(Vec3Fix::ZERO);
+        let thickness = self.cloth.config.thickness;
+        let mut spheres = Vec::new();
+        let mut predicted = Vec::new();
+        for (i, b) in ctx.bodies().iter().enumerate() {
+            let Some(radius) = ctx.body_radius(i) else {
+                continue;
+            };
+            let dynamic = b.is_dynamic();
+            let velocity = if dynamic {
+                b.velocity + g * h
+            } else {
+                b.velocity
+            };
+            let centre = b.position + velocity * h;
+            spheres.push(ContactSphere {
+                start: b.position,
+                centre,
+                reach: radius + thickness,
+                inv_mass: if dynamic { b.inv_mass } else { Fix128::ZERO },
+            });
+            predicted.push((i, centre));
+        }
+        (spheres, predicted)
+    }
+}
+
 impl Participant for ClothParticipant {
     fn kind(&self) -> ParticipantKind {
         CLOTH_PARTICIPANT_KIND
@@ -76,11 +115,31 @@ impl Participant for ClothParticipant {
         StepRule::PerFrame(self.steps_per_frame)
     }
 
-    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
         if h <= Fix128::ZERO {
             return Err(ParticipantFault::InvalidState);
         }
-        self.cloth.step_by_its_own(h);
+        let (spheres, predicted) = self.spheres(ctx, h);
+        let mut spheres = spheres;
+        self.cloth.step_with_spheres(h, &mut spheres);
+        // the reaction: the impulse that moves the body by what the cloth moved it,
+        // `M · Δc / W`, delivered over the world substep this call runs in (the world
+        // applies a staged force over its substep, `W / k` for a call covering `k`)
+        let covered = self
+            .step_rule()
+            .covers(ctx.substep_index(), ctx.substeps())
+            .unwrap_or(1);
+        let hs = h / Fix128::from_int(covered as i64);
+        for (k, (body, pred)) in predicted.iter().enumerate() {
+            let s = spheres[k];
+            let moved = s.centre - *pred;
+            if s.inv_mass.is_zero() || moved == Vec3Fix::ZERO {
+                continue;
+            }
+            let scale = Fix128::ONE / (s.inv_mass * h * hs);
+            ctx.add_force(*body, moved * scale)
+                .map_err(|_| ParticipantFault::OutOfRange)?;
+        }
         Ok(())
     }
 
