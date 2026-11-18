@@ -195,6 +195,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s = win.samples as f64;
     let z0 = scene::source_top_m(dx_mm);
     let (mut pr, mut pw, mut pt, mut min_cells) = (vec![], vec![], vec![], f64::INFINITY);
+    // the far field over the band: its gradient, the plume's centreline excess at the band's top
+    let (mut pa, mut t_top) = (vec![], 0.0);
     println!(" j   z (m)   R (cells)  R²/z (m)   w_c (m/s)   ΔT_c·z (K·m)  far field (K)");
     for j in 0..ny {
         let z = (j as f64 + 0.5) * dx - z0;
@@ -208,12 +210,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pr.push((z.ln(), r2.ln()));
             pw.push((z.ln(), w.ln()));
             pt.push((z.ln(), t.ln()));
+            pa.push((z, amb));
+            t_top = t;
             min_cells = min_cells.min(cells);
         }
     }
     if pr.len() < 3 {
         return Err(format!("only {} layers in the band {z_lo}..{z_hi} m", pr.len()).into());
     }
+    // A closed box fills from the top down, so its air is stratified, N² = g β dT∞/dz; that bends
+    // the plume itself (it stops at a finite height). The laminar closed form needs it negligible:
+    // N·t over the window ≪ 1, and the far field's change across the band ≪ the plume's excess.
+    let cfg = alice_physics_core::smoke_plume::SmokeConfig::air();
+    let grad = slope(&pa);
+    let n2 = cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * grad;
+    let window_s = (seconds - from) as f64;
+    let span = pa.last().unwrap().1 - pa[0].1;
+    println!(
+        "STRATIFICATION dTinf_dz_K_per_m {grad:.4} N2_per_s2 {n2:.4e} N_t_window {:.3} \
+         far_field_change_over_band_K {span:.4} centreline_excess_at_top_K {t_top:.4} ratio {:.3}",
+        n2.max(0.0).sqrt() * window_s,
+        span / t_top
+    );
     println!(
         "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} band {z_lo}..{z_hi} layers {} min_radius_cells {min_cells:.2} \
          exp_R2 {:.4} exp_w {:.4} exp_T {:.4} (laminar 1 0 -1) ms_per_step {:.1}",
