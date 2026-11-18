@@ -31,7 +31,9 @@
 
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
-use alice_physics_core::thick_chain::{ThickChain, ThickChainConfig, ThickChainError, P2};
+use alice_physics_core::thick_chain::{
+    ThickChain, ThickChainConfig, ThickChainError, ThickChainStretch, P2,
+};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -43,15 +45,23 @@ fn f(v: Fix128) -> f64 {
 
 const ZERO2: P2 = [Fix128::ZERO, Fix128::ZERO];
 
+fn linear(compliance: f64) -> ThickChainStretch {
+    ThickChainStretch::Linear {
+        compliance: fx(compliance),
+    }
+}
+
 fn config() -> ThickChainConfig {
     ThickChainConfig {
         substeps: 8,
         iterations: 4,
         gravity: ZERO2,
-        compliance: fx(1.0e-4),
+        stretch: linear(1.0e-4),
         drag: Fix128::ZERO,
         friction: Fix128::ZERO,
         min_radius: fx(0.005),
+        splits: 0,
+        relaxation: Fix128::ZERO,
     }
 }
 
@@ -90,7 +100,7 @@ fn a_hanging_link_stretches_by_its_compliance_times_the_weight() {
     let (l0, r0, rho, g, alpha, drag) = (0.02, 0.01, 1000.0, 9.81, 1.0e-4, 30.0);
     let mut cfg = config();
     cfg.gravity = [Fix128::ZERO, fx(-g)];
-    cfg.compliance = fx(alpha);
+    cfg.stretch = linear(alpha);
     cfg.drag = fx(drag);
     let points = [[Fix128::ZERO, fx(l0)], ZERO2];
     let mut chain = ThickChain::new(cfg, &points, fx(r0), fx(rho)).expect("a valid chain");
@@ -118,7 +128,7 @@ fn swing(iterations: u32, steps: usize) -> (Vec<f64>, f64, f64) {
     let mut cfg = config();
     cfg.substeps = 1;
     cfg.iterations = iterations;
-    cfg.compliance = fx(alpha);
+    cfg.stretch = linear(alpha);
     cfg.min_radius = fx(0.001);
     let points = [ZERO2, [fx(l0), Fix128::ZERO]];
     let mut chain = ThickChain::new(cfg, &points, fx(r0), fx(rho)).expect("a valid chain");
@@ -167,7 +177,7 @@ fn channel(c: f32) -> DistanceSdfQuery<impl Fn(f32, f32, f32) -> f32> {
 fn a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths() {
     let (l0, r0, rho, alpha, c) = (0.01, 0.05, 1000.0, 1.0e-4, 0.027f32);
     let mut cfg = config();
-    cfg.compliance = fx(alpha);
+    cfg.stretch = linear(alpha);
     cfg.drag = fx(30.0);
     let area = 2.0 * r0 * l0;
     let held = area / (2.0 * f64::from(c));
@@ -214,7 +224,7 @@ fn a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance() {
     cfg.gravity = [Fix128::ZERO, fx(-g)];
     cfg.friction = fx(mu);
     // stiff links: the weight flattens them by less than a part in 1e4
-    cfg.compliance = fx(1.0e-7);
+    cfg.stretch = linear(1.0e-7);
     let mut chain =
         ThickChain::new(cfg, &row([0.0, r0], l0, 4), fx(r0), fx(rho)).expect("a valid chain");
     for i in 0..chain.particle_count() {
@@ -247,7 +257,7 @@ fn a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance() {
 fn a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance() {
     let (l0, r0, rho, alpha, c, mu, v0) = (0.01, 0.05, 1000.0, 1.0e-4, 0.027f32, 0.05, 0.3);
     let mut cfg = config();
-    cfg.compliance = fx(alpha);
+    cfg.stretch = linear(alpha);
     cfg.friction = fx(mu);
     let area = 2.0 * r0 * l0;
     let held = area / (2.0 * f64::from(c));
@@ -434,7 +444,7 @@ fn through_the_pipe(half: f32) -> [u8; 32] {
     // e^(−(k / 2 − √(k² / 4 − ω²)) t) when it does not; the slowest is the longest wave of the
     // free chain, ω1 >= 2 ω0 sin(π / (2 (N + 1))), ω0² = 1 / (m α), m a link's mass
     let k = f(cfg.drag);
-    let w0 = (1.0 / (rho * 2.0 * r0 * l0 * f(cfg.compliance))).sqrt();
+    let w0 = (1.0 / (rho * 2.0 * r0 * l0 * 1.0e-4)).sqrt();
     let w1 = 2.0 * w0 * (core::f64::consts::PI / (2.0 * (links + 1) as f64)).sin();
     let rate = if w1 > k / 2.0 {
         k / 2.0
@@ -481,6 +491,7 @@ fn a_refused_chain_or_step_changes_nothing() {
                 "substeps" => "substeps",
                 "iterations" => "iterations",
                 "compliance" => "compliance",
+                "shear" => "shear",
                 "drag" => "drag",
                 "friction" => "friction",
                 _ => "min_radius",
@@ -490,7 +501,15 @@ fn a_refused_chain_or_step_changes_nothing() {
     };
     bad(&|c| c.substeps = 0, "substeps");
     bad(&|c| c.iterations = 0, "iterations");
-    bad(&|c| c.compliance = Fix128::ZERO, "compliance");
+    bad(&|c| c.stretch = linear(0.0), "compliance");
+    bad(
+        &|c| {
+            c.stretch = ThickChainStretch::NeoHookean {
+                shear: Fix128::ZERO,
+            }
+        },
+        "shear",
+    );
     bad(&|c| c.drag = fx(-1.0), "drag");
     bad(&|c| c.friction = fx(-0.1), "friction");
     bad(&|c| c.min_radius = Fix128::ZERO, "min_radius");
