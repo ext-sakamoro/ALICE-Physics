@@ -38,6 +38,23 @@
 //!   velocity of the link's centre of mass across the walls' mean slope `Σ Δλ G / Σ Δλ` drops
 //!   by at most `μ Σ Δλ / (h (m_i + m_j))`, both ends alike; the lengthening itself meets no
 //!   friction.
+//!   The conforming rule ([`ThickChainFit::Conforming`], neo-Hookean links) lets a link take
+//!   the shape of the space it has. Its samples' shares `ω_j` (trapezoid weights that add up
+//!   to 1) are each as long as the wall there makes them, `μ_j = r_rest / d_j` (a planar
+//!   share keeps its area, width times length; not the `λ^(−1/2)` of a rod in space), or as
+//!   the link's tension does, `λ*`, whichever is more: `l / l0 = Σ ω_j max(λ*, μ_j)`. The
+//!   link's energy is `A Σ ω_j W(max(λ*, μ_j))` and its tension `T(λ*)`: one constraint
+//!   `C = √(Σ ω_j (m_j − 1/m_j)²)` (`m_j` the larger of `λ*` and `μ_j`) with the compliance
+//!   `1 / (μ A)` and one multiplier, whichever shares are held. Its slope moves the ends
+//!   along the link with the tension and each held share's sample along the wall's slope
+//!   with what the share carries above the tension, `∝ (m̃_j s_j − m̃* s*) r_rest / d_j²`
+//!   (`m̃ = m − 1/m`, `s = 1 + m⁻²`): the gel's own press on the walls, and what throws a
+//!   squeezed body out of an open end. A link cannot be shorter than `l0 Σ ω_j μ_j`: the
+//!   hard wall (its radius at most the harmonic mean of the distances). At that length `λ*`
+//!   is the least `μ_j` (its limit from above), so the tension has no jump there: the link
+//!   pulls, the hard wall answers, and that push is the walls' force, `T l / c` in a
+//!   channel as under the disc rule. A pass takes every link's energy step, then every
+//!   link's walls. The middle line stays `r_min` off the walls.
 //! - **Units.** SI: m, s, kg, N; planar, so masses, forces and the compliance are per metre
 //!   of depth (kg/m, N/m, `α` in m²/N); `k` in 1/s.
 //! - **Conservation.** A link's area is `2 r l` by the definition of `r`, exactly, down to
@@ -84,7 +101,7 @@
 //!   taken over `±r_min / 8`, so the chain is centred between two walls to that width. The
 //!   wall projections are not accumulated: what the last pass of an iteration leaves is
 //!   carried to the next substep.
-//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy::moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length::fed_every_link_is_as_long_as_the_channel_makes_it`
+//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy::moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length::fed_every_link_is_as_long_as_the_channel_makes_it::a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time` `tests/analytic_thick_chain_shares.rs::a_chain_in_a_channel_is_as_long_under_either_rule::a_conforming_chain_held_thin_stops_after_the_squeeze_friction_distance::the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it::the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth::let_go_at_the_open_end_a_squeezed_chain_leaves_with_no_more_than_the_squeezes_energy::the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links::held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension`
 //! - **Tiers.** L0 only.
 
 use crate::math::Fix128;
@@ -143,6 +160,8 @@ pub struct ThickChainConfig {
     /// The retardation time of the links' material, s (viscosity over stiffness, the
     /// Kelvin-Voigt solid): the stretch is resisted in proportion to its rate. 0: none
     pub relaxation: Fix128,
+    /// How a link meets the walls
+    pub fit: ThickChainFit,
 }
 
 /// How a link answers a stretch.
@@ -159,6 +178,17 @@ pub enum ThickChainStretch {
         /// The shear modulus, Pa, above 0 (a third of Young's modulus)
         shear: Fix128,
     },
+}
+
+/// How a link meets the walls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThickChainFit {
+    /// A body of one width along a link: a disc of the link's radius fits at every sample
+    Disc,
+    /// A body that takes the shape of the space it has: each sample's share of the link is as
+    /// long as the wall there makes it or as the link's tension makes it, whichever is more
+    /// (neo-Hookean links only)
+    Conforming,
 }
 
 /// Why a chain cannot be made or stepped.
@@ -193,6 +223,77 @@ pub enum ThickChainError {
     },
 }
 
+/// The shares of one link under the conforming rule (see `ThickChain::shares_of`).
+struct Shares {
+    weight: Vec<Fix128>,
+    place: Vec<Fix128>,
+    room: Vec<Fix128>,
+    short: Vec<Fix128>,
+    asked: Vec<Fix128>,
+    need: Fix128,
+}
+
+/// Which shares the walls hold, the weight of the others, and their stretch `λ*`:
+/// `ratio = Σ ω_j max(λ*, μ_j)`. When the link is no longer than the walls ask
+/// (`ratio ≤ need`), `λ*` is the least `μ_j`, its limit as the link comes down to that
+/// length: the link's tension has no jump there, and the shares at the least are the free
+/// ones.
+#[allow(
+    clippy::needless_range_loop,
+    reason = "a share's index reads three rows"
+)]
+fn held_shares(
+    ratio: Fix128,
+    need: Fix128,
+    weight: &[Fix128],
+    asked: &[Fix128],
+) -> (Vec<bool>, Fix128, Fix128) {
+    let count = weight.len();
+    if ratio <= need {
+        let mut least = asked[0];
+        for &mu in asked {
+            if mu < least {
+                least = mu;
+            }
+        }
+        let mut open = Fix128::ZERO;
+        let mut is_held = vec![false; count];
+        for j in 0..count {
+            if asked[j] > least {
+                is_held[j] = true;
+            } else {
+                open = open + weight[j];
+            }
+        }
+        return (is_held, open, least);
+    }
+    let mut is_held = vec![false; count];
+    loop {
+        let (mut sum, mut open) = (Fix128::ZERO, Fix128::ZERO);
+        for j in 0..count {
+            if is_held[j] {
+                sum = sum + weight[j] * asked[j];
+            } else {
+                open = open + weight[j];
+            }
+        }
+        if open.is_zero() {
+            return (is_held, Fix128::ZERO, Fix128::ZERO);
+        }
+        let stretch = (ratio - sum) / open;
+        let mut more = false;
+        for j in 0..count {
+            if !is_held[j] && asked[j] > stretch {
+                is_held[j] = true;
+                more = true;
+            }
+        }
+        if !more {
+            return (is_held, open, stretch);
+        }
+    }
+}
+
 /// A planar chain of links of fixed area.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThickChain {
@@ -202,6 +303,8 @@ pub struct ThickChain {
     inv_mass: Vec<Fix128>,
     rest_length: Vec<Fix128>,
     area: Vec<Fix128>,
+    /// the walls' press on each link in the last substep taken (read out, not state)
+    wall_force: Vec<Fix128>,
 }
 
 impl ThickChain {
@@ -254,6 +357,11 @@ impl ThickChain {
         if config.relaxation < zero {
             return Err(ThickChainError::Invalid("relaxation"));
         }
+        if config.fit == ThickChainFit::Conforming
+            && !matches!(config.stretch, ThickChainStretch::NeoHookean { .. })
+        {
+            return Err(ThickChainError::Invalid("fit"));
+        }
         if points.len() < 2 {
             return Err(ThickChainError::Invalid("points"));
         }
@@ -288,6 +396,7 @@ impl ThickChain {
             x: points.to_vec(),
             v: vec![ZERO2; points.len()],
             inv_mass: mass.iter().map(|&m| Fix128::ONE / m).collect(),
+            wall_force: vec![zero; rest_length.len()],
             rest_length,
             area,
         })
@@ -369,6 +478,20 @@ impl ThickChain {
     #[must_use]
     pub fn area(&self, k: usize) -> Fix128 {
         self.area[k]
+    }
+
+    /// The walls' press on link `k` in the last substep taken, N per metre of depth (the sum
+    /// of the walls' forces across them, whatever their sides): `T l / c` for a link held in
+    /// a channel of half-width `c`. 0 before the first step and without walls. It is read
+    /// out of the step, not part of the state: a chain made from a snapshot has 0 until it
+    /// is stepped.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not a link.
+    #[must_use]
+    pub fn wall_force(&self, k: usize) -> Fix128 {
+        self.wall_force[k]
     }
 
     /// The length of link `k` now.
@@ -594,7 +717,21 @@ impl ThickChain {
         // per link, the walls' multipliers of this substep: their sum and their sum by slope
         let mut pressed = vec![Fix128::ZERO; links];
         let mut leaned = vec![ZERO2; links];
+        let conforming = c.fit == ThickChainFit::Conforming;
         for _ in 0..c.iterations {
+            if let (true, Some(walls)) = (conforming, walls) {
+                // every link's energy, then every link's walls (as the disc rule: a pass
+                // ends with the links on the walls)
+                for wall in [false, true] {
+                    for k in 0..links {
+                        let (press, lean) =
+                            self.conform(k, samples[k], h, walls, &start, &mut lambda[k], wall)?;
+                        pressed[k] = pressed[k] + press;
+                        leaned[k] = add(leaned[k], lean);
+                    }
+                }
+                continue;
+            }
             for (k, held) in lambda.iter_mut().enumerate() {
                 let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
                 if (w0 + w1).is_zero() {
@@ -634,6 +771,16 @@ impl ThickChain {
                 }
             }
         }
+        // a held share pulled by its link's tension may leave the walls' press below zero
+        for press in &mut pressed {
+            if *press < Fix128::ZERO {
+                *press = Fix128::ZERO;
+            }
+        }
+        // a multiplier is a force times h²
+        for (force, press) in self.wall_force.iter_mut().zip(&pressed) {
+            *force = *press / (h * h);
+        }
         let rate = Fix128::ONE / h;
         for (i, &from) in start.iter().enumerate() {
             if !self.inv_mass[i].is_zero() {
@@ -667,6 +814,285 @@ impl ThickChain {
             self.v[k + 1] = add(self.v[k + 1], change);
         }
         Ok(())
+    }
+
+    /// One pass of the conforming rule over link `k` with `n + 1` samples: the link's shares
+    /// (trapezoid weights along it) are each as long as the wall there makes them,
+    /// `μ_j = r_rest / d_j`, or as the link's tension does, `λ*`, whichever is more, with
+    /// `l / l0 = Σ ω_j max(λ*, μ_j)`. Without `wall`: the link's energy as one constraint
+    /// (the root of `Σ ω_j (m_j − 1/m_j)²`, `m_j` the larger of the two for share `j`). With
+    /// it: the hard wall `l ≥ l0 Σ ω_j μ_j` and the middle line kept the least radius off the
+    /// walls, on the link as it is then. Returns the walls' press on the link and its sum by
+    /// slope.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::needless_range_loop,
+        reason = "one link's pass: the samples, the shares' stretch and the three constraints on them belong together; a sample's index reads six rows"
+    )]
+    fn conform(
+        &mut self,
+        k: usize,
+        n: i64,
+        h: Fix128,
+        walls: &dyn SdfQuery,
+        start: &[P2],
+        held: &mut Fix128,
+        wall: bool,
+    ) -> Result<(Fix128, P2), ThickChainError> {
+        let c = self.config;
+        let ThickChainStretch::NeoHookean { shear } = c.stretch else {
+            return Err(ThickChainError::Invalid("fit"));
+        };
+        let field = |p: P2| -> Result<Fix128, ThickChainError> {
+            let d = walls.query_distance(p[0].to_f32(), p[1].to_f32(), 0.0);
+            if d.is_finite() {
+                Ok(Fix128::from_f32(d))
+            } else {
+                Err(ThickChainError::Field { link: k })
+            }
+        };
+        // the wall's slope over ±e
+        let e = c.min_radius.shr_bits(3);
+        let over = Fix128::ONE / (e + e);
+        let slope_at = |p: P2| -> Result<P2, ThickChainError> {
+            Ok([
+                (field([p[0] + e, p[1]])? - field([p[0] - e, p[1]])?) * over,
+                (field([p[0], p[1] + e])? - field([p[0], p[1] - e])?) * over,
+            ])
+        };
+        let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
+        let mut press = Fix128::ZERO;
+        let mut lean = ZERO2;
+        if (w0 + w1).is_zero() {
+            return Ok((press, lean));
+        }
+        let along = sub(self.x[k + 1], self.x[k]);
+        let l = dot(along, along).sqrt();
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let u = scale(along, Fix128::ONE / l);
+        let rest = self.rest_length[k];
+        let area = self.area[k];
+        let rest_radius = area / (rest + rest);
+        let Shares {
+            weight,
+            place,
+            room,
+            short,
+            asked,
+            need,
+        } = self.shares_of(k, n, walls)?;
+        let count = weight.len();
+        let mut slope = Vec::with_capacity(count);
+        for t in &place {
+            let p = add(scale(self.x[k], Fix128::ONE - *t), scale(self.x[k + 1], *t));
+            slope.push(slope_at(p)?);
+        }
+        // what a held share's stretch changes by per metre of its sample's way along the
+        // wall's slope: dμ/dp = −(r_rest / d²) G
+        let turn = |j: usize| rest_radius / (room[j] * room[j]);
+        // the hard wall: the link is not shorter than its shares held by the walls,
+        // `l ≥ l0 Σ ω_j μ_j`. Its push is the walls' answer to the link's tension
+        let lack = rest * need - l;
+        let (u, l) = if wall && lack > Fix128::ZERO {
+            let mut g0 = scale(u, -Fix128::ONE);
+            let mut g1 = u;
+            let mut by_walls = Fix128::ZERO;
+            let mut leaning = ZERO2;
+            for j in 0..count {
+                let by_wall = rest * weight[j] * turn(j);
+                g0 = add(g0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
+                g1 = add(g1, scale(slope[j], by_wall * place[j]));
+                by_walls = by_walls + by_wall;
+                leaning = add(leaning, scale(slope[j], by_wall));
+            }
+            let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
+            if !denom.is_zero() {
+                let push = lack / denom;
+                self.x[k] = add(self.x[k], scale(g0, w0 * push));
+                self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
+                press = press + push * by_walls;
+                lean = add(lean, scale(leaning, push));
+            }
+            let along = sub(self.x[k + 1], self.x[k]);
+            let l = dot(along, along).sqrt();
+            if l.is_zero() {
+                return Err(ThickChainError::Degenerate { link: k });
+            }
+            (scale(along, Fix128::ONE / l), l)
+        } else {
+            (u, l)
+        };
+        if !wall {
+            // the link's energy over μ A / 2 is S = Σ ω_j (m_j − 1/m_j)², m_j the held share's
+            // μ_j or the free shares' λ*: one constraint C = √S with the compliance 1 / (μ A),
+            // its multiplier kept through the passes whichever shares are held
+            let (is_held, free, tension_stretch) = held_shares(l / rest, need, &weight, &asked);
+            let term = |m: Fix128| {
+                let back = Fix128::ONE / m;
+                (m - back, Fix128::ONE + back * back)
+            };
+            let (free_value, free_rise) = if free.is_zero() {
+                (Fix128::ZERO, Fix128::ZERO)
+            } else {
+                term(tension_stretch)
+            };
+            let mut sum = free * free_value * free_value;
+            for j in 0..count {
+                if is_held[j] {
+                    let (value, _) = term(asked[j]);
+                    sum = sum + weight[j] * value * value;
+                }
+            }
+            let value = sum.sqrt();
+            if !value.is_zero() {
+                // dS/2 = Σ_held ω_j (m̃_j s_j − m̃* s*) dμ_j + m̃* s* d(l / l0)
+                let pull_by_length = free_value * free_rise / (value * rest);
+                let mut g0 = scale(u, -pull_by_length);
+                let mut g1 = scale(u, pull_by_length);
+                let mut by_walls = Fix128::ZERO;
+                let mut leaning = ZERO2;
+                for j in 0..count {
+                    if is_held[j] {
+                        let (held_value, held_rise) = term(asked[j]);
+                        let by_wall = weight[j] * (held_value * held_rise - free_value * free_rise)
+                            / value
+                            * turn(j);
+                        g0 = sub(g0, scale(slope[j], by_wall * (Fix128::ONE - place[j])));
+                        g1 = sub(g1, scale(slope[j], by_wall * place[j]));
+                        by_walls = by_walls + by_wall;
+                        leaning = add(leaning, scale(slope[j], by_wall));
+                    }
+                }
+                let softness = Fix128::ONE / (shear * area * h * h);
+                let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
+                let dl = if c.relaxation.is_zero() {
+                    (-value - softness * *held) / (denom + softness)
+                } else {
+                    let rate = c.relaxation / h;
+                    let moved = dot(g0, sub(self.x[k], start[k]))
+                        + dot(g1, sub(self.x[k + 1], start[k + 1]));
+                    (-value - softness * *held - rate * moved)
+                        / ((Fix128::ONE + rate) * denom + softness)
+                };
+                *held = *held + dl;
+                self.x[k] = add(self.x[k], scale(g0, w0 * dl));
+                self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * dl));
+                // the held shares press on the walls with what they carry above the tension
+                press = press - dl * by_walls;
+                lean = add(lean, scale(leaning, -dl));
+            }
+            return Ok((press, lean));
+        }
+        // the middle line stays the least radius off the walls
+        for j in 0..count {
+            if short[j].is_zero() {
+                continue;
+            }
+            let g0 = scale(slope[j], Fix128::ONE - place[j]);
+            let g1 = scale(slope[j], place[j]);
+            let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
+            if denom.is_zero() {
+                continue;
+            }
+            let push = short[j] / denom;
+            self.x[k] = add(self.x[k], scale(g0, w0 * push));
+            self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
+            press = press + push;
+            lean = add(lean, scale(slope[j], push));
+        }
+        Ok((press, lean))
+    }
+
+    /// The shares of link `k` at `n + 1` samples between `walls`: trapezoid weights that add
+    /// up to 1 exactly, each sample's place along the link, the wall's distance there (not
+    /// below the least radius), how far the middle line is short of the least radius, the
+    /// stretch the wall asks of the share (`r_rest / d`, the planar relation of a share that
+    /// keeps its area: width times length), and the sum of the weights times those.
+    fn shares_of(&self, k: usize, n: i64, walls: &dyn SdfQuery) -> Result<Shares, ThickChainError> {
+        let floor = self.config.min_radius;
+        let rest = self.rest_length[k];
+        let rest_radius = self.area[k] / (rest + rest);
+        let count = n as usize + 1;
+        let step = Fix128::ONE / Fix128::from_int(n);
+        let mut out = Shares {
+            weight: Vec::with_capacity(count),
+            place: Vec::with_capacity(count),
+            room: Vec::with_capacity(count),
+            short: Vec::with_capacity(count),
+            asked: Vec::with_capacity(count),
+            need: Fix128::ZERO,
+        };
+        let mut given = Fix128::ZERO;
+        for j in 0..=n {
+            let t = Fix128::from_ratio(j, n);
+            let p = add(scale(self.x[k], Fix128::ONE - t), scale(self.x[k + 1], t));
+            let d = walls.query_distance(p[0].to_f32(), p[1].to_f32(), 0.0);
+            if !d.is_finite() {
+                return Err(ThickChainError::Field { link: k });
+            }
+            let d = Fix128::from_f32(d);
+            // the last share takes what is left, so the weights add up to 1 exactly
+            let w = if j == n {
+                Fix128::ONE - given
+            } else if j == 0 {
+                step.half()
+            } else {
+                step
+            };
+            given = given + w;
+            let (kept, lack) = if d > floor {
+                (d, Fix128::ZERO)
+            } else {
+                (floor, floor - d)
+            };
+            let mu = rest_radius / kept;
+            out.need = out.need + w * mu;
+            out.weight.push(w);
+            out.place.push(t);
+            out.room.push(kept);
+            out.short.push(lack);
+            out.asked.push(mu);
+        }
+        Ok(out)
+    }
+
+    /// The stretch of link `k`'s free shares between `walls` now (the conforming rule's
+    /// `λ*`: what the link's tension answers to; the least stretch the walls ask of a share
+    /// when the link is no longer than they make it).
+    ///
+    /// # Errors
+    ///
+    /// [`ThickChainError::Degenerate`] for a link of no length, [`ThickChainError::Stretched`]
+    /// for one beyond the samples a link may have, [`ThickChainError::Field`] for a distance
+    /// that is not a number.
+    ///
+    /// # Panics
+    ///
+    /// When `k` is not a link.
+    pub fn free_stretch<F: SdfQuery>(
+        &self,
+        k: usize,
+        walls: &F,
+    ) -> Result<Fix128, ThickChainError> {
+        let l = self.length(k);
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let n = ((l + l) / self.config.min_radius).ceil();
+        if n > Fix128::from_int(MAX_SAMPLES) {
+            return Err(ThickChainError::Stretched { link: k });
+        }
+        let shares = self.shares_of(k, n.hi + 1, walls)?;
+        let (_, _, stretch) = held_shares(
+            l / self.rest_length[k],
+            shares.need,
+            &shares.weight,
+            &shares.asked,
+        );
+        Ok(stretch)
     }
 
     /// The wall constraint of link `k` at its sample `t`: a disc of the link's radius fits
@@ -750,6 +1176,10 @@ impl ThickChain {
             c.min_radius,
             Fix128::from_int(i64::from(c.splits)),
             c.relaxation,
+            match c.fit {
+                ThickChainFit::Disc => Fix128::ZERO,
+                ThickChainFit::Conforming => Fix128::ONE,
+            },
         ] {
             put(x);
         }
@@ -786,3 +1216,6 @@ mod analytic_thick_chain_neo_hookean_oracle;
 #[cfg(test)]
 #[path = "../tests/analytic_thick_chain.rs"]
 mod analytic_thick_chain_oracle;
+#[cfg(test)]
+#[path = "../tests/analytic_thick_chain_shares.rs"]
+mod analytic_thick_chain_shares_oracle;
