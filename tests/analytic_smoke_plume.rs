@@ -1040,12 +1040,14 @@ fn the_plume_window_opens_on_a_steady_outflow_not_on_the_overshoot() {
         }
     }
     // the second at which a rule first holds on the history up to it
-    let opens = |rule: &dyn Fn(&[(i64, i64)]) -> bool| {
+    // one (left, added) pair per whole second
+    type History = [(i64, i64)];
+    let opens = |rule: &dyn Fn(&History) -> bool| {
         (1..=hist.len()).find(|&s| rule(&hist[..s])).map(|s| s - 1)
     };
     assert_eq!(opens(&laminar_scene::outflow_steady), Some(8));
     let span = laminar_scene::STEADY_SPAN_S;
-    let one_sided = |h: &[(i64, i64)]| {
+    let one_sided = |h: &History| {
         h.len() > span && {
             let (now, then) = (h[h.len() - 1], h[h.len() - 1 - span]);
             now.1 > then.1 && (now.0 - then.0) * 100 >= 95 * (now.1 - then.1)

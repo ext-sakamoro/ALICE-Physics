@@ -244,6 +244,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             n = s;
         }
     }
+    // a window opened under an earlier rule is kept only if its start meets this one; otherwise
+    // its sums are dropped (the outflow history stays) and the window opens again by the rule
+    if win.start > 0 {
+        let at = (win.start / per_second)
+            .checked_sub(win.hist_from)
+            .map(|i| i as usize + 1);
+        let meets = at.is_some_and(|k| k <= win.hist.len() && outflow_steady(&win.hist[..k]));
+        if !meets {
+            println!(
+                "the window from {:.1} s does not meet the steady rule: its sums are dropped",
+                win.start as f64 / per_second as f64
+            );
+            win.start = 0;
+            win.samples = 0;
+            win.w
+                .iter_mut()
+                .chain(win.prof.iter_mut())
+                .for_each(|v| *v = 0.0);
+        }
+    }
     if n == 0 {
         if let Some(c) = &coarse_ckpt {
             let mut coarse = scene::scene_um(2 * dx_um, nu, heat);
