@@ -59,7 +59,8 @@
 //!   resolve, so its width comes from the scheme's diffusion and narrows with the cell
 //!   (measured without molecular diffusion at 10 and 5 mm cells over 0.15–0.35 m in a 0.64 m box:
 //!   `d ln R²/d ln z` 1.03 → 0.48, `d ln w_c/d ln z` 0.27 → 0.22, `d ln ΔT_c/d ln z`
-//!   −0.26 → −0.18, against the laminar 1, 0, −1); neither plume law is claimed yet. The
+//!   −0.26 → −0.18, against the laminar 1, 0, −1; the source of that scene sat one cell above
+//!   the floor, so 5 mm lower on the 5 mm grid); neither plume law is claimed yet. The
 //!   laminar closed form (`R² ∝ z`, `w_c` constant, `ΔT_c ∝ 1/z`) holds only where its own
 //!   conditions hold, and `examples/smoke_laminar_plume.rs` checks them on the scene before it
 //!   reports exponents (a scene that fails one is reported invalid, not passed): the plume's
