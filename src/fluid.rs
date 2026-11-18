@@ -302,6 +302,9 @@ pub struct Fluid {
     bodies: Vec<crate::fluid_boundary_map::FluidBody>,
     /// Per solid: the force the fluid exerted on it in the last substep
     body_forces: Vec<Vec3Fix>,
+    /// measurement only: (solid, particle position, force on the solid, 0 = map / 1 = contact) of the last substep
+    #[doc(hidden)]
+    pub diag: Vec<(usize, Vec3Fix, Vec3Fix, u8)>,
 }
 
 impl Fluid {
@@ -343,6 +346,7 @@ impl Fluid {
             #[cfg(feature = "std")]
             bodies: Vec::new(),
             body_forces: Vec::new(),
+            diag: Vec::new(),
         }
     }
 
@@ -607,6 +611,7 @@ impl Fluid {
         let mut total_correction = Vec3Fix::ZERO;
         let mut wall_corrections = vec![Vec3Fix::ZERO; self.boundary.len()];
         let mut body_corrections = vec![Vec3Fix::ZERO; n_bodies];
+        let mut diag_map: Vec<(usize, usize, Vec3Fix)> = Vec::new();
         let mut body_samples = vec![(Fix128::ZERO, Vec3Fix::ZERO); n * n_bodies];
         for _ in 0..self.config.iterations {
             for i in 0..n {
@@ -719,6 +724,8 @@ impl Fluid {
                     if let Some((a, b, to_b)) = split {
                         body_corrections[b] = body_corrections[b] + to_b;
                         body_corrections[a] = body_corrections[a] + (total - to_b);
+                        diag_map.push((b, i, to_b));
+                        diag_map.push((a, i, total - to_b));
                     } else {
                         let mut credited = Vec3Fix::ZERO;
                         let last = samples.len() - 1;
@@ -730,6 +737,7 @@ impl Fluid {
                             };
                             credited = credited + own;
                             body_corrections[k] = body_corrections[k] + own;
+                            diag_map.push((k, i, own));
                         }
                     }
                 }
@@ -755,6 +763,10 @@ impl Fluid {
             .into_iter()
             .map(|c| -(c * force_per_correction))
             .collect();
+        self.diag.clear();
+        for &(k, i, c) in &diag_map {
+            self.diag.push((k, self.predicted[i], -(c * force_per_correction), 0));
+        }
 
         // 4. Update velocities and positions
         let inv_dt = Fix128::ONE / dt;
@@ -987,6 +999,7 @@ impl Fluid {
                     ContactSide::Solid,
                 ) {
                     on_fluid = on_fluid + (v - self.velocities[i]) * (m * inv_dt);
+                    self.diag.push((k, p, -((v - self.velocities[i]) * (m * inv_dt)), 1));
                     self.positions[i] = p;
                     self.predicted[i] = p;
                     self.velocities[i] = v;
@@ -1036,7 +1049,8 @@ fn sdf_contact(
     let normal = sdf.local_normal_to_world(nx, ny, nz);
     let p = p + normal * Fix128::from_f32(-dist);
     let vn = normal * v.dot(normal);
-    Some((p, v - vn * Fix128::from_ratio(15, 10)))
+    let factor = match side { ContactSide::Solid => std::env::var("DIAG_CONTACT_FACTOR").ok().and_then(|s| s.parse::<f64>().ok()).map_or(Fix128::from_ratio(15, 10), Fix128::from_f64), ContactSide::Container => Fix128::from_ratio(15, 10) };
+    Some((p, v - vn * factor))
 }
 
 impl core::fmt::Debug for Fluid {
