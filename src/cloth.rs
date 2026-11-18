@@ -1048,13 +1048,20 @@ impl Cloth {
         };
         let sphere_candidates = self.collect_sphere_candidates(&start, spheres);
         let mut normal_lambda = vec![Fix128::ZERO; sphere_candidates.len()];
+        let mut tangential_lambda = vec![Fix128::ZERO; sphere_candidates.len()];
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
-            self.solve_sphere_contacts(&sphere_candidates, spheres, &start, &mut normal_lambda);
+            self.solve_sphere_contacts(
+                &sphere_candidates,
+                spheres,
+                &start,
+                &mut normal_lambda,
+                &mut tangential_lambda,
+            );
         }
 
         // 3. Update velocities
@@ -3136,7 +3143,8 @@ impl Cloth {
     /// `Δp_t = ((c − c₀) − (q − q₀))_t` (`q₀` the same barycentric point on the
     /// step-start corners), is cancelled while `|Δp_t| / w < μ λ_n` (`λ_n` the
     /// pair's normal multiplier summed over the step's iterations); past the cone
-    /// the point slides and the correction is capped at `μ λ_n`. It is weighted like
+    /// the point slides, and the pair's tangential correction summed over the
+    /// step's iterations is capped at `μ λ_n`. It is weighted like
     /// the normal correction, so it keeps the momentum balance.
     fn solve_sphere_contacts(
         &mut self,
@@ -3144,6 +3152,7 @@ impl Cloth {
         spheres: &mut [ContactSphere],
         start: &[Vec3Fix],
         normal_lambda: &mut [Fix128],
+        tangential_lambda: &mut [Fix128],
     ) {
         for (kk, k) in candidates.iter().enumerate() {
             let s = spheres[k.sphere];
@@ -3213,7 +3222,13 @@ impl Cloth {
             if len.is_zero() {
                 continue;
             }
-            let hold = crate::xpbd_contact::static_hold(len, denom, limit).unwrap_or(limit);
+            // the cone bounds the step's total: what earlier iterations held counts
+            let budget = limit - tangential_lambda[kk];
+            if budget <= Fix128::ZERO {
+                continue;
+            }
+            let hold = crate::xpbd_contact::static_hold(len, denom, budget).unwrap_or(budget);
+            tangential_lambda[kk] = tangential_lambda[kk] + hold;
             self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, t_dir, -hold);
         }
     }

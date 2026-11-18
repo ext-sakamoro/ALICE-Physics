@@ -366,14 +366,16 @@ pub enum StepRule {
     /// itself, deterministically from its own state (e.g. a CFL limit).
     Subcycle,
     /// `m` calls per frame, spread evenly over the world's `n` substeps
-    /// whatever `n` is: substep `i` (from 0) calls the participant when
-    /// `⌊(i+1)·m/n⌋ > ⌊i·m/n⌋` (every substep when `m ≥ n`). A call advances
-    /// by the width of the substeps since the participant's previous call in
-    /// the frame (`k·h` for `k` substeps), so the calls of a frame cover the
-    /// frame and the participant's own step does not depend on how the world
-    /// cuts the frame. The bodies it reads are those at the start of the
-    /// substep of the call, and a force it stages acts in that substep (an
-    /// impulse `F·h`). `m = 0` is refused at registration
+    /// whatever `n` is: substep `i` (from 0) calls the participant when `i = 0`
+    /// or `⌊i·m/n⌋ > ⌊(i−1)·m/n⌋` (every substep when `m ≥ n`), at the first
+    /// substep of the span it covers. A call advances by the width of the
+    /// substeps until its next call in the frame (`k·h` for `k` substeps), so
+    /// the calls of a frame cover the frame and the participant's own step does
+    /// not depend on how the world cuts the frame. The bodies it reads are those
+    /// at the start of its span, and a force it stages acts in the span's first
+    /// substep (an impulse `F·h`), before the world integrates the span: a
+    /// participant that predicts a body over its step predicts it over the same
+    /// substeps the world then integrates. `m = 0` is refused at registration
     /// ([`RegisterError::NonPositiveStep`]); `m` above the world's substeps is
     /// refused at registration and at every step
     /// ([`RegisterError::StepsPerFrameAboveSubsteps`], a step then runs
@@ -420,8 +422,9 @@ impl StepRule {
     /// Whether the participant is called at substep `index` of `count`, and
     /// then how many substeps the call covers: always `Some(1)` except for
     /// [`Self::PerFrame`], which gives `Some(k)` at the substeps it is called
-    /// at (`k` substeps since its previous call in the frame) and `None` at
-    /// the others. `None` for `PerFrame(0)` and for `count = 0`.
+    /// at (the first of a span of `k` substeps, up to its next call in the
+    /// frame) and `None` at the others. `None` for `PerFrame(0)` and for
+    /// `count = 0`.
     #[must_use]
     pub fn covers(self, index: usize, count: usize) -> Option<usize> {
         let Self::PerFrame(m) = self else {
@@ -431,17 +434,17 @@ impl StepRule {
         if m == 0 || count == 0 || index >= count {
             return None;
         }
-        let calls_before = |i: usize| i * m / count;
-        if calls_before(index + 1) == calls_before(index) {
+        // substep `i` starts a span when the count of calls up to it moves
+        let starts = |i: usize| i == 0 || i * m / count > (i - 1) * m / count;
+        if !starts(index) {
             return None;
         }
-        // the substeps since the previous call: back to the last substep that
-        // made a call (or the start of the frame)
-        let mut start = index;
-        while start > 0 && calls_before(start) == calls_before(start - 1) {
-            start -= 1;
+        // the span runs to the next substep that starts one (or the frame's end)
+        let mut end = index + 1;
+        while end < count && !starts(end) {
+            end += 1;
         }
-        Some(index + 1 - start)
+        Some(end - index)
     }
 }
 

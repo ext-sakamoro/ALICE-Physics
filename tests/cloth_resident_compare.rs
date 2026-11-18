@@ -290,9 +290,10 @@ fn per_frame_places_the_calls_evenly() {
         (0..n).map(|i| StepRule::PerFrame(m).covers(i, n)).collect()
     };
     // oracle: m calls cover the n substeps in contiguous runs summing to n
-    assert_eq!(at(1, 4), vec![None, None, None, Some(4)]);
-    assert_eq!(at(2, 4), vec![None, Some(2), None, Some(2)]);
-    assert_eq!(at(2, 3), vec![None, Some(2), Some(1)]);
+    // each call sits at the first substep of its span
+    assert_eq!(at(1, 4), vec![Some(4), None, None, None]);
+    assert_eq!(at(2, 4), vec![Some(2), None, Some(2), None]);
+    assert_eq!(at(2, 3), vec![Some(2), None, Some(1)]);
     assert_eq!(at(3, 3), vec![Some(1), Some(1), Some(1)]);
     assert_eq!(StepRule::PerFrame(0).covers(0, 4), None);
     for (m, n) in [(1u32, 1usize), (2, 5), (3, 7), (4, 8), (5, 8)] {
@@ -304,8 +305,8 @@ fn per_frame_places_the_calls_evenly() {
         );
         assert_eq!(v.iter().flatten().sum::<usize>(), n, "m {m} n {n}");
         assert!(
-            v[n - 1].is_some(),
-            "the last substep ends the frame with a call"
+            v[0].is_some(),
+            "the first substep starts the frame with a call"
         );
     }
 }
