@@ -1014,3 +1014,42 @@ fn the_laminar_scene_has_the_same_lengths_at_every_cell() {
     fine.write_state(&mut bytes);
     fine_scene.check_state(&bytes).unwrap();
 }
+
+/// The averaging window of the laminar plume run opens only on a steady outflow, on both sides:
+/// replaying the recorded outflow of [`plume`] with its top open (outflow / source per half
+/// second, 0 to 6.5 s: 0, 0, 0, 0, 0.0206, 1.0078, 1.2689, 1.1009, 1.0529, 1.0361, 1.0182, 1.0105,
+/// 1.0060, 1.0024, 1.0005, 1.0002, the overshoot of the plume's first arrival at the top) as one
+/// `(left, added)` pair per second, the rule opens at 8 s, where the last 4 s carried 1.0159 of
+/// the source (oracle, the mean of those 8 ratios); a one-sided `left >= 0.95 · added` would
+/// open at 7 s, inside the overshoot (1.0618).
+#[test]
+fn the_plume_window_opens_on_a_steady_outflow_not_on_the_overshoot() {
+    // the ratios in units of 10⁻⁴, against a source of 10⁶ quanta per half second
+    let ratios: [i64; 16] = [
+        0, 0, 0, 0, 206, 10078, 12689, 11009, 10529, 10361, 10182, 10105, 10060, 10024, 10005,
+        10002,
+    ];
+    let per_half = 1_000_000i64;
+    let (mut left, mut added) = (0i64, 0i64);
+    let mut hist = vec![(0i64, 0i64)];
+    for (h, r) in ratios.iter().enumerate() {
+        added += per_half;
+        left += r * per_half / 10_000;
+        if h % 2 == 1 {
+            hist.push((left, added));
+        }
+    }
+    // the second at which a rule first holds on the history up to it
+    let opens = |rule: &dyn Fn(&[(i64, i64)]) -> bool| {
+        (1..=hist.len()).find(|&s| rule(&hist[..s])).map(|s| s - 1)
+    };
+    assert_eq!(opens(&laminar_scene::outflow_steady), Some(8));
+    let span = laminar_scene::STEADY_SPAN_S;
+    let one_sided = |h: &[(i64, i64)]| {
+        h.len() > span && {
+            let (now, then) = (h[h.len() - 1], h[h.len() - 1 - span]);
+            now.1 > then.1 && (now.0 - then.0) * 100 >= 95 * (now.1 - then.1)
+        }
+    };
+    assert_eq!(opens(&one_sided), Some(7));
+}

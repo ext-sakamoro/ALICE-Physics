@@ -137,3 +137,26 @@ pub fn step_um(dx_um: i64) -> Fix128 {
 pub fn source_top_m() -> f64 {
     (SOURCE_BOTTOM.micrometres() + SOURCE_SIDE.micrometres()) as f64 / 1e6
 }
+
+/// The span (whole seconds) over which the outflow must match the source before the averaging
+/// window opens, and how closely.
+pub const STEADY_SPAN_S: usize = 4;
+pub const STEADY_TOLERANCE: f64 = 0.05;
+
+/// Whether the outflow history, one `(heat that had left, heat the source had added)` pair per
+/// whole second, is steady at its last second: over the last [`STEADY_SPAN_S`] seconds the heat
+/// that left is the heat added within [`STEADY_TOLERANCE`], on both sides (a plume first
+/// reaching an open top pushes out the warm air ahead of it, so the outflow overshoots the
+/// source before it settles; a one-sided test would open the window on that overshoot).
+#[allow(
+    dead_code,
+    reason = "the long run and the rule's test read it; the push-time guard does not"
+)]
+pub fn outflow_steady(hist: &[(i64, i64)]) -> bool {
+    if hist.len() <= STEADY_SPAN_S {
+        return false;
+    }
+    let (now, then) = (hist[hist.len() - 1], hist[hist.len() - 1 - STEADY_SPAN_S]);
+    let added = (now.1 - then.1) as f64;
+    added > 0.0 && ((now.0 - then.0) as f64 / added - 1.0).abs() <= STEADY_TOLERANCE
+}

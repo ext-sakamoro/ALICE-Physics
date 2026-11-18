@@ -21,7 +21,8 @@
 //! The width and the centreline excess are measured on the excess over that far field.
 //!
 //! The window is set by a rule, not by hand: it starts at the first whole second `t0` at which the
-//! heat that left over the last 4 s is at least 95 % of what the source added over them, and it
+//! heat that left over the last 4 s is within 5 % of what the source added over them (on both
+//! sides: the plume's first arrival at the top overshoots), and it
 //! lasts 8 s; the run fails when `t0 + 8 s` is not reached within the given maximum time.
 //!
 //! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state, the
@@ -46,10 +47,7 @@ const MAGIC: &[u8; 8] = b"SMKLAM05";
 /// Earlier formats: a run resumes from their plume's state alone (its outflow history and
 /// window start afresh), and a coarse run's state prolongs from any of them.
 const MAGIC_OLD: [&[u8; 8]; 4] = [b"SMKLAM01", b"SMKLAM02", b"SMKLAM03", b"SMKLAM04"];
-/// The window starts once the outflow over this many seconds is at least [`STEADY_FROM`] of
-/// the heat added over them.
-const STEADY_SPAN_S: usize = 4;
-const STEADY_FROM: f64 = 0.95;
+use scene::{outflow_steady, STEADY_SPAN_S, STEADY_TOLERANCE};
 /// The window's length (s).
 const WINDOW_S: u64 = 8;
 /// The far field is where the window-mean excess is within this fraction of the centreline's
@@ -57,8 +55,6 @@ const WINDOW_S: u64 = 8;
 const FAR_FIELD_FRACTION: f64 = 0.01;
 /// The largest `N · t_window` of the far field for which the scene counts as unstratified.
 const MAX_N_T: f64 = 0.1;
-/// The heat leaving over the window may differ from the heat added by this fraction.
-const STEADY_TOLERANCE: f64 = 0.05;
 /// The far field must reach this far (m) between the plume's reach and the wall: a length, so
 /// it is the same whatever the cell.
 const FAR_FIELD_MARGIN_M: f64 = 0.02;
@@ -301,15 +297,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             win.hist
                 .push((plume.outflow().heat_left, plume.ledger().heat_added));
             let h = &win.hist;
-            if win.start == 0 && h.len() > STEADY_SPAN_S {
-                let (now, then) = (h[h.len() - 1], h[h.len() - 1 - STEADY_SPAN_S]);
-                let added = (now.1 - then.1) as f64;
-                if added > 0.0 && (now.0 - then.0) as f64 >= STEADY_FROM * added {
-                    win.start = n;
-                    win.out0 = now.0;
-                    win.added0 = now.1;
-                    println!("window starts at {:.1} s", n as f64 / per_second as f64);
-                }
+            if win.start == 0 && outflow_steady(h) {
+                let now = h[h.len() - 1];
+                win.start = n;
+                win.out0 = now.0;
+                win.added0 = now.1;
+                println!("window starts at {:.1} s", n as f64 / per_second as f64);
             }
         }
         if win.start > 0 && n > win.start {
@@ -361,7 +354,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if win.start == 0 {
         return Err(format!(
             "scene invalid: outflow never steady: the heat leaving over {STEADY_SPAN_S} s did not \
-             reach {STEADY_FROM} of the heat added within {seconds} s"
+             match the heat added within {STEADY_TOLERANCE} by {seconds} s"
         )
         .into());
     }
