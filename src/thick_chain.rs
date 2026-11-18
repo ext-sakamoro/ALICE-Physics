@@ -888,7 +888,11 @@ impl ThickChain {
                 // every link's energy, then every link's walls (as the disc rule: a pass
                 // ends with the links on the walls)
                 for k in 0..links {
-                    self.conform(k, samples[k], h, walls, &start, &mut lambda[k], false)?;
+                    // the held shares' press on the walls
+                    let (press, lean) =
+                        self.conform(k, samples[k], h, walls, &start, &mut lambda[k], false)?;
+                    pressed[k] = pressed[k] + press;
+                    leaned[k] = add(leaned[k], lean);
                 }
                 self.walls_together(&samples, walls, &mut pressed, &mut leaned)?;
                 for k in 0..links {
