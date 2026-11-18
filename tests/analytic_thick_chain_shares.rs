@@ -261,6 +261,11 @@ fn held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_te
                 );
             }
         }
+        assert_eq!(
+            chain.walls_unsettled(),
+            0,
+            "a pass left its walls unsettled"
+        );
         for k in 0..links {
             let share = f(chain.wall_force(k)) / expect;
             println!(
@@ -509,5 +514,107 @@ fn a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated() {
     assert_eq!(
         count(8.0, 8.0 + 1.0 / 1024.0),
         Err(ThickChainError::Stretched { link: 0 })
+    );
+}
+
+/// a channel of half-width `c` with a pocket of half-width `wide` over `from..to`, its ends
+/// sloped over 4 mm (a field with the walls as its zero set; not a distance in the slopes)
+fn pocket(
+    c: f32,
+    wide: f32,
+    from: f32,
+    to: f32,
+) -> DistanceSdfQuery<impl Fn(f32, f32, f32) -> f32> {
+    DistanceSdfQuery::new(move |x: f32, y: f32, _z: f32| {
+        let ramp = 0.004;
+        let open = ((x - from) / ramp)
+            .clamp(0.0, 1.0)
+            .min(((to - x) / ramp).clamp(0.0, 1.0));
+        c + (wide - c) * open - y.abs()
+    })
+}
+
+#[test]
+fn between_links_held_by_a_channel_a_link_in_a_pocket_is_off_its_walls_and_takes_the_push() {
+    // nine links in a channel that holds them at λc = r0 / c, the head fixed, the tail pushed
+    // with F; no friction. Where the channel has a pocket wide enough to leave a link free,
+    // that link is not on its walls: it is as long as its own stretch makes it under the
+    // push, T(λ) = −F (μ w0 (λ − λ⁻³) = −F), longer than the pocket's walls would make it,
+    // while the links in the channel on both sides stay at the walls' length (they cannot be
+    // shorter) and pass the push on. The walls of the two held runs are solved with the
+    // free links between them off the condition.
+    let (l0, r0, shear, c, wide) = (0.01, 0.02, 500.0, 0.012f32, 0.03f32);
+    let (links, push) = (9usize, 9.0);
+    let held = r0 * l0 / f64::from(c);
+    let walls = pocket(c, wide, 0.05, 0.09);
+    let mut cfg = config(shear, ThickChainFit::Conforming);
+    cfg.drag = fx(30.0);
+    let mut chain =
+        ThickChain::new(cfg, &row(0.0, l0, links), fx(r0), fx(DENSITY)).expect("a chain");
+    for i in 0..=links {
+        // laid from the fixed head back, as long as the channel holds them
+        chain.set_position(i, [fx(0.15 - held * (links - i) as f64), Fix128::ZERO]);
+    }
+    chain.pin(links);
+    let mut accel = vec![ZERO2; links + 1];
+    accel[0] = [fx(push / (DENSITY * r0 * l0)), Fix128::ZERO];
+    let mut rested = false;
+    for _ in 0..1800 {
+        chain.step_in(frame(), &walls, &accel).expect("a step");
+        if chain.velocities().iter().all(|v| f(v[0]).abs() < 1.0e-6) {
+            rested = true;
+            break;
+        }
+    }
+    assert!(rested, "the chain does not come to rest");
+    assert_eq!(
+        chain.walls_unsettled(),
+        0,
+        "a pass left its walls unsettled"
+    );
+    // λ with pull(λ) = −F / (μ w0), by bisection (pull grows with λ)
+    let (mut lo, mut hi) = (0.5f64, 1.0f64);
+    for _ in 0..200 {
+        let mid = (lo + hi) / 2.0;
+        if shear * 2.0 * r0 * pull(mid) < -push {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let free = (lo + hi) / 2.0;
+    let (mut in_pocket, mut before, mut after) = (0, 0, 0);
+    for k in 0..links {
+        let (a, b) = (f(chain.positions()[k][0]), f(chain.positions()[k + 1][0]));
+        let ratio = f(chain.length(k)) / l0;
+        if a >= 0.054 && b <= 0.086 {
+            // wholly in the pocket's flat part: the drag at rest is below
+            // 10 particles × 0.4 kg × 30 /s × 1e-6 m/s = 1.2e-4 N of the 9 N
+            assert!(
+                (ratio - free).abs() <= 1.0e-4 * free,
+                "link {k} in the pocket is {ratio} of its rest length, its stretch under the push is {free}"
+            );
+            assert!(
+                ratio > r0 / f64::from(wide) * 1.2,
+                "link {k} is on the pocket's walls"
+            );
+            in_pocket += 1;
+        } else if b <= 0.05 || a >= 0.09 {
+            // wholly in the channel: at the walls' length (f32 walls, Q64.64 against f64)
+            assert!(
+                (ratio - held / l0).abs() <= 1.0e-6 * held / l0,
+                "link {k} in the channel is {ratio} of its rest length, the walls make it {}",
+                held / l0
+            );
+            if b <= 0.05 {
+                before += 1;
+            } else {
+                after += 1;
+            }
+        }
+    }
+    assert!(
+        in_pocket >= 1 && before >= 2 && after >= 2,
+        "{in_pocket} links in the pocket, {before} and {after} in the channel on its sides"
     );
 }
