@@ -60,6 +60,15 @@
 //! - artificial pressure off by default: `s_corr` pushes every pair apart and makes a
 //!   free block expand (1.68x its height in 60 frames); kept as `artificial_pressure`
 //!   (`k`, with `n = 4` and `dq = 0.2 h`, in `lambda` units).
+//! - contact with solids: a particle centre inside a density-map solid
+//!   ([`Fluid::with_sdf_body`]) is put back on the solid's surface along its SDF normal and
+//!   loses its normal velocity (inelastic; a liquid at a wall does not bounce), and the
+//!   momentum change is credited to that solid. Without it the map density alone left the
+//!   layer next to a wall 0.013-0.015 m inside it at rest (measured 2026-11-18). Container
+//!   colliders ([`Fluid::step_with_sdf`]) keep their restitution 0.5 for now. Measured: with
+//!   restitution 0.5 on the solids too, the bounce during settling changes the packing and
+//!   the cube two kernel radii above the floor reads `F_y / (rho_0 g V)` = 0.924; inelastic,
+//!   0.995.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
 //!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
 //!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
@@ -302,6 +311,9 @@ pub struct Fluid {
     bodies: Vec<crate::fluid_boundary_map::FluidBody>,
     /// Per solid: the force the fluid exerted on it in the last substep
     body_forces: Vec<Vec3Fix>,
+    /// Per particle and solid (`i * body_count + k`): the force the particle exerted on the
+    /// solid in the last substep
+    body_particle_forces: Vec<Vec3Fix>,
 }
 
 impl Fluid {
@@ -343,6 +355,7 @@ impl Fluid {
             #[cfg(feature = "std")]
             bodies: Vec::new(),
             body_forces: Vec::new(),
+            body_particle_forces: Vec::new(),
         }
     }
 
@@ -375,6 +388,15 @@ impl Fluid {
     #[must_use]
     pub fn body_forces(&self) -> &[Vec3Fix] {
         &self.body_forces
+    }
+
+    /// Force (N) each particle exerted on each solid added with [`Fluid::with_sdf_body`]
+    /// during the last substep (density map and contact), at index `i * body_count() + k`
+    /// for particle `i` and solid `k`; summed over the particles it is
+    /// [`Fluid::body_forces`] up to rounding. Empty before the first step.
+    #[must_use]
+    pub fn body_particle_forces(&self) -> &[Vec3Fix] {
+        &self.body_particle_forces
     }
 
     /// Number of solids added with [`Fluid::with_sdf_body`]
@@ -607,6 +629,7 @@ impl Fluid {
         let mut total_correction = Vec3Fix::ZERO;
         let mut wall_corrections = vec![Vec3Fix::ZERO; self.boundary.len()];
         let mut body_corrections = vec![Vec3Fix::ZERO; n_bodies];
+        let mut particle_corrections = vec![Vec3Fix::ZERO; n * n_bodies];
         let mut body_samples = vec![(Fix128::ZERO, Vec3Fix::ZERO); n * n_bodies];
         for _ in 0..self.config.iterations {
             for i in 0..n {
@@ -719,6 +742,10 @@ impl Fluid {
                     if let Some((a, b, to_b)) = split {
                         body_corrections[b] = body_corrections[b] + to_b;
                         body_corrections[a] = body_corrections[a] + (total - to_b);
+                        particle_corrections[i * n_bodies + b] =
+                            particle_corrections[i * n_bodies + b] + to_b;
+                        particle_corrections[i * n_bodies + a] =
+                            particle_corrections[i * n_bodies + a] + (total - to_b);
                     } else {
                         let mut credited = Vec3Fix::ZERO;
                         let last = samples.len() - 1;
@@ -730,6 +757,8 @@ impl Fluid {
                             };
                             credited = credited + own;
                             body_corrections[k] = body_corrections[k] + own;
+                            particle_corrections[i * n_bodies + k] =
+                                particle_corrections[i * n_bodies + k] + own;
                         }
                     }
                 }
@@ -751,6 +780,10 @@ impl Fluid {
             .map(|c| c * force_per_correction)
             .collect();
         // the solids receive the reaction of the corrections they gave the fluid
+        self.body_particle_forces = particle_corrections
+            .into_iter()
+            .map(|c| -(c * force_per_correction))
+            .collect();
         self.body_forces = body_corrections
             .into_iter()
             .map(|c| -(c * force_per_correction))
@@ -764,8 +797,8 @@ impl Fluid {
         }
 
         // 4b. Contact with the density-map solids: a centre inside a solid is put back on its
-        //     surface with the contact rule of the container colliders; the fluid's momentum
-        //     change is the solid's reaction (Newton 3, credited per solid)
+        //     surface and loses its normal velocity; the fluid's momentum change is the
+        //     solid's reaction (Newton 3, credited per solid and per particle)
         #[cfg(feature = "std")]
         self.resolve_body_contacts(inv_dt);
 
@@ -971,7 +1004,7 @@ impl Fluid {
 
     /// Contact with the solids added by [`Fluid::with_sdf_body`]: a centre inside a solid
     /// (`SDF < 0`) goes back to its surface along the solid's normal and its normal velocity
-    /// is reflected as for a container collider; `m dv / dt` of each contact is added to the
+    /// is removed (inelastic); `m dv / dt` of each contact is added to the
     /// force on the fluid and taken from that solid's force
     #[cfg(feature = "std")]
     fn resolve_body_contacts(&mut self, inv_dt: Fix128) {
@@ -986,7 +1019,12 @@ impl Fluid {
                     self.velocities[i],
                     ContactSide::Solid,
                 ) {
-                    on_fluid = on_fluid + (v - self.velocities[i]) * (m * inv_dt);
+                    let push = (v - self.velocities[i]) * (m * inv_dt);
+                    on_fluid = on_fluid + push;
+                    let slot = i * self.bodies.len() + k;
+                    if let Some(f) = self.body_particle_forces.get_mut(slot) {
+                        *f = *f - push;
+                    }
                     self.positions[i] = p;
                     self.predicted[i] = p;
                     self.velocities[i] = v;
@@ -1012,10 +1050,10 @@ enum ContactSide {
     Solid,
 }
 
-/// The contact rule shared by container colliders and solids: a centre on the wrong side
-/// of the surface is moved back onto it along the normal (by `-d`) and its normal velocity
-/// is reflected with restitution 0.5 (`v - 1.5 (v . n) n`); `None` when the centre is on its
-/// side
+/// The contact rule of container colliders and solids: a centre on the wrong side of the
+/// surface is moved back onto it along the normal (by `-d`); a container reflects its normal
+/// velocity with restitution 0.5 (`v - 1.5 (v . n) n`), a solid removes it (`v - (v . n) n`);
+/// `None` when the centre is on its side
 #[cfg(feature = "std")]
 fn sdf_contact(
     sdf: &SdfCollider,
@@ -1036,7 +1074,12 @@ fn sdf_contact(
     let normal = sdf.local_normal_to_world(nx, ny, nz);
     let p = p + normal * Fix128::from_f32(-dist);
     let vn = normal * v.dot(normal);
-    Some((p, v - vn * Fix128::from_ratio(15, 10)))
+    match side {
+        // restitution 0.5, kept for the container colliders (see the fluid MODEL)
+        ContactSide::Container => Some((p, v - vn * Fix128::from_ratio(15, 10))),
+        // inelastic: a liquid at a solid wall keeps no normal velocity
+        ContactSide::Solid => Some((p, v - vn)),
+    }
 }
 
 impl core::fmt::Debug for Fluid {
