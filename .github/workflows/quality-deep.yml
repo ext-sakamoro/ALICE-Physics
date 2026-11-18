@@ -427,7 +427,8 @@ jobs:
 
   laminar-plume:
     # 層流の点源 plume の検証場面 (examples/smoke_laminar_plume.rs、上面開放、0.32 × 0.64 × 0.32 m) を
-    # 10 mm で 2 通り走らせる: 熱 400 K/s は閉形式の成立条件 (plume の届く範囲が箱の内、その外の
+    # 10 mm で 2 通り走らせる (窓は規則で決まる: 直前 4 s の流出 ≥ 0.95·源となった最初の秒 t0 から 8 s、
+    # 実測 t0 = 18 s、最大 40 s): 熱 400 K/s は閉形式の成立条件 (plume の届く範囲が箱の内、その外の
     # 遠方場の N·t < 0.1、窓の間の流出が源と 5 % 以内) を満たし指数を出す (exit 0、SCENE ... valid)、
     # 熱 100 K/s は届く範囲が箱に入らず「scene invalid: reach」で失敗する (成立域の境界の記録)
     # 5 mm と 2.5 mm は Paperspace (checkpoint 付き)、指数の許容は細分化の収束を測ってから足す
@@ -442,14 +443,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the run
         run: cargo build --release --example smoke_laminar_plume
-      - name: heat 400 K/s (valid) and 100 K/s (outside validity), 20 s, window 12-20 s
+      - name: heat 400 K/s (valid, window from t0 by rule, at most 40 s) and 100 K/s (outside validity, at most 60 s)
         shell: bash
         run: |
           set -o pipefail
           run=target/release/examples/smoke_laminar_plume
-          "$run" 10 200 400 20 12 0.10 0.40 open > h400.log 2>&1 &
+          "$run" 10 200 400 40 0.10 0.40 open > h400.log 2>&1 &
           a=$!
-          "$run" 10 200 100 20 12 0.10 0.40 open > h100.log 2>&1 &
+          "$run" 10 200 100 60 0.10 0.40 open > h100.log 2>&1 &
           b=$!
           rc400=0; wait "$a" || rc400=$?
           rc100=0; wait "$b" || rc100=$?
