@@ -1,6 +1,6 @@
 //! The laminar point-plume scene, shared by the long oracle (`examples/smoke_laminar_plume.rs`)
 //! and the short push-time guard in `tests/analytic_smoke_plume.rs`, so both build the same
-//! physical scene: a closed box of air 0.32 × 0.64 × 0.32 m, heat and momentum diffusing alike
+//! physical scene: a box of air 0.32 × 0.64 × 0.32 m (closed; the long run may open its top), heat and momentum diffusing alike
 //! (`ν = κ`, Prandtl 1), and a 2 cm cube of heating on the floor's centre. The box, the source
 //! and the rates are physical sizes, so a finer grid resolves the same plume.
 
@@ -17,7 +17,10 @@ pub const SOURCE_MM: i64 = 20;
 /// and heat diffusivity both `nu_um2` · 10⁻⁶ m²/s and the source heating at `heat_k_per_s`.
 /// The velocity step is at most 1/120 s at 10 mm and shrinks with the cell.
 pub fn scene(dx_mm: i64, nu_um2: i64, heat_k_per_s: i64) -> SmokePlume {
-    assert!(dx_mm > 0 && SOURCE_MM % dx_mm == 0, "the cell must divide the source");
+    assert!(
+        dx_mm > 0 && SOURCE_MM % dx_mm == 0,
+        "the cell must divide the source"
+    );
     let n_xz = (BOX_XZ_MM / dx_mm) as usize;
     let n_y = (BOX_Y_MM / dx_mm) as usize;
     let mut c = SmokeConfig::air();
@@ -49,6 +52,10 @@ pub fn step(dx_mm: i64) -> Fix128 {
 
 /// Height of the source's top above the floor (m), the virtual origin the plume's `z` is
 /// measured from.
+#[allow(
+    dead_code,
+    reason = "the long run reads it; the push-time guard does not"
+)]
 pub fn source_top_m(dx_mm: i64) -> f64 {
     (dx_mm + SOURCE_MM) as f64 / 1000.0
 }
