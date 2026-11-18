@@ -120,6 +120,7 @@ fn chain_of(shear: f64, drag: f64, links: usize, fit: ThickChainFit) -> ThickCha
         splits: 8,
         relaxation: Fix128::ZERO,
         fit,
+        reach: fx(RADIUS / 0.005),
     };
     let link = BODY / links as f64;
     let points: Vec<P2> = (0..=links)
@@ -334,8 +335,8 @@ fn fed_every_link_is_as_long_as_the_channel_makes_it() {
 }
 
 /// the conforming rule's energy of the chain, J per metre of depth, from its definition:
-/// per link the samples' shares (at most half the least radius apart, one interval more than
-/// the length asks for; trapezoid weights), each as stretched as the wall asks,
+/// per link the samples' shares (laid out once for the longest the link may be, at most half
+/// the least radius apart there; trapezoid weights), each as stretched as the wall asks,
 /// `μ = r_rest / d`, or as the free stretch `λ*`, whichever is more, with
 /// `l / l0 = Σ ω max(λ*, μ)`
 fn stored_in_shares(chain: &ThickChain) -> f64 {
@@ -344,7 +345,9 @@ fn stored_in_shares(chain: &ThickChain) -> f64 {
     for k in 0..chain.link_count() {
         let (a, b) = (chain.positions()[k], chain.positions()[k + 1]);
         let (l, rest) = (f(chain.length(k)), f(chain.rest_length(k)));
-        let n = (2.0 * l / least).ceil() as usize + 1;
+        // the chain's own layout: laid out once for the link's reach, whatever its length
+        // (the count itself is pinned in analytic_thick_chain_shares.rs)
+        let n = usize::try_from(chain.spans(k).expect("a count")).expect("a count");
         let mut weights = Vec::new();
         let mut asked = Vec::new();
         for j in 0..=n {
