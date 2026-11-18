@@ -4,7 +4,8 @@
 //!   gravity along −y. Velocity: incompressible Navier–Stokes in the Boussinesq form,
 //!   `∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u + β ΔT g ŷ`, `∇·u = 0`, solved by [`CfdSolver`] on its
 //!   MAC grid (BFECC advection, explicit diffusion, multigrid projection, no-through-flow
-//!   walls); the buoyancy is added to the y faces from the mean `ΔT` of the two cells
+//!   walls, or an open top: [`SmokePlume::set_open_top`] makes the top layer's `+y` faces
+//!   outflow faces, exterior `p = 0` and the normal velocity extrapolated); the buoyancy is added to the y faces from the mean `ΔT` of the two cells
 //!   sharing each face before the solver step ([`SmokePlume::step_once`]). Scalars: the
 //!   temperature excess `ΔT = T − T₀ ≥ 0` and the soot density `s ≥ 0` obey
 //!   `∂φ/∂t + ∇·(uφ) = κ_φ ∇²φ + S_φ` (molecular diffusivity `κ_φ`,
@@ -20,7 +21,10 @@
 //!   `M = ⌊E⌋` whole quanta, shared among the outgoing faces by largest remainder, and
 //!   the fraction `E − M` stays with the cell for its next substep. Every move is read from
 //!   the same state and summed per cell, so the result does not depend on the order the
-//!   cells are visited ([`SmokePlume::set_reverse_cells`]). The transport takes
+//!   cells are visited ([`SmokePlume::set_reverse_cells`]). Through an open top a face
+//!   whose velocity points out carries `c q_d`, upwind (no slope from outside the box), into
+//!   [`SmokePlume::outflow`]; a face pointing in brings nothing (the air outside holds no
+//!   excess) and nothing diffuses across the top. The transport takes
 //!   `k = ⌈2 max_d Σ_out c⌉` substeps per velocity step, so `Σ_out c ≤ 1/2`: with the
 //!   limiter `φ_f ≤ 3/2 q_d`, so `E ≤ 3/4 q_d + 1` and no cell gives more than it holds
 //!   ([`TransportReport::overrun_cells`] counts any that would). Diffusion follows the
@@ -36,8 +40,9 @@
 //!   ([`SOOT_QUANTUM_BITS`]) per cell; velocities and rates are [`Fix128`].
 //! - **Conservation**: heat (`Σ ΔT`, the cells being of equal volume) and soot mass are
 //!   conserved exactly, as integers: a move leaves one cell and enters its neighbour, the
-//!   walls pass nothing, and the ledger `Σ q = initial + sources` holds to the last quantum
-//!   ([`SmokeLedger`]). The carried fractions are below one quantum per cell, so the
+//!   walls pass nothing, and the ledger `Σ q = initial + sources − out` holds to the last
+//!   quantum ([`SmokeLedger`], [`SmokePlume::heat_held_expected`]; `out` is what left
+//!   through an open top, zero for a closed box). The carried fractions are below one quantum per cell, so the
 //!   transported amount differs from the exact flux sum by less than one quantum per cell.
 //!   Momentum is the solver's (not conserved exactly).
 //! - **Range**: cells from 1 mm to 1 m, each extent a power of two from 4 to 256 (the
@@ -62,16 +67,17 @@
 //! - **Approximations**: Boussinesq (density variations only in the buoyancy), no radiation,
 //!   constant diffusivities, no wall heat loss, soot a passive tracer (no settling, no
 //!   coagulation), a burner's fuel and oxidizer held at their declared densities (a supplied
-//!   burner, not a consumed one), a closed box only (its air warms from the top down, so a
-//!   plume in it rises into a stratifying ambient, `N² = g β dT∞/dz`).
+//!   burner, not a consumed one), closed walls and floor with the top closed (the air then
+//!   warms from the top down, so a plume in it rises into a stratifying ambient,
+//!   `N² = g β dT∞/dz`) or open (no inflow of excess, a zero-gradient top for diffusion).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses`
+//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses::the_open_top_sends_the_upwind_share_out::an_open_top_lets_heat_out_and_the_ledger_still_closes::an_open_plume_state_round_trips_and_is_told_apart::the_open_top_carries_the_source_away_at_steady_state`
 //!
 //! Author: Moroya Sakamoto
 
 use crate::cfd_solver::{AdvectionScheme, CfdSolver};
 use crate::det_hash::DetHasher;
-use crate::eulerian_grid::MacGrid;
+use crate::eulerian_grid::{FaceBc, MacGrid};
 use crate::math::{Fix128, Vec3Fix};
 use crate::smoke_fire::{
     heat_release_j_per_m3_s, reaction_rate_kg_per_m3_s, soot_generation_kg_per_m3_s,
@@ -229,8 +235,7 @@ impl QuantaField {
         })
     }
 
-    /// Velocity on the face of cell `(i, j, k)` toward `(axis, s)`; boundary faces carry
-    /// nothing (closed box).
+    /// Velocity on the face of cell `(i, j, k)` toward `(axis, s)` (a wall face holds 0).
     fn face_velocity(
         grid: &MacGrid,
         i: usize,
@@ -276,12 +281,30 @@ impl QuantaField {
     /// One transport substep of width `dt` through the face velocities of `grid` (the grid
     /// must have this field's extents). `reverse` visits the cells in reverse order (the
     /// result is the same). The caller keeps `Σ_out c ≤ 1/2` ([`Self::max_out_courant`]).
+    /// Every boundary face is closed; [`Self::step_open_top`] opens the top.
     pub fn step(&mut self, grid: &MacGrid, dt: Fix128, reverse: bool) -> TransportReport {
+        self.step_open_top(grid, dt, reverse, false).0
+    }
+
+    /// [`Self::step`] with the top boundary (`+y` faces of the top layer) open when
+    /// `open_top`: a top face whose velocity points out of the box carries `c q_d` out of it,
+    /// upwind (the face value is the cell's own, no slope from outside the box), as whole
+    /// quanta with the cell's carried fraction like any other face; a face pointing in
+    /// brings nothing (the air outside holds no excess). Returns the report and the quanta
+    /// that left the box.
+    pub fn step_open_top(
+        &mut self,
+        grid: &MacGrid,
+        dt: Fix128,
+        reverse: bool,
+        open_top: bool,
+    ) -> (TransportReport, i64) {
         let kdt = dt / grid.dx;
+        let outside = self.q.len();
         let half = Fix128::from_ratio(1, 2);
         let q = self.q.clone();
         let mut carry = self.carry.clone();
-        let report = self.exchange(&mut carry, reverse, |f, c, i, j, k, faces| {
+        let (report, left) = self.exchange(&mut carry, reverse, |f, c, i, j, k, faces| {
             let qd = q[c];
             let mut nf = 0usize;
             for &(axis, s) in &DIRS {
@@ -290,12 +313,16 @@ impl QuantaField {
                 if !outward {
                     continue;
                 }
+                let ca = u.abs() * kdt;
                 let Some(recv) = f.neighbour(i, j, k, axis, s) else {
+                    if open_top && axis == 1 && s > 0 {
+                        faces[nf] = (outside, ca * Fix128::from_int(qd.max(0)));
+                        nf += 1;
+                    }
                     continue;
                 };
                 let qr = q[recv];
                 let qb = f.neighbour(i, j, k, axis, -s).map_or(qd, |b| q[b]);
-                let ca = u.abs() * kdt;
                 let slope = minmod(qd - qb, qr - qd);
                 let phi = qd
                     + ((Fix128::ONE - ca) * half * Fix128::from_int(slope))
@@ -307,7 +334,7 @@ impl QuantaField {
             nf
         });
         self.carry = carry;
-        report
+        (report, left)
     }
 
     /// One diffusion substep with diffusion number `d = κ Δt / l²`: each cell sends
@@ -317,7 +344,7 @@ impl QuantaField {
     pub fn diffuse(&mut self, d: Fix128, reverse: bool) -> TransportReport {
         let q = self.q.clone();
         let mut carry = self.dcarry.clone();
-        let report = self.exchange(&mut carry, reverse, |f, c, i, j, k, faces| {
+        let (report, _) = self.exchange(&mut carry, reverse, |f, c, i, j, k, faces| {
             let qd = q[c];
             let mut nf = 0usize;
             for &(axis, s) in &DIRS {
@@ -338,18 +365,19 @@ impl QuantaField {
     /// Move quanta out of every cell along the faces `outflows` names, all read from the
     /// same state: a cell's exact outflow plus its carried fraction moves as whole quanta,
     /// shared among its faces by largest remainder (ties to the earlier direction), and the
-    /// fraction left stays in `carry`.
+    /// fraction left stays in `carry`. A face whose receiver is the index one past the last
+    /// cell sends out of the box; the quanta sent there are returned beside the report.
     fn exchange<F>(
         &mut self,
         carry: &mut [Fix128],
         reverse: bool,
         mut outflows: F,
-    ) -> TransportReport
+    ) -> (TransportReport, i64)
     where
         F: FnMut(&Self, usize, usize, usize, usize, &mut [(usize, Fix128); 6]) -> usize,
     {
         let n = self.q.len();
-        let mut delta = vec![0i64; n];
+        let mut delta = vec![0i64; n + 1];
         let mut report = TransportReport::default();
         for t in 0..n {
             let c = if reverse { n - 1 - t } else { t };
@@ -411,6 +439,7 @@ impl QuantaField {
             }
             report.moved += m as u64;
         }
+        let left = delta[n];
         let (mut min, mut max) = (i64::MAX, i64::MIN);
         for (q, d) in self.q.iter_mut().zip(delta) {
             *q += d;
@@ -419,7 +448,7 @@ impl QuantaField {
         }
         report.min = min;
         report.max = max;
-        report
+        (report, left)
     }
 }
 
@@ -607,7 +636,18 @@ impl SmokeLedger {
     }
 }
 
-/// Buoyant smoke in a closed box as a world participant (see the module MODEL).
+/// The quanta that left a box with an open top ([`SmokePlume::set_open_top`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SmokeOutflow {
+    /// Heat quanta carried out through the top.
+    pub heat_left: i64,
+    /// Soot quanta carried out through the top.
+    pub soot_left: i64,
+}
+
+/// Buoyant smoke in a box, closed or open at the top, as a world participant (see the module
+/// MODEL).
 #[derive(Clone, Debug)]
 pub struct SmokePlume {
     config: SmokeConfig,
@@ -618,6 +658,8 @@ pub struct SmokePlume {
     // per source cell, in source order then x-fastest: heat and soot carried fractions
     source_carry: Vec<(Fix128, Fix128)>,
     ledger: SmokeLedger,
+    open_top: bool,
+    outflow: SmokeOutflow,
     digest: u64,
     steps: u64,
     reverse: bool,
@@ -689,6 +731,8 @@ impl SmokePlume {
             sources: Vec::new(),
             source_carry: Vec::new(),
             ledger: SmokeLedger::default(),
+            open_top: false,
+            outflow: SmokeOutflow::default(),
             digest: 0,
             steps: 0,
             reverse: false,
@@ -704,6 +748,10 @@ impl SmokePlume {
     fn config_digest(&self) -> u64 {
         let mut h = DetHasher::default();
         self.config.hash_into(&mut h);
+        if self.open_top {
+            // only an open box hashes it, so a closed box's digest is the one it always had
+            h.write(b"open top");
+        }
         let g = &self.solver.grid;
         for n in [g.nx, g.ny, g.nz] {
             h.write(&(n as u64).to_le_bytes());
@@ -749,6 +797,56 @@ impl SmokePlume {
             }
         }
         h.finish()
+    }
+
+    /// Open the top of the box: the `+y` faces of the top layer become outflow faces
+    /// ([`crate::eulerian_grid::FaceBc::Outflow`], exterior pressure 0, the normal velocity
+    /// extrapolated from inside), heat and soot leave through them upwind
+    /// ([`QuantaField::step_open_top`]) and [`Self::outflow`] counts what left. The walls and
+    /// the floor stay closed. Only before the first step.
+    ///
+    /// # Errors
+    ///
+    /// [`SmokeBuildError::BadConfig`] once the plume has stepped.
+    pub fn set_open_top(&mut self) -> Result<(), SmokeBuildError> {
+        if self.steps > 0 {
+            return Err(SmokeBuildError::BadConfig);
+        }
+        let g = &mut self.solver.grid;
+        let (nx, ny, nz) = (g.nx, g.ny, g.nz);
+        for k in 0..nz {
+            for i in 0..nx {
+                g.set_v_bc(i, ny, k, FaceBc::Outflow);
+            }
+        }
+        self.open_top = true;
+        self.digest = self.config_digest();
+        Ok(())
+    }
+
+    /// Whether the top is open ([`Self::set_open_top`]).
+    #[must_use]
+    pub fn open_top(&self) -> bool {
+        self.open_top
+    }
+
+    /// The quanta that left through an open top (zero for a closed box).
+    #[must_use]
+    pub fn outflow(&self) -> SmokeOutflow {
+        self.outflow
+    }
+
+    /// Heat quanta the cells must hold: what the plume was given ([`SmokeLedger::heat_expected`])
+    /// less what left through an open top.
+    #[must_use]
+    pub fn heat_held_expected(&self) -> i64 {
+        self.ledger.heat_expected() - self.outflow.heat_left
+    }
+
+    /// Soot quanta the cells must hold, as [`Self::heat_held_expected`].
+    #[must_use]
+    pub fn soot_held_expected(&self) -> i64 {
+        self.ledger.soot_expected() - self.outflow.soot_left
     }
 
     /// Add a source.
@@ -938,11 +1036,21 @@ impl SmokePlume {
         let sdt = dt.div_int(sub);
         let mut moved = 0u64;
         for _ in 0..sub {
-            for field in [&mut self.heat, &mut self.soot] {
-                let r = field.step(&self.solver.grid, sdt, self.reverse);
+            for (field, left_total) in [
+                (&mut self.heat, &mut self.outflow.heat_left),
+                (&mut self.soot, &mut self.outflow.soot_left),
+            ] {
+                let (r, left) = if self.open_top {
+                    field.step_open_top(&self.solver.grid, sdt, self.reverse, true)
+                } else {
+                    (field.step(&self.solver.grid, sdt, self.reverse), 0)
+                };
                 if r.overrun_cells > 0 || r.min < 0 || r.max > MAX_CELL_QUANTA {
                     return Err(ParticipantFault::OutOfRange);
                 }
+                *left_total = left_total
+                    .checked_add(left)
+                    .ok_or(ParticipantFault::OutOfRange)?;
                 moved += r.moved;
             }
         }
@@ -1047,13 +1155,19 @@ impl SmokePlume {
         g.u.len() + g.v.len() + g.w.len() + g.pressure.len()
     }
     fn state_len(&self) -> usize {
-        HEADER_LEN + self.cells() * PER_CELL + self.faces() * 16 + self.source_carry.len() * 32
+        HEADER_LEN
+            + self.cells() * PER_CELL
+            + self.faces() * 16
+            + self.source_carry.len() * 32
+            + if self.open_top { OUTFLOW_LEN } else { 0 }
     }
 }
 
 // version, digest, steps, solver steps, ledger (4), last steps, last substeps, last moved,
 // last diffusion substeps
 const HEADER_LEN: usize = 4 + 8 + 8 + 8 + 8 * 4 + 4 + 4 + 8 + 4;
+// an open box only: heat and soot quanta that left through the top
+const OUTFLOW_LEN: usize = 8 + 8;
 // per cell: heat quanta, heat carry, heat diffusion carry, soot quanta, soot carry, soot
 // diffusion carry
 const PER_CELL: usize = 8 + 16 + 16 + 8 + 16 + 16;
@@ -1151,6 +1265,10 @@ impl Participant for SmokePlume {
             put_fix(out, h);
             put_fix(out, s);
         }
+        if self.open_top {
+            out.extend_from_slice(&self.outflow.heat_left.to_le_bytes());
+            out.extend_from_slice(&self.outflow.soot_left.to_le_bytes());
+        }
     }
 
     fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
@@ -1177,7 +1295,10 @@ impl Participant for SmokePlume {
         let carries = HEADER_LEN + self.cells() * PER_CELL + self.faces() * 16;
         let bad_source =
             (0..self.source_carry.len() * 2).any(|n| !is_fraction(fix_at(bytes, carries + n * 16)));
-        if bad_cell || bad_source {
+        let out_at = carries + self.source_carry.len() * 32;
+        let bad_outflow =
+            self.open_top && (i64_at(bytes, out_at) < 0 || i64_at(bytes, out_at + 8) < 0);
+        if bad_cell || bad_source || bad_outflow {
             return Err(StateError::InvalidValue);
         }
         Ok(())
@@ -1219,6 +1340,12 @@ impl Participant for SmokePlume {
         for sc in &mut self.source_carry {
             *sc = (fix_at(bytes, at), fix_at(bytes, at + 16));
             at += 32;
+        }
+        if self.open_top {
+            self.outflow = SmokeOutflow {
+                heat_left: i64_at(bytes, at),
+                soot_left: i64_at(bytes, at + 8),
+            };
         }
     }
 }
