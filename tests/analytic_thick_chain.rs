@@ -24,6 +24,10 @@
 //!    middle line never touches a wall, and past the mouth the links are back at their rest
 //!    radius. For a pipe wider than the chain and for one narrower.
 //! 8. A run repeats bit for bit; a refused step changes nothing.
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: closed forms are evaluated in f64, never by the code under test"
+)]
 
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
