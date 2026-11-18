@@ -318,6 +318,7 @@ fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
         )
     };
     let mut last_err = f64::INFINITY;
+    let mut corner_speed = f64::NAN;
     for frame in 1..=900 {
         fluid.step(Fix128::from_ratio(1, 60));
         if frame % 30 != 0 {
@@ -344,17 +345,25 @@ fn stretched_block_contracts_under_cohesion_within_its_energy_budget() {
             "frame {frame}: densest quarter at {densest} rho_0"
         );
         last_err = err;
+        let cp = p3(&fluid.positions[corner]);
+        let cv = fluid.velocities[corner];
+        eprintln!(
+            "frame {frame}: corner inward displacement {} m, inward speed {} m/s, KE {ke} J, released {released} J, quarter err {err}",
+            (cp[0] + cp[1] + cp[2]) / 3f64.sqrt(),
+            -(cv.x.to_f64() + cv.y.to_f64() + cv.z.to_f64()) / 3f64.sqrt()
+        );
         if frame == 300 {
             let v = fluid.velocities[corner];
             let inward = -(v.x.to_f64() + v.y.to_f64() + v.z.to_f64()) / 3f64.sqrt();
             eprintln!("frame 300: corner inward {inward} m/s, damping-limited drift {drift} m/s");
-            assert!(
-                inward > drift / 2.0 && inward < drift * 2.0,
-                "corner inward {inward} m/s vs drift {drift} m/s"
-            );
+            corner_speed = inward;
         }
     }
     eprintln!("stretched block: quarter error {last_err} at frame 900");
+    assert!(
+        corner_speed > drift / 2.0 && corner_speed < drift * 2.0,
+        "corner inward {corner_speed} m/s vs drift {drift} m/s at frame 300"
+    );
     assert!(last_err < 0.3804, "the block did not contract: {last_err}");
 }
 
