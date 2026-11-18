@@ -200,7 +200,8 @@ fn point_triangle(p: [f64; 3], a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
 }
 
 /// The sheet's height under the ball: the mean height of the particles within one
-/// cell of the ball's `x–z` position.
+/// cell of the ball's `x–z` position. Panics when no particle is that close (the
+/// ball is off the sheet's footprint), so a check never reads an undefined height.
 fn sheet_height_under(w: &PhysicsWorld, c: Vec3Fix) -> f64 {
     let (cx, cz) = (c.x.to_f64(), c.z.to_f64());
     let near: Vec<f64> = particles(w)
@@ -208,14 +209,24 @@ fn sheet_height_under(w: &PhysicsWorld, c: Vec3Fix) -> f64 {
         .filter(|(x, _)| (x.x.to_f64() - cx).abs() <= 0.1 && (x.z.to_f64() - cz).abs() <= 0.1)
         .map(|(x, _)| x.y.to_f64())
         .collect();
+    assert!(
+        !near.is_empty(),
+        "the ball at ({cx:.3}, {cz:.3}) is off the sheet's footprint"
+    );
     near.iter().sum::<f64>() / near.len() as f64
+}
+
+/// The ball's `x–z` is over the sheet's footprint (the 1 m square, one cell inside).
+fn over_footprint(c: Vec3Fix) -> bool {
+    c.x.to_f64().abs() < 0.4 && c.z.to_f64().abs() < 0.4
 }
 
 /// A ball dropped on the pinned sheet under gravity comes to rest on it, at `m = 1`
 /// and `m = 2` steps per frame and at world substeps that do and do not equal `m`:
 /// over the last second of a 5 s run it is above the sheet, no face is inside `R` of
-/// its centre by more than 1 % of `R`, its height moves by less than 0.1 mm and its
-/// vertical speed stays below 1 mm/s (rest without drift).
+/// its centre by more than 1 % of `R`, its position moves by less than 0.1 mm in each
+/// axis and its speed stays below 1 mm/s (rest without drift: the friction of the
+/// body's `friction` holds it where it settles).
 #[test]
 fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
     let reach = reach_of(BALL_RADIUS);
@@ -230,8 +241,8 @@ fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
             gravity(),
             cloth,
         );
-        let (mut closest, mut lo, mut hi, mut fastest) =
-            (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, 0.0f64);
+        let (mut closest, mut fastest) = (f64::INFINITY, 0.0f64);
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
         for frame in 0..300 {
             s.world.step(dt());
             if frame >= 240 {
@@ -241,28 +252,34 @@ fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
                     "n {n} m {m} frame {frame}: the ball is above the sheet"
                 );
                 closest = closest.min(closest_face(&s.world, c));
-                lo = lo.min(c.y.to_f64());
-                hi = hi.max(c.y.to_f64());
-                fastest = fastest.max(s.world.bodies[s.ball].velocity.y.to_f64().abs());
+                for (k, x) in [c.x, c.y, c.z].iter().enumerate() {
+                    lo[k] = lo[k].min(x.to_f64());
+                    hi[k] = hi[k].max(x.to_f64());
+                }
+                fastest = fastest.max(s.world.bodies[s.ball].velocity.length().to_f64());
             }
         }
         println!(
-            "[cloth contact] n {n} m {m}: closest face {closest:.5} (R {reach:.3}), height range {:.2e} m, |vy| max {fastest:.2e} m/s",
-            hi - lo
+            "[cloth contact] n {n} m {m}: closest face {closest:.5} (R {reach:.3}), range x {:.2e} y {:.2e} z {:.2e} m, |v| max {fastest:.2e} m/s",
+            hi[0] - lo[0],
+            hi[1] - lo[1],
+            hi[2] - lo[2]
         );
         assert!(
             closest >= reach * 0.99,
             "n {n} m {m}: penetration {:.5}",
             reach - closest
         );
-        assert!(
-            hi - lo < 1e-4,
-            "n {n} m {m}: the ball drifts {:.2e} m in the last second",
-            hi - lo
-        );
+        for (k, axis) in ["x", "y", "z"].iter().enumerate() {
+            assert!(
+                hi[k] - lo[k] < 1e-4,
+                "n {n} m {m}: the ball drifts {:.2e} m in {axis} in the last second",
+                hi[k] - lo[k]
+            );
+        }
         assert!(
             fastest < 1e-3,
-            "n {n} m {m}: |vy| {fastest:.2e} m/s in the last second"
+            "n {n} m {m}: |v| {fastest:.2e} m/s in the last second"
         );
     }
 }
@@ -299,37 +316,115 @@ fn a_ball_smaller_than_a_cell_is_held_by_its_faces() {
     );
 }
 
-/// The stated coupling limit: a ball crossing the sheet's plane at `v` with
-/// `v · W = 2 R` (`W = dt / m`, one cloth step) is caught at every start phase, at
-/// `m = 1` and `m = 2`. (The cloth reads each body's centre at the start of a step and
-/// predicts it over the step; the side a body starts a step on is the side it is kept
-/// on.)
+/// The stated coupling limit: a body whose centre crosses a face's plane within one
+/// cloth step (`W = dt / m`) is held on the side it started the step on. Tested at the
+/// old particle limit `v · W = 2 R` and at 3 times it, at `m = 1` and `m = 2` and four
+/// start phases, in zero gravity: at every frame the ball is over the footprint and
+/// above the sheet under it, or it has left the footprint moving up; it never ends on
+/// the far side (`y < 0`, below the pinned frame).
 #[test]
-fn a_ball_at_the_stated_coupling_limit_is_caught() {
+fn a_ball_crossing_a_face_within_one_step_is_held_on_its_start_side() {
     let reach = reach_of(BALL_RADIUS);
-    for m in [1usize, 2] {
-        let v = -2.0 * reach * 60.0 * m as f64;
-        for y0 in [(50, 100), (47, 100), (44, 100), (41, 100)] {
-            let cloth = sheet(m, Vec3Fix::ZERO, true, r(99, 100));
-            let mut s = scene(
-                m,
-                m,
-                (Fix128::ZERO, r(y0.0, y0.1), Fix128::ZERO),
-                Fix128::from_f64(v),
-                BALL_RADIUS,
-                Vec3Fix::ZERO,
-                cloth,
-            );
-            for _ in 0..90 {
-                s.world.step(dt());
+    for ratio in [1.0f64, 3.0] {
+        for m in [1usize, 2] {
+            let v = -2.0 * reach * 60.0 * m as f64 * ratio;
+            for y0 in [(50, 100), (47, 100), (44, 100), (41, 100)] {
+                let cloth = sheet(m, Vec3Fix::ZERO, true, r(99, 100));
+                let mut s = scene(
+                    m,
+                    m,
+                    (Fix128::ZERO, r(y0.0, y0.1), Fix128::ZERO),
+                    Fix128::from_f64(v),
+                    BALL_RADIUS,
+                    Vec3Fix::ZERO,
+                    cloth,
+                );
+                let mut checked = 0;
+                for frame in 0..90 {
+                    s.world.step(dt());
+                    let b = &s.world.bodies[s.ball];
+                    if over_footprint(b.position) {
+                        checked += 1;
+                        assert!(
+                            b.position.y.to_f64() > sheet_height_under(&s.world, b.position),
+                            "x{ratio} m {m} y0 {y0:?} frame {frame}: below the sheet (ball y {:.3})",
+                            b.position.y.to_f64()
+                        );
+                    } else {
+                        assert!(
+                            b.position.y > Fix128::ZERO && b.velocity.y > Fix128::ZERO,
+                            "x{ratio} m {m} y0 {y0:?} frame {frame}: left the footprint other than upward"
+                        );
+                    }
+                }
+                assert!(
+                    checked > 0,
+                    "x{ratio} m {m} y0 {y0:?}: the side was checked"
+                );
+                assert!(
+                    s.world.bodies[s.ball].position.y > Fix128::ZERO,
+                    "x{ratio} m {m} y0 {y0:?}: ended on the far side"
+                );
             }
-            let c = s.world.bodies[s.ball].position;
+        }
+    }
+}
+
+/// Friction on an incline: a fully pinned (flat, unmovable) sheet and gravity tilted
+/// by `θ` in `x`, the ball resting on it with the default `friction` `μ = 0.5`. Below
+/// the cone (`tan θ = 0.3`) it stays put (less than 1 mm in 1 s); above it (`tan θ =
+/// 0.8`) it slides `½ g (sin θ − μ cos θ) t²` (the closed form of a block, the contact
+/// acting at the centre) to 5 % over 0.5 s.
+#[test]
+fn a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it() {
+    let reach = reach_of(BALL_RADIUS);
+    let mu = 0.5;
+    for (tan, frames) in [(0.3f64, 60usize), (0.8, 30)] {
+        let (sin, cos) = (
+            tan / (1.0 + tan * tan).sqrt(),
+            1.0 / (1.0 + tan * tan).sqrt(),
+        );
+        let g = Vec3Fix::new(
+            Fix128::from_f64(9.81 * sin),
+            Fix128::from_f64(-9.81 * cos),
+            Fix128::ZERO,
+        );
+        let mut cloth = sheet(1, Vec3Fix::ZERO, true, r(99, 100));
+        for i in 0..RES * RES {
+            cloth.pin(i);
+        }
+        let mut s = scene(
+            1,
+            1,
+            (r(-2, 10), Fix128::from_f64(reach), Fix128::ZERO),
+            Fix128::ZERO,
+            BALL_RADIUS,
+            g,
+            cloth,
+        );
+        let x0 = s.world.bodies[s.ball].position.x.to_f64();
+        for _ in 0..frames {
+            s.world.step(dt());
+        }
+        let moved = s.world.bodies[s.ball].position.x.to_f64() - x0;
+        let t = frames as f64 / 60.0;
+        let expect = 0.5 * 9.81 * (sin - mu * cos).max(0.0) * t * t;
+        println!(
+            "[cloth contact] incline tan {tan}: moved {moved:.5} m, closed form {expect:.5} m"
+        );
+        if tan < mu {
+            assert!(moved.abs() < 1e-3, "tan {tan}: held (moved {moved:.5})");
+        } else {
             assert!(
-                c.y.to_f64() > sheet_height_under(&s.world, c),
-                "m {m} y0 {y0:?}: caught at the limit (ball y {:.3})",
-                c.y.to_f64()
+                (moved - expect).abs() < 0.05 * expect,
+                "tan {tan}: slid {moved:.5} vs {expect:.5}"
             );
         }
+        let y = s.world.bodies[s.ball].position.y.to_f64();
+        assert!(
+            y > reach * 0.99,
+            "tan {tan}: on the sheet, not in it (y {y:.5})"
+        );
     }
 }
 

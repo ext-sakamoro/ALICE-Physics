@@ -1047,13 +1047,14 @@ impl Cloth {
             (Vec::new(), Vec::new())
         };
         let sphere_candidates = self.collect_sphere_candidates(&start, spheres);
+        let mut normal_lambda = vec![Fix128::ZERO; sphere_candidates.len()];
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
-            self.solve_sphere_contacts(&sphere_candidates, spheres);
+            self.solve_sphere_contacts(&sphere_candidates, spheres, &start, &mut normal_lambda);
         }
 
         // 3. Update velocities
@@ -3040,6 +3041,8 @@ pub(crate) struct ContactSphere {
     pub(crate) reach: Fix128,
     /// The body's inverse mass (0: the cloth cannot move it)
     pub(crate) inv_mass: Fix128,
+    /// Coulomb coefficient between the body and the cloth (the body's `friction`)
+    pub(crate) friction: Fix128,
 }
 
 /// A face a sphere may touch during a step, with the side it starts the step on.
@@ -3126,12 +3129,23 @@ impl Cloth {
     /// through. The correction is mass-weighted, `λ = −C / (w_s + Σ wᵢ wᵢ'²)`: the sphere
     /// moves by `+w_s λ n`, each corner by `−wᵢ wᵢ' λ n` (`wᵢ` inverse masses, `wᵢ'` the
     /// barycentric weights), so `M Δc + Σ mᵢ Δpᵢ = 0` for every correction.
+    ///
+    /// Friction is the rigid contacts' Coulomb law
+    /// ([`crate::xpbd_contact::static_hold`], eq. (26–27)): the tangential relative
+    /// displacement of the centre and the face point over the step,
+    /// `Δp_t = ((c − c₀) − (q − q₀))_t` (`q₀` the same barycentric point on the
+    /// step-start corners), is cancelled while `|Δp_t| / w < μ λ_n` (`λ_n` the
+    /// pair's normal multiplier summed over the step's iterations); past the cone
+    /// the point slides and the correction is capped at `μ λ_n`. It is weighted like
+    /// the normal correction, so it keeps the momentum balance.
     fn solve_sphere_contacts(
         &mut self,
         candidates: &[SphereCandidate],
         spheres: &mut [ContactSphere],
+        start: &[Vec3Fix],
+        normal_lambda: &mut [Fix128],
     ) {
-        for k in candidates {
+        for (kk, k) in candidates.iter().enumerate() {
             let s = spheres[k.sphere];
             let tri = self.triangles[k.triangle];
             let (a, b, c) = (
@@ -3182,14 +3196,48 @@ impl Cloth {
                 continue;
             }
             let lambda = -violation / denom;
-            spheres[k.sphere].centre = s.centre + n * (s.inv_mass * lambda);
-            for corner in 0..3 {
-                if w[corner].is_zero() {
-                    continue;
-                }
-                let i = tri[corner];
-                self.positions[i] = self.positions[i] - n * (w[corner] * bary[corner] * lambda);
+            self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, n, lambda);
+            normal_lambda[kk] = normal_lambda[kk] + lambda;
+            let limit = s.friction * normal_lambda[kk];
+            if limit <= Fix128::ZERO {
+                continue;
             }
+            let q_now = self.positions[tri[0]] * bary[0]
+                + self.positions[tri[1]] * bary[1]
+                + self.positions[tri[2]] * bary[2];
+            let q_start =
+                start[tri[0]] * bary[0] + start[tri[1]] * bary[1] + start[tri[2]] * bary[2];
+            let dp = (spheres[k.sphere].centre - s.start) - (q_now - q_start);
+            let dp_t = dp - n * dp.dot(n);
+            let (t_dir, len) = dp_t.normalize_with_length_scaled();
+            if len.is_zero() {
+                continue;
+            }
+            let hold = crate::xpbd_contact::static_hold(len, denom, limit).unwrap_or(limit);
+            self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, t_dir, -hold);
+        }
+    }
+
+    /// Move sphere `si` by `+w_s λ d` and each corner of `tri` by `−wᵢ wᵢ' λ d`.
+    #[allow(clippy::too_many_arguments)]
+    fn move_sphere_and_face(
+        &mut self,
+        spheres: &mut [ContactSphere],
+        si: usize,
+        tri: [usize; 3],
+        bary: [Fix128; 3],
+        w: [Fix128; 3],
+        d: Vec3Fix,
+        lambda: Fix128,
+    ) {
+        let s = spheres[si];
+        spheres[si].centre = s.centre + d * (s.inv_mass * lambda);
+        for corner in 0..3 {
+            if w[corner].is_zero() {
+                continue;
+            }
+            let i = tri[corner];
+            self.positions[i] = self.positions[i] - d * (w[corner] * bary[corner] * lambda);
         }
     }
 }

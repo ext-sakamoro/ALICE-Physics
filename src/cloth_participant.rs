@@ -99,6 +99,7 @@ impl ClothParticipant {
                 centre,
                 reach: radius + thickness,
                 inv_mass: if dynamic { b.inv_mass } else { Fix128::ZERO },
+                friction: b.friction,
             });
             predicted.push((i, centre));
         }

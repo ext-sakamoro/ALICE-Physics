@@ -246,6 +246,19 @@ pub(crate) fn compliance_over_h2(alpha: Fix128, h: Fix128) -> Fix128 {
     }
 }
 
+/// Static friction (eq. (27)): the multiplier that holds a point whose tangential
+/// relative displacement is `len` against an effective inverse mass `w`,
+/// `λ_t = len / w`, while it stays inside the cone `limit = μ λ_n`; `None` when it
+/// does not (the point slides). The one Coulomb test of the rigid contacts and of a
+/// resident cloth's contact with bodies.
+pub(crate) fn static_hold(len: Fix128, w: Fix128, limit: Fix128) -> Option<Fix128> {
+    let lambda = len / w;
+    if lambda >= limit {
+        return None;
+    }
+    Some(lambda)
+}
+
 /// The static friction correction of contact `c` over a substep of width `h`
 /// (see the module MODEL), or `None` when the contact slides (or does not move
 /// tangentially, or carries no normal separation). The combined material
@@ -281,12 +294,7 @@ pub(crate) fn static_friction(
     if w <= Fix128::ZERO {
         return None;
     }
-    // Static while the multiplier that holds the point, `λ_t = |Δp_t| / w`, stays
-    // inside the cone `μ λ_n` (eq. (27)).
-    let lambda = len / w;
-    if lambda >= c.friction * c.cached_lambda {
-        return None;
-    }
+    let lambda = static_hold(len, w, c.friction * c.cached_lambda)?;
     // A's point moved by `+dp_t` relative to B's: A is moved back along `−t`.
     Some(PointCorrection {
         a: share(a, r_a, t, -lambda),
