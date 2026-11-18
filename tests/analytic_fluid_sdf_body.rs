@@ -170,6 +170,8 @@ fn settle(sc: &mut Scene, default_frames: usize) -> (f64, f64) {
         assert_eq!(bf.len(), 2, "both solids report a force");
         // Newton 3 on every frame: the solids' forces sum to minus their push on the fluid
         let sum = bf[0] + bf[1] + sc.fluid.boundary_force();
+        // Newton 3 exactly: the solids' forces sum to minus their push on the fluid
+        assert_eq!(sum, Vec3Fix::ZERO, "frame {f}: Newton 3");
         let scale = sc.fluid.boundary_force().length().to_f64().max(1e-30);
         newton = newton.max(sum.length().to_f64() / scale);
         if f + 60 >= total {
@@ -206,10 +208,6 @@ fn cube_on_the_floor(default_frames: usize) {
     eprintln!(
         "cube on the floor: F_y / closed form = {ratio} ({fy} N vs {closed} N), newton {newton}"
     );
-    assert!(
-        newton < 1e-9,
-        "the solids' forces sum to the fluid-side total: {newton}"
-    );
     assert!((ratio - 1.0).abs() < 0.05, "F_y / closed form = {ratio}");
 }
 
@@ -238,6 +236,8 @@ fn settle_with_faces(sc: &mut Scene, bottom: f64, default_frames: usize) -> (f64
         sc.fluid.step(dt);
         let bf = sc.fluid.body_forces();
         let sum = bf[0] + bf[1] + sc.fluid.boundary_force();
+        // Newton 3 exactly: the solids' forces sum to minus their push on the fluid
+        assert_eq!(sum, Vec3Fix::ZERO, "frame {f}: Newton 3");
         let scale = sc.fluid.boundary_force().length().to_f64().max(1e-30);
         newton = newton.max(sum.length().to_f64() / scale);
         if f + 60 < total {
@@ -302,10 +302,6 @@ fn cube_two_kernel_radii_up(default_frames: usize) {
         -faces.top / top_closed,
         faces.bottom / bottom_closed,
         faces.side
-    );
-    assert!(
-        newton < 1e-9,
-        "the solids' forces sum to the fluid-side total: {newton}"
     );
     assert!((ratio - 1.0).abs() < 0.05, "F_y / (rho g V) = {ratio}");
     assert!(
