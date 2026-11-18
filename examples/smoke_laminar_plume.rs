@@ -14,8 +14,9 @@
 //! and the window sums so far) every few seconds of simulated time and resumes from it.
 //!
 //! Run: `cargo run --release --example smoke_laminar_plume -- <dx_mm> <nu_um2> <heat_k_per_s>
-//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> [checkpoint]`
-//! e.g. `-- 10 200 100 20 12 0.10 0.30 /tmp/plume10.ckpt`
+//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint]`
+//! e.g. `-- 10 200 100 20 12 0.10 0.30 open /tmp/plume10.ckpt` (`open`: the top is an outflow,
+//! so the box does not fill)
 
 #[path = "../tests/support/smoke_laminar_scene.rs"]
 mod scene;
@@ -25,9 +26,13 @@ use alice_physics_core::world_participant::Participant;
 use std::io::Write;
 use std::time::Instant;
 
-const MAGIC: &[u8; 8] = b"SMKLAM02";
-/// The first format (no ambient sums): its state still resumes a run that had not reached the window.
-const MAGIC_V1: &[u8; 8] = b"SMKLAM01";
+const MAGIC: &[u8; 8] = b"SMKLAM03";
+/// Earlier formats (no ambient sums, no radial profile): their state still resumes a run that
+/// had not reached the window.
+const MAGIC_OLD: [&[u8; 8]; 2] = [b"SMKLAM01", b"SMKLAM02"];
+/// The far field is where the window-mean excess is within this fraction of the centreline's
+/// excess over the layer's coolest radius.
+const FAR_FIELD_FRACTION: f64 = 0.01;
 
 /// The sums over the averaging window, per layer `j`.
 struct Window {
@@ -37,6 +42,18 @@ struct Window {
     t: Vec<f64>,
     /// The layer's far field: the mean excess temperature on the box's outer ring of cells.
     amb: Vec<f64>,
+    /// The excess temperature summed per layer and radius bin (`j · bins + b`, bin `b` holds
+    /// the cells whose centre is `b..b+1` cells from the box's axis).
+    prof: Vec<f64>,
+}
+
+/// Natural log of a measured quantity, for the log-log fits.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: the log of the simulated plume's width, speed and excess, fitted against the laminar exponents"
+)]
+fn ln(v: f64) -> f64 {
+    v.ln()
 }
 
 fn slope(pts: &[(f64, f64)]) -> f64 {
@@ -57,7 +74,14 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     out.extend_from_slice(&(state.len() as u64).to_le_bytes());
     out.extend_from_slice(&state);
     out.extend_from_slice(&win.samples.to_le_bytes());
-    for v in win.r2.iter().chain(&win.w).chain(&win.t).chain(&win.amb) {
+    for v in win
+        .r2
+        .iter()
+        .chain(&win.w)
+        .chain(&win.t)
+        .chain(&win.amb)
+        .chain(&win.prof)
+    {
         out.extend_from_slice(&v.to_bits().to_le_bytes());
     }
     // write beside, then rename: a run stopped mid-write keeps the previous checkpoint
@@ -69,7 +93,7 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
 fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
     let b = std::fs::read(path).ok()?;
     let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
-    let v1 = &b[..8] == MAGIC_V1;
+    let v1 = MAGIC_OLD.iter().any(|m| &b[..8] == *m);
     assert!(v1 || &b[..8] == MAGIC, "not a laminar plume checkpoint");
     let step = u64_at(8);
     let len = u64_at(16) as usize;
@@ -78,12 +102,22 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
     win.samples = u64_at(o);
     o += 8;
     if v1 {
-        // its window sums measured against zero, not the far field: resume only before the window
-        assert_eq!(win.samples, 0, "a first-format checkpoint inside the window cannot resume");
+        // its window sums lack the later ones: resume only before the window
+        assert_eq!(
+            win.samples, 0,
+            "an earlier-format checkpoint inside the window cannot resume"
+        );
         return Some(step);
     }
     let n = win.r2.len();
-    for v in win.r2.iter_mut().chain(win.w.iter_mut()).chain(win.t.iter_mut()).chain(win.amb.iter_mut()) {
+    for v in win
+        .r2
+        .iter_mut()
+        .chain(win.w.iter_mut())
+        .chain(win.t.iter_mut())
+        .chain(win.amb.iter_mut())
+        .chain(win.prof.iter_mut())
+    {
         *v = f64::from_bits(u64_at(o));
         o += 8;
     }
@@ -93,16 +127,29 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    if a.len() < 7 {
-        return Err("args: dx_mm nu_um2 heat_k_per_s seconds window_from_s z_lo_m z_hi_m [checkpoint]".into());
+    if a.len() < 8 {
+        return Err(
+            "args: dx_mm nu_um2 heat_k_per_s seconds window_from_s z_lo_m z_hi_m closed|open [checkpoint]".into(),
+        );
     }
     let int = |i: usize| a[i].parse::<i64>();
     let real = |i: usize| a[i].parse::<f64>();
     let (dx_mm, nu, heat, seconds, from) = (int(0)?, int(1)?, int(2)?, int(3)?, int(4)?);
     let (z_lo, z_hi) = (real(5)?, real(6)?);
-    let ckpt = a.get(7).cloned();
+    let open = match a[7].as_str() {
+        "open" => true,
+        "closed" => false,
+        other => return Err(format!("the top is closed or open, not {other}").into()),
+    };
+    let ckpt = a.get(8).cloned();
 
     let mut plume = scene::scene(dx_mm, nu, heat);
+    if open {
+        plume
+            .set_open_top()
+            .map_err(|e| format!("open the top: {e:?}"))?;
+    }
+    assert_eq!(plume.open_top(), open);
     let step = scene::step(dx_mm);
     let per_second = (1200 / dx_mm) as u64;
     let total = seconds as u64 * per_second;
@@ -111,34 +158,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let g = plume.velocity();
         (g.nx, g.ny, g.nz)
     };
+    // radius bins out to the box's corner
+    let bins = ((nx.max(nz) as f64) * 0.5 * std::f64::consts::SQRT_2).ceil() as usize + 1;
+    let bin_of = |i: usize, k: usize| {
+        let x = i as f64 + 0.5 - 0.5 * nx as f64;
+        let z = k as f64 + 0.5 - 0.5 * nz as f64;
+        (x * x + z * z).sqrt() as usize
+    };
+    let mut bin_cells = vec![0.0; bins];
+    for k in 0..nz {
+        for i in 0..nx {
+            bin_cells[bin_of(i, k)] += 1.0;
+        }
+    }
     let mut win = Window {
         samples: 0,
         r2: vec![0.0; ny],
         w: vec![0.0; ny],
         t: vec![0.0; ny],
         amb: vec![0.0; ny],
+        prof: vec![0.0; ny * bins],
     };
     let mut n = 0u64;
     if let Some(p) = &ckpt {
         if let Some(s) = load(p, &mut plume, &mut win) {
-            println!("resumed at step {s} ({:.2} s)", s as f64 / per_second as f64);
+            println!(
+                "resumed at step {s} ({:.2} s)",
+                s as f64 / per_second as f64
+            );
             n = s;
         }
     }
 
     let dx = dx_mm as f64 / 1000.0;
     let (ci, ck) = (nx / 2, nz / 2);
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the time per velocity step that this run prints"
+    )]
     let clock = Instant::now();
+    // the steps this process runs (a resumed run starts past 0)
+    let first = n;
     let mut max_sub = 0;
     while n < total {
-        plume.advance(step).map_err(|e| format!("advance at step {n}: {e:?}"))?;
+        plume
+            .advance(step)
+            .map_err(|e| format!("advance at step {n}: {e:?}"))?;
         n += 1;
         max_sub = max_sub.max(plume.last_transport_substeps());
         if n > window_from {
             win.samples += 1;
             let f = plume.heat();
             let g = plume.velocity();
-            let temp = |i: usize, j: usize, k: usize| from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64();
+            let temp = |i: usize, j: usize, k: usize| {
+                from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64()
+            };
             for j in 0..ny {
                 // the closed box warms its own air: the plume is the excess over the layer's far field
                 let (mut ring, mut ring_n) = (0.0, 0.0);
@@ -152,6 +226,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let amb = ring / ring_n;
                 win.amb[j] += amb;
+                for k in 0..nz {
+                    for i in 0..nx {
+                        win.prof[j * bins + bin_of(i, k)] += temp(i, j, k);
+                    }
+                }
                 let (mut m0, mut m2) = (0.0, 0.0);
                 for k in 0..nz {
                     for i in 0..nx {
@@ -179,15 +258,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(p) = &ckpt {
                 save(p, n, &plume, &win)?;
             }
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: the time per velocity step that this run prints"
+            )]
+            let ms = clock.elapsed().as_secs_f64() * 1e3 / (n - first).max(1) as f64;
             println!(
-                "t {:.1} s, {:.0} ms/step, max transport substeps {max_sub}",
+                "t {:.1} s, {ms:.0} ms/step, max transport substeps {max_sub}",
                 n as f64 / per_second as f64,
-                clock.elapsed().as_secs_f64() * 1e3 / n.max(1) as f64
             );
         }
     }
-    let ledger = plume.ledger();
-    assert_eq!(plume.heat().total(), Some(ledger.heat_expected()), "heat ledger");
+    assert_eq!(
+        plume.heat().total(),
+        Some(plume.heat_held_expected()),
+        "heat ledger"
+    );
+    assert_eq!(
+        plume.soot().total(),
+        Some(plume.soot_held_expected()),
+        "soot ledger"
+    );
+    if open {
+        let l = plume.ledger();
+        println!(
+            "OUTFLOW heat_left_over_heat_added {:.4}",
+            plume.outflow().heat_left as f64 / l.heat_added.max(1) as f64
+        );
+    }
     if win.samples == 0 {
         return Err("the window holds no samples".into());
     }
@@ -205,11 +303,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (r2, w, t, amb) = (win.r2[j] / s, win.w[j] / s, win.t[j] / s, win.amb[j] / s);
         let cells = r2.sqrt() / dx;
-        println!("{j:3} {z:7.4} {cells:9.2} {:11.4e} {w:11.4e} {:11.4e} {amb:11.4e}", r2 / z, t * z);
+        println!(
+            "{j:3} {z:7.4} {cells:9.2} {:11.4e} {w:11.4e} {:11.4e} {amb:11.4e}",
+            r2 / z,
+            t * z
+        );
         if z >= z_lo && z <= z_hi && r2 > 0.0 && w > 0.0 && t > 0.0 {
-            pr.push((z.ln(), r2.ln()));
-            pw.push((z.ln(), w.ln()));
-            pt.push((z.ln(), t.ln()));
+            pr.push((ln(z), ln(r2)));
+            pw.push((ln(z), ln(w)));
+            pt.push((ln(z), ln(t)));
             pa.push((z, amb));
             t_top = t;
             min_cells = min_cells.min(cells);
@@ -232,14 +334,104 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         n2.max(0.0).sqrt() * window_s,
         span / t_top
     );
+    // The far field from the plume's own reach: per layer, the window-mean radial profile P(r);
+    // the reach r_f is the first radius where P − P_min ≤ f·(P(0) − P_min), and the far field
+    // is the mean over the radii from r_f on that stay within that fraction (the plateau, before
+    // any warming at the walls). It exists only if the plateau lies inside the box's inscribed
+    // circle (radius n/2 cells); the box must be at least 2·(r_f + 2) cells wide for it.
+    let inscribed = nx.min(nz) / 2;
+    let (mut reach_max, mut missing, mut fr, mut ft, mut fa) =
+        (0usize, 0usize, vec![], vec![], vec![]);
+    println!(" j   z (m)   reach (cells)  plateau  far field (K)  R (cells)  ΔT_c (K)");
+    for j in 0..ny {
+        let z = (j as f64 + 0.5) * dx - z0;
+        if z < z_lo || z > z_hi {
+            continue;
+        }
+        let pm: Vec<f64> = (0..bins)
+            .map(|b| {
+                if bin_cells[b] > 0.0 {
+                    win.prof[j * bins + b] / s / bin_cells[b]
+                } else {
+                    f64::NAN
+                }
+            })
+            .collect();
+        let inside = &pm[..=inscribed.min(bins - 1)];
+        let p0 = pm[0];
+        let pmin = inside.iter().cloned().fold(f64::INFINITY, f64::min);
+        let cut = pmin + FAR_FIELD_FRACTION * (p0 - pmin);
+        let reach = inside.iter().position(|&v| v <= cut);
+        let Some(r_f) = reach else {
+            missing += 1;
+            continue;
+        };
+        let plateau: Vec<f64> = inside[r_f..]
+            .iter()
+            .cloned()
+            .take_while(|&v| v <= cut)
+            .collect();
+        if plateau.len() < 2 {
+            missing += 1;
+            continue;
+        }
+        reach_max = reach_max.max(r_f);
+        let far = plateau.iter().sum::<f64>() / plateau.len() as f64;
+        let (mut m0, mut m2) = (0.0, 0.0);
+        for b in 0..bins {
+            if bin_cells[b] == 0.0 {
+                continue;
+            }
+            let e = (pm[b] - far).max(0.0) * bin_cells[b];
+            let r = (b as f64 + 0.5) * dx;
+            m0 += e;
+            m2 += e * r * r;
+        }
+        let tc = p0 - far;
+        if j % 4 == 0 {
+            println!(
+                "{j:3} {z:7.4} {r_f:10} {:8} {far:13.4e} {:9.2} {tc:11.4e}",
+                plateau.len(),
+                (m2 / m0).sqrt() / dx
+            );
+        }
+        if m0 > 0.0 && tc > 0.0 {
+            fr.push((ln(z), ln(m2 / m0)));
+            ft.push((ln(z), ln(tc)));
+            fa.push((z, far));
+        }
+    }
+    if fr.len() >= 3 {
+        let g2 = slope(&fa);
+        println!(
+            "FARFIELD fraction {FAR_FIELD_FRACTION} reach_max_cells {reach_max} box_half_width_cells {inscribed} \
+             needed_width_m {:.3} layers_without_far_field {missing} exp_R2 {:.4} exp_T {:.4} \
+             dTinf_dz_K_per_m {g2:.4} N_t_window {:.3}",
+            2.0 * (reach_max + 2) as f64 * dx,
+            slope(&fr),
+            slope(&ft),
+            (cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * g2).max(0.0).sqrt() * window_s
+        );
+    } else {
+        println!(
+            "FARFIELD fraction {FAR_FIELD_FRACTION} none inside the box: {missing} of the band's layers \
+             have no plateau within {inscribed} cells (reach_max_cells {reach_max})"
+        );
+    }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: the time per velocity step that this run prints"
+    )]
+    let ms_per_step = clock.elapsed().as_secs_f64() * 1e3 / (total - first).max(1) as f64;
     println!(
-        "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} band {z_lo}..{z_hi} layers {} min_radius_cells {min_cells:.2} \
+        "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} top {} band {z_lo}..{z_hi} layers {} min_radius_cells {min_cells:.2} \
          exp_R2 {:.4} exp_w {:.4} exp_T {:.4} (laminar 1 0 -1) ms_per_step {:.1}",
+        if open { "open" } else { "closed" },
         pr.len(),
         slope(&pr),
         slope(&pw),
         slope(&pt),
-        clock.elapsed().as_secs_f64() * 1e3 / total as f64,
+        ms_per_step,
     );
     Ok(())
 }

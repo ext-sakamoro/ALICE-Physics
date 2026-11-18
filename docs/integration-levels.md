@@ -174,7 +174,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone | 0 / 0 / 0 / 70 / 0 | — |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
-| `smoke_plume` | standalone | 0 / 0 / 0 / 49 / 0 | — |
+| `smoke_plume` | standalone | 0 / 0 / 0 / 56 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `spherical_terrain` | standalone (step 1 of 10 items) | 1 / 0 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
