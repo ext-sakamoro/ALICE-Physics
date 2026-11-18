@@ -4292,11 +4292,13 @@ fn split(p_over_dx: Fix128, axis_offset: Fix128) -> (usize, Fix128) {
 ///
 /// The u-face is staggered by `+0` on X, `+0.5` on Y, `+0.5` on Z relative
 /// to the cell corner grid.
-pub(crate) fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+///
+/// `inv_dx` is `Fix128::ONE / grid.dx`, computed once by the caller: the advection loops sample
+/// every face and would otherwise divide once per sample (the same operation, so the same bits).
+pub(crate) fn sample_u_trilinear_scaled(grid: &MacGrid, pos_m: Vec3Fix, inv_dx: Fix128) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }
-    let inv_dx = Fix128::ONE / grid.dx;
     let fx = pos_m.x * inv_dx;
     let fy = pos_m.y * inv_dx;
     let fz = pos_m.z * inv_dx;
@@ -4325,11 +4327,12 @@ pub(crate) fn sample_u_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     c0 * om_w + c1 * w
 }
 
-pub(crate) fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+/// Trilinear-interpolate the v-face grid at a world point; `inv_dx` as
+/// [`sample_u_trilinear_scaled`].
+pub(crate) fn sample_v_trilinear_scaled(grid: &MacGrid, pos_m: Vec3Fix, inv_dx: Fix128) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }
-    let inv_dx = Fix128::ONE / grid.dx;
     let fx = pos_m.x * inv_dx;
     let fy = pos_m.y * inv_dx;
     let fz = pos_m.z * inv_dx;
@@ -4354,11 +4357,12 @@ pub(crate) fn sample_v_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
     c0 * om_w + c1 * w
 }
 
-pub(crate) fn sample_w_trilinear(grid: &MacGrid, pos_m: Vec3Fix) -> Fix128 {
+/// Trilinear-interpolate the w-face grid at a world point; `inv_dx` as
+/// [`sample_u_trilinear_scaled`].
+pub(crate) fn sample_w_trilinear_scaled(grid: &MacGrid, pos_m: Vec3Fix, inv_dx: Fix128) -> Fix128 {
     if grid.dx.is_zero() {
         return Fix128::ZERO;
     }
-    let inv_dx = Fix128::ONE / grid.dx;
     let fx = pos_m.x * inv_dx;
     let fy = pos_m.y * inv_dx;
     let fz = pos_m.z * inv_dx;
@@ -4490,10 +4494,11 @@ pub fn g2p_velocity(grid: &MacGrid, pos_m: Vec3Fix) -> Vec3Fix {
     if grid.dx.is_zero() {
         return Vec3Fix::default();
     }
+    let inv_dx = Fix128::ONE / grid.dx;
     Vec3Fix::new(
-        sample_u_trilinear(grid, pos_m),
-        sample_v_trilinear(grid, pos_m),
-        sample_w_trilinear(grid, pos_m),
+        sample_u_trilinear_scaled(grid, pos_m, inv_dx),
+        sample_v_trilinear_scaled(grid, pos_m, inv_dx),
+        sample_w_trilinear_scaled(grid, pos_m, inv_dx),
     )
 }
 
