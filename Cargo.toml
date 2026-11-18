@@ -232,6 +232,10 @@ name = "particle_rain_run_off"
 required-features = ["std"]
 
 [[example]]
+name = "particle_run_off_retention"
+required-features = ["std"]
+
+[[example]]
 name = "critically_damped_tether"
 required-features = ["std"]
 

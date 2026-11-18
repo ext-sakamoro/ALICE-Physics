@@ -9701,6 +9701,26 @@ impl<'a> core::marker::Unpin for alice_physics_core::particle::LandingTarget<'a>
 impl<'a> core::marker::UnsafeUnpin for alice_physics_core::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::LandingTarget<'a>
+pub struct alice_physics_core::particle::FilmHandOff
+impl alice_physics_core::particle::FilmHandOff
+pub fn alice_physics_core::particle::FilmHandOff::deposited(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::particle::FilmHandOff::hand_off(&mut self, &mut alice_physics_core::water_film::WaterFilm, &[alice_physics_core::particle::PinnedEvent], alice_physics_core::math::Fix128) -> usize
+pub fn alice_physics_core::particle::FilmHandOff::held(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::particle::FilmHandOff::off_bed(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::particle::FilmHandOff::quanta(&self) -> i64
+impl core::clone::Clone for alice_physics_core::particle::FilmHandOff
+pub fn alice_physics_core::particle::FilmHandOff::clone(&self) -> Self
+impl core::default::Default for alice_physics_core::particle::FilmHandOff
+pub fn alice_physics_core::particle::FilmHandOff::default() -> Self
+impl core::fmt::Debug for alice_physics_core::particle::FilmHandOff
+pub fn alice_physics_core::particle::FilmHandOff::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics_core::particle::FilmHandOff
+impl core::marker::Send for alice_physics_core::particle::FilmHandOff
+impl core::marker::Sync for alice_physics_core::particle::FilmHandOff
+impl core::marker::Unpin for alice_physics_core::particle::FilmHandOff
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::FilmHandOff
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::FilmHandOff
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::FilmHandOff
 #[non_exhaustive] pub struct alice_physics_core::particle::LandingEvent
 pub alice_physics_core::particle::LandingEvent::normal: alice_physics_core::math::Vec3Fix
 pub alice_physics_core::particle::LandingEvent::particle: usize
@@ -9789,9 +9809,30 @@ impl core::marker::Unpin for alice_physics_core::particle::ParticleSystem
 impl core::marker::UnsafeUnpin for alice_physics_core::particle::ParticleSystem
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::ParticleSystem
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::ParticleSystem
+pub struct alice_physics_core::particle::PinnedEvent
+pub alice_physics_core::particle::PinnedEvent::particle: usize
+pub alice_physics_core::particle::PinnedEvent::position: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::particle::PinnedEvent::target: usize
+impl core::clone::Clone for alice_physics_core::particle::PinnedEvent
+pub fn alice_physics_core::particle::PinnedEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::particle::PinnedEvent
+impl core::cmp::PartialEq for alice_physics_core::particle::PinnedEvent
+pub fn alice_physics_core::particle::PinnedEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::particle::PinnedEvent
+pub fn alice_physics_core::particle::PinnedEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::particle::PinnedEvent
+impl core::marker::StructuralPartialEq for alice_physics_core::particle::PinnedEvent
+impl core::marker::Freeze for alice_physics_core::particle::PinnedEvent
+impl core::marker::Send for alice_physics_core::particle::PinnedEvent
+impl core::marker::Sync for alice_physics_core::particle::PinnedEvent
+impl core::marker::Unpin for alice_physics_core::particle::PinnedEvent
+impl core::marker::UnsafeUnpin for alice_physics_core::particle::PinnedEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::PinnedEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::PinnedEvent
 pub struct alice_physics_core::particle::RunOff
 pub alice_physics_core::particle::RunOff::drag: alice_physics_core::math::Fix128
 pub alice_physics_core::particle::RunOff::drip_cos: alice_physics_core::math::Fix128
+pub alice_physics_core::particle::RunOff::retention: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::particle::RunOff
 pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::particle::RunOff
@@ -9811,6 +9852,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunO
 pub struct alice_physics_core::particle::RunOffEvents
 pub alice_physics_core::particle::RunOffEvents::dripped: alloc::vec::Vec<usize>
 pub alice_physics_core::particle::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub alice_physics_core::particle::RunOffEvents::pinned: alloc::vec::Vec<alice_physics_core::particle::PinnedEvent>
 impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
 pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
 impl core::default::Default for alice_physics_core::particle::RunOffEvents
@@ -9826,6 +9868,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::particle::R
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunOffEvents
 pub const alice_physics_core::particle::LANDING_BISECTIONS: u32
 pub const alice_physics_core::particle::RUN_OFF_PROJECTIONS: u32
+pub fn alice_physics_core::particle::retention_acceleration(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub mod alice_physics_core::phase_change
 #[repr(u8)] pub enum alice_physics_core::phase_change::Phase
 pub alice_physics_core::phase_change::Phase::Gas = 2
@@ -14921,6 +14964,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope::RopeConf
 pub struct alice_physics_core::prelude::RunOff
 pub alice_physics_core::prelude::RunOff::drag: alice_physics_core::math::Fix128
 pub alice_physics_core::prelude::RunOff::drip_cos: alice_physics_core::math::Fix128
+pub alice_physics_core::prelude::RunOff::retention: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::particle::RunOff
 pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::particle::RunOff
@@ -14940,6 +14984,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunO
 pub struct alice_physics_core::prelude::RunOffEvents
 pub alice_physics_core::prelude::RunOffEvents::dripped: alloc::vec::Vec<usize>
 pub alice_physics_core::prelude::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub alice_physics_core::prelude::RunOffEvents::pinned: alloc::vec::Vec<alice_physics_core::particle::PinnedEvent>
 impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
 pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
 impl core::default::Default for alice_physics_core::particle::RunOffEvents
@@ -21816,6 +21861,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::water_film::Fi
 pub struct alice_physics_core::water_film::FilmBed
 impl alice_physics_core::water_film::FilmBed
 pub fn alice_physics_core::water_film::FilmBed::cell(&self) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::water_film::FilmBed::cell_at(&self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::option::Option<(usize, usize)>
 pub fn alice_physics_core::water_film::FilmBed::centre(&self, usize, usize) -> (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::water_film::FilmBed::from_height_fn(usize, usize, alice_physics_core::math::Fix128, (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128), u64, impl core::ops::function::Fn(f32, f32) -> f32) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
 pub fn alice_physics_core::water_film::FilmBed::from_heights(usize, usize, alice_physics_core::math::Fix128, (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128), &[alice_physics_core::math::Fix128], u64) -> core::result::Result<Self, alice_physics_core::water_film::FilmBuildError>
@@ -27803,6 +27849,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::rope::RopeConf
 pub struct alice_physics_core::RunOff
 pub alice_physics_core::RunOff::drag: alice_physics_core::math::Fix128
 pub alice_physics_core::RunOff::drip_cos: alice_physics_core::math::Fix128
+pub alice_physics_core::RunOff::retention: alice_physics_core::math::Fix128
 impl core::clone::Clone for alice_physics_core::particle::RunOff
 pub fn alice_physics_core::particle::RunOff::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::particle::RunOff
@@ -27822,6 +27869,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::particle::RunO
 pub struct alice_physics_core::RunOffEvents
 pub alice_physics_core::RunOffEvents::dripped: alloc::vec::Vec<usize>
 pub alice_physics_core::RunOffEvents::landed: alloc::vec::Vec<alice_physics_core::particle::LandingEvent>
+pub alice_physics_core::RunOffEvents::pinned: alloc::vec::Vec<alice_physics_core::particle::PinnedEvent>
 impl core::clone::Clone for alice_physics_core::particle::RunOffEvents
 pub fn alice_physics_core::particle::RunOffEvents::clone(&self) -> Self
 impl core::default::Default for alice_physics_core::particle::RunOffEvents

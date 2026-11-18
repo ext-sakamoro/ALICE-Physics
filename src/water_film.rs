@@ -229,6 +229,18 @@ impl FilmBed {
         })
     }
 
+    /// The cell `(i, k)` the point `(x, z)` (m) lies over, `None` off the bed.
+    #[must_use]
+    pub fn cell_at(&self, x: Fix128, z: Fix128) -> Option<(usize, usize)> {
+        let fi = ((x - self.origin_x) / self.cell).floor();
+        let fk = ((z - self.origin_z) / self.cell).floor();
+        if fi.is_negative() || fk.is_negative() {
+            return None;
+        }
+        let (i, k) = (fi.hi as usize, fk.hi as usize);
+        (i < self.nx && k < self.nz).then_some((i, k))
+    }
+
     /// The centre of cell `(i, k)` in metres.
     #[must_use]
     pub fn centre(&self, i: usize, k: usize) -> (Fix128, Fix128) {
@@ -922,15 +934,9 @@ impl WaterFilm {
         if volume.is_negative() {
             return 0;
         }
-        let fi = ((x - self.bed.origin_x) / self.bed.cell).floor();
-        let fk = ((z - self.bed.origin_z) / self.bed.cell).floor();
-        if fi.is_negative() || fk.is_negative() {
+        let Some((i, k)) = self.bed.cell_at(x, z) else {
             return 0;
-        }
-        let (i, k) = (fi.hi as usize, fk.hi as usize);
-        if i >= self.bed.nx || k >= self.bed.nz {
-            return 0;
-        }
+        };
         let q = metres_to_quanta(volume / (self.bed.cell * self.bed.cell));
         let c = i + k * self.bed.nx;
         self.depth[c] += q;

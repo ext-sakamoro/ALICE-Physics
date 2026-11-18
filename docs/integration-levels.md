@@ -137,7 +137,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `neural` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
-| `particle` | standalone | 0 / 0 / 0 / 20 / 0 | — |
+| `particle` | standalone | 0 / 0 / 0 / 28 / 0 | — |
 | `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `physics2d` | standalone (world API 1 of 60 items) | 0 / 1 / 0 / 59 / 0 | C ABI, Python, WebAssembly |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
@@ -191,7 +191,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
 | `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `water_film` | standalone | 0 / 0 / 0 / 58 / 0 | — |
+| `water_film` | standalone | 0 / 0 / 0 / 59 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone (binding 5 of 14 items) | 0 / 0 / 5 / 9 / 0 | C ABI, Python, WebAssembly |
 | `privacy` | unused (standalone 21 of 45 items) | 0 / 0 / 0 / 21 / 24 | — |

@@ -37,6 +37,8 @@ fn main() {
     let run_off = RunOff {
         drag: Fix128::from_int(3),
         drip_cos: Fix128::from_ratio(1, 2),
+        // no hysteresis: these drops are not held by the surface
+        retention: Fix128::ZERO,
     };
 
     let (mut landed, mut dripped) = (0, 0);

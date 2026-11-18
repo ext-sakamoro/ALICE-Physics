@@ -832,11 +832,14 @@ use alice_physics::pair_potential::Truncated as _;
 use alice_physics::pair_potential::Yukawa as _;
 use alice_physics::pair_potential::COULOMB_CONSTANT as _;
 use alice_physics::particle as _;
+use alice_physics::particle::retention_acceleration as _;
+use alice_physics::particle::FilmHandOff as _;
 use alice_physics::particle::LandingEvent as _;
 use alice_physics::particle::LandingTarget as _;
 use alice_physics::particle::Particle as _;
 use alice_physics::particle::ParticleEmitter as _;
 use alice_physics::particle::ParticleSystem as _;
+use alice_physics::particle::PinnedEvent as _;
 use alice_physics::particle::RunOff as _;
 use alice_physics::particle::RunOffEvents as _;
 use alice_physics::particle::LANDING_BISECTIONS as _;
@@ -2001,7 +2004,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1983 paths, checked at compile time
+    // 1986 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
