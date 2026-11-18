@@ -137,12 +137,14 @@ fn main() {
     let g = FluidConfig::default().gravity.y.to_f64().abs();
     let lo = (W - CUBE) / 2.0;
     let (mut f_face, mut f_bins) = ([[0.0_f64; 2]; 3], [[0.0_f64; 2]; 4]);
+    let mut per_frame: Vec<[[f64; 2]; 3]> = Vec::new();
     let frames = 900;
     for f in 0..frames {
         sc.fluid.step(Fix128::from_ratio(1, 60));
         if f + 60 < frames {
             continue;
         }
+        let mut this = [[0.0_f64; 2]; 3];
         for &(k, p, force, kind) in &sc.fluid.diag {
             if k != 1 {
                 continue;
@@ -150,19 +152,25 @@ fn main() {
             let (x, y) = (p.x.to_f64(), p.y.to_f64());
             let face = if y > bottom + CUBE { 0 } else if y < bottom { 1 } else { 2 };
             f_face[face][kind as usize] += force.y.to_f64() / 60.0;
+            this[face][kind as usize] += force.y.to_f64();
             if face == 1 {
                 let bin = (((x - lo) / S).floor().max(0.0) as usize).min(3);
                 f_bins[bin][kind as usize] += force.y.to_f64() / 60.0;
             }
         }
+        per_frame.push(this);
     }
+    let sd = |face: usize, kind: usize| {
+        let m = per_frame.iter().map(|r| r[face][kind]).sum::<f64>() / per_frame.len() as f64;
+        (per_frame.iter().map(|r| (r[face][kind] - m).powi(2)).sum::<f64>() / per_frame.len() as f64).sqrt()
+    };
     let h = (sc.n as f64 * S * S * S + CUBE * CUBE * CUBE) / (W * W);
     let closed = RHO0 * g * CUBE * CUBE * CUBE;
     let p_bot = RHO0 * g * (h - bottom) * CUBE * CUBE;
     let p_top = RHO0 * g * (h - bottom - CUBE) * CUBE * CUBE;
     println!("contact factor {:?}; H {h:.4} m; closed Archimedes {closed:.2} N; bottom face closed {p_bot:.2} N up, top face closed {p_top:.2} N down", std::env::var("DIAG_CONTACT_FACTOR").ok());
     for (name, i) in [("top", 0), ("bottom", 1), ("side", 2)] {
-        println!("{name}: map F_y {:.2} N, contact F_y {:.2} N, sum {:.2} N", f_face[i][0], f_face[i][1], f_face[i][0] + f_face[i][1]);
+        println!("{name}: map F_y {:.2} N (sd {:.2}), contact F_y {:.2} N (sd {:.2}), sum {:.2} N", f_face[i][0], sd(i, 0), f_face[i][1], sd(i, 1), f_face[i][0] + f_face[i][1]);
     }
     let tot: f64 = f_face.iter().map(|r| r[0] + r[1]).sum();
     let bf = sc.fluid.body_forces()[1].y.to_f64();
