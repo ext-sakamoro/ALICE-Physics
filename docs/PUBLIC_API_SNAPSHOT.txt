@@ -5233,6 +5233,7 @@ pub fn alice_physics_core::fluid::Fluid::body_particle_forces(&self) -> &[alice_
 pub fn alice_physics_core::fluid::Fluid::boundary_force(&self) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::fluid::Fluid::boundary_forces(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::fluid::Fluid::box_boundary(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::fluid::Fluid::contact_left_inside(&self) -> usize
 pub fn alice_physics_core::fluid::Fluid::new(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::new_block(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::particle_count(&self) -> usize
@@ -13060,6 +13061,7 @@ pub fn alice_physics_core::fluid::Fluid::body_particle_forces(&self) -> &[alice_
 pub fn alice_physics_core::fluid::Fluid::boundary_force(&self) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::fluid::Fluid::boundary_forces(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::fluid::Fluid::box_boundary(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::fluid::Fluid::contact_left_inside(&self) -> usize
 pub fn alice_physics_core::fluid::Fluid::new(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::new_block(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::particle_count(&self) -> usize
@@ -25808,6 +25810,7 @@ pub fn alice_physics_core::fluid::Fluid::body_particle_forces(&self) -> &[alice_
 pub fn alice_physics_core::fluid::Fluid::boundary_force(&self) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::fluid::Fluid::boundary_forces(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::fluid::Fluid::box_boundary(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, usize) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
+pub fn alice_physics_core::fluid::Fluid::contact_left_inside(&self) -> usize
 pub fn alice_physics_core::fluid::Fluid::new(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::new_block(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128, alice_physics_core::fluid::FluidConfig) -> Self
 pub fn alice_physics_core::fluid::Fluid::particle_count(&self) -> usize
