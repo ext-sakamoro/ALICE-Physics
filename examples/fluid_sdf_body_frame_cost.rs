@@ -270,4 +270,8 @@ fn main() {
         }
     }
     println!("cube by face (y): above {above:.1} N, below {below:.1} N, beside {beside:.1} N");
+    println!(
+        "centres left inside a solid after the contact: {}",
+        with_bodies.contact_left_inside()
+    );
 }
