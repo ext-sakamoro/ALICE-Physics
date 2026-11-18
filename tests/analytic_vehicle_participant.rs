@@ -659,9 +659,9 @@ fn drive_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-// re-pinned under PHYSICS_SEMANTICS_ID 8b71c956… (the fluid pbf pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID 81d4485c… (the fluid C >= 0 clamp): the identifier in the header moved
 const DRIVE_XPBD: &str = "288e121f43df5d9cda89124f8c0737672cd999f586910a89f2f2bb6ddcb71b7e";
-const DRIVE_TGS: &str = "7b0fdcb827b1515eed4e0d07e624b2a06db01423b915392ebe62091b5240e2ab";
+const DRIVE_TGS: &str = "db64023f447f451aec286595d7f872509775a9ad334f8608999b92d4570e81db";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
