@@ -29,6 +29,10 @@
 //! The solves of 4 to 7 run 64 passes with `α / h²` 7 times `(w_i + w_j) |∇C|²` or more at
 //! rest, so a pass leaves a small part of the error before it (Gauss-Seidel on a diagonally
 //! dominant chain): what is left after 64 is far below the tolerances stated.
+//!
+//! Integration test only (not brought into the lib tests with `#[path]`): its chains settle
+//! over many frames, about 70 s at opt-level 2 and six minutes without optimisation, which
+//! the lib tests of the minimum-toolchain job run twice.
 #![allow(
     clippy::disallowed_methods,
     reason = "analytic reference: closed forms are evaluated in f64, never by the code under test"

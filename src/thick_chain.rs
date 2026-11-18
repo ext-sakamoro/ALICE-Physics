@@ -804,11 +804,13 @@ impl ThickChain {
     }
 }
 
-// The closed-form oracles of this module (`tests/analytic_thick_chain.rs`) also run as lib
-// tests, so the module's lines count in the lib's coverage.
-#[cfg(test)]
-#[path = "../tests/analytic_thick_chain_anchor.rs"]
-mod analytic_thick_chain_anchor_oracle;
+// The closed-form oracles of this module (`tests/analytic_thick_chain.rs` and
+// `tests/analytic_thick_chain_neo_hookean.rs`) also run as lib tests, so the module's lines
+// count in the lib's coverage. `tests/analytic_thick_chain_anchor.rs` and
+// `tests/analytic_thick_chain_entry.rs` are integration tests only: they settle chains over
+// many frames (70 s and 80 s at opt-level 2), and the lib tests also run without
+// optimisation (the minimum-toolchain job, twice), where the anchor file alone added six
+// minutes to each run.
 #[cfg(test)]
 #[path = "../tests/analytic_thick_chain_neo_hookean.rs"]
 mod analytic_thick_chain_neo_hookean_oracle;
