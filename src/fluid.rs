@@ -6,10 +6,10 @@
 //! # Algorithm (Macklin & Muller 2013)
 //!
 //! 1. Predict particle positions
-//! 2. Find neighbors (spatial hash grid)
-//! 3. Iterate: compute density, solve density constraints
+//! 2. Iterate: rebuild the neighbour grid on the current predicted positions, compute
+//!    density, solve density constraints
+//! 3. Update velocities
 //! 4. Apply viscosity and vorticity confinement
-//! 5. Update velocities
 //!
 //! # MODEL
 //!
@@ -73,6 +73,15 @@
 //!   restitution 0.5 on the solids too, the bounce during settling changes the packing and
 //!   the cube two kernel radii above the floor reads `F_y / (rho_0 g V)` = 0.924; inelastic,
 //!   0.995.
+//! - Newton 3 between the fluid and the solids holds exactly: the neighbour grid is rebuilt
+//!   on the predicted positions at the start of every constraint iteration, so every pair
+//!   is found from both sides and its push is equal and opposite; the fluid-side total
+//!   ([`Fluid::boundary_force`]) and the solids' forces ([`Fluid::body_forces`]) then sum to
+//!   zero in `Fix128`, on every frame. Measured (2026-11-18): with the grid built once per
+//!   substep, the corrections moved the particles off the cells the grid was built on, a
+//!   pair near a cell edge was found from one side only, and the sum was 0 to 3.3e-9 of the
+//!   fluid-side total depending on the initial placement (3.4e-5 N of 2.98e4 N); rebuilt
+//!   every iteration, exactly 0 on all 900 frames, at no measurable cost.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
 //!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
 //!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
@@ -607,6 +616,19 @@ impl Fluid {
         self.apply_frame_damping();
     }
 
+    /// The spatial grid on the predicted fluid positions and the fixed boundary particles
+    fn rebuild_grid(&mut self) {
+        let n = self.particle_count();
+        self.grid.clear();
+        for i in 0..n {
+            self.grid.insert(i, self.predicted[i]);
+        }
+        for (k, b) in self.boundary.iter().enumerate() {
+            self.grid.insert(n + k, *b);
+        }
+        self.grid.build();
+    }
+
     /// Single substep
     fn substep(&mut self, dt: Fix128) {
         let n = self.particle_count();
@@ -626,16 +648,6 @@ impl Fluid {
             self.predicted[i] = self.positions[i] + self.velocities[i] * dt;
         }
 
-        // 2. Build spatial grid on the predicted fluid positions and the boundary
-        self.grid.clear();
-        for i in 0..n {
-            self.grid.insert(i, self.predicted[i]);
-        }
-        for (k, b) in self.boundary.iter().enumerate() {
-            self.grid.insert(n + k, *b);
-        }
-        self.grid.build();
-
         // 3. Density constraint iterations (Jacobi: every lambda, then every correction)
         let s_ref = self.reference_gradient_sq;
         let artificial = self.config.artificial_pressure;
@@ -646,7 +658,17 @@ impl Fluid {
         let mut body_corrections = vec![Vec3Fix::ZERO; n_bodies];
         let mut particle_corrections = vec![Vec3Fix::ZERO; n * n_bodies];
         let mut body_samples = vec![(Fix128::ZERO, Vec3Fix::ZERO); n * n_bodies];
+        if self.config.iterations == 0 {
+            // the steps after the constraints (viscosity, cohesion, vorticity) read the grid
+            self.rebuild_grid();
+        }
         for _ in 0..self.config.iterations {
+            // 2. Spatial grid on the predicted fluid positions and the boundary, rebuilt
+            //    every iteration: the corrections move `predicted`, and a grid built on the
+            //    positions of an earlier iteration finds a pair near a cell edge from one side
+            //    only, so the pair's push is not equal and opposite (the fluid-side total and
+            //    the solids' forces then differ; see MODEL "Newton 3")
+            self.rebuild_grid();
             for i in 0..n {
                 self.grid
                     .query_neighbors_into(self.predicted[i], h_sq, &mut neighbors_buf);
@@ -1450,7 +1472,6 @@ mod tests {
         assert!(f.body_forces().is_empty(), "no force before the first step");
         let frames = 240;
         let mut carried = 0.0;
-        let mut newton = 0.0_f64;
         let wd = side.to_f64();
         for frame in 0..frames {
             f.step(Fix128::from_ratio(1, 60));
@@ -1477,14 +1498,12 @@ mod tests {
                 -deepest
             );
             let sum = bf[0] + bf[1] + f.boundary_force();
-            let scale = f.boundary_force().length().to_f64().max(1e-30);
-            newton = newton.max(sum.length().to_f64() / scale);
+            assert_eq!(sum, Vec3Fix::ZERO, "frame {frame}: Newton 3");
             if frame >= frames - 60 {
                 carried += -(bf[0].y + bf[1].y).to_f64() / 60.0;
             }
         }
         let weight = f.particle_count() as f64 * config.particle_mass.to_f64() * 10.0;
-        assert!(newton < 1e-9, "solids vs fluid-side total: {newton}");
         assert!(
             (carried / weight - 1.0).abs() < 0.05,
             "weight carried by the solids / M g = {}",
@@ -1561,10 +1580,7 @@ mod tests {
             }
             // the solid's force is minus the fluid-side total
             let sum = f.body_forces()[0] + fb;
-            assert!(
-                sum.length().to_f64() <= 1e-9 * fb.length().to_f64().max(1e-30),
-                "frame {frame}: Newton 3 {sum:?}"
-            );
+            assert_eq!(sum, Vec3Fix::ZERO, "frame {frame}: Newton 3");
             let lowest = f
                 .positions
                 .iter()
