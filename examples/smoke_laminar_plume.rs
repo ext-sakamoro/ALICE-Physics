@@ -6,6 +6,10 @@
 //! cells the plume's radius spans there; the oracle compares the exponents at two cells
 //! (10 mm and 5 mm) and asks that they converge to (1, 0, −1).
 //!
+//! The box is closed, so the plume's heat fills it from the top down; every layer's width and
+//! centreline temperature are measured on the excess over that layer's far field (the mean on the
+//! box's outer ring of cells), which the table prints beside them.
+//!
 //! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state
 //! and the window sums so far) every few seconds of simulated time and resumes from it.
 //!
@@ -21,7 +25,9 @@ use alice_physics_core::world_participant::Participant;
 use std::io::Write;
 use std::time::Instant;
 
-const MAGIC: &[u8; 8] = b"SMKLAM01";
+const MAGIC: &[u8; 8] = b"SMKLAM02";
+/// The first format (no ambient sums): its state still resumes a run that had not reached the window.
+const MAGIC_V1: &[u8; 8] = b"SMKLAM01";
 
 /// The sums over the averaging window, per layer `j`.
 struct Window {
@@ -29,6 +35,8 @@ struct Window {
     r2: Vec<f64>,
     w: Vec<f64>,
     t: Vec<f64>,
+    /// The layer's far field: the mean excess temperature on the box's outer ring of cells.
+    amb: Vec<f64>,
 }
 
 fn slope(pts: &[(f64, f64)]) -> f64 {
@@ -49,7 +57,7 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     out.extend_from_slice(&(state.len() as u64).to_le_bytes());
     out.extend_from_slice(&state);
     out.extend_from_slice(&win.samples.to_le_bytes());
-    for v in win.r2.iter().chain(&win.w).chain(&win.t) {
+    for v in win.r2.iter().chain(&win.w).chain(&win.t).chain(&win.amb) {
         out.extend_from_slice(&v.to_bits().to_le_bytes());
     }
     // write beside, then rename: a run stopped mid-write keeps the previous checkpoint
@@ -61,15 +69,21 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
 fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Option<u64> {
     let b = std::fs::read(path).ok()?;
     let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
-    assert_eq!(&b[..8], MAGIC, "not a laminar plume checkpoint");
+    let v1 = &b[..8] == MAGIC_V1;
+    assert!(v1 || &b[..8] == MAGIC, "not a laminar plume checkpoint");
     let step = u64_at(8);
     let len = u64_at(16) as usize;
     plume.read_state(&b[24..24 + len]);
     let mut o = 24 + len;
     win.samples = u64_at(o);
     o += 8;
+    if v1 {
+        // its window sums measured against zero, not the far field: resume only before the window
+        assert_eq!(win.samples, 0, "a first-format checkpoint inside the window cannot resume");
+        return Some(step);
+    }
     let n = win.r2.len();
-    for v in win.r2.iter_mut().chain(win.w.iter_mut()).chain(win.t.iter_mut()) {
+    for v in win.r2.iter_mut().chain(win.w.iter_mut()).chain(win.t.iter_mut()).chain(win.amb.iter_mut()) {
         *v = f64::from_bits(u64_at(o));
         o += 8;
     }
@@ -102,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         r2: vec![0.0; ny],
         w: vec![0.0; ny],
         t: vec![0.0; ny],
+        amb: vec![0.0; ny],
     };
     let mut n = 0u64;
     if let Some(p) = &ckpt {
@@ -123,11 +138,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             win.samples += 1;
             let f = plume.heat();
             let g = plume.velocity();
+            let temp = |i: usize, j: usize, k: usize| from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64();
             for j in 0..ny {
+                // the closed box warms its own air: the plume is the excess over the layer's far field
+                let (mut ring, mut ring_n) = (0.0, 0.0);
+                for k in 0..nz {
+                    for i in 0..nx {
+                        if i == 0 || k == 0 || i == nx - 1 || k == nz - 1 {
+                            ring += temp(i, j, k);
+                            ring_n += 1.0;
+                        }
+                    }
+                }
+                let amb = ring / ring_n;
+                win.amb[j] += amb;
                 let (mut m0, mut m2) = (0.0, 0.0);
                 for k in 0..nz {
                     for i in 0..nx {
-                        let q = from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64();
+                        let q = (temp(i, j, k) - amb).max(0.0);
                         let x = (i as f64 + 0.5) * dx - 0.5 * nx as f64 * dx;
                         let z = (k as f64 + 0.5) * dx - 0.5 * nz as f64 * dx;
                         m0 += q;
@@ -141,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (mut w, mut t) = (0.0, 0.0);
                 for (i, k) in [(ci - 1, ck - 1), (ci, ck - 1), (ci - 1, ck), (ci, ck)] {
                     w += g.cell_velocity(i, j, k).1.to_f64() / 4.0;
-                    t += from_quanta(f.quanta()[f.index(i, j, k)], HEAT_QUANTUM_BITS).to_f64() / 4.0;
+                    t += (temp(i, j, k) - amb) / 4.0;
                 }
                 win.w[j] += w;
                 win.t[j] += t;
@@ -167,15 +195,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s = win.samples as f64;
     let z0 = scene::source_top_m(dx_mm);
     let (mut pr, mut pw, mut pt, mut min_cells) = (vec![], vec![], vec![], f64::INFINITY);
-    println!(" j   z (m)   R (cells)  R²/z (m)   w_c (m/s)   ΔT_c·z (K·m)");
+    println!(" j   z (m)   R (cells)  R²/z (m)   w_c (m/s)   ΔT_c·z (K·m)  far field (K)");
     for j in 0..ny {
         let z = (j as f64 + 0.5) * dx - z0;
         if z <= 0.0 {
             continue;
         }
-        let (r2, w, t) = (win.r2[j] / s, win.w[j] / s, win.t[j] / s);
+        let (r2, w, t, amb) = (win.r2[j] / s, win.w[j] / s, win.t[j] / s, win.amb[j] / s);
         let cells = r2.sqrt() / dx;
-        println!("{j:3} {z:7.4} {cells:9.2} {:11.4e} {w:11.4e} {:11.4e}", r2 / z, t * z);
+        println!("{j:3} {z:7.4} {cells:9.2} {:11.4e} {w:11.4e} {:11.4e} {amb:11.4e}", r2 / z, t * z);
         if z >= z_lo && z <= z_hi && r2 > 0.0 && w > 0.0 && t > 0.0 {
             pr.push((z.ln(), r2.ln()));
             pw.push((z.ln(), w.ln()));
