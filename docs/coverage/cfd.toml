@@ -923,7 +923,7 @@ axis = "particle method"
 item = "position-based fluids (density constraint)"
 source = "Macklin-Muller 2013"
 status = "implemented+oracle"
-evidence = "tests/analytic_fluid_pbf_density.rs::column_under_gravity_settles_and_the_floor_carries_its_weight / tests/analytic_fluid_pbf_density.rs::side_wall_carries_the_hydrostatic_force / tests/analytic_fluid_pbf_density.rs::submerged_cube_feels_the_archimedes_force"
+evidence = "tests/analytic_fluid_pbf_density.rs::column_under_gravity_settles_and_the_floor_carries_its_weight / tests/analytic_fluid_pbf_density.rs::side_wall_load_per_height_bin_matches_the_hydrostatic_profile / tests/analytic_fluid_pbf_density.rs::submerged_cube_feels_the_archimedes_force"
 oracle_candidate = "静水圧 (床の反力 = 重さ、側壁の力 = 線形圧力の積分) と静止 block の密度誤差"
 limitation = ""
 
