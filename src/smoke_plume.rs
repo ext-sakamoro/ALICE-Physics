@@ -43,10 +43,16 @@
 //! - **Range**: cells from 1 mm to 1 m, each extent a power of two from 4 to 256 (the
 //!   multigrid projection), the velocity step at most [`SmokeConfig::step_max`] with the
 //!   viscous diffusion number `ν Δt / l² ≤ 1/6` checked at build (the scalar diffusion is
-//!   substepped instead). No turbulence model, and the plume's similarity is open: at the
-//!   air's own diffusivity a plume is about 5 mm wide, below what these grids resolve, so
-//!   its width comes from the scheme's diffusion and narrows with the cell (measured
-//!   without molecular diffusion at 10 and 5 mm cells over 0.15–0.35 m in a 0.64 m box:
+//!   substepped instead). No turbulence model. The limited face values add a numerical
+//!   diffusivity of order `|u| l / 2` (largest at extrema such as a plume's centreline,
+//!   where the limiter falls back to upwind); its ratio to the molecular `κ` is half the
+//!   cell Péclet number `|u| l / κ`, so the scalar's diffusion is the molecular one only
+//!   when `|u| l / κ ≲ 2`, and a similarity law can only be claimed from its convergence as
+//!   the cell shrinks (`examples/smoke_laminar_plume.rs`: at `ν = κ = 2·10⁻⁴` m²/s and a
+//!   centreline speed of 0.14 m/s the cell Péclet number is about 7 at 10 mm and 3.4 at
+//!   5 mm). At the air's own diffusivity a plume is about 5 mm wide, below what these grids
+//!   resolve, so its width comes from the scheme's diffusion and narrows with the cell
+//!   (measured without molecular diffusion at 10 and 5 mm cells over 0.15–0.35 m in a 0.64 m box:
 //!   `d ln R²/d ln z` 1.03 → 0.48, `d ln w_c/d ln z` 0.27 → 0.22, `d ln ΔT_c/d ln z`
 //!   −0.26 → −0.18, against the laminar 1, 0, −1); neither plume law is claimed yet. More
 //!   than [`SmokeConfig::max_steps`] velocity steps in an advance, more than
@@ -56,7 +62,8 @@
 //! - **Approximations**: Boussinesq (density variations only in the buoyancy), no radiation,
 //!   constant diffusivities, no wall heat loss, soot a passive tracer (no settling, no
 //!   coagulation), a burner's fuel and oxidizer held at their declared densities (a supplied
-//!   burner, not a consumed one), a closed box only.
+//!   burner, not a consumed one), a closed box only (its air warms from the top down, so a
+//!   plume in it rises into a stratifying ambient, `N² = g β dT∞/dz`).
 //! - **Tiers**: L0 only.
 //! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses`
 //!

@@ -661,3 +661,33 @@ fn a_gradient_below_one_quantum_still_diffuses() {
     // the tie goes to the earlier direction (−x)
     assert_eq!(f.quanta()[f.index(3, 0, 0)], 1);
 }
+
+#[path = "support/smoke_laminar_scene.rs"]
+mod laminar_scene;
+
+/// The push-time guard of the laminar plume oracle (`examples/smoke_laminar_plume.rs`, run
+/// weekly): the same scene at 10 mm for 3 velocity steps. The heat held equals the declared
+/// rate times the source's cells times the elapsed time, floored to a quantum per cell at every
+/// step (oracle: each step adds ⌊100 K/s × 1/120 s⌋ in quanta to each of the 8 cells, 3 steps);
+/// the air over the source rises
+/// (buoyancy); and the state's SHA-256 is pinned, so a change in the scene or the wiring is
+/// seen at push time without the long run.
+#[test]
+fn the_laminar_plume_scene_starts_rising_with_its_declared_heat() {
+    use sha2::{Digest, Sha256};
+    let mut p = laminar_scene::scene(10, 200, 100);
+    for _ in 0..3 {
+        p.advance(laminar_scene::step(10)).unwrap();
+    }
+    // floored per step, not once over the run: 3·⌊(100 · 2³²) / 120⌋, one quantum below 2.5 K
+    let per_cell = 3 * ((100_i128 << HEAT_QUANTUM_BITS) / 120);
+    assert_eq!(p.heat().total(), Some((8 * per_cell) as i64));
+    assert_eq!(p.ledger().heat_expected(), (8 * per_cell) as i64);
+    // the source spans cells 15..17 on x and z and 1..3 on y: the air just above its top rises
+    let w = p.velocity().cell_velocity(16, 3, 16).1;
+    assert!(w > Fix128::ZERO, "the air over the source must rise, got {}", w.to_f64());
+    let mut state = Vec::new();
+    p.write_state(&mut state);
+    let digest: String = Sha256::digest(&state).iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(digest, "7221c60fb6bdf5341a6e9bc5bd662833b48bd66ab9cc239638ca566d1d2e7c02");
+}
