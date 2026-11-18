@@ -20,12 +20,16 @@
 //!
 //! The width and the centreline excess are measured on the excess over that far field.
 //!
-//! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state and
-//! the window sums so far) every 2 s of simulated time and resumes from it.
+//! The window is set by a rule, not by hand: it starts at the first whole second `t0` at which the
+//! heat that left over the last 4 s is at least 95 % of what the source added over them, and it
+//! lasts 8 s; the run fails when `t0 + 8 s` is not reached within the given maximum time.
+//!
+//! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state, the
+//! outflow history and the window sums so far) every 2 s of simulated time and resumes from it.
 //!
 //! Run: `cargo run --release --example smoke_laminar_plume -- <dx_mm> <nu_um2> <heat_k_per_s>
-//! <seconds> <window_from_s> <z_lo_m> <z_hi_m> <closed|open> [checkpoint] [coarse checkpoint]`,
-//! e.g. `-- 10 200 400 20 12 0.10 0.40 open /tmp/plume10.ckpt`. With a coarse checkpoint (a run
+//! <max_seconds> <z_lo_m> <z_hi_m> <closed|open> [checkpoint] [coarse checkpoint]`,
+//! e.g. `-- 10 200 400 40 0.10 0.40 open /tmp/plume10.ckpt`. With a coarse checkpoint (a run
 //! of the same scene at twice the cell) and no checkpoint of its own yet, the run starts from that
 //! state prolonged to this cell (`SmokePlume::prolonged`) instead of from rest; the window should
 //! start a while after it.
@@ -38,10 +42,16 @@ use alice_physics_core::world_participant::Participant;
 use std::io::Write;
 use std::time::Instant;
 
-const MAGIC: &[u8; 8] = b"SMKLAM04";
-/// Earlier formats: their state still resumes a run that had not reached the window, and a
-/// coarse run's state prolongs from any of them.
-const MAGIC_OLD: [&[u8; 8]; 3] = [b"SMKLAM01", b"SMKLAM02", b"SMKLAM03"];
+const MAGIC: &[u8; 8] = b"SMKLAM05";
+/// Earlier formats: a run resumes from their plume's state alone (its outflow history and
+/// window start afresh), and a coarse run's state prolongs from any of them.
+const MAGIC_OLD: [&[u8; 8]; 4] = [b"SMKLAM01", b"SMKLAM02", b"SMKLAM03", b"SMKLAM04"];
+/// The window starts once the outflow over this many seconds is at least [`STEADY_FROM`] of
+/// the heat added over them.
+const STEADY_SPAN_S: usize = 4;
+const STEADY_FROM: f64 = 0.95;
+/// The window's length (s).
+const WINDOW_S: u64 = 8;
 /// The far field is where the window-mean excess is within this fraction of the centreline's
 /// excess over the layer's coolest radius.
 const FAR_FIELD_FRACTION: f64 = 0.01;
@@ -50,8 +60,13 @@ const MAX_N_T: f64 = 0.1;
 /// The heat leaving over the window may differ from the heat added by this fraction.
 const STEADY_TOLERANCE: f64 = 0.05;
 
-/// The sums over the averaging window.
+/// The outflow history and the sums over the averaging window.
 struct Window {
+    /// The heat that had left and the heat added, at each whole second from `hist_from`.
+    hist: Vec<(i64, i64)>,
+    hist_from: u64,
+    /// The step at which the window starts (0 while not yet found).
+    start: u64,
     samples: u64,
     /// The heat that had left through the top, and the heat the source had added, when the
     /// window began.
@@ -90,6 +105,13 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
     out.extend_from_slice(&step.to_le_bytes());
     out.extend_from_slice(&(state.len() as u64).to_le_bytes());
     out.extend_from_slice(&state);
+    out.extend_from_slice(&win.hist_from.to_le_bytes());
+    out.extend_from_slice(&(win.hist.len() as u64).to_le_bytes());
+    for &(l, a) in &win.hist {
+        out.extend_from_slice(&l.to_le_bytes());
+        out.extend_from_slice(&a.to_le_bytes());
+    }
+    out.extend_from_slice(&win.start.to_le_bytes());
     out.extend_from_slice(&win.samples.to_le_bytes());
     out.extend_from_slice(&win.out0.to_le_bytes());
     out.extend_from_slice(&win.added0.to_le_bytes());
@@ -124,20 +146,23 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u
         return Ok(None);
     };
     let (step, old, rest) = read_plume(&b, plume).map_err(|e| format!("{path}: {e}"))?;
-    let at = |o: usize| u64::from_le_bytes(rest[o..o + 8].try_into().unwrap());
-    win.samples = at(0);
     if old {
-        // its window sums are not this format's: resume only before the window
-        if win.samples != 0 {
-            return Err(format!(
-                "{path}: an earlier format inside the window cannot resume"
-            ));
-        }
+        // its sums are not this format's: the plume's state resumes, the history starts afresh
+        println!("{path}: an earlier format, resuming from the plume's state alone");
         return Ok(Some(step));
     }
-    win.out0 = at(8) as i64;
-    win.added0 = at(16) as i64;
-    let mut o = 24;
+    let at = |o: usize| u64::from_le_bytes(rest[o..o + 8].try_into().unwrap());
+    win.hist_from = at(0);
+    let len = at(8) as usize;
+    win.hist = (0..len)
+        .map(|h| (at(16 + 16 * h) as i64, at(24 + 16 * h) as i64))
+        .collect();
+    let mut o = 16 + 16 * len;
+    win.start = at(o);
+    win.samples = at(o + 8);
+    win.out0 = at(o + 16) as i64;
+    win.added0 = at(o + 24) as i64;
+    o += 32;
     for v in win.w.iter_mut().chain(win.prof.iter_mut()) {
         *v = f64::from_bits(at(o));
         o += 8;
@@ -150,24 +175,24 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    if a.len() < 8 {
+    if a.len() < 7 {
         return Err(
-            "args: dx_mm nu_um2 heat_k_per_s seconds window_from_s z_lo_m z_hi_m \
-                    closed|open [checkpoint] [coarse checkpoint]"
+            "args: dx_mm nu_um2 heat_k_per_s max_seconds z_lo_m z_hi_m closed|open \
+                    [checkpoint] [coarse checkpoint]"
                 .into(),
         );
     }
     let int = |i: usize| a[i].parse::<i64>();
     let real = |i: usize| a[i].parse::<f64>();
-    let (dx_mm, nu, heat, seconds, from) = (int(0)?, int(1)?, int(2)?, int(3)?, int(4)?);
-    let (z_lo, z_hi) = (real(5)?, real(6)?);
-    let open = match a[7].as_str() {
+    let (dx_mm, nu, heat, seconds) = (int(0)?, int(1)?, int(2)?, int(3)?);
+    let (z_lo, z_hi) = (real(4)?, real(5)?);
+    let open = match a[6].as_str() {
         "open" => true,
         "closed" => false,
         other => return Err(format!("the top is closed or open, not {other}").into()),
     };
-    let ckpt = a.get(8).cloned();
-    let coarse_ckpt = a.get(9).cloned();
+    let ckpt = a.get(7).cloned();
+    let coarse_ckpt = a.get(8).cloned();
 
     let mut plume = scene::scene(dx_mm, nu, heat);
     if open {
@@ -179,7 +204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let step = scene::step(dx_mm);
     let per_second = (1200 / dx_mm) as u64;
     let total = seconds as u64 * per_second;
-    let window_from = from as u64 * per_second;
+    let window_steps = WINDOW_S * per_second;
     let (nx, ny, nz) = {
         let g = plume.velocity();
         (g.nx, g.ny, g.nz)
@@ -198,6 +223,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut win = Window {
+        hist: vec![],
+        hist_from: 0,
+        start: 0,
         samples: 0,
         out0: 0,
         added0: 0,
@@ -254,17 +282,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the steps this process runs (a resumed run starts past 0)
     let first = n;
     let mut max_sub = 0;
-    while n < total {
+    while n < total && !(win.start > 0 && n >= win.start + window_steps) {
         plume
             .advance(step)
             .map_err(|e| format!("advance at step {n}: {e:?}"))?;
         n += 1;
         max_sub = max_sub.max(plume.last_transport_substeps());
-        if n > window_from {
-            if win.samples == 0 {
-                win.out0 = plume.outflow().heat_left;
-                win.added0 = plume.ledger().heat_added;
+        if n % per_second == 0 {
+            if win.hist.is_empty() {
+                win.hist_from = n / per_second;
             }
+            win.hist
+                .push((plume.outflow().heat_left, plume.ledger().heat_added));
+            let h = &win.hist;
+            if win.start == 0 && h.len() > STEADY_SPAN_S {
+                let (now, then) = (h[h.len() - 1], h[h.len() - 1 - STEADY_SPAN_S]);
+                let added = (now.1 - then.1) as f64;
+                if added > 0.0 && (now.0 - then.0) as f64 >= STEADY_FROM * added {
+                    win.start = n;
+                    win.out0 = now.0;
+                    win.added0 = now.1;
+                    println!("window starts at {:.1} s", n as f64 / per_second as f64);
+                }
+            }
+        }
+        if win.start > 0 && n > win.start {
             win.samples += 1;
             let f = plume.heat();
             let g = plume.velocity();
@@ -310,8 +352,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(plume.soot_held_expected()),
         "soot ledger"
     );
-    if win.samples == 0 {
-        return Err("the window holds no samples".into());
+    if win.start == 0 {
+        return Err(format!(
+            "scene invalid: outflow never steady: the heat leaving over {STEADY_SPAN_S} s did not \
+             reach {STEADY_FROM} of the heat added within {seconds} s"
+        )
+        .into());
+    }
+    if n < win.start + window_steps {
+        return Err(format!(
+            "the window from {:.1} s does not end within {seconds} s",
+            win.start as f64 / per_second as f64
+        )
+        .into());
     }
 
     let s = win.samples as f64;
@@ -392,7 +445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     let cfg = SmokeConfig::air();
-    let window_s = (seconds - from) as f64;
+    let window_s = WINDOW_S as f64;
     let grad = if pa.len() >= 2 { slope(&pa) } else { f64::NAN };
     let n_t = (cfg.gravity_m_s2.to_f64() * cfg.beta_per_k.to_f64() * grad)
         .max(0.0)
@@ -422,7 +475,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         clippy::disallowed_methods,
         reason = "timing harness: the time per velocity step that this run prints"
     )]
-    let ms_per_step = clock.elapsed().as_secs_f64() * 1e3 / (total - first).max(1) as f64;
+    let ms_per_step = clock.elapsed().as_secs_f64() * 1e3 / (n - first).max(1) as f64;
     if pr.len() >= 3 {
         println!(
             "RESULT dx_mm {dx_mm} nu_um2 {nu} heat {heat} top {} band {z_lo}..{z_hi} layers {} \
