@@ -335,6 +335,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "cloth body contact",
+        "determinism_golden.rs",
+        "determinism_cloth_body_contact",
+        "",
+    ),
+    (
         "secondary chain",
         "determinism_golden.rs",
         "determinism_secondary_chain",
@@ -438,6 +444,12 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("cloth damping rate", &["damping_over("], 1),
     // a cloth registered as a world resident, its steps placed per frame
     ("cloth resident", &["ClothParticipant::new("], 1),
+    // a body in reach of a resident cloth: the contact between them
+    (
+        "cloth body contact",
+        &["ClothParticipant::new(", "set_body_collision_radius("],
+        1,
+    ),
     ("secondary chain", &["SecondaryChain::"], 1),
     // the sleep rule in seconds: a rule set on the world, bodies read as sleeping
     ("sleep by time", &["set_sleep_config(", "is_sleeping("], 1),
