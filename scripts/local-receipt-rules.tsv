@@ -1,0 +1,14 @@
+# class (local | ci)<TAB>regex on the step's command and its `env: KEY=value` lines (first match decides)<TAB>reason
+ci	\$\{\{|\$\{?GITHUB_|\$\{?RUNNER_	reads the event or the runner (an expression, GITHUB_* or RUNNER_*): only the CI has it
+ci	^(cargo|'cargo) (\+\S+ )?(test|build|install|hack|miri|fuzz|llvm-cov|mutants|semver-checks|public-api|audit|deny|machete|bench|run|careful|udeps|geiger|criterion)\b	a build, test, tool-install or audit leg: the CI's (the tests and the builds are its evidence)
+ci	^(rustup|sudo|curl|npm|npx|pip|pip3|python -m pip|maturin|wasm-pack|zip|7z|lscpu|apt-get|brew|choco) 	installs a toolchain or a tool, builds a wheel or packs an artifact on the runner
+ci	^(bash )?scripts/(run_tests|run_js_binding_tests|downstream_check|scip_index|preflight)\.sh\b|^WASM_BIN=	runs tests (native, wasm under wasmtime, the JS binding, downstream crates) or the SCIP index a landing builds itself
+ci	^python3? scripts/(run_examples|run_feature_gated_tests|determinism_release|facade_artifacts)\.py\b|^python3? scripts/binding_build_commands\.py --run	builds and runs tests, examples or bindings: the CI's legs
+ci	^python3? scripts/(line_coverage_ratchet|bench_counts_check|mutants_ratchet|mutants_run_status|mutants_in_diff_plan)\.py\b|/tmp/current-api\.txt	reads what an earlier step of the same CI job measured (coverage, instruction counts, mutants)
+ci	^python3? scripts/run_ignored\.py$	runs the ignored (weekly) tests: the weekly workflow's
+ci	^python3? scripts/gen-(oracle|wiring)-status\.py$	writes a ledger and compares it in the next step: a landing regenerates and commits the ledgers itself
+ci	^python3? scripts/(scip_reach\.py --check-baseline|integration_levels\.py --check|audit_refs\.py --check)$|--scip target/scip\b	reads the SCIP index an earlier step of the job built: a landing runs the same checks on its own index
+local	^cargo (clippy|doc|fmt|check|metadata)\b	a lint, a doc build or a manifest check: runs here in minutes
+local	^python3? scripts/[\w-]+\.py\b	a checker or a checker's own test: runs here
+local	^scripts/g11_table\.sh\b	the conformance table check at its pinned revision: runs here (it fetches the pinned checker)
+local	^\s*(hits=\$\()?grep -(rnE?|E) 	grep-only source checks (stubs, dbg!, re-export lists): run here in seconds
