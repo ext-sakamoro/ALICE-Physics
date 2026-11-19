@@ -53,6 +53,7 @@ src/mpm2d/implicit.rs	the implicit step of src/mpm2d.rs, its model is in that mo
 src/netcode.rs	network state replication
 src/netcode_prediction.rs	network prediction and reconciliation
 src/neural.rs	fixed point neural inference for controllers, no physics
+src/par_slabs.rs	the fixed slab partition and the wrapping-sum reduction the grid fluid kernels run on under `parallel`, no physics (its claim, bits independent of the thread count, is tests/cfd_parallel_determinism.rs)
 src/pipeline.rs	print pipeline I/O
 src/plane_collider.rs	plane shape
 src/print_orientation.rs	optimiser over the strength modules (chooses an orientation), the laws are theirs
