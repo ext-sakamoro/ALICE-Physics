@@ -52,6 +52,9 @@ jobs:
         run: cargo doc --lib
 """
 
+SLOW_WORKFLOW = WORKFLOW + "      - run: cargo llvm-cov --lib\n      - run: python3 scripts/ratchet.py\n"
+SLOW_RULES = "slow\t^cargo llvm-cov\\b|^python3 scripts/ratchet\\.py$\tthe lib coverage and its ratchet: half an hour here\n"
+
 RULES = """\
 # class<TAB>regex<TAB>reason
 ci\t\\$\\{\\{\treads the event: only the CI has it
@@ -73,6 +76,7 @@ def repo(tmp: str, workflow: str = WORKFLOW, rules: str = RULES) -> Path:
     (root / "README.md").write_text("readme 1\n", encoding="utf-8")
     sh(root, "init", "-q")
     commit(root, "first")
+    sh(root, "branch", "base")
     return root
 
 
@@ -132,6 +136,9 @@ class Sorting(unittest.TestCase):
         with self.assertRaisesRegex(c.ReceiptError, "matches a step that reads the runner"):
             self.sort(greedy.replace("ci\t\\$\\{\\{\treads the event: only the CI has it\n", "")
                       + "ci\t^never\tno step: this row is stale but the error above comes too\n")
+        slow = "slow\t^python3 scripts/\\w+\\.py\ta slow checker: runs here in an hour\n" + RULES
+        with self.assertRaisesRegex(c.ReceiptError, "a `slow` rule .* matches a step that reads the runner"):
+            self.sort(slow.replace("ci\t\\$\\{\\{\treads the event: only the CI has it\n", ""))
         pwsh = WORKFLOW + "      - run: cargo clippy --win\n        shell: pwsh\n"
         with self.assertRaisesRegex(c.ReceiptError, "'pwsh'"):
             self.sort(workflow=pwsh)
@@ -149,22 +156,62 @@ class Receipt(unittest.TestCase):
         self.root = repo(self.tmp.name)
         self.old = os.environ.get("LOCAL_RECEIPT_DIR")
         os.environ["LOCAL_RECEIPT_DIR"] = str(Path(self.tmp.name) / "receipts")
+        self.base, c.BASE = c.BASE, "base"
 
     def tearDown(self):
+        c.BASE = self.base
         if self.old is None:
             del os.environ["LOCAL_RECEIPT_DIR"]
         else:
             os.environ["LOCAL_RECEIPT_DIR"] = self.old
         self.tmp.cleanup()
 
-    def run_all(self, red: str | None = None, only: str | None = None) -> list:
+    def run_all(self, red: str | None = None, only: str | None = None, cls: str = "local") -> list:
         seen = []
 
         def runner(n, unit):
             seen.append(unit)
             return 101 if red and red in unit["cmd"] else 0
-        c.run(self.root, runner, only=only)
+        c.run(self.root, runner, only=only, cls=cls)
         return seen
+
+    def slow_repo(self, change: str) -> None:
+        """the fixture with two slow steps, and one commit after `base` that changes `change`"""
+        self.root = repo(str(Path(self.tmp.name) / change.replace("/", "-")), SLOW_WORKFLOW, SLOW_RULES + RULES)
+        (self.root / change).write_text("changed\n", encoding="utf-8")
+        commit(self.root, "the series")
+
+    def test_a_series_that_changes_src_needs_the_slow_receipt_and_another_does_not(self):
+        self.slow_repo("scripts/tool.py")
+        self.assertEqual(len(self.run_all()), 4, "the slow steps are not among the local ones")
+        self.assertIn("slow receipt not asked", c.check(self.root))
+        self.slow_repo("src/lib.rs")
+        self.run_all()
+        with self.assertRaisesRegex(c.ReceiptError, r"no slow receipt.*run --slow.*2 slow steps"):
+            c.check(self.root)
+        seen = self.run_all(cls="slow")
+        self.assertEqual([u["cmd"] for u in seen], ["cargo llvm-cov --lib", "python3 scripts/ratchet.py"],
+                         "in the workflow's order: the ratchet reads what the step before wrote")
+        self.assertRegex(c.check(self.root), r"slow receipt: 2 of 2 steps green.*1 file\(s\) under src/")
+
+    def test_a_red_slow_step_and_a_slow_receipt_alone_are_refused(self):
+        self.slow_repo("src/lib.rs")
+        self.run_all(cls="slow")
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt for the code of HEAD"):
+            c.check(self.root)
+        self.run_all()
+        self.run_all(red="ratchet", cls="slow")
+        with self.assertRaisesRegex(c.ReceiptError, "1 of 2 slow step"):
+            c.check(self.root)
+
+    def test_a_base_that_cannot_be_read_and_src_changed_without_a_slow_step_are_errors(self):
+        (self.root / "src/lib.rs").write_text("pub fn one() -> u32 { 4 }\n", encoding="utf-8")
+        commit(self.root, "code")
+        self.run_all()
+        with self.assertRaisesRegex(c.ReceiptError, "no slow step"):
+            c.check(self.root)
+        with self.assertRaisesRegex(c.ReceiptError, "merge-base nowhere/main"):
+            c.check(self.root, "nowhere/main")
 
     def test_without_a_receipt_the_check_refuses_and_with_a_green_one_it_passes(self):
         with self.assertRaisesRegex(c.ReceiptError, "no receipt for the code of HEAD"):
@@ -255,6 +302,10 @@ class ThisRepository(unittest.TestCase):
         doc = next(u for u in units if u["cmd"] == "cargo doc --lib --no-deps")
         self.assertEqual(doc["env"].get("RUSTDOCFLAGS"), "-Dwarnings", "the job's env reaches the step")
         self.assertFalse([cmd for cmd in cmds if cmd.startswith("cargo test")], "no test leg is run here")
+        slow = [u["cmd"] for u in c.local_steps(c.ROOT, "slow")]
+        self.assertEqual(len(slow), 2, "the push's lib coverage and its ratchet, in this order")
+        self.assertIn("cargo llvm-cov --lib --summary-only", slow[0])
+        self.assertEqual(slow[1], "python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt")
 
 
 if __name__ == "__main__":

@@ -1546,8 +1546,8 @@ class Lander:
             self.sh(*cmd)
         # the cheap prepass does not build: every workflow step that can run here (lints, doc builds, checkers)
         # has run on this code, all green (scripts/local_receipt.py; without the receipt a red one is found a CI
-        # round later)
-        self.sh(sys.executable, "scripts/local_receipt.py", "check")
+        # round later); a series that changes src/ needs the receipt of the lib coverage ratchet too (`run --slow`)
+        self.sh(sys.executable, "scripts/local_receipt.py", "check", "--base", f"{self.remote}/{self.branch}")
         self.check_changelog()
 
     def check_changelog(self) -> None:
