@@ -715,8 +715,9 @@ fn swing_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
-const SWING_XPBD: &str = "0200ff7dd4c996cf0873b066e788c0dedd1cb3e33dac67c017090a97c33f3361";
-const SWING_TGS: &str = "57047368dcb483a8dcf139a9fd66d3dfa8f50874a3f8716c1881df6f995716d2";
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
+const SWING_XPBD: &str = "9c59d12d82c1c71b00bfc366e18d55db877f66b1da314caa6114c3982d74ea22";
+const SWING_TGS: &str = "87045c9a7801f961d983371fd7dc6b11246cfc1ed54b8dd1b15739b2b439ed70";
 
 /// golden (determinism): the world snapshot and the payload of the swing scene
 /// after 256 frames, for each backend, printed so the log shows the bits.

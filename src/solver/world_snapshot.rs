@@ -2056,7 +2056,7 @@ impl PhysicsWorld {
     /// the last substep (`u64` count, at least 1, then per body ascending its index
     /// `u64` and the pose the dynamics left it at, `Vec3Fix` and `QuatFix`); another
     /// bit is refused. A world with no such body writes the byte as before.
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 10;
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 11;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -2126,7 +2126,7 @@ impl PhysicsWorld {
     /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
     /// | `body_axis_locks` | saved | from version 8 always (a count of 0 without locks); a version 7 blob has them only when a body had a lock, a version 1 to 6 blob none |
     /// | `axis_lock_starts` | not covered | scratch of one substep, empty between steps |
-    /// | `cloths` / next grab id | saved | every [`crate::cloth::Cloth`]: particles (position, previous, velocity, inverse mass), triangles, pins and the inverse masses they replaced, wind, [`crate::cloth::ClothConfig`], rest tether, rest positions, grabs, `last_dt` (version 9; an older blob restores no cloth). The sleep flag and the sleep snapshot are rebuilt (sleep on, awake): they change no bit, and if the body was at its fixed point the next step is the identity and puts it back to sleep with the same bits |
+    /// | `cloths` / next grab id | saved | every [`crate::cloth::Cloth`]: particles (position, previous, velocity, inverse mass), triangles, pins and the inverse masses they replaced, wind, [`crate::cloth::ClothConfig`], rest tether, triangle area constraint (compliance and rest areas, version 11; an older blob restores it off), rest positions, grabs, `last_dt` (version 9; an older blob restores no cloth). The sleep flag and the sleep snapshot are rebuilt (sleep on, awake): they change no bit, and if the body was at its fixed point the next step is the identity and puts it back to sleep with the same bits |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -2182,7 +2182,7 @@ impl PhysicsWorld {
     /// | section | content |
     /// |---|---|
     /// | `continuous_collision` | `enabled: u8` (`0` / `1`), `motion_threshold` ([`PhysicsWorld::continuous_collision`]) |
-    /// | `cloths` (version 9) | `count: u64`, per body: `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each) and inverse masses (`Fix128`), `triangles: u64` then `u64 × 3` each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`) each, `wind`, config (`iterations: u64`, `substeps: u64`, `gravity`, `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`, `self_collision: u8`, `self_collision_distance`), tether (`u8`, then `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then per grab `id: u32`, `particle: u64`, `target`, `applied` × 2, then `last_dt`; after every cloth `next_grab_id: u32` |
+    /// | `cloths` (version 9) | `count: u64`, per body: `particles: u64`, positions / previous positions / velocities (`Vec3Fix` each) and inverse masses (`Fix128`), `triangles: u64` then `u64 × 3` each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`) each, `wind`, config (`iterations: u64`, `substeps: u64`, `gravity`, `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`, `self_collision: u8`, `self_collision_distance`), flags (`u8`: bit 0 tether, bit 1 area constraint from version 11), `stiffness`, `damping` when bit 0, area `compliance`, `rest_areas: u64` then `Fix128` each when bit 1, `rest: u64` then `Vec3Fix` each, `grabs: u64` then per grab `id: u32`, `particle: u64`, `target`, `applied` × 2, then `last_dt`; after every cloth `next_grab_id: u32` |
     ///
     /// The version is raised for it because the reader rejects trailing
     /// bytes: a section appended to a version 2 blob could not be told apart
@@ -2869,7 +2869,7 @@ fn w_cloth(w: &mut W, c: &crate::cloth::Cloth) {
     c.write_state(&mut w.0);
 }
 
-fn r_cloth(r: &mut R<'_>) -> Res<crate::cloth::Cloth> {
+fn r_cloth(r: &mut R<'_>, version: u16) -> Res<crate::cloth::Cloth> {
     use crate::cloth::{Cloth, ClothConfig, Grab, GrabId};
     const S: &str = "cloths";
     let bad = || WorldSnapshotError::InvalidValue { section: S };
@@ -2933,8 +2933,26 @@ fn r_cloth(r: &mut R<'_>) -> Res<crate::cloth::Cloth> {
         self_collision: r.bool(S)?,
         self_collision_distance: r.fix()?,
     };
-    let tether = if r.bool(S)? {
+    // bit 0: rest tether; bit 1: triangle area constraint (version 11; a version 9 or
+    // 10 blob has no area constraint, and its byte is the tether's bool)
+    let flags = r.u8()?;
+    let known = if version >= 11 { 0b11 } else { 0b01 };
+    if flags & !known != 0 {
+        return Err(bad());
+    }
+    let tether = if flags & 1 != 0 {
         Some((r.fix()?, r.fix()?))
+    } else {
+        None
+    };
+    let area = if flags & 0b10 != 0 {
+        let compliance = r.fix()?;
+        let m = r.len(S, 16)?;
+        let mut rest_areas = Vec::with_capacity(m);
+        for _ in 0..m {
+            rest_areas.push(r.fix()?);
+        }
+        Some((compliance, rest_areas))
     } else {
         None
     };
@@ -2975,6 +2993,11 @@ fn r_cloth(r: &mut R<'_>) -> Res<crate::cloth::Cloth> {
     cloth.set_rest_positions(&rest).map_err(|_| bad())?;
     if let Some((k, d)) = tether {
         cloth.set_rest_tether(k, d);
+    }
+    if let Some((compliance, rest_areas)) = area {
+        cloth
+            .restore_area_constraint(compliance, rest_areas)
+            .map_err(|()| bad())?;
     }
     // the exact sleep is on, as for a body just added (it changes no bit)
     cloth.set_sleep(true);
@@ -3377,7 +3400,7 @@ fn decode_payload(r: &mut R<'_>, version: u16, legacy_step: Option<Fix128>) -> R
         let n = r.len("cloths", 8)?;
         let mut v = Vec::with_capacity(n);
         for _ in 0..n {
-            v.push(r_cloth(r)?);
+            v.push(r_cloth(r, version)?);
         }
         (v, r.u32()?)
     } else {
@@ -4765,8 +4788,8 @@ mod tests {
     #[test]
     fn a_magnet_takes_the_first_free_force_field_tag_and_the_version_stays() {
         // 7 came with the axis locks, 8 with the sleep rule as time, 9 with soft bodies,
-        // 10 with the contact section; none for a magnet
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
+        // 10 with the contact section, 11 with the cloth area constraint; none for a magnet
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 11);
         let v = Vec3Fix::from_int;
         let one = Fix128::ONE;
         let older = [
@@ -4941,7 +4964,7 @@ mod tests {
         assert_eq!(
             t.snapshot_world(),
             current,
-            "written again: the version 10 blob"
+            "written again: the current blob"
         );
         let mut a = sectioned_world();
         for _ in 0..30 {
@@ -4952,6 +4975,78 @@ mod tests {
             a.snapshot_world(),
             t.snapshot_world(),
             "they step on identically"
+        );
+    }
+
+    /// A world holding a cloth with the triangle area constraint on (a 4×4 sheet, a
+    /// corner pulled out over the first frames so the areas are away from rest).
+    fn area_world() -> PhysicsWorld {
+        let mut w = variant_world();
+        let mut cloth =
+            crate::cloth::Cloth::new_grid(v(20, 3, 0), Fix128::ONE, Fix128::ONE, 4, 4, fx(1, 100));
+        // the reader rebuilds the constraints from the rest shape, so a cloth in a world
+        // snapshot carries its rest positions (as `sectioned_world` does)
+        let rest = cloth.positions.clone();
+        cloth.set_rest_positions(&rest).expect("the rest shape");
+        cloth.config.gravity = Vec3Fix::ZERO;
+        cloth.pin(0);
+        cloth.velocities[15] = v(1, 0, 1);
+        cloth.set_area_constraint(fx(1, 1000));
+        w.add_cloth(cloth);
+        w
+    }
+
+    /// Version 11 carries a cloth's area constraint: a world restored from its blob has
+    /// the same compliance and rest areas, writes the same blob, and steps on bit for bit
+    /// as the world it came from.
+    #[test]
+    fn a_cloths_area_constraint_survives_the_world_snapshot() {
+        let mut w = area_world();
+        for _ in 0..10 {
+            w.step(fx(1, 60));
+        }
+        let blob = w.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&blob).expect("the blob restores");
+        assert_eq!(t.cloths[0].area_constraint(), Some(fx(1, 1000)));
+        assert_eq!(t.snapshot_world(), blob, "written again: the same blob");
+        for _ in 0..30 {
+            w.step(fx(1, 60));
+            t.step(fx(1, 60));
+        }
+        assert_eq!(
+            w.cloths[0].positions, t.cloths[0].positions,
+            "same trajectory"
+        );
+        assert_eq!(
+            w.snapshot_world(),
+            t.snapshot_world(),
+            "they step on identically"
+        );
+    }
+
+    /// `blob` relabelled with an earlier `version`, same bytes otherwise.
+    fn relabelled(blob: &[u8], version: u16) -> Vec<u8> {
+        let mut b = blob.to_vec();
+        b[4..6].copy_from_slice(&version.to_le_bytes());
+        reseal(b)
+    }
+
+    /// A version 10 blob has no area constraint: a cloth without one (its flag byte is
+    /// the tether's bool) restores with the constraint off, and a blob labelled 10 whose
+    /// flag byte carries the area bit is refused rather than misread.
+    #[test]
+    fn a_version_10_blob_restores_the_area_constraint_off_and_refuses_the_area_bit() {
+        let plain = sectioned_world();
+        let v10 = relabelled(&plain.snapshot_world(), 10);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        t.restore_world(&v10).expect("a version 10 blob restores");
+        assert_eq!(t.cloths[0].area_constraint(), None);
+        let with_area = relabelled(&area_world().snapshot_world(), 10);
+        let mut u = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            u.restore_world(&with_area),
+            Err(WorldSnapshotError::InvalidValue { section: "cloths" })
         );
     }
 
@@ -5205,12 +5300,13 @@ mod tests {
         assert_eq!(super::header_len(6), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &10u16.to_le_bytes());
+        assert_eq!(&b[4..6], &11u16.to_le_bytes());
         assert_eq!(super::header_len(7), 80);
         assert_eq!(super::header_len(8), 80);
         assert_eq!(super::header_len(9), 80);
         assert_eq!(super::header_len(10), 80);
-        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
+        assert_eq!(super::header_len(11), 80);
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 11);
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;

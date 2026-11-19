@@ -344,11 +344,13 @@ test("one impulse changes the digest, the same calls do not", () => {
 // golden (regenerated on purpose only, with the Rust test that pins the same two values,
 // tests/state_digest.rs GOLDEN_STATE_DIGEST / GOLDEN_LAW_ID): the jointed scene after 120 steps
 // must give these exact bytes in WebAssembly as on every native platform
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header
+// moved; the same value as GOLDEN_STATE_DIGEST in tests/state_digest.rs
 test("the jointed scene's digest and law id are the golden the native platforms compute", () => {
   const w = jointedScene();
   for (let i = 0; i < 120; i++) w.step(DT);
   const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-  assert.equal(hex(w.stateDigest()), "f49b4c81040c771c19e3aab6a1f979897e2b3ee17aeefbb00833509a0cb70fd2");
+  assert.equal(hex(w.stateDigest()), "2d317d21daae0bd07148ba7bdfbd64edf83f139b162b6597129a277c238b81ac");
   assert.equal(hex(w.lawId()), "e05d07424ae4be0f309f955ed444b6752132c200ddf6a3b63e892e36bc3feb6b");
 });
 

@@ -1131,9 +1131,9 @@ fn snapshot_carries_the_setting() {
     let blob = w.snapshot_world();
     // version 10 (damping as rates per second from version 6, the sleep rule and
     // the idle counts as time from version 8, the cloth section from version 9, the
-    // contact section from version 10)
-    assert_eq!(&blob[4..6], &10u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v10 blob");
+    // contact section from version 10, a cloth's area constraint from version 11)
+    assert_eq!(&blob[4..6], &11u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v11 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

@@ -1929,6 +1929,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
+pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
@@ -1941,12 +1943,14 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
 pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::total_area(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
 impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
@@ -11818,6 +11822,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
+pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
@@ -11830,12 +11836,14 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
 pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::total_area(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
 impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
@@ -24715,6 +24723,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
+pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics_core::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics_core::math::Vec3Fix>
 pub fn alice_physics_core::cloth::Cloth::from_mesh(alloc::vec::Vec<alice_physics_core::math::Vec3Fix>, alloc::vec::Vec<[usize; 3]>, alice_physics_core::math::Fix128) -> Self
@@ -24727,12 +24737,14 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_sleep(&mut self, bool)
 pub fn alice_physics_core::cloth::Cloth::sleep_enabled(&self) -> bool
 pub fn alice_physics_core::cloth::Cloth::step(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::step_with_sdf(&mut self, alice_physics_core::math::Fix128, &[alice_physics_core::sdf_collider::SdfCollider])
+pub fn alice_physics_core::cloth::Cloth::total_area(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::cloth::Cloth::unpin(&mut self, usize)
 impl alice_physics_core::cloth::Cloth
 pub fn alice_physics_core::cloth::Cloth::from_outline(&alice_physics_core::cloth::OutlineDesc) -> core::result::Result<Self, alice_physics_core::cloth::OutlineError>
