@@ -693,6 +693,17 @@ fn run_crumple(
     steps: usize,
     self_collision_distance: Fix128,
 ) -> (usize, usize, Vec<Vec3Fix>) {
+    run_crumple_lifted(self_collision, steps, self_collision_distance, 0)
+}
+
+/// `run_crumple` with the lift raised by `extra` raw units (`extra · 2⁻⁶⁴`), for an
+/// ensemble of starts a few ulp to `2⁻²⁰` apart
+fn run_crumple_lifted(
+    self_collision: bool,
+    steps: usize,
+    self_collision_distance: Fix128,
+    extra: u64,
+) -> (usize, usize, Vec<Vec3Fix>) {
     const RES: usize = 9;
     let mut cloth = Cloth::new_grid(
         Vec3Fix::ZERO,
@@ -704,7 +715,7 @@ fn run_crumple(
     );
     cloth.config.self_collision = self_collision;
     cloth.config.self_collision_distance = self_collision_distance;
-    let bump = Fix128::from_ratio(1, 8);
+    let bump = Fix128::from_ratio(1, 8) + Fix128::from_raw(0, extra);
     cloth.positions[4 * RES + 4].y = bump;
     cloth.prev_positions[4 * RES + 4].y = bump;
 
@@ -1735,4 +1746,66 @@ fn translating_the_whole_scene_does_not_change_the_predicate() {
     let moved = segment_pierces_triangle(p0 + shift, p1 + shift, a + shift, b + shift, c + shift);
     // `Fix128` の加算は厳密なので、差分から作る述語は平行移動で bit 一致する
     assert_eq!(base, moved, "平行移動で述語が変わった");
+}
+
+/// The crumple over 15 starts: the lift raised by `k · 2⁻⁴⁰` (k = 0..9) and `k · 2⁻²⁰`
+/// (k = 1..5). Self-contact must not leave more edge-edge pairs inside the contact
+/// thickness than the same run without it, on any start, and must leave none among the
+/// pairs the solver controls (both edges free).
+///
+/// Measured with the `Fix128` transcendentals at the format's resolution (60 steps,
+/// default radius; not yet measured on the previous trigonometry): ON 19, 9, 27, 17, 2, 0, 9, 2, 2, 4, 8, 8, 6, 2, 7
+/// against OFF 13, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3 (ON above OFF on 14 of 15, a
+/// tie at 0 on one); free pairs ON 6, 3, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0; the smallest
+/// edge-edge distance² lower with ON on all 15. A single start read 0 under the previous
+/// `Fix128` trigonometry, which is how the single-start baseline above came to be 0.
+#[test]
+#[ignore = "known defect: cloth-self-contact-edge-edge-worse-than-off: self-contact leaves more edge-edge pairs inside the thickness than no self-contact on 14 of 15 starts (median 7 against 0) and free pairs inside it on 5 of 15"]
+fn self_contact_never_leaves_more_edge_edge_violations_than_none_over_an_ensemble() {
+    let radius = default_radius();
+    let cloth = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::from_int(8),
+        Fix128::from_int(8),
+        9,
+        9,
+        Fix128::from_ratio(1, 100),
+    );
+    let pinned = |i: usize| {
+        let (r, c) = (i / 9, i % 9);
+        r == 0 || c == 0 || r == 8 || c == 8
+    };
+    let mut starts: Vec<u64> = (0..10u64).map(|k| k << 24).collect();
+    starts.extend((1..6u64).map(|k| k << 44));
+    let mut rows = Vec::new();
+    for &extra in &starts {
+        let (_, _, on) = run_crumple_lifted(true, SEPARATION_STEPS, radius, extra);
+        let (_, _, off) = run_crumple_lifted(false, SEPARATION_STEPS, radius, extra);
+        let all_on = edge_edge_separation(&on, &cloth.triangles, radius, &pinned, false);
+        let all_off = edge_edge_separation(&off, &cloth.triangles, radius, &pinned, false);
+        let free_on = edge_edge_separation(&on, &cloth.triangles, radius, &pinned, true);
+        assert!(
+            free_on.population > 0,
+            "no free edge pairs at start {extra}"
+        );
+        rows.push((
+            extra,
+            all_on.violations,
+            all_off.violations,
+            free_on.violations,
+        ));
+    }
+    // anti-vacuous: an ensemble where nothing comes near the thickness tests nothing
+    assert!(
+        rows.iter().any(|r| r.2 > 0),
+        "no start has an edge-edge violation without self-contact: {rows:?}"
+    );
+    assert_eq!(rows.len(), 15, "the ensemble has 15 starts");
+    for &(extra, on, off, free) in &rows {
+        assert!(
+            on <= off && free == 0,
+            "start {extra}: self-contact leaves {on} edge-edge pairs inside the thickness \
+             ({free} of them free) against {off} without it; all (start, on, off, free): {rows:?}"
+        );
+    }
 }
