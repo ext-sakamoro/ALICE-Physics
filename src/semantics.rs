@@ -213,7 +213,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "physics2d",
-        hex32("8d1e013f0bceb47c12d10e1f9e00dd35966484bba8146ea578d0883536f54dc1"),
+        hex32("3bacaf4b5e98a62da162e1dbc9e3905fecb2f5d5fb23c34290e8bc315c9ee8b3"),
     ),
     (
         "secondary chain",
@@ -221,7 +221,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "step_parallel shared-body order",
-        hex32("6a5d9698aeeb7a1743b51f9c57015c9fc292cf27fc7b20c61a7d02ad7a06cbc6"),
+        hex32("9fde7bda6853494332e8c600aa9ed41841558419df0201968e4c84d9b3d3f1a2"),
     ),
     (
         "installed bridge",

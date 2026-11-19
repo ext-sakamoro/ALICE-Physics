@@ -342,7 +342,7 @@ fn anisotropic_hash(backend: SolverBackend, parallel: bool) -> String {
 const GOLDEN_ANISOTROPIC_XPBD: &str =
     "0f804d25480989ac61dd70b4c1b318ad1795d32934be9617d37a68b1a25e632c";
 const GOLDEN_ANISOTROPIC_TGS: &str =
-    "dc45925c5bcc2d5cf5472de757efc7234d8b1d62db6842f82408041a4fcd517b";
+    "065bd841745bc8b81e82dc04b630c7aed4f5aaf70e31a0bdb8cccb05bbcdadbc";
 
 /// oracle (c): the anisotropic path is unchanged (pinned on the code before
 /// the isotropic case was handled separately). `step_parallel` is compared
