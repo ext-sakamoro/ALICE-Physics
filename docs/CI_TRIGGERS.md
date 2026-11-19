@@ -20,6 +20,18 @@ files disagree, or when it compares no row (CI test job and `scripts/preflight.s
 | schedule-only | never runs on a `ci/**` push (schedule, manual dispatch, pull request) |
 | tag-only | runs on a version tag |
 
+## The test job's shards
+
+On Linux and Windows the `test` job of `ci.yml` runs as four jobs, one per shard: a matrix
+value is `<runner>, <shard>` (`checks`: the checker tests and the landing-script tests;
+`default`: the builds and the `ci-test` suite; `parallel`: the same suite with `parallel`;
+`features`: the library tests of the other feature sets and the remaining checks), and
+the job is named `Test (<runner>, <shard>)`. Each step says where it runs with an `if:` over
+`matrix.os`. The macOS values are the runner alone and run every step in one job, so the
+macOS legs below keep their names. `scripts/ci_test_shards_check.py` (CI test job and
+`scripts/preflight.sh`) fails unless every step runs exactly once per runner, every sharded
+runner has all four shards in every event, and every condition is one it can read.
+
 ## Path gates
 
 A workflow with a path gate has no `paths` filter on `on.push`. GitHub's filter

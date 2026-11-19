@@ -118,6 +118,8 @@ python3 scripts/test_changed_paths.py
 python3 scripts/changed_paths.py sync
 python3 scripts/test_ci_triggers_check.py
 python3 scripts/ci_triggers_check.py
+python3 scripts/test_ci_test_shards_check.py
+python3 scripts/ci_test_shards_check.py
 python3 scripts/test_package_contents_check.py
 python3 scripts/package_contents_check.py
 python3 scripts/test_package_git_patches.py
