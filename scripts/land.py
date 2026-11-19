@@ -1544,6 +1544,9 @@ class Lander:
             if "--scip" in cmd and skip:
                 continue   # (the CI's scip job runs it on the same SHA: ci_receipt requires that job)
             self.sh(*cmd)
+        # the cheap prepass does not build: the CI's clippy lines have run on this code, all of them, all green
+        # (scripts/clippy_receipt.py; without the receipt a diagnostic is found a CI round later)
+        self.sh(sys.executable, "scripts/clippy_receipt.py", "check")
         self.check_changelog()
 
     def check_changelog(self) -> None:

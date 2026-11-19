@@ -1024,6 +1024,13 @@ jobs:
         run: python3 scripts/test_wiring_guard.py
       - name: wiring-guard (新規の未配線 / 理由の無い dead_code が無い)
         run: python3 scripts/wiring_guard.py
+
+      # scripts/clippy_receipt.py reads the clippy lines of the workflows for the receipt a
+      # landing asks for: its tests, and that it reads lines from these workflows (0 lines fail)
+      - name: clippy receipt (the script's tests, and the lines it reads here)
+        run: |
+          python3 scripts/test_clippy_receipt.py
+          python3 scripts/clippy_receipt.py lines
       # 物理 module の宣言: scripts/model-modules.txt の module は MODEL 節 (方程式 / 単位 / 保存則 / 適用範囲 /
       # 近似 / 検証 / 段) を持ち、名指しの試験が実在して #[ignore] でなく CI の cargo test で走る
       # (未記載は scripts/model-section-baseline.txt のラチェット、比較 0 件で fail)

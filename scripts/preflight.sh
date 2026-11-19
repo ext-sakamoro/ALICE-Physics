@@ -199,6 +199,10 @@ python3 scripts/gen-wiring-status.py --check
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
+
+step "clippy receipt (the script's tests, and the lines it reads here)"
+python3 scripts/test_clippy_receipt.py
+python3 scripts/clippy_receipt.py lines
 python3 scripts/test_model_section_check.py
 python3 scripts/model_section_check.py
 python3 scripts/test_contact_law_matrix.py
