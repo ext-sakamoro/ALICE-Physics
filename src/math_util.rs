@@ -40,24 +40,7 @@ pub fn exp_fix(x: Fix128) -> Fix128 {
     if x <= sat_lo {
         return Fix128::ZERO;
     }
-    let half = Fix128::from_ratio(1, 2);
-    let neg_half = Fix128::from_ratio(-1, 2);
-    let mut y = x;
-    let mut shifts: u32 = 0;
-    while y > half || y < neg_half {
-        y = y.half();
-        shifts += 1;
-    }
-    let mut term = Fix128::ONE;
-    let mut sum = Fix128::ONE;
-    for k in 1..=12u32 {
-        term = term * y / Fix128::from_int(i64::from(k));
-        sum = sum + term;
-    }
-    for _ in 0..shifts {
-        sum = sum * sum;
-    }
-    sum
+    x.exp()
 }
 
 /// Integer power `x^n` via repeated multiplication.
@@ -98,28 +81,7 @@ pub fn cbrt_fix(n: Fix128) -> Fix128 {
     if n <= Fix128::ZERO {
         return Fix128::ZERO;
     }
-    // n > 0 so `hi >= 0` and the 128-bit pattern is the unsigned value n·2^64.
-    let bits = (u128::from(n.hi as u64) << 64) | u128::from(n.lo);
-    let p = 127 - bits.leading_zeros() as i32;
-    let e = (p - 63 + 2).div_euclid(3);
-    let mut x = if e >= 0 {
-        Fix128::from_int(1_i64 << e)
-    } else {
-        Fix128 {
-            hi: 0,
-            lo: 1_u64 << (64 + e),
-        }
-    };
-    for _ in 0..24 {
-        let x_sq = x * x;
-        if x_sq.is_zero() {
-            break;
-        }
-        // x_{k+1} = (2·x + n/x²) / 3
-        let new = (x.double() + n / x_sq) / Fix128::from_int(3);
-        x = new;
-    }
-    x
+    crate::fix128_kernels::cbrt_floor(n)
 }
 
 /// Clamp `x` to `[lo, hi]`. Assumes `lo ≤ hi`.
