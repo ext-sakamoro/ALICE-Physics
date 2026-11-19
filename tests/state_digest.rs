@@ -240,8 +240,9 @@ fn hex(b: &[u8]) -> String {
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
 const GOLDEN_STATE_DIGEST: &str =
-    "f49b4c81040c771c19e3aab6a1f979897e2b3ee17aeefbb00833509a0cb70fd2";
+    "2d317d21daae0bd07148ba7bdfbd64edf83f139b162b6597129a277c238b81ac";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): moved with the identifier only
 const GOLDEN_LAW_ID: &str = "e05d07424ae4be0f309f955ed444b6752132c200ddf6a3b63e892e36bc3feb6b";
@@ -252,8 +253,9 @@ const GOLDEN_LAW_ID: &str = "e05d07424ae4be0f309f955ed444b6752132c200ddf6a3b63e8
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "93e650e56723bbf6877fdde5aae5acc8ff8f6d73f9c304a5b426122c343312ca";
+    "e83dc707151f2d8b34722d11286b2db37f772c77735403aedc3ed9abc5bd0dcb";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

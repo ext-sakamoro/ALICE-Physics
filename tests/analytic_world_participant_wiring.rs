@@ -585,7 +585,7 @@ fn a_version_10_blob_extends_the_version_1_payload() {
     let w = legacy_snapshot(v1);
     let v7 = w.snapshot_world();
     assert_eq!(&v7[0..4], &v1[0..4]);
-    assert_eq!(&v7[4..6], &10u16.to_le_bytes());
+    assert_eq!(&v7[4..6], &11u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l7) = (len(v1), len(&v7));
     let expected = as_version_7_payload(

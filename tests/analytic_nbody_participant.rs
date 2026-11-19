@@ -564,8 +564,9 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
-const THREE_BODY_XPBD: &str = "d2a139af5058372402ffb1eece28b1eb55e9bfd9bf83e1bf77acaa176dd9cffa";
-const THREE_BODY_TGS: &str = "8326c9c519d06ec24a78c922a4f9c398fdde63bd6092beabe32e032dbf1e21c9";
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
+const THREE_BODY_XPBD: &str = "4b0d3ad36d4829885c5edd5cc08e8f6bdbf651619734ae5ea476459441be65cf";
+const THREE_BODY_TGS: &str = "398a94cf217a0e986c8a20568dfa0369ca1cc9bbb4e1249503742b793e6459cb";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
