@@ -984,6 +984,8 @@ pub(crate) mod gyroscopic;
 // hidden from the public surface; re-expose via semver-minor bump if
 // concrete demand emerges).
 pub(crate) mod det_hash;
+// fixed-slab data parallelism whose bits do not depend on the thread count
+pub(crate) mod par_slabs;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs;
 #[cfg(feature = "std")]
