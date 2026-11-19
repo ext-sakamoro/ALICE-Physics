@@ -1909,8 +1909,12 @@ class Landing(Isolated):
         commit(self.r.upstream, {"scripts/other.py": "x\n"}, "ci: other")
         git(self.r.upstream, "push", "-q", "origin", "HEAD:refs/heads/ci/T-1")
         commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: x")
+        refused = self.r.lander()
+        with self.assertRaisesRegex(land.LandError, r"holds other commits .*land\.py --id T-1 --replace-ci"):
+            refused.land()
+        self.assertEqual(refused.preflight_runs, 0, "refused before the preparation, not after it")
         with self.assertRaisesRegex(land.LandError, "holds other commits"):
-            self.r.lander().land()
+            self.r.lander(dry_run=True).land()   # a dry run says so too
         self.r.lander(replace_ci=True).land()  # explicit: an earlier attempt of ours
 
     def test_ci_ref_from_our_earlier_attempt_is_reused(self):

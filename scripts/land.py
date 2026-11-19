@@ -2120,6 +2120,42 @@ class Lander:
                                 f"rebase; first difference: {first}: refusing to push")
         self.log(f"commit messages: {len(now)} byte-identical to before the rebase")
 
+    def only_ledger_commits_beyond_ours(self, held: str) -> bool:
+        """every commit of `held` without a patch-equal commit in HEAD changes ledgers only (the
+        regenerated-ledgers commit of an earlier attempt, which HEAD has only after its own preparation)"""
+        r = subprocess.run([*self.git_argv, "cherry", "HEAD", held], cwd=self.root, capture_output=True, text=True,
+                           env=self.git_env)
+        if r.returncode != 0:
+            return False
+        for line in r.stdout.splitlines():
+            if line.startswith("-"):
+                continue
+            paths = [p for p in self.git("diff-tree", "--no-commit-id", "--name-only", "-r", line.split()[1]).splitlines() if p]
+            if not paths or any(p not in GENERATED and p not in SEMI_GENERATED for p in paths):
+                return False
+        return True
+
+    def refuse_foreign_ci_ref(self, held: str, prepared: bool = True) -> None:
+        """LandError when ci/<id> holds commits that are neither in HEAD nor patch-equal to ours and
+        --replace-ci was not given; the message carries the command to run. Before the preparation
+        (`prepared` False) an earlier attempt's ledger commit is not counted against it"""
+        ref = f"ci/{self.id}"
+        self.git("fetch", "-q", self.remote, held, check=False)
+        r = subprocess.run([*self.git_argv, "merge-base", "--is-ancestor", held, "HEAD"], cwd=self.root,
+                           env=self.git_env)
+        ours = self.owns_ref(held) or (not prepared and self.only_ledger_commits_beyond_ours(held))
+        if r.returncode != 0 and not ours and not self.replace_ci:
+            raise LandError(f"{ref} holds other commits ({held[:7]}); pick another --id, or, if it is your own "
+                            f"earlier attempt (e.g. amended after a red CI), run again with --replace-ci: "
+                            f"python3 scripts/land.py --id {self.id} --replace-ci")
+
+    def ci_ref_early(self) -> None:
+        """the same refusal before anything is rebuilt or checked: without it a landing that only
+        lacks --replace-ci stops after the whole preparation (2026-11-19: 20 minutes in)"""
+        held = self.git("ls-remote", self.remote, f"refs/heads/ci/{self.id}").split()
+        if held:
+            self.refuse_foreign_ci_ref(held[0], prepared=False)
+
     def push_evidence(self, sha: str, first: bool) -> None:
         """Push `sha` to ci/<id> and wait for the expected set (wait_evidence)."""
         ref = f"ci/{self.id}"
@@ -2135,12 +2171,7 @@ class Lander:
                     self.ci_receipt(ref, sha)
                 return
             if existing:
-                self.git("fetch", "-q", self.remote, existing[0], check=False)
-                r = subprocess.run([*self.git_argv, "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root,
-                                   env=self.git_env)
-                if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
-                    raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
-                                    "if it is your own earlier attempt (e.g. amended after a red CI)")
+                self.refuse_foreign_ci_ref(existing[0])
         # our own ci/<id>: a re-evidence push replaces the earlier attempt (and its pending run)
         self.check_remote()
         self.check_messages()
@@ -2337,6 +2368,8 @@ class Lander:
             lane = "ci"
             self.record.append(f"lane: ci (ci/{self.id})")
         self.log(f"lane: {lane}")
+        if lane == "ci":
+            self.ci_ref_early()
         # the ledgers are rebuilt before the first preflight: it checks them against a
         # freshly built index, so ledgers written from an older index would fail there
         sha = self.prepare("preflight")
