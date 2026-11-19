@@ -23,7 +23,7 @@
 //! | `Fix128` `+` `-` | `\|a ± b\| < 2⁶³` | wrap |
 //! | `Fix128` `/` | `\|a/b\| < 2⁶³` | wrap (`checked_div` は 0 除算しか見ない) |
 //! | `sqrt` | 非負の全域 | (超えない) |
-//! | `sin` `cos` | 全域で wrap しない | 絶対誤差が `\|x\|·2⁻⁷⁰` 程度で増える |
+//! | `sin` `cos` | 全域 (誤差は 1 ulp 以内、π/2 を 188 bit で持って還元) | (超えない) |
 //! | `exp` | `x < 43` | saturate (文書どおり) |
 //! | `powf_pos` | 結果 `< 2⁶³` | saturate (`exp` と同じ上限) |
 //! | `Vec3Fix::length_squared` / `length` / `normalize` | `\|v\| < 2³¹·⁵ ≈ 3.04e9` | wrap、`length` は 0、`normalize` は ZERO (`checked_*` 版は `None`) |
@@ -360,14 +360,14 @@ fn sqrt_is_the_exact_floor_over_the_whole_positive_range() {
     }
 }
 
-/// characterization: `sin` / `cos` は wrap しないが、引数の還元で絶対誤差が
-/// `|x|` に比例して増える (2π の表現誤差 × 周回数、実測 ≈ `|x|·2⁻⁷⁰`)
+/// `sin` / `cos` は大きな引数でも精度を落とさない (π/2 を 188 bit で持って還元する)
+/// 参照の f64 `sin` は 2⁶⁰ まで正確に還元するので、差は f64 の丸め (≤ 2⁻⁵³) だけ
 #[test]
-fn characterization_sin_absolute_error_grows_with_the_argument() {
+fn sin_keeps_its_accuracy_for_large_arguments() {
     let err = |n: u32| (pow2(n).sin().to_f64() - ((1u64 << n) as f64).sin()).abs();
-    assert!(err(20) < 1e-12, "2²⁰: {}", err(20));
-    assert!(err(40) < 1e-7, "2⁴⁰: {}", err(40));
-    assert!(err(60) > 1e-5, "2⁶⁰: {} (誤差が増えていない)", err(60));
+    for n in [20, 40, 60] {
+        assert!(err(n) <= 2f64.powi(-53), "2^{n}: {}", err(n));
+    }
     // 増えても単位円からは外れない
     let (s, c) = pow2(60).sin_cos();
     assert!(((s * s + c * c).to_f64() - 1.0).abs() < 1e-9);
@@ -395,7 +395,10 @@ fn powf_pos_saturates_from_2_pow_63_and_integer_powers_stay_exact() {
     // 範囲内: 厳密
     assert_eq!(pow2(31).powf_pos(two), pow2(62));
     assert_eq!(two.powf_pos(Fix128::from_int(62)), pow2(62));
-    assert_eq!(Fix128::from_int(3).powf_pos(Fix128::from_int(39)), Fix128::from_int(4_052_555_153_018_976_267));
+    assert_eq!(
+        Fix128::from_int(3).powf_pos(Fix128::from_int(39)),
+        Fix128::from_int(4_052_555_153_018_976_267)
+    );
     // 範囲外: 上限で止まる (wrap しない)
     assert_eq!(pow2(32).powf_pos(two), max);
     assert_eq!(two.powf_pos(Fix128::from_int(63)), max);
@@ -403,9 +406,18 @@ fn powf_pos_saturates_from_2_pow_63_and_integer_powers_stay_exact() {
     assert_eq!(Fix128::from_int(1000).powf_pos(Fix128::from_int(7)), max);
     // 小数部のある指数でも同じ (614^6.6 ≈ 2.7e18 は範囲内、614^6.9 ≈ 1.8e19 は範囲外)
     let in_range = Fix128::from_int(614).powf_pos(Fix128::from_ratio(66, 10));
-    assert!(in_range > Fix128::from_int(2_000_000_000_000_000_000), "614^6.6 = {in_range:?}");
-    assert!(in_range < Fix128::from_int(3_000_000_000_000_000_000), "614^6.6 = {in_range:?}");
-    assert_eq!(Fix128::from_int(614).powf_pos(Fix128::from_ratio(69, 10)), max);
+    assert!(
+        in_range > Fix128::from_int(2_000_000_000_000_000_000),
+        "614^6.6 = {in_range:?}"
+    );
+    assert!(
+        in_range < Fix128::from_int(3_000_000_000_000_000_000),
+        "614^6.6 = {in_range:?}"
+    );
+    assert_eq!(
+        Fix128::from_int(614).powf_pos(Fix128::from_ratio(69, 10)),
+        max
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +475,8 @@ fn rotate_vec_does_not_wrap_up_to_2_pow_62() {
 }
 
 /// characterization: 回転の絶対誤差は `|v|` に比例する (四元数の成分が厳密でない)
-/// 2³¹ の点を 90° 回すと 1e-5 m 級ずれる ⇒ 絶対座標を回さず相対ベクトルを回す
+/// 2³¹ の点を 90° 回すと `x` が 1.6e-10 残る (成分の 1 ulp × `|v|` 程度、実測
+/// 1.65e-10 ≈ 1.4·|v|·2⁻⁶⁴) ⇒ 絶対座標を回さず相対ベクトルを回す
 #[test]
 fn characterization_rotate_vec_absolute_error_scales_with_magnitude() {
     let q = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), Fix128::HALF_PI);
@@ -473,8 +486,10 @@ fn characterization_rotate_vec_absolute_error_scales_with_magnitude() {
         .x
         .abs()
         .to_f64();
-    assert!(small < 1e-12, "|v|=1: {small}");
-    assert!(big > 1e-7 && big < 1e-3, "|v|=2³¹: {big}");
+    let ulp = 2f64.powi(-64);
+    assert!(small <= 2.0 * ulp, "|v|=1: {small}");
+    let scaled = 2f64.powi(31) * ulp;
+    assert!(big > 0.5 * scaled && big < 4.0 * scaled, "|v|=2³¹: {big}");
 }
 
 /// `Mat3Fix::inverse` は `|det|` が `2⁶³` 以上なら `None` (以前は境界の直後で
@@ -1696,7 +1711,8 @@ fn in_range_fingerprints() -> Vec<(u32, SolverBackend, u64)> {
 /// 範囲内の scene は、範囲の検査を足す前の solver と `serialize_state` が
 /// bit 一致する (指紋は範囲の検査を足す前の solver で同じ関数を走らせて記録した値
 /// TGS の姿勢を厳密な指数写像で積分するようになった後の solver で取り直した
-/// XPBD の 7 件は、XPBD の速度を予測速度 + 位置補正 / h で求めるようになったため再記録した)
+/// XPBD の 7 件は、XPBD の速度を予測速度 + 位置補正 / h で求めるようになったため再記録した
+/// `Fix128` の sin / cos / atan2 / exp / ln を 1 ulp 以内にした時に 13 件を取り直した)
 ///
 /// `parallel` は積分と速度導出を rayon で回すが、body ごとに独立な計算なので
 /// 同じ値になる (修正前の commit で両方を測って一致を確認)
@@ -1755,17 +1771,17 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// warm start の力積) を足した時に取り直した blob の形式だけが動く (記憶を書かず version を 5 に
 /// 戻すと 13 件すべてが直前の値と一致する)
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0xc9cec26c286b1b6f_u64),
-    (1, SolverBackend::Xpbd, 0x504615e51866c0d9_u64),
-    (2, SolverBackend::Xpbd, 0x6ff3627f9c0f1395_u64),
+    (0, SolverBackend::Xpbd, 0x742bf890c6bb4167_u64),
+    (1, SolverBackend::Xpbd, 0xb623028a6a8c85c6_u64),
+    (2, SolverBackend::Xpbd, 0x8473e4e0cb0004fc_u64),
     (3, SolverBackend::Xpbd, 0x67919b94ca406d18_u64),
-    (4, SolverBackend::Xpbd, 0xbbe10561e196b12a_u64),
+    (4, SolverBackend::Xpbd, 0x18cc3d94bc62cd04_u64),
     (5, SolverBackend::Xpbd, 0x44cd6f433f469052_u64),
     (6, SolverBackend::Xpbd, 0xed2c2345e44cfa42_u64),
-    (0, SolverBackend::Tgs, 0x6de10e7d8618cf68_u64),
-    (1, SolverBackend::Tgs, 0x767ec6ea71c818f0_u64),
-    (2, SolverBackend::Tgs, 0xf0b7b70772170e20_u64),
+    (0, SolverBackend::Tgs, 0xdbba673134a1b852_u64),
+    (1, SolverBackend::Tgs, 0x73f071dd958479bc_u64),
+    (2, SolverBackend::Tgs, 0x10e10ab535fccebe_u64),
     (3, SolverBackend::Tgs, 0x67919b94ca406d18_u64),
-    (4, SolverBackend::Tgs, 0x33e7ab672b5caae0_u64),
-    (5, SolverBackend::Tgs, 0x4dfd2c61a269b331_u64),
+    (4, SolverBackend::Tgs, 0x457d7be72aff9d26_u64),
+    (5, SolverBackend::Tgs, 0x6454d22279f02c01_u64),
 ];
