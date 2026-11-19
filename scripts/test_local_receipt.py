@@ -74,7 +74,10 @@ def repo(tmp: str, workflow: str = WORKFLOW, rules: str = RULES) -> Path:
     (root / "docs").mkdir()
     (root / "docs/oracle-status.md").write_text("ledger 1\n", encoding="utf-8")
     (root / "tests").mkdir()
-    (root / "tests/in_lib.rs").write_text("// included\n", encoding="utf-8")
+    (root / "tests/in_lib.rs").write_text('// included\n#[path = "support/deeper.rs"]\nmod deeper;\n', encoding="utf-8")
+    (root / "tests/support").mkdir()
+    (root / "tests/support/deeper.rs").write_text("// included by an included file\n", encoding="utf-8")
+    (root / "tests/support/apart.rs").write_text("// of the test binaries only\n", encoding="utf-8")
     (root / "tests/apart.rs").write_text("// its own binary\n", encoding="utf-8")
     (root / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
     (root / "README.md").write_text("readme 1\n", encoding="utf-8")
@@ -200,7 +203,8 @@ class Receipt(unittest.TestCase):
         self.assertRegex(c.check(self.root), r"slow receipt: 2 of 2 steps green.*1 input\(s\).*src/lib\.rs")
 
     def test_every_input_of_the_lib_coverage_asks_for_the_slow_receipt(self):
-        for change, asked in (("tests/in_lib.rs", True), ("tests/apart.rs", False), ("Cargo.toml", True),
+        for change, asked in (("tests/in_lib.rs", True), ("tests/apart.rs", False), ("tests/support/deeper.rs", True),
+                              ("tests/support/apart.rs", False), ("Cargo.toml", True),
                               ("build.rs", True), ("scripts/line-coverage-baseline.txt", True),
                               (".github/workflows/ci.yml", True), ("README.md", False)):
             self.slow_repo(change)
@@ -337,6 +341,7 @@ class ThisRepository(unittest.TestCase):
                          "the receipt outlives what a landing writes, and nothing else")
         includes, holders = c.slow_inputs(c.ROOT)
         self.assertGreaterEqual(len(includes), 10, "the tests/ files the lib includes are read from src/")
+        self.assertIn("tests/support/law_rows.rs", includes, "an include of an included file")
         self.assertEqual(holders, {".github/workflows/security-audit.yml"})
         slow = [u["cmd"] for u in c.local_steps(c.ROOT, "slow")]
         self.assertEqual(len(slow), 2, "the push's lib coverage and its ratchet, in this order")

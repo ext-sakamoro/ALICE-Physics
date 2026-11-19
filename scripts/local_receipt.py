@@ -258,17 +258,24 @@ def receipt_path(key: str, cls: str = "local") -> Path:
 
 
 def included(root: Path) -> set[str]:
-    """the files outside src/ that a file of HEAD's src/ includes with #[path = "..."] (they are
-    compiled into the lib and its tests); an include that names no file of HEAD is an error"""
+    """the files outside src/ that the lib compiles: what a file of HEAD's src/ includes with
+    #[path = "..."], and what an included file includes, to the end (each path is relative to
+    the directory of the file that names it); an include that names no file of HEAD is an error"""
     tracked = set(git(root, "ls-files").splitlines())
+    todo = sorted(t for t in tracked if t.startswith("src/") and t.endswith(".rs"))
+    read: set[str] = set(todo)
     out: set[str] = set()
-    for f in sorted(t for t in tracked if t.startswith("src/") and t.endswith(".rs")):
+    while todo:
+        f = todo.pop()
         for rel in INCLUDE.findall((root / f).read_text(encoding="utf-8")):
             target = os.path.normpath(os.path.join(os.path.dirname(f), rel)).replace(os.sep, "/")
             if target not in tracked:
                 raise ReceiptError(f"{f}: #[path = \"{rel}\"] names {target}, not a file of this checkout")
             if not target.startswith("src/"):
                 out.add(target)
+            if target not in read:
+                read.add(target)
+                todo.append(target)
     return out
 
 
