@@ -43,9 +43,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 7 / 7 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 45 / 22 / 9 / 22 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 46 / 22 / 9 / 23 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
-| `cloth` | world API (step 5 of 51 items) | 5 / 29 / 7 / 10 / 0 | C ABI, Python, WebAssembly |
+| `cloth` | world API (step 5 of 53 items) | 5 / 30 / 7 / 11 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
@@ -56,7 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 11 items) | 4 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 41 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 75 of 244 items) | 75 / 139 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 76 of 245 items) | 76 / 139 / 8 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 2 of 10 items) | 2 / 8 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -108,7 +108,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `filter` | standalone (step 3, binding 1 of 18 items) | 3 / 0 / 1 / 14 / 0 | C ABI, Python, WebAssembly |
 | `flow_viz` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `fluid` | standalone | 0 / 0 / 0 / 17 / 0 | — |
+| `fluid` | standalone | 0 / 0 / 0 / 19 / 0 | — |
 | `fluid_boundary_map` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `fluid_netcode` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `fracture` | standalone | 0 / 0 / 0 / 8 / 0 | — |
@@ -183,7 +183,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `thick_chain` | standalone | 0 / 0 / 0 / 23 / 0 | — |
+| `thick_chain` | standalone | 0 / 0 / 0 / 27 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `touch` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `touch_layers` | standalone | 0 / 0 / 0 / 25 / 0 | — |
