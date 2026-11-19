@@ -40,7 +40,10 @@ RULES = "scripts/local-receipt-rules.tsv"
 RUN = re.compile(r"^(\s*)(- )?run:\s*(.*)$")
 PAIR = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*?)\s*$")
 NOT_COMPILED = ("docs/",)
-CLASSES = ("local", "ci")
+CLASSES = ("local", "slow", "ci")
+# a series that changes a file under one of these needs the `slow` steps too (the lib coverage ratchet)
+SLOW_PATHS = ("src/",)
+BASE = "origin/main"
 # what the runner gives a step and this machine does not: a local step may not read it
 RUNNER_ONLY = re.compile(r"\$\{\{|\$\{?GITHUB_|\$\{?RUNNER_")
 
@@ -155,7 +158,7 @@ def read_rules(text: str) -> list[dict]:
             continue
         cols = row.split("\t")
         if len(cols) != 3 or cols[0] not in CLASSES or len(cols[2].strip()) < 12:
-            raise ReceiptError(f"{RULES}:{n}: a rule is `local|ci<TAB>regex<TAB>reason (12 characters or more)`")
+            raise ReceiptError(f"{RULES}:{n}: a rule is `local|slow|ci<TAB>regex<TAB>reason (12 characters or more)`")
         try:
             rules.append({"class": cols[0], "re": re.compile(cols[1], re.M), "src": cols[1], "reason": cols[2], "n": n})
         except re.error as e:
@@ -184,10 +187,10 @@ def sort_steps(found: list[dict], rules: list[dict]) -> list[dict]:
                             f"with the reason): {s['cmd'].splitlines()[0][:100]}")
             continue
         used.add(rule["n"])
-        if rule["class"] == "local":
+        if rule["class"] != "ci":
             reads = [v for v in (s["cmd"], s["cwd"], *s["env"].values()) if RUNNER_ONLY.search(v)]
             if reads or s["shell"] != "bash":
-                problems.append(f"{where}: a `local` rule (line {rule['n']}) matches a step that reads the runner "
+                problems.append(f"{where}: a `{rule['class']}` rule (line {rule['n']}) matches a step that reads the runner "
                                 f"({(reads or [s['shell']])[0][:60]!r}): {s['cmd'].splitlines()[0][:80]}")
                 continue
         out.append({**s, "class": rule["class"], "rule": rule["n"]})
@@ -197,19 +200,20 @@ def sort_steps(found: list[dict], rules: list[dict]) -> list[dict]:
     return out
 
 
-def local_steps(root: Path) -> list[dict]:
-    """the steps to run here, each command once (the first workflow that has it names it)"""
+def local_steps(root: Path, cls: str = "local") -> list[dict]:
+    """the steps of one class to run here, in the workflows' order, each command once (the
+    first workflow that has it names it)"""
     rules = read_rules((root / RULES).read_text(encoding="utf-8"))
     seen: set[str] = set()
     out = []
     for s in sort_steps(workflow_steps(root), rules):
         unit = {"cmd": s["cmd"], "env": s["env"], "cwd": s["cwd"]}
         key = json.dumps(unit, sort_keys=True)
-        if s["class"] == "local" and key not in seen:
+        if s["class"] == cls and key not in seen:
             seen.add(key)
             out.append(unit)
     if not out:
-        raise ReceiptError("no local step: nothing to run is an error, not a pass")
+        raise ReceiptError(f"no {cls} step: nothing to run is an error, not a pass")
     return out
 
 
@@ -238,8 +242,16 @@ def receipt_dir() -> Path:
     return Path(base) if base else Path.home() / ".cache" / "alice-siblings" / "local-receipts"
 
 
-def receipt_path(key: str) -> Path:
-    return receipt_dir() / f"{key}.json"
+def receipt_path(key: str, cls: str = "local") -> Path:
+    return receipt_dir() / (f"{key}.json" if cls == "local" else f"{key}.{cls}.json")
+
+
+def needs_slow(root: Path, base: str | None = None) -> list[str]:
+    """the files under SLOW_PATHS that HEAD changes since it left `base` (a base that cannot
+    be read is an error: the answer is not "nothing changed")"""
+    fork = git(root, "merge-base", base or BASE, "HEAD").strip()
+    changed = git(root, "diff", "--name-only", fork, "HEAD").splitlines()
+    return [f for f in changed if f.startswith(SLOW_PATHS)]
 
 
 def shell(root: Path, logs: Path):
@@ -262,17 +274,17 @@ def shell(root: Path, logs: Path):
     return runner
 
 
-def run(root: Path, runner=None, only: str | None = None) -> tuple[Path | None, list[dict]]:
-    """run every local step to the end (a red step does not stop the next) and write the
-    receipt; with `only` (a regex) run the matching steps and write nothing"""
+def run(root: Path, runner=None, only: str | None = None, cls: str = "local") -> tuple[Path | None, list[dict]]:
+    """run every step of the class to the end (a red step does not stop the next) and write
+    the receipt; with `only` (a regex) run the matching steps and write nothing"""
     dirty = [row for row in git(root, "status", "--porcelain", "--untracked-files=no").splitlines()
              if compiled(row[3:])]
     if dirty and only is None:
         raise ReceiptError(f"{len(dirty)} tracked file(s) differ from HEAD ({dirty[0][3:]} ...): "
                            "the receipt is of a commit, commit first")
-    units = local_steps(root)
+    units = local_steps(root, cls)
     key = code_key(root)
-    logs = receipt_dir() / f"{key}.logs"
+    logs = receipt_dir() / (f"{key}.logs" if cls == "local" else f"{key}.{cls}.logs")
     if runner is None:
         logs.mkdir(parents=True, exist_ok=True)
         runner = shell(root, logs)
@@ -282,40 +294,53 @@ def run(root: Path, runner=None, only: str | None = None) -> tuple[Path | None, 
             continue
         t0 = time.monotonic()
         rc = runner(n, unit)
-        print(f"local_receipt: {n}/{len(units)} rc={rc} {time.monotonic() - t0:.0f}s :: "
+        print(f"local_receipt: {cls} {n}/{len(units)} rc={rc} {time.monotonic() - t0:.0f}s :: "
               f"{unit['cmd'].splitlines()[0][:110]}", flush=True)
         ran.append({**unit, "rc": rc})
     if only is not None:
         return None, ran
-    path = receipt_path(key)
+    path = receipt_path(key, cls)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"key": key, "head": git(root, "rev-parse", "HEAD").strip(), "steps": ran,
                                 "compared": len(ran)}, indent=1) + "\n", encoding="utf-8")
     return path, ran
 
 
-def check(root: Path) -> str:
-    """the line land.py prints, or ReceiptError: no receipt, another set of steps, a red step, nothing run"""
-    units = local_steps(root)
+def check_class(root: Path, cls: str) -> str:
+    units = local_steps(root, cls)
     key = code_key(root)
-    path = receipt_path(key)
+    path = receipt_path(key, cls)
+    flag = "" if cls == "local" else f" --{cls}"
     if not path.exists():
-        raise ReceiptError(f"no receipt for the code of HEAD ({key[:12]}): run `python3 scripts/local_receipt.py "
-                           f"run` on this commit (the workflows' {len(units)} local steps) before the landing")
+        raise ReceiptError(f"no {'' if cls == 'local' else cls + ' '}receipt for the code of HEAD ({key[:12]}): run `python3 scripts/local_receipt.py "
+                           f"run{flag}` on this commit (the workflows' {len(units)} {cls} steps) before the landing")
     data = json.loads(path.read_text(encoding="utf-8"))
     ran = data.get("steps") or []
     if data.get("key") != key or [{k: r.get(k) for k in ("cmd", "env", "cwd")} for r in ran] != units:
         raise ReceiptError(f"the receipt {path.name} is not of these {len(units)} steps: run it again")
     red = [r["cmd"].splitlines()[0] for r in ran if r.get("rc") != 0]
     if red:
-        raise ReceiptError(f"{len(red)} of {len(ran)} local step(s) not green in the receipt: {red[0]}")
-    return f"local receipt: {len(ran)} of {len(units)} steps green on the code of HEAD ({key[:12]})"
+        raise ReceiptError(f"{len(red)} of {len(ran)} {cls} step(s) not green in the receipt: {red[0]}")
+    return f"{cls} receipt: {len(ran)} of {len(units)} steps green on the code of HEAD ({key[:12]})"
+
+
+def check(root: Path, base: str | None = None) -> str:
+    """the line land.py prints, or ReceiptError: no receipt, another set of steps, a red step,
+    nothing run; the `slow` receipt too when the series changes a file under SLOW_PATHS"""
+    line = check_class(root, "local")
+    touched = needs_slow(root, base)
+    if not touched:
+        return f"{line}; slow receipt not asked (no file under {'/'.join(SLOW_PATHS)} changed since {base or BASE})"
+    return f"{line}; {check_class(root, 'slow')} ({len(touched)} file(s) under {' '.join(SLOW_PATHS)} changed)"
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("what", choices=("steps", "run", "check"))
-    ap.add_argument("--only", help="run: a regex; only the matching local steps are run and no receipt is written")
+    ap.add_argument("--only", help="run: a regex; only the matching steps are run and no receipt is written")
+    ap.add_argument("--slow", action="store_true", help="run: the `slow` steps (the lib coverage ratchet, about "
+                    "half an hour) in place of the local ones; their receipt is asked when the series changes src/")
+    ap.add_argument("--base", default=BASE, help=f"check: the branch the series left (default {BASE})")
     args = ap.parse_args(argv)
     try:
         if args.what == "steps":
@@ -324,16 +349,17 @@ def main(argv: list[str] | None = None) -> int:
             for s in sorted_steps:
                 print(f"{s['class']}\t{s['workflow']}:{s['line']}\trule {s['rule']}\t{s['cmd'].splitlines()[0][:100]}")
             n = sum(1 for s in sorted_steps if s["class"] == "local")
+            slow = sum(1 for s in sorted_steps if s["class"] == "slow")
             print(f"local_receipt: {len(sorted_steps)} steps: {n} local ({len(local_steps(ROOT))} distinct), "
-                  f"{len(sorted_steps) - n} the CI's")
+                  f"{slow} slow ({len(local_steps(ROOT, 'slow'))} distinct), {len(sorted_steps) - n - slow} the CI's")
         elif args.what == "run":
-            path, ran = run(ROOT, only=args.only)
+            path, ran = run(ROOT, only=args.only, cls="slow" if args.slow else "local")
             red = sum(1 for r in ran if r["rc"] != 0)
             print(f"local_receipt: {len(ran) - red} of {len(ran)} steps green, "
                   + (f"receipt {path}" if path else "no receipt written (--only)"))
             return 1 if red or not ran else 0
         else:
-            print(check(ROOT))
+            print(check(ROOT, args.base))
     except ReceiptError as e:
         print(f"local_receipt: {e}", file=sys.stderr)
         return 1
