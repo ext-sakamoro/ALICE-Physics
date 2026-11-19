@@ -134,7 +134,7 @@ fn main() {
     // the 0.2-0.5 m bins match the closed form)
     let h = config.kernel_radius.to_f64();
     let vol = config.particle_mass.to_f64() / rho0;
-    let cg = 45.0 / (std::f64::consts::PI * h.powi(6));
+    let cg = 45.0 / (std::f64::consts::PI * (h * h * h) * (h * h * h));
     let mut sm = vec![0.0_f64; nb + 1];
     for b in fluid.boundary.iter() {
         let (bx, by, bz) = (b.x.to_f64(), b.y.to_f64(), b.z.to_f64());
