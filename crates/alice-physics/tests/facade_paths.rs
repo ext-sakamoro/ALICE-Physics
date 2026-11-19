@@ -1556,6 +1556,12 @@ use alice_physics::thermal_stress as _;
 use alice_physics::thermal_stress::analyze_thermal_stress as _;
 use alice_physics::thermal_stress::yield_temperature_c as _;
 use alice_physics::thermal_stress::ThermalStressReport as _;
+use alice_physics::thick_chain as _;
+use alice_physics::thick_chain::ThickChain as _;
+use alice_physics::thick_chain::ThickChainConfig as _;
+use alice_physics::thick_chain::ThickChainError as _;
+use alice_physics::thick_chain::ThickChainStretch as _;
+use alice_physics::thick_chain::P2 as _;
 use alice_physics::thin_wall as _;
 use alice_physics::thin_wall::analyze_thickness as _;
 use alice_physics::thin_wall::analyze_thickness_grid as _;
@@ -2011,7 +2017,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1993 paths, checked at compile time
+    // 1999 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
