@@ -738,7 +738,7 @@ fn determinism_fluid_step() {
 /// (boundary particles in the density, XSPH) and a free 5 x 5 x 5 block laid out 15 %
 /// wider than the rest spacing, without gravity, for 60 frames (`C >= 0` clamped, cohesion
 /// pulling it in). Positions, velocities and the floor reaction.
-const GOLDEN_FLUID_PBF: &str = "8c0a8249d35143e2fc3a3f2dcd3f44ee08917246e19d7b92be91b345e76886d8";
+const GOLDEN_FLUID_PBF: &str = "fc4a30b4f455577663d6df9c4be51bdc9f71088e0c4fb0ade574facec210d08c";
 
 #[test]
 fn determinism_fluid_pbf() {
