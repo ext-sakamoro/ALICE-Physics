@@ -193,7 +193,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     // solids as density maps with the force on each solid (the normal split at a foot)
     (
         "fluid pbf",
-        hex32("8c0a8249d35143e2fc3a3f2dcd3f44ee08917246e19d7b92be91b345e76886d8"),
+        hex32("fc4a30b4f455577663d6df9c4be51bdc9f71088e0c4fb0ade574facec210d08c"),
     ),
     // the cloth's damping as a rate (a 120 Hz step keeps the square root of the 60 Hz retention)
     (
