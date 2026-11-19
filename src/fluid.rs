@@ -92,7 +92,8 @@
 //!   (`tests/analytic_fluid_newton_fixture.rs`: the cube two kernel radii above the floor,
 //!   3008 particles, at frame 124 of its run): with that grid the step gives 9.18e5 times the
 //!   bound, with the grid of every iteration 2.7e-3 (measured 2026-11-19). The 900-frame cube
-//!   run of `tests/analytic_fluid_sdf_body.rs` sees it too (1.45e6 times the bound); the two
+//!   run (`the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames` in
+//!   `tests/analytic_fluid_sdf_body.rs`, weekly) sees it too (1.45e6 times the bound); the two
 //!   small scenes of the unit tests do not move a particle across a cell inside the
 //!   iterations and stay bit-identical either way.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
