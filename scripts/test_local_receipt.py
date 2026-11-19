@@ -249,7 +249,8 @@ class ThisRepository(unittest.TestCase):
         cmds = [u["cmd"] for u in units]
         self.assertGreaterEqual(len(units), 100)
         for wanted in ("cargo clippy --all-targets -- -D warnings", "cargo doc --lib --no-deps",
-                       "python3 scripts/g2_comparisons.py", "cargo fmt --all -- --check"):
+                       "python3 scripts/g2_comparisons.py", "cargo fmt --all -- --check",
+                       "python scripts/run_examples.py"):
             self.assertIn(wanted, cmds)
         doc = next(u for u in units if u["cmd"] == "cargo doc --lib --no-deps")
         self.assertEqual(doc["env"].get("RUSTDOCFLAGS"), "-Dwarnings", "the job's env reaches the step")
