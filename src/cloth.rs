@@ -20,14 +20,19 @@
 //! `α̃ = α / h²`); velocities `v = (x − x_prev) / h` after the solve. The rest tether
 //! ([`Cloth::set_rest_tether`]) is the damped harmonic oscillator
 //! `m·ẍ = −k·(x − x_rest) − c·ẋ + m·a` solved exactly over `h` (`ω = √(k/m)`,
-//! `ζ = c / (2·√(k·m))`). Gravity and wind are a constant acceleration `a` per substep.
+//! `ζ = c / (2·√(k·m))`). Gravity and wind are a constant acceleration `a` per substep. The
+//! triangle area constraint ([`Cloth::set_area_constraint`]), when on, is `C = A − A₀` per
+//! triangle (`A = |(x₁ − x₀) × (x₂ − x₀)| / 2`) with its own compliance, solved in the same
+//! iterations after the bending constraints: the sheet is then incompressible in its plane
+//! (a strip pulled to `L` narrows to `W₀·L₀/L`, in-plane Poisson ratio 1).
 //!
 //! **Units.** SI: positions m, masses kg, time s, `k` N/m, `c` N·s/m, compliances m/N,
 //! velocities m/s; every quantity is `Fix128` (Q64.64), so a run replays bit for bit.
 //!
 //! **Conservation.** A stretch correction moves the two particles in opposite directions
 //! in proportion to their inverse masses, so the pair's linear momentum is unchanged by the
-//! correction (exactly: `Fix128` addition is exact). Energy is not conserved: the tether's
+//! correction (exactly: `Fix128` addition is exact). The area correction's three gradients sum to
+//! zero, so with equal masses it moves no momentum either (to rounding). Energy is not conserved: the tether's
 //! `c` dissipates it (physically), and `config.damping` is a velocity retention per frame
 //! (numerical, frame-rate dependent). The exact sleep ([`Cloth::set_sleep`]) skips a step
 //! only when the previous step changed no bit under the same inputs, so it alters no
@@ -96,7 +101,9 @@
 //! not collide with rigid bodies or static colliders.
 //!
 //! **Validation.** `tests/analytic_cloth_rest_tether.rs` (oscillator closed form: period,
-//! decay, critical damping), `tests/cloth_sleep_oracle.rs` (exact fixed point, wake on
+//! decay, critical damping), `tests/analytic_cloth_area_constraint.rs` (a pulled strip's
+//! width against `W₀·L₀/L` and its area kept to 1e-6, the small area-preserving mode at the
+//! tether's period and decay, no energy gain after release, momentum, off bit-identical), `tests/cloth_sleep_oracle.rs` (exact fixed point, wake on
 //! input change, bit identity with sleep off), `tests/soft_letters_oracle.rs` (rest is
 //! still, local stretch, throw velocity bit identity, recovery to rest within 600 frames,
 //! digest coverage, frozen replay digest), `tests/cloth_state_digest.rs` (replay bit
@@ -273,6 +280,8 @@ pub struct Cloth {
     pub config: ClothConfig,
     /// Rest tether: per-particle spring-damper toward `rest_positions` (`None` = off)
     rest_tether: Option<RestTether>,
+    /// Triangle area constraint (`None` = off, see [`Cloth::set_area_constraint`])
+    area: Option<AreaConstraint>,
     /// The step this cloth was made with ([`Self::step`]): the world steps its cloths through it,
     /// so the cloth step is linked only into programs that make a cloth.
     step_fn: fn(&mut Cloth, Fix128),
@@ -304,8 +313,23 @@ struct SleepSnapshot {
     wind: Vec3Fix,
     config: ClothConfig,
     rest_tether: Option<RestTether>,
+    area: Option<AreaConstraint>,
     rest_positions: Vec<Vec3Fix>,
     dt: Fix128,
+}
+
+/// `|(b − a) × (c − a)| / 2`.
+fn triangle_area(a: Vec3Fix, b: Vec3Fix, c: Vec3Fix) -> Fix128 {
+    (b - a).cross(c - a).length().half()
+}
+
+/// Compliance and rest areas of the triangle area constraint (see
+/// [`Cloth::set_area_constraint`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AreaConstraint {
+    compliance: Fix128,
+    /// One per triangle, in the order of `triangles`.
+    rest_areas: Vec<Fix128>,
 }
 
 /// Stiffness / damping of the rest tether (see [`Cloth::set_rest_tether`]).
@@ -625,6 +649,7 @@ impl Cloth {
             wind: Vec3Fix::ZERO,
             config: ClothConfig::default(),
             rest_tether: None,
+            area: None,
             rest_positions: Vec::new(),
             pin_released: Vec::new(),
             sleep_enabled: false,
@@ -661,6 +686,7 @@ impl Cloth {
             wind: Vec3Fix::ZERO,
             config: ClothConfig::default(),
             rest_tether: None,
+            area: None,
             rest_positions: Vec::new(),
             pin_released: Vec::new(),
             sleep_enabled: false,
@@ -802,6 +828,7 @@ impl Cloth {
             && s.wind == self.wind
             && s.config == self.config
             && s.rest_tether == self.rest_tether
+            && s.area == self.area
             && s.rest_positions == self.rest_positions
     }
 
@@ -816,6 +843,7 @@ impl Cloth {
             wind: self.wind,
             config: self.config,
             rest_tether: self.rest_tether,
+            area: self.area.clone(),
             rest_positions: self.rest_positions.clone(),
             dt,
         }
@@ -895,6 +923,57 @@ impl Cloth {
     #[must_use]
     pub fn rest_positions(&self) -> &[Vec3Fix] {
         &self.rest_positions
+    }
+
+    /// Turn on the triangle area constraint: every triangle keeps its rest area
+    /// `A₀`, `C = A − A₀` with `A = |(x₁ − x₀) × (x₂ − x₀)| / 2`, solved with the stretch
+    /// and bending constraints inside every iteration (so what it moves a particle by
+    /// enters the particle's velocity like every other constraint). `compliance` is in
+    /// m²/N (0 = the area is kept exactly at convergence; negative values are treated as
+    /// 0). The rest areas are those of the rest positions when they are set (one per
+    /// particle, [`set_rest_positions`] or the tether), else of the current positions.
+    /// A sheet that keeps each triangle's area is incompressible in its plane: pulled to
+    /// `L` it narrows to `W₀·L₀/L` (in-plane Poisson ratio 1).
+    ///
+    /// [`set_rest_positions`]: Self::set_rest_positions
+    pub fn set_area_constraint(&mut self, compliance: Fix128) {
+        let shape = if self.rest_positions.len() == self.positions.len() {
+            &self.rest_positions
+        } else {
+            &self.positions
+        };
+        let rest_areas = self
+            .triangles
+            .iter()
+            .map(|&[a, b, c]| triangle_area(shape[a], shape[b], shape[c]))
+            .collect();
+        self.area = Some(AreaConstraint {
+            compliance: if compliance.is_negative() {
+                Fix128::ZERO
+            } else {
+                compliance
+            },
+            rest_areas,
+        });
+    }
+
+    /// Turn the triangle area constraint off.
+    pub fn clear_area_constraint(&mut self) {
+        self.area = None;
+    }
+
+    /// The compliance of the triangle area constraint, if enabled.
+    #[must_use]
+    pub fn area_constraint(&self) -> Option<Fix128> {
+        self.area.as_ref().map(|a| a.compliance)
+    }
+
+    /// The sum of the triangles' areas at the current positions.
+    #[must_use]
+    pub fn total_area(&self) -> Fix128 {
+        self.triangles.iter().fold(Fix128::ZERO, |sum, &[a, b, c]| {
+            sum + triangle_area(self.positions[a], self.positions[b], self.positions[c])
+        })
     }
 
     /// Step through the step this cloth was made with (the world's cloth step uses it)
@@ -1052,6 +1131,7 @@ impl Cloth {
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
+            self.solve_area_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
@@ -1167,6 +1247,57 @@ impl Cloth {
                 self.positions[c.i1] = self.positions[c.i1] - correction * w1;
             }
         }
+    }
+
+    /// Solve the triangle area constraints ([`Self::set_area_constraint`]), if enabled.
+    ///
+    /// With `n = (x₁ − x₀) × (x₂ − x₀)` and `n̂ = n / |n|`, `A = |n| / 2` and
+    /// `∇₁A = (x₂ − x₀) × n̂ / 2`, `∇₂A = n̂ × (x₁ − x₀) / 2`, `∇₀A = −∇₁A − ∇₂A`; the
+    /// correction is `Δxᵢ = −wᵢ (A − A₀) / (Σ wⱼ |∇ⱼA|² + α / h²) · ∇ᵢA`, the same form
+    /// as the stretch constraint. The gradients sum to zero, so with equal masses the
+    /// correction moves no momentum. A degenerate triangle (`|n| = 0`) has no direction
+    /// and is skipped.
+    fn solve_area_constraints(&mut self, dt: Fix128) {
+        let Some(area) = self.area.take() else {
+            return;
+        };
+        let alpha = area.compliance / (dt * dt);
+        for (t, &rest) in self.triangles.iter().zip(&area.rest_areas) {
+            let [i0, i1, i2] = *t;
+            let (p0, p1, p2) = (self.positions[i0], self.positions[i1], self.positions[i2]);
+            let (w0, w1, w2) = (
+                self.inv_masses[i0],
+                self.inv_masses[i1],
+                self.inv_masses[i2],
+            );
+            let e1 = p1 - p0;
+            let e2 = p2 - p0;
+            let n = e1.cross(e2);
+            let len = n.length();
+            if len.is_zero() {
+                continue;
+            }
+            // n̂ / 2
+            let half_n_hat = n * (Fix128::ONE / len).half();
+            let g1 = e2.cross(half_n_hat);
+            let g2 = half_n_hat.cross(e1);
+            let g0 = -(g1 + g2);
+            let denom = w0 * g0.dot(g0) + w1 * g1.dot(g1) + w2 * g2.dot(g2) + alpha;
+            if denom.is_zero() {
+                continue;
+            }
+            let lambda = (len.half() - rest) / denom;
+            if !w0.is_zero() {
+                self.positions[i0] = self.positions[i0] - g0 * (w0 * lambda);
+            }
+            if !w1.is_zero() {
+                self.positions[i1] = self.positions[i1] - g1 * (w1 * lambda);
+            }
+            if !w2.is_zero() {
+                self.positions[i2] = self.positions[i2] - g2 * (w2 * lambda);
+            }
+        }
+        self.area = Some(area);
     }
 
     /// Solve bending constraints (dihedral angle).
@@ -2669,8 +2800,9 @@ impl Cloth {
     /// each, `pinned: u64` then `u64` each, `pin_released: u64` then (`u64`, `Fix128`)
     /// each, `wind`, the configuration (`iterations: u64`, `substeps: u64`, `gravity`,
     /// `damping`, `stretch_compliance`, `bend_compliance`, `sdf_friction`, `thickness`,
-    /// `self_collision: u8`, `self_collision_distance`), the rest tether (`u8`, then
-    /// `stiffness`, `damping` when 1), `rest: u64` then `Vec3Fix` each, `grabs: u64` then
+    /// `self_collision: u8`, `self_collision_distance`), a flag byte (bit 0 the rest
+    /// tether, bit 1 the area constraint), then `stiffness`, `damping` when the tether is
+    /// on and `compliance`, `areas: u64`, `Fix128` each when the area constraint is on, `rest: u64` then `Vec3Fix` each, `grabs: u64` then
     /// per grab `id: u32`, `particle: u64`, `target`, the two applied targets, then
     /// `last_dt`. This is the cloth's section of
     /// [`PhysicsWorld::snapshot_world`](crate::solver::PhysicsWorld::snapshot_world).
@@ -2717,13 +2849,20 @@ impl Cloth {
         push_fix(out, self.config.thickness);
         out.push(u8::from(self.config.self_collision));
         push_fix(out, self.config.self_collision_distance);
-        match self.rest_tether {
-            Some(t) => {
-                out.push(1);
-                push_fix(out, t.stiffness);
-                push_fix(out, t.damping);
+        // bit 0: tether, bit 1: area constraint (a cloth without one writes the byte as
+        // before the area constraint existed)
+        let flags = u8::from(self.rest_tether.is_some()) | (u8::from(self.area.is_some()) << 1);
+        out.push(flags);
+        if let Some(t) = self.rest_tether {
+            push_fix(out, t.stiffness);
+            push_fix(out, t.damping);
+        }
+        if let Some(a) = &self.area {
+            push_fix(out, a.compliance);
+            u(out, a.rest_areas.len());
+            for &r in &a.rest_areas {
+                push_fix(out, r);
             }
-            None => out.push(0),
         }
         u(out, self.rest_positions.len());
         for p in &self.rest_positions {
@@ -2786,13 +2925,18 @@ impl Cloth {
         fold_fix(&mut h, c.config.thickness);
         fold(&mut h, &[u8::from(c.config.self_collision)]);
         fold_fix(&mut h, c.config.self_collision_distance);
-        match c.rest_tether() {
-            Some((k, d)) => {
-                fold(&mut h, &[1]);
-                fold_fix(&mut h, k);
-                fold_fix(&mut h, d);
+        let flags = u8::from(c.rest_tether.is_some()) | (u8::from(c.area.is_some()) << 1);
+        fold(&mut h, &[flags]);
+        if let Some((k, d)) = c.rest_tether() {
+            fold_fix(&mut h, k);
+            fold_fix(&mut h, d);
+        }
+        if let Some(a) = &c.area {
+            fold_fix(&mut h, a.compliance);
+            fold(&mut h, &(a.rest_areas.len() as u64).to_le_bytes());
+            for &r in &a.rest_areas {
+                fold_fix(&mut h, r);
             }
-            None => fold(&mut h, &[0]),
         }
         h
     }
@@ -8194,6 +8338,151 @@ mod sphere_contact_tests {
         assert!(
             (dx - (0.01 - 0.1 * 0.05)).abs() < 1e-12,
             "slides by the cone: {dx}"
+        );
+    }
+}
+
+/// Lib tests of the triangle area constraint ([`Cloth::set_area_constraint`]): closed forms
+/// of one triangle, so its branches count in the `--lib` coverage (the sheet-level oracles
+/// are `tests/analytic_cloth_area_constraint.rs`).
+#[cfg(test)]
+mod area_constraint_tests {
+    use super::*;
+
+    fn r(n: i64, d: i64) -> Fix128 {
+        Fix128::from_ratio(n, d)
+    }
+
+    /// One triangle `(0,0,0) (1,0,0) (0,0,1)` (area 1/2) of three 1 kg particles. The grid's
+    /// fourth particle stays joined by edges; their compliance `1e12` makes their pull per
+    /// pass `h² w / α ≈ 1e-17`, below what the assertions see.
+    fn triangle() -> Cloth {
+        let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        c.triangles.truncate(1);
+        c.config.gravity = Vec3Fix::ZERO;
+        c.config.damping = Fix128::ONE;
+        c.config.stretch_compliance = Fix128::from_int(1_000_000_000_000);
+        c.config.bend_compliance = Fix128::ONE;
+        c.config.self_collision = false;
+        c
+    }
+
+    #[test]
+    fn the_rest_area_is_kept_and_the_centroid_does_not_move() {
+        let mut c = triangle();
+        c.set_area_constraint(Fix128::ZERO);
+        let tri = c.triangles[0];
+        let a0 = c.total_area();
+        assert_eq!(a0, r(1, 2));
+        // stretch the triangle to twice its area, at rest
+        for &i in &tri {
+            c.positions[i].x = c.positions[i].x.double();
+        }
+        c.prev_positions = c.positions.clone();
+        let centroid =
+            |c: &Cloth| (c.positions[tri[0]] + c.positions[tri[1]] + c.positions[tri[2]]) * r(1, 3);
+        let g0 = centroid(&c);
+        let start = c.positions.clone();
+        c.config.iterations = 40;
+        c.config.substeps = 1;
+        c.step(r(1, 60));
+        let rel = ((c.total_area() - a0) / a0).abs().to_f64();
+        assert!(rel < 1e-9, "area back to A0: {rel:e}");
+        let dg = (centroid(&c) - g0).length().to_f64();
+        assert!(dg < 1e-15, "equal masses: the centroid stays: {dg:e}");
+        // solved inside the iterations, the correction is part of the step's motion:
+        // `v = (x − x₀) / h` for the corners that moved
+        for &i in &tri {
+            let moved = c.positions[i] - start[i];
+            assert!(moved.length().to_f64() > 1e-3, "corner {i} moved");
+            let dv = (c.velocities[i] - moved * Fix128::from_int(60))
+                .length()
+                .to_f64();
+            assert!(
+                dv < 1e-12,
+                "corner {i}: velocity carries the correction ({dv:e})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_compliant_constraint_keeps_less_than_a_rigid_one() {
+        let run = |compliance: Fix128| {
+            let mut c = triangle();
+            c.set_area_constraint(compliance);
+            let tri = c.triangles[0];
+            for &i in &tri {
+                c.positions[i].x = c.positions[i].x.double();
+            }
+            c.prev_positions = c.positions.clone();
+            c.step(r(1, 60));
+            (c.total_area() - r(1, 2)).to_f64()
+        };
+        let rigid = run(Fix128::ZERO);
+        let soft = run(r(1, 100));
+        assert!(
+            soft > rigid,
+            "the compliance leaves more of the error: {soft} vs {rigid}"
+        );
+        assert!(rigid >= 0.0 && soft < 0.5);
+    }
+
+    #[test]
+    fn pinned_corners_and_degenerate_triangles_are_left_alone() {
+        // every corner pinned: nothing can move
+        let mut c = triangle();
+        c.set_area_constraint(Fix128::ZERO);
+        for i in 0..c.particle_count() {
+            c.pin(i);
+        }
+        let tri = c.triangles[0];
+        c.positions[tri[1]].x = Fix128::from_int(2);
+        let before = c.positions.clone();
+        c.step(r(1, 60));
+        assert_eq!(c.positions, before);
+        // a collapsed triangle has no direction: skipped, so the step is the step without
+        // the constraint
+        let collapsed = |area: bool| {
+            let mut d = triangle();
+            if area {
+                d.set_area_constraint(Fix128::ZERO);
+            }
+            let t = d.triangles[0];
+            d.positions[t[1]] = d.positions[t[0]];
+            d.positions[t[2]] = d.positions[t[0]];
+            d.prev_positions = d.positions.clone();
+            d.step(r(1, 60));
+            d.positions
+        };
+        assert_eq!(collapsed(true), collapsed(false));
+    }
+
+    #[test]
+    fn negative_compliance_is_zero_and_clear_turns_it_off() {
+        let mut c = triangle();
+        c.set_area_constraint(-Fix128::ONE);
+        assert_eq!(c.area_constraint(), Some(Fix128::ZERO));
+        c.clear_area_constraint();
+        assert_eq!(c.area_constraint(), None);
+    }
+
+    #[test]
+    fn the_rest_areas_come_from_the_rest_positions_when_set() {
+        let mut c = triangle();
+        let rest: Vec<Vec3Fix> = c
+            .positions
+            .iter()
+            .map(|p| *p * Fix128::from_int(2))
+            .collect();
+        c.set_rest_positions(&rest).unwrap();
+        c.set_area_constraint(Fix128::ZERO);
+        c.config.iterations = 40;
+        c.step(r(1, 60));
+        // pulled toward the rest shape's area (4 × 1/2), not the current 1/2
+        assert!(
+            c.total_area() > r(1, 2),
+            "grows toward 2: {}",
+            c.total_area().to_f64()
         );
     }
 }
