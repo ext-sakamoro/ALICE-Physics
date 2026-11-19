@@ -637,9 +637,9 @@ fn splash_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-// re-pinned under PHYSICS_SEMANTICS_ID af519b7b… (the cloth damping rate and cloth resident pins): the identifier in the header moved
-const SPLASH_XPBD: &str = "5e31b03dc1f4bd4926d27bea4f4e6f4a056efaaa6eb1d86669050fb706ba32b2";
-const SPLASH_TGS: &str = "e7f65623e586b7df352bffea7fe9bcecf701fa6070c0320f94bf8052cfb89c22";
+// re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
+const SPLASH_XPBD: &str = "5fdcdffaf030a45047da228a1fef29bcd3fb6eee4f059f3f8587882a5e43ef70";
+const SPLASH_TGS: &str = "3c5de8a9067223a1d160b8c9f3c1f51b940789ba56696abf6963916a0ef2a397";
 
 /// golden (determinism): the world snapshot and the payload of the splash scene
 /// after 256 frames, for each backend. CI runs this on every operating system
