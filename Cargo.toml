@@ -31,6 +31,7 @@ include = [
     "/tests/**/*.rs",
     "/tests/fixtures/*.bin",
     "/tests/fixtures/*.bits",
+    "/tests/fixtures/fix128_reference.txt",
     "/examples/*.rs",
     "/benches/*.rs",
     "/include/alice_physics.h",
