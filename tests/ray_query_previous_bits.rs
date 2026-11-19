@@ -304,20 +304,22 @@ fn run(
     out
 }
 
-/// Recorded on main `06b1e84b` (2026-11-07), before the range-safe query path.
+/// Recorded on main `06b1e84b` (2026-11-07), before the range-safe query path; the
+/// rows of rotated solids were re-recorded when the `Fix128` transcendentals moved to
+/// the format's resolution (their orientations come from `sin` / `cos`).
 const EXPECTED: &[(&str, usize, usize, usize, u64)] = &[
     ("sphere", 200, 101, 101, 0x6a703a7e2cf0ab9b),
-    ("box", 200, 141, 109, 0x54fd501b00a6759f),
-    ("wedge", 200, 83, 42, 0x5bb5f9c6fb0f4c06),
-    ("cone", 200, 103, 63, 0xfc1af673cfd9d084),
-    ("cylinder", 200, 115, 92, 0x03e724ed0fd5f248),
-    ("ellipsoid", 200, 104, 45, 0x56198af3d7f1fb3f),
-    ("torus", 200, 116, 82, 0xf4a8f03532b86db7),
-    ("compound", 200, 175, 74, 0x61a60ae38eed49d9),
+    ("box", 200, 141, 109, 0xf834acb792404c0f),
+    ("wedge", 200, 83, 42, 0x87d980233d78a5be),
+    ("cone", 200, 103, 63, 0x6931d3f2b10f66cc),
+    ("cylinder", 200, 115, 92, 0xe805b728ba3d87f0),
+    ("ellipsoid", 200, 104, 45, 0x7daf631c85fcc46f),
+    ("torus", 200, 116, 82, 0x0bc98518a60cd83b),
+    ("compound", 200, 175, 74, 0x95f0cddcddd74d31),
     ("plane", 200, 0, 152, 0x46cf9a9e117a113d),
     ("field", 200, 0, 151, 0x4e96553c5aad0af2),
     ("mesh", 200, 0, 126, 0x931e62495ca1fd31),
-    ("many", 200, 85, 66, 0xbf82005d8c186013),
+    ("many", 200, 85, 66, 0x520e23af15e7526a),
 ];
 
 #[test]

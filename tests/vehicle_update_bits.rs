@@ -83,8 +83,8 @@ fn run(start_y: Fix128, steering: Fix128) -> String {
 
 // re-recorded (from 6e8b1dae… / 54630c89…) when damping became a rate per second with default 0:
 // `run` uses the default config, which had damped the chassis by a retention 0.99 per step
-const DROP_AND_TURN: &str = "97d1f6f16a06196846b317bd1cd896254145dfacc9f13acc7c412f3309b648f2";
-const AIRBORNE_START: &str = "e9975e36e73ba4cb39e6413de8bf353c362d89197054743b4950c49c638de217";
+const DROP_AND_TURN: &str = "49a270e8fbe9fafd822bdd92746b315ef6e2c647d7b71626a0978b86821974c4";
+const AIRBORNE_START: &str = "d62b2434b75467e811d61813ca865f964b1ec922095f07ad2ec7dc72fcd2b3f9";
 
 /// golden (refactor guard): a chassis dropped onto its wheels, driven,
 /// turned right, shifted up, coasting and braking.
