@@ -20421,6 +20421,25 @@ impl core::marker::Unpin for alice_physics_core::thick_chain::ThickChainError
 impl core::marker::UnsafeUnpin for alice_physics_core::thick_chain::ThickChainError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::thick_chain::ThickChainError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::thick_chain::ThickChainError
+pub enum alice_physics_core::thick_chain::ThickChainFit
+pub alice_physics_core::thick_chain::ThickChainFit::Conforming
+pub alice_physics_core::thick_chain::ThickChainFit::Disc
+impl core::clone::Clone for alice_physics_core::thick_chain::ThickChainFit
+pub fn alice_physics_core::thick_chain::ThickChainFit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::thick_chain::ThickChainFit
+impl core::cmp::PartialEq for alice_physics_core::thick_chain::ThickChainFit
+pub fn alice_physics_core::thick_chain::ThickChainFit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::thick_chain::ThickChainFit
+pub fn alice_physics_core::thick_chain::ThickChainFit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::StructuralPartialEq for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::Freeze for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::Send for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::Sync for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::Unpin for alice_physics_core::thick_chain::ThickChainFit
+impl core::marker::UnsafeUnpin for alice_physics_core::thick_chain::ThickChainFit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::thick_chain::ThickChainFit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::thick_chain::ThickChainFit
 pub enum alice_physics_core::thick_chain::ThickChainStretch
 pub alice_physics_core::thick_chain::ThickChainStretch::Linear
 pub alice_physics_core::thick_chain::ThickChainStretch::Linear::compliance: alice_physics_core::math::Fix128
@@ -20446,6 +20465,7 @@ pub struct alice_physics_core::thick_chain::ThickChain
 impl alice_physics_core::thick_chain::ThickChain
 pub fn alice_physics_core::thick_chain::ThickChain::area(&self, usize) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::thick_chain::ThickChain::config(&self) -> alice_physics_core::thick_chain::ThickChainConfig
+pub fn alice_physics_core::thick_chain::ThickChain::free_stretch<F: alice_physics_core::sdf_collider::SdfQuery>(&self, usize, &F) -> core::result::Result<alice_physics_core::math::Fix128, alice_physics_core::thick_chain::ThickChainError>
 pub fn alice_physics_core::thick_chain::ThickChain::length(&self, usize) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::thick_chain::ThickChain::link_count(&self) -> usize
 pub fn alice_physics_core::thick_chain::ThickChain::new(alice_physics_core::thick_chain::ThickChainConfig, &[alice_physics_core::thick_chain::P2], alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::result::Result<Self, alice_physics_core::thick_chain::ThickChainError>
@@ -20457,11 +20477,13 @@ pub fn alice_physics_core::thick_chain::ThickChain::rest_length(&self, usize) ->
 pub fn alice_physics_core::thick_chain::ThickChain::set_position(&mut self, usize, alice_physics_core::thick_chain::P2)
 pub fn alice_physics_core::thick_chain::ThickChain::set_velocity(&mut self, usize, alice_physics_core::thick_chain::P2)
 pub fn alice_physics_core::thick_chain::ThickChain::snapshot(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::thick_chain::ThickChain::spans(&self, usize) -> core::result::Result<i64, alice_physics_core::thick_chain::ThickChainError>
 pub fn alice_physics_core::thick_chain::ThickChain::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::thick_chain::ThickChain::step(&mut self, alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::thick_chain::ThickChainError>
 pub fn alice_physics_core::thick_chain::ThickChain::step_in<F: alice_physics_core::sdf_collider::SdfQuery>(&mut self, alice_physics_core::math::Fix128, &F, &[alice_physics_core::thick_chain::P2]) -> core::result::Result<(), alice_physics_core::thick_chain::ThickChainError>
 pub fn alice_physics_core::thick_chain::ThickChain::velocities(&self) -> &[alice_physics_core::thick_chain::P2]
 pub fn alice_physics_core::thick_chain::ThickChain::wall_force(&self, usize) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::thick_chain::ThickChain::walls_unsettled(&self) -> u64
 impl core::clone::Clone for alice_physics_core::thick_chain::ThickChain
 pub fn alice_physics_core::thick_chain::ThickChain::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::thick_chain::ThickChain
@@ -20479,10 +20501,12 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::thick_chain
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::thick_chain::ThickChain
 pub struct alice_physics_core::thick_chain::ThickChainConfig
 pub alice_physics_core::thick_chain::ThickChainConfig::drag: alice_physics_core::math::Fix128
+pub alice_physics_core::thick_chain::ThickChainConfig::fit: alice_physics_core::thick_chain::ThickChainFit
 pub alice_physics_core::thick_chain::ThickChainConfig::friction: alice_physics_core::math::Fix128
 pub alice_physics_core::thick_chain::ThickChainConfig::gravity: alice_physics_core::thick_chain::P2
 pub alice_physics_core::thick_chain::ThickChainConfig::iterations: u32
 pub alice_physics_core::thick_chain::ThickChainConfig::min_radius: alice_physics_core::math::Fix128
+pub alice_physics_core::thick_chain::ThickChainConfig::reach: alice_physics_core::math::Fix128
 pub alice_physics_core::thick_chain::ThickChainConfig::relaxation: alice_physics_core::math::Fix128
 pub alice_physics_core::thick_chain::ThickChainConfig::splits: u32
 pub alice_physics_core::thick_chain::ThickChainConfig::stretch: alice_physics_core::thick_chain::ThickChainStretch
