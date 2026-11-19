@@ -87,12 +87,14 @@
 //!   off the cells the grid was built on, a pair near a cell edge was found from one side
 //!   only, and the sum was 0 to 3.3e-9 of the fluid-side total depending on the initial
 //!   placement (3.4e-5 N of 2.98e4 N, about 1e6 times this bound on the cube scene); rebuilt
-//!   every iteration, the sum stays within the bound, at no measurable cost. The check that
-//!   sees a grid built once per substep is the cube two kernel radii above the floor
-//!   (`tests/analytic_fluid_sdf_body.rs`, 900 frames, about 3000 particles): there the largest
-//!   `|sum|` reaches 1.45e6 times the bound (measured 2026-11-19); the two small scenes of the
-//!   unit tests do not move a particle across a cell inside the iterations and stay
-//!   bit-identical either way.
+//!   every iteration, the sum stays within the bound, at no measurable cost. The per-push
+//!   check that sees a grid built once per substep is one frame from a stored state
+//!   (`tests/analytic_fluid_newton_fixture.rs`: the cube two kernel radii above the floor,
+//!   3008 particles, at frame 124 of its run): with that grid the step gives 9.18e5 times the
+//!   bound, with the grid of every iteration 2.7e-3 (measured 2026-11-19). The 900-frame cube
+//!   run of `tests/analytic_fluid_sdf_body.rs` sees it too (1.45e6 times the bound); the two
+//!   small scenes of the unit tests do not move a particle across a cell inside the
+//!   iterations and stay bit-identical either way.
 //! - the side-wall load is not isotropic at the floor/wall junction and under the free
 //!   surface (measured 2026-11-18 on the 4x8x4 column after 900 frames): the x+ wall load
 //!   in 0.1 m bins, divided by the vertical load `rho_0 g (H - y)` on the same bin, is
@@ -1221,7 +1223,7 @@ mod tests {
     /// share are then multiplied by `m / dt^2` once each (half an ulp of force apiece). The pair
     /// terms cancel exactly (the products are sign-symmetric), so nothing else separates the sides.
     fn newton_bound(f: &Fluid, frame_dt: f64) -> f64 {
-        let ulp = 2.0_f64.powi(-64);
+        let ulp = 1.0 / 18_446_744_073_709_551_616.0_f64; // 2^-64, exact
         let dt = frame_dt / f.config.substeps as f64;
         let force_per_correction = f.config.particle_mass.to_f64() / (dt * dt);
         let count = (f.particle_count() * f.config.iterations) as f64;
