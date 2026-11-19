@@ -17,9 +17,12 @@ is written down as the CI's. A rule that matches no step is an error too.
     local_receipt.py run       run the local steps on HEAD (a clean checkout), write the receipt
     local_receipt.py check     exit 0 only with a receipt of HEAD's code: every local step run, all green
 
-The receipt is keyed by the blob list of HEAD without `docs/` and `*.md` (the ledgers a landing
-regenerates are there, and none of them is compiled): a change of any other file, a workflow or
-the rules among them, asks for a new run. No local step, or nothing read, is an error, not a pass.
+    local_receipt.py run --slow   the slow steps (the lib coverage and its ratchet), a second receipt
+                                  that `check` asks for when the series changes one of their inputs
+
+The receipt is keyed by the blob list of HEAD without the ledgers a landing writes itself: a
+change of any other file, a workflow or the rules among them, asks for a new run, and a file
+the checkout has and HEAD does not stops the run. No step, or nothing read, is an error, not a pass.
 """
 from __future__ import annotations
 
@@ -39,10 +42,18 @@ WORKFLOWS = ".github/workflows"
 RULES = "scripts/local-receipt-rules.tsv"
 RUN = re.compile(r"^(\s*)(- )?run:\s*(.*)$")
 PAIR = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*?)\s*$")
-NOT_COMPILED = ("docs/",)
+# what a landing writes itself after the rebase (land.py's LOCAL_LEDGERS and the API snapshot; a
+# test holds the two lists equal): a receipt outlives a change of these and of nothing else
+LANDING_WRITES = frozenset(("docs/integration-status.md", "docs/integration-levels.md", "docs/oracle-status.md",
+                            "docs/wiring-status.md", "docs/coverage/status.md", "docs/PUBLIC_API_SNAPSHOT.txt"))
 CLASSES = ("local", "slow", "ci")
-# a series that changes a file under one of these needs the `slow` steps too (the lib coverage ratchet)
+# a series that changes one of these needs the `slow` steps too (the lib coverage ratchet): the
+# lib's sources, the files they include with #[path] (read from the sources), the manifests and
+# build scripts, the ratchet and its baseline, and the workflows that hold a slow step
 SLOW_PATHS = ("src/",)
+SLOW_NAMES = ("Cargo.toml", "Cargo.lock", "build.rs")
+SLOW_FILES = ("scripts/line_coverage_ratchet.py", "scripts/line-coverage-baseline.txt")
+INCLUDE = re.compile(r'^\s*#\[path\s*=\s*"([^"]+)"\]', re.M)
 BASE = "origin/main"
 # what the runner gives a step and this machine does not: a local step may not read it
 RUNNER_ONLY = re.compile(r"\$\{\{|\$\{?GITHUB_|\$\{?RUNNER_")
@@ -225,12 +236,12 @@ def git(root: Path, *args: str) -> str:
 
 
 def compiled(path: str) -> bool:
-    return not path.startswith(NOT_COMPILED) and not path.endswith(".md")
+    return path not in LANDING_WRITES
 
 
 def code_key(root: Path) -> str:
-    """the blobs of HEAD that a step can read (the workflows and the rules among them):
-    what a receipt is a receipt of"""
+    """the blobs of HEAD but the ledgers a landing writes (the workflows and the rules among
+    them): what a receipt is a receipt of"""
     listed = [row for row in git(root, "ls-tree", "-r", "HEAD").splitlines() if compiled(row.split("\t", 1)[1])]
     if not listed:
         raise ReceiptError("HEAD lists no file")
@@ -246,12 +257,36 @@ def receipt_path(key: str, cls: str = "local") -> Path:
     return receipt_dir() / (f"{key}.json" if cls == "local" else f"{key}.{cls}.json")
 
 
+def included(root: Path) -> set[str]:
+    """the files outside src/ that a file of HEAD's src/ includes with #[path = "..."] (they are
+    compiled into the lib and its tests); an include that names no file of HEAD is an error"""
+    tracked = set(git(root, "ls-files").splitlines())
+    out: set[str] = set()
+    for f in sorted(t for t in tracked if t.startswith("src/") and t.endswith(".rs")):
+        for rel in INCLUDE.findall((root / f).read_text(encoding="utf-8")):
+            target = os.path.normpath(os.path.join(os.path.dirname(f), rel)).replace(os.sep, "/")
+            if target not in tracked:
+                raise ReceiptError(f"{f}: #[path = \"{rel}\"] names {target}, not a file of this checkout")
+            if not target.startswith("src/"):
+                out.add(target)
+    return out
+
+
+def slow_inputs(root: Path) -> tuple[set[str], set[str]]:
+    """(the #[path] includes, the workflows that hold a slow step)"""
+    rules = read_rules((root / RULES).read_text(encoding="utf-8"))
+    holders = {f"{WORKFLOWS}/{s['workflow']}" for s in sort_steps(workflow_steps(root), rules) if s["class"] == "slow"}
+    return included(root), holders
+
+
 def needs_slow(root: Path, base: str | None = None) -> list[str]:
-    """the files under SLOW_PATHS that HEAD changes since it left `base` (a base that cannot
+    """the inputs of the slow steps that HEAD changes since it left `base` (a base that cannot
     be read is an error: the answer is not "nothing changed")"""
     fork = git(root, "merge-base", base or BASE, "HEAD").strip()
     changed = git(root, "diff", "--name-only", fork, "HEAD").splitlines()
-    return [f for f in changed if f.startswith(SLOW_PATHS)]
+    includes, holders = slow_inputs(root)
+    return [f for f in changed if f.startswith(SLOW_PATHS) or f.rsplit("/", 1)[-1] in SLOW_NAMES
+            or f in SLOW_FILES or f in includes or f in holders]
 
 
 def shell(root: Path, logs: Path):
@@ -277,11 +312,12 @@ def shell(root: Path, logs: Path):
 def run(root: Path, runner=None, only: str | None = None, cls: str = "local") -> tuple[Path | None, list[dict]]:
     """run every step of the class to the end (a red step does not stop the next) and write
     the receipt; with `only` (a regex) run the matching steps and write nothing"""
-    dirty = [row for row in git(root, "status", "--porcelain", "--untracked-files=no").splitlines()
+    # an untracked file counts: a build reads it (a new module, test or example) and HEAD does not have it
+    dirty = [row for row in git(root, "status", "--porcelain", "--untracked-files=all").splitlines()
              if compiled(row[3:])]
     if dirty and only is None:
-        raise ReceiptError(f"{len(dirty)} tracked file(s) differ from HEAD ({dirty[0][3:]} ...): "
-                           "the receipt is of a commit, commit first")
+        raise ReceiptError(f"{len(dirty)} file(s) differ from HEAD or are not in it ({dirty[0][3:]} ...): "
+                           "the receipt is of a commit, commit (or remove) first")
     units = local_steps(root, cls)
     key = code_key(root)
     logs = receipt_dir() / (f"{key}.logs" if cls == "local" else f"{key}.{cls}.logs")
@@ -326,12 +362,12 @@ def check_class(root: Path, cls: str) -> str:
 
 def check(root: Path, base: str | None = None) -> str:
     """the line land.py prints, or ReceiptError: no receipt, another set of steps, a red step,
-    nothing run; the `slow` receipt too when the series changes a file under SLOW_PATHS"""
+    nothing run; the `slow` receipt too when the series changes an input of the slow steps (needs_slow)"""
     line = check_class(root, "local")
     touched = needs_slow(root, base)
     if not touched:
-        return f"{line}; slow receipt not asked (no file under {'/'.join(SLOW_PATHS)} changed since {base or BASE})"
-    return f"{line}; {check_class(root, 'slow')} ({len(touched)} file(s) under {' '.join(SLOW_PATHS)} changed)"
+        return f"{line}; slow receipt not asked (no input of the lib coverage changed since {base or BASE})"
+    return f"{line}; {check_class(root, 'slow')} ({len(touched)} input(s) of the lib coverage changed: {touched[0]} ...)"
 
 
 def main(argv: list[str] | None = None) -> int:

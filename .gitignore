@@ -29,3 +29,5 @@ __pycache__/
 /consumers/no_std/Cargo.lock
 /tools/no-outer-fneg-of-fma/target/
 /scripts/lazy-link-probe/target/
+# the summary the coverage step writes
+/coverage-summary.txt
