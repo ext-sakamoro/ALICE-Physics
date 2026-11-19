@@ -465,7 +465,7 @@ const GOLDEN_ISOTROPIC_XPBD: u64 = 0xb7a3_e060_1820_8cdc;
 // spinning colliding spheres of the TGS contact solve in the last bits; and
 // again when damping became a rate per second with default 0 (from
 // 0x645f_6a73_cb85_0486).
-const GOLDEN_ISOTROPIC_TGS: u64 = 0x1aac_bcec_02cf_c34a;
+const GOLDEN_ISOTROPIC_TGS: u64 = 0x112c_2798_9f94_36e8;
 
 /// oracle: `I_b = s·1 ⇒ ω × (s ω) = 0`, so adding the term must leave every
 /// bit of an isotropic scene unchanged (likewise bodies the term does not
