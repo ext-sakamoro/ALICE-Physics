@@ -359,35 +359,44 @@ impl Fix128 {
         Self { hi, lo }
     }
 
-    /// Sine using CORDIC algorithm (deterministic)
+    /// Sine, within one ulp (`2⁻⁶⁴`) of the exact value for every representable
+    /// argument (measured 0.59 ulp, `tests/analytic_fix128_transcendentals.rs`).
     ///
-    /// Input should be in range [-π, π] for best precision
+    /// The argument is reduced against π/2 carried to 188 fraction bits, so a
+    /// large argument loses no accuracy; the reduced angle goes through a
+    /// 68-step CORDIC at 124 fraction bits and is rounded once to the nearest
+    /// value. Integer arithmetic only, bit-identical on every platform.
     #[must_use]
     pub fn sin(self) -> Self {
         crate::fix128_kernels::sin_cos(self).0
     }
 
-    /// Cosine using CORDIC algorithm (deterministic)
-    ///
-    /// Input should be in range [-π, π] for best precision
+    /// Cosine, within one ulp of the exact value for every representable argument
+    /// (measured 0.57 ulp); the same computation as [`Fix128::sin`].
     #[must_use]
     pub fn cos(self) -> Self {
         crate::fix128_kernels::sin_cos(self).1
     }
 
-    /// Simultaneous sin and cos (more efficient)
+    /// `(sin, cos)` from one reduction and one CORDIC pass; bit-identical to
+    /// [`Fix128::sin`] and [`Fix128::cos`].
     #[must_use]
     pub fn sin_cos(self) -> (Self, Self) {
         crate::fix128_kernels::sin_cos(self)
     }
 
-    /// Arctangent using CORDIC (deterministic)
+    /// Arctangent in `(−π/2, π/2)`, within one ulp of the exact value (measured
+    /// 0.60 ulp, `tests/analytic_fix128_transcendentals.rs`); `atan2(self, 1)`.
     #[must_use]
     pub fn atan(self) -> Self {
         crate::fix128_kernels::atan2(self, Self::ONE)
     }
 
-    /// Arctangent2 (deterministic)
+    /// `atan2(y, x)` in `(−π, π]`, within one ulp of the exact value (measured
+    /// 0.61 ulp). Both inputs are scaled to a common magnitude first (the angle
+    /// does not depend on it), then a 68-step vectoring CORDIC at 124 fraction
+    /// bits, rounded once. `atan2(0, 0)` is `ZERO`; `x = 0` returns
+    /// `±HALF_PI`, `y = 0` with `x < 0` returns `PI`.
     #[must_use]
     pub fn atan2(y: Self, x: Self) -> Self {
         crate::fix128_kernels::atan2(y, x)
@@ -910,52 +919,40 @@ impl Fix128 {
         Some(Self::from_raw((d >> 64) as i64, d as u64))
     }
 
-    /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent).
+    /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent),
+    /// saturating at the representable maximum when the result reaches `2⁶³`
+    /// (it does not wrap). `self ≤ 0` or a negative exponent returns `ZERO` (no
+    /// NaN; callers that need those cases handle them explicitly).
     ///
-    /// Integer part of the exponent by repeated multiplication, fractional
-    /// part by its binary expansion `base^f = Π base^(1/2^k)` over the first 24
-    /// bits using successive [`Fix128::sqrt`] calls — pure integer arithmetic,
-    /// bit-identical on every platform, relative error ≲ |ln base| · 2⁻²⁴ plus
-    /// sqrt truncation (measured ≤ 1e-6 relative for results ≥ 1e-9 over
-    /// `base ∈ [1e-3, 1e3]`, `exponent ∈ [0, 8]`,
-    /// `math::tests::powf_pos_matches_f64_reference`; smaller results hit the
-    /// 2⁻⁶⁴ absolute resolution).
-    /// `self ≤ 0` or a negative exponent returns `ZERO` (no NaN; callers that
-    /// need those cases handle them explicitly).
-    ///
-    /// # Integer part of the exponent
-    ///
-    /// Exponents whose integer part is at most 64 use left-to-right repeated
-    /// multiplication; above 64 the integer part uses exponentiation by
-    /// squaring. The seam exists to keep results **bit-identical to 1.5.0 and
-    /// earlier wherever those versions were already correct**: fixed-point
-    /// multiplication truncates and is therefore not associative, so the two
-    /// orders differ in the low bits for a base that is not exactly
-    /// representable. Before 1.6.0 the integer part was silently capped at 64
-    /// (`1.01^100` returned `1.01^64` = 1.89 rather than 2.705), so only the
-    /// `n ≤ 64` range has bits worth preserving; above it the result was wrong
-    /// and the faster O(log n) order is used instead of an O(n) loop.
+    /// An integer exponent is tried first by exponentiation by squaring: when
+    /// every product is exact the exact power is returned (`2^62`, `3^39`,
+    /// `1.5^40`). Otherwise the result is `e^(exponent · ln self)` with the
+    /// product kept at 120 fraction bits and rounded once: relative error within
+    /// `2·2⁻⁶⁴` above 1 and one ulp below (measured 1.01·2⁻⁶⁴ and 0.73 ulp,
+    /// `tests/analytic_fix128_transcendentals.rs`).
     #[must_use]
     pub fn powf_pos(self, exponent: Self) -> Self {
         crate::fix128_kernels::powf_pos(self, exponent)
     }
 
-    /// Deterministic `e^self` via `2^(x·log₂e)` ([`Fix128::powf_pos`] with base 2;
-    /// negative arguments as `1 / e^|x|`). Relative error ≲ 1e-6 for
-    /// `|x| ≤ 40` (`math::tests::exp_matches_f64_reference`); `x < −44` is
-    /// below the 2⁻⁶⁴ resolution and returns `ZERO`, and from `x ≥ 63 · ln 2`
-    /// (≈ 43.668, where `e^x` reaches 2⁶³) it saturates at the representable
-    /// maximum instead of wrapping.
+    /// `e^self`, rounded to the nearest value: relative error within `2⁻⁶⁴`
+    /// above 1 and one ulp below (measured 0.50 in both, `tests/analytic_fix128_transcendentals.rs`).
+    ///
+    /// `x = k·ln 2 + r` with `|r| ≤ ½ ln 2` at 120 fraction bits, `e^r` from its
+    /// Taylor series at 124 fraction bits, then `2^k` by a shift and one
+    /// rounding. Below `x ≈ −65·ln 2 ≈ −45.05` the result is under half an ulp
+    /// and is `ZERO`; from `e^x ≥ 2⁶³` (`x ≈ 43.668`) it saturates at the
+    /// representable maximum instead of wrapping.
     #[must_use]
     pub fn exp(self) -> Self {
         crate::fix128_kernels::exp(self)
     }
 
-    /// Deterministic natural log via range reduction to `[1, 2)` + atanh
-    /// series (`ln(m) = 2·atanh((m−1)/(m+1))`, 16 terms). Non-positive input
-    /// returns `ZERO` (no panic, no NaN representation in `Fix128`). Moved
-    /// here from a private `turbulence.rs` helper of the same algorithm
-    /// (canonical source: one `ln`, not one per caller module).
+    /// Natural log, rounded to the nearest value (measured 0.50 ulp, `tests/analytic_fix128_transcendentals.rs`).
+    /// `x = 2^k·m` with `m ∈ [√2/2, √2)`, `ln m = 2·atanh((m−1)/(m+1))` at 124
+    /// fraction bits, `k·ln 2` at 120. Non-positive input returns `ZERO` (no
+    /// panic, no NaN representation in `Fix128`). The one canonical `ln`:
+    /// other modules call it rather than keeping a copy.
     #[must_use]
     pub fn ln(self) -> Self {
         crate::fix128_kernels::ln(self)
@@ -3246,13 +3243,13 @@ mod tests {
     fn atan_golden_bit_patterns_1_1_1() {
         // 修正後の実装値を pin (cross-platform bit-exact の source of truth、意図的変更時のみ更新)
         let cases: [(Fix128, i64, u64); 7] = [
-            (Fix128::ZERO, -1, 18446744073709455410),
-            (Fix128::ONE, 0, 14488038916154342774),
-            (Fix128::from_int(-1), -1, 3958705157555404150),
-            (Fix128::from_ratio(1, 2), 0, 8552788783625182168),
-            (Fix128::from_int(3), 1, 4594083626069865406),
-            (Fix128::from_ratio(-1, 8), -1, 16152799315017801038),
-            (Fix128::from_int(1000), 1, 10510887020674212946),
+            (Fix128::ZERO, 0, 0),
+            (Fix128::ONE, 0, 14488038916154245685),
+            (Fix128::from_int(-1), -1, 3958705157555305931),
+            (Fix128::from_ratio(1, 2), 0, 8552788783625223587),
+            (Fix128::from_int(3), 1, 4594083626069917655),
+            (Fix128::from_ratio(-1, 8), -1, 16152799315017896506),
+            (Fix128::from_int(1000), 1, 10510887020674141204),
         ];
         for (v, hi, lo) in cases {
             assert_eq!(v.atan(), Fix128 { hi, lo }, "atan({})", v.to_f64());
@@ -3293,17 +3290,17 @@ mod tests {
     #[test]
     fn atan2_golden_bit_patterns_1_1_1() {
         let cases: [(i64, i64, i64, u64); 11] = [
-            (1, 1, 0, 14488038916154342774),
-            (1, -1, 2, 6570628601043732041),
-            (-1, -1, -3, 11876115472666014883),
-            (-1, 1, -1, 3958705157555404150),
+            (1, 1, 0, 14488038916154245685),
+            (1, -1, 2, 6570628601043633822),
+            (-1, -1, -3, 11876115472665917794),
+            (-1, 1, -1, 3958705157555305931),
             (1, 0, 1, 10529333758598939753),
             (-1, 0, -2, 7917410315110611863),
-            (0, 1, -1, 18446744073709455410),
-            (0, -1, 3, 2611923443488231685),
+            (0, 1, 0, 0),
+            (0, -1, 3, 2611923443488327891),
             (0, 0, 0, 0),
-            (3, 4, 0, 11870500265058138062),
-            (-2, 5, -1, 11427640316703283098),
+            (3, 4, 0, 11870500265058044196),
+            (-2, 5, -1, 11427640316703342880),
         ];
         for (y, x, hi, lo) in cases {
             assert_eq!(
@@ -3341,16 +3338,11 @@ mod tests {
                 1e-12
             ));
         }
-        // sin / cos は本修正で bit 単位で不変 (代表点 pin)
+        // sin(HALF_PI) は厳密に 1 (HALF_PI は π/2 の切り捨てで π/2 − 0.46 ulp、
+        // cos はその 0.46 ulp を 1 ulp に丸めた値)
         let (s, c) = Fix128::HALF_PI.sin_cos();
-        assert_eq!(s, Fix128 { hi: 1, lo: 1453 });
-        assert_eq!(
-            c,
-            Fix128 {
-                hi: -1,
-                lo: 18446744073709456430
-            }
-        );
+        assert_eq!(s, Fix128::ONE);
+        assert_eq!(c, Fix128 { hi: 0, lo: 1 });
     }
 
     // ---- Mat3Fix (mutation-score tests, 2026-09-15) ---------------------
@@ -3640,8 +3632,8 @@ mod tests {
 
     #[test]
     fn sin_cos_golden_bit_patterns() {
-        // 17 角度の (angle, sin, cos) bit pattern pin (4.0 で積の最近接偶数への丸めと 2⁻¹⁰ rad 未満の
-        // Taylor 展開に伴い取り直した: sin(0) は厳密に 0、cos(0) は厳密に 1)
+        // 17 角度の (angle, sin, cos) bit pattern pin (124 bit の CORDIC と 188 bit の π/2 での還元に変えた時に
+        // 取り直した: sin(0) = 0、cos(0) = 1、sin(π/6) = 0.5、sin(π/2) = 1、cos(π) = −1 は厳密)
         // 範囲: [-π/2, π/2] 内 / 第 2・3 象限 / ±π ちょうど / 複数周回 (3π, -7π/2) / 大きな値 (100, -1000.25)
         let table: [(&str, Fix128, Fix128, Fix128); 17] = [
             (
@@ -3658,11 +3650,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 9223372036854815772,
+                    lo: 9223372036854775808,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 15975348984942493703,
+                    lo: 15975348984942515102,
                 },
             ),
             (
@@ -3673,11 +3665,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 13043817825332851804,
+                    lo: 13043817825332782212,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 13043817825332714670,
+                    lo: 13043817825332782213,
                 },
             ),
             (
@@ -3688,11 +3680,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 15975348984942493703,
+                    lo: 15975348984942515101,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 9223372036854815772,
+                    lo: 9223372036854775808,
                 },
             ),
             (
@@ -3701,11 +3693,8 @@ mod tests {
                     hi: 1,
                     lo: 10529333758598939753,
                 },
-                Fix128 { hi: 1, lo: 1453 },
-                Fix128 {
-                    hi: -1,
-                    lo: 18446744073709456430,
-                },
+                Fix128 { hi: 1, lo: 0 },
+                Fix128 { hi: 0, lo: 1 },
             ),
             (
                 "2pi/3",
@@ -3715,11 +3704,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 15975348984942493703,
+                    lo: 15975348984942515103,
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 9223372036854735844,
+                    lo: 9223372036854775810,
                 },
             ),
             (
@@ -3739,11 +3728,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 9223372036854735845,
+                    lo: 9223372036854775808,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 15975348984942493709,
+                    lo: 15975348984942515102,
                 },
             ),
             (
@@ -3752,14 +3741,8 @@ mod tests {
                     hi: -2,
                     lo: 7917410315110611863,
                 },
-                Fix128 {
-                    hi: -2,
-                    lo: 18446744073709550164,
-                },
-                Fix128 {
-                    hi: -1,
-                    lo: 18446744073709456423,
-                },
+                Fix128 { hi: -1, lo: 0 },
+                Fix128 { hi: 0, lo: 1 },
             ),
             (
                 "-3pi/4",
@@ -3769,11 +3752,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 5402926248376699811,
+                    lo: 5402926248376769403,
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 5402926248376836953,
+                    lo: 5402926248376769404,
                 },
             ),
             (
@@ -3793,11 +3776,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 5402926248376699811,
+                    lo: 5402926248376769404,
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 5402926248376836953,
+                    lo: 5402926248376769403,
                 },
             ),
             (
@@ -3815,8 +3798,11 @@ mod tests {
                     hi: -11,
                     lo: 81639984645628190,
                 },
-                Fix128 { hi: 1, lo: 1453 },
-                Fix128 { hi: 0, lo: 95186 },
+                Fix128 { hi: 1, lo: 0 },
+                Fix128 {
+                    hi: -1,
+                    lo: 18446744073709551615,
+                },
             ),
             (
                 "1/2",
@@ -3826,11 +3812,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 8843840213032159770,
+                    lo: 8843840213032091554,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 16188540922742043083,
+                    lo: 16188540922742078702,
                 },
             ),
             (
@@ -3838,11 +3824,11 @@ mod tests {
                 Fix128 { hi: 100, lo: 0 },
                 Fix128 {
                     hi: -1,
-                    lo: 9105946684437943138,
+                    lo: 9105946684437970888,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 15906975547020722691,
+                    lo: 15906975547020737312,
                 },
             ),
             (
@@ -3853,11 +3839,11 @@ mod tests {
                 },
                 Fix128 {
                     hi: -1,
-                    lo: 1101110721943816547,
+                    lo: 1101110721943860982,
                 },
                 Fix128 {
                     hi: 0,
-                    lo: 6277847604637333680,
+                    lo: 6277847604637452194,
                 },
             ),
         ];
@@ -4432,30 +4418,6 @@ mod tests {
         assert_eq!(Fix128::from_ratio(-7, 1), Fix128::from_int(-7));
         assert_eq!(Fix128::from_ratio(7, -1), Fix128::from_int(-7));
         assert!(Fix128::from_ratio(1, -1_000_000).is_negative());
-    }
-
-    /// `exp` cut-off boundary: e⁻⁴⁴ = 7.78 · 10⁻²⁰ is 1.435 · 2⁻⁶⁴ (oracle:
-    /// 60-digit decimal evaluation of e⁻⁴⁴ · 2⁶⁴ = 1.4353…), so it is still
-    /// representable, while e⁻⁴⁵ = 0.53 · 2⁻⁶⁴ truncates to zero. The
-    /// `hi < -44` early return must therefore not include −44, and must fire
-    /// for every smaller integer part. Between −44 and −43.67 the
-    /// intermediate 2^(|x|·log₂e) exceeds 2⁶³ and wraps in `powf_pos`, which
-    /// lands the reciprocal on 2 ulp instead of the truncated 1 ulp — within
-    /// one ulp of the true value, so the assertion is a range, not a pin.
-    #[test]
-    fn exp_cutoff_boundary_is_minus_44() {
-        let at_boundary = Fix128::from_int(-44).exp();
-        assert!(!at_boundary.is_zero());
-        assert!(at_boundary <= Fix128::from_raw(0, 2), "{at_boundary}");
-        assert_eq!(Fix128::from_int(-45).exp(), Fix128::ZERO);
-        assert_eq!(Fix128::from_int(-46).exp(), Fix128::ZERO);
-        assert_eq!(Fix128::from_int(-100).exp(), Fix128::ZERO);
-        assert_eq!(Fix128::from_raw(-45, 1).exp(), Fix128::ZERO);
-        // just above the boundary is still non-zero and ordered
-        let a = Fix128::from_raw(-44, 1).exp();
-        let b = Fix128::from_int(-43).exp();
-        assert!(!a.is_zero());
-        assert!(a < b, "{a} < {b}");
     }
 
     /// `QuatFix::normalize` divides every component by the length (as a

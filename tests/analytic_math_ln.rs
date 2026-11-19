@@ -5,8 +5,10 @@
 //! # Closed forms (independent of the function under test)
 //!
 //! - `f64::ln` (platform `libm`) at 1e-9 relative tolerance -- `Fix128::ln`
-//!   uses range reduction to `[1, 2)` plus a 16-term atanh series, an
-//!   independent algorithm from the platform's `libm`.
+//!   uses range reduction to `[√2/2, √2)` plus an atanh series at 124 fraction
+//!   bits, an independent algorithm from the platform's `libm` (the ulp-level
+//!   bound is checked against a 400-bit reference in
+//!   `tests/analytic_fix128_transcendentals.rs`).
 //! - Functional identity `ln(a·b) = ln(a) + ln(b)` for several `(a, b)`
 //!   pairs, checked against the *values* `Fix128::ln` itself returns for
 //!   `a`, `b`, `a*b` (an internal-consistency oracle, additional to the

@@ -845,6 +845,7 @@ pub mod kinematic_loop;
 pub mod laminate;
 pub mod laminate_failure;
 // Content identifier of the rules a world is configured with.
+mod fix128_kernels;
 pub mod holds;
 pub mod input_log;
 pub mod law_id;
@@ -862,7 +863,6 @@ pub mod linear_elastic_fem;
 pub mod linear_solver;
 pub mod mass_properties;
 pub mod material;
-mod fix128_kernels;
 pub mod math;
 pub mod math_util;
 pub mod maxwell_fdtd;
