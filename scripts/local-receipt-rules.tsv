@@ -1,4 +1,6 @@
-# class (local | ci)<TAB>regex on the step's command and its `env: KEY=value` lines (first match decides)<TAB>reason
+# class (local | slow | ci)<TAB>regex on the step's command and its `env: KEY=value` lines (first match decides)<TAB>reason
+slow	^set -o pipefail\ncargo llvm-cov --lib --summary-only 2>&1 \| tee coverage-summary\.txt$	the lib coverage of the push's coverage job: runs here in about half an hour, asked when src/ changes
+slow	^python3? scripts/line_coverage_ratchet\.py --summary coverage-summary\.txt$	the ratchet on the summary the step before wrote: no file's lib coverage may fall under its baseline
 ci	\$\{\{|\$\{?GITHUB_|\$\{?RUNNER_	reads the event or the runner (an expression, GITHUB_* or RUNNER_*): only the CI has it
 ci	^(cargo|'cargo) (\+\S+ )?(test|build|install|hack|miri|fuzz|llvm-cov|mutants|semver-checks|public-api|audit|deny|machete|bench|run|careful|udeps|geiger|criterion)\b	a build, test, tool-install or audit leg: the CI's (the tests and the builds are its evidence)
 ci	^(rustup|sudo|curl|npm|npx|pip|pip3|python -m pip|maturin|wasm-pack|zip|7z|lscpu|apt-get|brew|choco) 	installs a toolchain or a tool, builds a wheel or packs an artifact on the runner
