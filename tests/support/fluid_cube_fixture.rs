@@ -1,12 +1,13 @@
 //! The cube scene of `tests/analytic_fluid_sdf_body.rs` (a 1.6 m tank, s = 0.1 m, h = 2 s, a
-//! 0.4 m cube held 2 h above the floor, fluid to 1.2 m) and the stored state of its run at frame
-//! 124, shared by `tests/analytic_fluid_newton_fixture.rs` and the example
-//! `fluid_newton_fixture`, which writes `tests/fixtures/fluid_newton_cube_f124.bin`.
+//! 0.4 m cube on the floor or held 2 h above it, fluid to 1.2 m) and the stored states of the
+//! run with the cube 2 h up: frame 124 ([`NEWTON`], read by `tests/analytic_fluid_newton_fixture.rs`)
+//! and frame 840 ([`SETTLED`], read by `tests/analytic_fluid_sdf_body.rs`). The example
+//! `fluid_cube_state` writes either.
 //!
-//! The file is a short text header (lines starting with `#`, then the line `data`) followed by
-//! the particle count as a little-endian `u32` and, per particle, the position then the velocity,
-//! each component a `Fix128` as `hi` (`i64`) then `lo` (`u64`), little-endian. The header holds
-//! no paths beyond the repository's own.
+//! A stored file is a short text header (lines starting with `#`, then the line `data`) followed
+//! by the particle count as a little-endian `u32` and, per particle, the position then the
+//! velocity, each component a `Fix128` as `hi` (`i64`) then `lo` (`u64`), little-endian. The
+//! header holds no paths beyond the repository's own.
 
 #![allow(
     dead_code,
@@ -17,21 +18,21 @@ use alice_physics_core::fluid::{Fluid, FluidConfig};
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
-const S: f64 = 0.1;
-const W: f64 = 1.6;
-const CUBE: f64 = 0.4;
-const RHO0: f64 = 1000.0;
+pub const S: f64 = 0.1;
+pub const W: f64 = 1.6;
+pub const CUBE: f64 = 0.4;
+pub const RHO0: f64 = 1000.0;
 
-fn fx(x: f64) -> Fix128 {
+pub fn fx(x: f64) -> Fix128 {
     Fix128::from_f64(x)
 }
 
-fn v(x: f64, y: f64, z: f64) -> Vec3Fix {
+pub fn v(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(fx(x), fx(y), fx(z))
 }
 
 /// Exact SDF of an axis-aligned box `[lo, hi]` (negative inside)
-fn box_sdf(p: [f32; 3], lo: [f32; 3], hi: [f32; 3]) -> f32 {
+pub fn box_sdf(p: [f32; 3], lo: [f32; 3], hi: [f32; 3]) -> f32 {
     let q: Vec<f32> = (0..3).map(|i| (lo[i] - p[i]).max(p[i] - hi[i])).collect();
     let outside = q
         .iter()
@@ -46,7 +47,7 @@ fn box_sdf(p: [f32; 3], lo: [f32; 3], hi: [f32; 3]) -> f32 {
 }
 
 /// Central-difference normal of an f32 SDF closure
-fn fd_normal(f: &dyn Fn([f32; 3]) -> f32, p: [f32; 3]) -> (f32, f32, f32) {
+pub fn fd_normal(f: &dyn Fn([f32; 3]) -> f32, p: [f32; 3]) -> (f32, f32, f32) {
     let e = 1e-4_f32;
     let mut g = [0.0_f32; 3];
     for a in 0..3 {
@@ -60,7 +61,7 @@ fn fd_normal(f: &dyn Fn([f32; 3]) -> f32, p: [f32; 3]) -> (f32, f32, f32) {
     (g[0] / n, g[1] / n, g[2] / n)
 }
 
-fn collider(f: impl Fn([f32; 3]) -> f32 + Send + Sync + Clone + 'static) -> SdfCollider {
+pub fn collider(f: impl Fn([f32; 3]) -> f32 + Send + Sync + Clone + 'static) -> SdfCollider {
     let g = f.clone();
     let field = ClosureSdf::new(
         move |x, y, z| f([x, y, z]),
@@ -70,7 +71,7 @@ fn collider(f: impl Fn([f32; 3]) -> f32 + Send + Sync + Clone + 'static) -> SdfC
 }
 
 /// Open-topped tank: floor at y = 0 and four walls of thickness 2 s around `[0, W]^2`
-fn tank(top: f64) -> SdfCollider {
+pub fn tank(top: f64) -> SdfCollider {
     let (w, l, t) = (W as f32, (2.0 * S) as f32, top as f32);
     collider(move |p| {
         let outer = box_sdf(p, [-l, -l, -l], [w + l, t, w + l]);
@@ -79,7 +80,7 @@ fn tank(top: f64) -> SdfCollider {
     })
 }
 
-fn cube(bottom: f64) -> SdfCollider {
+pub fn cube(bottom: f64) -> SdfCollider {
     let lo = ((W - CUBE) / 2.0) as f32;
     let (b, c) = (bottom as f32, CUBE as f32);
     collider(move |p| box_sdf(p, [lo, b, lo], [lo + c, b + c, lo + c]))
@@ -168,57 +169,90 @@ pub fn largest(v: Vec3Fix) -> f64 {
 /// The cube's bottom and the fluid's top of the stored scene, in m
 pub const BOTTOM: f64 = 0.4;
 pub const TOP: f64 = BOTTOM + 0.8;
-/// Frames of 1/60 s stepped from the lattice before the state is stored
-pub const FRAME: usize = 124;
+/// A stored state of the run with the cube 2 h up: the frame it was taken at, its file, and the
+/// test that reads it
+pub struct Stored {
+    /// Frames of 1/60 s stepped from the lattice before the state is stored
+    pub frame: usize,
+    /// The file, from the repository root
+    pub file: &'static str,
+    /// The test that reads it, from the repository root
+    pub reader: &'static str,
+}
 
-const HEADER: &str = "# PBF fluid state: the cube scene of tests/support/fluid_cube_fixture.rs\n\
-# (cube 0.4 m above the floor, fluid to 1.2 m) stepped 124 frames of 1/60 s from the lattice.\n\
-# Read by tests/analytic_fluid_newton_fixture.rs; written by\n\
-# cargo run --example fluid_newton_fixture -- tests/fixtures/fluid_newton_cube_f124.bin\n\
+/// Frame 124: one step from it with a grid built once per substep breaks Newton 3
+pub const NEWTON: Stored = Stored {
+    frame: 124,
+    file: "tests/fixtures/fluid_newton_cube_f124.bin",
+    reader: "tests/analytic_fluid_newton_fixture.rs",
+};
+
+/// Frame 840: the last 60 frames of the 900-frame run step from it
+pub const SETTLED: Stored = Stored {
+    frame: 840,
+    file: "tests/fixtures/fluid_cube_f840.bin",
+    reader: "tests/analytic_fluid_sdf_body.rs",
+};
+
+impl Stored {
+    fn header(&self) -> String {
+        format!(
+            "# PBF fluid state: the cube scene of tests/support/fluid_cube_fixture.rs\n\
+# (cube 0.4 m above the floor, fluid to 1.2 m) stepped {} frames of 1/60 s from the lattice.\n\
+# Read by {}; written by\n\
+# cargo run --release --example fluid_cube_state -- {} {}\n\
 # After the line `data`: u32 particle count, then per particle position xyz and velocity xyz,\n\
 # each Fix128 as hi i64 then lo u64, all little-endian.\n\
-data\n";
-
-/// The scene stepped [`FRAME`] frames from the lattice
-pub fn run_to_fixture_frame() -> Scene {
-    let mut sc = scene(BOTTOM, TOP);
-    let dt = Fix128::from_ratio(1, 60);
-    for _ in 0..FRAME {
-        sc.fluid.step(dt);
+data\n",
+            self.frame, self.reader, self.frame, self.file
+        )
     }
-    sc
-}
 
-/// The stored form of the fluid's positions and velocities
-pub fn encode(f: &Fluid) -> Vec<u8> {
-    let mut out = HEADER.as_bytes().to_vec();
-    let n = f.positions.len();
-    out.extend_from_slice(&(n as u32).to_le_bytes());
-    for i in 0..n {
-        for w in [f.positions[i], f.velocities[i]] {
-            for c in [w.x, w.y, w.z] {
-                out.extend_from_slice(&c.hi.to_le_bytes());
-                out.extend_from_slice(&c.lo.to_le_bytes());
+    /// The scene stepped [`Stored::frame`] frames from the lattice
+    pub fn run(&self) -> Scene {
+        let mut sc = scene(BOTTOM, TOP);
+        let dt = Fix128::from_ratio(1, 60);
+        for _ in 0..self.frame {
+            sc.fluid.step(dt);
+        }
+        sc
+    }
+
+    /// The stored form of the fluid's positions and velocities
+    pub fn encode(&self, f: &Fluid) -> Vec<u8> {
+        let mut out = self.header().into_bytes();
+        let n = f.positions.len();
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+        for i in 0..n {
+            for w in [f.positions[i], f.velocities[i]] {
+                for c in [w.x, w.y, w.z] {
+                    out.extend_from_slice(&c.hi.to_le_bytes());
+                    out.extend_from_slice(&c.lo.to_le_bytes());
+                }
             }
         }
+        out
     }
-    out
-}
 
-/// Positions and velocities read back from [`encode`]'s form
-pub fn decode(bytes: &[u8]) -> (Vec<Vec3Fix>, Vec<Vec3Fix>) {
-    assert!(bytes.starts_with(HEADER.as_bytes()), "fixture header");
-    let body = &bytes[HEADER.len()..];
-    let n = u32::from_le_bytes(body[..4].try_into().unwrap()) as usize;
-    assert_eq!(body.len(), 4 + n * 6 * 16, "fixture length");
-    let fix = |k: usize| {
-        let at = 4 + 16 * k;
-        let hi = i64::from_le_bytes(body[at..at + 8].try_into().unwrap());
-        let lo = u64::from_le_bytes(body[at + 8..at + 16].try_into().unwrap());
-        Fix128::from_raw(hi, lo)
-    };
-    let vec = |k: usize| Vec3Fix::new(fix(k), fix(k + 1), fix(k + 2));
-    let pos = (0..n).map(|i| vec(6 * i)).collect();
-    let vel = (0..n).map(|i| vec(6 * i + 3)).collect();
-    (pos, vel)
+    /// The scene with the fluid's positions and velocities read back from [`Stored::encode`]'s
+    /// form (the particle count is checked against the scene's)
+    pub fn restore(&self, bytes: &[u8]) -> Scene {
+        let header = self.header();
+        assert!(bytes.starts_with(header.as_bytes()), "fixture header");
+        let body = &bytes[header.len()..];
+        let n = u32::from_le_bytes(body[..4].try_into().unwrap()) as usize;
+        assert_eq!(body.len(), 4 + n * 6 * 16, "fixture length");
+        let fix = |k: usize| {
+            let at = 4 + 16 * k;
+            let hi = i64::from_le_bytes(body[at..at + 8].try_into().unwrap());
+            let lo = u64::from_le_bytes(body[at + 8..at + 16].try_into().unwrap());
+            Fix128::from_raw(hi, lo)
+        };
+        let vec = |k: usize| Vec3Fix::new(fix(k), fix(k + 1), fix(k + 2));
+        let mut sc = scene(BOTTOM, TOP);
+        assert_eq!(n, sc.n, "particle count");
+        sc.fluid.positions = (0..n).map(|i| vec(6 * i)).collect();
+        sc.fluid.velocities = (0..n).map(|i| vec(6 * i + 3)).collect();
+        sc
+    }
 }

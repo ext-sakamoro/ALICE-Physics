@@ -92,7 +92,13 @@
 //!
 //! **Range and open limitation.** The coupling is verified at s = 0.1 m, h = 2 s for a cube of
 //! 4 spacings: lying on the floor (vertical force within 5 % of the top-only closed form) and
-//! 2 h above it (Archimedes within 5 %). With only 1 h of fluid between the floor and the
+//! 2 h above it (Archimedes within 5 % for the placement the test uses: 0.990 at 900 frames).
+//! The 2 h result depends on where the particles start: shifting the initial lattice by a tenth
+//! of a spacing in +x, in +z, or in -x and +z gives 0.934, 0.930 and 1.032 at 900 frames
+//! (measured 2026-11-19, cube 2 h up, mean of the last 60 frames; the lattice in reverse order
+//! gives the unshifted 0.990 bit for bit), so two of four placements are outside 5 %. Whether
+//! that spread shrinks with more frames, particles or iterations (sampling) or stays (model)
+//! is not measured yet. With only 1 h of fluid between the floor and the
 //! body's bottom (two particle layers), the buoyancy is 0.79-0.81 of Archimedes in the
 //! prototype on both PBF and DFSPH: this case is open and not covered by this split. Solids
 //! are static; moving bodies are not covered.
