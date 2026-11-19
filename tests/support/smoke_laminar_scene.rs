@@ -138,25 +138,52 @@ pub fn source_top_m() -> f64 {
     (SOURCE_BOTTOM.micrometres() + SOURCE_SIDE.micrometres()) as f64 / 1e6
 }
 
-/// The span (whole seconds) over which the outflow must match the source before the averaging
-/// window opens, and how closely.
-pub const STEADY_SPAN_S: usize = 4;
+/// How closely the heat leaving the box must match the heat the source adds.
 pub const STEADY_TOLERANCE: f64 = 0.05;
 
-/// Whether the outflow history, one `(heat that had left, heat the source had added)` pair per
-/// whole second, is steady at its last second: over the last [`STEADY_SPAN_S`] seconds the heat
-/// that left is the heat added within [`STEADY_TOLERANCE`], on both sides (a plume first
-/// reaching an open top pushes out the warm air ahead of it, so the outflow overshoots the
-/// source before it settles; a one-sided test would open the window on that overshoot).
+/// The plume's own time scale for the steady rule: the time to cross the box's height at the
+/// plume's speed, `BOX_Y / w`, in whole seconds rounded up (at least 1). The outflow is
+/// compared with the source over this span, and must stay steady for this many seconds before
+/// the window opens: an outflow that only passes through the band while the box fills does not
+/// stay there for a transit.
 #[allow(
     dead_code,
     reason = "the long run and the rule's test read it; the push-time guard does not"
 )]
-pub fn outflow_steady(hist: &[(i64, i64)]) -> bool {
-    if hist.len() <= STEADY_SPAN_S {
+pub fn transit_span_s(speed_m_s: f64) -> Option<usize> {
+    let um_s = (speed_m_s * 1e6) as i64;
+    if um_s <= 0 {
+        return None;
+    }
+    let height = BOX_Y.micrometres();
+    Some(((height + um_s - 1) / um_s).max(1) as usize)
+}
+
+/// Whether the outflow history, one `(heat that had left, heat the source had added)` pair per
+/// whole second, is steady at its last second over `span` seconds: the heat that left over the
+/// last `span` seconds is the heat added within [`STEADY_TOLERANCE`], on both sides (a plume
+/// first reaching an open top pushes out the warm air ahead of it, so the outflow overshoots).
+#[allow(
+    dead_code,
+    reason = "the long run and the rule's test read it; the push-time guard does not"
+)]
+pub fn outflow_steady(hist: &[(i64, i64)], span: usize) -> bool {
+    if span == 0 || hist.len() <= span {
         return false;
     }
-    let (now, then) = (hist[hist.len() - 1], hist[hist.len() - 1 - STEADY_SPAN_S]);
+    let (now, then) = (hist[hist.len() - 1], hist[hist.len() - 1 - span]);
     let added = (now.1 - then.1) as f64;
     added > 0.0 && ((now.0 - then.0) as f64 / added - 1.0).abs() <= STEADY_TOLERANCE
+}
+
+/// Whether the outflow has stayed steady ([`outflow_steady`] over `span`) at each of the last
+/// `span` whole seconds: the condition for opening the averaging window.
+#[allow(
+    dead_code,
+    reason = "the long run and the rule's test read it; the push-time guard does not"
+)]
+pub fn sustained_steady(hist: &[(i64, i64)], span: usize) -> bool {
+    span > 0
+        && hist.len() >= 2 * span
+        && (0..span).all(|k| outflow_steady(&hist[..hist.len() - k], span))
 }

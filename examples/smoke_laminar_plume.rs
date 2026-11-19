@@ -21,9 +21,13 @@
 //! The width and the centreline excess are measured on the excess over that far field.
 //!
 //! The window is set by a rule, not by hand: it starts at the first whole second `t0` at which the
-//! heat that left over the last 4 s is within 5 % of what the source added over them (on both
-//! sides: the plume's first arrival at the top overshoots), and it
-//! lasts 8 s; the run fails when `t0 + 8 s` is not reached within the given maximum time.
+//! heat that left has matched what the source added within 5 % (on both sides: the plume's first
+//! arrival at the top overshoots) over a span of one transit of the box (its height at the
+//! fastest centreline speed, in whole seconds), at each of the last transit's seconds (an
+//! outflow passing through the band while the box fills does not stay), and it
+//! lasts 8 s; a window over which the outflow was not steady after all is dropped and the rule
+//! looks for the next start, and the run fails when no steady window ends within the given maximum
+//! time.
 //!
 //! It is long (minutes at 10 mm, hours at 5 mm), so it saves a checkpoint (the plume's state, the
 //! outflow history and the window sums so far) every 2 s of simulated time and resumes from it.
@@ -43,11 +47,14 @@ use alice_physics_core::world_participant::Participant;
 use std::io::Write;
 use std::time::Instant;
 
-const MAGIC: &[u8; 8] = b"SMKLAM05";
+const MAGIC: &[u8; 8] = b"SMKLAM06";
+/// The format before the window's span was stored: its outflow history resumes, its window
+/// (opened under an earlier rule) is dropped.
+const MAGIC_V5: &[u8; 8] = b"SMKLAM05";
 /// Earlier formats: a run resumes from their plume's state alone (its outflow history and
 /// window start afresh), and a coarse run's state prolongs from any of them.
 const MAGIC_OLD: [&[u8; 8]; 4] = [b"SMKLAM01", b"SMKLAM02", b"SMKLAM03", b"SMKLAM04"];
-use scene::{outflow_steady, STEADY_SPAN_S, STEADY_TOLERANCE};
+use scene::{sustained_steady, transit_span_s, STEADY_TOLERANCE};
 /// The window's length (s).
 const WINDOW_S: u64 = 8;
 /// The far field is where the window-mean excess is within this fraction of the centreline's
@@ -64,8 +71,10 @@ struct Window {
     /// The heat that had left and the heat added, at each whole second from `hist_from`.
     hist: Vec<(i64, i64)>,
     hist_from: u64,
-    /// The step at which the window starts (0 while not yet found).
+    /// The step at which the window starts (0 while not yet found), and the span (s) its
+    /// steady rule used.
     start: u64,
+    span: u64,
     samples: u64,
     /// The heat that had left through the top, and the heat the source had added, when the
     /// window began.
@@ -111,6 +120,7 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
         out.extend_from_slice(&a.to_le_bytes());
     }
     out.extend_from_slice(&win.start.to_le_bytes());
+    out.extend_from_slice(&win.span.to_le_bytes());
     out.extend_from_slice(&win.samples.to_le_bytes());
     out.extend_from_slice(&win.out0.to_le_bytes());
     out.extend_from_slice(&win.added0.to_le_bytes());
@@ -127,7 +137,7 @@ fn save(path: &str, step: u64, plume: &SmokePlume, win: &Window) -> std::io::Res
 /// accepts them; the rest of the bytes is returned.
 fn read_plume<'a>(b: &'a [u8], plume: &mut SmokePlume) -> Result<(u64, bool, &'a [u8]), String> {
     let old = MAGIC_OLD.iter().any(|m| &b[..8] == *m);
-    if !(old || &b[..8] == MAGIC) {
+    if !(old || &b[..8] == MAGIC || &b[..8] == MAGIC_V5) {
         return Err("not a laminar plume checkpoint".into());
     }
     let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
@@ -138,6 +148,17 @@ fn read_plume<'a>(b: &'a [u8], plume: &mut SmokePlume) -> Result<(u64, bool, &'a
         .map_err(|e| format!("the scene refuses the state: {e:?}"))?;
     plume.read_state(state);
     Ok((u64_at(8), old, &b[24 + len..]))
+}
+
+/// Forget the window (start, span and sums); the outflow history stays.
+fn drop_window(win: &mut Window) {
+    win.start = 0;
+    win.span = 0;
+    win.samples = 0;
+    win.w
+        .iter_mut()
+        .chain(win.prof.iter_mut())
+        .for_each(|v| *v = 0.0);
 }
 
 fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u64>, String> {
@@ -156,18 +177,29 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u
     win.hist = (0..len)
         .map(|h| (at(16 + 16 * h) as i64, at(24 + 16 * h) as i64))
         .collect();
+    let v5 = &b[..8] == MAGIC_V5;
     let mut o = 16 + 16 * len;
     win.start = at(o);
-    win.samples = at(o + 8);
-    win.out0 = at(o + 16) as i64;
-    win.added0 = at(o + 24) as i64;
-    o += 32;
+    o += 8;
+    if !v5 {
+        win.span = at(o);
+        o += 8;
+    }
+    win.samples = at(o);
+    win.out0 = at(o + 8) as i64;
+    win.added0 = at(o + 16) as i64;
+    o += 24;
     for v in win.w.iter_mut().chain(win.prof.iter_mut()) {
         *v = f64::from_bits(at(o));
         o += 8;
     }
     if o != rest.len() {
         return Err(format!("{path}: checkpoint length"));
+    }
+    if v5 && win.start > 0 {
+        // opened under the rule before the sustained one: dropped, the history stays
+        println!("{path}: its window was opened under an earlier rule and is dropped");
+        drop_window(win);
     }
     Ok(Some(step))
 }
@@ -228,6 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         hist: vec![],
         hist_from: 0,
         start: 0,
+        span: 0,
         samples: 0,
         out0: 0,
         added0: 0,
@@ -242,26 +275,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s as f64 / per_second as f64
             );
             n = s;
-        }
-    }
-    // a window opened under an earlier rule is kept only if its start meets this one; otherwise
-    // its sums are dropped (the outflow history stays) and the window opens again by the rule
-    if win.start > 0 {
-        let at = (win.start / per_second)
-            .checked_sub(win.hist_from)
-            .map(|i| i as usize + 1);
-        let meets = at.is_some_and(|k| k <= win.hist.len() && outflow_steady(&win.hist[..k]));
-        if !meets {
-            println!(
-                "the window from {:.1} s does not meet the steady rule: its sums are dropped",
-                win.start as f64 / per_second as f64
-            );
-            win.start = 0;
-            win.samples = 0;
-            win.w
-                .iter_mut()
-                .chain(win.prof.iter_mut())
-                .for_each(|v| *v = 0.0);
         }
     }
     if n == 0 {
@@ -304,7 +317,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the steps this process runs (a resumed run starts past 0)
     let first = n;
     let mut max_sub = 0;
-    while n < total && !(win.start > 0 && n >= win.start + window_steps) {
+    let window_done = |win: &Window, n: u64| win.start > 0 && n >= win.start + window_steps;
+    while n < total && !window_done(&win, n) {
         plume
             .advance(step)
             .map_err(|e| format!("advance at step {n}: {e:?}"))?;
@@ -316,13 +330,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             win.hist
                 .push((plume.outflow().heat_left, plume.ledger().heat_added));
+            // the plume's transit: the box's height at the fastest centreline speed
+            let g = plume.velocity();
+            let w_max = (0..ny)
+                .map(|j| {
+                    [(ci - 1, ck - 1), (ci, ck - 1), (ci - 1, ck), (ci, ck)]
+                        .iter()
+                        .map(|&(i, k)| g.cell_velocity(i, j, k).1.to_f64() / 4.0)
+                        .sum::<f64>()
+                })
+                .fold(0.0, f64::max);
             let h = &win.hist;
-            if win.start == 0 && outflow_steady(h) {
-                let now = h[h.len() - 1];
-                win.start = n;
-                win.out0 = now.0;
-                win.added0 = now.1;
-                println!("window starts at {:.1} s", n as f64 / per_second as f64);
+            if let Some(span) = transit_span_s(w_max) {
+                if win.start == 0 && sustained_steady(h, span) {
+                    let now = h[h.len() - 1];
+                    win.start = n;
+                    win.span = span as u64;
+                    win.out0 = now.0;
+                    win.added0 = now.1;
+                    println!(
+                        "window starts at {:.1} s (steady for a transit of {span} s)",
+                        n as f64 / per_second as f64
+                    );
+                }
             }
         }
         if win.start > 0 && n > win.start {
@@ -344,6 +374,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|&(i, k)| g.cell_velocity(i, j, k).1.to_f64() / 4.0)
                     .sum();
                 win.w[j] += w;
+            }
+        }
+        if window_done(&win, n) {
+            let out = (plume.outflow().heat_left - win.out0) as f64;
+            let added = (plume.ledger().heat_added - win.added0) as f64;
+            let ratio = out / added.max(1.0);
+            if ratio.is_nan() || (ratio - 1.0).abs() > STEADY_TOLERANCE {
+                // not steady over the whole window after all: look for the next start
+                println!(
+                    "the window from {:.1} s was not steady (out / added {ratio:.4}): dropped",
+                    win.start as f64 / per_second as f64
+                );
+                drop_window(&mut win);
             }
         }
         if n % (2 * per_second) == 0 {
@@ -373,8 +416,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     if win.start == 0 {
         return Err(format!(
-            "scene invalid: outflow never steady: the heat leaving over {STEADY_SPAN_S} s did not \
-             match the heat added within {STEADY_TOLERANCE} by {seconds} s"
+            "scene invalid: outflow never steady: the heat leaving did not stay within \
+             {STEADY_TOLERANCE} of the heat added for a transit of the box, and a whole window, by \
+             {seconds} s"
         )
         .into());
     }

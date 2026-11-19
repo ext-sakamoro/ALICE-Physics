@@ -67,7 +67,10 @@
 //!   reach (the radius where its excess falls to 1 % of the centreline's) lies inside the box,
 //!   the far field beyond it is unstratified (`N · t_window < 0.1`), and the heat leaving an
 //!   open top over the window matches the source within 5 % (a closed box fills from the top
-//!   down and never qualifies). Measured at 10 mm, `ν = κ = 2·10⁻⁴` m²/s, 0.32 m box, open top,
+//!   down and never qualifies). The window opens only once that has held for one transit of the
+//!   box (its height at the plume's fastest centreline speed, in whole seconds) at each second of
+//!   a transit, the plume's own time scale; a window that turns out unsteady is dropped and the
+//!   rule looks again. Measured at 10 mm, `ν = κ = 2·10⁻⁴` m²/s, 0.32 m box, open top,
 //!   window 12–20 s: a 2 cm source at 400 K/s reaches 13 of 16 cells (valid in this box), at
 //!   100 K/s it reaches 15 and needs a 0.34 m box (outside the scene's validity). More
 //!   than [`SmokeConfig::max_steps`] velocity steps in an advance, more than
@@ -81,7 +84,7 @@
 //!   warms from the top down, so a plume in it rises into a stratifying ambient,
 //!   `N² = g β dT∞/dz`) or open (no inflow of excess, a zero-gradient top for diffusion).
 //! - **Tiers**: L0 only.
-//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses::the_open_top_sends_the_upwind_share_out::an_open_top_lets_heat_out_and_the_ledger_still_closes::an_open_plume_state_round_trips_and_is_told_apart::the_open_top_carries_the_source_away_at_steady_state::prolongation_keeps_every_quantum_and_each_parents_divergence::prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be::the_laminar_scene_has_the_same_lengths_at_every_cell::the_plume_window_opens_on_a_steady_outflow_not_on_the_overshoot`
+//! - **Validation**: `tests/analytic_smoke_plume.rs::heat_and_soot_are_conserved_to_the_last_quantum::the_projection_leaves_a_bounded_divergence_and_closed_walls::rewind_and_rerun_are_bit_identical::cell_order_does_not_change_the_state::a_tampered_payload_is_refused::no_cell_goes_negative_at_the_largest_courant_number::a_cell_below_one_face_quantum_still_drains::the_soot_left_behind_a_passing_puff_is_bounded::degenerate_inputs_are_refused::the_plume_steps_inside_a_world::a_burner_heats_at_the_arrhenius_rate::an_isolated_cell_drains_at_the_upwind_rate::the_transport_substeps_keep_half_a_cell_per_substep::a_puff_spreads_with_variance_two_kappa_t::a_gradient_below_one_quantum_still_diffuses::the_open_top_sends_the_upwind_share_out::an_open_top_lets_heat_out_and_the_ledger_still_closes::an_open_plume_state_round_trips_and_is_told_apart::the_open_top_carries_the_source_away_at_steady_state::prolongation_keeps_every_quantum_and_each_parents_divergence::prolongation_keeps_the_open_top_and_refuses_what_the_fine_grid_cannot_be::the_laminar_scene_has_the_same_lengths_at_every_cell::the_plume_window_opens_on_a_sustained_steady_outflow`
 //!
 //! Author: Moroya Sakamoto
 

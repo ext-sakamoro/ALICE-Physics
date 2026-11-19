@@ -1015,43 +1015,84 @@ fn the_laminar_scene_has_the_same_lengths_at_every_cell() {
     fine_scene.check_state(&bytes).unwrap();
 }
 
-/// The averaging window of the laminar plume run opens only on a steady outflow, on both sides:
-/// replaying the recorded outflow of [`plume`] with its top open (outflow / source per half
-/// second, 0 to 6.5 s: 0, 0, 0, 0, 0.0206, 1.0078, 1.2689, 1.1009, 1.0529, 1.0361, 1.0182, 1.0105,
-/// 1.0060, 1.0024, 1.0005, 1.0002, the overshoot of the plume's first arrival at the top) as one
-/// `(left, added)` pair per second, the rule opens at 8 s, where the last 4 s carried 1.0159 of
-/// the source (oracle, the mean of those 8 ratios); a one-sided `left >= 0.95 · added` would
-/// open at 7 s, inside the overshoot (1.0618).
+/// The averaging window of the laminar plume run opens only on an outflow that has stayed
+/// steady for a transit (oracle: the means of the declared ratios, computed outside the rule):
+/// (1) the recorded outflow of [`plume`] with its top open (outflow / source per half second,
+/// 0 to 6.5 s: 0, 0, 0, 0, 0.0206, 1.0078, 1.2689, 1.1009, 1.0529, 1.0361, 1.0182, 1.0105, 1.0060,
+/// 1.0024, 1.0005, 1.0002, the overshoot of the first arrival at the top, then 1.0000): over a
+/// span of 4 s the two-sided test first holds at 8 s (1.0159), a one-sided `left >= 0.95 · added`
+/// at 7 s inside the overshoot (1.0618), and the sustained rule opens at 11 s, the first second
+/// with 8, 9, 10 and 11 s all inside the band; (2) an outflow passing through the band while the
+/// box fills (per second 0, 0.2, 0.5, 0.8, 0.95, 1.02, 1.09, 1.16, 1.18, 1.14, 1.08, 1.03, 1.01,
+/// then 1.00): the two-sided test alone holds at 7 s (0.965) and leaves the band at 8 s (1.055),
+/// the sustained rule waits to 17 s; (3) the span is the box's height at the plume's speed in
+/// whole seconds rounded up: 0.64 m at 0.27 m/s is 3 s, at 0.16 m/s 4 s, at 0.64 m/s 1 s, and no
+/// span without an upward speed.
 #[test]
-fn the_plume_window_opens_on_a_steady_outflow_not_on_the_overshoot() {
-    // the ratios in units of 10⁻⁴, against a source of 10⁶ quanta per half second
-    let ratios: [i64; 16] = [
-        0, 0, 0, 0, 206, 10078, 12689, 11009, 10529, 10361, 10182, 10105, 10060, 10024, 10005,
+fn the_plume_window_opens_on_a_sustained_steady_outflow() {
+    // one (left, added) pair per whole second
+    type History = [(i64, i64)];
+    let opens = |hist: &History, rule: &dyn Fn(&History) -> bool| {
+        (1..=hist.len()).find(|&s| rule(&hist[..s])).map(|s| s - 1)
+    };
+    // (1) the ratios per half second in units of 10⁻⁴, against 10⁶ quanta of source each
+    let mut halves = vec![
+        0i64, 0, 0, 0, 206, 10078, 12689, 11009, 10529, 10361, 10182, 10105, 10060, 10024, 10005,
         10002,
     ];
-    let per_half = 1_000_000i64;
+    halves.extend([10_000; 12]);
     let (mut left, mut added) = (0i64, 0i64);
     let mut hist = vec![(0i64, 0i64)];
-    for (h, r) in ratios.iter().enumerate() {
-        added += per_half;
-        left += r * per_half / 10_000;
+    for (h, r) in halves.iter().enumerate() {
+        added += 1_000_000;
+        left += r * 100;
         if h % 2 == 1 {
             hist.push((left, added));
         }
     }
-    // the second at which a rule first holds on the history up to it
-    // one (left, added) pair per whole second
-    type History = [(i64, i64)];
-    let opens = |rule: &dyn Fn(&History) -> bool| {
-        (1..=hist.len()).find(|&s| rule(&hist[..s])).map(|s| s - 1)
-    };
-    assert_eq!(opens(&laminar_scene::outflow_steady), Some(8));
-    let span = laminar_scene::STEADY_SPAN_S;
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::outflow_steady(h, 4)),
+        Some(8)
+    );
     let one_sided = |h: &History| {
-        h.len() > span && {
-            let (now, then) = (h[h.len() - 1], h[h.len() - 1 - span]);
+        h.len() > 4 && {
+            let (now, then) = (h[h.len() - 1], h[h.len() - 5]);
             now.1 > then.1 && (now.0 - then.0) * 100 >= 95 * (now.1 - then.1)
         }
     };
-    assert_eq!(opens(&one_sided), Some(7));
+    assert_eq!(opens(&hist, &one_sided), Some(7));
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::sustained_steady(h, 4)),
+        Some(11)
+    );
+    // (2) per second, in units of 10⁻⁴
+    let seconds = [
+        0i64, 2000, 5000, 8000, 9500, 10200, 10900, 11600, 11800, 11400, 10800, 10300, 10100,
+        10000, 10000, 10000, 10000, 10000, 10000, 10000,
+    ];
+    let (mut left, mut added) = (0i64, 0i64);
+    let mut hist = vec![(0i64, 0i64)];
+    for r in seconds {
+        added += 1_000_000;
+        left += r * 100;
+        hist.push((left, added));
+    }
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::outflow_steady(h, 4)),
+        Some(7)
+    );
+    assert!(
+        !laminar_scene::outflow_steady(&hist[..9], 4),
+        "it leaves the band at 8 s"
+    );
+    assert_eq!(
+        opens(&hist, &|h| laminar_scene::sustained_steady(h, 4)),
+        Some(17)
+    );
+    // (3)
+    assert_eq!(laminar_scene::transit_span_s(0.27), Some(3));
+    assert_eq!(laminar_scene::transit_span_s(0.16), Some(4));
+    assert_eq!(laminar_scene::transit_span_s(0.64), Some(1));
+    assert_eq!(laminar_scene::transit_span_s(0.0), None);
+    assert_eq!(laminar_scene::transit_span_s(-0.1), None);
 }
