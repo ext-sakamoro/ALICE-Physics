@@ -58,6 +58,54 @@ fn way(x: [f32; 2]) -> [f64; 2] {
     }
 }
 
+/// The conforming rule in the level run: every share of a link takes the width the walls
+/// leave it, so a link at rest is as long as its walls make it and no longer.
+fn conforming_at_rest() {
+    let (l0, r0, links) = (0.01, 0.05, 8);
+    let config = ThickChainConfig {
+        substeps: 16,
+        iterations: 4,
+        gravity: [Fix128::ZERO; 2],
+        stretch: ThickChainStretch::NeoHookean { shear: fx(3000.0) },
+        drag: fx(40.0),
+        friction: Fix128::ZERO,
+        min_radius: fx(0.005),
+        splits: 8,
+        relaxation: Fix128::ZERO,
+        fit: ThickChainFit::Conforming,
+        // the level run asks a link to be r0 / HALF = 1.85 times its rest length
+        reach: fx(2.0),
+    };
+    let start = [f64::from(A[0]) + 0.05, f64::from(A[1])];
+    let held = l0 * r0 / f64::from(HALF);
+    let points: Vec<P2> = (0..=links)
+        .map(|i| [fx(start[0] + l0 * i as f64), fx(start[1])])
+        .collect();
+    let mut chain = ThickChain::new(config, &points, fx(r0), fx(1000.0)).expect("a valid chain");
+    // set in the level run as long as its walls make it
+    for i in 0..chain.particle_count() {
+        chain.set_position(i, [fx(start[0] + held * i as f64), fx(start[1])]);
+    }
+    let walls = DistanceSdfQuery::new(|x: f32, y: f32, _z: f32| pipe(x, y));
+    for _ in 0..120 {
+        chain
+            .step_in(Fix128::from_ratio(1, 60), &walls, &[])
+            .expect("a step in the level run");
+    }
+    let middle = links / 2;
+    let asked = chain
+        .free_stretch(middle, &walls)
+        .expect("a link inside the walls")
+        .to_f64();
+    println!(
+        "conforming, {links} links at rest in the level run: link {middle} is {:.4} of its rest length, the walls ask {asked:.4}, in {} shares, its walls press {:.1} N/m; passes that left walls unsettled: {}",
+        chain.length(middle).to_f64() / chain.rest_length(middle).to_f64(),
+        chain.spans(middle).expect("a link of the chain"),
+        chain.wall_force(middle).to_f64(),
+        chain.walls_unsettled()
+    );
+}
+
 fn main() {
     let (l0, r0) = (0.01, 0.05);
     let config = ThickChainConfig {
@@ -147,6 +195,7 @@ fn main() {
             );
         }
     }
+    conforming_at_rest();
     // held by its tail and let go, the chain keeps its place there
     chain.pin(0);
     let at = chain.positions()[0];
