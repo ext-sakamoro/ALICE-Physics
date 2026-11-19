@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6514 |
+| 🟢 Not ignored (run by CI) | 6521 |
 | 🔴 Red by design | 76 |
 | ⏱ Gated (runtime / diagnostic / manual) | 42 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6632** |
+| **Total** | **6639** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -184,7 +184,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6514)
+## 🟢 Not ignored (6521)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -540,6 +540,7 @@ Per-file counts (the test names are in `tests/`):
 | `world_snapshot_previous_semantics.rs` | 8 |
 | `analytic_axis_lock.rs` | 7 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
+| `analytic_cloth_area_constraint.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
 | `analytic_deformable_static_sag.rs` | 7 |
 | `analytic_electromagnetic_wiring.rs` | 7 |

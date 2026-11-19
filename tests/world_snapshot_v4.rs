@@ -203,17 +203,18 @@ fn checked(
     r
 }
 
-/// Version 10 keeps the layout of version 4 (version 5 added the panic fault
+/// Version 11 keeps the layout of version 4 (version 5 added the panic fault
 /// codes, version 6 stores damping as rates per second, version 7 the body axis
 /// locks when a body had one, version 8 the sleep rule and idle times as seconds
 /// and always the axis-lock section, version 9 appends the soft-body section,
-/// version 10 the contact section and its length).
+/// version 10 the contact section and its length, version 11 a cloth's area
+/// constraint in the flag byte after its config).
 #[test]
-fn the_writer_emits_version_10() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 10);
+fn the_writer_emits_version_11() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 11);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &10u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &11u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
