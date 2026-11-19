@@ -676,7 +676,7 @@ fn shared_body_scene() -> PhysicsWorld {
 
 #[cfg(feature = "parallel")]
 const GOLDEN_STEP_PARALLEL_SHARED_BODY: &str =
-    "6a5d9698aeeb7a1743b51f9c57015c9fc292cf27fc7b20c61a7d02ad7a06cbc6";
+    "9fde7bda6853494332e8c600aa9ed41841558419df0201968e4c84d9b3d3f1a2";
 
 /// `step_parallel` where constraints share a body gives the bits of `step`:
 /// the colouring keeps every body's constraints in the serial order, and
@@ -722,7 +722,7 @@ fn golden_installed_bridge() {
 const GOLDEN_AXIS_LOCK_XPBD: &str =
     "a734dc9811ff7f0b693d1f9e36ede1cfdba0cef1e7881f39374281b7f28f6d19";
 const GOLDEN_AXIS_LOCK_TGS: &str =
-    "9f35c69e5a91274c0542e824e5a5cde3b4bcbb6993059abfce96463216580a90";
+    "6e459342b978d86bfd5215b42afea89c10c5a600e9a9675738f11294a5954205";
 
 /// The axis-lock scene stepped 60 frames on `backend`: a ball dropped onto a dynamic shelf
 /// with every axis locked, and a thrown body locked to the x-y plane. The locked coordinates are

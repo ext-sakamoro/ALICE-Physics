@@ -854,6 +854,12 @@ fn joule_map_fix(lambda: Fix128, u: Fix128) -> Fix128 {
 
 /// Aitken's Δ² acceleration of `g`, which reaches a repelling fixed point by
 /// extrapolating with an effective relaxation factor outside `(0, 1)`.
+///
+/// The correction is `Δ1·(Δ1/Δ²)`, the quotient first. The textbook order
+/// `Δ1²/Δ²` squares a difference that is already small: below `2^-32.5` the
+/// square rounds to 0 in `Fix128`, the correction vanishes, and the iterate
+/// stalls about `2^-32.5/g'(u)` from the root (measured `4.6e-11 … 2.8e-10` on
+/// the three `Λ` below, against a rounding level of `5.4e-20`).
 fn aitken_fix(lambda: Fix128, seed: Fix128, steps: u32) -> Fix128 {
     let two = Fix128::from_int(2);
     let mut u = seed;
@@ -864,7 +870,7 @@ fn aitken_fix(lambda: Fix128, seed: Fix128, steps: u32) -> Fix128 {
         if second_difference.is_zero() {
             break;
         }
-        let next = u2 - (u2 - u1) * (u2 - u1) / second_difference;
+        let next = u2 - (u2 - u1) * ((u2 - u1) / second_difference);
         if next == u {
             break;
         }
@@ -892,14 +898,15 @@ fn joule_root_f64(lambda: f64, seed: f64) -> f64 {
 ///
 /// | `Λ` | upper root | lower root | `Fix128` Aitken | sweeps | residual | relative displacement |
 /// |---|---|---|---|---|---|---|
-/// | `0.20` | `2.542641357773526` | `0.259171101819074` | `2.542641404254685` | 9 | `0` | `1.83e-8` |
-/// | `0.30` | `1.781337023421627` | `0.489402227180215` | `1.781337088677384` | 8 | `0` | `3.66e-8` |
-/// | `0.35` | `1.349717252192249` | `0.716638816456074` | `1.349717319476777` | 15 | `0` | `4.99e-8` |
+/// | `0.20` | `2.542641357773526` | `0.259171101819074` | `2.542641357773527` | 9 | raw `1` | `1.7e-16` |
+/// | `0.30` | `1.781337023421627` | `0.489402227180215` | `1.781337023421627` | 7 | `0` | `2.5e-16` |
+/// | `0.35` | `1.349717252192249` | `0.716638816456074` | `1.349717252192249` | 8 | `0` | `0` (in `f64`) |
 ///
-/// ⚠️ The residual under the *implemented* map is exactly zero while the root
-/// is displaced by `~1e-8`: Aitken converges to the fixed point of
-/// `Λ·Fix128::exp(u)`, which is not the fixed point of `Λ·e^u`. The
-/// displacement tracks `exp`'s resolution, not the word's — see the next test.
+/// The limit is the root to `f64`'s resolution (the displacement column), and
+/// its residual under the implemented map is within the rounding of one
+/// evaluation of the map. While `exp` read only 24 fraction bits of its
+/// exponent the limit sat `1.8e-8 … 5.0e-8` from the root, with residual 0
+/// under that flat map.
 #[test]
 fn aitken_reaches_the_unstable_upper_branch_under_fix128_too() {
     for (num, den) in [(20i64, 100i64), (30, 100), (35, 100)] {
@@ -943,13 +950,24 @@ fn aitken_reaches_the_unstable_upper_branch_under_fix128_too() {
             to_upper / upper
         );
 
-        // It is a genuine fixed point of the implemented map.
-        let residual = (limit - joule_map_fix(lambda, limit)).abs();
+        // It is a fixed point of the implemented map to the rounding of one
+        // evaluation. One evaluation of g is off by at most
+        // eps = Λ·(1 + ⌊e^u⌋) + 1/2 ulp (exp's stated bound scaled by Λ, then the
+        // product's rounding). Extrapolating a map known to eps lands within
+        // eps/(g' − 1) of the root of the evaluated map, where the residual is
+        // (g' − 1)·eps/(g' − 1) + eps; the bound takes (1 + g'(u))·eps, g'(u) = u
+        // at a root of u = Λe^u, which also covers the stop being one lattice
+        // step off. Measured: raw 1, 0 and 0 for Λ = 0.20, 0.30, 0.35.
+        let residual = raw((limit - joule_map_fix(lambda, limit)).abs());
+        let e_u = limit.exp();
+        let eps = lambda.to_f64() * (1.0 + (raw(e_u) >> 64) as f64) + 0.5;
+        let bound = ((1.0 + limit.to_f64()) * eps).ceil() as i128;
         assert!(
-            raw(residual) <= 2,
-            "Lambda = {num}/{den}: the Aitken limit must be a fixed point of the \
-             implemented map, residual raw {}",
-            raw(residual)
+            residual <= bound,
+            "Lambda = {num}/{den}: the Aitken limit's residual under the implemented \
+             map is raw {residual}, above the rounding of one evaluation (1 + g')·eps \
+             = {bound}; the squaring floor 2^-32.5/g' would be raw {:.0}",
+            2f64.powf(31.5) / limit.to_f64()
         );
 
         // ⚠️ Control: the same seed under *plain* iteration falls to the lower

@@ -244,7 +244,7 @@ const GOLDEN_STATE_DIGEST: &str =
     "a2938fb03dcec1df384d50fb2afa8b9fb1174843960e8d141f20c6e6b163e937";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): moved with the identifier only
-const GOLDEN_LAW_ID: &str = "38f12b573ddc7c5248d907067b79b6965e89e9b4e242f97a230e4ce59eff6b5d";
+const GOLDEN_LAW_ID: &str = "8357ce8df35944c57f82509ffd501efce643c276bf87ac236e74429794df0ad2";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
