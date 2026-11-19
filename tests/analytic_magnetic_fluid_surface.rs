@@ -25,6 +25,8 @@ use alice_physics_core::electromagnetic::{
 use alice_physics_core::{Fix128, Vec3Fix};
 
 const REL: f64 = 1e-9;
+/// 2⁻³⁶: the bound a normalised normal's traction keeps against a unit normal's (see the test)
+const REL_NORMAL: f64 = 1.0 / 68_719_476_736.0;
 const MU0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
 const RHO: f64 = 1200.0;
 const G: f64 = 9.81;
@@ -181,7 +183,7 @@ fn no_field_no_magnetisation_or_no_weight() {
     let r = liquid(Fix128::ONE, 400_000);
     assert_eq!(
         magnetic_fluid_traction(Vec3Fix::ZERO, up(), &r),
-        Fix128::ZERO,
+        Some(Fix128::ZERO),
         "no field, the level"
     );
     let water = liquid(Fix128::ZERO, 0);
@@ -197,4 +199,57 @@ fn no_field_no_magnetisation_or_no_weight() {
         magnetic_fluid_surface_rise(b, up(), &r, Fix128::ONE, -Fix128::ONE),
         None
     );
+}
+
+/// The surface normal may have any length: the traction and the rise are those of its unit normal. An exact
+/// scaling (2·up, up/8) gives the same bits; a general one ((3, 4, 0)/5 against (3, 4, 0), (1, 2, 2)/3 against
+/// (1, 2, 2), in an oblique field and both regimes) agrees to `2⁻³⁶` relative: the normalisation is good to `2⁻⁴⁰`
+/// per component, the inexact unit normal from `from_ratio` is within `2⁻⁶³`, and the traction is quadratic in
+/// the normal's components with factors of order one (`B₀_n²` and `B₀_t² = |B₀|² − B₀_n²`), so a few `2⁻⁴⁰`
+/// of the traction, under `2⁻³⁶`. A normal shorter than `2⁻¹⁶` (rounding noise) gives `None` for both
+#[test]
+fn the_normal_is_normalised_and_a_short_one_has_no_direction() {
+    let b = magnet_field(7, 2, 20);
+    let lin = liquid(Fix128::ONE, 400_000);
+    let sat = liquid(Fix128::ONE, 2_000);
+    let t = |n: Vec3Fix, r: &MagneticResponse| magnetic_fluid_traction(b, n, r);
+    let scale = |n: Vec3Fix, k: Fix128| Vec3Fix::new(n.x * k, n.y * k, n.z * k);
+    for r in [&lin, &sat] {
+        let at_up = t(up(), r).expect("a unit normal");
+        assert!(at_up > Fix128::ZERO);
+        assert_eq!(t(scale(up(), Fix128::from_int(2)), r), Some(at_up));
+        assert_eq!(t(scale(up(), fx(1, 8)), r), Some(at_up));
+        let pairs = [
+            (
+                Vec3Fix::new(fx(3, 5), fx(4, 5), Fix128::ZERO),
+                Vec3Fix::new(Fix128::from_int(3), Fix128::from_int(4), Fix128::ZERO),
+            ),
+            (
+                Vec3Fix::new(fx(1, 3), fx(2, 3), fx(2, 3)),
+                Vec3Fix::new(Fix128::ONE, Fix128::from_int(2), Fix128::from_int(2)),
+            ),
+        ];
+        for (unit, long) in pairs {
+            let (a, c) = (
+                t(unit, r).expect("unit").to_f64(),
+                t(long, r).expect("long").to_f64(),
+            );
+            assert!(a > 0.0);
+            assert!((a - c).abs() <= a * REL_NORMAL, "{a} vs {c}");
+            let ru = magnetic_fluid_surface_rise(b, unit, r, Fix128::from_int(1200), fx(981, 100))
+                .expect("rise")
+                .to_f64();
+            let rl = magnetic_fluid_surface_rise(b, long, r, Fix128::from_int(1200), fx(981, 100))
+                .expect("rise")
+                .to_f64();
+            assert!((ru - rl).abs() <= ru * REL_NORMAL, "{ru} vs {rl}");
+        }
+        let noise = Vec3Fix::new(Fix128::ZERO, Fix128::from_raw(0, 1 << 40), Fix128::ZERO);
+        assert_eq!(t(noise, r), None);
+        assert_eq!(t(Vec3Fix::ZERO, r), None);
+        assert_eq!(
+            magnetic_fluid_surface_rise(b, Vec3Fix::ZERO, r, Fix128::ONE, Fix128::ONE),
+            None
+        );
+    }
 }

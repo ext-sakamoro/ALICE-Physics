@@ -25,7 +25,9 @@
 //! - **Range**: point dipoles, valid at distances much larger than the magnet and the body
 //!   (`dipole_sample`, no field at `r = 0`); quasi-static fields only (`lorentz_force`); the
 //!   liquid's rise holds for any `χ` and saturation below the Rosensweig threshold, and is `None` for
-//!   a non-positive density or gravity (`magnetic_fluid_surface_rise`).
+//!   a non-positive density or gravity (`magnetic_fluid_surface_rise`); the surface normal may have
+//!   any length and is normalised, one shorter than `2⁻¹⁶` has no direction and gives `None`
+//!   (`magnetic_fluid_traction`).
 //! - **Approximations**: no full Maxwell equations, no induction (Faraday), no hysteresis
 //!   (`EmSource::sample`); a magnetisable body is a point dipole with a linear-then-saturating
 //!   magnetisation (`MagneticResponse`); the liquid is a wide flat layer: the field just above its
@@ -333,9 +335,36 @@ pub fn induced_dipole_force(
 // A magnetisable liquid at rest in the field of permanent magnets
 // ---------------------------------------------------------------------------
 
+/// The smallest squared length a surface normal may have, `2⁻³²` (`|n| ≥ 2⁻¹⁶`): each component of a
+/// normal carries its own rounding of up to `2⁻⁶⁴`, which turns its direction by up to `2⁻⁶⁴/|n|`, so at
+/// `|n| ≥ 2⁻¹⁶` the direction is set to `2⁻⁴⁸` (below the `2⁻⁴⁰` of the normalisation itself) and a
+/// shorter normal is rounding noise with no direction.
+const MIN_NORMAL_LENGTH_SQUARED: Fix128 = Fix128::from_raw(0, 1 << 32);
+
+/// How far from 1 a squared length may be for the normal to be taken as unit already, `2⁻⁵⁶`: a unit
+/// vector normalised in Q64.64 has `|n|² − 1` of a few `2⁻⁶⁴`, and re-normalising it would change its last
+/// bits (and every result computed from it) for nothing.
+const UNIT_LENGTH_SQUARED_TOLERANCE: Fix128 = Fix128::from_raw(0, 1 << 8);
+
+/// The surface's unit normal from the caller's `normal`, which need not be unit: `None` when it is shorter
+/// than `2⁻¹⁶` (`MIN_NORMAL_LENGTH_SQUARED`, no direction) or so long that its squared length leaves the
+/// range of `Fix128` (`|n| ≥ 2³¹·⁵`); the normal itself, bit for bit, when `| |n|² − 1 | ≤ 2⁻⁵⁶`
+/// (`UNIT_LENGTH_SQUARED_TOLERANCE`); otherwise `n/|n|` to `2⁻⁴⁰` per component
+/// (`Vec3Fix::normalize_with_length_scaled`).
+fn surface_unit_normal(normal: Vec3Fix) -> Option<Vec3Fix> {
+    let l2 = normal.checked_length_squared()?;
+    if l2 < MIN_NORMAL_LENGTH_SQUARED {
+        return None;
+    }
+    if (l2 - Fix128::ONE).abs() <= UNIT_LENGTH_SQUARED_TOLERANCE {
+        return Some(normal);
+    }
+    Some(normal.normalize_with_length_scaled().0)
+}
+
 /// The field inside a magnetisable liquid just under its surface, and its magnetisation there, where the magnets'
-/// field just above the surface is `field` (`B₀`, T) and the surface's unit normal is `normal` (out of the liquid).
-/// The liquid fills the half space under a flat surface: across it the tangential `H` and the normal `B` are
+/// field just above the surface is `field` (`B₀`, T) and the surface's unit normal is `normal` (out of the liquid,
+/// already unit: see `surface_unit_normal`). The liquid fills the half space under a flat surface: across it the tangential `H` and the normal `B` are
 /// continuous, so `H_t = B₀_t/μ0` and `H_n + M_n = B₀_n/μ0`, with `M = min(χ·|H|, M_s)·Ĥ` (`χ` is
 /// `response.chi_eff`, the liquid's susceptibility; `M_s` its saturation magnetisation). Below saturation
 /// `H_n = B₀_n/(μ0(1+χ))`; above it the normal condition `x + M_s·x/√(H_t² + x²) = B₀_n/μ0` is solved for `x = H_n`
@@ -389,20 +418,25 @@ fn liquid_field(field: Vec3Fix, normal: Vec3Fix, response: &MagneticResponse) ->
 }
 
 /// The magnetic traction (Pa) that lifts the free surface of a magnetisable liquid at rest, where the magnets' field
-/// just above the surface is `field` (T) and the surface's unit normal is `normal` (out of the liquid): the
+/// just above the surface is `field` (T) and the surface's normal is `normal` (out of the liquid, any length: it
+/// is normalised first, and a unit normal is used as given, bit for bit): the
 /// ferrohydrostatic Bernoulli condition at the interface (Rosensweig) gives the fluid magnetic pressure
 /// `μ0·M̄·H = μ0∫₀^|H| M dH'` (with `H` inside the liquid, `M̄` the field-averaged magnetisation) plus the magnetic
 /// normal traction `μ0·M_n²/2`. Below saturation this is `χ/(2μ0)·(B₀_t² + B₀_n²/(1+χ))`; above the saturation field
 /// `H_s = M_s/χ` the pressure is `μ0(M_s·|H| − M_s·H_s/2)`. Zero for a liquid that does not magnetise. The liquid is a
 /// flat layer (see `liquid_field`): a surface that bends strongly over the field's length scale is outside it.
+///
+/// `None` when `normal` gives no direction: shorter than `2⁻¹⁶` (rounding noise) or with a squared length outside
+/// the range of `Fix128` (see `surface_unit_normal`).
 #[must_use]
 pub fn magnetic_fluid_traction(
     field: Vec3Fix,
     normal: Vec3Fix,
     response: &MagneticResponse,
-) -> Fix128 {
+) -> Option<Fix128> {
+    let normal = surface_unit_normal(normal)?;
     if response.chi_eff <= Fix128::ZERO || response.saturation_magnetization <= Fix128::ZERO {
-        return Fix128::ZERO;
+        return Some(Fix128::ZERO);
     }
     let (h, m_n) = liquid_field(field, normal, response);
     let m_s = response.saturation_magnetization;
@@ -415,7 +449,7 @@ pub fn magnetic_fluid_traction(
     } else {
         mu * (m_s * h - m_s * h_s / two)
     };
-    pressure + mu * m_n * m_n / two
+    Some(pressure + mu * m_n * m_n / two)
 }
 
 /// How far (m) the free surface of a magnetisable liquid at rest stands above its level where there is no field, at
@@ -425,7 +459,7 @@ pub fn magnetic_fluid_traction(
 /// rise of the sum; rises do not add.
 ///
 /// `density` is ρ (kg/m³), `gravity` is `|g|` (m/s²). `None` when either is not positive (no liquid at rest to
-/// stand). The level where there is no field is the caller's: in a closed dish the liquid drawn up under a magnet
+/// stand) or when `normal` gives no direction (as [`magnetic_fluid_traction`]; any other length is normalised). The level where there is no field is the caller's: in a closed dish the liquid drawn up under a magnet
 /// comes from the rest, so the caller shifts the whole surface to keep the volume.
 ///
 /// Valid below the Rosensweig threshold (a smooth mound, no spikes): the surface's own tension and the instability
@@ -442,7 +476,7 @@ pub fn magnetic_fluid_surface_rise(
     if density <= Fix128::ZERO || gravity <= Fix128::ZERO {
         return None;
     }
-    Some(magnetic_fluid_traction(field, normal, response) / (density * gravity))
+    Some(magnetic_fluid_traction(field, normal, response)? / (density * gravity))
 }
 
 #[cfg(test)]
@@ -824,6 +858,60 @@ mod magnet_tests {
         assert!(saturated.z.is_zero());
     }
 
+    /// A unit normal goes through `surface_unit_normal` bit for bit (so no result computed with one moves): an
+    /// axis, and unit vectors normalised in Q64.64 whose squared length is a few `2⁻⁶⁴` off 1; a non-unit one is
+    /// normalised; one shorter than `2⁻¹⁶` or past the range of the squared length has no direction
+    #[test]
+    fn a_unit_normal_is_kept_bit_for_bit_and_a_short_one_has_none() {
+        let f = Fix128::from_ratio;
+        let units = [
+            Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO),
+            Vec3Fix::new(f(1, 1), f(2, 1), f(3, 1)).normalize(),
+            Vec3Fix::new(f(-7, 10), f(3, 10), f(13, 100)).normalize(),
+            Vec3Fix::new(f(3, 5), f(4, 5), Fix128::ZERO),
+            // normalised in Q64.64 from a random direction: normalising it again moves its last bits (36 % of
+            // 2·10⁵ such vectors do), so this one has teeth against a normalise without the unit pass-through
+            Vec3Fix::new(
+                Fix128::from_raw(0, 13_386_511_167_239_980_992),
+                Fix128::from_raw(-1, 12_314_541_111_223_996_475),
+                Fix128::from_raw(0, 11_112_145_270_701_833_585),
+            ),
+        ];
+        let moved = units[4].normalize_with_length_scaled().0;
+        assert_ne!(moved, units[4], "normalising it again changes its bits");
+        let inexact = units
+            .iter()
+            .filter(|n| n.length_squared() != Fix128::ONE)
+            .count();
+        assert!(
+            inexact >= 2,
+            "the set has unit vectors whose squared length is not exactly 1"
+        );
+        for n in units {
+            assert_eq!(surface_unit_normal(n), Some(n), "{n:?}");
+        }
+        let two_up = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(2), Fix128::ZERO);
+        assert_eq!(
+            surface_unit_normal(two_up),
+            Some(Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO))
+        );
+        // |n|² = 2⁻³² exactly is the shortest kept; 2⁻³⁴ is noise
+        let at = Vec3Fix::new(Fix128::ZERO, Fix128::from_raw(0, 1 << 48), Fix128::ZERO);
+        assert_eq!(at.length_squared(), MIN_NORMAL_LENGTH_SQUARED);
+        assert_eq!(
+            surface_unit_normal(at),
+            Some(Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO))
+        );
+        let short = Vec3Fix::new(Fix128::ZERO, Fix128::from_raw(0, 1 << 47), Fix128::ZERO);
+        assert_eq!(surface_unit_normal(short), None);
+        assert_eq!(surface_unit_normal(Vec3Fix::ZERO), None);
+        let huge = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(1 << 33), Fix128::ZERO);
+        assert_eq!(surface_unit_normal(huge), None);
+        // (2³² + 1)² wraps to 2³³ + 1, which passes the length floor: only the range check refuses it
+        let wraps = Vec3Fix::new(Fix128::ZERO, Fix128::from_int((1 << 32) + 1), Fix128::ZERO);
+        assert_eq!(surface_unit_normal(wraps), None);
+    }
+
     /// Unit oracle (the lib's own coverage): the flat layer's magnetic traction against Rosensweig's normal-field
     /// closed form `χB²/(2μ0(1+χ))` and the tangential one `χB²/(2μ0)` at χ = 1, the saturated normal field
     /// `μ0(M_s(H₀ − M_s) − M_s·H_s/2) + μ0 M_s²/2`, and no rise without weight or magnetisation
@@ -838,9 +926,9 @@ mod magnet_tests {
         let side_field = Vec3Fix::new(Fix128::from_ratio(5, 100), Fix128::ZERO, Fix128::ZERO);
         let mu0 = 4.0 * core::f64::consts::PI * 1e-7;
         let b2 = 0.05 * 0.05;
-        let tn = magnetic_fluid_traction(normal_field, up, &liquid);
+        let tn = magnetic_fluid_traction(normal_field, up, &liquid).expect("a unit normal");
         assert!(close(tn, b2 / (2.0 * mu0 * 2.0), 1000.0, 1e-9), "{tn:?}");
-        let tt = magnetic_fluid_traction(side_field, up, &liquid);
+        let tt = magnetic_fluid_traction(side_field, up, &liquid).expect("a unit normal");
         assert!(close(tt, b2 / (2.0 * mu0), 1000.0, 1e-9), "{tt:?}");
         let h = magnetic_fluid_surface_rise(
             normal_field,
@@ -863,7 +951,7 @@ mod magnet_tests {
         let h0 = 0.05 / mu0;
         let (m_s, h_s) = (10_000.0, 10_000.0);
         let want = mu0 * (m_s * (h0 - m_s) - m_s * h_s / 2.0) + mu0 * m_s * m_s / 2.0;
-        let ts = magnetic_fluid_traction(normal_field, up, &sat);
+        let ts = magnetic_fluid_traction(normal_field, up, &sat).expect("a unit normal");
         assert!(close(ts, want, 1000.0, 1e-9), "{ts:?} vs {want}");
         assert_eq!(
             magnetic_fluid_surface_rise(normal_field, up, &liquid, Fix128::ZERO, Fix128::ONE),
