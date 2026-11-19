@@ -3214,6 +3214,11 @@ impl Cloth {
                 continue;
             }
             let lambda = -violation / denom;
+            // TEMP-TRACE
+            #[cfg(feature = "std")]
+            if std::env::var_os("ALICE_CLOTH_TRACE_N").is_some() {
+                std::eprintln!("TRACEN face {} n ({:.4},{:.4},{:.4}) bary ({:.3},{:.3},{:.3}) dlambda {:.4e}", k.triangle, n.x.to_f64(), n.y.to_f64(), n.z.to_f64(), bary[0].to_f64(), bary[1].to_f64(), bary[2].to_f64(), lambda.to_f64());
+            }
             self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, n, lambda);
             normal_lambda[kk] = normal_lambda[kk] + lambda;
             let limit = s.friction * normal_lambda[kk];

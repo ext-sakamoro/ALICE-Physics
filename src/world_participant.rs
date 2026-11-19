@@ -372,10 +372,16 @@ pub enum StepRule {
     /// substeps until its next call in the frame (`k·h` for `k` substeps), so
     /// the calls of a frame cover the frame and the participant's own step does
     /// not depend on how the world cuts the frame. The bodies it reads are those
-    /// at the start of its span, and a force it stages acts in the span's first
-    /// substep (an impulse `F·h`), before the world integrates the span: a
-    /// participant that predicts a body over its step predicts it over the same
-    /// substeps the world then integrates. `m = 0` is refused at registration
+    /// at the start of its span, and a force it stages acts once, in the span's
+    /// first substep (the impulse `F·hs`, `hs` one world substep,
+    /// [`SubstepCtx::world_substep`]), before the world integrates the span; it
+    /// is not repeated in the span's other substeps. A participant that
+    /// predicts a body over its step predicts it over the same substeps the
+    /// world then integrates (`crate::solver::free_linear_substep`, `k` times).
+    /// A body at rest against such a participant has a velocity sawtooth over
+    /// each span, up to `(k−1)/2 · |g| · hs`, while its position stays put: a
+    /// single pulse is the only distribution that gives a position-based
+    /// partner's displacement and impulse together. `m = 0` is refused at registration
     /// ([`RegisterError::NonPositiveStep`]); `m` above the world's substeps is
     /// refused at registration and at every step
     /// ([`RegisterError::StepsPerFrameAboveSubsteps`], a step then runs

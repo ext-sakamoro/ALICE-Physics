@@ -19,6 +19,38 @@ use alice_physics_core::cloth::{Cloth, ClothConfig};
 use alice_physics_core::cloth_participant::ClothParticipant;
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
+use std::sync::{Arc, Mutex};
+
+/// Records the speed of one body at the start of every world substep (the
+/// velocity the previous substep left), so an oracle can bound it at every
+/// substep, not only at the end of a frame.
+struct SpeedProbe {
+    body: usize,
+    speeds: Arc<Mutex<Vec<f64>>>,
+}
+
+impl Participant for SpeedProbe {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(0x5BED)
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _h: Fix128) -> Result<(), ParticipantFault> {
+        let v = ctx.bodies()[self.body].velocity.length().to_f64();
+        self.speeds
+            .lock()
+            .map_err(|_| ParticipantFault::InvalidState)?
+            .push(v);
+        Ok(())
+    }
+    fn observe(&self, _out: &mut ObservationSink) {}
+    fn write_state(&self, _out: &mut Vec<u8>) {}
+    fn check_state(&self, _bytes: &[u8]) -> Result<(), StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _bytes: &[u8]) {}
+}
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -225,11 +257,17 @@ fn over_footprint(c: Vec3Fix) -> bool {
 /// and `m = 2` steps per frame and at world substeps that do and do not equal `m`:
 /// over the last second of a 5 s run it is above the sheet, no face is inside `R` of
 /// its centre by more than 1 % of `R`, its position moves by less than 0.1 mm in each
-/// axis and its speed stays below 1 mm/s (rest without drift: the friction of the
-/// body's `friction` holds it where it settles).
+/// axis, its displacement over a frame divided by `dt` stays below 1 mm/s (rest
+/// without drift: the friction of the body's `friction` holds it where it settles),
+/// and its speed at the start of every world substep stays within the span sawtooth
+/// `(k−1)/2 · |g| · hs` (+ 1 mm/s) that the cloth's front-pulse reaction leaves when
+/// one cloth call covers `k = n/m` world substeps (derivation in the
+/// `cloth_participant` MODEL).
 #[test]
 fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
     let reach = reach_of(BALL_RADIUS);
+    // settling tolerance: what is left of the drop after 4 s
+    let settle = 1e-3;
     for (n, m) in [(1usize, 1usize), (2, 2), (4, 2), (3, 1)] {
         let cloth = sheet(m, gravity(), true, r(99, 100));
         let mut s = scene(
@@ -241,12 +279,35 @@ fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
             gravity(),
             cloth,
         );
-        let (mut closest, mut fastest) = (f64::INFINITY, 0.0f64);
+        let speeds = Arc::new(Mutex::new(Vec::new()));
+        s.world
+            .add_participant(Box::new(SpeedProbe {
+                body: s.ball,
+                speeds: Arc::clone(&speeds),
+            }))
+            .expect("register the probe");
+        // MODEL (span sawtooth of a front-pulse partner): the cloth's reaction
+        // reaches the ball once, at the first of the `k = n/m` world substeps
+        // its call covers; at rest the span's net displacement is 0, so the
+        // velocity after substep `j` is `g·hs·(j − (k+1)/2)` and its largest
+        // magnitude is `(k−1)/2 · |g| · hs`, at the ends of the span
+        let k = (n / m) as f64;
+        let hs = dt().to_f64() / n as f64;
+        let sawtooth = (k - 1.0) / 2.0 * gravity().length().to_f64() * hs;
+        let (mut closest, mut fastest, mut creep) = (f64::INFINITY, 0.0f64, 0.0f64);
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        let mut last = s.world.bodies[s.ball].position;
         for frame in 0..300 {
+            speeds.lock().expect("probe").clear();
             s.world.step(dt());
+            let c = s.world.bodies[s.ball].position;
+            let moved = (c - last).length().to_f64();
+            last = c;
             if frame >= 240 {
-                let c = s.world.bodies[s.ball].position;
+                creep = creep.max(moved / dt().to_f64());
+                for v in speeds.lock().expect("probe").iter() {
+                    fastest = fastest.max(*v);
+                }
                 assert!(
                     c.y.to_f64() > sheet_height_under(&s.world, c),
                     "n {n} m {m} frame {frame}: the ball is above the sheet"
@@ -260,7 +321,7 @@ fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
             }
         }
         println!(
-            "[cloth contact] n {n} m {m}: closest face {closest:.5} (R {reach:.3}), range x {:.2e} y {:.2e} z {:.2e} m, |v| max {fastest:.2e} m/s",
+            "[cloth contact] n {n} m {m}: closest face {closest:.5} (R {reach:.3}), range x {:.2e} y {:.2e} z {:.2e} m, frame displacement/dt max {creep:.2e} m/s, |v| max {fastest:.3e} m/s (sawtooth {sawtooth:.3e})",
             hi[0] - lo[0],
             hi[1] - lo[1],
             hi[2] - lo[2]
@@ -278,8 +339,12 @@ fn a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting() {
             );
         }
         assert!(
-            fastest < 1e-3,
-            "n {n} m {m}: |v| {fastest:.2e} m/s in the last second"
+            creep < settle,
+            "n {n} m {m}: the ball moves {creep:.2e} m/s over a frame in the last second"
+        );
+        assert!(
+            fastest <= sawtooth + settle,
+            "n {n} m {m}: |v| {fastest:.3e} m/s at a substep, above the span sawtooth {sawtooth:.3e} + {settle:.0e}"
         );
     }
 }

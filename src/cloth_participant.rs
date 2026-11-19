@@ -12,21 +12,60 @@
 //!   frame into. The damping is a rate ([`crate::cloth::damping_over`]: the retention
 //!   per 1/60 s raised to `h · 60`), so a second of motion decays the same at any `m`.
 //! - **Units**: SI. Mass kg, length m, time s.
-//! - **Conservation**: as [`Cloth::step`]; the participant adds nothing and takes
-//!   nothing.
-//! - **Range**: as [`Cloth::step`].
-//! - **Approximations**: cloth-body contact is not wired yet: the cloth reads no
-//!   body and stages no force, so a body and a cloth in one world pass through each
-//!   other (pinned by `a_body_and_a_resident_cloth_do_not_interact`). Its own
-//!   `gravity` is used.
+//! - **Contact with the world's bodies**: every body is a sphere of its world
+//!   collision radius ([`SubstepCtx::body_radius`](crate::world_participant::SubstepCtx::body_radius)), reach `R = radius + thickness`.
+//!   The call first predicts where the world will have each dynamic body at the end
+//!   of the call with no cloth: `k` steps of `solver::free_linear_substep`
+//!   (the same function the world's integration calls, with the body's
+//!   `gravity_scale`), `k` the world substeps the call covers and `hs` the world's
+//!   substep width ([`SubstepCtx::world_substep`](crate::world_participant::SubstepCtx::world_substep)). Inside the cloth's iterations each
+//!   sphere is held at `R` from the faces it was on the start side of
+//!   (particle–triangle: closest point, normal from the face, the side fixed by the
+//!   body's start position), a mass-weighted XPBD projection that moves the sphere
+//!   by `w_s λ` and corner `i` by `−w_i b_i λ` (`w = inv_mass`, `b` barycentric).
+//!   Coulomb friction acts in the same contact with the rigid static-friction law
+//!   (`xpbd_contact::static_hold`): the tangential slip of the sphere relative to the
+//!   face's material point is undone while the accumulated tangential multiplier
+//!   stays within `μ` times the accumulated normal one, `μ` the body's `friction`.
+//!   The force acts at the centre: no torque (a sliding block, not a rolling ball).
+//!   Static and kinematic bodies take no reaction (`w_s = 0`).
+//! - **Reaction**: the sphere's displacement from its prediction, `Δc`, is returned to
+//!   the body as one force at the first substep of the call: the world applies it
+//!   once, `Δv = F · inv_mass · hs`, and the body carries `Δv` through the `k`
+//!   substeps, so `F = Δc / (inv_mass · hs · k·hs)` moves it by `Δc` and gives it
+//!   the impulse `M·Δc/(k·hs)`, the momentum the cloth's position-based step takes
+//!   in the other direction. Of the distributions of one force over the span this
+//!   is the only one that matches both the displacement and the impulse of a
+//!   position-based partner (a force spread over the `k` substeps moves the body
+//!   `(k+1)/(2k)` as far for the same impulse).
+//! - **Span sawtooth**: at rest the span's net displacement is 0, so the body leaves
+//!   the pulse with `u = −g·hs·(k+1)/2` and after substep `j` has
+//!   `u + j·g·hs = g·hs·(j − (k+1)/2)`: its speed reaches `(k−1)/2 · |g| · hs` at the
+//!   ends of each span while its position stays put (0 for `k = 1`).
+//! - **Conservation**: as [`Cloth::step`]; the contact conserves the momentum of
+//!   cloth and bodies together (equal and opposite mass-weighted moves, the impulse
+//!   above).
+//! - **Range**: as [`Cloth::step`]. A body whose prediction leaves the range faults
+//!   the call ([`ParticipantFault::OutOfRange`](crate::world_participant::ParticipantFault::OutOfRange)).
+//! - **Approximations**: a body that crosses a face's plane within one cloth step is
+//!   held on its start side (the side is read from the start position, so a body
+//!   that moves more than its reach plus the cloth's motion in one step against a
+//!   face it was not near is not caught). Bodies are spheres; no torque. The cloth's
+//!   own `gravity` is used.
 //! - **Tiers**: L0 only.
 //! - **Validation**: `tests/cloth_resident_compare.rs` (bit equality with the
-//!   world's own cloth step at one step per frame for any world substeps, the settle
+//!   world's own cloth step at one step per frame with no body in reach, the settle
 //!   within 2 % across world substeps, including counts the steps do not divide,
-//!   rewind and fork bits, no interaction with the world's bodies).
+//!   rewind and fork bits); `tests/cloth_body_contact.rs`
+//!   (`a_dropped_ball_comes_to_rest_on_the_sheet_without_sinking_or_drifting`, rest
+//!   with no drift and the span sawtooth bound at every substep;
+//!   `a_ball_smaller_than_a_cell_is_held_by_its_faces`;
+//!   `a_ball_crossing_a_face_within_one_step_is_held_on_its_start_side`;
+//!   `a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it`;
+//!   `ball_and_cloth_momentum_together_is_conserved_through_the_contact`).
 //!
 //! Unstable like the rest of the participant API: it may change before that API is
-//! declared stable, and contact with the world's bodies is still to come.
+//! declared stable.
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
