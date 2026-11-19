@@ -603,7 +603,8 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 // letters did not move
 // re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
-const THROW_DIGEST_600: &str = "0bd6d13bd93a4159a70539c9afce2de2fdfd577cf1d368333e2f3d6806b08fb6";
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
+const THROW_DIGEST_600: &str = "7fd400538c43eb2effa93409ba72d45034ef25cfacc61a29f6e75db776d8e908";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -739,8 +740,9 @@ fn rollback_blob_carries_the_letters() {
 // letters did not move; re-pinned again with the bend term's fold branch (the thrown letter's
 // fold is unfolded)
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "c7bb2892d728c7f071dec8ad46f9bf49e51dd05b33761f72b73ba3e55cd7ad04";
+    "a99f7cd18b2610dbdd19628d44646664a26661afa3d91b075b2cd6bb70bc6f3e";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {
