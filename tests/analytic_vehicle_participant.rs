@@ -660,8 +660,9 @@ fn drive_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
-const DRIVE_XPBD: &str = "ffb679bc4e576da781e62b115c5f9ee9ad6a685b3a90d957c13a1d1395ebd656";
-const DRIVE_TGS: &str = "a21fc16a620038fde9fb4220f6a5af9e32381c01d488f22936d42ddc622ec10b";
+// re-pinned under world snapshot version 11 (a cloth's area constraint): only the version in the header moved; the same tree with WORLD_SNAPSHOT_VERSION set back to 10 gives the previous pins bit for bit
+const DRIVE_XPBD: &str = "2820d792197d8a55d59814c24d16f9bc75242d437c8ae29904325534a9fecdd0";
+const DRIVE_TGS: &str = "7015ee4e24938ccbc869e75515e09d792b62d57961487314ab8fbeb0b6d49b8d";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
