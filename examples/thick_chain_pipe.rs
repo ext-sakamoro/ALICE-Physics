@@ -112,11 +112,14 @@ fn main() {
         if frame % 10 == 9 {
             let (mut thin, mut wide, mut length, mut near) =
                 (f64::INFINITY, 0.0f64, 0.0, f64::INFINITY);
+            // the walls' press on the whole body, N per metre of depth
+            let mut press = 0.0;
             for k in 0..chain.link_count() {
                 let r = chain.radius(k).to_f64();
                 thin = thin.min(r);
                 wide = wide.max(r);
                 length += chain.length(k).to_f64();
+                press += chain.wall_force(k).to_f64();
                 for p in [chain.positions()[k], chain.positions()[k + 1]] {
                     near = near.min(f64::from(pipe(p[0].to_f32(), p[1].to_f32())) - r);
                 }
@@ -124,7 +127,7 @@ fn main() {
             let head = chain.positions()[links];
             let speed = chain.velocities()[links];
             println!(
-                "t {:.2} s{}: tail ({:.3}, {:.3}) head ({:.3}, {:.3}) at {:.2} m/s, radius {:.4}..{:.4} m, length {:.2} of rest, outline to wall {:+.4} m",
+                "t {:.2} s{}: tail ({:.3}, {:.3}) head ({:.3}, {:.3}) at {:.2} m/s, radius {:.4}..{:.4} m, length {:.2} of rest, outline to wall {:+.4} m, the walls press {:.1} N/m",
                 f64::from(frame + 1) / 60.0,
                 if on { " drive" } else { "" },
                 tail[0].to_f64(),
@@ -135,7 +138,8 @@ fn main() {
                 thin,
                 wide,
                 length / rest,
-                near
+                near,
+                press
             );
         }
     }
