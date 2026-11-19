@@ -35,7 +35,6 @@
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[default] src/math.rs: replace + with - in cordic_sin_cos
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
@@ -272,7 +271,6 @@
 [parallel] src/joint.rs: replace < with <= in solve_slider_joint
 [parallel] src/joint.rs: replace < with == in solve_cone_twist_joint
 [parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
-[parallel] src/math.rs: replace + with - in cordic_sin_cos
 [parallel] src/solver.rs: delete ! in PhysicsWorld::integrate_positions
 [parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
 [parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
