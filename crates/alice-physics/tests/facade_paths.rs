@@ -346,6 +346,8 @@ use alice_physics::electromagnetic::induced_dipole_energy as _;
 use alice_physics::electromagnetic::induced_dipole_force as _;
 use alice_physics::electromagnetic::lorentz_force as _;
 use alice_physics::electromagnetic::lorentz_force_sum as _;
+use alice_physics::electromagnetic::magnetic_fluid_pressure as _;
+use alice_physics::electromagnetic::magnetic_fluid_surface_rise as _;
 use alice_physics::electromagnetic::ChargedBody as _;
 use alice_physics::electromagnetic::DipoleSample as _;
 use alice_physics::electromagnetic::EmSource as _;
@@ -2011,7 +2013,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1993 paths, checked at compile time
+    // 1995 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
