@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6509 |
-| 🔴 Red by design | 73 |
+| 🟢 Not ignored (run by CI) | 6513 |
+| 🔴 Red by design | 76 |
 | ⏱ Gated (runtime / diagnostic / manual) | 42 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6624** |
+| **Total** | **6631** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (73)
+## 🔴 Red by design (76)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -69,6 +69,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `result_velocity_has_no_component_into_the_wall_after_a_head_on_slide` (audit_character.rs) — known defect: AUD-A-S3W3-005: MoveResult.velocity doc says velocity after sliding but move_and_slide always re…
 - `rigid_half_turn_in_an_even_number_of_increments_is_stress_free` (audit_c_linear_elastic_fem.rs) — known defect: AUD-A-S34-030: `solve_corotational` applies a rigid 180 degree rotation in an even number of inc…
 - `rotation_error_magnitude_equals_the_angle_for_a_quarter_turn` (audit_motor.rs) — known defect: AUD-A-S5W2-002: the in-code comment calls the position error \"axis-angle\" but the controller u…
+- `self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: free edge pairs end the crumple inside the …
 - `separation_distance_matches_closed_form_diagonal_equal_radius` (analytic_gjk_separation_distance.rs) — src gap: fixed-iteration GJK converges inexactly for a diagonal separation even at equal radii (dist=5 r1=1 r2…
 - `separation_distance_matches_closed_form_off_axis_unequal_radius` (analytic_gjk_separation_distance.rs) — src gap: fixed-iteration GJK converges inexactly for unequal-radius separated spheres along a non-x axis (dist…
 - `slot_merge_keeps_the_gauge_when_the_other_slot_never_wrote_one` (audit_pipeline.rs) — known defect: AUD-A-S5W3-015: MetricSlot::merge overwrites the gauge with the other slot's value whenever that…
@@ -86,6 +87,8 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `submerged_cube_feels_the_archimedes_force` (analytic_fluid_pbf_density.rs) — known defect: a cube of boundary particles in place of fluid is pushed up by 1.535 rho_0 g V (measured, s = 0.…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
+- `the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below rea…
+- `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below; wi…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
 - `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
 - `to_f64_is_relatively_accurate_for_small_negative_values` (audit_math.rs) — known defect: AUD-A-S1W5-025: Fix128::to_f64 computes hi + lo/2^64 in f64, so a small negative value loses its…
@@ -112,7 +115,7 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (12)
+## ⚠️ Known defects without an id (15)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
@@ -125,6 +128,9 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `a_heavy_load_on_a_light_rope_holds_its_length` (analytic_rope_participant.rs) — known defect: rope:body 1:1000 stretches 5 % at frame 9 (reach 2.10 on 2.0); the chain's sweep does not conver…
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
+- `self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: free edge pairs end the crumple inside the …
+- `the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below rea…
+- `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` (analytic_self_contact.rs) — known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below; wi…
 - `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
@@ -178,7 +184,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6509)
+## 🟢 Not ignored (6513)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -305,7 +311,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_modal_wiring.rs` | 17 |
 | `analytic_nbody.rs` | 17 |
 | `analytic_phase_change_wiring.rs` | 17 |
-| `analytic_self_contact.rs` | 17 |
 | `audit_articulation.rs` | 17 |
 | `audit_audio_physics.rs` | 17 |
 | `audit_fatigue.rs` | 17 |
@@ -322,6 +327,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_privacy_wiring.rs` | 16 |
 | `analytic_profiling_wiring.rs` | 16 |
 | `analytic_rope_participant.rs` | 16 |
+| `analytic_self_contact.rs` | 16 |
 | `analytic_shape.rs` | 16 |
 | `analytic_structural_solver_wiring.rs` | 16 |
 | `analytic_vehicle_wiring.rs` | 16 |
@@ -592,6 +598,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cloth_crossings_wiring.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
 | `analytic_euler_fv_participant.rs` | 5 |
+| `analytic_fix128_transcendentals.rs` | 5 |
 | `analytic_fluid_sdf_body.rs` | 5 |
 | `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
