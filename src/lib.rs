@@ -862,6 +862,7 @@ pub mod linear_elastic_fem;
 pub mod linear_solver;
 pub mod mass_properties;
 pub mod material;
+mod fix128_kernels;
 pub mod math;
 pub mod math_util;
 pub mod maxwell_fdtd;

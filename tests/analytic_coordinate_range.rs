@@ -25,7 +25,7 @@
 //! | `sqrt` | 非負の全域 | (超えない) |
 //! | `sin` `cos` | 全域で wrap しない | 絶対誤差が `\|x\|·2⁻⁷⁰` 程度で増える |
 //! | `exp` | `x < 43` | saturate (文書どおり) |
-//! | `powf_pos` 整数部 | 結果 `< 2⁶³` | wrap |
+//! | `powf_pos` | 結果 `< 2⁶³` | saturate (`exp` と同じ上限) |
 //! | `Vec3Fix::length_squared` / `length` / `normalize` | `\|v\| < 2³¹·⁵ ≈ 3.04e9` | wrap、`length` は 0、`normalize` は ZERO (`checked_*` 版は `None`) |
 //! | `Vec3Fix::checked_length_scaled` / `try_normalize_scaled` | 長さ `< 2⁶³` / 全域 | `None` (範囲内は `length` / `try_normalize` と bit 一致) |
 //! | `Vec3Fix::cross` | 各積 `< 2⁶²` | wrap |
@@ -386,12 +386,26 @@ fn exp_saturates_and_ln_atan_stay_in_range() {
     assert!((pow2(62).atan().to_f64() - core::f64::consts::FRAC_PI_2).abs() < 1e-12);
 }
 
-/// characterization: `powf_pos` の整数部は `*` の繰り返しなので同じく wrap する
+/// `powf_pos` は結果が `2⁶³` 以上なら表現できる最大値で止まる (`exp` と同じ上限)
+/// 整数の冪は範囲内なら厳密で、境界の直下 (`2⁶²`) も厳密に出る
 #[test]
-fn characterization_powf_pos_integer_power_wraps() {
+fn powf_pos_saturates_from_2_pow_63_and_integer_powers_stay_exact() {
+    let max = Fix128::from_raw(i64::MAX, u64::MAX);
     let two = Fix128::from_int(2);
+    // 範囲内: 厳密
     assert_eq!(pow2(31).powf_pos(two), pow2(62));
-    assert_eq!(pow2(32).powf_pos(two), Fix128::ZERO);
+    assert_eq!(two.powf_pos(Fix128::from_int(62)), pow2(62));
+    assert_eq!(Fix128::from_int(3).powf_pos(Fix128::from_int(39)), Fix128::from_int(4_052_555_153_018_976_267));
+    // 範囲外: 上限で止まる (wrap しない)
+    assert_eq!(pow2(32).powf_pos(two), max);
+    assert_eq!(two.powf_pos(Fix128::from_int(63)), max);
+    assert_eq!(two.powf_pos(Fix128::from_int(200)), max);
+    assert_eq!(Fix128::from_int(1000).powf_pos(Fix128::from_int(7)), max);
+    // 小数部のある指数でも同じ (614^6.6 ≈ 2.7e18 は範囲内、614^6.9 ≈ 1.8e19 は範囲外)
+    let in_range = Fix128::from_int(614).powf_pos(Fix128::from_ratio(66, 10));
+    assert!(in_range > Fix128::from_int(2_000_000_000_000_000_000), "614^6.6 = {in_range:?}");
+    assert!(in_range < Fix128::from_int(3_000_000_000_000_000_000), "614^6.6 = {in_range:?}");
+    assert_eq!(Fix128::from_int(614).powf_pos(Fix128::from_ratio(69, 10)), max);
 }
 
 // ---------------------------------------------------------------------------
