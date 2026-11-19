@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6428 |
+| 🟢 Not ignored (run by CI) | 6439 |
 | 🔴 Red by design | 73 |
 | ⏱ Gated (runtime / diagnostic / manual) | 36 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6537** |
+| **Total** | **6548** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -172,7 +172,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6428)
+## 🟢 Not ignored (6439)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -223,6 +223,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_law_outputs.rs` | 25 |
 | `analytic_compound_wiring.rs` | 24 |
 | `analytic_physics2d_pairs.rs` | 24 |
+| `analytic_smoke_plume.rs` | 24 |
 | `analytic_transient_thermal_wiring.rs` | 24 |
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
@@ -378,7 +379,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_ccd_wiring.rs` | 13 |
 | `analytic_sim_modifier_wiring.rs` | 13 |
 | `analytic_sketch_wiring.rs` | 13 |
-| `analytic_smoke_plume.rs` | 13 |
 | `analytic_spring_joint.rs` | 13 |
 | `analytic_touch_layers.rs` | 13 |
 | `analytic_vehicle_participant.rs` | 13 |
