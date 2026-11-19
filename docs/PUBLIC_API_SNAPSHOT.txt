@@ -3952,7 +3952,7 @@ pub fn alice_physics_core::electromagnetic::induced_dipole_force(&alice_physics_
 pub fn alice_physics_core::electromagnetic::lorentz_force(alice_physics_core::electromagnetic::ChargedBody, &alice_physics_core::solver::RigidBody, &alice_physics_core::electromagnetic::EmSource) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::electromagnetic::lorentz_force_sum(alice_physics_core::electromagnetic::ChargedBody, &alice_physics_core::solver::RigidBody, &[alice_physics_core::electromagnetic::EmSource]) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::electromagnetic::magnetic_fluid_surface_rise(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, &alice_physics_core::electromagnetic::MagneticResponse, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::math::Fix128>
-pub fn alice_physics_core::electromagnetic::magnetic_fluid_traction(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, &alice_physics_core::electromagnetic::MagneticResponse) -> alice_physics_core::math::Fix128
+pub fn alice_physics_core::electromagnetic::magnetic_fluid_traction(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix, &alice_physics_core::electromagnetic::MagneticResponse) -> core::option::Option<alice_physics_core::math::Fix128>
 pub mod alice_physics_core::ellipsoid
 pub struct alice_physics_core::ellipsoid::Ellipsoid
 pub alice_physics_core::ellipsoid::Ellipsoid::center: alice_physics_core::math::Vec3Fix
