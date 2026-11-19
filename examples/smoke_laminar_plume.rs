@@ -37,7 +37,9 @@
 //! e.g. `-- 10 200 400 40 0.10 0.40 open /tmp/plume10.ckpt`. With a coarse checkpoint (a run
 //! of the same scene at twice the cell) and no checkpoint of its own yet, the run starts from that
 //! state prolonged to this cell (`SmokePlume::prolonged`) instead of from rest; the window should
-//! start a while after it.
+//! start a while after it. With no arguments it runs a short default (the 10 mm scene for 3
+//! steps, checking the declared heat and that the air over the source rises), not the
+//! measurement.
 
 #[path = "../tests/support/smoke_laminar_scene.rs"]
 mod scene;
@@ -204,8 +206,38 @@ fn load(path: &str, plume: &mut SmokePlume, win: &mut Window) -> Result<Option<u
     Ok(Some(step))
 }
 
+/// With no arguments: the scene at 10 mm for 3 velocity steps, a smoke check and not the
+/// measurement (that needs the arguments above). The heat held is the declared rate times the
+/// source's 8 cells times the steps, floored to a quantum per cell at each step, and the air over
+/// the source rises.
+fn short_default() -> Result<(), Box<dyn std::error::Error>> {
+    println!("short default (no arguments): 10 mm scene, 3 steps; not the plume measurement");
+    let mut p = scene::scene(10, 200, 100);
+    for _ in 0..3 {
+        p.advance(scene::step(10))
+            .map_err(|e| format!("advance: {e:?}"))?;
+    }
+    let per_cell = 3 * ((100_i128 << HEAT_QUANTUM_BITS) / 120);
+    let held = p.heat().total();
+    if held != Some((8 * per_cell) as i64) {
+        return Err(format!("heat held {held:?}, declared {}", 8 * per_cell).into());
+    }
+    let w = p.velocity().cell_velocity(16, 3, 16).1.to_f64();
+    if w <= 0.0 {
+        return Err(format!("the air over the source must rise, got {w}").into());
+    }
+    println!(
+        "heat held {} quanta as declared; air over the source rises at {w:.6} m/s",
+        8 * per_cell
+    );
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let a: Vec<String> = std::env::args().skip(1).collect();
+    if a.is_empty() {
+        return short_default();
+    }
     if a.len() < 7 {
         return Err(
             "args: dx_mm nu_um2 heat_k_per_s max_seconds z_lo_m z_hi_m closed|open \
