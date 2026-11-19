@@ -154,6 +154,23 @@ fn fed(shear: f64, drag: f64, links: usize, share: f64) -> bool {
 }
 
 #[test]
+fn a_chain_of_short_links_is_not_fed_below_the_push_of_its_squeeze_energy_and_is_fed_above_it() {
+    // the closed form's push at one resolution (40 links of 5 mm): not fed at 0.95 of it, fed
+    // by 1.6 of it at the most (the links' lumps: see the module's Approximations). The other
+    // resolutions and the order between them are in the test below.
+    assert!(
+        !fed(SHEAR, DRAG, 40, 0.95),
+        "40 links are fed below the limit"
+    );
+    assert!(
+        [1.1, 1.3, 1.6]
+            .iter()
+            .any(|&share| fed(SHEAR, DRAG, 40, share)),
+        "no push of the ladder feeds 40 links"
+    );
+}
+
+#[test]
 #[ignore = "runtime: about 45 s at opt-level 2, measured 2026-11-19 (nine pushes of 15 s each, up to 80 links); run by the weekly job"]
 fn pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy() {
     let (limit, outside) = threshold();
@@ -265,6 +282,13 @@ fn slow_feed(links: usize) -> (f64, f64) {
         limit * way
     );
     (work / gain, gain / (limit * way))
+}
+
+#[test]
+fn moved_slowly_the_push_works_no_less_than_the_links_take() {
+    // one resolution (20 mm links); the other and the order between them are in the test below
+    let (ratio, _) = slow_feed(10);
+    assert!(ratio >= 1.0, "the work over the energy is {ratio}");
 }
 
 #[test]

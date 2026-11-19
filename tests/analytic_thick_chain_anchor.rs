@@ -427,15 +427,25 @@ fn every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull() {
 }
 
 #[test]
-#[ignore = "runtime: about 30 s at opt-level 2, measured 2026-11-19 (two pulls of 3 s between walls at 64 passes); run by the weekly job"]
-fn the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch() {
+fn the_reach_in_a_channel_under_less_than_the_walls_hold_is_the_walls_hold() {
+    reach_in_a_channel(0.5);
+}
+
+#[test]
+fn the_reach_in_a_channel_under_more_than_the_walls_hold_is_the_pulls_stretch() {
+    reach_in_a_channel(2.0);
+}
+
+/// the free part's length under a pull of `share` of the tension the walls hold the links
+/// at: the walls' length below it, the pull's stretch above it (and clear of the walls)
+fn reach_in_a_channel(share: f64) {
     let c = 0.012f32;
     let at = RADIUS / f64::from(c);
     let held = at * LINK;
     let (drag, seconds) = (30.0, 3.0);
     let limit = SHEAR * 2.0 * RADIUS * pull(at);
     let walls = channel(c);
-    for share in [0.5, 2.0] {
+    {
         let force = share * limit;
         let mut cfg = config(neo());
         cfg.drag = fx(drag);
