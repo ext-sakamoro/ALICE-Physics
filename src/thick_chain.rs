@@ -810,7 +810,9 @@ impl ThickChain {
 // `tests/analytic_thick_chain_entry.rs` are integration tests only: they settle chains over
 // many frames (70 s and 80 s at opt-level 2), and the lib tests also run without
 // optimisation (the minimum-toolchain job, twice), where the anchor file alone added six
-// minutes to each run.
+// minutes to each run. Their longest tests (the reach in a channel, and the two studies of
+// the push at a mouth) are `#[ignore = "runtime: …"]` and run by the weekly job: on the
+// slowest test runner the four files added five and a half minutes to each full pass.
 #[cfg(test)]
 #[path = "../tests/analytic_thick_chain_neo_hookean.rs"]
 mod analytic_thick_chain_neo_hookean_oracle;

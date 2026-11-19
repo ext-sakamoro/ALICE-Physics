@@ -394,6 +394,10 @@ fn every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull() {
         let mut cfg = config(neo());
         cfg.drag = fx(drag);
         cfg.splits = 8;
+        // the walls are 10 m away and never touched: the samples a link is given between
+        // them (one per half of the least radius) only cost time here, so the least radius
+        // is the body's own
+        cfg.min_radius = fx(RADIUS);
         let accel = on_the_head(force);
         let mut pulled = anchored(cfg);
         for _ in 0..(seconds * 60.0) as usize {
@@ -423,6 +427,7 @@ fn every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull() {
 }
 
 #[test]
+#[ignore = "runtime: about 30 s at opt-level 2, measured 2026-11-19 (two pulls of 3 s between walls at 64 passes); run by the weekly job"]
 fn the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch() {
     let c = 0.012f32;
     let at = RADIUS / f64::from(c);
