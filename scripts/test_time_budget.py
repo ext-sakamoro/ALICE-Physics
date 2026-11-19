@@ -173,10 +173,13 @@ def time_locally(binaries: list[str]) -> dict[str, float]:
             ["cargo", "test", "--profile", "ci-test", "--test", name],
             capture_output=True, text=True, check=False,
         )
-        times = binary_times(r.stdout + r.stderr)
-        got = [sum(v) for k, v in times.items() if k.endswith(f"{name}.rs")]
-        if r.returncode != 0 or not got:
-            raise BudgetError(f"{path}: the test run failed or reported no time (exit {r.returncode})")
+        # one binary was asked for: its result line is on stdout (cargo's "Running" line is
+        # on stderr, so the two cannot be paired here as in a job's log)
+        got = [float(m.group(1)) for m in RESULT.finditer(ANSI.sub("", r.stdout))]
+        if r.returncode != 0 or len(got) != 1:
+            raise BudgetError(
+                f"{path}: the test run failed or reported {len(got)} times (exit {r.returncode})"
+            )
         out[path] = got[0]
     return out
 
