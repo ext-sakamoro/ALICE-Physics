@@ -29,6 +29,7 @@ src/event.rs	event queue (infrastructure)
 src/ffi.rs	C bindings
 src/filament_db.rs	table of filament material data
 src/filter.rs	collision layer and mask filtering, no physics
+src/fix128_kernels.rs	wide fixed point kernels for the Fix128 transcendental functions (one rounding at the end), no physics (accuracy pinned by tests/analytic_fix128_transcendentals.rs)
 src/flow_viz.rs	flow visualisation (drawing)
 src/fluid_netcode.rs	fluid state compression for the network, no equation of motion
 src/gpu_bridge.rs	offload trait for an external backend, no equation of its own

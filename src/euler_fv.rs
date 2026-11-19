@@ -248,73 +248,27 @@ fn max(a: Fix128, b: Fix128) -> Fix128 {
 
 /// `ln 2`, exact to `2⁻⁶⁴` (same constant as [`Fix128::ln`]).
 const LN2: Fix128 = Fix128::from_raw(0, 0xB172_17F7_D1CF_79AC);
-/// `√2`, truncated to `2⁻⁶⁴`.
-const SQRT2: Fix128 = Fix128::from_raw(1, 0x6A09_E667_F3BC_C908);
-
-/// Natural log of `x > 0`: reduce to `m ∈ [1/√2, √2)`, then
-/// `ln m = 2 atanh t`, `t = (m−1)/(m+1)`, `|t| ≤ 0.172`, 14 terms
-/// (truncation `< 0.172²⁹/29 ≈ 2e-24`). `x ≤ 0` returns `ln 2⁻⁶⁴` (the log
-/// of the smallest positive value) instead of looping in the range reduction.
+/// Natural log of `x > 0` ([`Fix128::ln`]); `x ≤ 0` returns `ln 2⁻⁶⁴` (the
+/// log of the smallest positive value).
 fn ln_pos(x: Fix128) -> Fix128 {
     if x <= Fix128::ZERO {
         return -(Fix128::from_int(64) * LN2);
     }
-    let mut m = x;
-    let mut k: i64 = 0;
-    while m >= SQRT2 {
-        m = m.half();
-        k += 1;
-    }
-    let lower = SQRT2.half();
-    while m < lower {
-        m = m.double();
-        k -= 1;
-    }
-    let t = (m - Fix128::ONE) / (m + Fix128::ONE);
-    let t2 = (t) * (t);
-    let mut term = t;
-    let mut sum = Fix128::ZERO;
-    for n in 0..14i64 {
-        sum = sum + ((term) * (Fix128::from_ratio(1, 2 * n + 1)));
-        term = (term) * (t2);
-    }
-    Fix128::from_int(k) * LN2 + sum.double()
+    x.ln()
 }
 
-/// `eˣ`: `x = k ln 2 + r`, `|r| ≤ ½ ln 2`, Taylor series of `eʳ` to the 20th
-/// term (truncation `< 0.35²¹/21! ≈ 5e-30`), then `2ᵏ` by shifts. Saturates
-/// above `x ≈ 43` and returns 0 below the resolution.
+/// `eˣ` ([`Fix128::exp`]).
 fn exp_fix(x: Fix128) -> Fix128 {
-    // 1/ln 2 = 1.442 695 040 888 963 4
-    const INV_LN2: Fix128 = Fix128::from_raw(1, 8_166_282_121_979_092_992);
-    let q = ((x) * (INV_LN2)) + Fix128::ONE.half();
-    let k = q.floor().hi;
-    if k > 62 {
-        return Fix128::from_raw(i64::MAX, u64::MAX);
-    }
-    if k < -65 {
-        return Fix128::ZERO;
-    }
-    let r = x - Fix128::from_int(k) * LN2;
-    let mut sum = Fix128::ONE;
-    let mut term = Fix128::ONE;
-    for n in 1..=20i64 {
-        term = ((term) * (r)) * (Fix128::from_ratio(1, n));
-        sum = sum + term;
-    }
-    if k >= 0 {
-        for _ in 0..k {
-            sum = sum.double();
-        }
-        sum
-    } else {
-        sum.shr_bits((-k) as u32)
-    }
+    x.exp()
 }
 
-/// `xᵉ` for `x > 0` (any sign of `e`), as `exp(e ln x)`.
+/// `xᵉ` for `x > 0` (any sign of `e`), as `exp(e ln x)` with the product kept
+/// at the kernels' precision (one rounding).
 fn pow_pos(x: Fix128, e: Fix128) -> Fix128 {
-    exp_fix((e) * (ln_pos(x)))
+    if x <= Fix128::ZERO {
+        return exp_fix((e) * (ln_pos(x)));
+    }
+    crate::fix128_kernels::exp_mul_ln(x, e)
 }
 
 // ============================================================================
