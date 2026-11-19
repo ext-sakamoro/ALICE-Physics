@@ -2115,6 +2115,30 @@ fn sdf_speculative_margin(
         + gravity.length() * h * h
 }
 
+/// One substep of a free dynamic body's linear motion, exactly as
+/// `integrate_positions` does it (semi-implicit Euler): `v ← v + g·s·h`, then
+/// `x ← x + v·h`, where `s` is the body's `gravity_scale`.
+///
+/// Returns the new velocity and the new position. The position is `None` when
+/// `v·h` or the sum leaves the range; the world then keeps the old position
+/// and records the overflow. A participant that predicts where a free body
+/// will be (the cloth's contact spheres) calls this same function, so the
+/// prediction and the world's integration cannot drift apart.
+#[inline]
+pub(crate) fn free_linear_substep(
+    position: Vec3Fix,
+    velocity: Vec3Fix,
+    gravity: Vec3Fix,
+    gravity_scale: Fix128,
+    h: Fix128,
+) -> (Vec3Fix, Option<Vec3Fix>) {
+    let velocity = velocity + gravity * gravity_scale * h;
+    let position = velocity
+        .checked_scale(h)
+        .and_then(|d| position.checked_add(d));
+    (velocity, position)
+}
+
 /// Pose of a kinematic body after one substep towards its target.
 ///
 /// `left` is the number of substeps left in the frame including the current
@@ -5907,23 +5931,25 @@ impl PhysicsWorld {
                     body.prev_position = body.position;
                     body.prev_rotation = body.rotation;
 
-                    // Apply gravity (with per-body scale)
-                    body.velocity = body.velocity + gravity * body.gravity_scale * dt;
-
+                    // Apply gravity (with per-body scale) and predict the
+                    // position: one `free_linear_substep`, the same function a
+                    // participant's own prediction of a free body calls.
                     // Damping is applied once per frame in `apply_frame_damping`
                     // (1.2.0). Applying it here, per substep, made the terminal
                     // velocity depend on `substeps` (v_inf = g*h*d/(1-d)).
-
-                    // Predict position
                     // ⚠️ parallel branch でも同じ検出を行う — 片方だけだと
                     // `--features parallel` で guard が silent に消える
                     // (closure から `self` に書けないので bool を reduce する)
                     // 位置の加算も検査する (`|x| ≥ 2⁶³` で反対側の端へ wrap するため)
-                    match body
-                        .velocity
-                        .checked_scale(dt)
-                        .and_then(|d| body.position.checked_add(d))
-                    {
+                    let (velocity, position) = free_linear_substep(
+                        body.position,
+                        body.velocity,
+                        gravity,
+                        body.gravity_scale,
+                        dt,
+                    );
+                    body.velocity = velocity;
+                    match position {
                         Some(p) => body.position = p,
                         None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                     }
@@ -5983,24 +6009,24 @@ impl PhysicsWorld {
                 self.bodies[i].prev_position = self.bodies[i].position;
                 self.bodies[i].prev_rotation = self.bodies[i].rotation;
 
-                // Apply gravity (with per-body scale)
-                let grav = self.config.gravity * self.bodies[i].gravity_scale * dt;
-                self.bodies[i].velocity = self.bodies[i].velocity + grav;
-
-                // Damping: once per frame in `apply_frame_damping` (see the
-                // `parallel` branch above for the rationale).
-
-                // Predict position
+                // Apply gravity (with per-body scale) and predict the position
+                // (`free_linear_substep`, see the `parallel` branch above).
+                // Damping: once per frame in `apply_frame_damping`.
                 // ⚠️ `checked_scale` で範囲外を検出する (WM-01 / B-12)
                 // 範囲外なら **位置を動かさず** flag を立てる — 0 加算されて
                 // 「原点で静止した自己整合な状態」に落ちるのを表に出すため
                 // 位置の加算も検査する (`|x| ≥ 2⁶³` で反対側の端へ wrap するため)
+                let gravity = self.config.gravity;
                 let body = &mut self.bodies[i];
-                match body
-                    .velocity
-                    .checked_scale(dt)
-                    .and_then(|d| body.position.checked_add(d))
-                {
+                let (velocity, position) = free_linear_substep(
+                    body.position,
+                    body.velocity,
+                    gravity,
+                    body.gravity_scale,
+                    dt,
+                );
+                body.velocity = velocity;
+                match position {
                     Some(p) => body.position = p,
                     None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                 }
