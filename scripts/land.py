@@ -1548,6 +1548,9 @@ class Lander:
         # has run on this code, all green (scripts/local_receipt.py; without the receipt a red one is found a CI
         # round later); a series that changes src/ needs the receipt of the lib coverage ratchet too (`run --slow`)
         self.sh(sys.executable, "scripts/local_receipt.py", "check", "--base", f"{self.remote}/{self.branch}")
+        # before the ci/ push: the Test jobs' time with this branch's test binaries, projected from the
+        # ledger of main (a job cut at its limit is found two hours after the push otherwise)
+        self.sh(sys.executable, "scripts/test_time_budget.py", "check", self.upstream())
         self.check_changelog()
 
     def check_changelog(self) -> None:

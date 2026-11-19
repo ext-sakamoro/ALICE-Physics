@@ -146,6 +146,8 @@ jobs:
           "$PY" "$RUNNER_TEMP/alice-law/scripts/g11_self_check.py" --repo . --name ALICE-Physics
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
+      - name: Test-time budget (tests)
+        run: python scripts/test_test_time_budget.py
       - name: Release determinism check (tests of the checker)
         run: python scripts/test_determinism_release.py
       - name: no_std dependent check (tests of the checker)

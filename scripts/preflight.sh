@@ -106,6 +106,7 @@ scripts/g11_table.sh
 )
 python3 scripts/test_lib_test_gate.py
 python3 scripts/lib_test_gate.py origin/main
+python3 scripts/test_test_time_budget.py
 python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
 python3 scripts/test_fuzz_targets.py
@@ -447,6 +448,12 @@ if [[ $fast -eq 1 ]]; then
   print_skip_summary
   echo; echo "preflight --fast OK (static gates + affected tests; the full suites run in CI)"; exit 0
 fi
+
+# The Test jobs run every test binary twice inside one time limit: the test binaries this
+# branch adds or changes are timed here and projected on what the jobs took on main
+# (scripts/test-time-ledger.tsv); a job projected within 15 minutes of its limit is refused.
+step "test-time budget (changed test binaries timed here, projected on the ledger of main)"
+python3 scripts/test_time_budget.py check origin/main
 
 step "cargo test (default features, all targets, profile ci-test)"
 cargo test --no-fail-fast --profile ci-test
