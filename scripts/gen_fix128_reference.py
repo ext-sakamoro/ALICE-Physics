@@ -133,7 +133,22 @@ def main():
         n = raw(v)
         add("cbrt", [n], [floor_raw(M.cbrt(val(n)))])
 
-    OUT.write_text("\n".join(rows) + "\n")
+    # exp's zero boundary: the largest raw x with e^x >= 2^-65 (half an ulp)
+    # rounds to 1 ulp, the next raw value below rounds to 0
+    edge = int(M.floor(-65 * M.log(2) * S))
+    # e^x increases with x: step up while edge is below half an ulp, then down
+    # while the value below edge is still at or above it
+    while M.exp(val(edge)) < M.mpf(2) ** -65:
+        edge += 1
+    while M.exp(val(edge - 1)) >= M.mpf(2) ** -65:
+        edge -= 1
+    header = [
+        "# Fix128 transcendental reference table (scripts/gen_fix128_reference.py)",
+        f"# mpmath {M.__version__}, precision {M.mp.prec} bits, seed 20261119",
+        f"# rows: {len(rows)}",
+        f"# exp-zero-boundary-raw: {edge}",
+    ]
+    OUT.write_text("\n".join(header + rows) + "\n")
     print(f"{OUT.name}: {len(rows)} rows")
 
 

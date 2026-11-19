@@ -37,12 +37,16 @@ fn raw(x: Fix128) -> i128 {
 fn rows() -> Vec<(String, Vec<i128>, Vec<i128>)> {
     TABLE
         .lines()
+        .filter(|line| !line.starts_with('#'))
         .map(|line| {
             let (lhs, rhs) = line.split_once(" = ").expect("row has ' = '");
             let mut lhs = lhs.split_whitespace();
             let name = lhs.next().expect("fn name").to_string();
             let ins = lhs.map(|t| t.parse().expect("input raw")).collect();
-            let outs = rhs.split_whitespace().map(|t| t.parse().expect("expected raw")).collect();
+            let outs = rhs
+                .split_whitespace()
+                .map(|t| t.parse().expect("expected raw"))
+                .collect();
             (name, ins, outs)
         })
         .collect()
@@ -58,7 +62,10 @@ fn within(name: &str, ins: &[i128], got: Fix128, want: i128, b: u128) {
     }
     let err = g.abs_diff(want);
     let bound = 1 + b * (want.unsigned_abs() >> 64);
-    assert!(err <= bound, "{name}{ins:?}: got {g}, want {want}, error {err} > {bound}");
+    assert!(
+        err <= bound,
+        "{name}{ins:?}: got {g}, want {want}, error {err} > {bound}"
+    );
 }
 
 #[test]
@@ -73,7 +80,11 @@ fn every_transcendental_is_within_its_bound_of_the_400_bit_reference() {
                 let (s, c) = x.sin_cos();
                 within("sin", &ins, s, want[0], 0);
                 within("cos", &ins, c, want[1], 0);
-                assert_eq!((x.sin(), x.cos()), (s, c), "sin/cos agree with sin_cos {ins:?}");
+                assert_eq!(
+                    (x.sin(), x.cos()),
+                    (s, c),
+                    "sin/cos agree with sin_cos {ins:?}"
+                );
             }
             "atan" => within("atan", &ins, x.atan(), want[0], 0),
             "atan2" => within("atan2", &ins, Fix128::atan2(x, fix(ins[1])), want[0], 1),
@@ -95,8 +106,48 @@ fn every_transcendental_is_within_its_bound_of_the_400_bit_reference() {
         ("cbrt", 140),
     ] {
         let n = counts.get(name).copied().unwrap_or(0);
-        assert!(n >= min, "{name}: {n} rows compared, at least {min} expected");
+        assert!(
+            n >= min,
+            "{name}: {n} rows compared, at least {min} expected"
+        );
     }
+}
+
+/// The value of a `# key: value` header line of the table.
+fn header(key: &str) -> i128 {
+    let prefix = format!("# {key}: ");
+    TABLE
+        .lines()
+        .find_map(|l| l.strip_prefix(prefix.as_str()))
+        .unwrap_or_else(|| panic!("table header `{key}` missing"))
+        .parse()
+        .expect("header value")
+}
+
+/// The table has exactly the number of rows its header states, and more than
+/// zero (a truncated or emptied fixture fails here before any comparison).
+#[test]
+fn the_table_has_the_rows_its_header_states() {
+    let stated = header("rows");
+    assert!(stated > 0, "header states {stated} rows");
+    assert_eq!(rows().len() as i128, stated);
+}
+
+/// `exp` rounds to the nearest value, so it is 1 ulp down to the largest
+/// representable `x` with `e^x ≥ 2⁻⁶⁵` (half an ulp) and 0 from the next value
+/// below. That `x` (≈ −65·ln 2 ≈ −45.05) is computed by the generator from the
+/// 400-bit reference, not from `exp`.
+#[test]
+fn exp_is_zero_exactly_below_half_an_ulp() {
+    let edge = header("exp-zero-boundary-raw");
+    assert_eq!(
+        fix(edge).exp(),
+        Fix128::from_raw(0, 1),
+        "e^x at the last x above half an ulp"
+    );
+    assert_eq!(fix(edge - 1).exp(), Fix128::ZERO, "e^x one raw step below");
+    assert_eq!(Fix128::from_int(-46).exp(), Fix128::ZERO);
+    assert_eq!(Fix128::from_int(-1000).exp(), Fix128::ZERO);
 }
 
 /// Integer powers that are exactly representable come out exactly; inexact ones
@@ -105,13 +156,22 @@ fn every_transcendental_is_within_its_bound_of_the_400_bit_reference() {
 #[test]
 fn exact_integer_powers_are_exact() {
     let two = Fix128::from_int(2);
-    assert_eq!(two.powf_pos(Fix128::from_int(62)), Fix128::from_raw(1 << 62, 0));
-    assert_eq!(Fix128::from_int(3).powf_pos(Fix128::from_int(39)), Fix128::from_int(4_052_555_153_018_976_267));
+    assert_eq!(
+        two.powf_pos(Fix128::from_int(62)),
+        Fix128::from_raw(1 << 62, 0)
+    );
+    assert_eq!(
+        Fix128::from_int(3).powf_pos(Fix128::from_int(39)),
+        Fix128::from_int(4_052_555_153_018_976_267)
+    );
     // 1.5^40 = 3^40 / 2^40: 40 fraction bits, exact
     let p = Fix128::from_ratio(3, 2).powf_pos(Fix128::from_int(40));
     let three40: u128 = 12_157_665_459_056_928_801;
     assert_eq!(raw(p), (three40 << 24) as i128);
-    assert_eq!(Fix128::from_ratio(1, 2).powf_pos(Fix128::from_int(60)), Fix128::from_raw(0, 1 << 4));
+    assert_eq!(
+        Fix128::from_ratio(1, 2).powf_pos(Fix128::from_int(60)),
+        Fix128::from_raw(0, 1 << 4)
+    );
 }
 
 /// Around an integer exponent `n` the three values at `n − 2⁻⁶⁰`, `n`, `n + 2⁻⁶⁰`
@@ -121,7 +181,14 @@ fn exact_integer_powers_are_exact() {
 fn powf_pos_is_continuous_and_monotone_across_integer_exponents() {
     let step = Fix128::from_raw(0, 16); // 2⁻⁶⁰
     let mut compared = 0;
-    for (num, den) in [(3i64, 2i64), (27, 10), (10, 1), (3, 10), (10_001, 10_000), (600, 1)] {
+    for (num, den) in [
+        (3i64, 2i64),
+        (27, 10),
+        (10, 1),
+        (3, 10),
+        (10_001, 10_000),
+        (600, 1),
+    ] {
         let x = Fix128::from_ratio(num, den);
         for n in [1i64, 2, 5, 10] {
             let y = Fix128::from_int(n);
@@ -130,14 +197,26 @@ fn powf_pos_is_continuous_and_monotone_across_integer_exponents() {
                 continue;
             }
             if x > Fix128::ONE {
-                assert!(lo <= mid && mid <= hi, "x={num}/{den} n={n}: {lo:?} {mid:?} {hi:?}");
+                assert!(
+                    lo <= mid && mid <= hi,
+                    "x={num}/{den} n={n}: {lo:?} {mid:?} {hi:?}"
+                );
             } else {
-                assert!(lo >= mid && mid >= hi, "x={num}/{den} n={n}: {lo:?} {mid:?} {hi:?}");
+                assert!(
+                    lo >= mid && mid >= hi,
+                    "x={num}/{den} n={n}: {lo:?} {mid:?} {hi:?}"
+                );
             }
             // true step x^n · ln x · 2⁻⁶⁰ is below 2⁻⁵⁴·x^n here; allow that plus the bound
             let slack = 3 + 2 * (raw(mid).unsigned_abs() >> 54);
-            assert!(raw(mid).abs_diff(raw(lo)) <= slack, "x={num}/{den} n={n}: below step");
-            assert!(raw(hi).abs_diff(raw(mid)) <= slack, "x={num}/{den} n={n}: above step");
+            assert!(
+                raw(mid).abs_diff(raw(lo)) <= slack,
+                "x={num}/{den} n={n}: below step"
+            );
+            assert!(
+                raw(hi).abs_diff(raw(mid)) <= slack,
+                "x={num}/{den} n={n}: above step"
+            );
             compared += 1;
         }
     }
