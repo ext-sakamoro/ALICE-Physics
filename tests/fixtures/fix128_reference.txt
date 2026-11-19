@@ -1,3 +1,7 @@
+# Fix128 transcendental reference table (scripts/gen_fix128_reference.py)
+# mpmath 1.4.1, precision 400 bits, seed 20261119
+# rows: 1749
+# exp-zero-boundary-raw: -831110061938172617886
 sqrt 2 = 6074000999
 sqrt 4 = 8589934592
 sqrt 8 = 12148001999

@@ -21,11 +21,9 @@ pub const EXP_OVERFLOW_SENTINEL: Fix128 = Fix128 {
     lo: 0,
 };
 
-/// Deterministic exponential `exp(x)` for `x ∈ [-40, 20]`.
-///
-/// Uses range reduction `exp(x) = exp(x/2^k)^{2^k}` to bring `|x|` below
-/// `0.5`, then a 12-term Taylor series (converges to Fix128 ULP), then
-/// repeated squaring.
+/// Exponential `exp(x)` for `x ∈ (-40, 20)`: [`Fix128::exp`] (nearest value,
+/// relative error within `2⁻⁶⁴` above 1) inside the range, with this helper's
+/// own saturation outside it.
 ///
 /// Saturation:
 /// - `x ≥ 20`  → returns [`EXP_OVERFLOW_SENTINEL`] (very large).
@@ -67,15 +65,9 @@ pub fn pow_int(x: Fix128, n: i32) -> Fix128 {
     }
 }
 
-/// Deterministic cube root via Newton iteration.
-///
-/// Returns 0 for non-positive inputs. Uses `x_{k+1} = (2·x + n/x²) / 3` with
-/// 24 iterations. The seed is the power of two `2^e` with `e = ⌈(p − 63) / 3⌉`,
-/// where `p` is the position of the most significant set bit of the 128-bit
-/// representation of `n` (so `n < 2^(p−63)`): it is at least `∛n` and at most
-/// `2·∛n`, and Newton's method on a convex function converges monotonically
-/// from above, reaching Fix128 ULP accuracy in well under 24 iterations for
-/// every positive `n` (checked from `2^-64` up to `2^62`).
+/// Cube root: the largest `r` with `r³ ≤ n` at the `2⁻⁶⁴` resolution (the floor
+/// of the exact root, like [`Fix128::sqrt`]), by binary digit recurrence on the
+/// 256-bit integer `raw(n)·2¹²⁸`. Returns 0 for non-positive inputs.
 #[must_use]
 pub fn cbrt_fix(n: Fix128) -> Fix128 {
     if n <= Fix128::ZERO {
