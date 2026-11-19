@@ -151,7 +151,7 @@ fn scene(bottom: f64, top: f64) -> Scene {
 /// each solid's share are then multiplied by `m / dt^2` once each (half an ulp of force
 /// apiece). The pair terms cancel exactly, so nothing else separates the two sides.
 fn newton_bound(f: &Fluid, frame_dt: f64) -> f64 {
-    let ulp = 2.0_f64.powi(-64);
+    let ulp = 1.0 / 18_446_744_073_709_551_616.0_f64; // 2^-64, exact
     let dt = frame_dt / f.config.substeps as f64;
     let force_per_correction = f.config.particle_mass.to_f64() / (dt * dt);
     let count = (f.particle_count() * f.config.iterations) as f64;
