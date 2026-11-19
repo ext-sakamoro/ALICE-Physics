@@ -400,8 +400,24 @@ fn a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time() {
     // on their lumps (the first test of this file)
     assert!(!fed(0.95), "fed below the limit");
     assert!(fed(1.1), "not fed at 1.1 of the limit");
-    // moved slowly by its tail from where 0.9 of the limit left it: the push's work is the
-    // energy the shares took, both ways
+}
+
+#[test]
+fn moved_slowly_a_conforming_chains_push_works_what_its_shares_take() {
+    the_slow_feed_of_a_conforming_chain(10);
+}
+
+#[test]
+#[ignore = "runtime: about 5 min at opt-level 2, measured 2026-11-19 (100 moves of 0.25 mm, each brought to rest); the 10-move test above runs every time; run by the weekly job"]
+fn moved_slowly_a_conforming_chains_push_works_what_its_shares_take_over_25_mm() {
+    the_slow_feed_of_a_conforming_chain(100);
+}
+
+/// moved slowly by its tail, `count` moves of 0.25 mm, from where 0.9 of the limit left it:
+/// the push's work is the energy the shares took, both ways
+fn the_slow_feed_of_a_conforming_chain(count: u32) {
+    let limit = threshold().0 * SHEAR * 2.0 * RADIUS;
+    let links = 20;
     let stalled = pushed(
         chain_of(SHEAR, DRAG, links, ThickChainFit::Conforming),
         0.9 * limit,
@@ -433,7 +449,7 @@ fn a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time() {
     let push = |chain: &ThickChain| -SHEAR * 2.0 * RADIUS * pull(f(chain.length(0)) / link);
     rest(&mut chain);
     let (first, mut before) = (stored_in_shares(&chain), push(&chain));
-    let (step, count) = (2.5e-4, 100);
+    let step = 2.5e-4;
     let (mut work, mut variation) = (0.0, 0.0);
     let at = f(chain.positions()[0][0]);
     for n in 1..=count {
