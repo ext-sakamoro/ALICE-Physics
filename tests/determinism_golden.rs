@@ -557,6 +557,61 @@ fn determinism_cloth_resident() {
     );
 }
 
+/// **Cloth body contact**: a ball (0.1 kg, radius 8 cm) dropped on a resident sheet pinned at its
+/// edges, the sheet stepping twice a frame on the world's 4 substeps (the front-pulse reaction over
+/// a two-substep span, the free-body prediction, friction and the shared-edge ownership), 120
+/// frames. The SHA-256 of the participant's payload followed by the ball's serialised state.
+const GOLDEN_CLOTH_BODY_CONTACT: &str =
+    "aaca70f8566becbc7c386939005e61a1fdc3b4cbdc2015d199862f872b70b0b8";
+
+#[test]
+fn determinism_cloth_body_contact() {
+    use alice_physics_core::cloth_participant::ClothParticipant;
+    let half = Fix128::from_ratio(1, 2);
+    let mut cloth = Cloth::new_grid(
+        Vec3Fix::new(-half, Fix128::ZERO, -half),
+        Fix128::ONE,
+        Fix128::ONE,
+        6,
+        6,
+        Fix128::from_ratio(1, 100),
+    );
+    for i in 0..6 {
+        cloth.pin(i);
+        cloth.pin(30 + i);
+        cloth.pin(6 * i);
+        cloth.pin(6 * i + 5);
+    }
+    cloth.config.substeps = 2;
+    cloth.config.thickness = Fix128::from_ratio(1, 100);
+    let mut world = PhysicsWorld::new(PhysicsConfig {
+        substeps: 4,
+        ..PhysicsConfig::default()
+    });
+    let ball = world.add_body(RigidBody::new_dynamic(
+        Vec3Fix::new(
+            Fix128::from_ratio(1, 20),
+            Fix128::from_ratio(3, 10),
+            Fix128::from_ratio(1, 30),
+        ),
+        Fix128::from_ratio(1, 10),
+    ));
+    world.set_body_collision_radius(ball, Fix128::from_ratio(8, 100));
+    world
+        .add_participant(Box::new(ClothParticipant::new(cloth)))
+        .expect("register");
+    for _ in 0..120 {
+        world.step(Fix128::from_ratio(1, 60));
+    }
+    let mut bytes = world.participant_state(0).expect("payload");
+    serialise_body(&mut bytes, &world.bodies[ball]);
+    assert_golden(
+        "cloth_body_contact",
+        sha256_bytes(&bytes),
+        GOLDEN_CLOTH_BODY_CONTACT,
+    );
+}
+
 /// **Secondary chain**: four particles hanging from a moving anchor, one per limit kind (angle,
 /// hinge, polar, none; tight enough that each one acts), with gravity and its falloff, stiffness, an immobile share, a radius
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated

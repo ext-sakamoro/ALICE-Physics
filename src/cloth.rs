@@ -908,7 +908,7 @@ impl Cloth {
     pub fn step(&mut self, dt: Fix128) {
         self.place_grabs();
         if !self.sleep_enabled {
-            self.step_awake(dt);
+            self.step_awake(dt, &mut []);
             self.record_grabs(dt);
             return;
         }
@@ -919,7 +919,7 @@ impl Cloth {
             }
         }
         let before = self.take_snapshot(dt);
-        self.step_awake(dt);
+        self.step_awake(dt, &mut []);
         let unchanged = before.positions == self.positions
             && before.prev_positions == self.prev_positions
             && before.velocities == self.velocities;
@@ -927,11 +927,26 @@ impl Cloth {
         self.record_grabs(dt);
     }
 
-    fn step_awake(&mut self, dt: Fix128) {
+    /// One step of width `dt` with contact against `spheres` solved inside the
+    /// iterations (the resident cloth's contact with the world's bodies, see
+    /// [`ContactSphere`]). With no sphere this is [`Self::step`] bit for bit; with
+    /// spheres the sleep shortcut is not taken (a body may arrive at a still cloth).
+    pub(crate) fn step_with_spheres(&mut self, dt: Fix128, spheres: &mut [ContactSphere]) {
+        if spheres.is_empty() {
+            self.step(dt);
+            return;
+        }
+        self.place_grabs();
+        self.sleeping = None;
+        self.step_awake(dt, spheres);
+        self.record_grabs(dt);
+    }
+
+    fn step_awake(&mut self, dt: Fix128, spheres: &mut [ContactSphere]) {
         let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
-            self.substep(substep_dt);
+            self.substep(substep_dt, spheres);
         }
         if let Some(start) = frame_start {
             self.resolve_self_contact_over_frame(&start, dt);
@@ -948,7 +963,7 @@ impl Cloth {
         let frame_start = self.snapshot_for_self_contact();
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
         for _ in 0..self.config.substeps {
-            self.substep(substep_dt);
+            self.substep(substep_dt, &mut []);
             self.resolve_sdf_collisions(sdf_colliders);
         }
         if let Some(start) = frame_start {
@@ -984,8 +999,14 @@ impl Cloth {
 
     /// Single substep
     #[inline(always)]
-    fn substep(&mut self, dt: Fix128) {
+    fn substep(&mut self, dt: Fix128, spheres: &mut [ContactSphere]) {
         let n = self.particle_count();
+        // positions at the step start: the side of each face a sphere starts on
+        let start = if spheres.is_empty() {
+            Vec::new()
+        } else {
+            self.positions.clone()
+        };
 
         // 1. Predict positions (with the rest tether: the exact damped-oscillator step,
         //    which also returns the predicted positions for the velocity update)
@@ -1025,12 +1046,22 @@ impl Cloth {
         } else {
             (Vec::new(), Vec::new())
         };
+        let sphere_candidates = self.collect_sphere_candidates(&start, spheres);
+        let mut normal_lambda = vec![Fix128::ZERO; sphere_candidates.len()];
+        let mut tangential_lambda = vec![Fix128::ZERO; sphere_candidates.len()];
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
+            self.solve_sphere_contacts(
+                &sphere_candidates,
+                spheres,
+                &start,
+                &mut normal_lambda,
+                &mut tangential_lambda,
+            );
         }
 
         // 3. Update velocities
@@ -3000,6 +3031,295 @@ fn segment_pierces_triangle(
         return None; // outside the segment
     }
     Some((t, det))
+}
+
+/// A body as a resident cloth sees it for contact: a sphere of `reach` (the body's
+/// collision radius plus the cloth's thickness) whose centre goes from `start` (the
+/// body at the start of the cloth's step) to `centre` (the body predicted over the
+/// step). The contact moves `centre` by `inv_mass`; what it moved is the reaction the
+/// body receives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ContactSphere {
+    /// The centre at the start of the step: the side of each face it starts on
+    pub(crate) start: Vec3Fix,
+    /// The predicted centre, moved by the contact during the iterations
+    pub(crate) centre: Vec3Fix,
+    /// Body collision radius plus the cloth's thickness
+    pub(crate) reach: Fix128,
+    /// The body's inverse mass (0: the cloth cannot move it)
+    pub(crate) inv_mass: Fix128,
+    /// Coulomb coefficient between the body and the cloth (the body's `friction`)
+    pub(crate) friction: Fix128,
+}
+
+/// A face a sphere may touch during a step, with the side it starts the step on.
+#[derive(Clone, Copy, Debug)]
+struct SphereCandidate {
+    sphere: usize,
+    triangle: usize,
+    /// `true` when the sphere starts on the side the face's normal `(b−a)×(c−a)` points to
+    above: bool,
+}
+
+impl Cloth {
+    /// The faces each sphere may touch during this step: a face whose box over its
+    /// start and predicted corners overlaps the sphere's box over its start and
+    /// predicted centre grown by twice its reach (the iterations move both by less),
+    /// with the side the sphere's start centre is on relative to the face at the step
+    /// start. A face that cannot be projected onto at the start (zero area) is left out.
+    fn collect_sphere_candidates(
+        &self,
+        start: &[Vec3Fix],
+        spheres: &[ContactSphere],
+    ) -> Vec<SphereCandidate> {
+        let mut out = Vec::new();
+        if spheres.is_empty() {
+            return out;
+        }
+        for (si, s) in spheres.iter().enumerate() {
+            let grow = s.reach.double();
+            let lo = Vec3Fix::new(
+                s.start.x.min(s.centre.x) - grow,
+                s.start.y.min(s.centre.y) - grow,
+                s.start.z.min(s.centre.z) - grow,
+            );
+            let hi = Vec3Fix::new(
+                s.start.x.max(s.centre.x) + grow,
+                s.start.y.max(s.centre.y) + grow,
+                s.start.z.max(s.centre.z) + grow,
+            );
+            for (ti, tri) in self.triangles.iter().enumerate() {
+                let corners = [
+                    start[tri[0]],
+                    start[tri[1]],
+                    start[tri[2]],
+                    self.positions[tri[0]],
+                    self.positions[tri[1]],
+                    self.positions[tri[2]],
+                ];
+                let outside = |axis: fn(&Vec3Fix) -> Fix128| {
+                    let (mut cmin, mut cmax) = (axis(&corners[0]), axis(&corners[0]));
+                    for c in &corners[1..] {
+                        cmin = cmin.min(axis(c));
+                        cmax = cmax.max(axis(c));
+                    }
+                    cmax < axis(&lo) || cmin > axis(&hi)
+                };
+                if outside(|v| v.x) || outside(|v| v.y) || outside(|v| v.z) {
+                    continue;
+                }
+                let (a, b, c) = (start[tri[0]], start[tri[1]], start[tri[2]]);
+                let Some((q, _)) = closest_point_on_triangle(s.start, a, b, c) else {
+                    continue;
+                };
+                let normal = (b - a).cross(c - a);
+                if normal == Vec3Fix::ZERO {
+                    continue;
+                }
+                out.push(SphereCandidate {
+                    sphere: si,
+                    triangle: ti,
+                    above: (s.start - q).dot(normal) >= Fix128::ZERO,
+                });
+            }
+        }
+        out
+    }
+
+    /// One Gauss–Seidel pass of sphere–face contact, in candidate order.
+    ///
+    /// The face keeps the sphere's centre `c` at least `reach` from its closest point
+    /// `q = w₀a + w₁b + w₂c₂` on the side the sphere started the step on (`n` the face's
+    /// unit normal toward that side): when `c` is on that side, `C = |c − q| − reach`
+    /// along `(c − q)/|c − q|`; when it has crossed the face's plane, `C = (c − q)·n −
+    /// reach` along `n`, so a sphere that crossed within the step is pushed back, not
+    /// through. The correction is mass-weighted, `λ = −C / (w_s + Σ wᵢ wᵢ'²)`: the sphere
+    /// moves by `+w_s λ n`, each corner by `−wᵢ wᵢ' λ n` (`wᵢ` inverse masses, `wᵢ'` the
+    /// barycentric weights), so `M Δc + Σ mᵢ Δpᵢ = 0` for every correction.
+    ///
+    /// Feature ownership: when `q` lies on an edge or a vertex of the face and
+    /// another candidate face of the same sphere shares that edge or vertex and has
+    /// the projection of `c` on its own plane inside it, the contact belongs to that
+    /// face and this one is skipped; the direction `c − q` is used only where no
+    /// neighbour owns the feature (the sheet's boundary, a fold the sphere is past).
+    /// Without it a flat sheet's shared edges and vertices push a sphere along the
+    /// surface.
+    ///
+    /// Friction is the rigid contacts' Coulomb law
+    /// ([`crate::xpbd_contact::static_hold`], eq. (26–27)): the tangential relative
+    /// displacement of the centre and the face point over the step,
+    /// `Δp_t = ((c − c₀) − (q − q₀))_t` (`q₀` the same barycentric point on the
+    /// step-start corners), is cancelled while `|Δp_t| / w < μ λ_n` (`λ_n` the
+    /// pair's normal multiplier summed over the step's iterations); past the cone
+    /// the point slides, and the pair's tangential correction summed over the
+    /// step's iterations is capped at `μ λ_n`. It is weighted like
+    /// the normal correction, so it keeps the momentum balance.
+    fn solve_sphere_contacts(
+        &mut self,
+        candidates: &[SphereCandidate],
+        spheres: &mut [ContactSphere],
+        start: &[Vec3Fix],
+        normal_lambda: &mut [Fix128],
+        tangential_lambda: &mut [Fix128],
+    ) {
+        for (kk, k) in candidates.iter().enumerate() {
+            let s = spheres[k.sphere];
+            let tri = self.triangles[k.triangle];
+            let (a, b, c) = (
+                self.positions[tri[0]],
+                self.positions[tri[1]],
+                self.positions[tri[2]],
+            );
+            let Some((q, bary)) = closest_point_on_triangle(s.centre, a, b, c) else {
+                continue;
+            };
+            let (face_n, area2) = (b - a).cross(c - a).normalize_with_length_scaled();
+            if area2.is_zero() {
+                continue;
+            }
+            let n_side = if k.above { face_n } else { -face_n };
+            let diff = s.centre - q;
+            let height = diff.dot(n_side);
+            if height >= s.reach {
+                continue;
+            }
+            let lateral = diff - n_side * height;
+            if lateral.length() >= s.reach {
+                continue;
+            }
+            // feature ownership: a closest point on an edge or a vertex of this
+            // face belongs to a neighbour sharing that feature whose own plane
+            // has the centre's projection inside it; that face holds the sphere
+            // along its normal, and this one stays out (on a smooth sheet the
+            // edge's direction `c − q` would push the sphere along the surface)
+            if height > Fix128::ZERO
+                && bary.iter().any(|x| x.is_zero())
+                && self.feature_owned_elsewhere(candidates, kk, tri, bary, s.centre)
+            {
+                continue;
+            }
+            let (n, violation) = if height > Fix128::ZERO {
+                let (dir, dist) = diff.normalize_with_length_scaled();
+                if dist >= s.reach {
+                    continue;
+                }
+                if dist.is_zero() {
+                    (n_side, -s.reach)
+                } else {
+                    (dir, dist - s.reach)
+                }
+            } else {
+                (n_side, height - s.reach)
+            };
+            let w = [
+                self.inv_masses[tri[0]],
+                self.inv_masses[tri[1]],
+                self.inv_masses[tri[2]],
+            ];
+            let denom = s.inv_mass
+                + w[0] * bary[0] * bary[0]
+                + w[1] * bary[1] * bary[1]
+                + w[2] * bary[2] * bary[2];
+            if denom.is_zero() {
+                continue;
+            }
+            let lambda = -violation / denom;
+            self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, n, lambda);
+            normal_lambda[kk] = normal_lambda[kk] + lambda;
+            let limit = s.friction * normal_lambda[kk];
+            if limit <= Fix128::ZERO {
+                continue;
+            }
+            let q_now = self.positions[tri[0]] * bary[0]
+                + self.positions[tri[1]] * bary[1]
+                + self.positions[tri[2]] * bary[2];
+            let q_start =
+                start[tri[0]] * bary[0] + start[tri[1]] * bary[1] + start[tri[2]] * bary[2];
+            let dp = (spheres[k.sphere].centre - s.start) - (q_now - q_start);
+            let dp_t = dp - n * dp.dot(n);
+            let (t_dir, len) = dp_t.normalize_with_length_scaled();
+            if len.is_zero() {
+                continue;
+            }
+            // the cone bounds the step's total: what earlier iterations held counts
+            let budget = limit - tangential_lambda[kk];
+            if budget <= Fix128::ZERO {
+                continue;
+            }
+            let hold = crate::xpbd_contact::static_hold(len, denom, budget).unwrap_or(budget);
+            tangential_lambda[kk] = tangential_lambda[kk] + hold;
+            self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, t_dir, -hold);
+        }
+    }
+
+    /// Whether another candidate face of the same sphere owns the feature of `tri`
+    /// that holds the closest point
+    /// ([`crate::xpbd_contact::feature_owned_by_neighbour`]).
+    fn feature_owned_elsewhere(
+        &self,
+        candidates: &[SphereCandidate],
+        own: usize,
+        tri: [usize; 3],
+        bary: [Fix128; 3],
+        p: Vec3Fix,
+    ) -> bool {
+        let sphere = candidates[own].sphere;
+        let mut feature = [0usize; 3];
+        let mut len = 0;
+        for i in 0..3 {
+            if !bary[i].is_zero() {
+                feature[len] = tri[i];
+                len += 1;
+            }
+        }
+        let neighbours = candidates
+            .iter()
+            .enumerate()
+            .filter(|(jj, o)| *jj != own && o.sphere == sphere)
+            .map(|(_, o)| {
+                let t = self.triangles[o.triangle];
+                (
+                    t,
+                    [
+                        self.positions[t[0]],
+                        self.positions[t[1]],
+                        self.positions[t[2]],
+                    ],
+                )
+            });
+        let own = [
+            self.positions[tri[0]],
+            self.positions[tri[1]],
+            self.positions[tri[2]],
+        ];
+        crate::xpbd_contact::feature_owned_by_neighbour(own, &feature[..len], neighbours, p)
+    }
+
+    /// Move sphere `si` by `+w_s λ d` and each corner of `tri` by `−wᵢ wᵢ' λ d`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the sphere, the face and the projection each come as separate values from the solver loop; a struct would only regroup them for this one call"
+    )]
+    fn move_sphere_and_face(
+        &mut self,
+        spheres: &mut [ContactSphere],
+        si: usize,
+        tri: [usize; 3],
+        bary: [Fix128; 3],
+        w: [Fix128; 3],
+        d: Vec3Fix,
+        lambda: Fix128,
+    ) {
+        let s = spheres[si];
+        spheres[si].centre = s.centre + d * (s.inv_mass * lambda);
+        for corner in 0..3 {
+            if w[corner].is_zero() {
+                continue;
+            }
+            let i = tri[corner];
+            self.positions[i] = self.positions[i] - d * (w[corner] * bary[corner] * lambda);
+        }
+    }
 }
 
 /// Closest point of triangle `(a, b, c)` to `p`, with its barycentric weights.

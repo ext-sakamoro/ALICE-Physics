@@ -909,6 +909,7 @@ const SINCE: &[(&str, Since)] = &[
     ("fluid pbf", Since::FunctionPins),
     ("cloth damping rate", Since::FunctionPins),
     ("cloth resident", Since::FunctionPins),
+    ("cloth body contact", Since::FunctionPins),
     ("physics2d", Since::DetMath(DET_MATH_0_5_0)),
     ("secondary chain", Since::DetMath(DET_MATH_0_5_0)),
     (
