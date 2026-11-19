@@ -1560,6 +1560,7 @@ use alice_physics::thick_chain as _;
 use alice_physics::thick_chain::ThickChain as _;
 use alice_physics::thick_chain::ThickChainConfig as _;
 use alice_physics::thick_chain::ThickChainError as _;
+use alice_physics::thick_chain::ThickChainFit as _;
 use alice_physics::thick_chain::ThickChainStretch as _;
 use alice_physics::thick_chain::P2 as _;
 use alice_physics::thin_wall as _;
@@ -2017,7 +2018,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1999 paths, checked at compile time
+    // 2000 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
