@@ -721,8 +721,8 @@ fn exp_ln_powf_accuracy_claims() {
     }
     assert!(worst < 1e-6, "exp worst rel {worst:e}");
     assert_eq!(Fix128::ZERO.exp(), Fix128::ONE);
-    // documented extremes
-    assert_eq!(f(-45.0).exp(), Fix128::ZERO);
+    // documented extremes (below −65·ln 2 ≈ −45.05 the result is under half an ulp)
+    assert_eq!(f(-46.0).exp(), Fix128::ZERO);
     assert_eq!(
         f(44.0).exp(),
         Fix128 {
@@ -1302,7 +1302,8 @@ fn simd_width_is_consistent_with_the_documented_table() {
 }
 
 /// 0^0 is documented as ZERO (`self <= 0` returns ZERO); exp is accurate up to the saturation point;
-/// ln of an exact power of two is k * LN2 (range reduction ends exactly at 1, no series error).
+/// ln of an exact power of two is k·ln 2 rounded to the nearest value (range reduction ends exactly
+/// at 1, no series error), from ln 2 to 128 fraction bits.
 #[test]
 fn powf_zero_base_exp_near_saturation_and_ln_of_powers_of_two() {
     assert_eq!(Fix128::ZERO.powf_pos(Fix128::ZERO), Fix128::ZERO);
@@ -1314,15 +1315,21 @@ fn powf_zero_base_exp_near_saturation_and_ln_of_powers_of_two() {
             "exp({x}) = {got:e} vs {want:e}"
         );
     }
-    // ln(2) is the LN2 constant 0xB17217F7D1CF79AC, ln(2^k) = k * LN2 exactly
+    // ln 2 = 0.B17217F7D1CF79AB C9E3B39803F2F6AF… (hex, 128 fraction bits); its nearest
+    // 64-bit value is the LN2 constant 0xB17217F7D1CF79AC
+    const LN2_HI: u64 = 0xB172_17F7_D1CF_79AB;
+    const LN2_LO: u64 = 0xC9E3_B398_03F2_F6AF;
     let ln2 = Fix128 {
         hi: 0,
         lo: 0xB172_17F7_D1CF_79AC,
     };
-    for k in 1..=30i64 {
+    for k in 1..=30u64 {
+        // k·ln 2 = k·HI + k·LO/2^64, rounded to the nearest raw value
+        let low = u128::from(k) * u128::from(LN2_LO);
+        let raw = u128::from(k) * u128::from(LN2_HI) + ((low + (1 << 63)) >> 64);
         assert_eq!(
             f((1u64 << k) as f64).ln(),
-            Fix128::from_int(k) * ln2,
+            Fix128::from_raw((raw >> 64) as i64, raw as u64),
             "ln(2^{k})"
         );
     }
