@@ -6,9 +6,9 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6457 |
+| 🟢 Not ignored (run by CI) | 6454 |
 | 🔴 Red by design | 73 |
-| ⏱ Gated (runtime / diagnostic / manual) | 38 |
+| ⏱ Gated (runtime / diagnostic / manual) | 41 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **6568** |
 
@@ -130,7 +130,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (38)
+## ⏱ Gated (41)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -161,12 +161,15 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `measure_the_slope_runs_in_time` (analytic_mpm2d_walls.rs) — measurement: prints the travel down the slope and along the normal over time
 - `measure_when_the_held_body_reaches_its_fixed_point_and_sleeps` (analytic_sleep_spring_creep.rs) — a measurement, not a check
 - `mg_rate_report` (analytic_multigrid.rs) — diagnostic: multigrid rates used to fix the thresholds
+- `moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length` (analytic_thick_chain_entry.rs) — runtime: about 43 s at opt-level 2, measured 2026-11-19 (two chains moved through 100 rests each); run by the …
 - `p2_error_decreases_with_refinement_at_better_than_second_order` (analytic_hyperelastic_mms_order.rs) — runtime: about 5 s in release, about 60 s in debug (P2 n = 2, 3, 4 with a Fix128 Newton solve each); run by ru…
 - `p3_separates_from_p2_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step, plus P2 n = 3); run by run_i…
 - `p3_separates_from_p2_in_order_and_in_error` (analytic_hyperelastic_mms_order.rs) — runtime: about 30 s in release (P3 n = 2 and 3 plus P2 n = 3, Fix128 Newton on 20-node elements); run by run_i…
+- `pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy` (analytic_thick_chain_entry.rs) — runtime: about 45 s at opt-level 2, measured 2026-11-19 (nine pushes of 15 s each, up to 80 links); run by the…
 - `reattachment_lengthens_under_grid_refinement` (armaly_backward_step.rs) — runtime only: 256x16 cells for 8192 steps, release-only (about 190 s, measured 2026-10-03); the measured value…
 - `the_cube_lying_on_the_floor_carries_only_the_column_above_it_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
 - `the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
+- `the_reach_in_a_channel_is_the_longer_of_the_walls_hold_and_the_pulls_stretch` (analytic_thick_chain_anchor.rs) — runtime: about 30 s at opt-level 2, measured 2026-11-19 (two pulls of 3 s between walls at 64 passes); run by …
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
@@ -174,7 +177,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6457)
+## 🟢 Not ignored (6454)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -455,7 +458,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sleep_spring_creep.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
 | `analytic_thick_chain.rs` | 10 |
-| `analytic_thick_chain_anchor.rs` | 10 |
 | `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
@@ -480,6 +482,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_static_contact_response.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
+| `analytic_thick_chain_anchor.rs` | 9 |
 | `analytic_touch_limits.rs` | 9 |
 | `analytic_world_query_precision.rs` | 9 |
 | `audit_acoustic_wave.rs` | 9 |
@@ -667,7 +670,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sphere_inertia.rs` | 3 |
 | `analytic_static_hit_events.rs` | 3 |
 | `analytic_static_target.rs` | 3 |
-| `analytic_thick_chain_entry.rs` | 3 |
 | `analytic_world_query_round_solids.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
@@ -739,6 +741,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_fem_mesh_flat_face.rs` | 1 |
 | `analytic_simultaneous_impact.rs` | 1 |
 | `analytic_sphere_landing_depth.rs` | 1 |
+| `analytic_thick_chain_entry.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |

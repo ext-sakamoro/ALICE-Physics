@@ -154,6 +154,7 @@ fn fed(shear: f64, drag: f64, links: usize, share: f64) -> bool {
 }
 
 #[test]
+#[ignore = "runtime: about 45 s at opt-level 2, measured 2026-11-19 (nine pushes of 15 s each, up to 80 links); run by the weekly job"]
 fn pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy() {
     let (limit, outside) = threshold();
     // the closed form's own numbers: λc = 5/3, the part outside 12 % shorter, 0.609 μ w0
@@ -267,6 +268,7 @@ fn slow_feed(links: usize) -> (f64, f64) {
 }
 
 #[test]
+#[ignore = "runtime: about 43 s at opt-level 2, measured 2026-11-19 (two chains moved through 100 rests each); run by the weekly job"]
 fn moved_slowly_the_push_works_no_less_than_the_links_take_and_the_loss_goes_with_the_links_length()
 {
     let (long, _) = slow_feed(10);
