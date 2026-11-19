@@ -246,6 +246,64 @@ pub(crate) fn compliance_over_h2(alpha: Fix128, h: Fix128) -> Fix128 {
     }
 }
 
+/// Static friction (eq. (27)): the multiplier that holds a point whose tangential
+/// relative displacement is `len` against an effective inverse mass `w`,
+/// `λ_t = len / w`, while it stays inside the cone `limit = μ λ_n`; `None` when it
+/// does not (the point slides). The one Coulomb test of the rigid contacts and of a
+/// resident cloth's contact with bodies.
+pub(crate) fn static_hold(len: Fix128, w: Fix128, limit: Fix128) -> Option<Fix128> {
+    let lambda = len / w;
+    if lambda >= limit {
+        return None;
+    }
+    Some(lambda)
+}
+
+/// Feature ownership of a point–mesh contact: the closest point of a face lies on
+/// `feature`, the face's corners that carry a nonzero barycentric weight (two for
+/// an edge, one for a vertex), and `neighbours` are the other faces in reach as
+/// (corner ids, corner positions). The contact belongs to a neighbour that has
+/// every corner of `feature` and has the projection of `p` on its own plane inside
+/// it (closed): that neighbour holds `p` along its face normal, so the face whose
+/// edge or vertex is closest stays out. `false` when no neighbour owns it (a mesh
+/// boundary, a fold `p` is past): the contact along `p − q` stands. On a flat mesh
+/// this keeps a shared edge or vertex from pushing a point along the surface.
+///
+/// A face that has the projection of `p` inside it (`own`, its corner positions)
+/// is an owner itself and is never handed off: when `p` projects onto a shared
+/// edge or vertex every face around it contains the projection, and each keeps
+/// its contact along its normal (otherwise each would defer to the others and no
+/// face would hold `p`).
+pub(crate) fn feature_owned_by_neighbour<I>(
+    own: [Vec3Fix; 3],
+    feature: &[usize],
+    neighbours: I,
+    p: Vec3Fix,
+) -> bool
+where
+    I: IntoIterator<Item = ([usize; 3], [Vec3Fix; 3])>,
+{
+    if projection_inside(own[0], own[1], own[2], p) {
+        return false;
+    }
+    neighbours.into_iter().any(|(ids, at)| {
+        feature.iter().all(|f| ids.contains(f)) && projection_inside(at[0], at[1], at[2], p)
+    })
+}
+
+/// Whether the projection of `p` on the plane of `a b c` lies inside the triangle
+/// or on its boundary (each edge's cross product with `p` has the face normal's
+/// direction or is zero). `false` for a degenerate triangle.
+fn projection_inside(a: Vec3Fix, b: Vec3Fix, c: Vec3Fix, p: Vec3Fix) -> bool {
+    let n = (b - a).cross(c - a);
+    if n == Vec3Fix::ZERO {
+        return false;
+    }
+    (b - a).cross(p - a).dot(n) >= Fix128::ZERO
+        && (c - b).cross(p - b).dot(n) >= Fix128::ZERO
+        && (a - c).cross(p - c).dot(n) >= Fix128::ZERO
+}
+
 /// The static friction correction of contact `c` over a substep of width `h`
 /// (see the module MODEL), or `None` when the contact slides (or does not move
 /// tangentially, or carries no normal separation). The combined material
@@ -281,12 +339,7 @@ pub(crate) fn static_friction(
     if w <= Fix128::ZERO {
         return None;
     }
-    // Static while the multiplier that holds the point, `λ_t = |Δp_t| / w`, stays
-    // inside the cone `μ λ_n` (eq. (27)).
-    let lambda = len / w;
-    if lambda >= c.friction * c.cached_lambda {
-        return None;
-    }
+    let lambda = static_hold(len, w, c.friction * c.cached_lambda)?;
     // A's point moved by `+dp_t` relative to B's: A is moved back along `−t`.
     Some(PointCorrection {
         a: share(a, r_a, t, -lambda),
@@ -945,5 +998,63 @@ mod tests {
             (dx.y.to_f64() - 2e-3).abs() > 1e-9,
             "the material compliance pushes out the whole overlap"
         );
+    }
+
+    /// Two triangles of a flat square, `0 1 2` and `0 2 3` (unit square in
+    /// `x–z`, shared edge `0–2`), and a point above the second one. Seen from the
+    /// first face the closest point is on the shared edge: the second face owns
+    /// it. The vertex `2` is shared too: owned. The vertex `1` belongs only to the
+    /// first face: not owned. A point beyond the square's outer edge `0–3` has no
+    /// owning neighbour (the boundary keeps its contact).
+    #[test]
+    fn a_shared_edge_or_vertex_of_a_flat_mesh_is_owned_by_the_face_under_the_point() {
+        let v = |x: f64, z: f64| Vec3Fix::new(fx(x), Fix128::ZERO, fx(z));
+        let at = [v(0.0, 0.0), v(1.0, 0.0), v(1.0, 1.0), v(0.0, 1.0)];
+        let first = [at[0], at[1], at[2]];
+        let second = ([0usize, 2, 3], [at[0], at[2], at[3]]);
+        let above_second = Vec3Fix::new(fx(0.25), fx(0.5), fx(0.6));
+        assert!(feature_owned_by_neighbour(
+            first,
+            &[0, 2],
+            [second],
+            above_second
+        ));
+        assert!(feature_owned_by_neighbour(
+            first,
+            &[2],
+            [second],
+            above_second
+        ));
+        assert!(!feature_owned_by_neighbour(
+            first,
+            &[1],
+            [second],
+            above_second
+        ));
+        let past_edge = Vec3Fix::new(fx(-0.1), fx(0.5), fx(0.5));
+        assert!(!feature_owned_by_neighbour(
+            first,
+            &[0, 2],
+            [second],
+            past_edge
+        ));
+        // a point right above the shared edge is inside both (closed): the first
+        // face keeps its contact, it is not handed to the second
+        let above_edge = Vec3Fix::new(fx(0.5), fx(0.5), fx(0.5));
+        assert!(!feature_owned_by_neighbour(
+            first,
+            &[0, 2],
+            [second],
+            above_edge
+        ));
+        // no neighbour at all, and a degenerate neighbour, own nothing
+        assert!(!feature_owned_by_neighbour(
+            first,
+            &[0, 2],
+            core::iter::empty(),
+            above_second
+        ));
+        let flat = ([0usize, 2, 3], [at[0], at[0], at[0]]);
+        assert!(!feature_owned_by_neighbour(first, &[0], [flat], past_edge));
     }
 }

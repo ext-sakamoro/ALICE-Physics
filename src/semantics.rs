@@ -205,6 +205,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "cloth resident",
         hex32("644fd2945b3461a080c64d09f1a0cc0d6ab7095c254259f996625f4d22a8e029"),
     ),
+    // a ball on a resident cloth: contact inside the cloth's iterations, the front-pulse
+    // reaction, the free-body prediction, friction and the shared-edge ownership
+    (
+        "cloth body contact",
+        hex32("aaca70f8566becbc7c386939005e61a1fdc3b4cbdc2015d199862f872b70b0b8"),
+    ),
     (
         "physics2d",
         hex32("8d1e013f0bceb47c12d10e1f9e00dd35966484bba8146ea578d0883536f54dc1"),
