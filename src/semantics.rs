@@ -108,19 +108,19 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "Xpbd step_n",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "Xpbd try_step",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "Xpbd step_parallel",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "Xpbd try_step_parallel",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "Xpbd step_with_bridge",
@@ -132,15 +132,15 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "Tgs step",
-        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
+        hex32("1b0629a4ce5ceb2cc5d6c35d10aa28e537ba2f75a711de9961352d2cf26c7f52"),
     ),
     (
         "Tgs step_n",
-        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
+        hex32("1b0629a4ce5ceb2cc5d6c35d10aa28e537ba2f75a711de9961352d2cf26c7f52"),
     ),
     (
         "Tgs try_step",
-        hex32("e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e"),
+        hex32("1b0629a4ce5ceb2cc5d6c35d10aa28e537ba2f75a711de9961352d2cf26c7f52"),
     ),
     (
         "contacts",
@@ -150,11 +150,11 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     // island and keep the move (tests/determinism_golden.rs::determinism_joint_pendulum)
     (
         "distance constraint",
-        hex32("d06737c90a67a3c6621f561610a53ac76e4f30a7411258d74ac7400f2062f29f"),
+        hex32("d40529f2439e9c76c8195c78d240855cc2125bfebc6a3270b81ea5a7b851442c"),
     ),
     (
         "joint",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "continuous collision",
@@ -162,19 +162,19 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "sleeping",
-        hex32("a55dc2e232a0498e143005288991ef51f78e393b0f76f1d9c20392b5da00a776"),
+        hex32("b30dc433eba41db85b48f3b717da4bc70dbb6bb03737f4ca623812737ff7cc7e"),
     ),
     (
         "broadphase Bvh",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "broadphase DynamicTree",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "broadphase Hybrid",
-        hex32("32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b"),
+        hex32("591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f"),
     ),
     (
         "participant",
@@ -182,12 +182,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "cloth",
-        hex32("e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb"),
+        hex32("26c00c5f3a17e6c9fd4d8af51a31c0940513491693621f2b660d89bc6e931a1d"),
     ),
     // a dragged letter that folds: the bend term's fold branch (a drape never folds)
     (
         "cloth fold",
-        hex32("0171621f0d1bd1502695bb6a6cab8dbd39fcf3f8b00c22433eaaadb25f408c4b"),
+        hex32("72fe7b855bebb192137f695141b4e8e836bf6058cf6d7a761433968e7e900ed0"),
     ),
     // the particle fluid's own bits: boundary particles, a free block pulled in, and SDF
     // solids as density maps with the force on each solid (the normal split at a foot)
@@ -198,18 +198,18 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     // the cloth's damping as a rate (a 120 Hz step keeps the square root of the 60 Hz retention)
     (
         "cloth damping rate",
-        hex32("2414b5abd7c8d5817a624b68e0f199d4f7cb0de4adf8726a1e76bf2527351c42"),
+        hex32("3796a69f92c4593d253ec2067b07cdac365069b45c28b256ced75cc84dea5b21"),
     ),
     // a cloth as a world resident: its steps placed per frame on the world's substeps
     (
         "cloth resident",
-        hex32("644fd2945b3461a080c64d09f1a0cc0d6ab7095c254259f996625f4d22a8e029"),
+        hex32("c52a6059c737e3878a9838f91c5fb97db889fe52ae01574d178ffd56db349b02"),
     ),
     // a ball on a resident cloth: contact inside the cloth's iterations, the front-pulse
     // reaction, the free-body prediction, friction and the shared-edge ownership
     (
         "cloth body contact",
-        hex32("aaca70f8566becbc7c386939005e61a1fdc3b4cbdc2015d199862f872b70b0b8"),
+        hex32("7166928d2b54ee33f11e52946eb29d8176f03f80b2f0e7b11b633133be9a4522"),
     ),
     (
         "physics2d",
@@ -217,7 +217,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "secondary chain",
-        hex32("b38f368c90287484da417d12e2379b0b11820a4bb298e743209bb0699fdee9e0"),
+        hex32("f6ed382cab0f82aefd33d99fc3c2b6f8550a8d8b201fc14e0f04aace80feebc1"),
     ),
     (
         "step_parallel shared-body order",
@@ -316,7 +316,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: tgs oriented 6dof hooks",
-        hex32("f0c1a48aec704624da95c4ceaccb547b6d3786379cf60ffbcb976a3f8a6fd839"),
+        hex32("42dcf2be8f235e7b0d3f257f026ef2dbd47b52355adc58ffc072aba2d192062a"),
     ),
     (
         "law output: thermal",

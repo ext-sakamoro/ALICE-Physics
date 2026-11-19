@@ -553,7 +553,7 @@ fn gust_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
-const GUST_XPBD: &str = "9f8935e2ef265f24425db3b9a75e3e69e1131d289ebf2fad1331b0af61f626a2";
+const GUST_XPBD: &str = "07ea36dc0fe624352891ba6a4a0796da594426072465323a438ba542c4e09662";
 const GUST_TGS: &str = "213cf624bb677d3ff73a6b22a64e3f9146093fe4e3a6d55144b7cf5c528ae417";
 
 /// golden (determinism): the world snapshot and the payload of the gust scene

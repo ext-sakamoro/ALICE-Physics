@@ -298,4 +298,4 @@ fn trajectory_digest_with_sleep_is_pinned() {
 // from Physics main bc76ee2d without any sleep code: the same scene never slept (release by
 // restoring the inverse mass by hand), 540 frames
 // re-pinned with the bend term's fold branch (the dragged sheet's fold is unfolded)
-const TRAJECTORY_DIGEST: &str = "0d2896d4ef6a7cad9dbe54ab2adf1086207bbf3ca54145dccd829ed7090a55e0";
+const TRAJECTORY_DIGEST: &str = "cd8056845e3f13445117c0d5fb23cdf13700298091a99ebe3daf7ec215c19260";

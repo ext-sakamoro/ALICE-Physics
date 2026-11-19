@@ -1,6 +1,6 @@
 //! Reference table for the `Fix128` transcendental functions.
 //!
-//! `tests/fixtures/fix128_reference.txt` holds 1749 inputs, each an exact
+//! `tests/fixtures/fix128_reference.txt` holds 1758 inputs, each an exact
 //! `Fix128` value, with the exact result computed with 400-bit arithmetic and
 //! rounded to the nearest raw value (`scripts/gen_fix128_reference.py`, fixed
 //! seed, reproducible byte for byte). The table is independent of the code under

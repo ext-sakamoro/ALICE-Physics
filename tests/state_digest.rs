@@ -241,7 +241,7 @@ fn hex(b: &[u8]) -> String {
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
 const GOLDEN_STATE_DIGEST: &str =
-    "4e0376d031a1c522305f4699fb72859be3d6a02be9fed8eb463c1a2cb7ed2bec";
+    "a2938fb03dcec1df384d50fb2afa8b9fb1174843960e8d141f20c6e6b163e937";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): moved with the identifier only
 const GOLDEN_LAW_ID: &str = "38f12b573ddc7c5248d907067b79b6965e89e9b4e242f97a230e4ce59eff6b5d";
@@ -253,7 +253,7 @@ const GOLDEN_LAW_ID: &str = "38f12b573ddc7c5248d907067b79b6965e89e9b4e242f97a230
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "8e5c7050761caad053ba28b44178b57f95821c6dc4955aebd4e054419dd8a428";
+    "8e50929133e251b482890ef7a866f101731a1cebef35fd46eb3627dbdebfe358";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

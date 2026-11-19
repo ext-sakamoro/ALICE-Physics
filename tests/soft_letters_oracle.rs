@@ -603,7 +603,7 @@ fn digest_covers_cloths_and_snapshot_round_trips() {
 // letters did not move
 // re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
-const THROW_DIGEST_600: &str = "4c3b333183d41d85e1e67219133871d7f4e9f9562e9a0c1a8f2f64cd4bf7a964";
+const THROW_DIGEST_600: &str = "e639cf69e64a0da5b9f434aeeedbecc27e746fcb564312652b8cb4c087ab7773";
 
 /// oracle: the throw script's digest at frame 600 is the frozen value on every target.
 #[test]
@@ -740,7 +740,7 @@ fn rollback_blob_carries_the_letters() {
 // fold is unfolded)
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
 const SOFT_LETTERS_WORLD_DIGEST_150: &str =
-    "ea3bec94623098d4aa78e922786f742f94f49570333e63da5e1e96acb675e497";
+    "67ae566dbe546d901ca9d3822acb3c4374b0dcafaadb2d84501fdf5f4588b077";
 
 #[test]
 fn the_world_digest_of_the_throw_script_is_the_golden() {

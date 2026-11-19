@@ -69,14 +69,11 @@
 //!    survives truncation, so `residual_norm_l2_checked` returns `Ok(0)` by its
 //!    documented contract rather than refusing. The two floors are nine orders
 //!    of magnitude apart and the squaring one binds first.
-//! 3. **The nonlinear fold is limited by [`Fix128::exp`], not by `2⁻⁶⁴`.**
-//!    `exp` routes through `powf_pos`, which consumes only the top 24 fraction
-//!    bits of its exponent, so its relative resolution is `ln 2 · 2⁻²⁴ =
-//!    4.13e-8` — about **twelve** orders of magnitude above the
-//!    `2⁻⁶⁴ = 5.42e-20` word floor (measured worst `4.005e-8`, a ratio of
-//!    `7.39e11`). The Aitken limit lands `1.8e-8 … 5.0e-8` away from the true
-//!    root *in relative terms* in consequence, while its residual under the
-//!    *implemented* map is exactly zero.
+//! 3. **The nonlinear fold is limited by the `2⁻⁶⁴` word, not by
+//!    [`Fix128::exp`].** `exp` is within `1 + ⌊e^u⌋` ulp of the exact value
+//!    (until the kernels were rewritten it read only 24 fraction bits of its
+//!    exponent, a relative resolution of `4.13e-8`, twelve orders above the
+//!    word, and the Aitken limit sat `1.8e-8 … 5.0e-8` from the true root).
 //!
 //! # The truncation directions these rest on (measured)
 //!
@@ -972,53 +969,47 @@ fn aitken_reaches_the_unstable_upper_branch_under_fix128_too() {
     }
 }
 
-/// Where the nonlinear scene's accuracy actually comes from.
+/// Where the nonlinear scene's accuracy comes from: [`Fix128::exp`] is within
+/// `1 + ⌊e^u⌋` ulp of the exact `e^u` (the bound
+/// `tests/analytic_fix128_transcendentals.rs` states), so the limit is the
+/// `2⁻⁶⁴` word, not the function.
 ///
-/// [`Fix128::exp`] evaluates `2^(x·log₂e)` through `powf_pos`, which walks only
-/// **24** successive square roots and therefore consumes only the top 24
-/// fraction bits of its exponent. Its relative resolution is consequently
-/// `ln 2 · 2⁻²⁴ ≈ 4.13e-8`, independent of the `2⁻⁶⁴ = 5.42e-20` word.
+/// Until the kernels were rewritten, `exp` went through `powf_pos`, which read
+/// only the top 24 fraction bits of its exponent, and its relative resolution
+/// was `ln 2 · 2⁻²⁴ ≈ 4.13e-8` (measured worst `4.005e-8` at `u = 3`, `7.39e11`
+/// words). This test asserted that; it now asserts the opposite.
 ///
-/// ⚠️ So the limit on hypothesis 4 under fixed point sits about **twelve**
-/// orders of magnitude above the rounding floor, and reasoning about the fold
-/// from the floor would be wrong by that factor. Measured worst over the branch
-/// range is `4.005e-8` at `u = 3`, just inside the derived bound, which is
-/// `7.39e11` times the word.
+/// oracle: the exact `e^u` rounded to the nearest raw value, from
+/// `tests/fixtures/fix128_reference.txt` (mpmath at 400 bits), at the nine
+/// branch points, which the generator writes as `exp` rows.
 #[test]
-fn the_nonlinear_branch_is_limited_by_fix128_exp_not_by_the_rounding_floor() {
-    // Derived from the algorithm, not fitted: 24 fractional bits of exponent.
-    let derived_bound = core::f64::consts::LN_2 * 2.0f64.powi(-24);
-    let word_floor = 2.0f64.powi(-64);
-
-    let mut worst = 0.0f64;
+fn the_nonlinear_branch_is_limited_by_the_word_not_by_fix128_exp() {
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/fix128_reference.txt"
+    ))
+    .expect("read the reference table");
+    let mut checked = 0;
     for u in [0.25f64, 0.5, 0.72, 1.0, 1.35, 1.78, 2.0, 2.54, 3.0] {
-        let reference = u.exp();
-        let measured = Fix128::from_f64(u).exp().to_f64();
-        let relative = (measured - reference).abs() / reference;
+        let x = Fix128::from_f64(u);
+        let key = format!("exp {} = ", raw(x));
+        let want: i128 = text
+            .lines()
+            .find_map(|l| l.strip_prefix(key.as_str()))
+            .unwrap_or_else(|| panic!("no exp row for u = {u} in the reference table"))
+            .trim()
+            .parse()
+            .expect("an integer raw value");
+        let got = raw(x.exp());
+        let bound = 1 + (want >> 64);
         assert!(
-            relative <= derived_bound * 1.05,
-            "exp({u}) is off by {relative:e}, above the derived resolution \
-             ln2 * 2^-24 = {derived_bound:e}"
+            (got - want).abs() <= bound,
+            "exp({u}) is {} ulp from the exact value, above 1 + floor(e^u) = {bound}",
+            (got - want).abs()
         );
-        if relative > worst {
-            worst = relative;
-        }
+        checked += 1;
     }
-
-    // The load-bearing half: the limit is `exp`, and it is far above the word.
-    assert!(
-        worst > 1e-9,
-        "if exp has become accurate to better than 1e-9 then the module doc's \
-         claim that it, and not the 2^-64 floor, limits the nonlinear scene is \
-         stale; worst was {worst:e}"
-    );
-    assert!(
-        worst / word_floor > 1e11,
-        "exp's resolution must sit about twelve orders above the word floor for \
-         the distinction to matter, which is what the module doc claims; the \
-         ratio was {}",
-        worst / word_floor
-    );
+    assert_eq!(checked, 9, "all nine branch points must be read");
 }
 
 // ---------------------------------------------------------------------------

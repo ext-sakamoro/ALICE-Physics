@@ -305,9 +305,11 @@ fn run(
 /// t the exact crossing floored to 2^-64): the same 172 hits, the t of each
 /// one's last bits moved (the digest was 10_044_748_902_636_547_745 on the
 /// rounded test).
+/// The box and wedge rows were re-recorded when the `Fix128` transcendentals
+/// moved to the format's resolution (the scenes' orientations come from `sin` / `cos`).
 const PREVIOUS: [(&str, usize, usize, u64); 4] = [
-    ("box", 223, 123, 9_051_903_827_425_138_261),
-    ("wedge", 217, 75, 13_186_901_299_020_445_947),
+    ("box", 223, 123, 10_511_852_846_573_288_499),
+    ("wedge", 217, 75, 7_822_168_949_801_549_495),
     ("mesh", 233, 172, 9_417_318_711_790_994_928),
     ("plane", 231, 158, 11_932_952_870_255_741_702),
 ];
@@ -338,10 +340,10 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 /// a cast ends on when its gap is bracketed (it is the clear end for a core of
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
 const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
-    ("cone", 1102, 513, 17_661_728_302_335_508_163),
-    ("cylinder", 1144, 624, 9_898_768_193_131_372_081),
+    ("cone", 1102, 513, 9_910_101_633_651_981_143),
+    ("cylinder", 1144, 624, 711_378_965_743_660_445),
     ("field", 1145, 870, 14_705_494_176_466_851_565),
-    ("ellipsoid", 1122, 525, 4_515_886_914_046_275_384),
+    ("ellipsoid", 1122, 525, 11_262_302_359_207_082_353),
 ];
 
 #[test]
