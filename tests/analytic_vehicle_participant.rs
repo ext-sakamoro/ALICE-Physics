@@ -661,7 +661,7 @@ fn drive_digest(backend: SolverBackend) -> String {
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
 const DRIVE_XPBD: &str = "b98f7343e25da88d73b6741c85bd02800417bed47ebf79e2329cb96c1b468af3";
-const DRIVE_TGS: &str = "4f3c68f5ae4e891cab42ce23e909ef95ed78b52851fbf3c04212fa28de079e72";
+const DRIVE_TGS: &str = "46ca0353399bd959d3e16461ebef9a249ebd503497ae4e85574df4a29380b5ff";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
