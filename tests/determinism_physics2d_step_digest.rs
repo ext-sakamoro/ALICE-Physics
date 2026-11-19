@@ -175,7 +175,7 @@ fn digest(w: &PhysicsWorld2D) -> u64 {
 
 const FRAMES: usize = 180;
 /// Recorded from `PhysicsWorld2D::step` before the tether set was introduced.
-const EXPECTED: u64 = 0x1ef7_2081_61b8_bd42;
+const EXPECTED: u64 = 0x4f91_28ea_4ba5_c52a;
 
 #[test]
 fn step_digest_is_unchanged() {

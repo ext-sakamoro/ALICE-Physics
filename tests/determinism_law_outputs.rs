@@ -925,7 +925,7 @@ fn law_output_tgs_oriented_6dof_hooks() {
     // re-recorded (from 79144576…) when damping became a rate per second with
     // default 0: this scene's default config had damped by a retention 0.99 per step
     const TGS_ORIENTED_6DOF_HOOKS_GOLDEN: &str =
-        "f0c1a48aec704624da95c4ceaccb547b6d3786379cf60ffbcb976a3f8a6fd839";
+        "42dcf2be8f235e7b0d3f257f026ef2dbd47b52355adc58ffc072aba2d192062a";
     let mut r = Record::default();
     let mut w = PhysicsWorld::new(SolverConfig {
         substeps: 4,

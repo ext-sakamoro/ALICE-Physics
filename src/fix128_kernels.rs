@@ -282,7 +282,7 @@ pub(crate) fn powf_pos(x: Fix128, y: Fix128) -> Fix128 {
             return r;
         }
     }
-    exp_mul_ln(x, y)
+    pow_exp_ln(x, y)
 }
 
 /// `x^n` by exponentiation by squaring when every product is exact and
@@ -317,7 +317,7 @@ fn exact_mul(a: Fix128, b: Fix128) -> Option<Fix128> {
 /// the nearest `Fix128` (the product `e · ln x` is kept at Q120, not rounded to
 /// `Fix128` first). Saturates like [`exp_q120`] (a product beyond `±64` is
 /// past both ends of the range).
-pub(crate) fn exp_mul_ln(x: Fix128, e: Fix128) -> Fix128 {
+pub(crate) fn pow_exp_ln(x: Fix128, e: Fix128) -> Fix128 {
     let l = ln_q120(x);
     let (hi, lo) = widening_mul_u128(raw(e).unsigned_abs(), l.unsigned_abs());
     let negative = (raw(e) < 0) != (l < 0);
