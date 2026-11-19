@@ -1469,6 +1469,7 @@ use alice_physics::smoke_plume::QuantaField as _;
 use alice_physics::smoke_plume::SmokeBuildError as _;
 use alice_physics::smoke_plume::SmokeConfig as _;
 use alice_physics::smoke_plume::SmokeLedger as _;
+use alice_physics::smoke_plume::SmokeOutflow as _;
 use alice_physics::smoke_plume::SmokePlume as _;
 use alice_physics::smoke_plume::SmokeSource as _;
 use alice_physics::smoke_plume::SourceKind as _;
@@ -2011,7 +2012,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1993 paths, checked at compile time
+    // 1994 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
