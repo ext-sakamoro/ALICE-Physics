@@ -70,9 +70,13 @@ def repo(tmp: str, workflow: str = WORKFLOW, rules: str = RULES) -> Path:
     (root / "scripts").mkdir()
     (root / "scripts/local-receipt-rules.tsv").write_text(rules, encoding="utf-8")
     (root / "src").mkdir()
-    (root / "src/lib.rs").write_text("pub fn one() -> u32 { 1 }\n", encoding="utf-8")
+    (root / "src/lib.rs").write_text("pub fn one() -> u32 { 1 }\n#[cfg(test)]\n#[path = \"../tests/in_lib.rs\"]\nmod in_lib;\n", encoding="utf-8")
     (root / "docs").mkdir()
-    (root / "docs/ledger.md").write_text("ledger 1\n", encoding="utf-8")
+    (root / "docs/oracle-status.md").write_text("ledger 1\n", encoding="utf-8")
+    (root / "tests").mkdir()
+    (root / "tests/in_lib.rs").write_text("// included\n", encoding="utf-8")
+    (root / "tests/apart.rs").write_text("// its own binary\n", encoding="utf-8")
+    (root / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
     (root / "README.md").write_text("readme 1\n", encoding="utf-8")
     sh(root, "init", "-q")
     commit(root, "first")
@@ -178,7 +182,8 @@ class Receipt(unittest.TestCase):
     def slow_repo(self, change: str) -> None:
         """the fixture with two slow steps, and one commit after `base` that changes `change`"""
         self.root = repo(str(Path(self.tmp.name) / change.replace("/", "-")), SLOW_WORKFLOW, SLOW_RULES + RULES)
-        (self.root / change).write_text("changed\n", encoding="utf-8")
+        with open(self.root / change, "a", encoding="utf-8") as f:
+            f.write("# changed\n" if change.endswith((".yml", ".toml", ".txt")) else "// changed\n")
         commit(self.root, "the series")
 
     def test_a_series_that_changes_src_needs_the_slow_receipt_and_another_does_not(self):
@@ -192,7 +197,21 @@ class Receipt(unittest.TestCase):
         seen = self.run_all(cls="slow")
         self.assertEqual([u["cmd"] for u in seen], ["cargo llvm-cov --lib", "python3 scripts/ratchet.py"],
                          "in the workflow's order: the ratchet reads what the step before wrote")
-        self.assertRegex(c.check(self.root), r"slow receipt: 2 of 2 steps green.*1 file\(s\) under src/")
+        self.assertRegex(c.check(self.root), r"slow receipt: 2 of 2 steps green.*1 input\(s\).*src/lib\.rs")
+
+    def test_every_input_of_the_lib_coverage_asks_for_the_slow_receipt(self):
+        for change, asked in (("tests/in_lib.rs", True), ("tests/apart.rs", False), ("Cargo.toml", True),
+                              ("build.rs", True), ("scripts/line-coverage-baseline.txt", True),
+                              (".github/workflows/ci.yml", True), ("README.md", False)):
+            self.slow_repo(change)
+            self.assertEqual(c.needs_slow(self.root) == [change], asked, change)
+
+    def test_an_include_that_names_no_file_is_an_error(self):
+        self.slow_repo("src/lib.rs")
+        (self.root / "src/lib.rs").write_text('#[path = "../tests/gone.rs"]\nmod gone;\n', encoding="utf-8")
+        commit(self.root, "an include of nothing")
+        with self.assertRaisesRegex(c.ReceiptError, r"src/lib\.rs: .*names tests/gone\.rs"):
+            c.needs_slow(self.root)
 
     def test_a_red_slow_step_and_a_slow_receipt_alone_are_refused(self):
         self.slow_repo("src/lib.rs")
@@ -240,10 +259,14 @@ class Receipt(unittest.TestCase):
 
     def test_a_change_of_code_asks_for_a_new_run_and_a_change_of_a_ledger_does_not(self):
         self.run_all()
-        (self.root / "docs/ledger.md").write_text("ledger 2\n", encoding="utf-8")
-        (self.root / "README.md").write_text("readme 2\n", encoding="utf-8")
-        commit(self.root, "ledgers")
+        (self.root / "docs/oracle-status.md").write_text("ledger 2\n", encoding="utf-8")
+        commit(self.root, "a ledger the landing writes")
         self.assertIn("4 of 4", c.check(self.root))
+        (self.root / "README.md").write_text("readme 2\n", encoding="utf-8")
+        commit(self.root, "a document the checkers read")
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
+            c.check(self.root)
+        self.run_all()
         (self.root / "src/lib.rs").write_text("pub fn one() -> u32 { 2 }\n", encoding="utf-8")
         commit(self.root, "code")
         with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
@@ -286,8 +309,15 @@ class Receipt(unittest.TestCase):
         (self.root / "src/lib.rs").write_text("pub fn one() -> u32 { 3 }\n", encoding="utf-8")
         with self.assertRaisesRegex(c.ReceiptError, "differ from HEAD"):
             self.run_all()
+        sh(self.root, "checkout", "-q", "--", "src/lib.rs")
+        (self.root / "src/new_module.rs").write_text("pub fn two() -> u32 { 2 }\n", encoding="utf-8")
+        with self.assertRaisesRegex(c.ReceiptError, r"not in it \(src/new_module\.rs"):
+            self.run_all()
+        (self.root / "src/new_module.rs").unlink()
         with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
             c.check(self.root)
+        (self.root / "docs/oracle-status.md").write_text("regenerated\n", encoding="utf-8")
+        self.assertEqual(len(self.run_all()), 4, "a ledger the landing writes may differ")
 
 
 class ThisRepository(unittest.TestCase):
@@ -302,6 +332,12 @@ class ThisRepository(unittest.TestCase):
         doc = next(u for u in units if u["cmd"] == "cargo doc --lib --no-deps")
         self.assertEqual(doc["env"].get("RUSTDOCFLAGS"), "-Dwarnings", "the job's env reaches the step")
         self.assertFalse([cmd for cmd in cmds if cmd.startswith("cargo test")], "no test leg is run here")
+        import land
+        self.assertEqual(c.LANDING_WRITES, land.LOCAL_LEDGERS | {"docs/PUBLIC_API_SNAPSHOT.txt"},
+                         "the receipt outlives what a landing writes, and nothing else")
+        includes, holders = c.slow_inputs(c.ROOT)
+        self.assertGreaterEqual(len(includes), 10, "the tests/ files the lib includes are read from src/")
+        self.assertEqual(holders, {".github/workflows/security-audit.yml"})
         slow = [u["cmd"] for u in c.local_steps(c.ROOT, "slow")]
         self.assertEqual(len(slow), 2, "the push's lib coverage and its ratchet, in this order")
         self.assertIn("cargo llvm-cov --lib --summary-only", slow[0])
