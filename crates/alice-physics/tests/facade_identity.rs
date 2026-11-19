@@ -8,7 +8,7 @@
 
 use core::any::TypeId;
 
-const PINNED_ID_HEX: &str = "af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09";
+const PINNED_ID_HEX: &str = "fcbe607208a3623d5a1366c7cd4238775d558a9c3ed4e0090ef81367e3af7450";
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()

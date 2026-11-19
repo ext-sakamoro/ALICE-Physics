@@ -19175,7 +19175,7 @@ impl core::marker::Unpin for alice_physics_core::smoke_plume::QuantaField
 impl core::marker::UnsafeUnpin for alice_physics_core::smoke_plume::QuantaField
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::smoke_plume::QuantaField
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::smoke_plume::QuantaField
-pub struct alice_physics_core::smoke_plume::SmokeConfig
+#[non_exhaustive] pub struct alice_physics_core::smoke_plume::SmokeConfig
 pub alice_physics_core::smoke_plume::SmokeConfig::ambient_k: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::beta_per_k: alice_physics_core::math::Fix128
 pub alice_physics_core::smoke_plume::SmokeConfig::density_kg_m3: alice_physics_core::math::Fix128
@@ -23082,6 +23082,8 @@ pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_body_radii(se
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_fields(self, &'a alice_physics_core::world_participant::FieldBoard, &'a mut alice_physics_core::world_participant::FieldStage, &'a [alice_physics_core::world_participant::Port]) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_gravity(self, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_sdf_contacts(self, &'a [alice_physics_core::sdf_collider::SdfContact]) -> Self
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::with_world_substep(self, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::world_participant::SubstepCtx<'a>::world_substep(&self) -> core::option::Option<alice_physics_core::math::Fix128>
 impl<'a> core::fmt::Debug for alice_physics_core::world_participant::SubstepCtx<'a>
 pub fn alice_physics_core::world_participant::SubstepCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Freeze for alice_physics_core::world_participant::SubstepCtx<'a>
