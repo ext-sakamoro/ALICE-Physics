@@ -3,196 +3,208 @@
 # job	<name>	<limit minutes>
 # run	<job>	<run id>	<commit>	<total seconds>	<build seconds per test binary and pass>
 # bin	<job>	<binary>	<seconds of each pass in the job's newest run, comma separated>
-job	Test (macos-latest)	120
-run	Test (macos-latest)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	4109	1.14
-run	Test (macos-latest)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	4205	1.14
-run	Test (macos-latest)	44463119185	731f26d228fc80482fc980be306cca075fd357de	2604	0.50
-job	Test (ubuntu-24.04-arm)	120
-run	Test (ubuntu-24.04-arm)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	3079	0.57
-run	Test (ubuntu-24.04-arm)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	3077	0.72
-run	Test (ubuntu-24.04-arm)	44463119185	731f26d228fc80482fc980be306cca075fd357de	3199	0.57
-job	Test (windows-latest)	160
-run	Test (windows-latest)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	5078	0.92
-run	Test (windows-latest)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	6432	1.26
-run	Test (windows-latest)	44463119185	731f26d228fc80482fc980be306cca075fd357de	6724	1.29
+job	Test (macos-15-intel)	360
+run	Test (macos-15-intel)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	5807	1.13
+run	Test (macos-15-intel)	44477971576	731f26d228fc80482fc980be306cca075fd357de	6510	1.28
 job	Test (ubuntu-latest)	120
 run	Test (ubuntu-latest)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	4049	1.07
 run	Test (ubuntu-latest)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	4051	0.87
 run	Test (ubuntu-latest)	44463119185	731f26d228fc80482fc980be306cca075fd357de	3147	0.66
-job	Test (macos-15-intel)	360
-run	Test (macos-15-intel)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	5807	1.13
-bin	Test (macos-latest)	tests/analytic_broadphase_hybrid.rs	2.03,2.26
-bin	Test (macos-latest)	tests/analytic_cfd_fractional_step_time_order.rs	5.66,5.54
-bin	Test (macos-latest)	tests/analytic_cubic_hyperelastic.rs	11.33,0.00
-bin	Test (macos-latest)	tests/analytic_deformable_static_sag.rs	5.90,5.46
-bin	Test (macos-latest)	tests/analytic_dynamic_fem_corotational.rs	108.19,122.03
-bin	Test (macos-latest)	tests/analytic_fluid_pbf_density.rs	95.05,0.00
-bin	Test (macos-latest)	tests/analytic_fluid_sdf_body.rs	129.68,100.62
-bin	Test (macos-latest)	tests/analytic_hyperelastic_mms_order.rs	0.00,8.06
-bin	Test (macos-latest)	tests/analytic_mpm2d_implicit.rs	9.28
-bin	Test (macos-latest)	tests/analytic_quadratic_hyperelastic.rs	12.16,0.00
-bin	Test (macos-latest)	tests/analytic_rans_wall_function.rs	1.80,2.10
-bin	Test (macos-latest)	tests/analytic_resting_box_manifold.rs	1.35,2.40
-bin	Test (macos-latest)	tests/analytic_rope_participant.rs	1.29,2.91
-bin	Test (macos-latest)	tests/analytic_self_contact.rs	5.15,0.00
-bin	Test (macos-latest)	tests/analytic_sleep_spring_creep.rs	0.15,2.09
-bin	Test (macos-latest)	tests/analytic_state_rollback_outside_writes.rs	7.52,19.71
-bin	Test (macos-latest)	tests/analytic_thick_chain.rs	1.82,2.10
-bin	Test (macos-latest)	tests/analytic_thick_chain_anchor.rs	9.53,12.01
-bin	Test (macos-latest)	tests/analytic_thick_chain_entry.rs	8.53,10.26
-bin	Test (macos-latest)	tests/analytic_wall_model.rs	2.08,0.00
-bin	Test (macos-latest)	tests/analytic_water_film.rs	3.11,3.82
-bin	Test (macos-latest)	tests/armaly_backward_step.rs	7.94,9.62
-bin	Test (macos-latest)	tests/cloth_sleep_oracle.rs	2.23,2.59
-bin	Test (macos-latest)	tests/default_configs.rs	1.07,1.30,11.46
-bin	Test (macos-latest)	tests/determinism_golden.rs	6.42,7.68
-bin	Test (macos-latest)	tests/trimesh_raycast_bruteforce.rs	41.63,42.01
-bin	Test (macos-latest)	tests/trimesh_raycast_exact.rs	3.85,3.80
-bin	Test (macos-latest)	tests/world_ccd_off_bit_identity.rs	0.26,2.39
-bin	Test (macos-latest)	unit src/lib.rs	8.35,1.47,0.67,0.10,9.31,110.74,3.07,111.96
-bin	Test (ubuntu-24.04-arm)	tests/analytic_broadphase_hybrid.rs	2.74,3.71
+run	Test (ubuntu-latest)	44477971576	731f26d228fc80482fc980be306cca075fd357de	2734	0.59
+job	Test (ubuntu-24.04-arm)	120
+run	Test (ubuntu-24.04-arm)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	3079	0.57
+run	Test (ubuntu-24.04-arm)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	3077	0.72
+run	Test (ubuntu-24.04-arm)	44463119185	731f26d228fc80482fc980be306cca075fd357de	3199	0.57
+run	Test (ubuntu-24.04-arm)	44477971576	731f26d228fc80482fc980be306cca075fd357de	3148	0.69
+job	Test (macos-latest)	120
+run	Test (macos-latest)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	4109	1.14
+run	Test (macos-latest)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	4205	1.14
+run	Test (macos-latest)	44463119185	731f26d228fc80482fc980be306cca075fd357de	2604	0.50
+run	Test (macos-latest)	44477971576	731f26d228fc80482fc980be306cca075fd357de	3929	1.03
+job	Test (windows-latest)	160
+run	Test (windows-latest)	44450474672	86ced83b8e578f1f6fce4bf711e97280703b40bf	5078	0.92
+run	Test (windows-latest)	44461317001	86ced83b8e578f1f6fce4bf711e97280703b40bf	6432	1.26
+run	Test (windows-latest)	44463119185	731f26d228fc80482fc980be306cca075fd357de	6724	1.29
+run	Test (windows-latest)	44477971576	731f26d228fc80482fc980be306cca075fd357de	6435	1.16
+bin	Test (macos-15-intel)	tests/analytic_broadphase_hybrid.rs	5.45,6.82
+bin	Test (macos-15-intel)	tests/analytic_cfd_fractional_step_time_order.rs	12.45,12.43
+bin	Test (macos-15-intel)	tests/analytic_cloth_rest_tether.rs	2.91
+bin	Test (macos-15-intel)	tests/analytic_collision_mesh.rs	2.62,0.23
+bin	Test (macos-15-intel)	tests/analytic_corotational.rs	5.30,5.33
+bin	Test (macos-15-intel)	tests/analytic_cubic_hyperelastic.rs	22.85,0.00
+bin	Test (macos-15-intel)	tests/analytic_deformable_static_sag.rs	0.00,12.47
+bin	Test (macos-15-intel)	tests/analytic_dynamic_fem_corotational.rs	281.39,376.88
+bin	Test (macos-15-intel)	tests/analytic_fdtd_materials.rs	1.33,2.26
+bin	Test (macos-15-intel)	tests/analytic_fluid_pbf_density.rs	180.29,240.31
+bin	Test (macos-15-intel)	tests/analytic_fluid_sdf_body.rs	240.18,274.51
+bin	Test (macos-15-intel)	tests/analytic_hyperelastic_mms_order.rs	16.77,17.00
+bin	Test (macos-15-intel)	tests/analytic_joint_compliance_xpbd.rs	0.10,2.30
+bin	Test (macos-15-intel)	tests/analytic_mpm2d.rs	3.67
+bin	Test (macos-15-intel)	tests/analytic_mpm2d_implicit.rs	21.68
+bin	Test (macos-15-intel)	tests/analytic_no_ghost_contact.rs	1.00,2.17
+bin	Test (macos-15-intel)	tests/analytic_physical_pendulum.rs	0.83,14.38
+bin	Test (macos-15-intel)	tests/analytic_quadratic_fem.rs	2.78,2.68
+bin	Test (macos-15-intel)	tests/analytic_quadratic_hyperelastic.rs	28.79,0.00
+bin	Test (macos-15-intel)	tests/analytic_rans_wall_function.rs	3.85,4.00
+bin	Test (macos-15-intel)	tests/analytic_resting_box_manifold.rs	3.44,4.55
+bin	Test (macos-15-intel)	tests/analytic_rope_participant.rs	2.49,5.20
+bin	Test (macos-15-intel)	tests/analytic_self_contact.rs	10.92,11.26
+bin	Test (macos-15-intel)	tests/analytic_shaped_static_contact.rs	2.56,3.33
+bin	Test (macos-15-intel)	tests/analytic_sleep_spring_creep.rs	0.32,4.42
+bin	Test (macos-15-intel)	tests/analytic_state_rollback_outside_writes.rs	18.25,33.33
+bin	Test (macos-15-intel)	tests/analytic_static_contact_response.rs	2.79,3.03
+bin	Test (macos-15-intel)	tests/analytic_thick_chain.rs	3.93
+bin	Test (macos-15-intel)	tests/analytic_thick_chain_anchor.rs	21.64,3.82
+bin	Test (macos-15-intel)	tests/analytic_thick_chain_entry.rs	17.45,17.67
+bin	Test (macos-15-intel)	tests/analytic_touch_release_settle.rs	2.11,2.09
+bin	Test (macos-15-intel)	tests/analytic_vehicle_scenario.rs	1.24,2.22
+bin	Test (macos-15-intel)	tests/analytic_wall_model.rs	4.59,4.82
+bin	Test (macos-15-intel)	tests/analytic_water_film.rs	7.41
+bin	Test (macos-15-intel)	tests/analytic_wave_ship_wiring.rs	0.00,7.60
+bin	Test (macos-15-intel)	tests/armaly_backward_step.rs	16.52,18.07
+bin	Test (macos-15-intel)	tests/cloth_resident_compare.rs	2.75,2.88
+bin	Test (macos-15-intel)	tests/cloth_sleep_oracle.rs	4.40,4.83
+bin	Test (macos-15-intel)	tests/default_configs.rs	2.23,2.06,19.34
+bin	Test (macos-15-intel)	tests/determinism_golden.rs	12.36,11.88
+bin	Test (macos-15-intel)	tests/indep_contact_restitution_friction.rs	0.03,2.34
+bin	Test (macos-15-intel)	tests/locking_p1.rs	3.12,3.27
+bin	Test (macos-15-intel)	tests/p2_oracle_design.rs	3.69,3.76
+bin	Test (macos-15-intel)	tests/sleep_skip.rs	2.63,5.62
+bin	Test (macos-15-intel)	tests/soft_letters_oracle.rs	2.41,2.45
+bin	Test (macos-15-intel)	tests/trimesh_raycast_bruteforce.rs	106.19,106.30
+bin	Test (macos-15-intel)	tests/trimesh_raycast_exact.rs	10.84,10.20
+bin	Test (macos-15-intel)	tests/world_ccd_off_bit_identity.rs	0.53,4.62
+bin	Test (macos-15-intel)	tests/world_query_previous_bits.rs	2.83,2.87
+bin	Test (macos-15-intel)	unit src/lib.rs	23.81,3.42,1.15,0.13,31.31,233.18,6.66,210.24
+bin	Test (ubuntu-latest)	tests/analytic_broadphase_hybrid.rs	3.38,4.03
+bin	Test (ubuntu-latest)	tests/analytic_cfd_fractional_step_time_order.rs	5.13,5.10
+bin	Test (ubuntu-latest)	tests/analytic_corotational.rs	3.23,3.49
+bin	Test (ubuntu-latest)	tests/analytic_cubic_hyperelastic.rs	11.89,0.00
+bin	Test (ubuntu-latest)	tests/analytic_deformable_static_sag.rs	7.26,8.43
+bin	Test (ubuntu-latest)	tests/analytic_dynamic_fem_corotational.rs	182.54,189.23
+bin	Test (ubuntu-latest)	tests/analytic_fluid_pbf_density.rs	0.00,110.45
+bin	Test (ubuntu-latest)	tests/analytic_fluid_sdf_body.rs	132.01,128.44
+bin	Test (ubuntu-latest)	tests/analytic_hyperelastic_mms_order.rs	9.81,10.16
+bin	Test (ubuntu-latest)	tests/analytic_mpm2d_implicit.rs	11.21
+bin	Test (ubuntu-latest)	tests/analytic_physical_pendulum.rs	0.45,2.89
+bin	Test (ubuntu-latest)	tests/analytic_quadratic_hyperelastic.rs	15.00,0.00
+bin	Test (ubuntu-latest)	tests/analytic_resting_box_manifold.rs	1.62,2.00
+bin	Test (ubuntu-latest)	tests/analytic_rope_participant.rs	1.32,2.03
+bin	Test (ubuntu-latest)	tests/analytic_self_contact.rs	7.16,7.39
+bin	Test (ubuntu-latest)	tests/analytic_state_rollback_outside_writes.rs	8.19,14.88
+bin	Test (ubuntu-latest)	tests/analytic_thick_chain_anchor.rs	10.74,10.99
+bin	Test (ubuntu-latest)	tests/analytic_thick_chain_entry.rs	7.90,7.91
+bin	Test (ubuntu-latest)	tests/analytic_wall_model.rs	2.13,2.23
+bin	Test (ubuntu-latest)	tests/analytic_water_film.rs	3.56,3.40
+bin	Test (ubuntu-latest)	tests/armaly_backward_step.rs	7.32,7.00
+bin	Test (ubuntu-latest)	tests/cloth_sleep_oracle.rs	2.56,2.60
+bin	Test (ubuntu-latest)	tests/default_configs.rs	1.29,1.30,8.66
+bin	Test (ubuntu-latest)	tests/determinism_golden.rs	5.69,5.83
+bin	Test (ubuntu-latest)	tests/p2_oracle_design.rs	2.11,2.04
+bin	Test (ubuntu-latest)	tests/trimesh_raycast_bruteforce.rs	32.84,33.42
+bin	Test (ubuntu-latest)	tests/trimesh_raycast_exact.rs	3.18,3.36
+bin	Test (ubuntu-latest)	unit src/lib.rs	14.16,2.20,0.46,0.08,15.69,117.62,3.04,114.73
+bin	Test (ubuntu-24.04-arm)	tests/analytic_acoustic_wave_wiring.rs	13.10,0.00
+bin	Test (ubuntu-24.04-arm)	tests/analytic_broadphase_hybrid.rs	2.76,3.48
 bin	Test (ubuntu-24.04-arm)	tests/analytic_cfd_fractional_step_time_order.rs	7.49,7.48
-bin	Test (ubuntu-24.04-arm)	tests/analytic_corotational.rs	2.87,2.89
+bin	Test (ubuntu-24.04-arm)	tests/analytic_corotational.rs	2.87,3.01
 bin	Test (ubuntu-24.04-arm)	tests/analytic_cubic_hyperelastic.rs	14.76,0.00
 bin	Test (ubuntu-24.04-arm)	tests/analytic_deformable_static_sag.rs	7.18,7.16
-bin	Test (ubuntu-24.04-arm)	tests/analytic_dynamic_fem_corotational.rs	157.12,156.93
-bin	Test (ubuntu-24.04-arm)	tests/analytic_fluid_pbf_density.rs	105.69,106.24
-bin	Test (ubuntu-24.04-arm)	tests/analytic_fluid_sdf_body.rs	150.77,150.89
-bin	Test (ubuntu-24.04-arm)	tests/analytic_hyperelastic_mms_order.rs	10.06,10.08
-bin	Test (ubuntu-24.04-arm)	tests/analytic_mpm2d_implicit.rs	11.51
-bin	Test (ubuntu-24.04-arm)	tests/analytic_quadratic_hyperelastic.rs	18.60
-bin	Test (ubuntu-24.04-arm)	tests/analytic_rans_wall_function.rs	2.20,2.21
-bin	Test (ubuntu-24.04-arm)	tests/analytic_resting_box_manifold.rs	1.95,2.36
-bin	Test (ubuntu-24.04-arm)	tests/analytic_rope_participant.rs	1.47,2.04
-bin	Test (ubuntu-24.04-arm)	tests/analytic_self_contact.rs	6.27,6.28
-bin	Test (ubuntu-24.04-arm)	tests/analytic_state_rollback_outside_writes.rs	9.77,13.62
-bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain.rs	2.27,2.27
-bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain_anchor.rs	12.30,12.20
-bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain_entry.rs	10.71,10.71
-bin	Test (ubuntu-24.04-arm)	tests/analytic_wall_model.rs	2.70,2.70
-bin	Test (ubuntu-24.04-arm)	tests/analytic_water_film.rs	4.21,4.18
+bin	Test (ubuntu-24.04-arm)	tests/analytic_dynamic_fem_corotational.rs	157.04,157.27
+bin	Test (ubuntu-24.04-arm)	tests/analytic_fluid_pbf_density.rs	105.53
+bin	Test (ubuntu-24.04-arm)	tests/analytic_fluid_sdf_body.rs	106.06,150.63
+bin	Test (ubuntu-24.04-arm)	tests/analytic_hyperelastic_mms_order.rs	10.05,10.07
+bin	Test (ubuntu-24.04-arm)	tests/analytic_mpm2d_implicit.rs	11.43
+bin	Test (ubuntu-24.04-arm)	tests/analytic_physical_pendulum.rs	0.51,2.74
+bin	Test (ubuntu-24.04-arm)	tests/analytic_quadratic_hyperelastic.rs	18.44,0.00
+bin	Test (ubuntu-24.04-arm)	tests/analytic_rans_wall_function.rs	2.19,2.21
+bin	Test (ubuntu-24.04-arm)	tests/analytic_resting_box_manifold.rs	1.94,2.33
+bin	Test (ubuntu-24.04-arm)	tests/analytic_self_contact.rs	6.27,6.29
+bin	Test (ubuntu-24.04-arm)	tests/analytic_state_rollback_outside_writes.rs	9.75,13.78
+bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain.rs	0.00,2.27
+bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain_anchor.rs	12.25,12.25
+bin	Test (ubuntu-24.04-arm)	tests/analytic_thick_chain_entry.rs	10.71,10.70
+bin	Test (ubuntu-24.04-arm)	tests/analytic_wall_model.rs	2.70,0.00
+bin	Test (ubuntu-24.04-arm)	tests/analytic_water_film.rs	4.21,4.20
 bin	Test (ubuntu-24.04-arm)	tests/armaly_backward_step.rs	10.07,10.04
-bin	Test (ubuntu-24.04-arm)	tests/cloth_sleep_oracle.rs	2.78,2.89
-bin	Test (ubuntu-24.04-arm)	tests/default_configs.rs	1.28,1.28,18.58
-bin	Test (ubuntu-24.04-arm)	tests/determinism_golden.rs	7.93,7.95
-bin	Test (ubuntu-24.04-arm)	tests/p2_oracle_design.rs	2.29,2.29
-bin	Test (ubuntu-24.04-arm)	tests/trimesh_raycast_bruteforce.rs	48.75,48.79
-bin	Test (ubuntu-24.04-arm)	tests/trimesh_raycast_exact.rs	4.67,4.73
-bin	Test (ubuntu-24.04-arm)	unit src/lib.rs	13.08,1.74,0.97,0.13,14.11,193.44,4.56,191.89
-bin	Test (windows-latest)	tests/analytic_broadphase_hybrid.rs	6.13,6.66
-bin	Test (windows-latest)	tests/analytic_cfd_fractional_step_time_order.rs	8.94,8.95
-bin	Test (windows-latest)	tests/analytic_cloth_rest_tether.rs	2.27,2.25
-bin	Test (windows-latest)	tests/analytic_corotational.rs	5.85,5.80
-bin	Test (windows-latest)	tests/analytic_cubic_hyperelastic.rs	19.76,0.00
-bin	Test (windows-latest)	tests/analytic_deformable_static_sag.rs	12.88,12.83
-bin	Test (windows-latest)	tests/analytic_dynamic_fem_corotational.rs	328.14,327.03
-bin	Test (windows-latest)	tests/analytic_fluid_pbf_density.rs	169.28,168.81
-bin	Test (windows-latest)	tests/analytic_fluid_sdf_body.rs	196.23,196.53
-bin	Test (windows-latest)	tests/analytic_hyperelastic_mms_order.rs	17.63,17.56
-bin	Test (windows-latest)	tests/analytic_mpm2d.rs	3.20
-bin	Test (windows-latest)	tests/analytic_mpm2d_implicit.rs	17.16
-bin	Test (windows-latest)	tests/analytic_physical_pendulum.rs	0.70,4.65
-bin	Test (windows-latest)	tests/analytic_quadratic_fem.rs	2.38,2.41
-bin	Test (windows-latest)	tests/analytic_quadratic_hyperelastic.rs	25.70,0.00
-bin	Test (windows-latest)	tests/analytic_rans_wall_function.rs	2.66,2.64
-bin	Test (windows-latest)	tests/analytic_resting_box_manifold.rs	2.86,4.47
-bin	Test (windows-latest)	tests/analytic_rope_participant.rs	2.12,3.51
-bin	Test (windows-latest)	tests/analytic_self_contact.rs	12.68,12.62
-bin	Test (windows-latest)	tests/analytic_shaped_static_contact.rs	2.18,3.09
-bin	Test (windows-latest)	tests/analytic_sleep_spring_creep.rs	0.28,2.29
-bin	Test (windows-latest)	tests/analytic_state_rollback_outside_writes.rs	15.35,35.42
-bin	Test (windows-latest)	tests/analytic_static_contact_response.rs	3.12,3.17
-bin	Test (windows-latest)	tests/analytic_thick_chain.rs	2.98,2.99
-bin	Test (windows-latest)	tests/analytic_thick_chain_anchor.rs	17.93,17.81
-bin	Test (windows-latest)	tests/analytic_thick_chain_entry.rs	13.18,13.10
-bin	Test (windows-latest)	tests/analytic_wall_model.rs	3.12,3.15
-bin	Test (windows-latest)	tests/analytic_water_film.rs	5.85,5.77
-bin	Test (windows-latest)	tests/armaly_backward_step.rs	12.84,12.60
-bin	Test (windows-latest)	tests/cloth_resident_compare.rs	2.70,2.77
-bin	Test (windows-latest)	tests/cloth_sleep_oracle.rs	3.80,3.80
-bin	Test (windows-latest)	tests/default_configs.rs	1.84,1.85,14.43
-bin	Test (windows-latest)	tests/determinism_golden.rs	9.51,9.73
-bin	Test (windows-latest)	tests/locking_p1.rs	3.28,3.50
-bin	Test (windows-latest)	tests/p2_oracle_design.rs	3.56,3.55
-bin	Test (windows-latest)	tests/sleep_skip.rs	1.92,2.47
-bin	Test (windows-latest)	tests/soft_letters_oracle.rs	2.32,2.28
-bin	Test (windows-latest)	tests/trimesh_raycast_bruteforce.rs	91.90,84.39
-bin	Test (windows-latest)	tests/trimesh_raycast_exact.rs	8.74,8.68
-bin	Test (windows-latest)	tests/world_ccd_off_bit_identity.rs	0.46,3.49
-bin	Test (windows-latest)	unit src/lib.rs	23.88,3.25,1.21,0.20,25.19,241.58,6.23,235.48
-bin	Test (ubuntu-latest)	tests/analytic_broadphase_hybrid.rs	4.20,0.12
-bin	Test (ubuntu-latest)	tests/analytic_cfd_fractional_step_time_order.rs	6.42,6.53
-bin	Test (ubuntu-latest)	tests/analytic_corotational.rs	4.50,4.15
-bin	Test (ubuntu-latest)	tests/analytic_cubic_hyperelastic.rs	15.99,0.00
-bin	Test (ubuntu-latest)	tests/analytic_deformable_static_sag.rs	8.47,10.23
-bin	Test (ubuntu-latest)	tests/analytic_dynamic_fem_corotational.rs	244.97,241.85
-bin	Test (ubuntu-latest)	tests/analytic_fluid_pbf_density.rs	0.00,133.64
-bin	Test (ubuntu-latest)	tests/analytic_fluid_sdf_body.rs	152.35,152.44
-bin	Test (ubuntu-latest)	tests/analytic_hyperelastic_mms_order.rs	0.00,13.08
-bin	Test (ubuntu-latest)	tests/analytic_mpm2d.rs	2.39
-bin	Test (ubuntu-latest)	tests/analytic_mpm2d_implicit.rs	13.61
-bin	Test (ubuntu-latest)	tests/analytic_quadratic_hyperelastic.rs	19.18,0.00
-bin	Test (ubuntu-latest)	tests/analytic_rans_wall_function.rs	2.05,2.07
-bin	Test (ubuntu-latest)	tests/analytic_resting_box_manifold.rs	2.74
-bin	Test (ubuntu-latest)	tests/analytic_rope_participant.rs	1.59,2.21
-bin	Test (ubuntu-latest)	tests/analytic_self_contact.rs	8.96,9.18
-bin	Test (ubuntu-latest)	tests/analytic_state_rollback_outside_writes.rs	10.35,15.83
-bin	Test (ubuntu-latest)	tests/analytic_static_contact_response.rs	2.18
-bin	Test (ubuntu-latest)	tests/analytic_static_hit_events.rs	2.02,0.01
-bin	Test (ubuntu-latest)	tests/analytic_thick_chain.rs	2.34,2.35
-bin	Test (ubuntu-latest)	tests/analytic_thick_chain_anchor.rs	14.28,14.37
-bin	Test (ubuntu-latest)	tests/analytic_thick_chain_entry.rs	10.31,10.20
-bin	Test (ubuntu-latest)	tests/analytic_wall_model.rs	0.00,2.59
-bin	Test (ubuntu-latest)	tests/analytic_water_film.rs	4.01,4.35
-bin	Test (ubuntu-latest)	tests/armaly_backward_step.rs	9.87,10.03
-bin	Test (ubuntu-latest)	tests/cloth_resident_compare.rs	2.02,0.00
-bin	Test (ubuntu-latest)	tests/cloth_sleep_oracle.rs	2.93
-bin	Test (ubuntu-latest)	tests/cloth_state_digest.rs	3.04,0.93
-bin	Test (ubuntu-latest)	tests/default_configs.rs	1.48,1.48,9.77
-bin	Test (ubuntu-latest)	tests/determinism_golden.rs	7.54,7.52
-bin	Test (ubuntu-latest)	tests/locking_p1.rs	2.22,2.46
-bin	Test (ubuntu-latest)	tests/p2_oracle_design.rs	2.99,2.74
-bin	Test (ubuntu-latest)	tests/trimesh_raycast_bruteforce.rs	42.35,42.49
-bin	Test (ubuntu-latest)	tests/trimesh_raycast_exact.rs	4.14,4.06
-bin	Test (ubuntu-latest)	unit src/lib.rs	16.99,2.46,0.57,0.11,18.17,157.92,3.68,153.40
-bin	Test (macos-15-intel)	tests/analytic_broadphase_hybrid.rs	4.52,5.36
-bin	Test (macos-15-intel)	tests/analytic_cfd_fractional_step_time_order.rs	11.56,11.30
-bin	Test (macos-15-intel)	tests/analytic_cloth_rest_tether.rs	0.00,2.45
-bin	Test (macos-15-intel)	tests/analytic_corotational.rs	4.32,4.16
-bin	Test (macos-15-intel)	tests/analytic_cubic_hyperelastic.rs	20.59,0.00
-bin	Test (macos-15-intel)	tests/analytic_deformable_static_sag.rs	10.49,0.00
-bin	Test (macos-15-intel)	tests/analytic_dynamic_fem_corotational.rs	234.16,248.03
-bin	Test (macos-15-intel)	tests/analytic_euler_fv.rs	0.00,2.81
-bin	Test (macos-15-intel)	tests/analytic_fluid_pbf_density.rs	155.30,156.32
-bin	Test (macos-15-intel)	tests/analytic_fluid_sdf_body.rs	213.60,217.00
-bin	Test (macos-15-intel)	tests/analytic_hyperelastic_mms_order.rs	15.05,0.00
-bin	Test (macos-15-intel)	tests/analytic_joint_compliance_xpbd.rs	0.09,2.10
-bin	Test (macos-15-intel)	tests/analytic_mpm2d.rs	3.16
-bin	Test (macos-15-intel)	tests/analytic_mpm2d_implicit.rs	21.46
-bin	Test (macos-15-intel)	tests/analytic_physical_pendulum.rs	0.76,13.27
-bin	Test (macos-15-intel)	tests/analytic_quadratic_hyperelastic.rs	25.53,0.00
-bin	Test (macos-15-intel)	tests/analytic_rans_wall_function.rs	3.34,3.46
-bin	Test (macos-15-intel)	tests/analytic_resting_box_manifold.rs	3.04,4.17
-bin	Test (macos-15-intel)	tests/analytic_rope_participant.rs	2.23,4.55
-bin	Test (macos-15-intel)	tests/analytic_self_contact.rs	9.35,9.45
-bin	Test (macos-15-intel)	tests/analytic_shaped_static_contact.rs	2.33,2.99
-bin	Test (macos-15-intel)	tests/analytic_sleep_spring_creep.rs	0.31,3.94
-bin	Test (macos-15-intel)	tests/analytic_state_rollback_outside_writes.rs	16.16,28.49
-bin	Test (macos-15-intel)	tests/analytic_static_contact_response.rs	2.46,2.74
-bin	Test (macos-15-intel)	tests/analytic_vehicle_scenario.rs	1.05,2.00
-bin	Test (macos-15-intel)	tests/analytic_wall_model.rs	4.25,4.31
-bin	Test (macos-15-intel)	tests/analytic_water_film.rs	6.41,6.51
-bin	Test (macos-15-intel)	tests/armaly_backward_step.rs	14.68,14.41
-bin	Test (macos-15-intel)	tests/cloth_resident_compare.rs	3.19,2.38
-bin	Test (macos-15-intel)	tests/cloth_sleep_oracle.rs	4.50,3.96
-bin	Test (macos-15-intel)	tests/default_configs.rs	2.49,1.97,20.96
-bin	Test (macos-15-intel)	tests/determinism_golden.rs	11.68,11.11
-bin	Test (macos-15-intel)	tests/indep_contact_restitution_friction.rs	0.03,2.39
-bin	Test (macos-15-intel)	tests/locking_p1.rs	3.68,2.81
-bin	Test (macos-15-intel)	tests/p2_oracle_design.rs	3.62,3.16
-bin	Test (macos-15-intel)	tests/sleep_skip.rs	3.10,0.01
-bin	Test (macos-15-intel)	tests/soft_letters_oracle.rs	2.73,2.44
-bin	Test (macos-15-intel)	tests/trimesh_raycast_bruteforce.rs	108.28,96.02
-bin	Test (macos-15-intel)	tests/trimesh_raycast_exact.rs	9.88,9.00
-bin	Test (macos-15-intel)	tests/world_query_previous_bits.rs	2.48,2.39
-bin	Test (macos-15-intel)	unit src/lib.rs	19.01,3.62,1.11,0.18,25.05,204.46,6.84,190.98
+bin	Test (ubuntu-24.04-arm)	tests/cloth_sleep_oracle.rs	2.78,2.78
+bin	Test (ubuntu-24.04-arm)	tests/default_configs.rs	1.28,1.28,18.60
+bin	Test (ubuntu-24.04-arm)	tests/determinism_golden.rs	7.92,7.94
+bin	Test (ubuntu-24.04-arm)	tests/p2_oracle_design.rs	2.29,2.28
+bin	Test (ubuntu-24.04-arm)	tests/trimesh_raycast_bruteforce.rs	48.72,48.80
+bin	Test (ubuntu-24.04-arm)	tests/trimesh_raycast_exact.rs	4.67,4.67
+bin	Test (ubuntu-24.04-arm)	unit src/lib.rs	1.74,0.96,0.13,13.96,193.34,4.56,192.06
+bin	Test (macos-latest)	tests/analytic_broadphase_hybrid.rs	0.18,4.02
+bin	Test (macos-latest)	tests/analytic_broadphase_overflow_kinds.rs	3.75,0.19
+bin	Test (macos-latest)	tests/analytic_cfd_fractional_step_time_order.rs	9.00,7.42
+bin	Test (macos-latest)	tests/analytic_corotational.rs	3.32,2.94
+bin	Test (macos-latest)	tests/analytic_cubic_hyperelastic.rs	13.99,0.00
+bin	Test (macos-latest)	tests/analytic_deformable_static_sag.rs	8.07,8.38
+bin	Test (macos-latest)	tests/analytic_dynamic_fem_corotational.rs	155.42,154.99
+bin	Test (macos-latest)	tests/analytic_fluid_pbf_density.rs	0.00,143.22
+bin	Test (macos-latest)	tests/analytic_fluid_sdf_body.rs	165.15,157.22
+bin	Test (macos-latest)	tests/analytic_hyperelastic_mms_order.rs	11.01,8.56
+bin	Test (macos-latest)	tests/analytic_mpm2d.rs	2.35
+bin	Test (macos-latest)	tests/analytic_mpm2d_implicit.rs	15.52
+bin	Test (macos-latest)	tests/analytic_quadratic_hyperelastic.rs	17.11,0.00
+bin	Test (macos-latest)	tests/analytic_rans_wall_function.rs	0.22,2.52
+bin	Test (macos-latest)	tests/analytic_resting_box_manifold.rs	2.04
+bin	Test (macos-latest)	tests/analytic_rope_participant.rs	0.12,2.61
+bin	Test (macos-latest)	tests/analytic_sensors.rs	0.05,7.16
+bin	Test (macos-latest)	tests/analytic_state_rollback_outside_writes.rs	0.24,13.50
+bin	Test (macos-latest)	tests/analytic_thick_chain.rs	3.12,2.38
+bin	Test (macos-latest)	tests/analytic_thick_chain_anchor.rs	20.52,18.09
+bin	Test (macos-latest)	tests/analytic_thick_chain_entry.rs	11.42,10.40
+bin	Test (macos-latest)	tests/analytic_wall_model.rs	3.17,3.00
+bin	Test (macos-latest)	tests/analytic_water_film.rs	3.90,4.29
+bin	Test (macos-latest)	tests/armaly_backward_step.rs	10.11,10.79
+bin	Test (macos-latest)	tests/cloth_resident_compare.rs	0.00,2.15
+bin	Test (macos-latest)	tests/cloth_sleep_oracle.rs	2.80,3.01
+bin	Test (macos-latest)	tests/default_configs.rs	1.31,0.08,12.41
+bin	Test (macos-latest)	tests/determinism_golden.rs	8.06,8.00
+bin	Test (macos-latest)	tests/p2_oracle_design.rs	2.04,2.05
+bin	Test (macos-latest)	tests/sleep_skip.rs	1.64,2.02
+bin	Test (macos-latest)	tests/trimesh_raycast_bruteforce.rs	46.26,45.50
+bin	Test (macos-latest)	tests/trimesh_raycast_exact.rs	5.11
+bin	Test (macos-latest)	tests/vehicle_dynamics_degenerate.rs	0.16,4.54
+bin	Test (macos-latest)	unit src/lib.rs	19.23,2.68,0.74,0.15,18.15,173.98,3.02,168.83
+bin	Test (windows-latest)	tests/analytic_broadphase_hybrid.rs	6.24,6.69
+bin	Test (windows-latest)	tests/analytic_cfd_fractional_step_time_order.rs	9.41,9.43
+bin	Test (windows-latest)	tests/analytic_cloth_rest_tether.rs	2.41,2.41
+bin	Test (windows-latest)	tests/analytic_corotational.rs	5.97,6.00
+bin	Test (windows-latest)	tests/analytic_cubic_hyperelastic.rs	21.53,0.00
+bin	Test (windows-latest)	tests/analytic_deformable_static_sag.rs	12.98,12.98
+bin	Test (windows-latest)	tests/analytic_dynamic_fem_corotational.rs	335.56,335.55
+bin	Test (windows-latest)	tests/analytic_euler_fv.rs	2.10,2.12
+bin	Test (windows-latest)	tests/analytic_fluid_pbf_density.rs	177.22,177.01
+bin	Test (windows-latest)	tests/analytic_fluid_sdf_body.rs	210.44,210.06
+bin	Test (windows-latest)	tests/analytic_hyperelastic_mms_order.rs	18.60,18.69
+bin	Test (windows-latest)	tests/analytic_mpm2d.rs	3.34
+bin	Test (windows-latest)	tests/analytic_mpm2d_implicit.rs	18.27
+bin	Test (windows-latest)	tests/analytic_quadratic_fem.rs	2.64,2.58
+bin	Test (windows-latest)	tests/analytic_quadratic_hyperelastic.rs	27.92,0.00
+bin	Test (windows-latest)	tests/analytic_rans_wall_function.rs	2.78,2.85
+bin	Test (windows-latest)	tests/analytic_resting_box_manifold.rs	3.06,4.34
+bin	Test (windows-latest)	tests/analytic_rope_participant.rs	2.27,3.23
+bin	Test (windows-latest)	tests/analytic_self_contact.rs	12.70,12.73
+bin	Test (windows-latest)	tests/analytic_shaped_static_contact.rs	2.26,3.00
+bin	Test (windows-latest)	tests/analytic_state_rollback_outside_writes.rs	15.95,31.99
+bin	Test (windows-latest)	tests/analytic_static_contact_response.rs	3.11,3.21
+bin	Test (windows-latest)	tests/analytic_thick_chain.rs	3.12,3.10
+bin	Test (windows-latest)	tests/analytic_thick_chain_anchor.rs	18.43,18.39
+bin	Test (windows-latest)	tests/analytic_thick_chain_entry.rs	13.81,13.69
+bin	Test (windows-latest)	tests/analytic_wall_model.rs	3.29,3.27
+bin	Test (windows-latest)	tests/analytic_water_film.rs	5.86,5.88
+bin	Test (windows-latest)	tests/armaly_backward_step.rs	13.16,13.17
+bin	Test (windows-latest)	tests/cloth_resident_compare.rs	2.78,2.77
+bin	Test (windows-latest)	tests/cloth_sleep_oracle.rs	4.07,4.02
+bin	Test (windows-latest)	tests/default_configs.rs	1.97,1.98,15.15
+bin	Test (windows-latest)	tests/determinism_golden.rs	10.16,10.18
+bin	Test (windows-latest)	tests/locking_p1.rs	3.41,3.21
+bin	Test (windows-latest)	tests/p2_oracle_design.rs	3.95,3.85
+bin	Test (windows-latest)	tests/sleep_skip.rs	2.03,2.48
+bin	Test (windows-latest)	tests/soft_letters_oracle.rs	2.35,2.35
+bin	Test (windows-latest)	tests/trimesh_raycast_bruteforce.rs	95.55,97.17
+bin	Test (windows-latest)	tests/trimesh_raycast_exact.rs	9.06,8.89
+bin	Test (windows-latest)	tests/world_ccd_off_bit_identity.rs	0.42,2.90
+bin	Test (windows-latest)	unit src/lib.rs	23.58,4.56,0.98,0.16,25.01,247.89,8.03,247.24
