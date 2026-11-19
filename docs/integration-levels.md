@@ -99,7 +99,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `deformable` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 34 / 0 | — |
-| `electromagnetic` | standalone (step 5 of 12 items) | 5 / 0 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
+| `electromagnetic` | standalone (step 5 of 14 items) | 5 / 0 / 0 / 9 / 0 | C ABI, Python, WebAssembly |
 | `erosion` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `euler_fv` | standalone | 0 / 0 / 0 / 44 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
