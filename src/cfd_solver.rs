@@ -10,6 +10,19 @@
 //! - Boussinesq buoyancy for hot fluid (`smoke_fire`)
 //! - Gravity (uniform body force)
 //!
+//! # Threads (the `parallel` feature)
+//!
+//! Under `parallel` the velocity advection (semi-Lagrangian and the BFECC passes with their
+//! limiter), the multigrid smoother, residual, restriction and prolongation, and the BiCGSTAB inner
+//! products run on the rayon pool in fixed slabs (`par_slabs`). The result is the same bits as the
+//! serial build on any number of threads, because every one of these kernels is a gather over a
+//! partition that does not depend on the thread count, and because the reductions add `Fix128`s:
+//! `Fix128` addition is wrapping integer addition (a group operation mod 2¹²⁸), so it is
+//! associative and commutative and no grouping of the terms can change a sum. This argument rests
+//! on that property of the addition; a reduction that rounded or divided a partial before
+//! combining it would break it. Verified by `tests/cfd_parallel_determinism.rs` (the serial build's
+//! digests, asserted again in pools of 1, 2, 4 and 8 threads).
+//!
 //! # Step order
 //!
 //! ```text
@@ -2009,77 +2022,36 @@ impl CfdSolver {
             Fix128::ONE / self.grid.dx
         };
         let old = self.grid.clone();
-        let dx = self.grid.dx;
-        let half = Fix128::from_ratio(1, 2);
-
-        // u faces
-        for k in 0..self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..=self.grid.nx {
-                    let px = Fix128::from_int(i as i64) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&old, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let new_u = sample_u_trilinear_scaled(&old, back, inv_dx);
-                    let ix = self.grid.idx_u(i, j, k);
-                    if ix < self.grid.u.len() {
-                        self.grid.u[ix] = new_u;
-                    }
-                }
-            }
-        }
-
-        // v faces
-        for k in 0..self.grid.nz {
-            for j in 0..=self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = Fix128::from_int(j as i64) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&old, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let new_v = sample_v_trilinear_scaled(&old, back, inv_dx);
-                    let ix = self.grid.idx_v(i, j, k);
-                    if ix < self.grid.v.len() {
-                        self.grid.v[ix] = new_v;
-                    }
-                }
-            }
-        }
-
-        // w faces
-        for k in 0..=self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = Fix128::from_int(k as i64) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&old, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let new_w = sample_w_trilinear_scaled(&old, back, inv_dx);
-                    let ix = self.grid.idx_w(i, j, k);
-                    if ix < self.grid.w.len() {
-                        self.grid.w[ix] = new_w;
-                    }
-                }
-            }
-        }
+        sl_faces(
+            Face::U,
+            &old,
+            &old,
+            dt_s,
+            false,
+            inv_dx,
+            None,
+            &mut self.grid.u,
+        );
+        sl_faces(
+            Face::V,
+            &old,
+            &old,
+            dt_s,
+            false,
+            inv_dx,
+            None,
+            &mut self.grid.v,
+        );
+        sl_faces(
+            Face::W,
+            &old,
+            &old,
+            dt_s,
+            false,
+            inv_dx,
+            None,
+            &mut self.grid.w,
+        );
     }
 
     /// MacCormack predictor-corrector for MAC velocity self-advection.
@@ -2407,7 +2379,6 @@ impl CfdSolver {
             Fix128::ONE / self.grid.dx
         };
         let u_n = self.grid.clone();
-        let dx = self.grid.dx;
         let half = Fix128::from_ratio(1, 2);
 
         // Pass 1 — forward SL: φ̂ = SL(φ_n, +dt).
@@ -2419,66 +2390,36 @@ impl CfdSolver {
         let mut u_tilde = vec![Fix128::ZERO; self.grid.u.len()];
         let mut v_tilde = vec![Fix128::ZERO; self.grid.v.len()];
         let mut w_tilde = vec![Fix128::ZERO; self.grid.w.len()];
-        for k in 0..self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..=self.grid.nx {
-                    let px = Fix128::from_int(i as i64) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let forward = Vec3Fix::new(
-                        pos.x + dt_s * vel.x,
-                        pos.y + dt_s * vel.y,
-                        pos.z + dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_u(i, j, k);
-                    if ix < u_tilde.len() {
-                        u_tilde[ix] = sample_u_trilinear_scaled(&phi_hat, forward, inv_dx);
-                    }
-                }
-            }
-        }
-        for k in 0..self.grid.nz {
-            for j in 0..=self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = Fix128::from_int(j as i64) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let forward = Vec3Fix::new(
-                        pos.x + dt_s * vel.x,
-                        pos.y + dt_s * vel.y,
-                        pos.z + dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_v(i, j, k);
-                    if ix < v_tilde.len() {
-                        v_tilde[ix] = sample_v_trilinear_scaled(&phi_hat, forward, inv_dx);
-                    }
-                }
-            }
-        }
-        for k in 0..=self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = Fix128::from_int(k as i64) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let forward = Vec3Fix::new(
-                        pos.x + dt_s * vel.x,
-                        pos.y + dt_s * vel.y,
-                        pos.z + dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_w(i, j, k);
-                    if ix < w_tilde.len() {
-                        w_tilde[ix] = sample_w_trilinear_scaled(&phi_hat, forward, inv_dx);
-                    }
-                }
-            }
-        }
+        sl_faces(
+            Face::U,
+            &phi_hat,
+            &u_n,
+            dt_s,
+            true,
+            inv_dx,
+            None,
+            &mut u_tilde,
+        );
+        sl_faces(
+            Face::V,
+            &phi_hat,
+            &u_n,
+            dt_s,
+            true,
+            inv_dx,
+            None,
+            &mut v_tilde,
+        );
+        sl_faces(
+            Face::W,
+            &phi_hat,
+            &u_n,
+            dt_s,
+            true,
+            inv_dx,
+            None,
+            &mut w_tilde,
+        );
 
         // Pass 3 — build the compensated input φ* = φ_n + ½(φ_n − φ̃).
         // 演算順序は index 版と同一 (決定論性維持): un + half * (un - ut)
@@ -2493,136 +2434,40 @@ impl CfdSolver {
             *ps = *un + half * (*un - *ut);
         }
 
-        // Pass 4 — final SL from φ* using u_n's advecting field.
-        for k in 0..self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..=self.grid.nx {
-                    let px = Fix128::from_int(i as i64) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_u(i, j, k);
-                    if ix < self.grid.u.len() {
-                        self.grid.u[ix] = sample_u_trilinear_scaled(&phi_star, back, inv_dx);
-                    }
-                }
-            }
-        }
-        for k in 0..self.grid.nz {
-            for j in 0..=self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = Fix128::from_int(j as i64) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_v(i, j, k);
-                    if ix < self.grid.v.len() {
-                        self.grid.v[ix] = sample_v_trilinear_scaled(&phi_star, back, inv_dx);
-                    }
-                }
-            }
-        }
-        for k in 0..=self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = Fix128::from_int(k as i64) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let ix = self.grid.idx_w(i, j, k);
-                    if ix < self.grid.w.len() {
-                        self.grid.w[ix] = sample_w_trilinear_scaled(&phi_star, back, inv_dx);
-                    }
-                }
-            }
-        }
-
-        // Monotonicity guard — clamp each face component to the local
-        // pre-advection range at the back-traced position on `u_n`.
-        for k in 0..self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..=self.grid.nx {
-                    let px = Fix128::from_int(i as i64) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let (lo, hi) = sample_u_range(&u_n, back);
-                    let ix = self.grid.idx_u(i, j, k);
-                    if ix < self.grid.u.len() {
-                        let val = self.grid.u[ix];
-                        self.grid.u[ix] = clamp(val, lo, hi);
-                    }
-                }
-            }
-        }
-        for k in 0..self.grid.nz {
-            for j in 0..=self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = Fix128::from_int(j as i64) * dx;
-                    let pz = (Fix128::from_int(k as i64) + half) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let (lo, hi) = sample_v_range(&u_n, back);
-                    let ix = self.grid.idx_v(i, j, k);
-                    if ix < self.grid.v.len() {
-                        let val = self.grid.v[ix];
-                        self.grid.v[ix] = clamp(val, lo, hi);
-                    }
-                }
-            }
-        }
-        for k in 0..=self.grid.nz {
-            for j in 0..self.grid.ny {
-                for i in 0..self.grid.nx {
-                    let px = (Fix128::from_int(i as i64) + half) * dx;
-                    let py = (Fix128::from_int(j as i64) + half) * dx;
-                    let pz = Fix128::from_int(k as i64) * dx;
-                    let pos = Vec3Fix::new(px, py, pz);
-                    let vel = g2p_velocity(&u_n, pos);
-                    let back = Vec3Fix::new(
-                        pos.x - dt_s * vel.x,
-                        pos.y - dt_s * vel.y,
-                        pos.z - dt_s * vel.z,
-                    );
-                    let (lo, hi) = sample_w_range(&u_n, back);
-                    let ix = self.grid.idx_w(i, j, k);
-                    if ix < self.grid.w.len() {
-                        let val = self.grid.w[ix];
-                        self.grid.w[ix] = clamp(val, lo, hi);
-                    }
-                }
-            }
-        }
+        // Pass 4 — final SL from φ* using u_n's advecting field, then the monotonicity guard:
+        // each face is clamped to the pre-advection range of `u_n` at the same back-traced
+        // position.
+        let range = Some(&u_n);
+        sl_faces(
+            Face::U,
+            &phi_star,
+            &u_n,
+            dt_s,
+            false,
+            inv_dx,
+            range,
+            &mut self.grid.u,
+        );
+        sl_faces(
+            Face::V,
+            &phi_star,
+            &u_n,
+            dt_s,
+            false,
+            inv_dx,
+            range,
+            &mut self.grid.v,
+        );
+        sl_faces(
+            Face::W,
+            &phi_star,
+            &u_n,
+            dt_s,
+            false,
+            inv_dx,
+            range,
+            &mut self.grid.w,
+        );
     }
 
     /// BFECC advection of the temperature scalar field.
@@ -2824,6 +2669,81 @@ impl CfdSolver {
             }
         }
     }
+}
+
+/// A velocity component of the MAC grid: which faces a pass runs over.
+#[derive(Clone, Copy)]
+enum Face {
+    U,
+    V,
+    W,
+}
+
+/// One semi-Lagrangian pass over every face of one velocity component: each face's new value is
+/// `src` sampled at the face's position moved by `dt_s` along `vel` (backward, or forward when
+/// `forward`), clamped to the range of `range` at that point when it is given. The faces are
+/// written in index order in fixed slabs ([`crate::par_slabs::fill`]): each face reads only
+/// `src`, `vel` and `range`, which no face writes, so the result is the same on any number of
+/// threads and the same as the serial loop.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one semi-Lagrangian pass over one face component: the face, the advected and advecting grids, the step, its direction, the cell scale, the optional limiter range and the output"
+)]
+fn sl_faces(
+    face: Face,
+    src: &MacGrid,
+    vel: &MacGrid,
+    dt_s: Fix128,
+    forward: bool,
+    inv_dx: Fix128,
+    range: Option<&MacGrid>,
+    out: &mut [Fix128],
+) {
+    let (nx, ny, dx) = (vel.nx, vel.ny, vel.dx);
+    let half = Fix128::from_ratio(1, 2);
+    let (rx, ry) = match face {
+        Face::U => (nx + 1, ny),
+        Face::V => (nx, ny + 1),
+        Face::W => (nx, ny),
+    };
+    // on the face's own axis the position is the face (c·dx), on the others the cell centre
+    let at = |c: usize, on_face: bool| {
+        if on_face {
+            Fix128::from_int(c as i64) * dx
+        } else {
+            (Fix128::from_int(c as i64) + half) * dx
+        }
+    };
+    crate::par_slabs::fill(out, |n| {
+        let (i, j, k) = (n % rx, (n / rx) % ry, n / (rx * ry));
+        let pos = Vec3Fix::new(
+            at(i, matches!(face, Face::U)),
+            at(j, matches!(face, Face::V)),
+            at(k, matches!(face, Face::W)),
+        );
+        let v = g2p_velocity(vel, pos);
+        let p = if forward {
+            Vec3Fix::new(pos.x + dt_s * v.x, pos.y + dt_s * v.y, pos.z + dt_s * v.z)
+        } else {
+            Vec3Fix::new(pos.x - dt_s * v.x, pos.y - dt_s * v.y, pos.z - dt_s * v.z)
+        };
+        let value = match face {
+            Face::U => sample_u_trilinear_scaled(src, p, inv_dx),
+            Face::V => sample_v_trilinear_scaled(src, p, inv_dx),
+            Face::W => sample_w_trilinear_scaled(src, p, inv_dx),
+        };
+        match range {
+            None => value,
+            Some(r) => {
+                let (lo, hi) = match face {
+                    Face::U => sample_u_range(r, p),
+                    Face::V => sample_v_range(r, p),
+                    Face::W => sample_w_range(r, p),
+                };
+                clamp(value, lo, hi)
+            }
+        }
+    });
 }
 
 fn clamp(value: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {

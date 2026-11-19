@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2913 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2917 |
 | live | reached without examples (crate-internal roots or a binding) | 913 |
-| | **total** | **3857** |
+| | **total** | **3861** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2913)
+## L1 — example-only (2917)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -219,6 +219,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `DeterministicNetwork::forward`, `DeterministicNetwork::input_size`, `DeterministicNetwork::new`, `DeterministicNetwork::num_layers`, `DeterministicNetwork::output_size`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `FixedTernaryWeight::from_ternary_weight`, `FixedTernaryWeight::from_ternary_weight_with_scale`, `FixedTernaryWeight::in_features`, `FixedTernaryWeight::out_features`, `FixedTernaryWeight::scale`, `RagdollController`, `RagdollController::compute`, `RagdollController::config`, `RagdollController::network`, `RagdollController::new`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`
 - `src/non_newtonian.rs`: `Bingham`, `Bingham::flows_under_stress`, `Bingham::stress`, `Carreau`, `Carreau::viscosity`, `Carreau::viscosity_with_index`, `HerschelBulkley`, `HerschelBulkley::stress`, `PowerLaw`, `PowerLaw::apparent_viscosity`, `PowerLaw::newtonian`, `PowerLaw::shear_thickening`, `PowerLaw::shear_thinning`, `PowerLaw::stress`
 - `src/pair_potential.rs`: `COULOMB_CONSTANT`, `Coulomb`, `Coulomb::new`, `Coulomb::with_constant`, `LennardJones`, `LennardJones::epsilon`, `LennardJones::new`, `LennardJones::sigma`, `Morse`, `Morse::harmonic_force_constant`, `Morse::new`, `PairPotential`, `PairPotentialError`, `ShiftMode`, `Truncated`, `Truncated::cutoff`, `Truncated::inner`, `Truncated::mode`, `Truncated::new`, `Yukawa`, `Yukawa::new`, `Yukawa::with_constant`, `lorentz_berthelot`
+- `src/par_slabs.rs`: `SLAB_LEN`, `fill`, `sum`, `update`
 - `src/particle.rs`: `LANDING_BISECTIONS`, `LandingEvent`, `LandingTarget`, `Particle`, `Particle::new`, `ParticleEmitter`, `ParticleEmitter::new`, `ParticleSystem`, `ParticleSystem::add_emitter`, `ParticleSystem::alive_count`, `ParticleSystem::apply_force_field`, `ParticleSystem::new`, `ParticleSystem::particle_on_surface`, `ParticleSystem::state_digest`, `ParticleSystem::step`, `ParticleSystem::step_with_landing`, `ParticleSystem::step_with_run_off`, `RUN_OFF_PROJECTIONS`, `RunOff`, `RunOffEvents`
 - `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `PhaseChangeModifier::PARTICIPANT_KIND`, `PhaseChangeModifier::apply_heat_at`, `PhaseChangeModifier::new`, `PhaseChangeModifier::phase_at`, `PhaseChangeModifier::temperature_at`
 - `src/physics2d.rs`: `AngularTether2D`, `AngularTether2D::critically_damped`, `AngularTether2D::new`, `AngularTetherId`, `BodyType2D`, `Contact2D`, `Joint2D`, `KinematicDrive2D`, `KinematicDrive2D::new`, `KinematicDriveId`, `PhysicsConfig2D`, `PhysicsWorld2D`, `PhysicsWorld2D::add_body`, `PhysicsWorld2D::add_joint`, `PhysicsWorld2D::check_collision_2d`, `PhysicsWorld2D::new`, `PhysicsWorld2D::remove_body`, `PhysicsWorld2D::step`, `PhysicsWorld2D::step_with_tethers`, `RigidBody2D`, `RigidBody2D::apply_force`, `RigidBody2D::apply_impulse`, `RigidBody2D::apply_impulse_at_point`, `RigidBody2D::is_static_or_kinematic`, `RigidBody2D::new_dynamic`, `RigidBody2D::new_kinematic`, `RigidBody2D::new_static`, `RigidBody2D::world_point`, `Shape2D`, `Tethers2D`, `Tethers2D::add_angular`, `Tethers2D::add_drive`, `Tethers2D::angular`, `Tethers2D::angular_count`, `Tethers2D::angular_mut`, `Tethers2D::drive`, `Tethers2D::drive_count`, `Tethers2D::drive_mut`, `Tethers2D::new`, `Tethers2D::remove_angular`, `Tethers2D::remove_drive`, `Vec2Fix`, `Vec2Fix::ONE`, `Vec2Fix::UNIT_X`, `Vec2Fix::UNIT_Y`, `Vec2Fix::ZERO`, `Vec2Fix::cross_scalar`, `Vec2Fix::distance_to`, `Vec2Fix::dot`, `Vec2Fix::from_int`, `Vec2Fix::length`, `Vec2Fix::length_squared`, `Vec2Fix::lerp`, `Vec2Fix::new`, `Vec2Fix::normalize`, `Vec2Fix::perpendicular`, `Vec2Fix::rotate`, `Vec2Fix::scale`, `solve_joints_2d`
