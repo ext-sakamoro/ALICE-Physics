@@ -1,4 +1,50 @@
-//! Lorentz-force electromagnetics for charged rigid bodies.
+//! Lorentz-force electromagnetics for charged rigid bodies, the field of permanent magnets, the
+//! force on magnetisable bodies in it, and the surface of a magnetisable liquid at rest in it.
+//!
+//! # MODEL
+//!
+//! - **Equations**: the Lorentz force `F = q(E + v × B)` on a charged body (`lorentz_force`,
+//!   `lorentz_force_sum`, sources from `EmSource::sample`); the field of a point magnetic dipole
+//!   `B = μ0/4π · (3(m·r̂)r̂ − m)/r³` and its Jacobian (`dipole_sample`); a soft magnetisable body
+//!   of moment `min(χ_eff·V·|B|/μ0, M_s·V)·B̂`, energy `U = −χ_eff·V·|B|²/(2μ0)` below
+//!   `B_s = μ0·M_s/χ_eff` and `−M_s·V·|B| + M_s·V·B_s/2` above (`induced_dipole_energy`), force
+//!   `F = −∇U` (`induced_dipole_force`); a magnetisable liquid at rest: the ferrohydrostatic
+//!   Bernoulli condition at its free surface (Rosensweig), `ρ g h = μ0·M̄·H + μ0·M_n²/2` with `H`
+//!   inside the liquid from the boundary conditions of a flat layer (`liquid_field`: tangential `H`
+//!   and normal `B` continuous, `M = min(χ|H|, M_s)·Ĥ`), so below saturation
+//!   `h = χ/(2μ0 ρ g)·(B_t² + B_n²/(1+χ))` (`magnetic_fluid_traction`,
+//!   `magnetic_fluid_surface_rise`).
+//! - **Units**: SI. q C, E V/m, B T, v m/s, F N, m A·m², r m, V m³, M_s A/m, U J, p* Pa, ρ kg/m³,
+//!   g m/s², h m; `μ0/4π = 1e-7` T·m/A (`mu0_over_4pi`), `μ0` to ten digits (`mu0`).
+//! - **Conservation**: the fields are prescribed sources with no state (`EmSource`,
+//!   `dipole_sample`); the magnetic force on a magnetisable body is conservative (`−∇U`,
+//!   `induced_dipole_force`); the Lorentz force of a static `B` does no work
+//!   (`lorentz_force`). The liquid's rise is a static balance (`magnetic_fluid_surface_rise`):
+//!   no flow, nothing is conserved or dissipated over time, the volume is the caller's
+//!   (`magnetic_fluid_traction`).
+//! - **Range**: point dipoles, valid at distances much larger than the magnet and the body
+//!   (`dipole_sample`, no field at `r = 0`); quasi-static fields only (`lorentz_force`); the
+//!   liquid's rise holds for any `χ` and saturation below the Rosensweig threshold, and is `None` for
+//!   a non-positive density or gravity (`magnetic_fluid_surface_rise`).
+//! - **Approximations**: no full Maxwell equations, no induction (Faraday), no hysteresis
+//!   (`EmSource::sample`); a magnetisable body is a point dipole with a linear-then-saturating
+//!   magnetisation (`MagneticResponse`); the liquid is a wide flat layer: the field just above its
+//!   surface is the magnets' applied field at the undisturbed level (its own magnetisation does not
+//!   change the field outside it; a narrow dish or a tall mound breaks this), the surface normal
+//!   points out of the liquid into the air (`liquid_field`), its surface has no tension and raises
+//!   no spikes (the Rosensweig instability is not modelled), and the field is not recomputed on the
+//!   raised surface (`magnetic_fluid_surface_rise`).
+//! - **Validation**: `tests/analytic_magnet_induced_dipole.rs` (the dipole field, the energy and
+//!   force in both regimes, `F = −∇U` by central difference),
+//!   `tests/analytic_magnetic_fluid_surface.rs` (the flat layer's closed forms at χ = 1 for a
+//!   normal, a tangential and an oblique field, the χ → 0 limit, the saturated normal-field closed
+//!   form, continuity at the saturation field, the saturated solver with a huge `M_s` against the
+//!   linear closed form, two magnets superpose their fields before squaring, a liquid that does not
+//!   magnetise or has no weight), `the_dipole_field_at_three_points_of_known_geometry`,
+//!   `the_jacobian_is_the_derivative_of_the_field_symmetric_and_traceless`,
+//!   `uniform_electric_field_pushes_positive_charge`, `magnetic_field_produces_perpendicular_force`,
+//!   `the_magnetic_liquid_traction_and_rise`.
+//! - **Tiers**: L0 only.
 //!
 //! Complements [`crate::force::ForceField::Vortex`] and gravity-well
 //! fields with the canonical electromagnetic force
@@ -281,6 +327,122 @@ pub fn induced_dipole_force(
     } else {
         grad_half_b_sq * (response.saturation_magnetization * volume / b_sq.sqrt())
     }
+}
+
+// ---------------------------------------------------------------------------
+// A magnetisable liquid at rest in the field of permanent magnets
+// ---------------------------------------------------------------------------
+
+/// The field inside a magnetisable liquid just under its surface, and its magnetisation there, where the magnets'
+/// field just above the surface is `field` (`B₀`, T) and the surface's unit normal is `normal` (out of the liquid).
+/// The liquid fills the half space under a flat surface: across it the tangential `H` and the normal `B` are
+/// continuous, so `H_t = B₀_t/μ0` and `H_n + M_n = B₀_n/μ0`, with `M = min(χ·|H|, M_s)·Ĥ` (`χ` is
+/// `response.chi_eff`, the liquid's susceptibility; `M_s` its saturation magnetisation). Below saturation
+/// `H_n = B₀_n/(μ0(1+χ))`; above it the normal condition `x + M_s·x/√(H_t² + x²) = B₀_n/μ0` is solved for `x = H_n`
+/// by bisection (strictly increasing in `x`, one root between 0 and `B₀_n/μ0`). Returns `(|H|, M_n)` in A/m.
+fn liquid_field(field: Vec3Fix, normal: Vec3Fix, response: &MagneticResponse) -> (Fix128, Fix128) {
+    let h0 = field * (Fix128::ONE / mu0());
+    let h0n = h0.dot(normal);
+    let t = h0.length_squared() - h0n * h0n;
+    let h0t_sq = if t.is_negative() { Fix128::ZERO } else { t };
+    let chi = response.chi_eff;
+    if chi <= Fix128::ZERO || response.saturation_magnetization <= Fix128::ZERO {
+        return (h0.length(), Fix128::ZERO);
+    }
+    let m_s = response.saturation_magnetization;
+    let h_s = m_s / chi;
+    // linear: self-consistent while |H| stays at or below the saturation field
+    let hn = h0n / (Fix128::ONE + chi);
+    let h_lin = (h0t_sq + hn * hn).sqrt();
+    if h_lin <= h_s {
+        return (h_lin, chi * hn);
+    }
+    // saturated: |M| = M_s along H; solve the normal condition for |H_n| (H_n has the sign of B₀_n)
+    let target = h0n.abs();
+    let g = |x: Fix128| -> Fix128 {
+        let len = (h0t_sq + x * x).sqrt();
+        let m_n = if len.is_zero() {
+            Fix128::ZERO
+        } else {
+            m_s * x / len
+        };
+        x + m_n - target
+    };
+    let (mut lo, mut hi) = (Fix128::ZERO, target);
+    for _ in 0..96 {
+        let mid = (lo + hi) * Fix128::from_ratio(1, 2);
+        if g(mid) < Fix128::ZERO {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let x = (lo + hi) * Fix128::from_ratio(1, 2);
+    let len = (h0t_sq + x * x).sqrt();
+    let m_n = if len.is_zero() {
+        Fix128::ZERO
+    } else {
+        m_s * x / len
+    };
+    let m_n = if h0n.is_negative() { -m_n } else { m_n };
+    (len, m_n)
+}
+
+/// The magnetic traction (Pa) that lifts the free surface of a magnetisable liquid at rest, where the magnets' field
+/// just above the surface is `field` (T) and the surface's unit normal is `normal` (out of the liquid): the
+/// ferrohydrostatic Bernoulli condition at the interface (Rosensweig) gives the fluid magnetic pressure
+/// `μ0·M̄·H = μ0∫₀^|H| M dH'` (with `H` inside the liquid, `M̄` the field-averaged magnetisation) plus the magnetic
+/// normal traction `μ0·M_n²/2`. Below saturation this is `χ/(2μ0)·(B₀_t² + B₀_n²/(1+χ))`; above the saturation field
+/// `H_s = M_s/χ` the pressure is `μ0(M_s·|H| − M_s·H_s/2)`. Zero for a liquid that does not magnetise. The liquid is a
+/// flat layer (see [`liquid_field`]): a surface that bends strongly over the field's length scale is outside it.
+#[must_use]
+pub fn magnetic_fluid_traction(
+    field: Vec3Fix,
+    normal: Vec3Fix,
+    response: &MagneticResponse,
+) -> Fix128 {
+    if response.chi_eff <= Fix128::ZERO || response.saturation_magnetization <= Fix128::ZERO {
+        return Fix128::ZERO;
+    }
+    let (h, m_n) = liquid_field(field, normal, response);
+    let m_s = response.saturation_magnetization;
+    let h_s = m_s / response.chi_eff;
+    let two = Fix128::from_int(2);
+    let mu = mu0();
+    // μ0∫₀^H M dH': χH²/2 below H_s, M_s·H − M_s·H_s/2 above (equal at H_s)
+    let pressure = if h <= h_s {
+        mu * response.chi_eff * h * h / two
+    } else {
+        mu * (m_s * h - m_s * h_s / two)
+    };
+    pressure + mu * m_n * m_n / two
+}
+
+/// How far (m) the free surface of a magnetisable liquid at rest stands above its level where there is no field, at
+/// a point of the surface where the magnets' field is `field` and the surface's unit normal is `normal`: the
+/// ferrohydrostatic Bernoulli equation `ρ·g·h = (magnetic traction)` along the surface, with the traction of
+/// [`magnetic_fluid_traction`]. Several magnets: add their fields (or their [`DipoleSample`]s) first, then take the
+/// rise of the sum; rises do not add.
+///
+/// `density` is ρ (kg/m³), `gravity` is `|g|` (m/s²). `None` when either is not positive (no liquid at rest to
+/// stand). The level where there is no field is the caller's: in a closed dish the liquid drawn up under a magnet
+/// comes from the rest, so the caller shifts the whole surface to keep the volume.
+///
+/// Valid below the Rosensweig threshold (a smooth mound, no spikes): the surface's own tension and the instability
+/// that raises spikes above the critical magnetisation are not in this equation. The field is the magnets' field at
+/// the point the caller gives (usually the undisturbed surface), not recomputed on the raised surface.
+#[must_use]
+pub fn magnetic_fluid_surface_rise(
+    field: Vec3Fix,
+    normal: Vec3Fix,
+    response: &MagneticResponse,
+    density: Fix128,
+    gravity: Fix128,
+) -> Option<Fix128> {
+    if density <= Fix128::ZERO || gravity <= Fix128::ZERO {
+        return None;
+    }
+    Some(magnetic_fluid_traction(field, normal, response) / (density * gravity))
 }
 
 #[cfg(test)]
@@ -660,5 +822,64 @@ mod magnet_tests {
         assert!(close(saturated.x, 0.85 * 2.4, 2.04, 1e-9), "{saturated:?}");
         assert!(close(saturated.y, -0.85 * 1.6, 2.04, 1e-9), "{saturated:?}");
         assert!(saturated.z.is_zero());
+    }
+
+    /// Unit oracle (the lib's own coverage): the flat layer's magnetic traction against Rosensweig's normal-field
+    /// closed form `χB²/(2μ0(1+χ))` and the tangential one `χB²/(2μ0)` at χ = 1, the saturated normal field
+    /// `μ0(M_s(H₀ − M_s) − M_s·H_s/2) + μ0 M_s²/2`, and no rise without weight or magnetisation
+    #[test]
+    fn the_magnetic_liquid_traction_and_rise() {
+        let liquid = MagneticResponse {
+            chi_eff: Fix128::ONE,
+            saturation_magnetization: Fix128::from_int(400_000),
+        };
+        let up = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let normal_field = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(5, 100), Fix128::ZERO);
+        let side_field = Vec3Fix::new(Fix128::from_ratio(5, 100), Fix128::ZERO, Fix128::ZERO);
+        let mu0 = 4.0 * core::f64::consts::PI * 1e-7;
+        let b2 = 0.05 * 0.05;
+        let tn = magnetic_fluid_traction(normal_field, up, &liquid);
+        assert!(close(tn, b2 / (2.0 * mu0 * 2.0), 1000.0, 1e-9), "{tn:?}");
+        let tt = magnetic_fluid_traction(side_field, up, &liquid);
+        assert!(close(tt, b2 / (2.0 * mu0), 1000.0, 1e-9), "{tt:?}");
+        let h = magnetic_fluid_surface_rise(
+            normal_field,
+            up,
+            &liquid,
+            Fix128::from_int(1200),
+            Fix128::from_ratio(981, 100),
+        )
+        .expect("a liquid with weight");
+        assert!(
+            close(h, b2 / (4.0 * mu0 * 1200.0 * 9.81), 0.1, 1e-9),
+            "{h:?}"
+        );
+        // saturated normal field: χ = 1, M_s = H_s = 10000 A/m, H₀ = 0.05/μ0 ≈ 39789 A/m, the linear H₀/2 > H_s, and
+        // the normal B condition gives H = H₀ − M_s
+        let sat = MagneticResponse {
+            chi_eff: Fix128::ONE,
+            saturation_magnetization: Fix128::from_int(10_000),
+        };
+        let h0 = 0.05 / mu0;
+        let (m_s, h_s) = (10_000.0, 10_000.0);
+        let want = mu0 * (m_s * (h0 - m_s) - m_s * h_s / 2.0) + mu0 * m_s * m_s / 2.0;
+        let ts = magnetic_fluid_traction(normal_field, up, &sat);
+        assert!(close(ts, want, 1000.0, 1e-9), "{ts:?} vs {want}");
+        assert_eq!(
+            magnetic_fluid_surface_rise(normal_field, up, &liquid, Fix128::ZERO, Fix128::ONE),
+            None
+        );
+        assert_eq!(
+            magnetic_fluid_surface_rise(normal_field, up, &liquid, Fix128::ONE, -Fix128::ONE),
+            None
+        );
+        let none = MagneticResponse {
+            chi_eff: Fix128::ZERO,
+            saturation_magnetization: Fix128::ZERO,
+        };
+        assert_eq!(
+            magnetic_fluid_surface_rise(normal_field, up, &none, Fix128::ONE, Fix128::ONE),
+            Some(Fix128::ZERO)
+        );
     }
 }
