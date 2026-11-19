@@ -345,7 +345,7 @@ fn stretched_block(viscosity: Fix128) -> (Vec<StretchedSample>, f64, f64) {
 ///    5.4e-4 J at frame 840);
 /// 2. monotone: the densest-quarter `|rho / rho_0 - 1|` does not rise from one sample to the
 ///    next (tolerance 1e-4; measured 0.3799 -> 0.3362);
-/// 3b. terminal drift: from frame 300 on the corner moves inward at a steady speed (spread
+/// 3. terminal drift: from frame 300 on the corner moves inward at a steady speed (spread
 ///    below 3 %, measured 0.295-0.301 of the bound), below the XSPH-free drift
 ///    `a_coh dt / (1 - d)` (XSPH only removes speed), at a stated ratio to it: measured 0.30
 ///    at the default `c = 0.3`, bound 0.25 (tighten only; the XSPH-coupled closed form is
