@@ -364,7 +364,7 @@ impl Fix128 {
     /// Input should be in range [-π, π] for best precision
     #[must_use]
     pub fn sin(self) -> Self {
-        cordic_sin_cos(self).0
+        crate::fix128_kernels::sin_cos(self).0
     }
 
     /// Cosine using CORDIC algorithm (deterministic)
@@ -372,25 +372,25 @@ impl Fix128 {
     /// Input should be in range [-π, π] for best precision
     #[must_use]
     pub fn cos(self) -> Self {
-        cordic_sin_cos(self).1
+        crate::fix128_kernels::sin_cos(self).1
     }
 
     /// Simultaneous sin and cos (more efficient)
     #[must_use]
     pub fn sin_cos(self) -> (Self, Self) {
-        cordic_sin_cos(self)
+        crate::fix128_kernels::sin_cos(self)
     }
 
     /// Arctangent using CORDIC (deterministic)
     #[must_use]
     pub fn atan(self) -> Self {
-        cordic_atan(self)
+        crate::fix128_kernels::atan2(self, Self::ONE)
     }
 
     /// Arctangent2 (deterministic)
     #[must_use]
     pub fn atan2(y: Self, x: Self) -> Self {
-        cordic_atan2(y, x)
+        crate::fix128_kernels::atan2(y, x)
     }
 
     // ========================================================================
@@ -937,56 +937,7 @@ impl Fix128 {
     /// and the faster O(log n) order is used instead of an O(n) loop.
     #[must_use]
     pub fn powf_pos(self, exponent: Self) -> Self {
-        if self <= Self::ZERO || exponent.is_negative() {
-            return Self::ZERO;
-        }
-        // Integer part (`exponent.hi` ≥ 0 here, checked above). Two
-        // multiplication orders on purpose, split at 64:
-        //
-        // - `n ≤ 64` — left-to-right repeated multiplication, the order
-        //   this function has always used. Fixed-point multiplication
-        //   truncates, so it is **not associative**: reassociating the
-        //   product changes the low bits (measured: up to 18 raw units for
-        //   a non-dyadic base at `n ≤ 64`, and exactly zero for a base that
-        //   is representable without truncation, such as the 2 that
-        //   [`Fix128::exp`] passes). Bit-exact reproducibility across
-        //   versions is a headline property of this crate, so the order is
-        //   preserved over the whole range where it was already correct.
-        // - `n > 64` — exponentiation by squaring. This range used to be
-        //   silently capped (`exponent.hi.min(64)`), so `1.01^100` returned
-        //   `1.01^64` = 1.89 instead of 2.705: a plainly wrong value that no
-        //   caller can have a legitimate dependency on, which leaves the
-        //   order free here. Squaring keeps it O(log n), so a large exponent
-        //   cannot turn into an unbounded loop.
-        let n = exponent.hi as u64;
-        let mut r = Self::ONE;
-        if n <= 64 {
-            for _ in 0..n {
-                r = r * self;
-            }
-        } else {
-            let mut n = n;
-            let mut base = self;
-            while n > 0 {
-                if n & 1 != 0 {
-                    r = r * base;
-                }
-                n >>= 1;
-                if n > 0 {
-                    base = base * base;
-                }
-            }
-        }
-        let mut frac_bits = exponent.lo;
-        let mut root = self;
-        for _ in 0..24 {
-            root = root.sqrt(); // base^(1/2), base^(1/4), …
-            if frac_bits & (1u64 << 63) != 0 {
-                r = r * root;
-            }
-            frac_bits <<= 1;
-        }
-        r
+        crate::fix128_kernels::powf_pos(self, exponent)
     }
 
     /// Deterministic `e^self` via `2^(x·log₂e)` ([`Fix128::powf_pos`] with base 2;
@@ -997,31 +948,7 @@ impl Fix128 {
     /// maximum instead of wrapping.
     #[must_use]
     pub fn exp(self) -> Self {
-        // log₂(e) = 1.442 695 040 888 963 4 (raw pair, exact to 2⁻⁶⁴)
-        const LOG2_E: Fix128 = Fix128 {
-            hi: 1,
-            lo: 8_166_282_121_979_092_992,
-        };
-        if self.is_negative() {
-            if self.hi < -44 {
-                return Self::ZERO;
-            }
-            let pos = Self::from_int(2).powf_pos(self.neg() * LOG2_E);
-            if pos.is_zero() {
-                return Self::ZERO;
-            }
-            return Self::ONE / pos;
-        }
-        // e^x fits Fix128 while x · log₂e < 63 (x < 43.668); past that it
-        // saturates. `self.hi >= 44` keeps the product itself in range.
-        if self.hi >= 44 {
-            return Self::from_raw(i64::MAX, u64::MAX);
-        }
-        let power = self * LOG2_E;
-        if power.hi >= 63 {
-            return Self::from_raw(i64::MAX, u64::MAX);
-        }
-        Self::from_int(2).powf_pos(power)
+        crate::fix128_kernels::exp(self)
     }
 
     /// Deterministic natural log via range reduction to `[1, 2)` + atanh
@@ -1031,34 +958,7 @@ impl Fix128 {
     /// (canonical source: one `ln`, not one per caller module).
     #[must_use]
     pub fn ln(self) -> Self {
-        if self <= Self::ZERO {
-            return Self::ZERO;
-        }
-        // ln 2 = 0.693 147 180 559 945 3 (raw pair, exact to 2⁻⁶⁴)
-        const LN2: Fix128 = Fix128 {
-            hi: 0,
-            lo: 0xB172_17F7_D1CF_79AC,
-        };
-        let mut m = self;
-        let mut k: i64 = 0;
-        while m >= Self::from_int(2) {
-            m = m.half();
-            k += 1;
-        }
-        while m < Self::ONE {
-            m = m.double();
-            k -= 1;
-        }
-        let t = (m - Self::ONE) / (m + Self::ONE);
-        let t2 = t * t;
-        let mut term = t;
-        let mut sum = Self::ZERO;
-        for n in 0..16u32 {
-            let denom = Self::from_int(i64::from(2 * n + 1));
-            sum = sum + term / denom;
-            term = term * t2;
-        }
-        Self::from_int(k) * LN2 + sum.double()
+        crate::fix128_kernels::ln(self)
     }
 
     /// Checked division: `None` when `rhs == 0`, otherwise `Some(self / rhs)`.
@@ -1182,261 +1082,6 @@ impl From<i32> for Fix128 {
     #[inline]
     fn from(n: i32) -> Self {
         Self::from_int(n as i64)
-    }
-}
-
-// ============================================================================
-// CORDIC Algorithm (Coordinate Rotation Digital Computer)
-// ============================================================================
-
-/// CORDIC angles table (arctan(2^-i) in Fix128 format)
-/// Precomputed for 64 iterations
-const CORDIC_ANGLES: [Fix128; 64] = compute_cordic_angles();
-
-/// CORDIC gain constant K = prod(cos(arctan(2^-i)), i=0..47) ≈ 0.60725293500888133
-const CORDIC_K: Fix128 = Fix128 {
-    hi: 0,
-    lo: 0x9B74EDA8435E5DD7, // 0.60725293500888133 * 2^64
-};
-
-/// Compute CORDIC angle table at compile time
-///
-/// Each entry is arctan(2^-i) in Fix128 format (hi=0, lo=fractional).
-/// Values precomputed to full 64-bit fractional precision.
-const fn compute_cordic_angles() -> [Fix128; 64] {
-    // arctan(2^-i) * 2^64 for i = 0..63, precomputed with arbitrary-precision math.
-    // arctan(2^0)  = pi/4        = 0.7853981633974483...
-    // arctan(2^-1) = 0.4636476090008061...
-    // arctan(2^-2) = 0.2449786631268641...
-    // For large i (>= ~15), arctan(2^-i) ≈ 2^-i to full precision.
-    const LO: [u64; 64] = [
-        0xC90FDAA22168C000, // i=0:  arctan(1)     = pi/4
-        0x76B19C1586ED4000, // i=1:  arctan(1/2)   = 0.46364760900...
-        0x3EB6EBF25901BA00, // i=2:  arctan(1/4)   = 0.24497866312...
-        0x1FD5BA9AAC2F6E00, // i=3:  arctan(1/8)   = 0.12435499454...
-        0x0FFAADDB967EF500, // i=4:  arctan(1/16)  = 0.06241880999...
-        0x07FF556EEA5D8940, // i=5:  arctan(1/32)  = 0.03123983343...
-        0x03FFEAAB776E5360, // i=6:  arctan(1/64)  = 0.01562372862...
-        0x01FFFD555BBBA970, // i=7:  arctan(1/128) = 0.00781234106...
-        0x00FFFFAAAADDDDB8, // i=8:  arctan(1/256)
-        0x007FFFF55556EEF0, // i=9:  arctan(1/512)
-        0x003FFFFEAAAAB778, // i=10: arctan(1/1024)
-        0x001FFFFFD55555BC, // i=11: arctan(1/2048)
-        0x000FFFFFFAAAAAAE, // i=12: arctan(1/4096)
-        0x0007FFFFFF555555, // i=13: arctan(1/8192)
-        0x0003FFFFFFEAAAAA, // i=14: arctan(1/16384)
-        0x0001FFFFFFFD5555, // i=15: arctan(1/32768)
-        0x0000FFFFFFFFAAAA, // i=16
-        0x00007FFFFFFFF555, // i=17
-        0x00003FFFFFFFFEAA, // i=18
-        0x00001FFFFFFFFFD5, // i=19
-        0x00000FFFFFFFFFFA, // i=20
-        0x000007FFFFFFFFFF, // i=21
-        0x000003FFFFFFFFFF, // i=22
-        0x000001FFFFFFFFFF, // i=23
-        0x000000FFFFFFFFFF, // i=24
-        0x0000007FFFFFFFFF, // i=25
-        0x0000003FFFFFFFFF, // i=26
-        0x0000002000000000, // i=27
-        0x0000001000000000, // i=28
-        0x0000000800000000, // i=29
-        0x0000000400000000, // i=30
-        0x0000000200000000, // i=31
-        0x0000000100000000, // i=32
-        0x0000000080000000, // i=33
-        0x0000000040000000, // i=34
-        0x0000000020000000, // i=35
-        0x0000000010000000, // i=36
-        0x0000000008000000, // i=37
-        0x0000000004000000, // i=38
-        0x0000000002000000, // i=39
-        0x0000000001000000, // i=40
-        0x0000000000800000, // i=41
-        0x0000000000400000, // i=42
-        0x0000000000200000, // i=43
-        0x0000000000100000, // i=44
-        0x0000000000080000, // i=45
-        0x0000000000040000, // i=46
-        0x0000000000020000, // i=47
-        0x0000000000010000, // i=48
-        0x0000000000008000, // i=49
-        0x0000000000004000, // i=50
-        0x0000000000002000, // i=51
-        0x0000000000001000, // i=52
-        0x0000000000000800, // i=53
-        0x0000000000000400, // i=54
-        0x0000000000000200, // i=55
-        0x0000000000000100, // i=56
-        0x0000000000000080, // i=57
-        0x0000000000000040, // i=58
-        0x0000000000000020, // i=59
-        0x0000000000000010, // i=60
-        0x0000000000000008, // i=61
-        0x0000000000000004, // i=62
-        0x0000000000000002, // i=63
-    ];
-    let mut angles = [Fix128::ZERO; 64];
-    let mut i = 0;
-    while i < 64 {
-        angles[i] = Fix128 { hi: 0, lo: LO[i] };
-        i += 1;
-    }
-    angles
-}
-
-/// CORDIC sine and cosine (deterministic, 48 iterations)
-/// Below this angle (`2⁻¹⁰` rad) [`cordic_sin_cos`] uses the Taylor series.
-const SMALL_ANGLE: Fix128 = Fix128 { hi: 0, lo: 1 << 54 };
-
-fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
-    // Step 1: O(1) modular reduction to [-π, π]
-    let mut theta = angle;
-    if theta > Fix128::PI || theta < Fix128::PI.neg() {
-        // k = floor((theta + π) / 2π)
-        let shifted = theta + Fix128::PI;
-        let k = shifted / Fix128::TWO_PI;
-        let k_int = Fix128::from_int(k.hi);
-        theta = theta - Fix128::TWO_PI * k_int;
-        // Clamp to handle edge cases
-        if theta > Fix128::PI {
-            theta = theta - Fix128::TWO_PI;
-        } else if theta < Fix128::PI.neg() {
-            theta = theta + Fix128::TWO_PI;
-        }
-    }
-
-    // Step 2: Quadrant reduction to [-π/2, π/2] (CORDIC convergence range)
-    // For |θ| > π/2, use: sin(θ) = sin(π-θ), cos(θ) = -cos(π-θ)
-    let negate_cos = if theta > Fix128::HALF_PI {
-        theta = Fix128::PI - theta;
-        true
-    } else if theta < Fix128::HALF_PI.neg() {
-        theta = Fix128::PI.neg() - theta;
-        true
-    } else {
-        false
-    };
-
-    // Step 3: a small angle (|θ| < 2⁻¹⁰) from the Taylor series, because 48
-    // CORDIC iterations resolve sin θ only to about 1e-14 absolute (a relative
-    // error of 7e-5 at 1e-11 rad, 6% at 1e-13): sin θ = θ − θ³/6 + θ⁵/120 and
-    // cos θ = 1 − θ²/2 + θ⁴/24 − θ⁶/720, whose first omitted terms, θ⁷/5040 <
-    // 2⁻⁸² and θ⁸/40320 < 2⁻⁹⁵, are below the 2⁻⁶⁴ resolution. At the switch
-    // the two forms agree to the CORDIC's own error there.
-    if theta.abs() < SMALL_ANGLE {
-        let t2 = theta * theta;
-        let t3 = t2 * theta;
-        let t4 = t2 * t2;
-        let sin = theta - t3 / Fix128::from_int(6) + t3 * t2 / Fix128::from_int(120);
-        let cos =
-            Fix128::ONE - t2.half() + t4 / Fix128::from_int(24) - t4 * t2 / Fix128::from_int(720);
-        return (sin, if negate_cos { -cos } else { cos });
-    }
-
-    // Initialize: start at (K, 0) and rotate by theta
-    let mut x = CORDIC_K;
-    let mut y = Fix128::ZERO;
-    let mut z = theta;
-
-    // CORDIC iterations
-    for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
-        let d = if z.is_negative() { -1i64 } else { 1i64 };
-
-        let x_shift = x.shr_bits(i as u32);
-        let y_shift = y.shr_bits(i as u32);
-
-        let new_x;
-        let new_y;
-
-        if d > 0 {
-            new_x = x - y_shift;
-            new_y = y + x_shift;
-            z = z - angle;
-        } else {
-            new_x = x + y_shift;
-            new_y = y - x_shift;
-            z = z + angle;
-        }
-
-        x = new_x;
-        y = new_y;
-    }
-
-    // Apply quadrant correction
-    if negate_cos {
-        (y, x.neg()) // sin preserved, cos negated
-    } else {
-        (y, x) // sin, cos
-    }
-}
-
-/// CORDIC arctangent (deterministic)
-fn cordic_atan(v: Fix128) -> Fix128 {
-    // atan(v) using CORDIC in vectoring mode
-    let mut x = Fix128::ONE;
-    let mut y = v;
-    let mut z = Fix128::ZERO;
-
-    for (i, &angle) in CORDIC_ANGLES.iter().enumerate().take(48) {
-        let d = if y.is_negative() { 1i64 } else { -1i64 };
-
-        let x_shift = x.shr_bits(i as u32);
-        let y_shift = y.shr_bits(i as u32);
-
-        if d > 0 {
-            x = x - y_shift;
-            y = y + x_shift;
-            z = z - angle;
-        } else {
-            x = x + y_shift;
-            y = y - x_shift;
-            z = z + angle;
-        }
-    }
-
-    z
-}
-
-/// CORDIC atan2 (deterministic)
-fn cordic_atan2(y: Fix128, x: Fix128) -> Fix128 {
-    if x.is_zero() && y.is_zero() {
-        return Fix128::ZERO;
-    }
-
-    if x.is_zero() {
-        return if y.is_negative() {
-            Fix128::HALF_PI.neg()
-        } else {
-            Fix128::HALF_PI
-        };
-    }
-
-    // Keep the CORDIC argument in [−1, 1]: for |y| > |x| use the complement
-    // atan2(y, x) = ±π/2 − atan(x / y). Before 1.2.0 `y / x` was formed
-    // unconditionally, and with |x| a few ulp it overflowed the 64-bit
-    // integer part (1 / 2⁻⁶³ = 2⁶³), so atan2(1, 2 ulp) returned −0.755
-    // instead of π/2 — visible as a wrong-way quaternion slerp between
-    // nearly opposite rotations.
-    if y.abs() > x.abs() {
-        let complement = cordic_atan(x / y);
-        return if y.is_negative() {
-            Fix128::HALF_PI.neg() - complement
-        } else {
-            Fix128::HALF_PI - complement
-        };
-    }
-
-    let ratio = y / x;
-    let base_atan = cordic_atan(ratio);
-
-    if x.is_negative() {
-        if y.is_negative() {
-            base_atan - Fix128::PI
-        } else {
-            base_atan + Fix128::PI
-        }
-    } else {
-        base_atan
     }
 }
 
