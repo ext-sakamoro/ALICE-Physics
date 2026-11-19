@@ -8,9 +8,9 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 |----------|-------|
 | 🟢 Not ignored (run by CI) | 6428 |
 | 🔴 Red by design | 73 |
-| ⏱ Gated (runtime / diagnostic / manual) | 36 |
+| ⏱ Gated (runtime / diagnostic / manual) | 38 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6537** |
+| **Total** | **6539** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -130,7 +130,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (36)
+## ⏱ Gated (38)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -165,6 +165,8 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `p3_separates_from_p2_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step, plus P2 n = 3); run by run_i…
 - `p3_separates_from_p2_in_order_and_in_error` (analytic_hyperelastic_mms_order.rs) — runtime: about 30 s in release (P3 n = 2 and 3 plus P2 n = 3, Fix128 Newton on 20-node elements); run by run_i…
 - `reattachment_lengthens_under_grid_refinement` (armaly_backward_step.rs) — runtime only: 256x16 cells for 8192 steps, release-only (about 190 s, measured 2026-10-03); the measured value…
+- `the_cube_lying_on_the_floor_carries_only_the_column_above_it_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
+- `the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from

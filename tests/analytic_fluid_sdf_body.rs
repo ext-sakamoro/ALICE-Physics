@@ -144,17 +144,24 @@ fn scene(bottom: f64, top: f64) -> Scene {
     Scene { fluid, n }
 }
 
-fn frames() -> usize {
+/// The frames of a run that is checked every time: the force is the mean over its last 60.
+/// The lattice the fluid starts on is close to hydrostatic, and the mean wanders by 2 to 4 %
+/// whatever the length (measured 2026-11-19, floor cube / cube 2 h up: 0.983 / 1.018 at 120
+/// frames, 1.013 / 0.996 at 240, 1.011 / 1.037 at 480), so a longer run is not a closer one;
+/// the 900-frame runs are the `runtime:` tests below.
+const FRAMES: usize = 120;
+
+fn frames(default: usize) -> usize {
     std::env::var("ALICE_FLUID_SDF_FRAMES")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(900)
+        .unwrap_or(default)
 }
 
 /// Mean vertical force on the cube over the last 60 frames, and the mean total check
-fn settle(sc: &mut Scene) -> (f64, f64) {
+fn settle(sc: &mut Scene, default_frames: usize) -> (f64, f64) {
     let dt = Fix128::from_ratio(1, 60);
-    let total = frames();
+    let total = frames(default_frames);
     let mut cube_y = 0.0;
     let mut newton = 0.0_f64;
     for f in 0..total {
@@ -178,9 +185,19 @@ fn g() -> f64 {
 
 #[test]
 fn the_cube_lying_on_the_floor_carries_only_the_column_above_it() {
+    cube_on_the_floor(FRAMES);
+}
+
+#[test]
+#[ignore = "runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every time; run by the weekly job"]
+fn the_cube_lying_on_the_floor_carries_only_the_column_above_it_over_900_frames() {
+    cube_on_the_floor(900);
+}
+
+fn cube_on_the_floor(default_frames: usize) {
     let top = 0.8;
     let mut sc = scene(0.0, top);
-    let (fy, newton) = settle(&mut sc);
+    let (fy, newton) = settle(&mut sc, default_frames);
     let vol = CUBE * CUBE * CUBE;
     let fluid_vol = sc.n as f64 * S * S * S;
     let ys = (fluid_vol + vol) / (W * W);
@@ -198,9 +215,19 @@ fn the_cube_lying_on_the_floor_carries_only_the_column_above_it() {
 
 #[test]
 fn the_cube_two_kernel_radii_above_the_floor_feels_archimedes() {
+    cube_two_kernel_radii_up(FRAMES);
+}
+
+#[test]
+#[ignore = "runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every time; run by the weekly job"]
+fn the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames() {
+    cube_two_kernel_radii_up(900);
+}
+
+fn cube_two_kernel_radii_up(default_frames: usize) {
     let bottom = 0.4;
     let mut sc = scene(bottom, bottom + 0.8);
-    let (fy, newton) = settle(&mut sc);
+    let (fy, newton) = settle(&mut sc, default_frames);
     let closed = RHO0 * g() * CUBE * CUBE * CUBE;
     let ratio = fy / closed;
     eprintln!("cube 2h up: F_y / (rho g V) = {ratio}, newton {newton}");
