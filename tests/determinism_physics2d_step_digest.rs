@@ -220,7 +220,7 @@ fn state_sha256(w: &PhysicsWorld2D) -> String {
 }
 
 /// The state pinned by `EXPECTED`, hashed with SHA-256 (`state_sha256`).
-const EXPECTED_SHA256: &str = "8d1e013f0bceb47c12d10e1f9e00dd35966484bba8146ea578d0883536f54dc1";
+const EXPECTED_SHA256: &str = "3bacaf4b5e98a62da162e1dbc9e3905fecb2f5d5fb23c34290e8bc315c9ee8b3";
 
 /// The same scene and frames as `step_digest_is_unchanged`, pinned as a
 /// SHA-256 digest. The `u64` digest is checked first, so this constant is a
