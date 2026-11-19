@@ -45,6 +45,9 @@ MARGIN = 15
 CALIBRATION = "tests/trimesh_raycast_bruteforce.rs"
 # the ledger keeps the binaries that take at least this many seconds in a pass
 KEEP = 2.0
+# the ledger may be this many commits behind the base it is compared with
+MAX_BEHIND = 20
+WORKFLOW = os.path.join(".github", "workflows", "ci.yml")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 RUNNING = re.compile(r"Running (unittests )?(\S+)")
 RESULT = re.compile(r"test result: \w+\. \d+ passed.*finished in ([\d.]+)s")
@@ -155,6 +158,53 @@ def project(
     return report, refusals
 
 
+def ledger_sha(text: str) -> str:
+    """The commit the ledger was written from (its `# sha` line)."""
+    m = re.search(r"^# sha\t([0-9a-f]{40})$", text, re.M)
+    if not m:
+        raise BudgetError("ledger: no `# sha` line")
+    return m.group(1)
+
+
+def workflow_jobs(workflow: str) -> set[str]:
+    """The Test jobs ci.yml defines: `Test (<os>)` for every os its matrix can take."""
+    m = re.search(r"^\s*os: \$\{\{ fromJSON\((.*)\) \}\}\s*$", workflow, re.M)
+    names = set(re.findall(r'"((?:macos|ubuntu|windows)[\w.\-]*)"', m.group(1))) if m else set()
+    if not names:
+        raise BudgetError(f"{WORKFLOW}: no os list of the Test job read (nothing to compare with)")
+    return {f"Test ({n})" for n in names}
+
+
+def staleness(ledger: dict[str, dict], workflow: str, behind: int) -> list[str]:
+    """Why the ledger cannot be projected from: other jobs than ci.yml's, or too old."""
+    problems = []
+    want = workflow_jobs(workflow)
+    have = set(ledger)
+    if have != want:
+        only_ledger = ", ".join(sorted(have - want)) or "none"
+        only_ci = ", ".join(sorted(want - have)) or "none"
+        problems.append(
+            f"the ledger's jobs are not ci.yml's (only in the ledger: {only_ledger}; only in "
+            f"ci.yml: {only_ci}): write it again from a run of main (--write-ledger RUN_ID)"
+        )
+    if behind > MAX_BEHIND:
+        problems.append(
+            f"the ledger is {behind} commits behind the base (at most {MAX_BEHIND}): write it "
+            f"again from a run of main (--write-ledger RUN_ID)"
+        )
+    return problems
+
+
+def commits_behind(sha: str, base: str) -> int:
+    """Commits of `base` the ledger's commit does not have (it must be an ancestor)."""
+    known = subprocess.run(["git", "merge-base", "--is-ancestor", sha, base], check=False)
+    if known.returncode != 0:
+        raise BudgetError(f"the ledger's commit {sha[:8]} is not an ancestor of {base}")
+    r = subprocess.run(["git", "rev-list", "--count", f"{sha}..{base}"],
+                       capture_output=True, text=True, check=True)
+    return int(r.stdout.strip())
+
+
 def changed_binaries(base: str) -> list[str]:
     """tests/*.rs the commits base..HEAD add or change (not deletions)."""
     r = subprocess.run(
@@ -164,21 +214,27 @@ def changed_binaries(base: str) -> list[str]:
     return sorted(p for p in r.stdout.split() if re.fullmatch(r"tests/[^/]+\.rs", p))
 
 
-def time_locally(binaries: list[str]) -> dict[str, float]:
-    """Seconds of each binary's run here (ci-test profile, as the Test jobs)."""
+def cargo_test(name: str) -> tuple[int, str]:
+    """(exit code, stdout) of one test binary's run here (ci-test profile, as the Test jobs)."""
+    r = subprocess.run(
+        ["cargo", "test", "--profile", "ci-test", "--test", name],
+        capture_output=True, text=True, check=False,
+    )
+    return r.returncode, r.stdout
+
+
+def time_locally(binaries: list[str], run=cargo_test) -> dict[str, float]:
+    """Seconds of each binary's run here."""
     out: dict[str, float] = {}
     for path in binaries:
         name = os.path.splitext(os.path.basename(path))[0]
-        r = subprocess.run(
-            ["cargo", "test", "--profile", "ci-test", "--test", name],
-            capture_output=True, text=True, check=False,
-        )
+        code, stdout = run(name)
         # one binary was asked for: its result line is on stdout (cargo's "Running" line is
         # on stderr, so the two cannot be paired here as in a job's log)
-        got = [float(m.group(1)) for m in RESULT.finditer(ANSI.sub("", r.stdout))]
-        if r.returncode != 0 or len(got) != 1:
+        got = [float(m.group(1)) for m in RESULT.finditer(ANSI.sub("", stdout))]
+        if code != 0 or len(got) != 1:
             raise BudgetError(
-                f"{path}: the test run failed or reported {len(got)} times (exit {r.returncode})"
+                f"{path}: the test run failed or reported {len(got)} times (exit {code})"
             )
         out[path] = got[0]
     return out
@@ -252,7 +308,16 @@ def main(argv: list[str]) -> int:
         if args.command != "check" or not args.base:
             ap.error("check BASE, or --write-ledger RUN_ID")
         with open(LEDGER, encoding="utf-8") as f:
-            ledger = parse_ledger(f.read())
+            text = f.read()
+        ledger = parse_ledger(text)
+        sha = ledger_sha(text)
+        behind = commits_behind(sha, args.base)
+        with open(WORKFLOW, encoding="utf-8") as f:
+            problems = staleness(ledger, f.read(), behind)
+        print(f"test_time_budget: ledger of {sha[:8]}, {behind} commits behind {args.base}, "
+              f"{len(ledger)} jobs")
+        if problems:
+            raise BudgetError("; ".join(problems))
         changed = changed_binaries(args.base)
         if not changed:
             print(f"test_time_budget: 0 test binaries changed since {args.base}; "

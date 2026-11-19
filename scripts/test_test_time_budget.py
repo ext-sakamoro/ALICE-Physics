@@ -69,6 +69,62 @@ class Projection(unittest.TestCase):
         self.assertEqual(len(refusals), 1, "96 min is over 120 - 30")
 
 
+CI = """
+    strategy:
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || '["macos-latest", "ubuntu-latest"]') }}
+"""
+
+
+class Stale(unittest.TestCase):
+    def test_a_ledger_of_other_jobs_than_the_workflows_is_refused(self):
+        ledger = t.parse_ledger(LEDGER)  # macos-latest, ubuntu-latest
+        problems = t.staleness(ledger, CI, 0)
+        self.assertEqual(len(problems), 1)  # ci.yml also has macos-15-intel
+        self.assertIn("Test (macos-15-intel)", problems[0])
+        whole = LEDGER + "job\tTest (macos-15-intel)\t360\t9000\n"
+        self.assertEqual(t.staleness(t.parse_ledger(whole), CI, 0), [])
+        # a job split in two leaves the ledger describing the old one
+        split = CI.replace('"macos-latest"', '"macos-latest-default", "macos-latest-parallel"')
+        problems = t.staleness(t.parse_ledger(whole), split, 0)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("only in the ledger: Test (macos-latest)", problems[0])
+        with self.assertRaises(t.BudgetError):
+            t.staleness(t.parse_ledger(whole), "jobs:\n  test:\n    runs-on: x\n", 0)
+
+    def test_a_ledger_too_far_behind_is_refused(self):
+        whole = t.parse_ledger(LEDGER + "job\tTest (macos-15-intel)\t360\t9000\n")
+        self.assertEqual(t.staleness(whole, CI, t.MAX_BEHIND), [])
+        problems = t.staleness(whole, CI, t.MAX_BEHIND + 1)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("commits behind", problems[0])
+
+    def test_the_ledgers_commit_is_read_from_its_sha_line(self):
+        self.assertEqual(t.ledger_sha(LEDGER), "0" * 40)
+        with self.assertRaises(t.BudgetError):
+            t.ledger_sha("job\tTest (x)\t120\t600\n")
+
+
+class LocalTimes(unittest.TestCase):
+    OUT = "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in {}s\n"
+
+    def test_one_result_line_on_stdout_is_the_binarys_time(self):
+        asked = []
+
+        def run(name):
+            asked.append(name)
+            return 0, "running 2 tests\n" + self.OUT.format("12.50")
+
+        self.assertEqual(t.time_locally(["tests/a_b.rs"], run), {"tests/a_b.rs": 12.5})
+        self.assertEqual(asked, ["a_b"])
+
+    def test_a_failed_run_or_no_time_or_two_times_is_an_error(self):
+        for code, out in [(101, self.OUT.format("1.00")), (0, "running 0 tests\n"),
+                          (0, self.OUT.format("1.00") + self.OUT.format("2.00"))]:
+            with self.assertRaises(t.BudgetError):
+                t.time_locally(["tests/a.rs"], lambda _name, c=code, o=out: (c, o))
+
+
 class Logs(unittest.TestCase):
     def test_a_jobs_log_gives_each_pass_of_each_binary(self):
         log = "\n".join([
