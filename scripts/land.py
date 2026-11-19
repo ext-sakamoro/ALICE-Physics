@@ -1548,6 +1548,9 @@ class Lander:
         # has run on this code, all green (scripts/local_receipt.py; without the receipt a red one is found a CI
         # round later); a series that changes src/ needs the receipt of the lib coverage ratchet too (`run --slow`)
         self.sh(sys.executable, "scripts/local_receipt.py", "check", "--base", f"{self.remote}/{self.branch}")
+        # before the ci/ push: the Test jobs' time with this branch's test binaries, projected from the
+        # ledger of main (a job cut at its limit is found two hours after the push otherwise)
+        self.sh(sys.executable, "scripts/test_time_budget.py", "check", self.upstream())
         self.check_changelog()
 
     def check_changelog(self) -> None:
@@ -2063,9 +2066,6 @@ class Lander:
         self.regenerate()
         self.commit_regenerated()
         self.run_checks()
-        # before the ci/ push: the Test jobs' time with this branch's test binaries, projected from the
-        # ledger of main (a job cut at its limit is found two hours after the push otherwise)
-        self.sh(sys.executable, "scripts/test_time_budget.py", "check", "origin/main")
         # every tree land.py pushes has the receipt of a preflight run on it (the pre-push gate's receipt step asks for
         # it): a rebase makes a new tree, so after one the preflight runs whatever `verify` chose (2026-10-29: a
         # documents-only or compile-only rebase used to push a tree no preflight had run on)

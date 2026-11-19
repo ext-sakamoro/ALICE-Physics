@@ -4536,6 +4536,9 @@ class ScipSkipSteps(unittest.TestCase):
             def check_changelog(self):
                 pass
 
+            def upstream(self):
+                return "origin/main"
+
             def slug(self):
                 return "o/r"
 
@@ -4568,7 +4571,8 @@ class ScipSkipSteps(unittest.TestCase):
 
     WRITERS_NO_INDEX = ["gen-oracle-status.py", "gen-wiring-status.py", "coverage_check.py --write-status"]
     CHECKS_NO_INDEX = ["readme_sync.py --check", "docs_lint.py --check", "gen-oracle-status.py --check",
-                       "wiring_guard.py", "coverage_check.py", "local_receipt.py check --base origin/main"]
+                       "wiring_guard.py", "coverage_check.py", "local_receipt.py check --base origin/main",
+                       "test_time_budget.py check origin/main"]
 
     def test_skipped_runs_exactly_the_steps_that_do_not_read_the_index(self):
         lr = self.lander(True)
@@ -4585,7 +4589,7 @@ class ScipSkipSteps(unittest.TestCase):
             *self.WRITERS_NO_INDEX, "public-api",
             "integration_levels.py --check --scip S", "readme_sync.py --check", "docs_lint.py --check",
             "scip_reach.py --check-baseline --scip S", "gen-oracle-status.py --check", "wiring_guard.py", "coverage_check.py",
-            "local_receipt.py check --base origin/main"])
+            "local_receipt.py check --base origin/main", "test_time_budget.py check origin/main"])
 
     def wf_run(self, i, name="CI", sha="s1", conclusion="success"):
         return {"databaseId": i, "workflowName": name, "status": "completed", "conclusion": conclusion, "headSha": sha}
