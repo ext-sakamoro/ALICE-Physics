@@ -6,16 +6,22 @@ parallel pass) inside one time limit. A new or changed test binary that takes
 minutes there is found only when the job is cut at its limit, two hours later.
 This script answers before the push:
 
-  ledger   `scripts/test-time-ledger.tsv`, written from a finished CI run on main
-           (`--write-ledger RUN`): per Test job its limit, its total time and, per
-           test binary, the seconds of each pass ("finished in" of the job's log).
+  ledger   `scripts/test-time-ledger.tsv`, written from finished CI runs of main's
+           commits (`--write-ledger RUN` adds one run and keeps the newest 5): per Test
+           job its limit; per run its total time and its build time per test binary
+           and pass; and, from the newest run, the seconds of each pass of each test
+           binary ("finished in" of the job's log).
   check    `check BASE`: the test binaries the commits BASE..HEAD add or change are
            timed here (`cargo test --profile ci-test --test <name>`), together with
            one calibration binary of the ledger; the ratio runner / here of that
-           binary, per job, scales the local times. Projected job time = the
-           ledger's total + (scaled new time - the ledger's time of that binary)
-           over its passes. A job whose projection is above its limit minus MARGIN
-           minutes is refused, with the binaries that cost most.
+           binary, per job, scales the local times. Projected job time = the slowest
+           of the job's runs in the ledger + (scaled new time - the ledger's time of
+           that binary) over its passes + the build time of every added binary. A
+           job whose projection is above its limit minus its margin is refused, with
+           the binaries that cost most. The margin is MARGIN minutes or the spread
+           of the job's runs, whichever is more (measured 2026-11-19: one commit took
+           the Windows job 85 and 107 minutes). A job with fewer than 3 runs in the
+           ledger is not projected: the check fails.
 
 The ratio is measured each time from the calibration binary (the machine's load
 changes), not written down. Nothing compared is an error: no job read from the
@@ -47,6 +53,14 @@ CALIBRATION = "tests/trimesh_raycast_bruteforce.rs"
 KEEP = 2.0
 # the ledger may be this many commits behind the base it is compared with
 MAX_BEHIND = 20
+# the runs of main a job's baseline is taken from (the newest RUNS), and the fewest it can be
+# projected from: one run says nothing of the spread between runners
+RUNS = 5
+MIN_RUNS = 3
+STAMP = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z ")
+STEP = re.compile(r"##\[group\]Run (.*)")
+# the steps that build and run every test binary (one pass each)
+FULL_PASS = "cargo test --profile ci-test"
 WORKFLOW = os.path.join(".github", "workflows", "ci.yml")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 RUNNING = re.compile(r"Running (unittests )?(\S+)")
@@ -75,16 +89,54 @@ def binary_times(log: str) -> dict[str, list[float]]:
     return out
 
 
-def format_ledger(sha: str, jobs: list[dict]) -> str:
-    """The ledger's text: `job` rows, then `bin` rows."""
+def build_seconds(log: str) -> float:
+    """Seconds of build per test binary and pass in a Test job's log: what the full-pass steps
+    took beyond their binaries' own run times, over the binaries they ran (the library's own
+    build is in it, so it overstates what one more test file costs)."""
+    steps: list[tuple[float, str, list[str]]] = []
+    last = None
+    for raw in log.splitlines():
+        line = ANSI.sub("", raw)
+        m = STAMP.match(line)
+        if m:
+            last = _seconds(m.group(1) + "Z")
+        g = STEP.search(line)
+        if g and last is not None:
+            steps.append((last, g.group(1).strip(), []))
+        elif steps:
+            steps[-1][2].append(raw)
+    if last is None:
+        raise BudgetError("the log has no time stamps (no build time read)")
+    took = ran = 0.0
+    count = 0
+    for k, (start, command, lines) in enumerate(steps):
+        if not command.startswith(FULL_PASS):
+            continue
+        end = steps[k + 1][0] if k + 1 < len(steps) else last
+        times = [s for passes in binary_times("\n".join(lines)).values() for s in passes]
+        took += end - start
+        ran += sum(times)
+        count += len(times)
+    if count == 0:
+        raise BudgetError(f"the log has no `{FULL_PASS}` step with test binaries (no build time read)")
+    return max(0.0, took - ran) / count
+
+
+def format_ledger(jobs: list[dict]) -> str:
+    """The ledger's text: per job its limit, its runs (oldest first) and the newest run's
+    binaries."""
+    newest = jobs[0]["runs"][-1]["sha"] if jobs and jobs[0]["runs"] else ""
     lines = [
         "# test-time ledger: what the Test jobs of ci.yml took on main (scripts/test_time_budget.py --write-ledger)",
-        f"# sha\t{sha}",
-        "# job\t<name>\t<limit minutes>\t<total seconds>",
-        "# bin\t<job>\t<binary>\t<seconds of each pass, comma separated>",
+        f"# sha\t{newest}",
+        "# job\t<name>\t<limit minutes>",
+        "# run\t<job>\t<run id>\t<commit>\t<total seconds>\t<build seconds per test binary and pass>",
+        "# bin\t<job>\t<binary>\t<seconds of each pass in the job's newest run, comma separated>",
     ]
     for job in jobs:
-        lines.append(f"job\t{job['name']}\t{job['limit']}\t{job['total']:.0f}")
+        lines.append(f"job\t{job['name']}\t{job['limit']:.0f}")
+        for run in job["runs"][-RUNS:]:
+            lines.append(f"run\t{job['name']}\t{run['id']}\t{run['sha']}\t{run['total']:.0f}\t{run['build']:.2f}")
     for job in jobs:
         for name in sorted(job["bins"]):
             # binaries under KEEP seconds a pass are left out (a binary without a row counts
@@ -97,17 +149,20 @@ def format_ledger(sha: str, jobs: list[dict]) -> str:
 
 
 def parse_ledger(text: str) -> dict[str, dict]:
-    """job name -> {limit (minutes), total (seconds), bins {binary: [seconds]}}."""
+    """job name -> {limit (minutes), runs [{id, sha, total, build}], bins {binary: [seconds]}}."""
     jobs: dict[str, dict] = {}
     for line in text.splitlines():
         if not line or line.startswith("#"):
             continue
         cells = line.split("\t")
-        if cells[0] == "job" and len(cells) == 4:
-            jobs[cells[1]] = {"limit": float(cells[2]), "total": float(cells[3]), "bins": {}}
+        if cells[0] == "job" and len(cells) == 3:
+            jobs[cells[1]] = {"limit": float(cells[2]), "runs": [], "bins": {}}
+        elif cells[0] in ("run", "bin") and cells[1] not in jobs:
+            raise BudgetError(f"ledger: a {cells[0]} row of {cells[1]!r} before its job row")
+        elif cells[0] == "run" and len(cells) == 6:
+            jobs[cells[1]]["runs"].append(
+                {"id": cells[2], "sha": cells[3], "total": float(cells[4]), "build": float(cells[5])})
         elif cells[0] == "bin" and len(cells) == 4:
-            if cells[1] not in jobs:
-                raise BudgetError(f"ledger: a bin row of {cells[1]!r} before its job row")
             jobs[cells[1]]["bins"][cells[2]] = [float(s) for s in cells[3].split(",") if s]
         else:
             raise BudgetError(f"ledger: unreadable row {line!r}")
@@ -117,24 +172,42 @@ def parse_ledger(text: str) -> dict[str, dict]:
 
 
 def project(
-    ledger: dict[str, dict], local: dict[str, float], changed: list[str], margin: float = MARGIN
+    ledger: dict[str, dict], local: dict[str, float], changed: list[str],
+    added: list[str] | None = None, margin: float = MARGIN,
 ) -> tuple[list[str], list[str]]:
-    """(report lines, refusals) for the changed binaries timed in `local`."""
+    """(report lines, refusals) for the changed binaries timed in `local`; `added` are those
+    of them the branch adds (each also costs its build). A job's baseline is the slowest of
+    its runs in the ledger and its margin the larger of `margin` and the spread of those
+    runs: the same commit takes a job 20 minutes more on a slow runner."""
+    added = added or []
     if CALIBRATION not in local or local[CALIBRATION] <= 0:
         raise BudgetError(f"no local time of the calibration binary {CALIBRATION}")
     missing = [b for b in changed if b not in local]
     if missing:
         raise BudgetError(f"changed test binaries not timed: {', '.join(missing)}")
+    stray = [b for b in added if b not in changed]
+    if stray:
+        raise BudgetError(f"added test binaries not among the changed ones: {', '.join(stray)}")
     report: list[str] = []
     refusals: list[str] = []
     compared = 0
     for name, job in ledger.items():
+        runs = job["runs"][-RUNS:]
+        if len(runs) < MIN_RUNS:
+            raise BudgetError(
+                f"ledger: job {name!r} has {len(runs)} runs (at least {MIN_RUNS} are needed: one "
+                f"run says nothing of the spread between runners): --write-ledger RUN_ID")
         runner = job["bins"].get(CALIBRATION)
         if not runner:
             raise BudgetError(f"ledger: job {name!r} has no time of {CALIBRATION}")
+        totals = [r["total"] for r in runs]
+        baseline = max(totals)
+        spread = (baseline - min(totals)) / 60.0
+        allowed = max(margin, spread)
         ratio = (sum(runner) / len(runner)) / local[CALIBRATION]
         passes = len(runner)
-        delta = 0.0
+        build = max(r["build"] for r in runs) * passes * len(added)
+        delta = build
         rows = []
         for binary in changed:
             scaled = local[binary] * ratio * passes
@@ -142,12 +215,14 @@ def project(
             delta += scaled - before
             rows.append((scaled - before, binary, before, scaled))
             compared += 1
-        projected = (job["total"] + delta) / 60.0
-        budget = job["limit"] - margin
+        projected = (baseline + delta) / 60.0
+        budget = job["limit"] - allowed
         report.append(
-            f"{name}: {job['total'] / 60.0:.0f} min on main, {delta / 60.0:+.1f} min from "
-            f"{len(changed)} changed binaries (ratio {ratio:.2f}, {passes} passes) = "
-            f"{projected:.0f} min of {job['limit']:.0f} (budget {budget:.0f})"
+            f"{name}: at most {baseline / 60.0:.0f} min on main ({len(runs)} runs, spread "
+            f"{spread:.0f} min), {delta / 60.0:+.1f} min from {len(changed)} changed binaries "
+            f"(ratio {ratio:.2f}, {passes} passes, {build / 60.0:.1f} min of it the build of "
+            f"{len(added)} added) = {projected:.0f} min of {job['limit']:.0f} (margin "
+            f"{allowed:.0f}, budget {budget:.0f})"
         )
         if projected > budget:
             worst = sorted(rows, reverse=True)[:5]
@@ -205,10 +280,10 @@ def commits_behind(sha: str, base: str) -> int:
     return int(r.stdout.strip())
 
 
-def changed_binaries(base: str) -> list[str]:
-    """tests/*.rs the commits base..HEAD add or change (not deletions)."""
+def changed_binaries(base: str, only: str = "AMR") -> list[str]:
+    """tests/*.rs the commits base..HEAD add or change (not deletions); `only="A"`: add."""
     r = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=AMR", f"{base}...HEAD", "--", "tests"],
+        ["git", "diff", "--name-only", f"--diff-filter={only}", f"{base}...HEAD", "--", "tests"],
         capture_output=True, text=True, check=True,
     )
     return sorted(p for p in r.stdout.split() if re.fullmatch(r"tests/[^/]+\.rs", p))
@@ -262,6 +337,11 @@ def write_ledger(run: str, repo: str | None) -> int:
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     limits = {"macos-15-intel": 360, "windows-latest": 160}
+    try:
+        with open(LEDGER, encoding="utf-8") as f:
+            known = parse_ledger(f.read())
+    except (OSError, BudgetError):
+        known = {}
     jobs = []
     for job in data["jobs"]:
         m = re.fullmatch(r"Test \(((?:macos|ubuntu|windows)[^)]*)\)", job["name"])
@@ -276,17 +356,28 @@ def write_ledger(run: str, repo: str | None) -> int:
             raise BudgetError(f"{job['name']}: the log has no time of {CALIBRATION}")
         started = _seconds(job["startedAt"])
         ended = _seconds(job["completedAt"])
-        jobs.append({
-            "name": job["name"], "limit": limits.get(m.group(1), 120),
-            "total": ended - started, "bins": bins,
-        })
+        runs = [r for r in known.get(job["name"], {}).get("runs", []) if r["id"] != str(run)]
+        runs.append({"id": str(run), "sha": data["headSha"], "total": ended - started,
+                     "build": build_seconds(log)})
+        jobs.append({"name": job["name"], "limit": limits.get(m.group(1), 120),
+                     "runs": runs[-RUNS:], "bins": bins})
     if not jobs:
         raise BudgetError(f"run {run}: no successful Test job (nothing to write)")
+    jobs = merge_jobs(known, jobs)
     with open(LEDGER, "w", encoding="utf-8") as f:
-        f.write(format_ledger(data["headSha"], jobs))
-    print(f"test_time_budget: ledger written from run {run}: {len(jobs)} jobs, "
+        f.write(format_ledger(jobs))
+    print(f"test_time_budget: run {run} of {data['headSha'][:8]} added to the ledger: {len(jobs)} jobs "
+          f"({', '.join(str(len(j['runs'])) for j in jobs)} runs kept), "
           f"{sum(len(j['bins']) for j in jobs)} binaries read, those of {KEEP:.0f} s or more kept")
     return 0
+
+
+def merge_jobs(known: dict[str, dict], jobs: list[dict]) -> list[dict]:
+    """`jobs` (of the run just read, first) and the ledger's jobs that run did not have (a
+    job that runs on main only is not in a run of a ci/ branch: its rows are kept)."""
+    have = {j["name"] for j in jobs}
+    kept = [{"name": name, **job} for name, job in known.items() if name not in have]
+    return jobs + kept
 
 
 def _seconds(stamp: str) -> float:
@@ -323,8 +414,12 @@ def main(argv: list[str]) -> int:
             print(f"test_time_budget: 0 test binaries changed since {args.base}; "
                   f"{len(ledger)} jobs in the ledger, nothing to project")
             return 0
+        added = changed_binaries(args.base, only="A")
+        for job in ledger.values():
+            for run in job["runs"]:
+                commits_behind(run["sha"], args.base)  # (every run is of a commit of the base)
         local = read_timings(args.timings) if args.timings else time_locally(changed + [CALIBRATION])
-        report, refusals = project(ledger, local, changed)
+        report, refusals = project(ledger, local, changed, added)
         for line in report:
             print(f"test_time_budget: {line}")
         for line in refusals:
