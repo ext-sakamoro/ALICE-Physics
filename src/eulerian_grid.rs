@@ -1242,6 +1242,39 @@ impl MgLevel {
     }
 
     /// Red-black Gauss-Seidel on `A p = rhs`, fixed visiting order.
+    ///
+    /// Each colour reads only the six face neighbours, all of the other colour, so the cells of a
+    /// colour can be computed in any order from the values before the colour's pass: under
+    /// `parallel` a pass writes every cell of the colour into a scratch copy from `p` in fixed
+    /// slabs ([`crate::par_slabs::fill`]), then copies it back — the same bits as the in-place
+    /// sweep below, on any number of threads.
+    #[cfg(feature = "parallel")]
+    fn smooth(&self, inv_deg: &[Fix128], p: &mut [Fix128], rhs: &[Fix128], iterations: u32) {
+        let mut q = vec![Fix128::ZERO; p.len()];
+        for _ in 0..iterations {
+            for colour in 0..2usize {
+                {
+                    let src: &[Fix128] = p;
+                    crate::par_slabs::fill(&mut q, |c| {
+                        let (i, j, k) = (
+                            c % self.nx,
+                            (c / self.nx) % self.ny,
+                            c / (self.nx * self.ny),
+                        );
+                        if (i + j + k) % 2 != colour {
+                            src[c]
+                        } else {
+                            (self.neighbour_sum(src, i, j, k) - rhs[c]) * inv_deg[c]
+                        }
+                    });
+                }
+                p.copy_from_slice(&q);
+            }
+        }
+    }
+
+    /// Red-black Gauss-Seidel on `A p = rhs`, fixed visiting order, in place.
+    #[cfg(not(feature = "parallel"))]
     fn smooth(&self, inv_deg: &[Fix128], p: &mut [Fix128], rhs: &[Fix128], iterations: u32) {
         for _ in 0..iterations {
             for colour in 0..2usize {
@@ -1261,18 +1294,17 @@ impl MgLevel {
         }
     }
 
-    /// `res = rhs − A p`.
+    /// `res = rhs − A p`, each cell from `p` alone (a gather, [`crate::par_slabs::fill`]).
     fn residual(&self, p: &[Fix128], rhs: &[Fix128], res: &mut [Fix128]) {
-        for k in 0..self.nz {
-            for j in 0..self.ny {
-                for i in 0..self.nx {
-                    let c = i + self.nx * (j + self.ny * k);
-                    let ap =
-                        p[c] * Fix128::from_int(-self.degree(c)) + self.neighbour_sum(p, i, j, k);
-                    res[c] = rhs[c] - ap;
-                }
-            }
-        }
+        crate::par_slabs::fill(res, |c| {
+            let (i, j, k) = (
+                c % self.nx,
+                (c / self.nx) % self.ny,
+                c / (self.nx * self.ny),
+            );
+            let ap = p[c] * Fix128::from_int(-self.degree(c)) + self.neighbour_sum(p, i, j, k);
+            rhs[c] - ap
+        });
     }
 }
 
@@ -1305,24 +1337,29 @@ fn mg_vcycle(
     let mut res = vec![Fix128::ZERO; fine.cells()];
     fine.residual(p, rhs, &mut res);
 
-    // Restriction: sum over the aggregate, ascending fine index.
+    // Restriction: each coarse cell sums its aggregate's children (a gather). `Fix128` addition
+    // is wrapping integer addition, so the children's order does not change the sum.
     let (fx, fy, fz) = (
         fine.nx / coarse.nx,
         fine.ny / coarse.ny,
         fine.nz / coarse.nz,
     );
-    let rc = &mut rhs_rest[0];
-    for x in rc.iter_mut() {
-        *x = Fix128::ZERO;
-    }
-    for k in 0..fine.nz {
-        for j in 0..fine.ny {
-            for i in 0..fine.nx {
-                let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                rc[ci] = rc[ci] + res[i + fine.nx * (j + fine.ny * k)];
+    crate::par_slabs::fill(&mut rhs_rest[0], |ci| {
+        let (cx, cy, cz) = (
+            ci % coarse.nx,
+            (ci / coarse.nx) % coarse.ny,
+            ci / (coarse.nx * coarse.ny),
+        );
+        let mut acc = Fix128::ZERO;
+        for k in cz * fz..(cz + 1) * fz {
+            for j in cy * fy..(cy + 1) * fy {
+                for i in cx * fx..(cx + 1) * fx {
+                    acc = acc + res[i + fine.nx * (j + fine.ny * k)];
+                }
             }
         }
-    }
+        acc
+    });
     for x in p_rest[0].iter_mut() {
         *x = Fix128::ZERO;
     }
@@ -1334,15 +1371,14 @@ fn mg_vcycle(
     // Prolongation: injection into the children, scaled.
     let scale = Fix128::from_ratio(MG_CORRECTION_SCALE_NUM, MG_CORRECTION_SCALE_DEN);
     let e = &p_rest[0];
-    for k in 0..fine.nz {
-        for j in 0..fine.ny {
-            for i in 0..fine.nx {
-                let ci = i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz));
-                let c = i + fine.nx * (j + fine.ny * k);
-                p[c] = p[c] + e[ci] * scale;
-            }
-        }
-    }
+    crate::par_slabs::update(p, |c, pc| {
+        let (i, j, k) = (
+            c % fine.nx,
+            (c / fine.nx) % fine.ny,
+            c / (fine.nx * fine.ny),
+        );
+        pc + e[i / fx + coarse.nx * (j / fy + coarse.ny * (k / fz))] * scale
+    });
 
     fine.smooth(&invs[0], p, rhs, MG_POST_SMOOTH);
 }
@@ -4245,11 +4281,9 @@ pub struct BicgstabStats {
 }
 
 fn dot(a: &[Fix128], b: &[Fix128]) -> Fix128 {
-    let mut acc = Fix128::ZERO;
-    for i in 0..a.len() {
-        acc = acc + a[i] * b[i];
-    }
-    acc
+    // per-slab partials, then the partials in slab order ([`crate::par_slabs::sum`]); no partial
+    // is rounded before it is combined, so this is the index-order sum on any number of threads
+    crate::par_slabs::sum(a.len(), |i| a[i] * b[i])
 }
 
 fn linf_norm(v: &[Fix128]) -> Fix128 {
