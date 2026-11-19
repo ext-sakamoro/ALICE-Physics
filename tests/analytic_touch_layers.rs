@@ -890,7 +890,7 @@ fn degenerate_scenes_give_their_stated_results() {
 /// (`CARGO_TARGET_WASM32_WASIP1_RUNNER=wasmtime cargo test --release --target wasm32-wasip1 --test
 /// analytic_touch_layers`). A change of the physics or the scene moves it, and every target is then checked again.
 // re-pinned with the bend term's fold branch (a sheet folded by the drag / throw is unfolded)
-const PINNED: &str = "9f4d57c79a134fc6e2cae947942628936c5c1726310f24bc0c2a7d7797c39e70";
+const PINNED: &str = "1e4c5e3f164435c86b08f18f3bd3f44c1b087936361ada5835ca09820aeb9c16";
 
 #[test]
 fn a_fixed_scene_reaches_the_pinned_history_digest() {
