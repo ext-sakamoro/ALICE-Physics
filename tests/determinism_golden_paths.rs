@@ -286,7 +286,7 @@ fn run_substep_with_bridge(mut w: PhysicsWorld) -> PhysicsWorld {
 
 // ── XPBD ────────────────────────────────────────────────────────────────────
 
-const GOLDEN_XPBD_STEP: &str = "32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b";
+const GOLDEN_XPBD_STEP: &str = "591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f";
 
 #[test]
 fn golden_path_xpbd_step() {
@@ -315,7 +315,7 @@ fn golden_path_xpbd_try_step() {
 /// is its own golden (see `PhysicsWorld::step_parallel`).
 #[cfg(feature = "parallel")]
 const GOLDEN_XPBD_STEP_PARALLEL: &str =
-    "32f8b4b02cc6b4743ed0a0937f81f0dd601756eb1d8262db593d8be1260b697b";
+    "591fe674799234fb89e49762b49ecdda25da20cc66066b67ba74bb8bb833aa2f";
 
 #[cfg(feature = "parallel")]
 #[test]
@@ -446,7 +446,7 @@ fn golden_path_tgs_substep_with_bridge_gives_the_xpbd_bits() {
 
 // ── TGS ─────────────────────────────────────────────────────────────────────
 
-const GOLDEN_TGS_STEP: &str = "e06525001373de0b27157dd843cab059c4b1d4c8d6c8053b4fad63e7903a327e";
+const GOLDEN_TGS_STEP: &str = "1b0629a4ce5ceb2cc5d6c35d10aa28e537ba2f75a711de9961352d2cf26c7f52";
 
 #[test]
 fn golden_path_tgs_step() {
@@ -475,7 +475,7 @@ fn golden_path_tgs_try_step() {
 /// dynamic body is asleep, and the digest pins the state the sleep decision left.
 /// Re-recorded when damping became a rate per second: the scene's retention 0.9
 /// per step of 1/60 s is now the rate `-ln(0.9)·60`, applied in closed form.
-const GOLDEN_SLEEPING: &str = "a55dc2e232a0498e143005288991ef51f78e393b0f76f1d9c20392b5da00a776";
+const GOLDEN_SLEEPING: &str = "b30dc433eba41db85b48f3b717da4bc70dbb6bb03737f4ca623812737ff7cc7e";
 
 #[test]
 fn golden_sleeping() {
@@ -720,7 +720,7 @@ fn golden_installed_bridge() {
 }
 
 const GOLDEN_AXIS_LOCK_XPBD: &str =
-    "133cd2a9adf2ca242a5a9e64446661bcaf57b73704373f075b75e099222eb1a5";
+    "a734dc9811ff7f0b693d1f9e36ede1cfdba0cef1e7881f39374281b7f28f6d19";
 const GOLDEN_AXIS_LOCK_TGS: &str =
     "9f35c69e5a91274c0542e824e5a5cde3b4bcbb6993059abfce96463216580a90";
 

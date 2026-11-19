@@ -268,7 +268,7 @@ fn pow_pos(x: Fix128, e: Fix128) -> Fix128 {
     if x <= Fix128::ZERO {
         return exp_fix((e) * (ln_pos(x)));
     }
-    crate::fix128_kernels::exp_mul_ln(x, e)
+    crate::fix128_kernels::pow_exp_ln(x, e)
 }
 
 // ============================================================================

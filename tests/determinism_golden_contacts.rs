@@ -317,7 +317,7 @@ fn determinism_contact_bounce() {
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_SLIDE: &str =
-    "4fa5740224f9fa5c0fe86018e51049c650771c0bb86584d0c9ea180209990506";
+    "974e0d2c988830bb01747603311f1538d31c6c96512ca58211f508932856cd2b";
 
 #[test]
 fn determinism_contact_slide() {
@@ -400,7 +400,7 @@ fn determinism_contact_slide() {
 /// contact pushes the bottom ball sideways, and a two-ball stack creeps
 /// `1.7e-2 m` in 2 s.
 const GOLDEN_CONTACT_SLOPE: &str =
-    "485d9d402ca5f4c96cf75601da163d9647108fd8a58a11fac230094b24c8ff22";
+    "cefa55cad8957c96ca5636e348fd8b50bffbde4ee6325da8be0f098a78629ba0";
 
 #[test]
 fn determinism_contact_slope() {
