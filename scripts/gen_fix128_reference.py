@@ -105,6 +105,9 @@ def main():
         exp_row(raw(-v))
     for v in [0, 43.66, 43.67, 50, -44.3, -44.4, -46]:
         exp_row(raw(v))
+    # the nine branch points tests/fix128_vs_f64_coupling_hypotheses.rs reads (as from_f64)
+    for v in [0.25, 0.5, 0.72, 1.0, 1.35, 1.78, 2.0, 2.54, 3.0]:
+        exp_row(raw(v))
 
     for v in logspace(-19, 18, 150):
         n = raw(v)

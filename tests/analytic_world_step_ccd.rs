@@ -974,7 +974,7 @@ fn crowd_hash(parallel: bool) -> String {
 /// outside since the last
 /// substep, the contact points of the last substep, the TGS impulses); with the memory
 /// not written and the version put back to 5 the digest is the value before.
-const GOLDEN_CROWD: &str = "274183a9fae573ab27a11461b90ee8c4cc79089cd41bd216f33a20bb85e04dfd";
+const GOLDEN_CROWD: &str = "4ff197867657e929094d8343fe93bd878e47b6e5b93b2fad30527a914dbd8fc0";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {

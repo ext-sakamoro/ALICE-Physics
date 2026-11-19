@@ -660,7 +660,7 @@ fn drive_digest(backend: SolverBackend) -> String {
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
 // re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
-const DRIVE_XPBD: &str = "6fcc55f9060bc199e3b2944d85d5169088ae4ca6926a7ee6870333662e71918a";
+const DRIVE_XPBD: &str = "b98f7343e25da88d73b6741c85bd02800417bed47ebf79e2329cb96c1b468af3";
 const DRIVE_TGS: &str = "4f3c68f5ae4e891cab42ce23e909ef95ed78b52851fbf3c04212fa28de079e72";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the

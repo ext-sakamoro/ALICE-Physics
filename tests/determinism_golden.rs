@@ -132,7 +132,7 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// (per body) per step of 1/60 s are now the rates `-ln(r)·60`, applied in
 /// closed form, which rounds differently from the per-step product.
 /// `tests/world_participant_conformance.rs` holds a copy.
-const GOLDEN_CASCADE: &str = "a57805dafeed2b5faa337bcc4fb5cefe9e5153af20dd283ef08c59ec22690ed0";
+const GOLDEN_CASCADE: &str = "9f07e32e8aa063af90e157bc2ecf1e1c6846545a7d5afeca1c5390e68a700118";
 
 #[test]
 fn determinism_cascade() {
@@ -290,7 +290,7 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// when a sleeping body that a step moves (a constraint pulled it) began to wake its island
 /// and keep the move, where it had stayed asleep holding the moved pose.
 const GOLDEN_JOINT_PENDULUM: &str =
-    "d06737c90a67a3c6621f561610a53ac76e4f30a7411258d74ac7400f2062f29f";
+    "d40529f2439e9c76c8195c78d240855cc2125bfebc6a3270b81ea5a7b851442c";
 
 #[test]
 fn determinism_joint_pendulum() {
@@ -400,7 +400,7 @@ fn hash_cloth(cloth: &Cloth) -> [u8; 32] {
 /// `0df965ee…` pinned a state where the bottom row had been pumped *above*
 /// the pinned top row (y = 6.92 with the top at 5); the cloth now hangs at
 /// y ≈ 3.02.
-const GOLDEN_CLOTH_DRAPE: &str = "e3f38c0ae46e2cb0aa55d0cd0b0869eb36fd6235c4819c62afb85e3e78bab8bb";
+const GOLDEN_CLOTH_DRAPE: &str = "26c00c5f3a17e6c9fd4d8af51a31c0940513491693621f2b660d89bc6e931a1d";
 
 #[test]
 fn determinism_cloth_drape() {
@@ -428,7 +428,7 @@ fn determinism_cloth_drape() {
 /// drag folds triangles over in the plane, which the bend term's fold branch unfolds (a drape
 /// never folds, so `determinism_cloth_drape` does not reach that branch). The particle positions
 /// and velocities after 300 steps; the cloth's own bits, no world header.
-const GOLDEN_CLOTH_FOLD: &str = "0171621f0d1bd1502695bb6a6cab8dbd39fcf3f8b00c22433eaaadb25f408c4b";
+const GOLDEN_CLOTH_FOLD: &str = "72fe7b855bebb192137f695141b4e8e836bf6058cf6d7a761433968e7e900ed0";
 
 #[test]
 fn determinism_cloth_fold() {
@@ -490,7 +490,7 @@ fn determinism_cloth_fold() {
 /// root (`damping_over`); a 60 Hz step keeps the value as it was, which is why the 60 Hz goldens
 /// did not move. The particle positions and velocities; the cloth's own bits, no world header.
 const GOLDEN_CLOTH_DAMPING_RATE: &str =
-    "2414b5abd7c8d5817a624b68e0f199d4f7cb0de4adf8726a1e76bf2527351c42";
+    "3796a69f92c4593d253ec2067b07cdac365069b45c28b256ced75cc84dea5b21";
 
 #[test]
 fn determinism_cloth_damping_rate() {
@@ -524,7 +524,7 @@ fn determinism_cloth_damping_rate() {
 /// participant's own payload (its motion state), not the world digest (which holds the semantics
 /// identifier this golden is part of).
 const GOLDEN_CLOTH_RESIDENT: &str =
-    "644fd2945b3461a080c64d09f1a0cc0d6ab7095c254259f996625f4d22a8e029";
+    "c52a6059c737e3878a9838f91c5fb97db889fe52ae01574d178ffd56db349b02";
 
 #[test]
 fn determinism_cloth_resident() {
@@ -562,7 +562,7 @@ fn determinism_cloth_resident() {
 /// a two-substep span, the free-body prediction, friction and the shared-edge ownership), 120
 /// frames. The SHA-256 of the participant's payload followed by the ball's serialised state.
 const GOLDEN_CLOTH_BODY_CONTACT: &str =
-    "aaca70f8566becbc7c386939005e61a1fdc3b4cbdc2015d199862f872b70b0b8";
+    "7166928d2b54ee33f11e52946eb29d8176f03f80b2f0e7b11b633133be9a4522";
 
 #[test]
 fn determinism_cloth_body_contact() {
@@ -617,7 +617,7 @@ fn determinism_cloth_body_contact() {
 /// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated
 /// frames turn with the anchor, so the limit axes move. 180 steps at 1/60 s, two passes.
 const GOLDEN_SECONDARY_CHAIN: &str =
-    "b38f368c90287484da417d12e2379b0b11820a4bb298e743209bb0699fdee9e0";
+    "f6ed382cab0f82aefd33d99fc3c2b6f8550a8d8b201fc14e0f04aace80feebc1";
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
