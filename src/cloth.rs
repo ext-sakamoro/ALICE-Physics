@@ -1064,15 +1064,6 @@ impl Cloth {
             );
         }
 
-        // TEMP-TRACE
-        #[cfg(feature = "std")]
-        if std::env::var_os("ALICE_CLOTH_TRACE").is_some() {
-            for (kk, k) in sphere_candidates.iter().enumerate() {
-                if !normal_lambda[kk].is_zero() {
-                    std::eprintln!("TRACE face {} lambda_n {:.6e} lambda_t {:.6e}", k.triangle, normal_lambda[kk].to_f64(), tangential_lambda[kk].to_f64());
-                }
-            }
-        }
         // 3. Update velocities
         let inv_dt = Fix128::ONE / dt;
         if predicted.is_empty() {
@@ -3146,6 +3137,14 @@ impl Cloth {
     /// moves by `+w_s λ n`, each corner by `−wᵢ wᵢ' λ n` (`wᵢ` inverse masses, `wᵢ'` the
     /// barycentric weights), so `M Δc + Σ mᵢ Δpᵢ = 0` for every correction.
     ///
+    /// Feature ownership: when `q` lies on an edge or a vertex of the face and
+    /// another candidate face of the same sphere shares that edge or vertex and has
+    /// the projection of `c` on its own plane inside it, the contact belongs to that
+    /// face and this one is skipped; the direction `c − q` is used only where no
+    /// neighbour owns the feature (the sheet's boundary, a fold the sphere is past).
+    /// Without it a flat sheet's shared edges and vertices push a sphere along the
+    /// surface.
+    ///
     /// Friction is the rigid contacts' Coulomb law
     /// ([`crate::xpbd_contact::static_hold`], eq. (26–27)): the tangential relative
     /// displacement of the centre and the face point over the step,
@@ -3188,6 +3187,17 @@ impl Cloth {
             if lateral.length() >= s.reach {
                 continue;
             }
+            // feature ownership: a closest point on an edge or a vertex of this
+            // face belongs to a neighbour sharing that feature whose own plane
+            // has the centre's projection inside it; that face holds the sphere
+            // along its normal, and this one stays out (on a smooth sheet the
+            // edge's direction `c − q` would push the sphere along the surface)
+            if height > Fix128::ZERO
+                && bary.iter().any(|x| x.is_zero())
+                && self.feature_owned_elsewhere(candidates, kk, tri, bary, s.centre)
+            {
+                continue;
+            }
             let (n, violation) = if height > Fix128::ZERO {
                 let (dir, dist) = diff.normalize_with_length_scaled();
                 if dist >= s.reach {
@@ -3214,11 +3224,6 @@ impl Cloth {
                 continue;
             }
             let lambda = -violation / denom;
-            // TEMP-TRACE
-            #[cfg(feature = "std")]
-            if std::env::var_os("ALICE_CLOTH_TRACE_N").is_some() {
-                std::eprintln!("TRACEN face {} n ({:.4},{:.4},{:.4}) bary ({:.3},{:.3},{:.3}) dlambda {:.4e}", k.triangle, n.x.to_f64(), n.y.to_f64(), n.z.to_f64(), bary[0].to_f64(), bary[1].to_f64(), bary[2].to_f64(), lambda.to_f64());
-            }
             self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, n, lambda);
             normal_lambda[kk] = normal_lambda[kk] + lambda;
             let limit = s.friction * normal_lambda[kk];
@@ -3245,6 +3250,49 @@ impl Cloth {
             tangential_lambda[kk] = tangential_lambda[kk] + hold;
             self.move_sphere_and_face(spheres, k.sphere, tri, bary, w, t_dir, -hold);
         }
+    }
+
+    /// Whether another candidate face of the same sphere owns the feature of `tri`
+    /// that holds the closest point
+    /// ([`crate::xpbd_contact::feature_owned_by_neighbour`]).
+    fn feature_owned_elsewhere(
+        &self,
+        candidates: &[SphereCandidate],
+        own: usize,
+        tri: [usize; 3],
+        bary: [Fix128; 3],
+        p: Vec3Fix,
+    ) -> bool {
+        let sphere = candidates[own].sphere;
+        let mut feature = [0usize; 3];
+        let mut len = 0;
+        for i in 0..3 {
+            if !bary[i].is_zero() {
+                feature[len] = tri[i];
+                len += 1;
+            }
+        }
+        let neighbours = candidates
+            .iter()
+            .enumerate()
+            .filter(|(jj, o)| *jj != own && o.sphere == sphere)
+            .map(|(_, o)| {
+                let t = self.triangles[o.triangle];
+                (
+                    t,
+                    [
+                        self.positions[t[0]],
+                        self.positions[t[1]],
+                        self.positions[t[2]],
+                    ],
+                )
+            });
+        let own = [
+            self.positions[tri[0]],
+            self.positions[tri[1]],
+            self.positions[tri[2]],
+        ];
+        crate::xpbd_contact::feature_owned_by_neighbour(own, &feature[..len], neighbours, p)
     }
 
     /// Move sphere `si` by `+w_s λ d` and each corner of `tri` by `−wᵢ wᵢ' λ d`.

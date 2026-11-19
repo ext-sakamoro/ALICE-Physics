@@ -311,11 +311,12 @@ fn per_frame_places_the_calls_evenly() {
     }
 }
 
-/// Cloth-body contact is not wired: a ball falling through a resident cloth moves
-/// exactly as in a world without the cloth, and the cloth exactly as in a world
-/// without the ball. (When contact is wired this test changes on purpose.)
+/// A body and a resident cloth in one world act on each other: a ball dropped
+/// through the letter's plane moves differently from the same ball in a world
+/// without the cloth, and the cloth differently from the same cloth in a world
+/// without the ball (the contact itself is measured in `tests/cloth_body_contact.rs`).
 #[test]
-fn a_body_and_a_resident_cloth_do_not_interact() {
+fn a_body_and_a_resident_cloth_act_on_each_other() {
     let g = Vec3Fix::new(Fix128::ZERO, r(-981, 100), Fix128::ZERO);
     let make = |with_ball: bool, with_cloth: bool| {
         let mut w = PhysicsWorld::new(SolverConfig {
@@ -342,17 +343,13 @@ fn a_body_and_a_resident_cloth_do_not_interact() {
         step(&mut ball, 1);
         step(&mut cloth, 1);
     }
-    assert_eq!(
+    assert_ne!(
         both.bodies[0].position, ball.bodies[0].position,
-        "the ball ignores the cloth"
+        "the ball feels the cloth"
     );
-    assert!(
-        both.bodies[0].position.y < r(-1, 1),
-        "the ball fell through the letter's plane"
-    );
-    assert_eq!(
+    assert_ne!(
         positions_a(&both),
         positions_a(&cloth),
-        "the cloth ignores the ball"
+        "the cloth feels the ball"
     );
 }

@@ -438,13 +438,21 @@ fn a_ball_crossing_a_face_within_one_step_is_held_on_its_start_side() {
 /// Friction on an incline: a fully pinned (flat, unmovable) sheet and gravity tilted
 /// by `θ` in `x`, the ball resting on it with the default `friction` `μ = 0.5`. Below
 /// the cone (`tan θ = 0.3`) it stays put (less than 1 mm in 1 s); above it (`tan θ =
-/// 0.8`) it slides `½ g (sin θ − μ cos θ) t²` (the closed form of a block, the contact
-/// acting at the centre) to 5 % over 0.5 s.
+/// 0.8`) it slides as a block with the contact at its centre, `a = g (sin θ − μ cos θ)`.
+/// The world's semi-implicit Euler moves a body under a constant `a` by exactly
+/// `a dt² N(N+1)/2` in `N` frames (the closed form `½ a t²` is `N/(N+1)` of it, 3 % off
+/// at `N = 30`), and the slide matches that to 1 %, starting with the contact on a
+/// grid vertex (`z = 0`) and on a grid edge (`z = 0.05`): a contact whose closest point
+/// is a shared edge or vertex of a flat sheet must not push along the sheet.
 #[test]
 fn a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it() {
     let reach = reach_of(BALL_RADIUS);
     let mu = 0.5;
-    for (tan, frames) in [(0.3f64, 60usize), (0.8, 30)] {
+    for (tan, frames, z) in [
+        (0.3f64, 60usize, Fix128::ZERO),
+        (0.8, 30, Fix128::ZERO),
+        (0.8, 30, r(5, 100)),
+    ] {
         let (sin, cos) = (
             tan / (1.0 + tan * tan).sqrt(),
             1.0 / (1.0 + tan * tan).sqrt(),
@@ -461,7 +469,7 @@ fn a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it() {
         let mut s = scene(
             1,
             1,
-            (r(-2, 10), Fix128::from_f64(reach), Fix128::ZERO),
+            (r(-2, 10), Fix128::from_f64(reach), z),
             Fix128::ZERO,
             BALL_RADIUS,
             g,
@@ -472,17 +480,21 @@ fn a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it() {
             s.world.step(dt());
         }
         let moved = s.world.bodies[s.ball].position.x.to_f64() - x0;
-        let t = frames as f64 / 60.0;
-        let expect = 0.5 * 9.81 * (sin - mu * cos).max(0.0) * t * t;
+        let h = 1.0 / 60.0;
+        let a = 9.81 * (sin - mu * cos).max(0.0);
+        let n = frames as f64;
+        let expect = a * h * h * n * (n + 1.0) / 2.0;
+        let z = z.to_f64();
         println!(
-            "[cloth contact] incline tan {tan}: moved {moved:.5} m, closed form {expect:.5} m"
+            "[cloth contact] incline tan {tan} z {z}: moved {moved:.5} m, discrete closed form {expect:.5} m (continuous {:.5})",
+            0.5 * a * (n * h) * (n * h)
         );
         if tan < mu {
             assert!(moved.abs() < 1e-3, "tan {tan}: held (moved {moved:.5})");
         } else {
             assert!(
-                (moved - expect).abs() < 0.05 * expect,
-                "tan {tan}: slid {moved:.5} vs {expect:.5}"
+                (moved - expect).abs() < 0.01 * expect,
+                "tan {tan} z {z}: slid {moved:.5} vs {expect:.5}"
             );
         }
         let y = s.world.bodies[s.ball].position.y.to_f64();
@@ -491,6 +503,59 @@ fn a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it() {
             "tan {tan}: on the sheet, not in it (y {y:.5})"
         );
     }
+}
+
+/// The sheet's boundary still catches: a ball dropped with its centre 4 cm outside the
+/// pinned sheet's edge (inside its reach of the boundary edge, which no other face
+/// shares) is held off the edge along the edge's rounded direction `c − q`: no face
+/// comes within 99 % of `R` of its centre, and it is pushed outward and falls past the
+/// sheet (a flat face normal would hold it hovering beyond the edge instead).
+#[test]
+fn a_ball_over_the_sheets_boundary_is_caught_by_the_edge_and_rolls_off() {
+    let reach = reach_of(BALL_RADIUS);
+    let mut cloth = sheet(1, gravity(), true, r(99, 100));
+    for i in 0..RES * RES {
+        cloth.pin(i);
+    }
+    let x0 = 0.54;
+    let mut s = scene(
+        1,
+        1,
+        (Fix128::from_f64(x0), r(2, 10), Fix128::ZERO),
+        Fix128::ZERO,
+        BALL_RADIUS,
+        gravity(),
+        cloth,
+    );
+    let mut closest = f64::INFINITY;
+    for _ in 0..90 {
+        s.world.step(dt());
+        let c = s.world.bodies[s.ball].position;
+        if c.y.to_f64() > -reach {
+            closest = closest.min(closest_face(&s.world, c));
+        }
+    }
+    let c = s.world.bodies[s.ball].position;
+    println!(
+        "[cloth contact] boundary: closest face {closest:.5} (R {reach:.3}), end x {:.4} y {:.4}",
+        c.x.to_f64(),
+        c.y.to_f64()
+    );
+    assert!(
+        closest >= reach * 0.99,
+        "boundary: penetration {:.5}",
+        reach - closest
+    );
+    assert!(
+        c.x.to_f64() > x0 + 0.01,
+        "boundary: pushed outward (x {:.4})",
+        c.x.to_f64()
+    );
+    assert!(
+        c.y.to_f64() < 0.0,
+        "boundary: fell past the sheet (y {:.4})",
+        c.y.to_f64()
+    );
 }
 
 /// Momentum balance: no gravity, no pins, no damping; a ball thrown down at a free

@@ -21,7 +21,11 @@
 //!   substep width ([`SubstepCtx::world_substep`](crate::world_participant::SubstepCtx::world_substep)). Inside the cloth's iterations each
 //!   sphere is held at `R` from the faces it was on the start side of
 //!   (particle–triangle: closest point, normal from the face, the side fixed by the
-//!   body's start position), a mass-weighted XPBD projection that moves the sphere
+//!   body's start position; a closest point on an edge or vertex that a
+//!   neighbouring face owns, the projection of the centre being inside that face,
+//!   is left to that face and its normal, so a flat sheet's internal edges do not
+//!   push along the surface; the boundary keeps the rounded direction `c − q`),
+//!   a mass-weighted XPBD projection that moves the sphere
 //!   by `w_s λ` and corner `i` by `−w_i b_i λ` (`w = inv_mass`, `b` barycentric).
 //!   Coulomb friction acts in the same contact with the rigid static-friction law
 //!   (`xpbd_contact::static_hold`): the tangential slip of the sphere relative to the
@@ -61,6 +65,7 @@
 //!   with no drift and the span sawtooth bound at every substep;
 //!   `a_ball_smaller_than_a_cell_is_held_by_its_faces`;
 //!   `a_ball_crossing_a_face_within_one_step_is_held_on_its_start_side`;
+//!   `a_ball_over_the_sheets_boundary_is_caught_by_the_edge_and_rolls_off`;
 //!   `a_ball_on_an_incline_holds_below_tan_mu_and_slides_above_it`;
 //!   `ball_and_cloth_momentum_together_is_conserved_through_the_contact`).
 //!
@@ -153,11 +158,6 @@ impl ClothParticipant {
                 friction: b.friction,
             });
             predicted.push((i, centre));
-            // TEMP-TRACE
-            #[cfg(feature = "std")]
-            if std::env::var_os("ALICE_CLOTH_TRACE").is_some() {
-                std::eprintln!("TRACE call sub {} start ({:.7},{:.7},{:.7}) v ({:.6},{:.6},{:.6}) predicted ({:.7},{:.7},{:.7})", ctx.substep_index(), b.position.x.to_f64(), b.position.y.to_f64(), b.position.z.to_f64(), b.velocity.x.to_f64(), b.velocity.y.to_f64(), b.velocity.z.to_f64(), centre.x.to_f64(), centre.y.to_f64(), centre.z.to_f64());
-            }
         }
         Ok((spheres, predicted))
     }
