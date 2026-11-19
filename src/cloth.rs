@@ -1064,6 +1064,15 @@ impl Cloth {
             );
         }
 
+        // TEMP-TRACE
+        #[cfg(feature = "std")]
+        if std::env::var_os("ALICE_CLOTH_TRACE").is_some() {
+            for (kk, k) in sphere_candidates.iter().enumerate() {
+                if !normal_lambda[kk].is_zero() {
+                    std::eprintln!("TRACE face {} lambda_n {:.6e} lambda_t {:.6e}", k.triangle, normal_lambda[kk].to_f64(), tangential_lambda[kk].to_f64());
+                }
+            }
+        }
         // 3. Update velocities
         let inv_dt = Fix128::ONE / dt;
         if predicted.is_empty() {

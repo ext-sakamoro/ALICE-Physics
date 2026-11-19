@@ -983,6 +983,7 @@ pub struct SubstepCtx<'a> {
     sdf_contacts: &'a [crate::sdf_collider::SdfContact],
     body_radii: Option<BodyRadii<'a>>,
     gravity: Option<Vec3Fix>,
+    world_substep: Option<Fix128>,
 }
 
 impl<'a> SubstepCtx<'a> {
@@ -1018,6 +1019,7 @@ impl<'a> SubstepCtx<'a> {
             sdf_contacts: &[],
             body_radii: None,
             gravity: None,
+            world_substep: None,
         })
     }
 
@@ -1058,6 +1060,24 @@ impl<'a> SubstepCtx<'a> {
     pub fn with_gravity(mut self, gravity: Vec3Fix) -> Self {
         self.gravity = Some(gravity);
         self
+    }
+
+    /// The same context with the width of one world substep, for
+    /// [`Self::world_substep`].
+    #[must_use]
+    pub fn with_world_substep(mut self, h: Fix128) -> Self {
+        self.world_substep = Some(h);
+        self
+    }
+
+    /// The width of one world substep (`dt / substeps`, as the world rounds
+    /// it). A call that covers `k` substeps ([`StepRule::PerFrame`]) spans `k`
+    /// of these while the world integrates its bodies `k` times; [`Self::h`]
+    /// is the call's width `dt·k/n`. `None` when this context was built
+    /// without it ([`Self::with_world_substep`]).
+    #[must_use]
+    pub fn world_substep(&self) -> Option<Fix128> {
+        self.world_substep
     }
 
     /// The world's gravity as it is in this substep, before each body's
@@ -2018,7 +2038,8 @@ pub(crate) fn run_substep_tracked(
             if let Some(world) = world {
                 ctx = ctx
                     .with_body_radii(world.radii, world.default)
-                    .with_gravity(world.gravity);
+                    .with_gravity(world.gravity)
+                    .with_world_substep(time.h);
             }
             *running = Some(i);
             let result = participants[i].substep(&mut ctx, h);

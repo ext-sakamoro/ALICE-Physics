@@ -33,6 +33,7 @@ use alloc::vec::Vec;
 
 use crate::cloth::{Cloth, ContactSphere, Cursor};
 use crate::math::{Fix128, Vec3Fix};
+use crate::solver::free_linear_substep;
 use crate::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
     SubstepCtx,
@@ -78,7 +79,9 @@ impl ClothParticipant {
         &self,
         ctx: &SubstepCtx<'_>,
         h: Fix128,
-    ) -> (Vec<ContactSphere>, Vec<(usize, Vec3Fix)>) {
+        covered: usize,
+        hs: Fix128,
+    ) -> Result<(Vec<ContactSphere>, Vec<(usize, Vec3Fix)>), ParticipantFault> {
         let g = ctx.gravity().unwrap_or(Vec3Fix::ZERO);
         let thickness = self.cloth.config.thickness;
         let mut spheres = Vec::new();
@@ -88,12 +91,21 @@ impl ClothParticipant {
                 continue;
             };
             let dynamic = b.is_dynamic();
-            let velocity = if dynamic {
-                b.velocity + g * h
+            // where the world will have the body at the end of this call with
+            // no cloth: its own `k` substeps of `free_linear_substep`; a
+            // static or kinematic body is not moved by the cloth, its centre
+            // is carried on its velocity
+            let centre = if dynamic {
+                let (mut x, mut v) = (b.position, b.velocity);
+                for _ in 0..covered {
+                    let (nv, nx) = free_linear_substep(x, v, g, b.gravity_scale, hs);
+                    v = nv;
+                    x = nx.ok_or(ParticipantFault::OutOfRange)?;
+                }
+                x
             } else {
-                b.velocity
+                b.position + b.velocity * h
             };
-            let centre = b.position + velocity * h;
             spheres.push(ContactSphere {
                 start: b.position,
                 centre,
@@ -102,8 +114,13 @@ impl ClothParticipant {
                 friction: b.friction,
             });
             predicted.push((i, centre));
+            // TEMP-TRACE
+            #[cfg(feature = "std")]
+            if std::env::var_os("ALICE_CLOTH_TRACE").is_some() {
+                std::eprintln!("TRACE call sub {} start ({:.7},{:.7},{:.7}) v ({:.6},{:.6},{:.6}) predicted ({:.7},{:.7},{:.7})", ctx.substep_index(), b.position.x.to_f64(), b.position.y.to_f64(), b.position.z.to_f64(), b.velocity.x.to_f64(), b.velocity.y.to_f64(), b.velocity.z.to_f64(), centre.x.to_f64(), centre.y.to_f64(), centre.z.to_f64());
+            }
         }
-        (spheres, predicted)
+        Ok((spheres, predicted))
     }
 }
 
@@ -120,24 +137,29 @@ impl Participant for ClothParticipant {
         if h <= Fix128::ZERO {
             return Err(ParticipantFault::InvalidState);
         }
-        let (spheres, predicted) = self.spheres(ctx, h);
-        let mut spheres = spheres;
-        self.cloth.step_with_spheres(h, &mut spheres);
-        // the reaction: the impulse that moves the body by what the cloth moved it,
-        // `M · Δc / W`, delivered over the world substep this call runs in (the world
-        // applies a staged force over its substep, `W / k` for a call covering `k`)
+        // the world integrates its bodies `k` times over this call, each a
+        // world substep `hs` (its own rounding of `dt / n`)
         let covered = self
             .step_rule()
             .covers(ctx.substep_index(), ctx.substeps())
             .unwrap_or(1);
-        let hs = h / Fix128::from_int(covered as i64);
+        let hs = ctx
+            .world_substep()
+            .unwrap_or_else(|| h / Fix128::from_int(covered as i64));
+        let span = hs * Fix128::from_int(covered as i64);
+        let (mut spheres, predicted) = self.spheres(ctx, h, covered, hs)?;
+        self.cloth.step_with_spheres(h, &mut spheres);
+        // the reaction: the impulse that moves the body by what the cloth moved
+        // it. The world applies a staged force once, at the first substep of the
+        // call, `Δv = F·inv_mass·hs`, and the body carries `Δv` through the `k`
+        // substeps, `Δx = Δv·k·hs`; so `F = Δc / (inv_mass · hs · k·hs)`
         for (k, (body, pred)) in predicted.iter().enumerate() {
             let s = spheres[k];
             let moved = s.centre - *pred;
             if s.inv_mass.is_zero() || moved == Vec3Fix::ZERO {
                 continue;
             }
-            let scale = Fix128::ONE / (s.inv_mass * h * hs);
+            let scale = Fix128::ONE / (s.inv_mass * span * hs);
             ctx.add_force(*body, moved * scale)
                 .map_err(|_| ParticipantFault::OutOfRange)?;
         }
