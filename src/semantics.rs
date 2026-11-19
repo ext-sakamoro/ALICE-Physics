@@ -10,7 +10,7 @@
 //! # Hex form (earlier `alice-det-math` generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09
+//! fcbe607208a3623d5a1366c7cd4238775d558a9c3ed4e0090ef81367e3af7450
 //! ```
 //!
 //! # Entries
@@ -1246,10 +1246,10 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// [`PHYSICS_SEMANTICS_PINS`] and, under `det-math <function>`,
 /// [`DET_MATH_PINS`], described in the [module documentation](self).
 ///
-/// Hex: `af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09`.
+/// Hex: `fcbe607208a3623d5a1366c7cd4238775d558a9c3ed4e0090ef81367e3af7450`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("af519b7be0d2c588b7eb551edf0c3dda9a696e355e92b352a867a83e32193e09");
+    hex32("fcbe607208a3623d5a1366c7cd4238775d558a9c3ed4e0090ef81367e3af7450");
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.

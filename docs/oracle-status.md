@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6475 |
+| 🟢 Not ignored (run by CI) | 6507 |
 | 🔴 Red by design | 73 |
-| ⏱ Gated (runtime / diagnostic / manual) | 41 |
+| ⏱ Gated (runtime / diagnostic / manual) | 42 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6589** |
+| **Total** | **6622** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -130,7 +130,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (41)
+## ⏱ Gated (42)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -169,7 +169,8 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `pushed_slowly_no_chain_is_fed_below_the_push_of_its_squeeze_energy` (analytic_thick_chain_entry.rs) — runtime: about 45 s at opt-level 2, measured 2026-11-19 (nine pushes of 15 s each, up to 80 links); run by the…
 - `reattachment_lengthens_under_grid_refinement` (armaly_backward_step.rs) — runtime only: 256x16 cells for 8192 steps, release-only (about 190 s, measured 2026-10-03); the measured value…
 - `the_cube_lying_on_the_floor_carries_only_the_column_above_it_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
-- `the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the 120-frame test above runs every tim…
+- `the_cube_two_kernel_radii_above_the_floor_feels_archimedes_over_900_frames` (analytic_fluid_sdf_body.rs) — runtime: about 20 min on the slowest test runner, measured 2026-11-18; the stored-state test above runs every …
+- `the_example_writes_the_stored_state_again` (analytic_fluid_newton_fixture.rs) — runtime: about 3.5 min in release (124 frames of 3008 particles); run by run_ignored.py
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
@@ -177,7 +178,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6475)
+## 🟢 Not ignored (6507)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -228,6 +229,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_law_outputs.rs` | 25 |
 | `analytic_compound_wiring.rs` | 24 |
 | `analytic_physics2d_pairs.rs` | 24 |
+| `analytic_smoke_plume.rs` | 24 |
 | `analytic_transient_thermal_wiring.rs` | 24 |
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
@@ -331,6 +333,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_flow_viz.rs` | 16 |
 | `audit_gpu_sdf.rs` | 16 |
 | `audit_maxwell_fdtd.rs` | 16 |
+| `determinism_golden.rs` | 16 |
 | `analytic_articulation_wiring.rs` | 15 |
 | `analytic_dynamic_fem.rs` | 15 |
 | `analytic_md_crowd_try_step.rs` | 15 |
@@ -345,7 +348,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_modal.rs` | 15 |
 | `audit_sdf_fem_mesh.rs` | 15 |
 | `audit_sdf_force.rs` | 15 |
-| `determinism_golden.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
 | `analytic_convex_decompose.rs` | 14 |
 | `analytic_joint_motor_world.rs` | 14 |
@@ -383,7 +385,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_ccd_wiring.rs` | 13 |
 | `analytic_sim_modifier_wiring.rs` | 13 |
 | `analytic_sketch_wiring.rs` | 13 |
-| `analytic_smoke_plume.rs` | 13 |
 | `analytic_spring_joint.rs` | 13 |
 | `analytic_touch_layers.rs` | 13 |
 | `analytic_vehicle_participant.rs` | 13 |
@@ -476,6 +477,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_laminate_failure_wiring.rs` | 9 |
 | `analytic_magnet_induced_dipole.rs` | 9 |
 | `analytic_magnet_world.rs` | 9 |
+| `analytic_magnetic_fluid_surface.rs` | 9 |
 | `analytic_material_wiring.rs` | 9 |
 | `analytic_quadratic_fem.rs` | 9 |
 | `analytic_quadratic_hyperelastic.rs` | 9 |
@@ -574,6 +576,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_world_query_touching.rs` | 6 |
 | `audit_c_joint_extra.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
+| `cloth_body_contact.rs` | 6 |
 | `cloth_fluid_sub_iteration.rs` | 6 |
 | `cloth_sleep_oracle.rs` | 6 |
 | `cloth_state_digest.rs` | 6 |
@@ -732,6 +735,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_add_force_is_immediate.rs` | 1 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_flat_landing.rs` | 1 |
+| `analytic_fluid_newton_fixture.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
 | `analytic_hypot3_max_tie.rs` | 1 |
