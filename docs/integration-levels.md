@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 24 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 5 |
-| standalone | a Rust API that only examples call | 132 |
+| standalone | a Rust API that only examples call | 133 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -183,6 +183,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
+| `thick_chain` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `touch` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `touch_layers` | standalone | 0 / 0 / 0 / 25 / 0 | — |
