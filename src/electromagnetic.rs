@@ -1,4 +1,43 @@
-//! Lorentz-force electromagnetics for charged rigid bodies.
+//! Lorentz-force electromagnetics for charged rigid bodies, the field of permanent magnets, the
+//! force on magnetisable bodies in it, and the surface of a magnetisable liquid at rest in it.
+//!
+//! # MODEL
+//!
+//! - **Equations**: the Lorentz force `F = q(E + v × B)` on a charged body (`lorentz_force`,
+//!   `lorentz_force_sum`, sources from `EmSource::sample`); the field of a point magnetic dipole
+//!   `B = μ0/4π · (3(m·r̂)r̂ − m)/r³` and its Jacobian (`dipole_sample`); a soft magnetisable body
+//!   of moment `min(χ_eff·V·|B|/μ0, M_s·V)·B̂`, energy `U = −χ_eff·V·|B|²/(2μ0)` below
+//!   `B_s = μ0·M_s/χ_eff` and `−M_s·V·|B| + M_s·V·B_s/2` above (`induced_dipole_energy`), force
+//!   `F = −∇U` (`induced_dipole_force`); a magnetisable liquid at rest: magnetic pressure
+//!   `p* = −U/V` (`magnetic_fluid_pressure`) and the ferrohydrostatic Bernoulli equation
+//!   `ρ g h − p* = const` along its free surface, so the rise `h = p*/(ρ g)`
+//!   (`magnetic_fluid_surface_rise`).
+//! - **Units**: SI. q C, E V/m, B T, v m/s, F N, m A·m², r m, V m³, M_s A/m, U J, p* Pa, ρ kg/m³,
+//!   g m/s², h m; `μ0/4π = 1e-7` T·m/A (`mu0_over_4pi`), `μ0` to ten digits (`mu0`).
+//! - **Conservation**: the fields are prescribed sources with no state (`EmSource`,
+//!   `dipole_sample`); the magnetic force on a magnetisable body is conservative (`−∇U`,
+//!   `induced_dipole_force`); the Lorentz force of a static `B` does no work
+//!   (`lorentz_force`). The liquid's rise is a static balance (`magnetic_fluid_surface_rise`):
+//!   no flow, nothing is conserved or dissipated over time, the volume is the caller's.
+//! - **Range**: point dipoles, valid at distances much larger than the magnet and the body
+//!   (`dipole_sample`, no field at `r = 0`); quasi-static fields only (`lorentz_force`); the
+//!   liquid's rise is valid below the Rosensweig threshold and for `χ ≪ 1`, and is `None` for a
+//!   non-positive density or gravity (`magnetic_fluid_surface_rise`).
+//! - **Approximations**: no full Maxwell equations, no induction (Faraday), no hysteresis
+//!   (`EmSource::sample`); a magnetisable body is a point dipole with a linear-then-saturating
+//!   magnetisation (`MagneticResponse`); the liquid's own magnetisation does not change the field
+//!   (`magnetic_fluid_pressure`), and its surface has no tension and raises no spikes (the
+//!   Rosensweig instability is not modelled), with the field taken at the point the caller
+//!   gives, not on the raised surface (`magnetic_fluid_surface_rise`).
+//! - **Validation**: `tests/analytic_magnet_induced_dipole.rs` (the dipole field, the energy and
+//!   force in both regimes, `F = −∇U` by central difference),
+//!   `tests/analytic_magnetic_fluid_surface.rs` (the rise on the axis of a magnet against the
+//!   closed form, the saturated branch, two magnets superpose their fields before squaring, a
+//!   liquid that does not magnetise or has no weight), `the_dipole_field_at_three_points_of_known_geometry`,
+//!   `the_jacobian_is_the_derivative_of_the_field_symmetric_and_traceless`,
+//!   `uniform_electric_field_pushes_positive_charge`, `magnetic_field_produces_perpendicular_force`,
+//!   `the_magnetic_liquid_pressure_and_rise`.
+//! - **Tiers**: L0 only.
 //!
 //! Complements [`crate::force::ForceField::Vortex`] and gravity-well
 //! fields with the canonical electromagnetic force
@@ -281,6 +320,52 @@ pub fn induced_dipole_force(
     } else {
         grad_half_b_sq * (response.saturation_magnetization * volume / b_sq.sqrt())
     }
+}
+
+// ---------------------------------------------------------------------------
+// A magnetisable liquid at rest in the field of permanent magnets
+// ---------------------------------------------------------------------------
+
+/// The magnetic pressure (Pa) of a magnetisable liquid where the magnets' field is `field`:
+/// `p* = ∫₀^|B| M dB'` with `M = min(χ·B'/μ0, M_s)`, that is `χ·|B|²/(2μ0)` below the saturation
+/// field `B_s = μ0·M_s/χ` and `M_s·|B| − M_s·B_s/2` above it (equal at `B_s`). It is the energy
+/// per unit volume the liquid gives up in the field, `−U/V` of [`induced_dipole_energy`], with
+/// `response.chi_eff` the liquid's susceptibility χ and `response.saturation_magnetization` its
+/// `M_s`. Zero for a liquid that does not magnetise.
+///
+/// The field inside the liquid is taken as the magnets' field (`χ ≪ 1`): the liquid's own
+/// magnetisation does not change the field it sits in.
+#[must_use]
+pub fn magnetic_fluid_pressure(field: Vec3Fix, response: &MagneticResponse) -> Fix128 {
+    -induced_dipole_energy(field, response, Fix128::ONE)
+}
+
+/// How far (m) the free surface of a magnetisable liquid at rest stands above its level where
+/// there is no field, at a point of the surface where the magnets' field is `field`: the
+/// ferrohydrostatic Bernoulli equation `ρ·g·h − p* = const` along the surface, so
+/// `h = p*/(ρ·g)` with `p*` from [`magnetic_fluid_pressure`]. Several magnets: add their fields
+/// (or their [`DipoleSample`]s) first, then take the rise of the sum; rises do not add.
+///
+/// `density` is ρ (kg/m³), `gravity` is `|g|` (m/s²). `None` when either is not positive (no
+/// liquid at rest to stand). The level where there is no field is the caller's: in a closed dish
+/// the liquid drawn up under a magnet comes from the rest, so the caller shifts the whole surface
+/// to keep the volume.
+///
+/// Valid below the Rosensweig threshold (a flat-topped mound, no spikes): the surface's own
+/// tension and the instability that raises spikes above the critical magnetisation are not in
+/// this equation. The field is evaluated where the caller asks (usually the undisturbed surface),
+/// not on the raised surface.
+#[must_use]
+pub fn magnetic_fluid_surface_rise(
+    field: Vec3Fix,
+    response: &MagneticResponse,
+    density: Fix128,
+    gravity: Fix128,
+) -> Option<Fix128> {
+    if density <= Fix128::ZERO || gravity <= Fix128::ZERO {
+        return None;
+    }
+    Some(magnetic_fluid_pressure(field, response) / (density * gravity))
 }
 
 #[cfg(test)]
@@ -660,5 +745,58 @@ mod magnet_tests {
         assert!(close(saturated.x, 0.85 * 2.4, 2.04, 1e-9), "{saturated:?}");
         assert!(close(saturated.y, -0.85 * 1.6, 2.04, 1e-9), "{saturated:?}");
         assert!(saturated.z.is_zero());
+    }
+
+    /// Unit oracle (the lib's own coverage): the magnetic liquid's pressure and rise against the closed forms
+    /// `χ|B|²/(2μ0)` and `M_s|B| − M_s B_s/2`, the rise `p*/(ρ g)`, and no rise without weight or magnetisation
+    #[test]
+    fn the_magnetic_liquid_pressure_and_rise() {
+        let liquid = MagneticResponse {
+            chi_eff: Fix128::ONE,
+            saturation_magnetization: Fix128::from_int(400_000),
+        };
+        let field = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(5, 100), Fix128::ZERO);
+        let mu0 = 4.0 * core::f64::consts::PI * 1e-7;
+        let p = magnetic_fluid_pressure(field, &liquid);
+        assert!(close(p, 0.05 * 0.05 / (2.0 * mu0), 1000.0, 1e-9), "{p:?}");
+        let h = magnetic_fluid_surface_rise(
+            field,
+            &liquid,
+            Fix128::from_int(1200),
+            Fix128::from_ratio(981, 100),
+        )
+        .expect("a liquid with weight");
+        assert!(
+            close(h, 0.05 * 0.05 / (2.0 * mu0 * 1200.0 * 9.81), 0.1, 1e-9),
+            "{h:?}"
+        );
+        // saturated: B_s = μ0·20000 ≈ 0.0251 T, below 0.05 T
+        let sat = MagneticResponse {
+            chi_eff: Fix128::ONE,
+            saturation_magnetization: Fix128::from_int(20_000),
+        };
+        let b_s = mu0 * 20_000.0;
+        let ps = magnetic_fluid_pressure(field, &sat);
+        assert!(
+            close(ps, 20_000.0 * 0.05 - 20_000.0 * b_s / 2.0, 1000.0, 1e-9),
+            "{ps:?}"
+        );
+        // no weight: no liquid at rest; no magnetisation: no rise
+        assert_eq!(
+            magnetic_fluid_surface_rise(field, &liquid, Fix128::ZERO, Fix128::ONE),
+            None
+        );
+        assert_eq!(
+            magnetic_fluid_surface_rise(field, &liquid, Fix128::ONE, -Fix128::ONE),
+            None
+        );
+        let none = MagneticResponse {
+            chi_eff: Fix128::ZERO,
+            saturation_magnetization: Fix128::ZERO,
+        };
+        assert_eq!(
+            magnetic_fluid_surface_rise(field, &none, Fix128::ONE, Fix128::ONE),
+            Some(Fix128::ZERO)
+        );
     }
 }
