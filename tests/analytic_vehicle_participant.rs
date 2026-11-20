@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "fcbe607208a3623d5a1366c7cd4238775d558a9c3ed4e0090ef81367e3af7450"
+        "0d77da7fa9cd5beacc09e1a802f28fcd7a19ae1e59f3021ffa6011fd6ffffb47"
     );
 }
 
@@ -659,9 +659,9 @@ fn drive_digest(backend: SolverBackend) -> String {
 // re-pinned under aa8c72e9… (world snapshot version 9): from today's blob the main 5fc440bf bytes
 // come back exactly with the header ids, the sleep rule and idle times as frames, no recurrence
 // count and no lock or cloth section; the bodies and the participant state did not move
-// re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
-const DRIVE_XPBD: &str = "b98f7343e25da88d73b6741c85bd02800417bed47ebf79e2329cb96c1b468af3";
-const DRIVE_TGS: &str = "46ca0353399bd959d3e16461ebef9a249ebd503497ae4e85574df4a29380b5ff";
+// re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
+const DRIVE_XPBD: &str = "ffb679bc4e576da781e62b115c5f9ee9ad6a685b3a90d957c13a1d1395ebd656";
+const DRIVE_TGS: &str = "a21fc16a620038fde9fb4220f6a5af9e32381c01d488f22936d42ddc622ec10b";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
