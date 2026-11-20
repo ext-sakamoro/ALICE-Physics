@@ -6,7 +6,7 @@
 On Linux and Windows the test job's matrix value is `<runner>, <shard>` (four shards per
 runner); a macOS value is the runner alone and runs every step in one job. Each step says
 where it runs with an `if:` over `matrix.os`. This reads the matrix of every event (with and
-without the landing-script gate output) and every step's condition, and fails (exit 1) unless:
+without the macos input of a manual run) and every step's condition, and fails (exit 1) unless:
 
   - every sharded runner has exactly the four shards (checks, default, parallel, features) in
     every event that runs it;
@@ -38,7 +38,7 @@ SHARDS = ("checks", "default", "parallel", "features")
 SEP = ", "
 # shared setup: run in more than one shard (each shard is its own runner)
 SHARED = ("actions/checkout", "actions/setup-python", "Install Rust toolchain", "Swatinem/rust-cache")
-GATE_OUTPUT = "needs.gate.outputs.landing_scripts"
+GATE_OUTPUT = "inputs.macos"
 
 TERM = re.compile(r"""^\s*(!?)\s*(contains|endsWith)\(\s*matrix\.os\s*,\s*'([^']*)'\s*\)\s*$|"""
                   r"""^\s*matrix\.os\s*==\s*'([^']*)'\s*$""")

@@ -69,18 +69,25 @@ EVENTS = (
     ("workflow_dispatch", "workflow_dispatch", "refs/heads/ci/x", "workflow_dispatch"),
     ("schedule", "schedule", "refs/heads/main", "schedule"),
 )
-# leg classes: started on the ci/<id> SHA and read after the landing, or not started on
-# ci/** at all (main push and schedule only) and read on main after the landing
-LEG_CLASSES = ("after-landing", "main-after-landing")
+# leg classes: started on the ci/<id> SHA and read after the landing, not started on
+# ci/** at all (main push and schedule only) and read on main after the landing, or run by
+# no push at all (the weekly schedule, and a manual run that asks for it), which a landing
+# never reads
+LEG_CLASSES = ("after-landing", "main-after-landing", "weekly")
 # job outputs a matrix expression may read: each is evaluated as 'false' for the leg's
 # `events` and as 'true' for its own key (a leg the output adds to an event declares the
 # events it then runs on; an output not listed here makes the matrix unknown before the run)
-CONDITION_OUTPUTS = {"needs.gate.outputs.landing_scripts": "events_when_landing_scripts"}
+# (a workflow_dispatch input is given on a manual run only: on any other event it is 'false'
+# even when it is the output being set)
+CONDITION_OUTPUTS = {"inputs.macos": "events_when_macos_input"}
 
 
 def event_ctx(ev: str, ref: str, true_output: str | None = None) -> dict[str, str]:
     ctx = {"github.event_name": ev, "github.ref": ref}
-    ctx.update({o: "true" if o == true_output else "false" for o in CONDITION_OUTPUTS})
+    for o in CONDITION_OUTPUTS:
+        on = o == true_output and (not o.startswith("inputs.") or ev == "workflow_dispatch")
+        # (a boolean input is a boolean in the expression; a job output is the string 'true' / 'false')
+        ctx[o] = on if o.startswith("inputs.") else ("true" if on else "false")
     return ctx
 DISPATCH_TABLE = "ci-triggers:dispatchable"
 DISPATCH_COLUMNS = ("workflow",)
@@ -438,6 +445,8 @@ def check(root: Path) -> tuple[list[str], int]:
         if lcls == "main-after-landing" and ("push ci/**" in present or "push main" not in present):
             errors.append(f"{EVIDENCE}: leg {label}: class main-after-landing needs a main push run "
                           "and no ci/** push run")
+        if lcls == "weekly" and ("push ci/**" in present or "push main" in present or "schedule" not in present):
+            errors.append(f"{EVIDENCE}: leg {label}: class weekly needs a schedule run and no push run")
     # a leg of a landing workflow that runs on main but not on ci/** must be declared:
     # otherwise the landing reads a ci/** run that silently lacks it
     declared = {(lg.get("workflow"), lg.get("job"), str(lg.get("matrix"))) for lg in legs}

@@ -751,6 +751,8 @@ EVIDENCE_FILE = ".github/ci-evidence.toml"
 EXPECTED_CLASSES = ("landing", "after-landing")
 NOT_ON_CI_CLASSES = ("schedule-only", "tag-only")
 MAX_DISPATCH = 2          # re-creations per workflow before the landing stops
+# what a landing asks for in place of the hosted macOS test legs, which run weekly (Landing.check_macos_receipt)
+MACOS_RECEIPT = {"mode": "full", "platform": "Darwin arm64", "min_compared": 1}
 NO_RUN_GRACE = 600        # seconds without a run for a workflow before it is re-created
 STARTED = ("in_progress", "completed")
 
@@ -1368,6 +1370,28 @@ class Lander:
                      + ("the CI receipt of the evidence SHA (every run on it green)" if self.public
                         else "the local preflight"))
         return self.public
+
+    def check_macos_receipt(self, trees: list[str]) -> None:
+        """the hosted macOS test legs run weekly, not on a push (docs/CI_TRIGGERS.md, the weekly class): a landing
+        asks instead for a receipt of a full preflight of one of `trees` (the change's tree, or the tree with this
+        landing's ledger commit) made on an arm64 Mac, whose parity check compared at least one ci.yml `cargo test`
+        command. The hooks checkout's scripts/receipt_verify.py reads it, from this machine or the remote receipt
+        machine; none is a refusal, never a pass"""
+        tool = hooks_tool("scripts/receipt_verify.py")
+        reasons = []
+        for t in dict.fromkeys(trees):
+            r = subprocess.run([sys.executable, "-I", str(tool), str(self.root), t, "--mode", MACOS_RECEIPT["mode"],
+                                "--platform", MACOS_RECEIPT["platform"],
+                                "--min-compared", str(MACOS_RECEIPT["min_compared"])],
+                               cwd=self.root, capture_output=True, text=True, env=gate_env())
+            if r.returncode == 0:
+                line = f"macOS receipt: tree {t[:12]}: {(r.stdout.strip().splitlines() or ['ok'])[-1]}"
+                self.log(line)
+                self.record.append(line)
+                return
+            reasons.append(f"tree {t[:12]}: {(r.stderr.strip().splitlines() or [f'exit {r.returncode}'])[-1]}")
+        raise LandError("no full preflight made on an arm64 Mac for this landing (the hosted macOS legs are weekly; "
+                        "run the full preflight of the tree on an arm64 Mac first):\n  " + "\n  ".join(reasons))
 
     def run_cheap(self) -> None:
         """a public repository: run-preflight.sh --cheap (the prepass's gates, no build of its own crates), whose
@@ -2059,6 +2083,9 @@ class Lander:
         `verify`: preflight / compile / none. Returns HEAD."""
         if self.needs_rebase():
             self.rebase()
+        # the tree the change brings, before this landing's own ledger commit (a receipt made on the author's tip
+        # covers it: the ledgers are generated from it)
+        source_tree = self.git("rev-parse", "HEAD^{tree}")
         self.decide_scip()
         self.regenerate()
         self.commit_regenerated()
@@ -2068,7 +2095,9 @@ class Lander:
         # documents-only or compile-only rebase used to push a tree no preflight had run on)
         tree = self.git("rev-parse", "HEAD^{tree}")
         if self.direct_reason is None and self.is_public():
-            # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local
+            # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local; the hosted
+            # macOS legs are weekly, so the arm64 macOS run is a full preflight made on an arm64 Mac (macOS receipt)
+            self.check_macos_receipt([source_tree, tree])
             if tree != self.preflighted_tree:
                 self.run_cheap()
                 self.preflighted_tree = tree
