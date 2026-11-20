@@ -704,6 +704,18 @@ fn run_crumple_lifted(
     self_collision_distance: Fix128,
     extra: u64,
 ) -> (usize, usize, Vec<Vec3Fix>) {
+    let (crossings, invariant, cloth) =
+        crumple_lifted_cloth(self_collision, steps, self_collision_distance, extra);
+    (crossings, invariant, cloth.positions)
+}
+
+/// `run_crumple_lifted` returning the whole cloth (for its counters)
+fn crumple_lifted_cloth(
+    self_collision: bool,
+    steps: usize,
+    self_collision_distance: Fix128,
+    extra: u64,
+) -> (usize, usize, Cloth) {
     const RES: usize = 9;
     let mut cloth = Cloth::new_grid(
         Vec3Fix::ZERO,
@@ -770,7 +782,7 @@ fn run_crumple_lifted(
             }
         }
     }
-    (crossings, invariant, cloth.positions)
+    (crossings, invariant, cloth)
 }
 
 const CRUMPLE_STEPS: usize = 120;
@@ -1842,12 +1854,14 @@ fn self_contact_never_passes_through_itself_where_no_self_contact_does_over_an_e
 /// With self-contact on, no edge pair the solver controls (both edges free) ends the
 /// crumple inside the contact thickness, on any of the 15 starts.
 ///
-/// Measured (60 steps, default radius): free pairs inside the thickness 6, 3, 0, 0, 0, 0,
-/// 2, 0, 0, 1, 0, 0, 0, 0, 0; the deepest at distance 0.024 against the thickness 0.05.
+/// Measured (60 steps, default radius) before the frame-end separation: free pairs inside
+/// the thickness 6, 3, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0, the deepest at distance 0.024
+/// against the thickness 0.05. With it: 1 pair on 1 start (distance 0.0457), held below by
+/// `the_frame_end_separation_holds_the_free_pairs_at_the_recorded_count`.
 /// Pairs with a pinned vertex are excluded for the reason given on
 /// `self_contact_never_passes_through_itself_where_no_self_contact_does_over_an_ensemble`.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-013: free edge pairs end the crumple inside the contact thickness with self-contact on, on 4 of 15 starts"]
+#[ignore = "known defect: AUD-A-S6W1-013: with the frame-end separation one free edge pair ends inside the thickness on 1 of 15 starts (k = 1 of the 2^-20 lifts, distance 0.0457 against 0.05); 3 of the 110 wide starts"]
 fn self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble() {
     let radius = default_radius();
     let cloth = Cloth::new_grid(
@@ -1877,4 +1891,145 @@ fn self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble(
              smallest free distance): {rows:?}"
         );
     }
+}
+
+/// The 110 starts of the wide crumple ensemble: the lift raised by `k · 2⁻⁴⁰`
+/// (k = 0..59) and `k · 2⁻²⁰` (k = 1..50), as raw `extra` units for
+/// `run_crumple_lifted`. This is the evidence standard for the frame-end separation:
+/// 15 starts are too few to tell its variants apart (measured: a variant at 0 of 15
+/// read 4 of 110).
+fn wide_crumple_starts() -> Vec<u64> {
+    let mut starts: Vec<u64> = (0..60u64).map(|k| k << 24).collect();
+    starts.extend((1..51u64).map(|k| k << 44));
+    starts
+}
+
+/// The free edge pairs inside the thickness at the end of the crumple, per start, with
+/// self-contact on; also asserts the run never passes through itself
+fn free_pairs_per_start(starts: &[u64]) -> Vec<(u64, usize)> {
+    let radius = default_radius();
+    let grid = Cloth::new_grid(
+        Vec3Fix::ZERO,
+        Fix128::from_int(8),
+        Fix128::from_int(8),
+        9,
+        9,
+        Fix128::from_ratio(1, 100),
+    );
+    starts
+        .iter()
+        .map(|&extra| {
+            let (crossings, invariant, on) =
+                run_crumple_lifted(true, SEPARATION_STEPS, radius, extra);
+            assert_eq!(
+                (crossings, invariant),
+                (0, 0),
+                "start {extra} passed through itself"
+            );
+            let free = edge_edge_separation(&on, &grid.triangles, radius, &crumple_pinned, true);
+            (extra, free.violations)
+        })
+        .collect()
+}
+
+/// Over the 110 starts of the wide ensemble, no free edge pair ends the crumple inside
+/// the contact thickness with self-contact on.
+#[test]
+#[ignore = "known defect: AUD-A-S6W1-013: 3 of 110 starts end with free edge pairs inside the thickness (4 pairs in all); without the frame-end separation 33 of 110"]
+fn self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_wide_ensemble() {
+    let rows = free_pairs_per_start(&wide_crumple_starts());
+    let bad: Vec<_> = rows.iter().filter(|r| r.1 > 0).collect();
+    println!("free-pair starts {} of {}: {bad:?}", bad.len(), rows.len());
+    assert!(
+        bad.is_empty(),
+        "{} of {} starts end with free edge pairs inside the thickness: {bad:?}",
+        bad.len(),
+        rows.len()
+    );
+}
+
+/// Every stop of the frame-end separation at its pass budget is counted, and each one ran
+/// the cluster stage: on start 0 of the ensemble the budget is reached (so the case tests
+/// the cluster stage), the cluster stage ran exactly once per capped call, and two calls
+/// at most run per frame.
+#[test]
+fn the_separation_counts_every_stop_at_its_budget() {
+    let (_, _, cloth) = crumple_lifted_cloth(true, SEPARATION_STEPS, default_radius(), 0);
+    let st = cloth.self_contact_stats();
+    println!("{st:?}");
+    assert!(st.separation_calls >= SEPARATION_STEPS as u64, "{st:?}");
+    assert!(st.separation_calls <= 2 * SEPARATION_STEPS as u64, "{st:?}");
+    assert!(
+        st.capped_calls > 0,
+        "the budget was never reached: the case tests nothing; {st:?}"
+    );
+    assert_eq!(st.cluster_solves, st.capped_calls, "{st:?}");
+    assert!(st.cluster_converged <= st.cluster_solves, "{st:?}");
+}
+
+/// The same start run twice gives the same bits (fixed contact order, no hashing).
+#[test]
+fn the_crumple_with_self_contact_is_bit_identical_when_run_twice() {
+    let a = run_crumple_lifted(true, SEPARATION_STEPS, default_radius(), 12 << 24);
+    let b = run_crumple_lifted(true, SEPARATION_STEPS, default_radius(), 12 << 24);
+    assert_eq!(a, b);
+}
+
+/// FNV-1a over the raw bits of every position (a digest the test can compute on any target)
+fn positions_digest(ps: &[Vec3Fix]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for p in ps {
+        for c in [p.x, p.y, p.z] {
+            for b in (c.hi as u64)
+                .to_le_bytes()
+                .into_iter()
+                .chain(c.lo.to_le_bytes())
+            {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+    }
+    h
+}
+
+/// The crumple with self-contact on start 12 ends at the same bits on every target (the
+/// test runs native and on wasm32): the separation uses no floating point and a fixed
+/// contact order.
+#[test]
+fn the_crumple_with_self_contact_ends_at_the_pinned_bits() {
+    let (_, _, ps) = run_crumple_lifted(true, SEPARATION_STEPS, default_radius(), 12 << 24);
+    let d = positions_digest(&ps);
+    println!("crumple start 12 digest {d:#018x}");
+    assert_eq!(d, 0xadb0_85e9_3b42_83d2, "got {d:#018x}");
+}
+
+/// The frame-end separation holds the free edge pairs inside the thickness at the recorded
+/// count over the 15 starts: 3 pairs in all (13 before it), 1 on `k = 1` and 2 on `k = 5`
+/// of the `2⁻²⁰` lifts. This is a ratchet, not the target: the target is 0, asserted by
+/// `self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble` (ignored,
+/// known defect). It does not tell the cluster stage's variants apart (on these 15 starts
+/// they read 0 and 1); `the_cluster_stage_separates_the_sentinel_start` does.
+#[test]
+fn the_frame_end_separation_holds_the_free_pairs_at_the_recorded_count() {
+    let rows = free_pairs_per_start(&crumple_ensemble_starts());
+    let total: usize = rows.iter().map(|r| r.1).sum();
+    assert!(
+        total <= 3,
+        "{total} free edge pairs inside the thickness over the 15 starts (recorded 3): {rows:?}"
+    );
+}
+
+/// Start `k = 34` of the `2⁻⁴⁰` lifts (raw `34 << 24`) ends with no free edge pair inside
+/// the thickness. Picked from the 110-start run as the start where both weaker cluster
+/// stages fail and the shipped one does not: measured, the shipped stage (over-relaxation
+/// 3/2) 0 pairs here and 3 of 110 starts overall; the cluster stage off 2 pairs here and 10
+/// of 110; over-relaxation 1 2 pairs here and 12 of 110.
+#[test]
+fn the_cluster_stage_separates_the_sentinel_start() {
+    let rows = free_pairs_per_start(&[34 << 24]);
+    assert_eq!(
+        rows[0].1, 0,
+        "free edge pairs inside the thickness at start 34 << 24: {rows:?}"
+    );
 }
