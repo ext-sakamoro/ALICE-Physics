@@ -89,6 +89,8 @@ jobs:
     timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 360 || startsWith(matrix.os, 'windows-latest') && 160 || 120 }}
     strategy:
       fail-fast: false
+      # at most 7 of this job's legs at once, so the other workflows of the account keep runners
+      max-parallel: 7
       matrix:
         # v1.0 Item E Phase 2: 5 native platform matrix (WASM は独立 job で扱う)
         # - macos-latest       → aarch64-apple-darwin       (Mac ARM, primary dev, golden hash baseline)
