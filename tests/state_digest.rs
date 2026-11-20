@@ -239,21 +239,21 @@ fn hex(b: &[u8]) -> String {
 // its snapshot holds a lock count of 0 and an empty cloth section after the continuous collision
 // section; from today's blob the main 5fc440bf bytes come back exactly with the header ids, the
 // sleep rule and idle times as frames, no recurrence count and no lock or cloth section
-// re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
 const GOLDEN_STATE_DIGEST: &str =
-    "a2938fb03dcec1df384d50fb2afa8b9fb1174843960e8d141f20c6e6b163e937";
+    "f49b4c81040c771c19e3aab6a1f979897e2b3ee17aeefbb00833509a0cb70fd2";
 // the law_id moved with the identifier only (f32dabf3… gives 6abdea57… for the same world)
-// re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): moved with the identifier only
-const GOLDEN_LAW_ID: &str = "8357ce8df35944c57f82509ffd501efce643c276bf87ac236e74429794df0ad2";
+// re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): moved with the identifier only
+const GOLDEN_LAW_ID: &str = "e05d07424ae4be0f309f955ed444b6752132c200ddf6a3b63e892e36bc3feb6b";
 
 /// The digest of `binding_scene` under the first definition of the digest, whose domain was the
 /// text `alice-physics/state-digest/v1` preceded by its length as a big-endian `u64` (never
 /// released). The domain became the 32 bytes of `STATE_DIGEST_DOMAIN`, which moved the golden from
 /// this value to `GOLDEN_STATE_DIGEST` with the snapshot unchanged (it is the same snapshot
 /// as `GOLDEN_STATE_DIGEST`, so it moves with it).
-// re-pinned under PHYSICS_SEMANTICS_ID fcbe6072… (the fluid pbf pin re-recorded and the cloth body contact pin): the identifier in the header moved
+// re-pinned under PHYSICS_SEMANTICS_ID 0d77da7f… (the Fix128 transcendental functions computed wide and rounded once: the pins they reach re-recorded): the identifier in the header moved
 const GOLDEN_STATE_DIGEST_TEXT_DOMAIN: &str =
-    "8e50929133e251b482890ef7a866f101731a1cebef35fd46eb3627dbdebfe358";
+    "93e650e56723bbf6877fdde5aae5acc8ff8f6d73f9c304a5b426122c343312ca";
 
 #[test]
 fn the_domain_move_is_the_only_change_from_the_text_domain_golden() {

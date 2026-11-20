@@ -122,7 +122,7 @@ fn a_participant_semantics_id_changes_the_law_id() {
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
-        "4664770e1f8dffae322a35b3542bff0ec0198157924ff509ec57bc436a208b4e",
+        "2474c61ea8a1b7ed60e90f34009f418db2d9375fd62240f3c24617e4c2b7d655",
         "pinned from main 88f76d3b, then under the identifier with the alice-ml peer, then with the cloth fold pin"
     );
 }
