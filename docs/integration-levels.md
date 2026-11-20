@@ -33,7 +33,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 16 / 0 / 0 / 12 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 68 / 16 / 2 / 17 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 67 / 17 / 2 / 17 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 9 / 6 / 0 / 7 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |

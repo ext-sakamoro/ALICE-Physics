@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2917 |
-| live | reached without examples (crate-internal roots or a binding) | 913 |
-| | **total** | **3861** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2919 |
+| live | reached without examples (crate-internal roots or a binding) | 920 |
+| | **total** | **3870** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2917)
+## L1 — example-only (2919)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -168,6 +168,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/filament_db.rs`: `FilamentDb`, `FilamentDb::by_category`, `FilamentDb::find_by_name`, `FilamentDb::get`, `FilamentDb::is_empty`, `FilamentDb::iter`, `FilamentDb::len`, `FilamentDb::new`, `FilamentDb::register`, `FilamentDb::try_register`, `FilamentDb::with_defaults`, `FilamentId`, `GPA_TO_PA`, `G_CM3_TO_KG_M3`, `MPA_TO_PA`, `MaterialCategory`, `MaterialProperties`, `MaterialProperties::a5052`, `MaterialProperties::abs`, `MaterialProperties::cf_nylon`, `MaterialProperties::density_si`, `MaterialProperties::is_fdm`, `MaterialProperties::is_sheet_metal`, `MaterialProperties::nylon`, `MaterialProperties::pc`, `MaterialProperties::peek`, `MaterialProperties::petg`, `MaterialProperties::pla`, `MaterialProperties::sus304`, `MaterialProperties::tensile_z`, `MaterialProperties::tpu`, `MaterialProperties::yield_at_angle`, `MaterialProperties::yield_pa`, `MaterialProperties::yield_z`, `MaterialProperties::youngs_at_angle`, `MaterialProperties::youngs_pa`, `MaterialProperties::youngs_z`
 - `src/fillet_stress.rs`: `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`, `kt_shaft_shoulder_bending`, `kt_u_notch_axial`, `recommended_fillet_radius_mm`
 - `src/filter.rs`: `ALL`, `CollisionFilter::ALL`, `CollisionFilter::new`, `CollisionFilter::with_group`, `DEBRIS`, `DEFAULT`, `ENEMY`, `KINEMATIC`, `PLAYER`, `PROJECTILE`, `SENSOR`, `STATIC`, `TRIGGER`, `VEHICLE`
+- `src/fix128_kernels.rs`: `cbrt_floor`
 - `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `Streamlines::is_empty`, `Streamlines::len`, `Streamlines::line`, `generate_flow_arrows`, `generate_streamlines`
 - `src/fluid.rs`: `Fluid`, `Fluid::body_count`, `Fluid::body_forces`, `Fluid::body_particle_forces`, `Fluid::boundary_force`, `Fluid::boundary_forces`, `Fluid::box_boundary`, `Fluid::contact_left_inside`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `Fluid::step_with_sdf`, `Fluid::with_boundary`, `Fluid::with_sdf_body`, `FluidConfig`, `FluidConfig::lattice_mass`, `poly6_kernel`, `spiky_grad_kernel`
 - `src/fluid_boundary_map.rs`: `BoundaryMap`, `BoundaryMap::from_sdf`, `BoundaryMap::node_count`, `BoundaryMap::sample`, `FluidBody`, `FluidBody::map`, `FluidBody::new`, `FluidBody::sdf`, `GRAM_MIN`, `sdf_distance`, `sdf_normal`, `split_two`
@@ -203,7 +204,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/linear_solver/precond.rs`: `BlockJacobiPreconditioner`, `BlockJacobiPreconditioner::from_dense`, `IdentityPreconditioner`, `IdentityPreconditioner::new`, `JacobiPreconditioner`, `JacobiPreconditioner::from_dense`, `JacobiPreconditioner::from_diagonal`
 - `src/mass_properties.rs`: `MassProperties`, `MassProperties::ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `cylinder_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
 - `src/material.rs`: `MaterialTable::combine`, `MaterialTable::is_empty`, `MaterialTable::len`, `MaterialTable::register_concrete`, `MaterialTable::register_ice`, `MaterialTable::register_metal`, `MaterialTable::register_rubber`, `MaterialTable::register_wood`, `MaterialTable::set_pair_override`, `PhysicsMaterial::with_combine_rules`, `PhysicsMaterial::with_contact_compliance`, `PhysicsMaterial::with_static_friction`
-- `src/math.rs`: `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::cos`, `Fix128::div_int`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `QuatFix::from_to`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::from_int`, `Vec3Fix::length_squared_simd`, `simd_width`
+- `src/math.rs`: `Fix128::TWO_PI`, `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::cos`, `Fix128::div_int`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `QuatFix::from_to`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::from_int`, `Vec3Fix::length_squared_simd`, `simd_width`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `Material`, `Material::VACUUM`, `Material::dielectric`, `Material::new`, `Material::refractive_index`, `MaterialError`, `MaterialMap`, `MaterialMap::dims`, `MaterialMap::fill`, `MaterialMap::get`, `MaterialMap::set`, `MaterialMap::vacuum`, `YEE_GRID_OBS_MAX_FIELD`, `YEE_GRID_OBS_STEPS`, `YEE_GRID_OBS_TIME`, `YEE_GRID_PARTICIPANT_KIND`, `YEE_STATE_VERSION`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_d`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::effective_material`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::read_state`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `YeeGrid::with_materials`, `YeeGrid::write_state`, `YeeGridParticipant`, `YeeGridParticipant::grid`, `YeeGridParticipant::new`, `YeeGridParticipant::step`, `YeeGridParticipant::steps`, `YeeGridParticipant::time`, `YeeParticipantError`, `YeeStateError`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
 - `src/metric.rs`: `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::norm`
