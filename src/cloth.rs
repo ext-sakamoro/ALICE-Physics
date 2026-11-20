@@ -254,6 +254,25 @@ pub fn damping_over(damping: Fix128, dt: Fix128) -> Fix128 {
     damping.powf_pos(dt / reference)
 }
 
+/// Counters of the frame-end contact separation ([`Cloth::self_contact_stats`]).
+///
+/// A capped call stopped at its pass budget with corrections still being made; the
+/// cluster stage then ran on the vertices still moving (its own budget). The counters
+/// make every stop at a budget visible instead of silent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SelfContactStats {
+    /// Separation calls (one or two per frame with self-contact on).
+    pub separation_calls: u64,
+    /// Calls that reached [`Cloth::SEPARATION_PASSES`] with corrections still being made.
+    pub capped_calls: u64,
+    /// Cluster stages run (one per capped call).
+    pub cluster_solves: u64,
+    /// Cluster stages that ended with no correction left before [`Cloth::CLUSTER_PASSES`].
+    pub cluster_converged: u64,
+    /// Corrections dropped because every halving of them still crossed the surface.
+    pub clipped_corrections: u64,
+}
+
 /// Cloth simulation
 #[derive(Clone)]
 #[repr(C, align(64))]
@@ -297,6 +316,22 @@ pub struct Cloth {
     grabs: Vec<Grab>,
     /// `dt` of the last step (the throw velocity divides by it); zero before any step.
     last_dt: Fix128,
+    /// Counters of the frame-end contact separation (not part of the state).
+    self_contact_stats: SelfContactStats,
+    /// The rest-geodesic near lists the frame-end separation filters with, with the
+    /// inputs they were built from (a cache, not part of the state).
+    near_cache: NearCache,
+}
+
+/// Per-particle sorted lists of the particles whose geodesic distance over the edge
+/// rest lengths is below `thickness`, kept with the edges and thickness they were built
+/// from; rebuilt when either differs (or the particle count changes).
+#[derive(Clone, Debug, Default)]
+struct NearCache {
+    thickness: Fix128,
+    edges: Vec<EdgeConstraint>,
+    lists: Vec<Vec<u32>>,
+    builds: u64,
 }
 
 /// A cloth's state and every input of `step`, kept when a `step` changed none of the state:
@@ -656,6 +691,8 @@ impl Cloth {
             sleeping: None,
             grabs: Vec::new(),
             last_dt: Fix128::ZERO,
+            self_contact_stats: SelfContactStats::default(),
+            near_cache: NearCache::default(),
         };
 
         cloth.build_constraints();
@@ -693,6 +730,8 @@ impl Cloth {
             sleeping: None,
             grabs: Vec::new(),
             last_dt: Fix128::ZERO,
+            self_contact_stats: SelfContactStats::default(),
+            near_cache: NearCache::default(),
         };
         cloth.build_constraints();
         cloth
@@ -2087,6 +2126,23 @@ impl Cloth {
     /// against the repair.
     fn resolve_self_contact_over_frame(&mut self, start: &[Vec3Fix], dt: Fix128) {
         let thickness = self.config.self_collision_distance;
+        let inv_dt = self.repair_frame_crossings(start, dt);
+        // The repair restores a crossed pair to gap 0, not to the thickness, and the
+        // substep passes have already run, so the thickness is restored here, every
+        // frame; the zones then restore the crossing invariant if separation broke it,
+        // and the zones' frame-start spacing is separated once more.
+        self.separate_contacts(thickness, inv_dt);
+        if self.resolve_impact_zones(start) {
+            self.separate_contacts(thickness, inv_dt);
+            self.resolve_impact_zones(start);
+        }
+    }
+
+    /// The swept repair passes of [`Self::resolve_self_contact_over_frame`]: every pierce
+    /// of the frame projected to gap 0 on its entry side (Jacobi, averaged), the
+    /// correction mirrored into the velocities. Returns `1 / dt` (zero for `dt = 0`).
+    fn repair_frame_crossings(&mut self, start: &[Vec3Fix], dt: Fix128) -> Fix128 {
+        let thickness = self.config.self_collision_distance;
         let n = self.particle_count();
         let inv_dt = if dt.is_zero() {
             Fix128::ZERO
@@ -2204,32 +2260,345 @@ impl Cloth {
             }
             self.velocities[i] = self.velocities[i] + *moved * inv_dt;
         }
-
-        if self.resolve_impact_zones(start) {
-            // the zones left particles at their frame-start spacing; separate them again
-            // with the proximity passes, then let the zones restore the invariant if the
-            // passes broke it
-            self.separate_after_zones(thickness, inv_dt);
-            self.resolve_impact_zones(start);
-        }
+        inv_dt
     }
 
-    /// The proximity passes run once more after the impact zones fired, with the velocity
-    /// of every free particle changed by its displacement over the frame: `v ← v + Δx / dt`
-    /// (`inv_dt = 1 / dt`). Pinned particles neither move nor change velocity.
-    fn separate_after_zones(&mut self, thickness: Fix128, inv_dt: Fix128) {
+    /// Pass budget of the frame-end contact separation (counted in
+    /// [`SelfContactStats::capped_calls`] when reached).
+    pub const SEPARATION_PASSES: usize = 16;
+    /// Pass budget of the cluster stage (counted in [`SelfContactStats::cluster_solves`]
+    /// minus [`SelfContactStats::cluster_converged`] when reached).
+    pub const CLUSTER_PASSES: usize = 64;
+
+    /// The counters of the frame-end contact separation since the cloth was made.
+    #[must_use]
+    pub fn self_contact_stats(&self) -> SelfContactStats {
+        self.self_contact_stats
+    }
+
+    /// Restore the thickness at the end of the frame: Gauss-Seidel over the proximity
+    /// contacts (vertex-face and edge-edge within `2 thickness`) in sorted index order,
+    /// each correction applied only as far as it creates no crossing (halved up to 4
+    /// times, else dropped and counted), up to [`Self::SEPARATION_PASSES`] passes.
+    /// Pairs whose rest geodesic distance (over the edge rest lengths) is below the
+    /// thickness are left out: they cannot be separated by the thickness at rest. When the
+    /// budget is reached with corrections still being made, the contacts touching the
+    /// vertices still moving get up to [`Self::CLUSTER_PASSES`] more passes with
+    /// over-relaxation `3/2`. Velocities change by the displacement over `1 / inv_dt`.
+    /// Pinned particles neither move nor change velocity.
+    fn separate_contacts(&mut self, thickness: Fix128, inv_dt: Fix128) {
         let before = self.positions.clone();
         let margin = thickness.double();
-        let vf = self.collect_vertex_face_candidates(margin);
-        let ee = self.collect_edge_edge_candidates(margin);
-        for _ in 0..self.config.iterations {
-            self.solve_self_collision(&vf, &ee);
+        self.refresh_near_cache(thickness);
+        let tris = self.triangles.clone();
+        let mut vf = self.collect_vertex_face_candidates(margin);
+        let mut ee = self.collect_edge_edge_candidates(margin);
+        let lists = &self.near_cache.lists;
+        let near = |a: usize, b: usize| lists[a].binary_search(&(b as u32)).is_ok();
+        vf.retain(|&(v, t)| !tris[t as usize].iter().any(|&k| near(v as usize, k)));
+        ee.retain(|c| {
+            ![(c[0], c[2]), (c[0], c[3]), (c[1], c[2]), (c[1], c[3])]
+                .iter()
+                .any(|&(a, b)| near(a as usize, b as usize))
+        });
+        vf.sort_unstable();
+        ee.sort_unstable();
+        let edges = self.mesh_edges();
+        self.self_contact_stats.separation_calls += 1;
+        let (converged, moving) = self.separation_passes(
+            &vf,
+            &ee,
+            thickness,
+            &edges,
+            Self::SEPARATION_PASSES,
+            Fix128::ONE,
+        );
+        if !converged {
+            self.self_contact_stats.capped_calls += 1;
+            self.self_contact_stats.cluster_solves += 1;
+            let vf2: Vec<(u32, u32)> = vf
+                .iter()
+                .copied()
+                .filter(|&(v, t)| moving[v as usize] || tris[t as usize].iter().any(|&k| moving[k]))
+                .collect();
+            let ee2: Vec<[u32; 4]> = ee
+                .iter()
+                .copied()
+                .filter(|c| c.iter().any(|&k| moving[k as usize]))
+                .collect();
+            let (done, _) = self.separation_passes(
+                &vf2,
+                &ee2,
+                thickness,
+                &edges,
+                Self::CLUSTER_PASSES,
+                Fix128::from_ratio(3, 2),
+            );
+            if done {
+                self.self_contact_stats.cluster_converged += 1;
+            }
         }
         for (i, &b) in before.iter().enumerate() {
             if !self.inv_masses[i].is_zero() {
                 self.velocities[i] = self.velocities[i] + (self.positions[i] - b) * inv_dt;
             }
         }
+    }
+
+    /// Up to `budget` Gauss-Seidel passes over `vf` / `ee` with step `omega`; returns
+    /// whether a pass made no correction, and the vertices the last pass moved.
+    fn separation_passes(
+        &mut self,
+        vf: &[(u32, u32)],
+        ee: &[[u32; 4]],
+        thickness: Fix128,
+        edges: &[[u32; 2]],
+        budget: usize,
+        omega: Fix128,
+    ) -> (bool, Vec<bool>) {
+        let n = self.particle_count();
+        let mut delta = vec![Vec3Fix::ZERO; n];
+        let mut hits = vec![0u32; n];
+        let mut moving = vec![false; n];
+        for _ in 0..budget {
+            moving.fill(false);
+            let mut corrected = 0usize;
+            for k in 0..vf.len() {
+                self.accumulate_vertex_face_contacts(
+                    &vf[k..k + 1],
+                    thickness,
+                    &mut delta,
+                    &mut hits,
+                );
+                let (v, t) = vf[k];
+                let tri = self.triangles[t as usize];
+                corrected += self.apply_clipped(
+                    &[v as usize, tri[0], tri[1], tri[2]],
+                    &mut delta,
+                    &mut hits,
+                    thickness,
+                    edges,
+                    omega,
+                    &mut moving,
+                );
+            }
+            for k in 0..ee.len() {
+                self.accumulate_edge_edge_contacts(&ee[k..k + 1], thickness, &mut delta, &mut hits);
+                let e = ee[k];
+                let ix = [e[0] as usize, e[1] as usize, e[2] as usize, e[3] as usize];
+                corrected += self.apply_clipped(
+                    &ix,
+                    &mut delta,
+                    &mut hits,
+                    thickness,
+                    edges,
+                    omega,
+                    &mut moving,
+                );
+            }
+            if corrected == 0 {
+                return (true, moving);
+            }
+        }
+        (false, moving)
+    }
+
+    /// Rebuild the near lists when the thickness, the edges (their ends and rest
+    /// lengths) or the particle count differ from the ones they were built from.
+    fn refresh_near_cache(&mut self, thickness: Fix128) {
+        let c = &self.near_cache;
+        if c.builds > 0
+            && c.thickness == thickness
+            && c.lists.len() == self.particle_count()
+            && c.edges == self.edge_constraints
+        {
+            return;
+        }
+        let lists = self.rest_geodesic_lists(thickness);
+        let c = &mut self.near_cache;
+        c.thickness = thickness;
+        c.edges.clone_from(&self.edge_constraints);
+        c.lists = lists;
+        c.builds += 1;
+    }
+
+    /// For each particle, the sorted particles (itself included) whose geodesic distance
+    /// over the edge rest lengths is below `thickness` (so the rest Euclidean distance is
+    /// too). Each search stops at the thickness, so the lists hold the particles within
+    /// it, not all `n`.
+    fn rest_geodesic_lists(&self, thickness: Fix128) -> Vec<Vec<u32>> {
+        let n = self.particle_count();
+        let mut adj: Vec<Vec<(usize, Fix128)>> = vec![Vec::new(); n];
+        for e in &self.edge_constraints {
+            adj[e.i0].push((e.i1, e.rest_length));
+            adj[e.i1].push((e.i0, e.rest_length));
+        }
+        let mut dist: Vec<Option<Fix128>> = vec![None; n];
+        let mut reached: Vec<usize> = Vec::new();
+        let mut stack = Vec::new();
+        let mut out = Vec::with_capacity(n);
+        for src in 0..n {
+            for &k in &reached {
+                dist[k] = None;
+            }
+            reached.clear();
+            dist[src] = Some(Fix128::ZERO);
+            reached.push(src);
+            stack.clear();
+            stack.push(src);
+            while let Some(u) = stack.pop() {
+                let du = dist[u].unwrap_or(Fix128::ZERO);
+                for &(w, l) in &adj[u] {
+                    let nd = du + l;
+                    if nd >= thickness {
+                        continue;
+                    }
+                    match dist[w] {
+                        None => {
+                            dist[w] = Some(nd);
+                            reached.push(w);
+                            stack.push(w);
+                        }
+                        Some(dw) if nd < dw => {
+                            dist[w] = Some(nd);
+                            stack.push(w);
+                        }
+                        Some(_) => {}
+                    }
+                }
+            }
+            let mut row: Vec<u32> = reached.iter().map(|&k| k as u32).collect();
+            row.sort_unstable();
+            out.push(row);
+        }
+        out
+    }
+
+    /// Apply the correction one contact accumulated in `delta` / `hits` (indices `idx`),
+    /// scaled by `omega`, only as far as it creates no crossing: halved up to 4 times,
+    /// else dropped (counted). Clears the touched entries; returns the vertices moved.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the contact indices, the two accumulators, the thickness, the edge list, the step and the moved flags are separate borrows of the caller's state"
+    )]
+    fn apply_clipped(
+        &mut self,
+        idx: &[usize],
+        delta: &mut [Vec3Fix],
+        hits: &mut [u32],
+        thickness: Fix128,
+        edges: &[[u32; 2]],
+        omega: Fix128,
+        moving: &mut [bool],
+    ) -> usize {
+        let mut old: Vec<(usize, Vec3Fix, Vec3Fix)> = Vec::with_capacity(4);
+        for &i in idx {
+            if hits[i] == 0 {
+                continue;
+            }
+            if !self.inv_masses[i].is_zero() && !old.iter().any(|o| o.0 == i) {
+                old.push((
+                    i,
+                    self.positions[i],
+                    delta[i] / Fix128::from_int(i64::from(hits[i])),
+                ));
+            }
+            delta[i] = Vec3Fix::ZERO;
+            hits[i] = 0;
+        }
+        if old.is_empty() {
+            return 0;
+        }
+        let mut f = omega;
+        for _ in 0..5 {
+            for &(i, p, d) in &old {
+                self.positions[i] = p + d * f;
+            }
+            if !self.move_creates_crossing(&old, thickness, edges) {
+                for &(i, _, _) in &old {
+                    moving[i] = true;
+                }
+                return old.len();
+            }
+            f = f.half();
+        }
+        for &(i, p, _) in &old {
+            self.positions[i] = p;
+        }
+        self.self_contact_stats.clipped_corrections += 1;
+        0
+    }
+
+    /// Whether moving the vertices of `old` (index, previous position, -) to their current
+    /// positions makes a vertex chord pierce a triangle, or an edge pair meet within
+    /// `thickness` and end on the far side. Exact box rejects come first.
+    fn move_creates_crossing(
+        &self,
+        old: &[(usize, Vec3Fix, Vec3Fix)],
+        thickness: Fix128,
+        edges: &[[u32; 2]],
+    ) -> bool {
+        let from = |i: usize| {
+            old.iter()
+                .find(|o| o.0 == i)
+                .map_or(self.positions[i], |o| o.1)
+        };
+        for &(v, p0, _) in old {
+            let chord = padded_bounds(&[p0, self.positions[v]], Fix128::ZERO);
+            for tri in &self.triangles {
+                if tri.contains(&v) {
+                    continue;
+                }
+                let (a, b, c) = (
+                    self.positions[tri[0]],
+                    self.positions[tri[1]],
+                    self.positions[tri[2]],
+                );
+                if boxes_disjoint(chord, padded_bounds(&[a, b, c], Fix128::ZERO)) {
+                    continue;
+                }
+                if segment_pierces_triangle(p0, self.positions[v], a, b, c).is_some() {
+                    return true;
+                }
+            }
+        }
+        for e in edges {
+            let (e0, e1) = (e[0] as usize, e[1] as usize);
+            if !old.iter().any(|o| o.0 == e0 || o.0 == e1) {
+                continue;
+            }
+            let eb = padded_bounds(
+                &[from(e0), self.positions[e0], from(e1), self.positions[e1]],
+                thickness,
+            );
+            for f in edges {
+                let (f0, f1) = (f[0] as usize, f[1] as usize);
+                if e0 == f0 || e0 == f1 || e1 == f0 || e1 == f1 {
+                    continue;
+                }
+                if boxes_disjoint(
+                    eb,
+                    padded_bounds(
+                        &[from(f0), self.positions[f0], from(f1), self.positions[f1]],
+                        Fix128::ZERO,
+                    ),
+                ) {
+                    continue;
+                }
+                if let Some(c) = edge_pair_frame_contact(
+                    (from(e0), self.positions[e0]),
+                    (from(e1), self.positions[e1]),
+                    (from(f0), self.positions[f0]),
+                    (from(f1), self.positions[f1]),
+                    thickness,
+                ) {
+                    if c.gap < Fix128::ZERO {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Fail-safe of the frame repair: rigid impact zones, translation only.
@@ -7615,8 +7984,9 @@ mod impact_zone_tests {
     /// and the triangle falls from y = 5/8 to 1/2. The chord crosses y = ½ at t = ½, at
     /// `e = (1/4, ½, 3/16)`, weights `(9/16, 3/16, 1/4)`; the start is below, so `n = −y` and
     /// `C = −(3/4 − ½) − 1/16 = −5/16`. One pass corrects it (the constraint is linear in
-    /// the positions), the second finds nothing, and the zones find no offender, so the
-    /// whole frame is the closed form (`closed_form_dy`).
+    /// the positions) and the second finds nothing, so the repair passes give the closed form
+    /// (`closed_form_dy`); the frame then separates the pair to the thickness, which the
+    /// frame-level tests check.
     #[test]
     fn an_oblique_chord_through_a_weighted_triangle_is_projected_in_closed_form() {
         let inv = [
@@ -7631,7 +8001,7 @@ mod impact_zone_tests {
             v3((3, 8), (3, 4), (1, 4)),
         );
         let end = cloth.positions.clone();
-        cloth.resolve_self_contact_over_frame(&start, Fix128::from_ratio(1, 8));
+        let _ = cloth.repair_frame_crossings(&start, Fix128::from_ratio(1, 8));
         let dy = closed_form_dy(
             -1.0,
             -5.0 / 16.0,
@@ -7659,7 +8029,7 @@ mod impact_zone_tests {
             v3((1, 4), (1, 4), (3, 16)),
         );
         let end = cloth.positions.clone();
-        cloth.resolve_self_contact_over_frame(&start, Fix128::from_ratio(1, 8));
+        let _ = cloth.repair_frame_crossings(&start, Fix128::from_ratio(1, 8));
         let dy = closed_form_dy(
             1.0,
             -5.0 / 16.0,
@@ -7876,7 +8246,7 @@ mod impact_zone_tests {
         let (x_before, v_before) = (cloth.positions.clone(), cloth.velocities.clone());
         let inv_dt = Fix128::from_int(64);
 
-        cloth.separate_after_zones(cloth.config.self_collision_distance, inv_dt);
+        cloth.separate_contacts(cloth.config.self_collision_distance, inv_dt);
 
         let moved = (1..x_before.len())
             .filter(|&i| cloth.positions[i] != x_before[i])
@@ -8501,5 +8871,82 @@ mod area_constraint_tests {
             "grows toward 2: {}",
             c.total_area().to_f64()
         );
+    }
+}
+
+#[cfg(test)]
+mod near_cache_tests {
+    use super::*;
+
+    fn grid(res: usize, thickness: Fix128) -> Cloth {
+        let mut c = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ONE,
+            res,
+            res,
+            Fix128::ONE,
+        );
+        c.config.self_collision_distance = thickness;
+        c
+    }
+
+    /// The cached near lists equal a fresh search after repeated separations, are built
+    /// once while the thickness and edges stay, and are rebuilt (to the fresh answer) when
+    /// the thickness or an edge rest length changes.
+    #[test]
+    fn near_cache_matches_a_fresh_search_and_rebuilds_on_input_change() {
+        // Spacing 1/4: thickness 3/10 reaches one grid step, 6/10 reaches two.
+        let t1 = Fix128::from_ratio(3, 10);
+        let mut c = grid(5, t1);
+        let inv_dt = Fix128::from_int(64);
+        for _ in 0..3 {
+            c.separate_contacts(t1, inv_dt);
+        }
+        assert_eq!(c.near_cache.builds, 1, "rebuilt with unchanged inputs");
+        assert_eq!(c.near_cache.lists, c.rest_geodesic_lists(t1));
+        assert!(
+            c.near_cache.lists.iter().any(|l| l.len() > 1),
+            "no particle has a neighbour within the thickness: the case tests nothing"
+        );
+
+        let t2 = Fix128::from_ratio(6, 10);
+        c.separate_contacts(t2, inv_dt);
+        assert_eq!(c.near_cache.builds, 2, "not rebuilt on a thickness change");
+        let fresh2 = c.rest_geodesic_lists(t2);
+        assert_ne!(
+            fresh2,
+            c.rest_geodesic_lists(t1),
+            "the two thicknesses give the same lists"
+        );
+        assert_eq!(c.near_cache.lists, fresh2);
+
+        c.edge_constraints[0].rest_length = Fix128::from_ratio(1, 1000);
+        c.separate_contacts(t2, inv_dt);
+        assert_eq!(
+            c.near_cache.builds, 3,
+            "not rebuilt on an edge rest length change"
+        );
+        assert_eq!(c.near_cache.lists, c.rest_geodesic_lists(t2));
+    }
+
+    /// The near lists stay local: on a 32 x 32 grid (spacing 1/31) with thickness 1/10,
+    /// a geodesic within the thickness spans at most 3 grid steps along each axis, so each
+    /// list holds at most 7 x 7 particles, not all 1024.
+    #[test]
+    fn near_lists_hold_a_bounded_number_of_entries_per_particle() {
+        let t = Fix128::from_ratio(1, 10);
+        let mut c = grid(32, t);
+        c.refresh_near_cache(t);
+        let lists = &c.near_cache.lists;
+        assert_eq!(lists.len(), 1024);
+        let max = lists.iter().map(Vec::len).max().unwrap_or(0);
+        assert!(
+            max > 1,
+            "no neighbours within the thickness: the case tests nothing"
+        );
+        assert!(max <= 49, "a near list holds {max} entries");
+        let total: usize = lists.iter().map(Vec::len).sum();
+        assert!(total <= 49 * 1024, "the near lists hold {total} entries");
     }
 }

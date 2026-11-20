@@ -172,6 +172,7 @@ use alice_physics::cloth::GrabId as _;
 use alice_physics::cloth::OutlineDesc as _;
 use alice_physics::cloth::OutlineError as _;
 use alice_physics::cloth::RestPositionsMismatch as _;
+use alice_physics::cloth::SelfContactStats as _;
 use alice_physics::cloth_fluid as _;
 use alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid as _;
 use alice_physics::cloth_fluid::apply_cloth_boundary_to_fluid_with_residual as _;
@@ -1962,6 +1963,7 @@ use alice_physics::SdfField as _;
 use alice_physics::SdfForceField as _;
 use alice_physics::SdfForceType as _;
 use alice_physics::SdfManifold as _;
+use alice_physics::SelfContactStats as _;
 use alice_physics::SerializedBody as _;
 use alice_physics::SerializedJoint as _;
 use alice_physics::Shape as _;
@@ -2021,7 +2023,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 2003 paths, checked at compile time
+    // 2005 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
