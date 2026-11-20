@@ -360,48 +360,80 @@ class Triggers(unittest.TestCase):
         # Linux and Windows run as four shards each (`<runner>, <shard>`), macOS as one job
         shards = lambda r: [f"{r}, {k}" for k in ("checks", "default", "parallel", "features")]
         sharded = shards("ubuntu-latest") + shards("ubuntu-24.04-arm") + shards("windows-latest")
-        four = ["macos-latest", *sharded]
-        five = ["macos-latest", "macos-15-intel", *sharded]
-        self.assertEqual(got["push main"], five)
-        self.assertEqual(got["push ci/**"], four)
-        self.assertEqual(got["pull_request"], four)
-        self.assertEqual(got["workflow_dispatch"], four)
-        self.assertEqual(got["schedule"], ["macos-15-intel"])
-        # a branch that changes the landing script: the Intel leg on the ci/** push and a manual
-        # run too (read before the landing), never on a pull request
-        ls = "needs.gate.outputs.landing_scripts"
-        got = {label: ct.matrix_values(job, "os", ct.event_ctx(e, ref, ls)) for label, e, ref, _ in ct.EVENTS}
-        self.assertEqual(got["push main"], five)
-        self.assertEqual(got["push ci/**"], five)
-        self.assertEqual(got["pull_request"], four)
-        self.assertEqual(got["workflow_dispatch"], five)
-        self.assertEqual(got["schedule"], ["macos-15-intel"])
+        macs = ["macos-latest", "macos-15-intel"]
+        # no push runs a macOS leg; the schedule runs the two macOS legs only (class weekly)
+        self.assertEqual(got["push main"], sharded)
+        self.assertEqual(got["push ci/**"], sharded)
+        self.assertEqual(got["pull_request"], sharded)
+        self.assertEqual(got["workflow_dispatch"], sharded)
+        self.assertEqual(got["schedule"], macs)
+        # a manual run with the input macos=true runs the macOS legs only; the input is given on a
+        # manual run alone, so every other event is unchanged
+        got = {label: ct.matrix_values(job, "os", ct.event_ctx(e, ref, "inputs.macos"))
+               for label, e, ref, _ in ct.EVENTS}
+        self.assertEqual(got["push main"], sharded)
+        self.assertEqual(got["push ci/**"], sharded)
+        self.assertEqual(got["pull_request"], sharded)
+        self.assertEqual(got["workflow_dispatch"], macs)
+        self.assertEqual(got["schedule"], macs)
 
     # --- a leg a job output adds ------------------------------------------------------------
 
     OS_LS = OS.replace("|| '[\"macos-latest\", \"ubuntu-latest\"]'",
-                       "|| (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && "
-                       "'[\"macos-latest\", \"intel\", \"ubuntu-latest\"]' || '[\"macos-latest\", \"ubuntu-latest\"]'")
-    WHEN = 'events_when_landing_scripts = ["push main", "push ci/**", "workflow_dispatch", "schedule"]\n'
+                       "|| inputs.macos && '[\"macos-latest\", \"intel\", \"ubuntu-latest\"]' "
+                       "|| '[\"macos-latest\", \"ubuntu-latest\"]'")
+    WHEN = 'events_when_macos_input = ["push main", "workflow_dispatch", "schedule"]\n'
 
     def ls_tree(self, evidence: str):
         self.assertNotEqual(self.OS_LS, OS)
         return self.errors(evidence=evidence, **{"ci.yml": CI.replace(OS, self.OS_LS)})
 
-    def test_a_leg_a_job_output_adds_is_declared(self):
+    def test_a_leg_an_input_adds_is_declared(self):
         ev = EVIDENCE + self.WHEN
         self.assertEqual(self.ls_tree(ev), [])
-        self.has(self.ls_tree(EVIDENCE), "declare `events_when_landing_scripts`")
-        wrong = EVIDENCE + self.WHEN.replace('"push ci/**", ', "")
-        self.has(self.ls_tree(wrong), "declared `events_when_landing_scripts`")
+        self.has(self.ls_tree(EVIDENCE), "declare `events_when_macos_input`")
+        wrong = EVIDENCE + self.WHEN.replace('"workflow_dispatch", ', "")
+        self.has(self.ls_tree(wrong), "declared `events_when_macos_input`")
 
-    def test_a_declaration_without_the_output_in_the_matrix_fails(self):
-        self.has(self.errors(evidence=EVIDENCE + self.WHEN), "the job does not read needs.gate.outputs.landing_scripts")
+    def test_an_input_is_given_on_a_manual_run_only(self):
+        for label, e, ref, _ in ct.EVENTS:
+            ctx = ct.event_ctx(e, ref, "inputs.macos")
+            self.assertIs(ctx["inputs.macos"], e == "workflow_dispatch", label)
+            self.assertIs(ct.event_ctx(e, ref)["inputs.macos"], False, label)
 
-    def test_an_unknown_job_output_in_the_matrix_fails(self):
-        other = self.OS_LS.replace("landing_scripts", "something_else")
+    def test_a_declaration_without_the_input_in_the_matrix_fails(self):
+        self.has(self.errors(evidence=EVIDENCE + self.WHEN), "the job does not read inputs.macos")
+
+    def test_an_unknown_input_in_the_matrix_fails(self):
+        other = self.OS_LS.replace("inputs.macos", "inputs.something_else")
         e = self.errors(evidence=EVIDENCE + self.WHEN, **{"ci.yml": CI.replace(OS, other)})
-        self.has(e, "unknown name 'needs.gate.outputs.something_else'")
+        self.has(e, "unknown name 'inputs.something_else'")
+
+    # --- the weekly class ------------------------------------------------------------------
+
+    OS_WEEKLY = ("${{ fromJSON((github.event_name == 'schedule' || inputs.macos) && '[\"weeklymac\"]' "
+                 "|| '[\"ubuntu-latest\"]') }}")
+    WEEKLY = ('[[legs]]\nworkflow = "ci.yml"\njob = "test"\nmatrix = "weeklymac"\nclass = "weekly"\n'
+              'events = ["schedule"]\nevents_when_macos_input = ["workflow_dispatch", "schedule"]\n')
+
+    def weekly_tree(self, leg: str):
+        ev = EVIDENCE.split("[[legs]]")[0] + leg
+        return self.errors(evidence=ev, **{"ci.yml": CI.replace(OS, self.OS_WEEKLY)})
+
+    def test_a_weekly_leg_runs_on_the_schedule_and_no_push(self):
+        # (the fixture's document does not list the leg; only the evidence file's rules are read here)
+        errs = self.weekly_tree(self.WEEKLY)
+        self.assertEqual([e for e in errs if e.startswith(".github/ci-evidence.toml") and "weeklymac" in e], [])
+        self.assertTrue(any("weeklymac" in e for e in errs))  # the leg was read (the document lacks it)
+
+    def test_a_weekly_leg_that_a_push_runs_fails(self):
+        on_push = self.OS_WEEKLY.replace("github.event_name == 'schedule'",
+                                         "github.event_name == 'schedule' || github.event_name == 'push'")
+        ev = EVIDENCE.split("[[legs]]")[0] + self.WEEKLY.replace(
+            'events = ["schedule"]', 'events = ["push main", "push ci/**", "schedule"]').replace(
+            '["workflow_dispatch", "schedule"]', '["push main", "push ci/**", "workflow_dispatch", "schedule"]')
+        e = self.errors(evidence=ev, **{"ci.yml": CI.replace(OS, on_push)})
+        self.has(e, "class weekly needs a schedule run and no push run")
 
     # --- dispatch --------------------------------------------------------------------------
 

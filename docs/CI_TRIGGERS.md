@@ -50,7 +50,7 @@ with the patterns in `.github/paths/<workflow>.txt`:
 - the last job, `gate` (shown as `Gate`), runs `changed_paths.py gate` and fails when
   `run=true` and a heavy job was skipped, cancelled or failed, and when `run=false` and a
   heavy job ran. `ci.yml` has no path gate and no such job: its own `gate` job (shown as
-  `gate`) decides whether the nightly schedule runs the Mac Intel leg
+  `gate`) decides whether the weekly schedule runs the macOS legs
   (`scripts/intel_nightly_gate.py`), and is a different job. `scripts/ci_triggers_check.py`
   requires the guard's `gate` job in every path-gated workflow and in no other.
 
@@ -85,48 +85,38 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `wiring-status.yml` | `main, ci/**` | `.github/paths/wiring-status.txt` | - | - | yes | runs when the paths match | landing |
 <!-- ci-triggers:workflows:end -->
 
-## Legs of landing workflows read after the landing
+## Legs of landing workflows not read before the landing
 
-The macOS legs of the test matrix take the longest. The landing does not wait for
-either of them, and a release (crates.io, PyPI) needs every leg green.
+The hosted macOS legs (`macos-latest`, the arm64 leg that holds the golden hashes, and
+`macos-15-intel`) take the longest, and no push runs them: they are class `weekly`.
 
-- `macos-latest` (class `after-landing`): starts on the `ci/<id>` SHA with the rest of
-  the run; its result is read after the landing. It is the arm64 leg that holds the
-  golden hashes: a red result there after a landing is fixed or reverted at once.
-- `macos-15-intel` (class `main-after-landing`): does **not** run on a `ci/**` push, a
-  pull request or a manual run. It runs on the push to `main` (all 5 OS) and on the
-  nightly schedule (that leg alone, when `main`'s HEAD has no successful Intel job); its
-  result is read on `main` after the landing.
+- They run on the weekly schedule (the `test` legs, when `main`'s HEAD has no successful
+  Intel job yet, and the `determinism-release` arm64 leg) and on a manual run with the
+  input `macos=true` (`-f macos=true`), which runs the macOS legs only. A red weekly
+  result is fixed or reverted like a red `main`.
+- A landing does not read them. In place of the arm64 leg it asks for a full preflight
+  of the landing tree made on an arm64 Mac (`scripts/land.py`, the macOS receipt): a
+  receipt of mode `full`, made on `Darwin arm64`, that compared at least one `cargo test`
+  command of `ci.yml` (`scripts/preflight_ci_parity.py`, which shows that
+  `scripts/preflight.sh` runs every one of them). It may come from either of the
+  account's arm64 Macs (the machine that lands, or the remote receipt machine).
+- The Mac Intel leg is weekly only: no landing reads an x86_64 macOS result.
 
-### Mac Intel on a `ci/**` push (landing script changes)
-
-When the branch changes `scripts/land.py`, `scripts/test_land.py` or the runner of those
-tests (`scripts/run_unittest_shards.py`), the Mac Intel leg
-also runs on the `ci/**` push and on a manual run, as an ordinary job of the run: the
-landing waits for it like the other legs. Those files start the runner's own git and
-tools, and the Intel image has different ones (its system git was older than the
-`--attr-source` option land.py passes, which only showed after a landing). The `gate`
-job of `ci.yml` decides it with `scripts/changed_paths.py decide` (a new or force-pushed
-branch and a manual run are compared with `merge-base(origin/main)`, a later push with
-`before..after`; an error or a step without an answer runs the leg) and outputs
-`landing_scripts`. The cost is one Intel job (about 100 min) per such branch. In
-`.github/ci-evidence.toml` the leg's `events_when_landing_scripts` lists the events it
-runs on then, and `scripts/ci_triggers_check.py` evaluates the matrix with that output
-true and false and compares both.
-
-The `test` matrix is computed from the event: the nightly schedule runs Mac Intel only,
-a push to `main` runs all 5 OS, and every other event, a manual run (`workflow_dispatch`,
-on any branch) included, runs the 4 others. The `events` column is checked against that
-expression: `scripts/ci_triggers_check.py` evaluates the matrix for each event and fails
-when a leg's declared events differ, or when a leg that runs on a `main` push but not on
-a `ci/**` push is not declared.
+The `test` matrix is computed from the event and the input: the schedule and a manual
+run with `macos=true` run the two macOS legs only; every other event (a push to `main`, a
+`ci/**` push, a pull request, a manual run without the input) runs the Linux and Windows
+shards. The `events` column is checked against that expression:
+`scripts/ci_triggers_check.py` evaluates the matrix for each event, with the input unset
+and set (the input is given on a manual run only), and fails when a leg's declared
+`events` or `events_when_macos_input` differ, or when a leg that runs on a `main` push but
+not on a `ci/**` push is not declared.
 
 <!-- ci-triggers:after-landing-legs:begin -->
 | workflow | job | matrix | class | events |
 |---|---|---|---|---|
-| `ci.yml` | `test` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
-| `ci.yml` | `test` | `macos-15-intel` | main-after-landing | push main, schedule |
-| `ci.yml` | `determinism-release` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
+| `ci.yml` | `test` | `macos-latest` | weekly | schedule |
+| `ci.yml` | `test` | `macos-15-intel` | weekly | schedule |
+| `ci.yml` | `determinism-release` | `macos-latest` | weekly | schedule |
 <!-- ci-triggers:after-landing-legs:end -->
 
 ## What the landing waits on
@@ -207,7 +197,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | workflow | class | waits for |
 |---|---|---|
 | `bench-gate.yml` | landing | success |
-| `ci.yml` | landing | success; started only: Test (macos-latest), Determinism tests (release, macos-latest) |
+| `ci.yml` | landing | success |
 | `downstream.yml` | landing | success |
 | `eol.yml` | landing | success |
 | `fuzz.yml` | landing | success |
@@ -238,9 +228,9 @@ variable or default that skips the `ci/<id>` lane.
 `--wait-only <SHA>` reads the after-landing set on `main` for the landed SHA and reports
 each item on its own line:
 
-- each matrix leg of class `after-landing` or `main-after-landing` (the macOS test legs):
-  the job in the newest run of its workflow that has it (the push to `main`, or a nightly
-  re-run of the Mac Intel leg);
+- each matrix leg of class `after-landing` or `main-after-landing` (none since the macOS
+  legs became weekly; the classes stay for a leg that needs them): the job in the newest
+  run of its workflow that has it;
 - each workflow of class `after-landing` (Miri and loom): its newest run; when its
   changes job said `run=false` it is reported as not run.
 
@@ -254,9 +244,6 @@ cancelled one, is pending, never green.
 <!-- ci-triggers:after-landing-wait:begin -->
 | item | class |
 |---|---|
-| ci.yml: Test (macos-latest) | after-landing |
-| ci.yml: Determinism tests (release, macos-latest) | after-landing |
-| ci.yml: Test (macos-15-intel) | main-after-landing |
 | unsafe-and-parallel.yml | after-landing |
 <!-- ci-triggers:after-landing-wait:end -->
 
