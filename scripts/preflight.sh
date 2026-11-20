@@ -412,6 +412,7 @@ grep -q '^wasm32-wasip1$' <<<"$(rustup target list --installed)" || rustup targe
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
+cargo test --test analytic_self_contact --target wasm32-wasip1 --no-run
 cargo test --test fix128_bit_identity --target wasm32-wasip1 --no-run
 cargo test --test determinism_from_f64 --target wasm32-wasip1 --no-run
 cargo test --test analytic_wind_zone_participant --target wasm32-wasip1 --no-run
