@@ -357,8 +357,11 @@ class Triggers(unittest.TestCase):
         text = (HERE.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         job = ct.jobs(text)["test"]
         got = {label: ct.matrix_values(job, "os", ct.event_ctx(e, ref)) for label, e, ref, _ in ct.EVENTS}
-        four = ["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]
-        five = ["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]
+        # Linux and Windows run as four shards each (`<runner>, <shard>`), macOS as one job
+        shards = lambda r: [f"{r}, {k}" for k in ("checks", "default", "parallel", "features")]
+        sharded = shards("ubuntu-latest") + shards("ubuntu-24.04-arm") + shards("windows-latest")
+        four = ["macos-latest", *sharded]
+        five = ["macos-latest", "macos-15-intel", *sharded]
         self.assertEqual(got["push main"], five)
         self.assertEqual(got["push ci/**"], four)
         self.assertEqual(got["pull_request"], four)
