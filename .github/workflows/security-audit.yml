@@ -294,16 +294,18 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     name: Coverage (cargo-llvm-cov, line-coverage ratchet)
     runs-on: ubuntu-latest
-    # The limit comes from the measured spread, not from a typical run: with the cache
-    # restored and the build done in 20-30 s, the instrumented lib tests (about 2800)
-    # alone took 411 s, 657 s and 692 s on three runs of 2026-11-19 (same inputs, the
-    # hosted runner's speed differs by more than 2x), and 4 of the last 10 runs were
-    # stopped at the former 15 min before the tests ended. Those 4 are censored, so the
-    # true tail is above 15 min and is not known: 30 min is twice the cut-off that
-    # 40 % of the runs hit, not a bound derived from the longest run. To revisit after
-    # about 10 runs at this limit: if a completed run takes more than 20 min, measure
-    # again and make the job faster or the limit larger.
-    timeout-minutes: 30
+    # The limit comes from the slower of two measured modes, not from a typical run. Over
+    # the 21 runs up to 2026-11-21 that reached the tests (cache restored, build 20-30 s,
+    # the same test binary), the instrumented lib tests (about 2800) took 485-692 s on the
+    # runner images 20261111.196.1 / 20261116.202.1 (15 of 17 runs completed, job 9-12 min)
+    # and 1636 s and 1670 s on the images 20261111.82.6 / 20261116.88.1 (6 of 6 runs slow:
+    # 2 completed at 28 min, 4 were stopped at the former 15 and 30 min limits). The time
+    # follows the image the job is given, every module about 2.6x slower, with identical
+    # code. Why that image is slower for this job is not known (the MSRV jobs do not show
+    # the two modes: 7-14 min on every image). 45 min is 1.55x the slow mode's 29 min
+    # (1670 s + about 1 min of setup). A run that needs more than 35 min is outside both
+    # modes: measure again before changing the number.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
