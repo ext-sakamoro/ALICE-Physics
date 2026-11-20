@@ -9,29 +9,30 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-  # nightly Mac Intel leg only, and only when main's HEAD has no successful Intel
-  # job yet (the `gate` job); every other job skips the schedule
+  # weekly: the hosted macOS legs (Mac ARM and Mac Intel), and only when main's HEAD has
+  # no successful Intel job yet (the `gate` job); no push runs them, a landing reads a
+  # full preflight of the landing tree made on an arm64 Mac instead (docs/CI_TRIGGERS.md,
+  # macOS legs); every other job skips the schedule
   schedule:
-    - cron: '15 16 * * *'
+    - cron: '15 16 * * 0'
   # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
-  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs);
+  # `-f macos=true` runs the macOS legs only, on demand
   workflow_dispatch:
+    inputs:
+      macos:
+        description: run the hosted macOS legs (and only those) instead of the push legs
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # On the schedule: a safety net. Every commit reaching main already runs all 5 OS
-  # on its push, so the nightly runs the Mac Intel leg only when main's HEAD has no
-  # successful `Test (macos-15-intel)` job (scripts/intel_nightly_gate.py reads
-  # HEAD's CI runs with the read-only token; an API error runs the leg). Any other
-  # event: run.
-  # On a ci/** push or a manual run: `landing_scripts` is true when the branch changes
-  # the landing script or its tests (compared with merge-base(origin/main) on a new or
-  # force-pushed branch and on a manual run, before..after otherwise; an error is true).
-  # The Mac Intel leg then runs on the ci/<id> SHA too and is read before the landing:
-  # those files run the runner's own git and tools, which differ on the Intel image
-  # (docs/CI_TRIGGERS.md, Mac Intel on a ci/** push).
+  # On the schedule: the weekly macOS run, skipped when main's HEAD already has a
+  # successful `Test (macos-15-intel)` job (main has not moved since the last weekly
+  # run; scripts/intel_nightly_gate.py reads HEAD's CI runs with the read-only token; an
+  # API error runs the legs). Any other event: run.
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -40,8 +41,6 @@ jobs:
       contents: read
     outputs:
       run: ${{ steps.decide.outputs.run || 'true' }}
-      # skipped (main push, schedule, pull request): false; ran without an answer: true
-      landing_scripts: ${{ steps.landing.outcome == 'skipped' && 'false' || steps.landing.outputs.run || 'true' }}
     steps:
       - uses: actions/checkout@v5
         if: github.event_name == 'schedule'
@@ -49,20 +48,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
         with:
           fetch-depth: 0
-      - id: landing
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
-        env:
-          EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.event.after || github.sha }}
-          CREATED: ${{ github.event.created }}
-          FORCED: ${{ github.event.forced }}
-        # a manual run is compared like a new branch (changed_paths.py runs every manual run)
-        run: >-
-          if [ "$EVENT" = workflow_dispatch ]; then EVENT=push CREATED=true; fi;
-          python3 scripts/changed_paths.py decide --event "$EVENT"
-          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
-          --pattern 'scripts/land.py' --pattern 'scripts/test_land.py' --pattern 'scripts/run_unittest_shards.py'
       # the lib-test gate land.py runs before it pushes (scripts/lib_test_gate.py): here on a ci/** push so a new
       # source file without lib tests is refused in this round, not at the land after it; 0 commits over main = fail
       - name: Lib-test gate (new source files bring lib tests)
@@ -99,13 +84,12 @@ jobs:
         # - ubuntu-24.04-arm   → aarch64-unknown-linux-gnu  (Linux ARM、GA runner 2025-01+)
         # - windows-latest     → x86_64-pc-windows-msvc     (Windows x86)
         # + wasm-test job below → wasm32-wasip1 (WASI) via wasmtime
-        # The Mac Intel leg (about 100 min) runs on pushes to main (all 5 OS) and on
-        # the nightly schedule (that leg alone); a ci/** staging push or a pull request
-        # runs the other four. Landing reads the non-macOS legs; macOS results are
-        # read after landing. Exception: a ci/** push or a manual run whose branch
-        # changes the landing script or its tests (gate: landing_scripts) runs all 5,
-        # and the landing reads the Intel leg too.
-        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]' || (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && '["macos-latest", "macos-15-intel", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]' || '["macos-latest", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]') }}
+        # The two macOS legs (Mac Intel about 100 min, Mac ARM about 60) run weekly and
+        # on a manual run with macos=true, and only there (then alone); every push runs
+        # the Linux and Windows shards. A landing reads those, and in place of the Mac
+        # ARM leg a full preflight of the landing tree made on an arm64 Mac
+        # (scripts/land.py, docs/CI_TRIGGERS.md: macOS legs).
+        os: ${{ fromJSON((github.event_name == 'schedule' || inputs.macos) && '["macos-latest", "macos-15-intel"]' || '["ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -641,16 +625,15 @@ jobs:
   # test legs above run the same tests unoptimised; the counts are read per test
   # binary so a filter that matches nothing is red
   determinism-release:
-    if: github.event_name != 'schedule'
     name: Determinism tests (release, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        # the job does not run on the schedule (if: above); the matrix says the same so
-        # scripts/ci_triggers_check.py reads the macOS leg's events correctly
-        os: ${{ fromJSON(github.event_name == 'schedule' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm", "macos-latest"]') }}
+        # the macOS leg runs with the other macOS legs (weekly, or a manual run with
+        # macos=true); a push runs the two Linux legs
+        os: ${{ fromJSON((github.event_name == 'schedule' || inputs.macos) && '["macos-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm"]') }}
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain

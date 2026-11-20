@@ -37,34 +37,35 @@
 # evaluates the job's matrix for each event and fails when they differ)
 #   after-landing       started on the ci/<id> SHA with the rest of the run, read after the landing
 #   main-after-landing  not started on ci/** at all: runs on the push to main (and on the
-#                       nightly schedule), read on main after the landing
+#                       schedule), read on main after the landing
+#   weekly              run by no push: the weekly schedule, and a manual run with the input
+#                       that asks for it; a landing never reads it (for the macOS legs it reads
+#                       a full preflight of the landing tree made on an arm64 Mac instead,
+#                       scripts/land.py)
 # event labels: "push main", "push ci/**", "pull_request", "workflow_dispatch", "schedule"
-# events_when_landing_scripts: the events whose run includes the leg when the ci.yml gate
-# says the branch changes the landing script or its tests (needs.gate.outputs.landing_scripts);
-# on a ci/** push the leg is then an ordinary job of the run, read before the landing
-
-# the arm64 leg that holds the golden hashes: red after a landing is fixed or reverted at once
+# events_when_macos_input: the events whose run includes the leg when a manual run sets the
+# ci.yml input `macos` (inputs.macos, given on workflow_dispatch only)
+# the hosted macOS legs: Mac ARM (the golden hashes' platform) and Mac Intel, weekly
 [[legs]]
 workflow = "ci.yml"
 job = "test"
 matrix = "macos-latest"
-class = "after-landing"
-events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
-
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
 [[legs]]
 workflow = "ci.yml"
 job = "test"
 matrix = "macos-15-intel"
-class = "main-after-landing"
-events = ["push main", "schedule"]
-events_when_landing_scripts = ["push main", "push ci/**", "workflow_dispatch", "schedule"]
-
-# the optimised determinism tests on arm64 macOS (a target with a fused multiply-add): read
-# after the landing like the other macOS legs; ubuntu-24.04-arm covers the same rewrite
-# before it
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
+# the optimised determinism tests on arm64 macOS (a target with a fused multiply-add):
+# weekly with the other macOS legs; ubuntu-24.04-arm covers the same rewrite on every push
 [[legs]]
 workflow = "ci.yml"
 job = "determinism-release"
 matrix = "macos-latest"
-class = "after-landing"
-events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
