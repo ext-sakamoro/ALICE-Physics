@@ -45,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `world_participant` | step | 46 / 22 / 9 / 23 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
-| `cloth` | world API (step 5 of 58 items) | 5 / 31 / 7 / 15 / 0 | C ABI, Python, WebAssembly |
+| `cloth` | world API (step 6 of 62 items) | 6 / 33 / 7 / 16 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |

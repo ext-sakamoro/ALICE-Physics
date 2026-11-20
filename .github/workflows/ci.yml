@@ -838,6 +838,19 @@ jobs:
           wasmtime "$WASM_BIN"
 
       # layered touch playback: the pinned history digest must be the same under wasm
+      - name: Build analytic_self_contact test (wasm32-wasip1)
+        run: cargo test --test analytic_self_contact --target wasm32-wasip1 --no-run
+
+      # one pinned crumple digest, compared with the native run of the same test; fails
+      # when the filter selects no test (the run must report exactly 1 passed)
+      - name: Run the self-contact crumple digest via wasmtime
+        run: |
+          set -o pipefail
+          WASM_BIN=$(find target/wasm32-wasip1/debug/deps -name 'analytic_self_contact-*.wasm' -not -name '*.d' | head -1)
+          echo "Executing: $WASM_BIN"
+          wasmtime "$WASM_BIN" the_crumple_with_self_contact_ends_at_the_pinned_bits --exact | tee /tmp/self-contact-wasm.txt
+          grep -q 'test result: ok. 1 passed' /tmp/self-contact-wasm.txt
+
       - name: Build analytic_touch_layers test (wasm32-wasip1)
         run: cargo test --test analytic_touch_layers --target wasm32-wasip1 --no-run
 
