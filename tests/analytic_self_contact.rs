@@ -1133,7 +1133,7 @@ fn self_collision_improves_the_vertex_face_separation_it_constrains() {
 /// 旧実測 (2026-09-29、半径 0.5): `min_d2 = 0.038967` (= `0.197401²`)、違反 74 件、
 /// 自己接触の on/off で両方とも完全一致
 #[test]
-#[ignore = "known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below; with the new transcendentals a free vertex pair is the ON minimum"]
+#[ignore = "known defect: AUD-A-S6W1-013: start 0 of the free-pair ensemble below; with the new transcendentals a free vertex pair is the ON minimum"]
 fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
     let radius = default_radius();
     let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
@@ -1588,7 +1588,7 @@ fn edge_edge_separation_scaled(
 const EDGE_EDGE_BASELINE_ON: usize = 0;
 
 #[test]
-#[ignore = "known defect: cloth-self-contact-free-edge-pairs-inside-thickness: start 0 of the free-pair ensemble below reads 6 free pairs inside the thickness; its all-pairs baseline (ON 19 / OFF 13) also counts pairs with a pinned vertex, so re-record that baseline when this is un-ignored"]
+#[ignore = "known defect: AUD-A-S6W1-013: start 0 of the free-pair ensemble below reads 6 free pairs inside the thickness; its all-pairs baseline (ON 19 / OFF 13) also counts pairs with a pinned vertex, so re-record that baseline when this is un-ignored"]
 fn the_full_step_keeps_the_edge_edge_violations_at_the_recorded_baseline() {
     let radius = default_radius();
     let (_, _, pos_on) = run_crumple(true, SEPARATION_STEPS, radius);
@@ -1847,7 +1847,7 @@ fn self_contact_never_passes_through_itself_where_no_self_contact_does_over_an_e
 /// Pairs with a pinned vertex are excluded for the reason given on
 /// `self_contact_never_passes_through_itself_where_no_self_contact_does_over_an_ensemble`.
 #[test]
-#[ignore = "known defect: cloth-self-contact-free-edge-pairs-inside-thickness: free edge pairs end the crumple inside the contact thickness with self-contact on, on 4 of 15 starts"]
+#[ignore = "known defect: AUD-A-S6W1-013: free edge pairs end the crumple inside the contact thickness with self-contact on, on 4 of 15 starts"]
 fn self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_ensemble() {
     let radius = default_radius();
     let cloth = Cloth::new_grid(
