@@ -1929,6 +1929,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLUSTER_PASSES: usize
+pub const alice_physics_core::cloth::Cloth::SEPARATION_PASSES: usize
 pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
@@ -1943,6 +1945,7 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::self_contact_stats(&self) -> alice_physics_core::cloth::SelfContactStats
 pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
@@ -2097,6 +2100,30 @@ impl core::marker::Unpin for alice_physics_core::cloth::RestPositionsMismatch
 impl core::marker::UnsafeUnpin for alice_physics_core::cloth::RestPositionsMismatch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::RestPositionsMismatch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::RestPositionsMismatch
+pub struct alice_physics_core::cloth::SelfContactStats
+pub alice_physics_core::cloth::SelfContactStats::capped_calls: u64
+pub alice_physics_core::cloth::SelfContactStats::clipped_corrections: u64
+pub alice_physics_core::cloth::SelfContactStats::cluster_converged: u64
+pub alice_physics_core::cloth::SelfContactStats::cluster_solves: u64
+pub alice_physics_core::cloth::SelfContactStats::separation_calls: u64
+impl core::clone::Clone for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::SelfContactStats
+impl core::cmp::PartialEq for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::default() -> Self
+impl core::fmt::Debug for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::SelfContactStats
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Freeze for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Send for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Sync for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Unpin for alice_physics_core::cloth::SelfContactStats
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::SelfContactStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::SelfContactStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::SelfContactStats
 pub fn alice_physics_core::cloth::damping_over(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::cloth::damping_reference_dt() -> alice_physics_core::math::Fix128
 pub mod alice_physics_core::cloth_fluid
@@ -11822,6 +11849,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLUSTER_PASSES: usize
+pub const alice_physics_core::cloth::Cloth::SEPARATION_PASSES: usize
 pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
@@ -11836,6 +11865,7 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::self_contact_stats(&self) -> alice_physics_core::cloth::SelfContactStats
 pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
@@ -24723,6 +24753,8 @@ pub fn alice_physics_core::cloth::Cloth::state_bytes(&self) -> alloc::vec::Vec<u
 pub fn alice_physics_core::cloth::Cloth::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::cloth::Cloth::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics_core::cloth::Cloth
+pub const alice_physics_core::cloth::Cloth::CLUSTER_PASSES: usize
+pub const alice_physics_core::cloth::Cloth::SEPARATION_PASSES: usize
 pub fn alice_physics_core::cloth::Cloth::area_constraint(&self) -> core::option::Option<alice_physics_core::math::Fix128>
 pub fn alice_physics_core::cloth::Cloth::clear_area_constraint(&mut self)
 pub fn alice_physics_core::cloth::Cloth::clear_rest_tether(&mut self)
@@ -24737,6 +24769,7 @@ pub fn alice_physics_core::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics_core::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics_core::math::Vec3Fix]) -> usize
 pub fn alice_physics_core::cloth::Cloth::rest_positions(&self) -> &[alice_physics_core::math::Vec3Fix]
 pub fn alice_physics_core::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)>
+pub fn alice_physics_core::cloth::Cloth::self_contact_stats(&self) -> alice_physics_core::cloth::SelfContactStats
 pub fn alice_physics_core::cloth::Cloth::set_area_constraint(&mut self, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics_core::math::Vec3Fix]) -> core::result::Result<(), alice_physics_core::cloth::RestPositionsMismatch>
 pub fn alice_physics_core::cloth::Cloth::set_rest_tether(&mut self, alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
@@ -28311,6 +28344,30 @@ impl core::marker::Unpin for alice_physics_core::sdf_manifold::SdfManifold
 impl core::marker::UnsafeUnpin for alice_physics_core::sdf_manifold::SdfManifold
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sdf_manifold::SdfManifold
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::sdf_manifold::SdfManifold
+pub struct alice_physics_core::SelfContactStats
+pub alice_physics_core::SelfContactStats::capped_calls: u64
+pub alice_physics_core::SelfContactStats::clipped_corrections: u64
+pub alice_physics_core::SelfContactStats::cluster_converged: u64
+pub alice_physics_core::SelfContactStats::cluster_solves: u64
+pub alice_physics_core::SelfContactStats::separation_calls: u64
+impl core::clone::Clone for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::cloth::SelfContactStats
+impl core::cmp::PartialEq for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::default() -> Self
+impl core::fmt::Debug for alice_physics_core::cloth::SelfContactStats
+pub fn alice_physics_core::cloth::SelfContactStats::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::cloth::SelfContactStats
+impl core::marker::StructuralPartialEq for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Freeze for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Send for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Sync for alice_physics_core::cloth::SelfContactStats
+impl core::marker::Unpin for alice_physics_core::cloth::SelfContactStats
+impl core::marker::UnsafeUnpin for alice_physics_core::cloth::SelfContactStats
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::cloth::SelfContactStats
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::cloth::SelfContactStats
 pub struct alice_physics_core::SerializedBody
 pub alice_physics_core::SerializedBody::body_type: u8
 pub alice_physics_core::SerializedBody::mass: [i64; 2]
