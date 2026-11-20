@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Decide whether the nightly CI runs the Mac Intel leg.
+"""Decide whether the weekly CI run runs the macOS legs.
 
-Every commit that reaches main already runs the 5-OS CI on its push, so the
-nightly is a safety net: it runs the `Test (macos-15-intel)` leg only when
-main's HEAD has no successful run of that job (the push run failed, was
-cancelled, or never ran it). The CI runs of HEAD are read with the GitHub API
-(read-only, the workflow's GITHUB_TOKEN):
+No push runs the hosted macOS legs (Mac ARM and Mac Intel): the weekly schedule runs them
+(docs/CI_TRIGGERS.md, the weekly class). It skips them when main's HEAD already has a
+successful `Test (macos-15-intel)` job, that is when main has not moved since a weekly
+run that passed (the name kept from the nightly gate it was). The CI runs of HEAD are read
+with the GitHub API (read-only, the workflow's GITHUB_TOKEN):
 
-  | the `Test (macos-15-intel)` jobs of HEAD's ci.yml runs | nightly |
+  | the `Test (macos-15-intel)` jobs of HEAD's ci.yml runs | weekly |
   |---|---|
   | any one concluded `success`                             | skip    |
   | none succeeded, one queued / in progress                | skip (leave it to finish) |
@@ -20,7 +20,7 @@ yet). Writes `run=true` / `run=false` to $GITHUB_OUTPUT and prints why.
 Bounds: it reads one page of each API listing (the 50 most recent ci.yml runs of
 the commit and 100 jobs of each run, far above what one commit gets), and it
 matches the job by the name `Test (macos-15-intel)`, which holds while the
-schedule's matrix is that single value; renaming the job or the runner label
+schedule's matrix has that value; renaming the job or the runner label
 needs the same change in JOB.
 
   python3 scripts/intel_nightly_gate.py      # in the gate job, on the schedule

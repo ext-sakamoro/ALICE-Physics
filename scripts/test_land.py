@@ -185,6 +185,21 @@ echo "$*" >> "$(cd "$(dirname "$0")/.." && pwd)/run-preflight.log"
 """
 
 
+# the macOS receipt verifier: records its arguments; passes for a tree listed in macos-receipts.txt next to the checkout
+RECEIPT_VERIFY_STAND_IN = """import sys
+from pathlib import Path
+cc = Path(__file__).resolve().parent.parent
+with open(cc / "receipt-verify.log", "a") as f:
+    f.write(" ".join(sys.argv[1:]) + "\\n")
+listed = (cc / "macos-receipts.txt").read_text().split() if (cc / "macos-receipts.txt").exists() else []
+if sys.argv[2] in listed:
+    print("stand-in: a full receipt made on Darwin arm64")
+    sys.exit(0)
+print("receipt_verify: no receipt of this tree", file=sys.stderr)
+sys.exit(1)
+"""
+
+
 STAND_IN_REPO = "hooks-stand-in"
 
 
@@ -199,6 +214,7 @@ def stand_in_hooks_checkout(d: Path) -> Path:
     (cc / "hooks" / "git_pre_push.py").write_text(GATE_STAND_IN)
     (cc / "scripts").mkdir()
     (cc / "scripts" / "run-preflight.sh").write_text(RUN_PREFLIGHT_STAND_IN)
+    (cc / "scripts" / "receipt_verify.py").write_text(RECEIPT_VERIFY_STAND_IN)
     (d / "home").mkdir()
     (d / "home" / ".gitconfig").write_text(f"[core]\n\thooksPath = {cc / 'hooks' / 'git-hooks'}\n")
     return cc
@@ -530,6 +546,10 @@ class PublicLander(FakeLander):
         self.preflight_runs += 1
         self.calls.append("cheap")
 
+    def check_macos_receipt(self, trees):
+        self.calls.append("macos_receipt")
+        self.macos_trees = trees
+
     def ci_receipt(self, ref, sha):
         self.calls.append(f"ci_receipt {ref}")
         self.receipted = getattr(self, "receipted", []) + [sha]
@@ -579,6 +599,59 @@ class PublicLanding(Isolated):
         self.assertIn("preflight", lander.calls)
         self.assertNotIn("cheap", lander.calls)
         self.assertFalse(any(c.startswith("ci_receipt") for c in lander.calls))
+
+
+class MacosReceipt(Isolated):
+    """the hosted macOS test legs run weekly: a public landing asks for a full preflight made on an arm64 Mac"""
+    CL = PublicLanding.CL
+
+    def lander(self, **k) -> PublicLander:
+        return PublicLander(self.r.work, "T-1", **k)
+
+    def test_a_public_landing_asks_for_it_before_the_push(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        lander = self.lander()
+        lander.land()
+        self.assertLess(lander.calls.index("macos_receipt"), lander.calls.index("wait_evidence ci/T-1"))
+        self.assertEqual(len(lander.macos_trees), 2)
+
+    def test_without_it_nothing_lands(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        before = self.r.origin_head()
+
+        class NoMac(PublicLander):
+            def check_macos_receipt(self, trees):
+                land.Lander.check_macos_receipt(self, trees)
+        with self.assertRaisesRegex(land.LandError, "arm64 Mac"):
+            NoMac(self.r.work, "T-1").land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_private_landing_does_not_ask_for_it(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        lander = self.r.lander()
+        lander.land()
+        self.assertNotIn("macos_receipt", lander.calls)
+
+    def real(self, listed: list[str]):
+        (self.cc / "macos-receipts.txt").write_text("\n".join(listed))
+        lander = self.lander()
+        land.Lander.check_macos_receipt(lander, ["a" * 40, "b" * 40])
+        return lander
+
+    def test_the_verifier_is_asked_for_a_full_darwin_arm64_receipt(self):
+        lander = self.real(["a" * 40])
+        args = (self.cc / "receipt-verify.log").read_text().splitlines()
+        self.assertEqual(len(args), 1, "the first tree passed: the second is not asked")
+        self.assertIn("a" * 40 + " --mode full --platform Darwin arm64 --min-compared 1", args[0])
+        self.assertTrue(any("macOS receipt" in r for r in lander.record))
+
+    def test_the_tree_with_the_ledger_commit_is_accepted_too(self):
+        self.real(["b" * 40])
+        self.assertEqual(len((self.cc / "receipt-verify.log").read_text().splitlines()), 2)
+
+    def test_no_receipt_for_either_tree_is_a_refusal(self):
+        with self.assertRaisesRegex(land.LandError, "no full preflight made on an arm64 Mac"):
+            self.real([])
 
 
 class AllRunsVerdict(unittest.TestCase):
