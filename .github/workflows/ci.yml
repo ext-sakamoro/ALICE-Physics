@@ -77,14 +77,16 @@ jobs:
         run: python3 scripts/intel_nightly_gate.py
 
   test:
+    # a matrix value names the runner, then for Linux and Windows the shard (`<runner>, <shard>`):
+    # the steps split into four parallel jobs there; macOS runs every step in one job
     name: Test (${{ matrix.os }})
     needs: gate
     if: needs.gate.outputs.run == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'windows-latest') && 'windows-latest' || startsWith(matrix.os, 'ubuntu-24.04-arm') && 'ubuntu-24.04-arm' || startsWith(matrix.os, 'ubuntu-latest') && 'ubuntu-latest' || matrix.os }}
     # per leg, from the slowest of the last successful runs: Intel macOS (max 192 min,
     # avg 100) stays at the 360-minute cap of a hosted runner, since twice its
     # maximum is above it; Windows (max 80) 160; the other legs (max 60) 120
-    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 360 || matrix.os == 'windows-latest' && 160 || 120 }}
+    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 360 || startsWith(matrix.os, 'windows-latest') && 160 || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -101,7 +103,7 @@ jobs:
         # read after landing. Exception: a ci/** push or a manual run whose branch
         # changes the landing script or its tests (gate: landing_scripts) runs all 5,
         # and the landing reads the Intel leg too.
-        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || '["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]' || (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && '["macos-latest", "macos-15-intel", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]' || '["macos-latest", "ubuntu-latest, checks", "ubuntu-latest, default", "ubuntu-latest, parallel", "ubuntu-latest, features", "ubuntu-24.04-arm, checks", "ubuntu-24.04-arm, default", "ubuntu-24.04-arm, parallel", "ubuntu-24.04-arm, features", "windows-latest, checks", "windows-latest, default", "windows-latest, parallel", "windows-latest, features"]') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -113,17 +115,22 @@ jobs:
         with:
           python-version: '3.11'
       - name: README sync checker (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_readme_sync.py
       - name: README sync (docs agree with Cargo.toml and src/)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/readme_sync.py --check
       - name: Version sync checker (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_version_sync.py
       - name: Version sync (metadata and install lines follow Cargo.toml)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/version_sync.py --check
       # ALICE-Law G11 (c): the files shared with the other crates are the bytes ALICE-Law's
       # table records (table and checker fetched at .github/shared-files-pin, both SHA-256
       # pinned); a difference, an unlisted shared path or nothing compared fails
       - name: Shared files equal ALICE-Law's table
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         shell: bash
         run: |
           python3 scripts/test_shared_files.py
@@ -132,11 +139,13 @@ jobs:
       # checker, the canary it must flag and the test that fails when it compared nothing (ALICE-Law's
       # checker fetched at .github/g11-table-pin, SHA-256 pinned; 0 rows compared fails)
       - name: G11 table matches the declared gates
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         shell: bash
         run: scripts/g11_table.sh
       # ALICE-Law G11: ALICE-Law's own self-check at the pinned revision (table, rows, shared copies, own copies
       # at their targets, manifest), on every OS of the matrix
       - name: ALICE-Law G11 self-check (the four G11 checks at the pinned revision)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         shell: bash
         run: |
           rev=$(awk '$1 == "rev" { print $2 }' .github/shared-files-pin)
@@ -145,80 +154,109 @@ jobs:
           PY=$(command -v python3 || command -v python)
           "$PY" "$RUNNER_TEMP/alice-law/scripts/g11_self_check.py" --repo . --name ALICE-Physics
       - name: Lib-test gate (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_lib_test_gate.py
       - name: Release determinism check (tests of the checker)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_determinism_release.py
       - name: no_std dependent check (tests of the checker)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_no_std_consumer.py
       - name: Binding build commands in the README (tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_binding_build_commands.py
           python scripts/binding_build_commands.py --check
       - name: Facade checker (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_facade_check.py
       - name: Preflight runs every cargo test of ci.yml (tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_preflight_ci_parity.py
           python scripts/preflight_ci_parity.py
       - name: Fuzz target list (tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_fuzz_targets.py
           python scripts/fuzz_targets.py --check
       - name: Semver-checks log reader (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_semver_checked.py
       - name: Semver baseline package reader (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_semver_baseline_has.py
       - name: Baseline selector (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_ci_base.py
       - name: Escape-sequence stripping for tool output (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_ansi.py
       - name: Clippy configuration of the library code (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_clippy_lib_gate.py
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_docs_lint.py
       - name: Docs lint (public documents, CHANGELOG structure)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/docs_lint.py --check
       # no built library or executable is tracked outside .github/tracked-binaries.txt
       - name: Tracked binaries (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_tracked_binaries.py
       - name: Tracked binaries (no built binary is tracked)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/tracked_binaries.py
       # no shell pipeline in the scripts and workflows ends in grep -q (SIGPIPE under pipefail)
       - name: Pipe into grep -q (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_check_pipe_grep_q.py
       - name: Pipe into grep -q (scripts and workflows)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/check_pipe_grep_q.py
       # coverage tables (docs/coverage/*.toml, hand-written): every cited test and
       # source symbol exists, oracles are not ignored, partial items and the
       # LIMITATION(<id>) comments in src/ point at each other
       - name: Coverage tables (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_coverage_check.py
       - name: Coverage reference converter (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_coverage_refs_to_symbols.py
       - name: Line-coverage ratchet (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_line_coverage_ratchet.py
       - name: Mutation ratchet (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_ratchet.py
       - name: Tests of scripts/mutants_run_status.py (killed / not measured / complete)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_run_status.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_exclude_check.py
       - name: Equivalent mutants (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_equivalent.py
       # every equivalent-mutant entry has a reason and still matches its source line
       # (a moved or edited line fails here); an empty list fails
       - name: Equivalent mutants still match the source
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/mutants_equivalent.py --check
       - name: Mutation in-diff plan (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_in_diff_plan.py
       - name: Nightly Mac Intel gate (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_intel_nightly_gate.py
       # the weekly ignored-test run fails on a crash, a binary that runs too
       # long, or a run that checked nothing; these keep that runner honest on
       # every push (the run itself is too heavy for the landing path)
       - name: Ignored-test runner (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_run_ignored.py
       # ALICE-Law G14, static half: no fast-math-style flag, target-cpu=native or flag
       # value the guard cannot resolve in any file a flag can come from (deliberate
@@ -226,64 +264,93 @@ jobs:
       # dynamic half's parser is tested here too (the check runs in determinism-release),
       # and the per-binary minimum of scripts/run_tests.sh
       - name: Build configuration guard (G14, tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_build_config_guard.py
           python scripts/build_config_guard.py
           python scripts/test_build_flags_check.py
           python scripts/test_run_tests.py
       - name: Ignored-test table derives
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/run_ignored.py --list
       - name: Bench count check (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_bench_counts_check.py
       - name: Heavy workflows stay off the landing path (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_ci_load_check.py
       - name: Heavy workflows stay off the landing path
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/ci_load_check.py
       # the changes jobs of the path-gated workflows, and the trigger table of
       # docs/CI_TRIGGERS.md against the workflows and .github/ci-evidence.toml
       - name: Changed-paths decider (tests and sync)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_changed_paths.py
           python scripts/changed_paths.py sync
       - name: CI trigger table (tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: |
           python scripts/test_ci_triggers_check.py
           python scripts/ci_triggers_check.py
+      # the shards of the test job: every step once per runner (four shards on Linux and Windows,
+      # one job on macOS), each sharded runner with all four shards in every event, a condition
+      # the checker cannot read is red
+      - name: Test job shards (tests and check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: |
+          python scripts/test_ci_test_shards_check.py
+          python scripts/ci_test_shards_check.py
       - name: Downstream release-tag selection (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_select_tag.py
       - name: Downstream repositories ALICE-LOL takes by path (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_siblings.py
       # includes a cargo build of a small provider and consumer (offline, no dependencies)
       - name: Downstream major-bump requirement rewrite (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_major_rewrite.py
       - name: Downstream path rewrite to the facade (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_path_rewrite.py
       - name: Downstream per-binary test counts (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_test_counts.py
       - name: Downstream GPU probe report (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_trt_probe.py
       # a small consumer locked to an older version from a local git source (offline)
       - name: Downstream lock move and resolve guard (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_resolve.py
       - name: Downstream patches per lock source (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_downstream_patches.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is
       # tested on hand-built indexes here; the real index needs rust-analyzer and
       # is built by integration-status.yml
       - name: SCIP reach analysis (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_scip_reach.py
       - name: Known-defect symbol resolution (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_audit_refs.py
       - name: Feature-gated test runner (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_run_feature_gated_tests.py
       # how each module and each C ABI consumer is integrated
       # (docs/integration-levels.md): the analysis on hand-built indexes, and the
       # C ABI coverage, which needs no index (the module part runs in the scip job)
       - name: Integration levels (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_integration_levels.py
       - name: C ABI declared by every consumer or listed with a reason
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/integration_levels.py --no-index --check
 
       - name: Install Rust toolchain
@@ -296,14 +363,17 @@ jobs:
       # Windows and Mac Intel (3 on Linux): one process per shard, test i in shard i mod N, and the
       # run fails unless every discovered test ran exactly once and no shard ran 0
       - name: Unittest shard runner (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_run_unittest_shards.py
       - name: Landing script (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/run_unittest_shards.py scripts/test_land.py
 
       # the tools land.py's children need (python3 >= 3.11, bash, cargo, rustc, rust-analyzer
       # when installed, git) started the way a landing starts them, from a minimal environment;
       # seconds, and it fails when it executed nothing
       - name: Landing child environment (env-smoke)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         shell: bash
         # the cargo of this step's PATH is named to land.py (LAND_CARGO_DIR): the image may keep it
         # outside $CARGO_HOME/bin, and the emptied environment cannot find it otherwise
@@ -319,11 +389,13 @@ jobs:
           fi
 
       - uses: Swatinem/rust-cache@v2
+        if: ${{ !endsWith(matrix.os, ', checks') }}
 
       # Cargo.lock is committed: every job builds the same dependency versions
       # the oracle ledger records, and a Cargo.toml change without its lock
       # update fails here instead of resolving afresh.
       - name: Cargo.lock matches Cargo.toml
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         shell: bash
         run: cargo metadata --locked --format-version 1 > /dev/null
 
@@ -340,18 +412,19 @@ jobs:
       # against this baseline, so a platform-specific difference there would
       # not be any more caught by running it 5 times than by running it once).
       - name: Install cargo-mutants
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest, default'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
       - name: Mutants exclude_re entries still match a real mutant
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest, default'
         run: python scripts/mutants_exclude_check.py
 
       # PIN markers must name an open known defect; external root causes must
       # name a crate Cargo resolves (docs/oracle-status.md lists both), read from
       # the committed Cargo.lock.
       - name: Oracle ledger links (PIN / root external)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: python scripts/gen-oracle-status.py --check
 
       # A crate that depends on this one builds every crate type in `[lib]
@@ -359,23 +432,29 @@ jobs:
       # `#![no_std]` crate with `default-features = false` (consumers/no_std),
       # warnings denied, alice-physics built and only as an rlib.
       - name: Build (no_std)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: cargo build --lib --no-default-features
       - name: Build (no_std dependent, warnings denied)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: python scripts/no_std_consumer.py
 
       - name: Build (std only)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: cargo build --lib --no-default-features --features "std"
 
       - name: Build (core — default features)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: cargo build --lib
 
       # the whole suite at opt-level 2 with debug assertions and overflow checks on
       # (Cargo.toml [profile.ci-test]); the steps below it stay at opt-level 0
       - name: Test (unit + integration + doc, profile ci-test)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         run: cargo test --profile ci-test
 
       # the profile keeps its checks: one test per check, each red or not built when it is off
       - name: Test (profile ci-test keeps debug assertions and overflow checks, zero executed is red)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         shell: bash
         run: scripts/run_tests.sh test_profile_checks=2 -- cargo test --profile ci-test --test test_profile_checks
 
@@ -383,12 +462,14 @@ jobs:
       # run_tests.sh failing unless each binary ran that many tests
       # at opt-level 0 (the test profile), the same goldens the ci-test run compares at opt-level 2
       - name: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', default') }}
         shell: bash
         run: scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12,state_digest=9 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4 --test state_digest
 
       # the 2D material point method is behind the `mpm2d` feature (off by default), so the
       # default run above does not build it: its oracles run here by name
       - name: Test (mpm2d feature, zero executed is red)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: |
           scripts/run_tests.sh analytic_mpm2d=21,analytic_mpm2d_implicit=8,analytic_mpm2d_mass=1,analytic_mpm2d_walls=8 -- cargo test --profile ci-test --features mpm2d --test analytic_mpm2d --test analytic_mpm2d_implicit --test analytic_mpm2d_mass --test analytic_mpm2d_walls
@@ -399,6 +480,7 @@ jobs:
       # the ffi test module (goldens the Unity / UE5 bindings replay) was never
       # executed in CI before 1.2.0 — only built
       - name: Test (FFI, lib)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         # quoted: a bare trailing `ffi::` makes YAML read the line as a mapping
         # (actionlint syntax-check; two pushes were red on this, 2026-09-15)
         run: 'cargo test --lib --features "ffi" "ffi::"'
@@ -406,6 +488,7 @@ jobs:
       # a participant panic inside a step, through the Rust step and through the C step
       # (alice_physics_world_step, feature ffi): the world records a fault and refuses the next step
       - name: Test (participant panic leaves the world faulted, ffi + gpu-solver-bridge)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: scripts/run_tests.sh participant_panic_leaves_world_faulted=2,faulted_world_refuses_changes=5,panic_paths_fault_the_world=3,c_world_fault_codes=1 -- cargo test --test participant_panic_leaves_world_faulted --test faulted_world_refuses_changes --test panic_paths_fault_the_world --test c_world_fault_codes --features "ffi,gpu-solver-bridge"
 
@@ -413,30 +496,37 @@ jobs:
       # wasm unit tests run natively, the Python module (an extension module
       # that links against the interpreter at import time) is type-checked
       - name: Test (WebAssembly binding, lib)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: 'cargo test --lib --features "wasm" "wasm::"'
 
       - name: Check (Python binding)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: cargo check --lib --features "python"
 
       # `[lib] crate-type` is rlib only (3.0.1): the C libraries are built with the
       # commands the README documents, read from its binding-build-commands block, so
       # the documented commands and the build cannot diverge
       - name: Build (FFI) with the README's commands + assert cdylib / staticlib artifacts
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: python scripts/binding_build_commands.py --run c
 
       - name: Build (parallel)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', parallel') }}
         run: cargo build --lib --features "parallel"
 
       - name: Test (parallel — unit + integration, profile ci-test)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', parallel') }}
         run: cargo test --profile ci-test --features "parallel"
 
       # full native feature set: the gpu-solver-bridge tests were only linted
       # (clippy), never run, before 1.2.0 — the quality-deep mutants job found
       # them failing in the unmutated tree
       - name: Test (full native feature set, lib)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: cargo test --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
       # the alice-crypto re-exports and KeyedRappor are behind their own feature
       - name: Test (privacy-crypto, lib)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: cargo test --lib --features privacy-crypto privacy
 
       # PHYSICS_SEMANTICS_ID and its table are constants no cfg gates: the same
@@ -444,6 +534,7 @@ jobs:
       # features of the gated stepping paths, and both assert the same hex.
       # scripts/preflight.sh runs the same command
       - name: Test (semantics identifier, parallel + gpu-solver-bridge)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', parallel') }}
         run: cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
       # ALICE-Law G7: the peer entry checked against the resolved
@@ -451,6 +542,7 @@ jobs:
       # refusing a GPU backend of another semantics; run_tests.sh fails unless
       # that many tests ran (a cfg'd-out test is red, not an empty green run)
       - name: Test (ALICE-Law G7 handshakes, analytics + gpu-solver-bridge)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: |
           scripts/run_tests.sh physics_semantics_id=20 -- cargo test --test physics_semantics_id --features "analytics,neural"
@@ -460,6 +552,7 @@ jobs:
       # public API resolves through it (facade_paths, generated by scripts/facade_check.py),
       # and its identifier and types are the core's (facade_identity)
       - name: Test (facade paths and identity)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: |
           scripts/run_tests.sh facade_paths=1 -- cargo test -p alice-physics --features "std,simd,parallel,ffi,gpu-solver-bridge" --test facade_paths
@@ -472,18 +565,21 @@ jobs:
       # script derives the file list from tests/ and fails when a selected target
       # executes zero tests; preflight.sh calls the same script with no arguments
       - name: Test (feature-gated integration tests, zero executed is red)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: python scripts/run_feature_gated_tests.py
 
       # test, not just build: a feature whose code is only compiled is a feature
       # whose effect nobody verifies (external review 2026-09-15: the SIMD paths
       # were scalar with dead intrinsics and no test caught the mismatch claim).
       - name: Test (SIMD, lib)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         run: cargo test --lib --features "simd"
 
       # ALICE-Law G14: round-to-nearest-even and no flush-to-zero, asserted at run
       # time in both profiles; scripts/run_tests.sh float_environment=2 fails unless
       # both tests passed (an ignored or cfg'd-out test is red, not an empty green run)
       - name: Test (float environment, debug and release)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: |
           scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
@@ -493,6 +589,7 @@ jobs:
       # (tools/fneg-fma-ir-probes), then the check over src/ tests/ examples/ benches/ with
       # the exact fma-call counts of scripts/no-outer-fneg-of-fma-allowlist.toml
       - name: No negated fma result (syntax tree, format then tests then check)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', features') }}
         shell: bash
         run: |
           cargo fmt --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --check
