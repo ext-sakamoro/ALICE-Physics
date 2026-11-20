@@ -123,7 +123,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `thick_chain` | planar chain of links of fixed area between walls of a signed distance field (a soft body that cannot tear: thinner when stretched, longer when squeezed) |  | [`thick_chain_pipe`](../examples/thick_chain_pipe.rs) | standalone |
 | `rope_participant` | a rope tied to bodies as a world participant, under the world's gravity |  |  | binding |
 | `rope_attach` | ropes attached to rigid bodies, with compliance and break force |  | [`rope_body_attachment`](../examples/rope_body_attachment.rs) | standalone |
-| `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | world API (step 5 of 58 items) |
+| `cloth` | XPBD triangle-mesh cloth with self-collision |  | [`cloth_simulation`](../examples/cloth_simulation.rs) | world API (step 6 of 62 items) |
 | `secondary_chain` | Secondary motion chains (hair, skirts, tails): pull, momentum, stiffness, gravity, angle limits, capsule colliders fitted to the rest |  | [`secondary_chain_hair`](../examples/secondary_chain_hair.rs) | standalone |
 | `cloth_fluid` | two-way cloth and fluid coupling |  |  | standalone |
 | `cloth_participant` | a cloth as a world participant, its steps placed per frame on the world's substeps |  | [`cloth_resident_cost`](../examples/cloth_resident_cost.rs) | standalone |
