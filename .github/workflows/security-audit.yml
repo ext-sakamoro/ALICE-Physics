@@ -294,7 +294,13 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     name: Coverage (cargo-llvm-cov, line-coverage ratchet)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The limit comes from the measured spread, not from a typical run: with the cache
+    # restored and the build done in 20-30 s, the instrumented lib tests (about 2800)
+    # alone took 411 s, 657 s and 692 s on three runs of 2026-11-19, and 4 of the last
+    # 10 runs were stopped at the former 15 min before the tests ended (same inputs,
+    # the hosted runner's speed differs by more than 2x). 30 min is twice the longest
+    # run that completed (13 min).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

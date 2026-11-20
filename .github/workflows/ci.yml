@@ -952,7 +952,11 @@ jobs:
     if: github.event_name != 'schedule'
     name: MSRV (rust-version = 1.85)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The limit comes from the measured spread: over 22 runs up to 2026-11-20 the job
+    # took 5.4-14.9 min when it completed and was stopped twice at the former 15 min.
+    # The build is cached; the time is the two lib test passes (221-576 s each on the
+    # same inputs). 30 min is twice the longest run that completed.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install MSRV toolchain
@@ -980,7 +984,9 @@ jobs:
     if: github.event_name != 'schedule'
     name: MSRV with privacy-crypto (Rust 1.87)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # measured 5.3-13.7 min over 21 runs up to 2026-11-20 (same lib tests as the job
+    # above); the limit is twice the longest run, as there
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust 1.87
