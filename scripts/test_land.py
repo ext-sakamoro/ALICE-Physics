@@ -269,6 +269,38 @@ class Isolated(unittest.TestCase):
         shutil.copytree(REAL_ROOT / ".github", repo.work / ".github", dirs_exist_ok=True)
         return repo.work
 
+    def wf_root_with_legs(self) -> Path:
+        """wf_root, with the evidence file declaring matrix legs of the after-landing classes (LEGACY_LEGS): no leg of
+        this repository has one since the macOS legs became weekly, and the landing's reading of such a leg (started
+        only before the landing, read on main after it) is kept and tested on this copy"""
+        root = Isolated.wf_root(self)
+        ev = root / ".github" / "ci-evidence.toml"
+        text = ev.read_text(encoding="utf-8")
+        ev.write_text(text[:text.index("[[legs]]")] + LEGACY_LEGS, encoding="utf-8")
+        return root
+
+
+# the after-landing legs the evidence file declared before the macOS legs became weekly (a fixture: Isolated.wf_root_with_legs)
+LEGACY_LEGS = """[[legs]]
+workflow = "ci.yml"
+job = "test"
+matrix = "macos-latest"
+class = "after-landing"
+events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
+[[legs]]
+workflow = "ci.yml"
+job = "test"
+matrix = "macos-15-intel"
+class = "main-after-landing"
+events = ["push main", "schedule"]
+[[legs]]
+workflow = "ci.yml"
+job = "determinism-release"
+matrix = "macos-latest"
+class = "after-landing"
+events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
+"""
+
 
 # what a shell might export, all pointing elsewhere
 def hostile_env(elsewhere: Path) -> dict[str, str]:
@@ -2431,6 +2463,9 @@ class BashParity(unittest.TestCase):
 class WaitEvidence(Isolated):
     """wait_evidence against a fake `gh` on PATH (no network)."""
 
+    def wf_root(self) -> Path:
+        return self.wf_root_with_legs()
+
     def setUp(self):
         super().setUp()
         self.dir = Path(tempfile.mkdtemp())
@@ -2439,7 +2474,7 @@ class WaitEvidence(Isolated):
         self.state = self.dir / "state.json"
         self.env = {k: os.environ.get(k) for k in ("FAKE_GH_STATE",)}
         os.environ["FAKE_GH_STATE"] = str(self.state)
-        self.expected = land.expected_workflows(ROOT)
+        self.expected = land.expected_workflows(self.wf_root())
         self.names = {w["file"]: w["name"] for w in self.expected}
 
     def tearDown(self):
@@ -2823,6 +2858,9 @@ class GhRetry(Isolated):
 class WaitAfter(Isolated):
     """wait_after on main against a fake `gh` (no network)."""
 
+    def wf_root(self) -> Path:
+        return self.wf_root_with_legs()
+
     def setUp(self):
         super().setUp()
         self.dir = Path(tempfile.mkdtemp())
@@ -2874,9 +2912,14 @@ class WaitAfter(Isolated):
         return lnd.wait_after(SHA)
 
     def test_the_items_are_derived(self):
-        labels = [land.after_item_label(i) for i in land.after_landing_items(ROOT)]
+        labels = [land.after_item_label(i) for i in land.after_landing_items(self.wf_root())]
         self.assertEqual(labels, ["ci.yml: Test (macos-latest)", "ci.yml: Test (macos-15-intel)",
                                   "ci.yml: Determinism tests (release, macos-latest)", "unsafe-and-parallel.yml"])
+
+    def test_the_weekly_macos_legs_are_not_read_after_a_landing(self):
+        # this repository's own evidence file: the macOS legs are weekly, so --wait reads Miri and loom only
+        labels = [land.after_item_label(i) for i in land.after_landing_items(ROOT)]
+        self.assertEqual(labels, ["unsafe-and-parallel.yml"])
 
     def test_all_green(self):
         code, lines = self.go()
@@ -3358,6 +3401,9 @@ GH_SCRUBBED = [k for k in HOSTILE_GH if k not in ("GH_HOST", "GH_CONFIG_DIR")]
 
 class GhEnvironment(Isolated):
     """gh is pinned to github.com: the environment cannot point it at another host."""
+
+    def wf_root(self) -> Path:
+        return self.wf_root_with_legs()
 
     def setUp(self):
         super().setUp()
