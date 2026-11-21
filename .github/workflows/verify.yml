@@ -219,12 +219,19 @@ jobs:
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
           ulimit -v 6291456
           set +e
+          # test timeout derived from the run's own unmutated baseline, multiplier 3 (the measured
+          # spread is in quality-deep.yml's in-diff step): a fixed --timeout also bounds the baseline
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --shard "$SHARD/$SHARDS" --timeout 300 --build-timeout 240 -j 2 \
-            --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests
-          rc=$?
+            cargo mutants --in-diff /tmp/planned.diff --shard "$SHARD/$SHARDS" --timeout-multiplier 3 --minimum-test-timeout 60 \
+            --build-timeout 240 -j 2 --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests \
+            2>&1 | tee /tmp/mutants.log
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -eq 4 ]; then
+            base=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/mutants.log | grep -m1 'Unmutated baseline' || echo 'no baseline line in the log')
+            echo "::error::cargo-mutants exit 4: the unmutated baseline failed or timed out, 0 mutants tested ($base)"
+          fi
           # the shard's rules (scripts/verify_mutants_check.py): an exit that is not a result
           # (a bad --features, a red unmutated tree) fails, and so does a single shard of a
           # non-empty plan with no mutant; the count goes to the total job, which needs every

@@ -83,13 +83,31 @@ jobs:
           # Exit codes: 0 all caught, 2 missed, 3 timeouts = measurement results;
           # anything else (4 = unmutated baseline red, 1 = usage) fails the job —
           # a red baseline measured nothing and used to be hidden by `|| true`.
+          # Test timeout: derived from this run's own unmutated baseline (cargo-mutants measures
+          # the baseline with no limit, then gives each mutant multiplier x that time). A fixed
+          # --timeout also bounds the baseline: at 300 s the baseline itself timed out (runs
+          # 43120898219 and 44420952496, e.g. 162 s build + 300 s test, 0 mutants tested), and
+          # on nights whose baseline took 201-286 s almost every mutant read TIMEOUT without
+          # hanging (46/47, 41/42, 59/60). Multiplier 3 from the measured spread: under -j 2 a
+          # mutant's test run takes a median 1.5-2.4x the baseline's, max 2.6x (nightlies 11-10
+          # to 11-20: 6->9 s, 9->15 s, 19->46 s, 28->63 s, 43->93 s, 112->207 s, 144->262 s;
+          # largest single mutant 19->49 s); the floor of 60 s covers a
+          # baseline of a few seconds. A mutant that hangs costs 3x the baseline (about 6 min
+          # at the 2 min baselines above) instead of 300 s.
+          # Exit 4 = the unmutated baseline failed or timed out: nothing was measured, so the
+          # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           ulimit -v 6291456
           set +e
-          cargo mutants ${{ inputs.scope }} --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
-          rc=$?
+          cargo mutants ${{ inputs.scope }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib 2>&1 | tee /tmp/mutants.log
+          rc=${PIPESTATUS[0]}
           set -e
-          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+          if [ "$rc" -eq 4 ]; then
+            base=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/mutants.log | grep -m1 'Unmutated baseline' || echo 'no baseline line in the log')
+            echo "::error::cargo-mutants exit 4: the unmutated baseline failed or timed out, 0 mutants tested ($base)"
+            exit 4
+          fi
+          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc";; esac
       - name: Summary
         if: always()
         run: |
@@ -186,11 +204,29 @@ jobs:
           # writes what it tested; an unfinished run then fails below instead of being
           # cancelled with its missed mutants unreported.
           # shellcheck disable=SC2086
+          # Test timeout: derived from this run's own unmutated baseline (cargo-mutants measures
+          # the baseline with no limit, then gives each mutant multiplier x that time). A fixed
+          # --timeout also bounds the baseline: at 300 s the baseline itself timed out (runs
+          # 43120898219 and 44420952496, e.g. 162 s build + 300 s test, 0 mutants tested), and
+          # on nights whose baseline took 201-286 s almost every mutant read TIMEOUT without
+          # hanging (46/47, 41/42, 59/60). Multiplier 3 from the measured spread: under -j 2 a
+          # mutant's test run takes a median 1.5-2.4x the baseline's, max 2.6x (nightlies 11-10
+          # to 11-20: 6->9 s, 9->15 s, 19->46 s, 28->63 s, 43->93 s, 112->207 s, 144->262 s;
+          # largest single mutant 19->49 s); the floor of 60 s covers a
+          # baseline of a few seconds. A mutant that hangs costs 3x the baseline (about 6 min
+          # at the 2 min baselines above) instead of 300 s.
+          # Exit 4 = the unmutated baseline failed or timed out: nothing was measured, so the
+          # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${features:+--features "$features"} --cargo-arg=--lib $tests
-          rc=$?
+            cargo mutants --in-diff /tmp/planned.diff --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 -j 2 --output mutants.out \
+            ${features:+--features "$features"} --cargo-arg=--lib $tests 2>&1 | tee /tmp/mutants.log
+          rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -eq 4 ]; then
+            base=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/mutants.log | grep -m1 'Unmutated baseline' || echo 'no baseline line in the log')
+            echo "::error::cargo-mutants exit 4: the unmutated baseline failed or timed out, 0 mutants tested ($base)"
+            exit 4
+          fi
           # cargo-mutants exits 0 without an output directory when the diff holds nothing
           # to mutate (doc comments only, Cargo.toml only): nothing to check, not a failure
           if [ "$rc" -eq 0 ] && [ ! -d mutants.out ]; then
@@ -248,14 +284,20 @@ jobs:
         run: |
           ulimit -v 6291456
           set +e
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
+          # test timeout derived from the run's own baseline (see the in-diff step for the numbers)
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
-            --cargo-arg=--lib
-          rc=$?
+            --cargo-arg=--lib 2>&1 | tee /tmp/mutants.log
+          rc=${PIPESTATUS[0]}
           set -e
-          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+          if [ "$rc" -eq 4 ]; then
+            base=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/mutants.log | grep -m1 'Unmutated baseline' || echo 'no baseline line in the log')
+            echo "::error::cargo-mutants exit 4: the unmutated baseline failed or timed out, 0 mutants tested ($base)"
+            exit 4
+          fi
+          case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc";; esac
       - name: Summary
         if: always()
         run: |
