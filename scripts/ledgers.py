@@ -43,6 +43,22 @@ GENERATED = (
 # rewrites: a conflict is merged with that column blanked, never dropped
 SEMI_GENERATED = ("docs/MODULES.md",)
 
+
+def blank_integration(text: str) -> str:
+    """docs/MODULES.md with the cells of every Integration column emptied."""
+    out, col = [], None
+    for line in text.split("\n"):
+        cells = line.strip().strip("|").split("|") if line.startswith("|") else None
+        if cells is None:
+            col = None
+        elif cells[0].strip() == "Module":
+            col = [c.strip() for c in cells].index("Integration") if "Integration" in line else None
+        elif col is not None and not set(line) <= set("|- ") and len(cells) > col:
+            cells[col] = " "
+            line = "|" + "|".join(cells) + "|"
+        out.append(line)
+    return "\n".join(out)
+
 PY = sys.executable
 # (name, argv, needs the SCIP index), in the order land.py has always run them
 WRITERS: tuple[tuple[str, list[str], bool], ...] = (

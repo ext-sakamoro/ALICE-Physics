@@ -617,7 +617,7 @@ def identity_problem(name: str, email: str) -> str | None:
 # the generated files, the generators and the toolchain pins live in ledgers.py
 # (the preflight's stale check reads the same list)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS  # noqa: E402
+from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS, blank_integration  # noqa: E402
 
 # The SCIP index (scripts/scip_index.sh, three rust-analyzer passes, about 20 minutes) feeds only the writers and checks
 # that take --scip. Its inputs, and the inputs of those writers and checks, are the patterns of SCIP_INPUTS
@@ -1066,22 +1066,6 @@ def changelog_problems(text: str) -> list[str]:
             kind = "heading" if line.startswith("#") else "line"
             out.append(f"CHANGELOG.md [Unreleased]: {kind} appears {n} times: {line[:80]}")
     return out
-
-
-def blank_integration(text: str) -> str:
-    """docs/MODULES.md with the cells of every Integration column emptied."""
-    out, col = [], None
-    for line in text.split("\n"):
-        cells = line.strip().strip("|").split("|") if line.startswith("|") else None
-        if cells is None:
-            col = None
-        elif cells[0].strip() == "Module":
-            col = [c.strip() for c in cells].index("Integration") if "Integration" in line else None
-        elif col is not None and not set(line) <= set("|- ") and len(cells) > col:
-            cells[col] = " "
-            line = "|" + "|".join(cells) + "|"
-        out.append(line)
-    return "\n".join(out)
 
 
 DOCS_RE = re.compile(r"^(docs/|README[^/]*\.md$|CHANGELOG\.md$)")
