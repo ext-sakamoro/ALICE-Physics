@@ -276,6 +276,33 @@ class Receipt(unittest.TestCase):
         with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
             c.check(self.root)
 
+    MODULES = ("# Modules\n\n| Module | Role | Integration |\n|--------|------|-------------|\n"
+               "| `alpha` | first | {a} |\n| `beta` | second | {b} |\n\ntext after the table\n")
+
+    def modules(self, **cells: str) -> None:
+        (self.root / "docs/MODULES.md").write_text(self.MODULES.format(**cells), encoding="utf-8")
+
+    def test_the_generated_column_of_the_module_table_does_not_ask_for_a_new_run_and_its_other_cells_do(self):
+        # the landing rewrites the Integration column of docs/MODULES.md from the tree (as it
+        # rewrites the ledgers); the rest of the file is hand-written and read by the checkers
+        self.modules(a="L3", b="L0")
+        commit(self.root, "the module table")
+        self.run_all()
+        self.modules(a="L3", b="L2")
+        commit(self.root, "the column the landing regenerated")
+        self.assertIn("4 of 4", c.check(self.root))
+        (self.root / "docs/MODULES.md").write_text(
+            self.MODULES.format(a="L3", b="L2").replace("| second |", "| second, reworded |"), encoding="utf-8")
+        commit(self.root, "a hand-written cell")
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
+            c.check(self.root)
+        self.run_all()
+        (self.root / "docs/MODULES.md").write_text(
+            self.MODULES.format(a="L3", b="L2").replace("text after the table", "L1 outside any table"), encoding="utf-8")
+        commit(self.root, "text outside the table")
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
+            c.check(self.root)
+
     def test_a_step_added_to_a_workflow_asks_for_a_new_run(self):
         self.run_all()
         wf = self.root / ".github/workflows/ci.yml"

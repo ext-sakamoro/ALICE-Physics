@@ -37,6 +37,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ledgers import SEMI_GENERATED, blank_integration  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = ".github/workflows"
 RULES = "scripts/local-receipt-rules.tsv"
@@ -240,9 +243,18 @@ def compiled(path: str) -> bool:
 
 
 def code_key(root: Path) -> str:
-    """the blobs of HEAD but the ledgers a landing writes (the workflows and the rules among
-    them): what a receipt is a receipt of"""
-    listed = [row for row in git(root, "ls-tree", "-r", "HEAD").splitlines() if compiled(row.split("\t", 1)[1])]
+    """the blobs of HEAD but the ledgers a landing writes and the generated column of
+    docs/MODULES.md (the workflows and the rules among them): what a receipt is a receipt of"""
+    listed = []
+    for row in git(root, "ls-tree", "-r", "HEAD").splitlines():
+        path = row.split("\t", 1)[1]
+        if not compiled(path):
+            continue
+        if path in SEMI_GENERATED:
+            # the landing rewrites this file's generated column: the row stands for the rest of it
+            rest = blank_integration(git(root, "show", f"HEAD:{path}"))
+            row = f"{row.split()[0]} rest {hashlib.sha256(rest.encode()).hexdigest()}\t{path}"
+        listed.append(row)
     if not listed:
         raise ReceiptError("HEAD lists no file")
     return hashlib.sha256("\n".join(listed).encode()).hexdigest()
