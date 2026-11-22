@@ -228,6 +228,25 @@ struct BendConstraint {
     rest_signed: Fix128,
 }
 
+/// Bit 0 of a cloth's flags byte (the snapshot section and [`Cloth::structure_hash`]): a rest
+/// tether follows.
+pub(crate) const FLAG_TETHER: u8 = 1;
+/// Bit 1 of the flags byte: a triangle area constraint follows.
+pub(crate) const FLAG_AREA: u8 = 1 << 1;
+/// Every flag bit a reader of the current format accepts.
+pub(crate) const FLAGS_KNOWN: u8 = FLAG_TETHER | FLAG_AREA;
+// The flags are joined with `|` in `flags_byte`; each flag must be one bit of its own, so `|`
+// and `^` give the same byte there (the mutation list relies on it). A new flag that shares a
+// bit with another fails to compile here.
+const _: () = assert!(
+    FLAG_TETHER.count_ones() == 1 && FLAG_AREA.count_ones() == 1 && FLAG_TETHER & FLAG_AREA == 0
+);
+
+/// The flags byte for a cloth with or without a rest tether and an area constraint
+fn flags_byte(tether: bool, area: bool) -> u8 {
+    (if tether { FLAG_TETHER } else { 0 }) | (if area { FLAG_AREA } else { 0 })
+}
+
 // ============================================================================
 // Cloth
 // ============================================================================
@@ -254,7 +273,8 @@ pub fn damping_over(damping: Fix128, dt: Fix128) -> Fix128 {
     damping.powf_pos(dt / reference)
 }
 
-/// Counters of the frame-end contact separation ([`Cloth::self_contact_stats`]).
+/// Counters of the frame-end contact separation and of the bend fold branch
+/// ([`Cloth::self_contact_stats`]). Runtime only: not part of the saved state or its hash.
 ///
 /// A capped call stopped at its pass budget with corrections still being made; the
 /// cluster stage then ran on the vertices still moving (its own budget). The counters
@@ -271,6 +291,9 @@ pub struct SelfContactStats {
     pub cluster_converged: u64,
     /// Corrections dropped because every halving of them still crossed the surface.
     pub clipped_corrections: u64,
+    /// Bend hinges solved by the face-normal fold branch (folded past a right angle,
+    /// away from the rest angle, with every unsigned-angle correction rounded to zero).
+    pub fold_solves: u64,
 }
 
 /// Cloth simulation
@@ -1449,6 +1472,7 @@ impl Cloth {
                 && !error.is_zero()
                 && deltas.iter().all(|v| *v == Vec3Fix::ZERO)
             {
+                self.self_contact_stats.fold_solves += 1;
                 self.solve_hinge_face_normal(c, compliance);
                 continue;
             }
@@ -2270,7 +2294,8 @@ impl Cloth {
     /// minus [`SelfContactStats::cluster_converged`] when reached).
     pub const CLUSTER_PASSES: usize = 64;
 
-    /// The counters of the frame-end contact separation since the cloth was made.
+    /// The counters of the frame-end contact separation and of the bend fold branch since
+    /// the cloth was made.
     #[must_use]
     pub fn self_contact_stats(&self) -> SelfContactStats {
         self.self_contact_stats
@@ -3237,7 +3262,7 @@ impl Cloth {
         push_fix(out, self.config.self_collision_distance);
         // bit 0: tether, bit 1: area constraint (a cloth without one writes the byte as
         // before the area constraint existed)
-        let flags = u8::from(self.rest_tether.is_some()) | (u8::from(self.area.is_some()) << 1);
+        let flags = flags_byte(self.rest_tether.is_some(), self.area.is_some());
         out.push(flags);
         if let Some(t) = self.rest_tether {
             push_fix(out, t.stiffness);
@@ -3311,7 +3336,7 @@ impl Cloth {
         fold_fix(&mut h, c.config.thickness);
         fold(&mut h, &[u8::from(c.config.self_collision)]);
         fold_fix(&mut h, c.config.self_collision_distance);
-        let flags = u8::from(c.rest_tether.is_some()) | (u8::from(c.area.is_some()) << 1);
+        let flags = flags_byte(c.rest_tether.is_some(), c.area.is_some());
         fold(&mut h, &[flags]);
         if let Some((k, d)) = c.rest_tether() {
             fold_fix(&mut h, k);
@@ -9041,5 +9066,233 @@ mod rollback_structure_tests {
     fn structure_hash_with_tether_and_area_is_pinned() {
         let [.., both] = variants();
         assert_eq!(both.structure_hash(), 7517482493617706342);
+    }
+}
+
+#[cfg(test)]
+mod hinge_branch_tests {
+    use super::*;
+
+    fn f(x: f64) -> Fix128 {
+        Fix128::from_f64(x)
+    }
+
+    /// The four hinge points `[x1, x2, x3, x4]` of `hinge_signed_angle`: edge `x3 → x4` of
+    /// length `s` along x, `x1` in the xy plane, `x2` turned by `phi` about the edge
+    /// (`phi = π` flat, `phi → 0` folded onto `x1`'s face).
+    fn hinge(phi: f64, s: f64) -> [Vec3Fix; 4] {
+        let (sn, c) = f(phi).sin_cos();
+        [
+            Vec3Fix::new(f(s / 2.0), f(s), Fix128::ZERO),
+            Vec3Fix::new(f(s / 2.0), f(s) * c, f(s) * sn),
+            Vec3Fix::ZERO,
+            Vec3Fix::new(f(s), Fix128::ZERO, Fix128::ZERO),
+        ]
+    }
+
+    /// A four-particle cloth holding the hinge, unit inverse masses; particle `k` of the
+    /// constraint is `i0 = x3, i1 = x4, i2 = x1, i3 = x2`.
+    fn cloth_on(h: [Vec3Fix; 4]) -> (Cloth, BendConstraint) {
+        let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        c.positions = vec![h[2], h[3], h[0], h[1]];
+        c.prev_positions = c.positions.clone();
+        let bc = BendConstraint {
+            i0: 0,
+            i1: 1,
+            i2: 2,
+            i3: 3,
+            rest_angle: Fix128::ZERO,
+            rest_signed: Fix128::ZERO,
+        };
+        (c, bc)
+    }
+
+    fn theta(c: &Cloth) -> Fix128 {
+        let p = &c.positions;
+        hinge_signed_angle(p[2], p[3], p[0], p[1])
+            .expect("a hinge")
+            .0
+    }
+
+    /// `a − b` wrapped to `(−π, π]`, in f64 (the measure, not the code under test)
+    fn wrapped(a: Fix128, b: Fix128) -> f64 {
+        let mut d = a.to_f64() - b.to_f64();
+        while d > core::f64::consts::PI {
+            d -= 2.0 * core::f64::consts::PI;
+        }
+        while d <= -core::f64::consts::PI {
+            d += 2.0 * core::f64::consts::PI;
+        }
+        d
+    }
+
+    /// One face-normal solve with no compliance takes a small signed-angle error most of
+    /// the way to the rest angle.
+    #[test]
+    fn face_normal_solve_reduces_a_small_error() {
+        let (mut c, mut bc) = cloth_on(hinge(2.0, 1.0));
+        let t0 = theta(&c);
+        bc.rest_signed = t0 + f(0.2);
+        c.solve_hinge_face_normal(bc, Fix128::ZERO);
+        let after = wrapped(theta(&c), bc.rest_signed).abs();
+        assert!(after < 0.05, "error 0.2 became {after}");
+    }
+
+    /// Near the fold the current and rest signed angles sit on either side of ±π: the error
+    /// is wrapped and the solve takes the short way across the fold (both signs), so the
+    /// wrapped distance to rest shrinks.
+    #[test]
+    fn face_normal_solve_wraps_the_error_across_the_fold() {
+        for phi in [0.15, -0.15] {
+            let (mut c, mut bc) = cloth_on(hinge(phi, 1.0));
+            let t0 = theta(&c);
+            assert!(
+                t0.to_f64().abs() > 2.9,
+                "phi {phi}: theta {t0:?} is not near the fold"
+            );
+            bc.rest_signed = -t0;
+            let before = wrapped(t0, bc.rest_signed).abs();
+            assert!(
+                before < 0.4,
+                "phi {phi}: the wrapped error {before} is not short"
+            );
+            c.solve_hinge_face_normal(bc, Fix128::ZERO);
+            let after = wrapped(theta(&c), bc.rest_signed).abs();
+            assert!(
+                after < before / 2.0,
+                "phi {phi}: wrapped error {before} became {after}"
+            );
+        }
+    }
+
+    /// A face of zero area on either side, with a good edge, has no signed angle.
+    #[test]
+    fn hinge_signed_angle_refuses_each_degenerate_face_alone() {
+        let [x1, x2, x3, x4] = hinge(2.0, 1.0);
+        assert!(hinge_signed_angle(x1, x2, x3, x4).is_some());
+        let on_edge = Vec3Fix::new(f(2.0), Fix128::ZERO, Fix128::ZERO);
+        assert!(
+            hinge_signed_angle(on_edge, x2, x3, x4).is_none(),
+            "face 1 degenerate"
+        );
+        assert!(
+            hinge_signed_angle(x1, on_edge, x3, x4).is_none(),
+            "face 2 degenerate"
+        );
+    }
+
+    /// The signed angle does not depend on the hinge's size: a 400 m hinge gives the same
+    /// angle as a 1 m one, `π − 2` for a hinge turned by 2 rad from flat.
+    #[test]
+    fn hinge_signed_angle_is_the_same_at_400_m() {
+        let small = hinge(2.0, 1.0);
+        let big = hinge(2.0, 400.0);
+        let a = hinge_signed_angle(small[0], small[1], small[2], small[3])
+            .unwrap()
+            .0;
+        let b = hinge_signed_angle(big[0], big[1], big[2], big[3])
+            .unwrap()
+            .0;
+        assert!(
+            (a.to_f64() - b.to_f64()).abs() < 1e-9
+                && (a.to_f64().abs() - (core::f64::consts::PI - 2.0)).abs() < 1e-9,
+            "1 m {a:?}, 400 m {b:?}"
+        );
+    }
+
+    /// The signed angle is part of every cloth step with the fold branch on, and steps are
+    /// compared bit for bit across targets: pin its bits for one hinge. (Normalising the face
+    /// normals does not change the angle's value, since atan2 does not depend on the scale
+    /// of its arguments, but it does change its last bits; this keeps the computed form.)
+    #[test]
+    fn hinge_signed_angle_bits_are_pinned() {
+        let [x1, x2, x3, x4] = hinge(2.0, 1.0);
+        let t = hinge_signed_angle(x1, x2, x3, x4).unwrap().0;
+        assert_eq!(
+            (t.hi, t.lo),
+            (-2, 15_834_820_630_221_223_724),
+            "theta = -(pi - 2)"
+        );
+        // Here face 1's unnormalised normal has length exactly 1, so dividing by its length
+        // and multiplying by it give the same bits: pin a second hinge whose face 1 is skewed
+        // off the symmetric position, where neither face normal has unit length.
+        let [_, x2, x3, x4] = hinge(2.0, 1.0);
+        let x1 = Vec3Fix::new(f(0.3), f(0.8), f(0.1));
+        let t = hinge_signed_angle(x1, x2, x3, x4).unwrap().0;
+        assert_eq!(
+            (t.hi, t.lo),
+            (-2, 13_540_875_871_529_568_615),
+            "skewed face 1"
+        );
+    }
+
+    /// `n1 · n2` of `solve_bend` for constraint `bc` (the same normalised face normals)
+    fn bend_d(c: &Cloth, bc: BendConstraint) -> Fix128 {
+        let p0 = c.positions[bc.i0];
+        let p1 = c.positions[bc.i1] - p0;
+        let p2 = c.positions[bc.i2] - p0;
+        let p3 = c.positions[bc.i3] - p0;
+        let (c12, c13) = (p1.cross(p2), p1.cross(p3));
+        let n1 = c12 * (Fix128::ONE / c12.length());
+        let n2 = c13 * (Fix128::ONE / c13.length());
+        n1.dot(n2)
+    }
+
+    /// The fold branch runs only past a right angle (`n1 · n2 > 0`). Both hinges are away
+    /// from their rest angle and have a compliance of 2^62, so every unsigned-angle
+    /// correction rounds to zero: the one folded past a right angle is solved by the
+    /// branch and counted once; the one at an exact right angle (`n1 · n2 = 0`) is not.
+    #[test]
+    fn the_fold_branch_runs_and_is_counted_only_past_a_right_angle() {
+        let compliance = Fix128::from_raw(1i64 << 62, 0);
+        // folded past a right angle
+        let (mut a, mut bc) = cloth_on(hinge(0.5, 1.0));
+        a.bend_constraints = vec![bc];
+        a.config.bend_compliance = compliance;
+        assert!(bend_d(&a, bc) > Fix128::ZERO, "not past a right angle");
+        a.solve_bend(Fix128::ONE, true);
+        assert_eq!(a.self_contact_stats().fold_solves, 1, "past a right angle");
+        a.solve_bend(Fix128::ONE, true);
+        assert_eq!(a.self_contact_stats().fold_solves, 2, "counted per solve");
+
+        // an exact right angle, rest one ulp away
+        let h = [
+            Vec3Fix::new(f(0.5), Fix128::ONE, Fix128::ZERO),
+            Vec3Fix::new(f(0.5), Fix128::ZERO, Fix128::ONE),
+            Vec3Fix::ZERO,
+            Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO),
+        ];
+        let (mut b, bc0) = cloth_on(h);
+        bc = bc0;
+        bc.rest_angle = Fix128::HALF_PI + Fix128::from_raw(0, 1);
+        b.bend_constraints = vec![bc];
+        b.config.bend_compliance = compliance;
+        assert_eq!(bend_d(&b, bc), Fix128::ZERO, "not an exact right angle");
+        let start = b.positions.clone();
+        b.solve_bend(Fix128::ONE, true);
+        assert_eq!(
+            b.positions, start,
+            "an unsigned correction did not round to zero"
+        );
+        assert_eq!(
+            b.self_contact_stats().fold_solves,
+            0,
+            "at an exact right angle"
+        );
+    }
+
+    /// The counters are runtime only: they are not in the saved state nor its hash.
+    #[test]
+    fn the_counters_are_not_in_the_state() {
+        let (c, _) = cloth_on(hinge(0.5, 1.0));
+        let mut counted = c.clone();
+        counted.self_contact_stats.fold_solves = 7;
+        counted.self_contact_stats.separation_calls = 3;
+        let (mut x, mut y) = (Vec::new(), Vec::new());
+        c.write_state(&mut x);
+        counted.write_state(&mut y);
+        assert_eq!(x, y);
+        assert_eq!(c.structure_hash(), counted.structure_hash());
+        assert_eq!(c.state_digest(), counted.state_digest());
     }
 }

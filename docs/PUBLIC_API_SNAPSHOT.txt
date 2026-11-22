@@ -2105,6 +2105,7 @@ pub alice_physics_core::cloth::SelfContactStats::capped_calls: u64
 pub alice_physics_core::cloth::SelfContactStats::clipped_corrections: u64
 pub alice_physics_core::cloth::SelfContactStats::cluster_converged: u64
 pub alice_physics_core::cloth::SelfContactStats::cluster_solves: u64
+pub alice_physics_core::cloth::SelfContactStats::fold_solves: u64
 pub alice_physics_core::cloth::SelfContactStats::separation_calls: u64
 impl core::clone::Clone for alice_physics_core::cloth::SelfContactStats
 pub fn alice_physics_core::cloth::SelfContactStats::clone(&self) -> Self

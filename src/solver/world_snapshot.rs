@@ -2936,16 +2936,20 @@ fn r_cloth(r: &mut R<'_>, version: u16) -> Res<crate::cloth::Cloth> {
     // bit 0: rest tether; bit 1: triangle area constraint (version 11; a version 9 or
     // 10 blob has no area constraint, and its byte is the tether's bool)
     let flags = r.u8()?;
-    let known = if version >= 11 { 0b11 } else { 0b01 };
+    let known = if version >= 11 {
+        crate::cloth::FLAGS_KNOWN
+    } else {
+        crate::cloth::FLAG_TETHER
+    };
     if flags & !known != 0 {
         return Err(bad());
     }
-    let tether = if flags & 1 != 0 {
+    let tether = if flags & crate::cloth::FLAG_TETHER != 0 {
         Some((r.fix()?, r.fix()?))
     } else {
         None
     };
-    let area = if flags & 0b10 != 0 {
+    let area = if flags & crate::cloth::FLAG_AREA != 0 {
         let compliance = r.fix()?;
         let m = r.len(S, 16)?;
         let mut rest_areas = Vec::with_capacity(m);
