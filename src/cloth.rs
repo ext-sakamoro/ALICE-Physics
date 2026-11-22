@@ -8905,6 +8905,17 @@ mod near_cache_tests {
         }
         assert_eq!(c.near_cache.builds, 1, "rebuilt with unchanged inputs");
         assert_eq!(c.near_cache.lists, c.rest_geodesic_lists(t1));
+        // binary_search over a row needs it strictly increasing; each row holds its own index
+        for (i, l) in c.near_cache.lists.iter().enumerate() {
+            assert!(
+                l.windows(2).all(|w| w[0] < w[1]),
+                "row {i} is not strictly increasing: {l:?}"
+            );
+            assert!(
+                l.binary_search(&(i as u32)).is_ok(),
+                "row {i} lacks its own index: {l:?}"
+            );
+        }
         assert!(
             c.near_cache.lists.iter().any(|l| l.len() > 1),
             "no particle has a neighbour within the thickness: the case tests nothing"
