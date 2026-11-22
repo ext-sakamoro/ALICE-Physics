@@ -376,6 +376,157 @@ pub fn anything() -> u8 {
 """
 
 
+class Selection(unittest.TestCase):
+    """Which integration tests a plan runs besides the ones named after the module."""
+
+    CARGO = '[package]\nname = "x-pkg"\n\n[lib]\nname = "x_core"\npath = "src/lib.rs"\n'
+    ORACLE = ("use x_core::cloth::Cloth;\n\n// mutants: fast\n#[test]\nfn counters_add_up() {}\n\n"
+              "#[test]\nfn long_scene_settles() {}\n\n/// doc\n#[test]\n// mutants: fast\nfn passes_stop() {}\n")
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        (self.root / "src").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "src/lib.rs").write_text("pub mod cloth;\npub mod math;\npub mod rope;\npub mod knot;\n"
+                                              "pub use cloth::{\n    Cloth, Pin as Tack,\n};\npub use rope::Rope;\n"
+                                              "    pub use crate::rope::Inner;\npub use knot::*;\n", encoding="utf-8")
+        (self.root / "Cargo.toml").write_text(self.CARGO, encoding="utf-8")
+        self.write("audit_cloth", "#[test]\nfn a() {}\n")
+        # the oracle of a cloth change under a name that does not hold the module's name
+        self.write("analytic_self_contact", self.ORACLE)
+        self.write("touch_layers", "use x_core::{math::Fix, cloth::{Cloth, Pin}};\n#[test]\nfn t() {}\n")
+        self.write("other_crate", "use y_core::cloth::Cloth;\n#[test]\nfn o() {}\n")
+        self.write("rope_only", "use x_core::rope::Rope;\n#[test]\nfn r() {}\n")
+
+    def write(self, name: str, text: str) -> None:
+        (self.root / f"tests/{name}.rs").write_text(text, encoding="utf-8")
+
+    def plan(self, *paths):
+        return mp.plan(diff_of(*paths), [], self.root)
+
+    def test_a_test_file_that_names_the_changed_module_runs_whatever_its_file_name(self):
+        p = self.plan("src/cloth.rs")
+        self.assertEqual(p["tests"], ["analytic_self_contact", "audit_cloth", "touch_layers"])
+        self.assertEqual(p["why"], {"analytic_self_contact": ["uses"], "audit_cloth": ["name"], "touch_layers": ["uses"]})
+
+    def test_a_test_file_that_reaches_the_module_through_a_root_re_export_runs(self):
+        self.write("integration", "use x_core::{math::Fix, Tack};\n#[test]\nfn i() {}\n")
+        self.write("by_root_path", "#[test]\nfn b() { let _ = x_core::Cloth::new(); }\n")
+        self.write("old_name", "use x_core::Pin;\n#[test]\nfn n() {}\n")       # re-exported as Tack only
+        self.write("not_at_column_0", "use x_core::Inner;\n#[test]\nfn c() {}\n")
+        p = self.plan("src/cloth.rs")
+        self.assertEqual(p["tests"], ["analytic_self_contact", "audit_cloth", "by_root_path", "integration", "touch_layers"])
+        self.assertEqual(p["why"]["integration"], ["uses"])
+        self.assertEqual(self.plan("src/rope.rs")["tests"], ["rope_only"])
+
+    def test_a_module_re_exported_with_a_star_is_reported(self):
+        self.assertEqual(self.plan("src/knot.rs")["not_selected"], [{"module": "knot", "glob": True}])
+        self.assertEqual(self.plan("src/cloth.rs")["not_selected"], [])
+
+    def test_the_test_file_the_diff_changes_runs_and_is_not_mutated(self):
+        p = self.plan("src/math.rs", "tests/rope_only.rs")
+        self.assertIn("rope_only", p["tests"])
+        self.assertEqual(p["why"]["rope_only"], ["changed"])
+        self.assertNotIn("tests/rope_only.rs", p["diff"])
+        self.assertIn("src/math.rs", p["diff"])
+
+    def test_a_changed_file_under_tests_that_is_not_a_target_selects_nothing(self):
+        (self.root / "tests/support").mkdir()
+        (self.root / "tests/support/scene.rs").write_text("", encoding="utf-8")
+        p = self.plan("src/rope.rs", "tests/support/scene.rs", "tests/gone.rs")
+        self.assertEqual(p["tests"], ["rope_only"])
+        self.assertNotIn("tests/", p["diff"])
+
+    def test_a_directory_target_is_named_by_its_directory(self):
+        (self.root / "tests/suite").mkdir()
+        (self.root / "tests/suite/main.rs").write_text("#[test]\nfn s() {}\n", encoding="utf-8")
+        self.assertIn("suite", self.plan("src/math.rs", "tests/suite/main.rs")["tests"])
+
+    def test_a_module_named_by_more_files_than_the_limit_adds_none_by_use_and_says_so(self):
+        for k in range(mp.USE_LIMIT):
+            self.write(f"user_{k}", "use x_core::cloth::Cloth;\n#[test]\nfn u%d() {}\n" % k)
+        p = self.plan("src/cloth.rs", "tests/analytic_self_contact.rs")
+        self.assertEqual(p["not_selected"], [{"module": "cloth", "files": mp.USE_LIMIT + 2, "limit": mp.USE_LIMIT}])
+        # by name and by the diff still
+        self.assertEqual(p["tests"], ["analytic_self_contact", "audit_cloth"])
+
+    def test_exactly_the_limit_still_runs_them(self):
+        for k in range(mp.USE_LIMIT - 2):
+            self.write(f"user_{k}", "use x_core::cloth::Cloth;\n#[test]\nfn u%d() {}\n" % k)
+        p = self.plan("src/cloth.rs")
+        self.assertEqual(p["not_selected"], [])
+        self.assertEqual(len(p["tests"]), mp.USE_LIMIT + 1)
+
+    def test_a_marked_file_runs_its_marked_tests_and_skips_the_others(self):
+        p = self.plan("src/cloth.rs")
+        self.assertEqual(p["skip"], ["long_scene_settles"])
+        self.assertEqual(p["fast"], {"analytic_self_contact": [2, 3]})
+
+    def test_a_file_without_a_mark_skips_nothing(self):
+        p = self.plan("src/rope.rs")
+        self.assertEqual((p["tests"], p["skip"], p["fast"]), (["rope_only"], [], {}))
+
+    def test_a_marked_file_with_a_test_inside_a_module_fails_the_plan(self):
+        self.write("analytic_self_contact", self.ORACLE + "mod deep {\n    #[test]\n    fn inner() {}\n}\n")
+        with self.assertRaisesRegex(ValueError, "inner"):
+            self.plan("src/cloth.rs")
+
+    def test_a_skipped_name_another_selected_file_runs_fails_the_plan(self):
+        self.write("audit_cloth", "#[test]\nfn long_scene_settles() {}\n")
+        with self.assertRaisesRegex(ValueError, "long_scene_settles"):
+            self.plan("src/cloth.rs")
+
+    def test_the_summary_names_each_target_its_reason_and_what_was_not_run(self):
+        d = self.root / "change.diff"
+        d.write_text(diff_of("src/cloth.rs"), encoding="utf-8")
+        s = self.root / "summary.md"
+        old = mp.ROOT
+        mp.ROOT = self.root
+        try:
+            self.assertEqual(mp.main([str(d), "--out", str(self.root / "o.diff"), "--summary", str(s)]), 0)
+        finally:
+            mp.ROOT = old
+        text = s.read_text(encoding="utf-8")
+        self.assertIn("- test target analytic_self_contact (uses): 2 of 3 tests (marked fast); a mutant missed here "
+                      "is missed against this subset, run the file without skips before listing it as equivalent\n", text)
+        self.assertIn("- test target audit_cloth (name)\n", text)
+
+    def test_the_real_tree_selects_the_self_contact_oracle_for_a_cloth_change(self):
+        # the case of 2026-11-22: the oracle of a cloth change lives in tests/analytic_self_contact.rs
+        p = mp.plan(diff_of("src/cloth.rs"), [], mp.ROOT)
+        self.assertIn("analytic_self_contact", p["tests"])
+        self.assertIn("uses", p["why"]["analytic_self_contact"])
+        # reaches Cloth only through the root (`use alice_physics_core::{.., Cloth, ..}`), name without "cloth"
+        self.assertEqual(p["why"]["integration_physics"], ["uses"])
+        self.assertEqual(p["not_selected"], [])
+        self.assertEqual(mp.crate_names((mp.ROOT / "Cargo.toml").read_text(encoding="utf-8")),
+                         ["alice_physics_core"])
+
+
+class Wiring(unittest.TestCase):
+    """The workflows that run a plan give it the test files of the diff and pass its skips on."""
+
+    def test_every_workflow_that_plans_reads_tests_into_the_diff_and_passes_the_skips(self):
+        seen = 0
+        for wf in sorted((mp.ROOT / ".github/workflows").glob("*.yml")):
+            text = wf.read_text(encoding="utf-8")
+            if "python3 scripts/mutants_in_diff_plan.py" not in text:
+                continue
+            diffs = re.findall(r"git diff \S+ HEAD -- ([^>\n]*)> /tmp/change\.diff", text)
+            self.assertTrue(diffs, wf.name)
+            for d in diffs:
+                self.assertIn("tests", d.split(), f"{wf.name}: the diff given to the plan leaves tests/ out")
+                seen += 1
+            runs = re.findall(r"cargo mutants --in-diff /tmp/planned\.diff.*?tee /tmp/mutants\.log", text, re.S)
+            self.assertTrue(runs, wf.name)
+            for r in runs:
+                self.assertIn("${skips:+-- -- --exact $skips}", r, wf.name)
+                self.assertIn("$tests", r, wf.name)
+                seen += 1
+            self.assertEqual(text.count('json.load(sys.stdin)["skip"]'), len(runs), wf.name)
+        self.assertGreaterEqual(seen, 5, "no workflow was compared")
+
+
 class Shapes(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())

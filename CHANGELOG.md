@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: 変異試験の差分の計画 (`scripts/mutants_in_diff_plan.py`) が走らせる統合試験を広げた これまでは file 名に変更した module の名前を含む試験だけで、変更と一緒に入った試験が別の名前の file にあると走らず、その変更の変異は見逃しと表示された (11-22 の手動の run: 布の変更の試験は `tests/analytic_self_contact.rs` にあり、走った 20 file に入っていなかった) 今は名前の一致に加えて、差分が変えた試験 file (変異の対象にはしない) と、変更した module をこの crate の path で名指す試験 file (`alice_physics_core::cloth::…`、または src/lib.rs が root に再公開した名前 `alice_physics_core::Cloth`) を走らせる 1 つの module を名指す file が 24 を超える時 (581 file 中 `math` は 447、`cloth` は 18) は名指しによる追加をせず、module と file 数を要約に「走らせていない」として出す 丸ごとでは 1 変異あたりの時間に収まらない試験 file は、速く厳密な試験の上に `// mutants: fast` の行を置くと、その file では印の付いた試験だけを走らせる (残りは `-- --exact --skip` で外し、要約に 印の数 / 全数 を出す 印の無い file は丸ごと 印のある file で見逃された変異は一部の試験に対する見逃しなので、等価の一覧に載せる前に skip なしで走らせる) 印のある file の試験が module の中にある時と、外した名前を別の選ばれた file が走らせる時は計画を失敗にする quality-deep の夜間と verify の差分は `tests/` を差分に含めて計画に渡す
 - CI: 夜間の変異試験 (quality-deep の in-diff) を、差分の計画を shard に分けて走らせる形に改めた (`scripts/mutants_nightly.py`) 1 job が 270 分で試せるのは 115-180 件で、11-17 から 11-21 の夜の計画は 1022 / 690 / 1634 / 388 / 105 件、終わるのは最後の夜だけだった feature の軸ごとに 100 件で 1 shard、1 夜は軸あたり 8 shard まで (同時に走るのは 4 job のまま) それを超える夜は走らせずに件数を出して失敗とし、その範囲を週次の run が上限なしで試す 週次の run は、置かれてから 8 日を超えて試されていない範囲があると失敗する
   - 差分の起点を「25 時間前の commit」から「全 shard を測り終えた直前の夜の head」に改めた (schedule は cron から 4.7-6.4 時間遅れて始まるため、時計では行が落ちることがある) 中断された夜、baseline が失敗した夜、shard が止まった夜は起点にならず、その行は次の夜の差分に入る 該当する夜が無い時だけ 25 時間前に戻り、summary にそう書く
   - 各 run は計画を記録 (artifact、保存 30 日) として残し、後の run が runs API から読む 読めない記録は「範囲なし」でなく失敗

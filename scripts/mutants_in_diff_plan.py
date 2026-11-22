@@ -12,9 +12,20 @@ mutants. This script reads the diff and prints, as JSON:
     src/lib.rs to the file, from the `cfg` attributes of every node (item,
     impl / trait item, field, variant, match arm, statement) whose span holds a
     changed line, plus the `required-features` of the tests below);
-  * `tests`: the integration test targets whose file name contains the name of
-    a changed module (`tests/audit_analytics_bridge.rs` for `src/analytics_bridge.rs`), to run
-    besides `--lib`;
+  * `tests`: the integration test targets to run besides `--lib`, and `why`, the
+    reason each one is there: its file name contains the name of a changed module
+    (`tests/audit_analytics_bridge.rs` for `src/analytics_bridge.rs`), the diff
+    changes the test file itself (the oracle that came with the change, whatever
+    its name), or the file names a changed module in a path of this crate
+    (`alice_physics_core::cloth::Cloth`, or a name src/lib.rs re-exports from it:
+    `alice_physics_core::Cloth`). A module named by more than USE_LIMIT
+    test files adds none of them by use; `not_selected` gives the module and the
+    count, so the run says what it did not run;
+  * `skip`: the tests of a selected file that are left out of the mutation run.
+    A file whose whole run is too long for one mutant marks the tests that are
+    quick and exact with a `// mutants: fast` line above them; once a file has
+    such a line, its other tests are skipped (`-- --exact --skip <name>`), and
+    `fast` gives marked / all per file. A file with no such line runs whole;
   * `skipped`: changed files whose module cannot be compiled on the host at
     all (it requires `not(feature = "std")`, or a wasm / python build); they
     are removed from the diff written to `--out`, and listed so the run says so;
@@ -247,6 +258,152 @@ def module_of(path: str) -> str | None:
     return None if name in ("lib", "main") else name
 
 
+# a module named by more test files than this adds none of them by use: every selected
+# target is built and run for every mutant (2026-11-23, of 581 files: `math` 447, `solver` 189,
+# then 40 and fewer; `cloth` 18, `heightfield` 19, three modules at 24)
+USE_LIMIT = 24
+FAST_MARK_RE = re.compile(r"^\s*//\s*mutants:\s*fast\s*$")
+FN_RE = re.compile(r"^(\s*)(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
+TEST_ATTR_RE = re.compile(r"^\s*#\[(?:[A-Za-z_][A-Za-z0-9_]*::)*test\b")
+
+
+def crate_names(cargo_toml: str) -> list[str]:
+    """The names a test file can call this crate by: the `[lib]` name and the
+    package name with `_` for `-`."""
+    names = set()
+    for table in ("package", "lib"):
+        m = re.search(rf'^\[{table}\]\s*$(.*?)(?=^\[|\Z)', cargo_toml, re.M | re.S)
+        n = re.search(r'^\s*name\s*=\s*"([^"]+)"', m.group(1), re.M) if m else None
+        if n:
+            names.add(n.group(1).replace("-", "_"))
+    return sorted(names)
+
+
+def test_target(path: str) -> str | None:
+    """The integration test target of a tests/ file (`tests/a.rs` and `tests/a/main.rs` -> `a`)."""
+    parts = Path(path).parts
+    if len(parts) == 2 and parts[0] == "tests" and parts[1].endswith(".rs"):
+        return parts[1][:-3]
+    if len(parts) == 3 and parts[0] == "tests" and parts[2] == "main.rs":
+        return parts[1]
+    return None
+
+
+REEXPORT_RE = re.compile(
+    r"^pub\s+use\s+(?:crate::)?([a-z_][a-z0-9_]*)::(\{[^{}]*\}|\*|[A-Za-z_][A-Za-z0-9_]*(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?)\s*;",
+    re.M)
+
+
+def reexports(lib_text: str) -> tuple[dict[str, set[str]], list[str]]:
+    """(`{name at the crate root: modules it comes from}`, modules re-exported with `*`) from the
+    `pub use <module>::...;` lines at column 0 of src/lib.rs. Most test files reach a type through
+    the root (`krate::Cloth`), not through its module. A `*` re-export gives no names to read: its
+    module is returned so the plan says that users by a root name are not found for it."""
+    names: dict[str, set[str]] = {}
+    globs: list[str] = []
+    for m in REEXPORT_RE.finditer(lib_text):
+        module, what = m.group(1), m.group(2)
+        if what == "*":
+            globs.append(module)
+            continue
+        for item in what.strip("{}").split(","):
+            words = item.split()
+            if words and "::" not in words[0]:
+                names.setdefault(words[-1], set()).add(module)
+    return names, sorted(set(globs))
+
+
+def modules_used(text: str, crates: list[str], exports: dict[str, set[str]] | None = None) -> set[str]:
+    """The top-level modules of this crate a test file names in a path:
+    `krate::cloth::Cloth`, the heads of `krate::{cloth::Cloth, math::Fix128}`, and, through the
+    re-exports of the crate root (`exports`), `krate::Cloth` and `krate::{Cloth, Grab}`."""
+    if not crates:
+        return set()
+    exports = exports or {}
+    alt = "|".join(re.escape(c) for c in crates)
+    heads = set(re.findall(rf"\b(?:{alt})::([A-Za-z_][A-Za-z0-9_]*)\b", text))
+    used = {h for h in heads if re.fullmatch(r"[a-z_][a-z0-9_]*", h)}
+    for h in heads:
+        used |= exports.get(h, set())
+    for m in re.finditer(rf"\b(?:{alt})::\{{", text):
+        depth, k, start = 1, m.end(), m.end()
+        group = []
+        while k < len(text) and depth:
+            c = text[k]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    group.append(text[start:k])
+            elif c == "," and depth == 1:
+                group.append(text[start:k])
+                start = k + 1
+            k += 1
+        for h in group:
+            hm = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\b", h)
+            if hm:
+                if re.fullmatch(r"[a-z_][a-z0-9_]*", hm.group(1)):
+                    used.add(hm.group(1))
+                used |= exports.get(hm.group(1), set())
+    return used
+
+
+def test_fns(text: str) -> list[tuple[str, bool, bool]]:
+    """`[(name, marked fast, nested)]` for the `#[test]` functions of a test file.
+    The attributes and line comments directly above a `fn` (no blank line between)
+    are its header; `nested` is a function that is not at column 0 (inside a `mod`).
+    A header with an attribute that spans several lines (`#[cfg_attr(\n ...)]`) is cut at
+    the continuation line: a mark or `#[test]` above it is not seen, so such a test is
+    not skipped and not counted (it runs)."""
+    lines = text.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        m = FN_RE.match(line)
+        if not m:
+            continue
+        k = i - 1
+        header = []
+        while k >= 0 and lines[k].strip().startswith(("#[", "//")):
+            header.append(lines[k])
+            k -= 1
+        if any(TEST_ATTR_RE.match(h) for h in header):
+            out.append((m.group(2), any(FAST_MARK_RE.match(h) for h in header), bool(m.group(1))))
+    return out
+
+
+def fast_subset(texts: dict[str, str]) -> tuple[list[str], dict[str, list[int]]]:
+    """(tests to skip, `{target: [marked, all]}`) for the selected test files
+    `{target: text}`. A skip is an exact name for every test binary of the run, so
+    a marked file must keep its tests at the top level, and a skipped name must not
+    be a test another selected file runs."""
+    skip: dict[str, str] = {}
+    fast: dict[str, list[int]] = {}
+    runs: dict[str, str] = {}
+    for target, text in sorted(texts.items()):
+        fns = test_fns(text)
+        if not any(f for _, f, _ in fns):
+            for name, _, nested in fns:
+                if not nested:
+                    runs[name] = target
+            continue
+        nested = sorted(n for n, _, deep in fns if deep)
+        if nested:
+            raise ValueError(f"tests/{target}.rs marks tests `// mutants: fast` but {nested} are inside a "
+                             "module: a skip is an exact top-level name, keep the tests of a marked file at the top level")
+        fast[target] = [sum(1 for _, f, _ in fns if f), len(fns)]
+        for name, f, _ in fns:
+            if f:
+                runs[name] = target
+            else:
+                skip[name] = target
+    clash = sorted(n for n in skip if n in runs)
+    if clash:
+        raise ValueError("a test skipped in one selected file is run by another under the same name (the skip "
+                         "would drop both): " + ", ".join(f"{n} (skipped in {skip[n]}, run in {runs[n]})" for n in clash))
+    return sorted(skip), fast
+
+
 def split_diff(diff: str) -> list[tuple[str, str]]:
     """`[(path, text of that file's diff)]` for a unified diff."""
     parts = re.split(r"(?=^diff --git )", diff, flags=re.M)
@@ -352,10 +509,41 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     test_names = sorted(p.stem for p in tests_dir.glob("*.rs")) if tests_dir.is_dir() else []
     features = set(base_features)
     tests: set[str] = set()
+    why: dict[str, set[str]] = {}
+    crates = crate_names(cargo)
+    lib_rs = root / "src" / "lib.rs"
+    exports, globs = reexports(lib_rs.read_text(encoding="utf-8")) if lib_rs.is_file() else ({}, [])
+    test_texts: dict[str, str] = {}
+
+    def text_of(t: str) -> str:
+        if t not in test_texts:
+            f = tests_dir / f"{t}.rs"
+            if not f.is_file():
+                f = tests_dir / t / "main.rs"
+            test_texts[t] = f.read_text(encoding="utf-8") if f.is_file() else ""
+        return test_texts[t]
+
+    def select(t: str, reason: str) -> None:
+        need = req.get(t, [])
+        if any(n in HOST_UNBUILDABLE for n in need):
+            return
+        features.update(n for n in need if n != "std")
+        tests.add(t)
+        why.setdefault(t, set()).add(reason)
+
+    users: dict[str, list[str]] | None = None
+    not_selected: list[dict] = []
+    seen_modules: set[str] = set()
     kept, skipped = [], []
     not_exercised: list[dict] = []
     for path, text in split_diff(diff):
         path = path.replace("\\", "/")  # a diff written on Windows by another tool
+        if path.startswith("tests/"):
+            # a test file is never mutated; the one the diff changes is run (the oracle of the change)
+            target = test_target(path)
+            if target is not None and (root / path).is_file():
+                select(target, "changed")
+            continue
         module = module_of(path)
         if module is None:
             # lib.rs / main.rs have no module gate, but their items can carry one
@@ -389,18 +577,43 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
         token = re.compile(rf"(^|_){re.escape(module)}(_|$)")
         for t in test_names:
             if token.search(t):
-                need = req.get(t, [])
-                if any(n in HOST_UNBUILDABLE for n in need):
-                    continue
-                features.update(n for n in need if n != "std")
-                tests.add(t)
+                select(t, "name")
+        if module in seen_modules:
+            continue
+        seen_modules.add(module)
+        if users is None:
+            users = {}
+            for t in test_names:
+                for used in modules_used(text_of(t), crates, exports):
+                    users.setdefault(used, []).append(t)
+        mine = users.get(module, [])
+        if module in globs:
+            not_selected.append({"module": module, "glob": True})
+        if len(mine) > USE_LIMIT:
+            not_selected.append({"module": module, "files": len(mine), "limit": USE_LIMIT})
+        else:
+            for t in mine:
+                select(t, "uses")
+    skip, fast = fast_subset({t: text_of(t) for t in tests})
     return {
         "features": sorted(f for f in features if f),
         "tests": sorted(tests),
+        "why": {t: sorted(r) for t, r in sorted(why.items())},
+        "skip": skip,
+        "fast": fast,
+        "not_selected": not_selected,
         "skipped": skipped,
         "not_exercised": not_exercised,
         "diff": "".join(kept),
     }
+
+
+def not_selected_line(n: dict) -> str:
+    if n.get("glob"):
+        return (f"module {n['module']} is re-exported from the crate root with `*`: test files that reach it "
+                "through a root name are not found by use")
+    return (f"the {n['files']} test files that name module {n['module']} (more than {n['limit']}) are not added "
+            "by use; only those selected by name or changed by the diff run")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -416,8 +629,18 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps(p))
     for f in p["skipped"]:
         print(f"note: {f} is not buildable on the host test run; not mutated", file=sys.stderr)
+    for n in p["not_selected"]:
+        print(f"note: {not_selected_line(n)}", file=sys.stderr)
     if args.summary:
         with open(args.summary, "a", encoding="utf-8") as f:
+            for t in p["tests"]:
+                part = p["fast"].get(t)
+                f.write(f"- test target {t} ({', '.join(p['why'][t])})"
+                        + (f": {part[0]} of {part[1]} tests (marked fast); a mutant missed here is missed against "
+                           "this subset, run the file without skips before listing it as equivalent" if part else "")
+                        + "\n")
+            for n in p["not_selected"]:
+                f.write(f"- not run: {not_selected_line(n)}\n")
             for n in p["not_exercised"]:
                 f.write(f"- not exercised by this job: {n['file']}: {n['lines']} changed line(s) under "
                         f"#[cfg({n['cfg']})]\n")

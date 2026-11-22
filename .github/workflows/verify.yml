@@ -209,7 +209,8 @@ jobs:
             echo "no change under src/ crates/ between $BASE and HEAD: nothing to mutate" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git diff "$BASE" HEAD -- src crates Cargo.toml > /tmp/change.diff
+          # tests/ is in the diff so the plan runs the test files the change came with (never mutated)
+          git diff "$BASE" HEAD -- src crates tests Cargo.toml > /tmp/change.diff
           plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "$FEATURES" --out /tmp/planned.diff)
           echo "plan: $plan"
           # the source changed: a plan that holds nothing is a reading that failed
@@ -217,6 +218,7 @@ jobs:
           [ -s /tmp/planned.diff ] || { echo "::error::src/ changed but the planned diff is empty"; exit 1; }
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
+          skips=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--skip " + t for t in json.load(sys.stdin)["skip"]))')
           ulimit -v 6291456
           set +e
           # test timeout derived from the run's own unmutated baseline, multiplier 3 (the measured
@@ -225,7 +227,7 @@ jobs:
           timeout --signal=INT --kill-after=10m 270m \
             cargo mutants --in-diff /tmp/planned.diff --shard "$SHARD/$SHARDS" --timeout-multiplier 3 --minimum-test-timeout 60 \
             --build-timeout-multiplier 3 -j 2 --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests \
-            2>&1 | tee /tmp/mutants.log
+            ${skips:+-- -- --exact $skips} 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -eq 4 ]; then

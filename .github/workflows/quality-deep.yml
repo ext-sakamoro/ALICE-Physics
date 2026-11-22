@@ -218,7 +218,7 @@ jobs:
               fi
             fi
             echo "base $base ($why), head $head" | tee -a "$GITHUB_STEP_SUMMARY"
-            git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
+            git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff
             counts=()
             for axis in "default=" "features=parallel,gpu-solver-bridge,simd"; do
               n=0
@@ -320,11 +320,17 @@ jobs:
         run: |
           # the plan's base: the head of the latest night that measured (or the pull request's base)
           base="${{ matrix.base }}"
-          git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
+          # tests/ is in the diff so the plan sees the test files the change came with (they are
+          # run, never mutated: the plan leaves them out of /tmp/planned.diff)
+          git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff
           if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; touch /tmp/measured; exit 0; fi
           # a module behind #[cfg(feature = ...)] is not compiled without its feature, so all
           # its mutants would read "missed"; turn the features of the changed modules on and
-          # run the integration tests named after them besides --lib
+          # run, besides --lib, the integration tests named after them, the test files the diff
+          # changes, and the test files that name a changed module (until 2026-11-22 only the
+          # first: the oracle of a cloth change in tests/analytic_self_contact.rs was not run and
+          # its mutants read missed). A file that marks tests `// mutants: fast` runs only those
+          # (`skip`); the summary lists each target with its reason and what was not run
           # changed lines under a cfg the host test run cannot build (a wasm / python-only item) are not
           # mutated: the plan reports them by count in the summary as not exercised, never as missed
           plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff \
@@ -332,6 +338,7 @@ jobs:
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
+          skips=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--skip " + t for t in json.load(sys.stdin)["skip"]))')
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; touch /tmp/measured; exit 0; fi
           ulimit -v 6291456
           set +e
@@ -356,7 +363,7 @@ jobs:
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           timeout --signal=INT --kill-after=10m 270m \
             cargo mutants --in-diff /tmp/planned.diff --shard "${{ matrix.shard }}/${{ matrix.of }}" --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
-            ${features:+--features "$features"} --cargo-arg=--lib $tests 2>&1 | tee /tmp/mutants.log
+            ${features:+--features "$features"} --cargo-arg=--lib $tests ${skips:+-- -- --exact $skips} 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -eq 4 ]; then
