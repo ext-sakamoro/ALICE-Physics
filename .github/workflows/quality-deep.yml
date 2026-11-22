@@ -18,8 +18,8 @@ name: Quality Deep
 
 on:
   schedule:
-    - cron: '0 18 * * 0'     # 日曜 03:00 JST: 全項目 (core shard の変異試験 + ratchet / Miri / loom / bench / ignored)
-    - cron: '30 17 * * 1-6'   # 月〜土 02:30 JST: その日 main に入った変更の行だけを変異試験 (見逃しで失敗)
+    - cron: '30 17 * * 6'    # 日曜 02:30 JST: 全項目 (core shard の変異試験 + ratchet / Miri / loom / bench / ignored)、夜間に回せなかった範囲の変異試験
+    - cron: '30 17 * * 1-5'   # 火〜土 02:30 JST: 前回測り終えた夜以降に main に入った変更の行だけを変異試験 (見逃しで失敗)
   workflow_dispatch:
     inputs:
       scope:
@@ -35,6 +35,13 @@ on:
         # 全 mutant が「非 compile = missed」になり 0 % に見える (2026-09-15 a* run) → 測定する
         # feature を明示する 空 = 通常の 2 軸 (default / parallel,gpu-solver-bridge)
         description: 'scoped 測定時に有効化する cargo features (例: analytics)、空なら 2 軸'
+        required: false
+        default: ''
+        type: string
+      diff_base:
+        # 例: 40 桁の commit  その commit から HEAD までの差分を夜間と同じ形 (shard に分けた in-diff) で試す
+        # 記録は夜間の起点には数えない (kind pr)、週次の項目 (core shard / Miri / bench 等) は走らない
+        description: 'in-diff の起点の commit (空 = 週次と同じ全項目)'
         required: false
         default: ''
         type: string
@@ -142,8 +149,137 @@ jobs:
           path: mutants.out
           if-no-files-found: ignore
 
-  mutants:
+  mutants-plan:
+    # What the mutation jobs of this run are (scripts/mutants_nightly.py):
+    # - nightly / PR: the diff since the base, cut into shards of at most 100 mutants per feature
+    #   axis. One job gets through 115-180 mutants in its 270 min (nights of 11-17 to 11-21), and the
+    #   plans of those nights were 1022 / 690 / 1634 / 388 / 105: as one job per axis only the last
+    #   could finish. At most 8 shards per axis; a larger plan is not run, the job fails with the
+    #   count and the range is set aside for the weekly run.
+    # - the nightly base is the head of the latest nightly run that measured every shard (or was
+    #   set aside, or had no mutant), not a clock: the schedule starts 4.7-6.4 h late, and a night
+    #   that was cancelled or did not finish must not drop its lines.
+    # - weekly: the 16 core shards x 2 axes, and every range set aside and not yet measured.
+    # Each plan is uploaded as a record (kept 30 days; the runs are read back 21 days).
+    name: Mutation plan (shards of the diff, ranges set aside)
     if: github.event_name != 'workflow_dispatch' || inputs.scope == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      jobs: ${{ steps.plan.outputs.jobs }}
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          BASE_REF: ${{ github.base_ref }}
+          DIFF_BASE: ${{ inputs.diff_base }}
+        run: |
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr"
+          elif [ "$SCHEDULE" = '30 17 * * 1-5' ]; then mode="nightly"
+          else mode="weekly"; fi
+          head=$(git rev-parse HEAD)
+          python3 scripts/mutants_nightly.py fetch --repo "$GITHUB_REPOSITORY" --self "$GITHUB_RUN_ID" --out /tmp/runs.json
+          over=false
+          if [ "$mode" = weekly ]; then
+            python3 scripts/mutants_nightly.py weekly --runs /tmp/runs.json --head "$head" --now "$now" \
+              --out-record mutants-record.json --out-matrix /tmp/matrix.json | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            if [ -n "$DIFF_BASE" ]; then
+              base=$(git rev-parse --verify -q "$DIFF_BASE^{commit}") || { echo "::error::diff_base '$DIFF_BASE' is not a commit"; exit 1; }
+              git merge-base --is-ancestor "$base" HEAD || { echo "::error::diff_base $base is not an ancestor of HEAD"; exit 1; }
+              why="the dispatch's diff_base"
+            elif [ "$mode" = pr ]; then
+              base=$(git rev-parse "origin/$BASE_REF"); why="the base of the pull request"
+            else
+              base=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why)
+              why=$(cat /tmp/why)
+              if [ -n "$base" ] && ! git merge-base --is-ancestor "$base" HEAD; then
+                why="$why, but $base is not an ancestor of HEAD"; base=
+              fi
+              if [ -z "$base" ]; then
+                base=$(git rev-list -1 --before="25 hours ago" HEAD)
+                why="$why: falling back to the commit of 25 hours ago"
+              fi
+            fi
+            echo "base $base ($why), head $head" | tee -a "$GITHUB_STEP_SUMMARY"
+            git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
+            counts=()
+            for axis in "default=" "features=parallel,gpu-solver-bridge,simd"; do
+              n=0
+              if [ -s /tmp/change.diff ]; then
+                python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "${axis#*=}" --out /tmp/planned.diff > /dev/null
+                if [ -s /tmp/planned.diff ]; then
+                  cargo mutants --list --in-diff /tmp/planned.diff > /tmp/listed.txt
+                  n=$(grep -c . /tmp/listed.txt || true)
+                fi
+              fi
+              counts+=(--count "${axis%%=*}=$n")
+            done
+            set +e
+            python3 scripts/mutants_nightly.py plan --mode "$mode" --runs /tmp/runs.json --base "$base" --head "$head" \
+              --base-reason "$why" --now "$now" "${counts[@]}" \
+              --out-record mutants-record.json --out-matrix /tmp/matrix.json 2> /tmp/plan.err | tee -a "$GITHUB_STEP_SUMMARY"
+            rc=${PIPESTATUS[0]}
+            set -e
+            cat /tmp/plan.err >&2
+            case $rc in
+              0) ;;
+              5) over=true; echo "::error::$(sed 's/^error: //' /tmp/plan.err)" ;;
+              *) exit "$rc" ;;
+            esac
+          fi
+          {
+            echo "mode=$mode"
+            echo "over=$over"
+            echo "matrix=$(cat /tmp/matrix.json)"
+            echo "jobs=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["include"]))' /tmp/matrix.json)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mutants-record
+          path: mutants-record.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: The plan is within the cap
+        if: steps.plan.outputs.over == 'true'
+        run: |
+          echo "::error::the plan is over the cap: no mutant was tested tonight, the range is set aside for the weekly run"
+          exit 1
+
+  mutants-accounted-age:
+    name: Ranges set aside for the weekly run (none open for more than 8 days)
+    needs: mutants-plan
+    if: needs.mutants-plan.outputs.mode == 'weekly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: mutants-record
+      - name: No range has been open for more than 8 days
+        run: python3 scripts/mutants_nightly.py age --record mutants-record.json --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$GITHUB_STEP_SUMMARY"; exit "${PIPESTATUS[0]}"
+
+  mutants:
+    needs: mutants-plan
+    if: needs.mutants-plan.outputs.jobs != '0'
     # 2026-09-15 初回実測: 全 crate = 30,677 mutant × 6-9 s (毎回 1378 test) × -j 2 ≈ 30 h、
     # 300 min timeout で a* 5 file しか進まず cancelled (MISSED 290 = animation_blend 157 /
     # anisotropic 55 / aeroelasticity 46 / analytics_bridge 26 / acoustic_wave 6)
@@ -153,7 +289,7 @@ jobs:
     # Mac 実測 66 s → 28 s) + timeout 300 に変更 shard 2 の score: caught 64 / missed 192 = 25%
     # 2026-09-15 3 回目実測: default feature だけだと `#[cfg(feature = "parallel")]` / gpu-solver-bridge 内の
     # code が compile されず「変異しても変わらない = missed」に数えられる (solver.rs で 163 / 575) → feature 軸を追加
-    name: Mutation testing (cargo-mutants${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && ', in-diff' || format(', core shard {0}/16', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
+    name: Mutation testing (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
@@ -161,15 +297,16 @@ jobs:
       # at most four mutation jobs at once: the weekly 32 jobs ran together and
       # held the runners the landing CI needed for hours
       max-parallel: 4
-      matrix:
-        shard: ${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
-        # the second axis also turns `simd` on: the x86_64 SIMD paths (`cross_simd`,
-        # `dot_batch_4`, the `simd_width` lane count) are only compiled with it, and the
-        # default axis keeps testing the scalar fallbacks
-        features: ['', 'parallel,gpu-solver-bridge,simd']
+      # one entry per job, from the plan: kind (diff / core), shard, of, features, base, head,
+      # label, artifact. The second feature axis also turns `simd` on: the x86_64 SIMD paths
+      # (`cross_simd`, `dot_batch_4`, the `simd_width` lane count) are only compiled with it,
+      # and the default axis keeps testing the scalar fallbacks
+      matrix: ${{ fromJSON(needs.mutants-plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v5
         with:
+          # a range set aside is tested at its own head (the diff's line numbers are that tree's)
+          ref: ${{ matrix.head }}
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -178,17 +315,13 @@ jobs:
         with:
           # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
           tool: cargo-mutants@27.1.0
-      - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
-        if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
+      - name: Mutants (in-diff shard, a missed mutant fails)
+        if: matrix.kind == 'diff'
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            base="origin/${{ github.base_ref }}"
-          else
-            # nightly: the changes main received since the previous night
-            base=$(git rev-list -1 --before="25 hours ago" HEAD)
-          fi
+          # the plan's base: the head of the latest night that measured (or the pull request's base)
+          base="${{ matrix.base }}"
           git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
-          if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; exit 0; fi
+          if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; touch /tmp/measured; exit 0; fi
           # a module behind #[cfg(feature = ...)] is not compiled without its feature, so all
           # its mutants would read "missed"; turn the features of the changed modules on and
           # run the integration tests named after them besides --lib
@@ -199,7 +332,7 @@ jobs:
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
-          if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
+          if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; touch /tmp/measured; exit 0; fi
           ulimit -v 6291456
           set +e
           # `--cargo-arg` limits the build of every mutant to the lib tests and the planned
@@ -222,7 +355,7 @@ jobs:
           # Exit 4 = the unmutated baseline failed or timed out: nothing was measured, so the
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
+            cargo mutants --in-diff /tmp/planned.diff --shard "${{ matrix.shard }}/${{ matrix.of }}" --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
             ${features:+--features "$features"} --cargo-arg=--lib $tests 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
@@ -235,6 +368,7 @@ jobs:
           # to mutate (doc comments only, Cargo.toml only): nothing to check, not a failure
           if [ "$rc" -eq 0 ] && [ ! -d mutants.out ]; then
             echo "no mutant in the changed lines"
+            touch /tmp/measured
             exit 0
           fi
           # equivalent mutants (scripts/mutants-equivalent.txt, keyed by position and the
@@ -269,6 +403,9 @@ jobs:
             echo "::error::in-diff mutants $line (cargo-mutants exit $rc)"
             exit 1
           fi
+          # every planned mutant of this shard has an outcome: the night counts as measured for
+          # this shard whether or not a mutant was missed (the step below reports it)
+          touch /tmp/measured
           if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
             echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
             exit 1
@@ -283,8 +420,13 @@ jobs:
       # `--cargo-arg=--lib` restricts both the build and the test run of every mutant to the
       # lib tests. `-- --lib` (until 2026-10) ran the same tests but built every integration
       # test and example per mutant: 3.5 min per mutant against 10 s, same missed set.
+      # read by the plan of later runs (scripts/mutants_nightly.py, MEASURED_STEP): a night is the
+      # next base, and a range set aside is closed, only when this step passed in every shard job
+      - name: Measured (every planned mutant of this shard has an outcome)
+        if: always() && matrix.kind == 'diff'
+        run: test -f /tmp/measured
       - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
-        if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
+        if: matrix.kind == 'core'
         run: |
           ulimit -v 6291456
           set +e
@@ -306,7 +448,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## cargo-mutants (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            echo "## cargo-mutants (${{ matrix.label }})"
             # cargo-mutants writes into mutants.out/mutants.out/ (--output names the parent)
             root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
             export MUTANTS_ROOT="$root"
@@ -331,7 +473,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: mutants-out-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || 'parallel' }}
+          name: ${{ matrix.artifact }}
           path: mutants.out
           if-no-files-found: ignore
 
@@ -342,7 +484,7 @@ jobs:
     # missing, fails the ratchet. Record a new baseline with `--write` after reviewing it.
     name: Mutation ratchet (weekly shards vs the missed baseline)
     needs: mutants
-    if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
+    if: always() && inputs.diff_base == '' && (github.event.schedule == '30 17 * * 6' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -358,7 +500,7 @@ jobs:
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -377,7 +519,7 @@ jobs:
 
   miri:
     name: Miri (UB 検出、parallel feature)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -421,7 +563,7 @@ jobs:
     # PR では走らせない (本 file の他 job と同じ方針): `runtime:` の 1 本だけで
     # CI Test job に +154..+309 s かかる実測がある (armaly_backward_step.rs の理由文)
     name: Ignored tests (runtime = must pass / src gap = must fail)
-    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
+    if: inputs.diff_base == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -451,7 +593,7 @@ jobs:
     # 見落とさないため、同じ 2 step を週に 1 回 opt-level 0 (test profile) で走らせる
     # 0 件の実行は red (test result の行が無い・passed が 0)
     name: Whole suite at opt-level 0 (the two ci-test steps of CI, unoptimised)
-    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
+    if: inputs.diff_base == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -480,7 +622,7 @@ jobs:
     # 5 mm と 2.5 mm は Paperspace (checkpoint 付き)、指数の許容は細分化の収束を測ってから足す
     # 結果の行が 1 本も無い時は red (比較 0 件)
     name: Laminar plume scene at 10 mm (validity of the closed form, exponents)
-    if: github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == '')
+    if: inputs.diff_base == '' && (github.event.schedule == '30 17 * * 6' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -514,7 +656,7 @@ jobs:
 
   bench-regress:
     name: Bench regression (criterion, informational)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -556,7 +698,7 @@ jobs:
 
   coverage-full:
     name: Coverage (lib + integration tests, weekly ratchet)
-    if: github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == '')
+    if: inputs.diff_base == '' && (github.event.schedule == '30 17 * * 6' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
