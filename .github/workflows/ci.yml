@@ -237,6 +237,9 @@ jobs:
       - name: Tests of scripts/mutants_run_status.py (killed / not measured / complete)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_run_status.py
+      - name: Tests of scripts/mutants_nightly.py (shards, the base of a night, ranges set aside)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/test_mutants_nightly.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_exclude_check.py

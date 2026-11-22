@@ -232,6 +232,7 @@ python3 scripts/test_coverage_check.py
 python3 scripts/test_line_coverage_ratchet.py
 python3 scripts/test_mutants_ratchet.py
 python3 scripts/test_mutants_run_status.py
+python3 scripts/test_mutants_nightly.py
 python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_equivalent.py
 python3 scripts/mutants_equivalent.py --check
