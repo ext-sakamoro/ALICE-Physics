@@ -20,7 +20,9 @@ move the base: its lines are in the next night's diff again. With no such run in
 commit of 25 hours ago, and the summary says so.
 
 An over-cap range stays open until a weekly run whose record lists it has every shard job of that range
-measured. Open ranges are carried in every record (`open`), so one does not leave with the window. A range
+measured. Open ranges are carried in every nightly and weekly record (`open`), so one does not leave with the
+window; the carried list is read from the latest such record (a pull request's or a diff_base dispatch's record
+carries none and is passed over). A range
 that has been open for more than MAX_AGE_DAYS fails the weekly run's age job. A record that is listed but
 expired or unreadable is an error (exit 2), never "no open range".
 
@@ -53,6 +55,9 @@ CORE_SHARDS = 16
 RECORD_ARTIFACT = "mutants-record"
 RECORD_FILE = "mutants-record.json"
 MEASURED_STEP = "Measured (every planned mutant of this shard has an outcome)"
+CARRYING = ("nightly", "weekly")   # the record kinds whose `open` list is the carried list
+EVENTS = ("schedule", "workflow_dispatch")   # the runs that are read back (a pull request's run is never a base)
+MAX_PAGES = 10       # of 100 runs per event: more than this in the window is an error, not a cut
 OVER_CAP, ERROR = 5, 2
 
 
@@ -120,9 +125,9 @@ def open_ranges(runs: list[dict]) -> list[dict]:
     check_records(runs)
     found: dict[str, dict] = {}
     ordered = by_time(runs)
-    for r in ordered:   # (the latest record's carried list)
+    for r in ordered:   # (the carried list of the latest nightly or weekly record: a pr record carries none)
         rec = r.get("record")
-        if rec:
+        if rec and rec.get("kind") in CARRYING:
             for o in rec.get("open", []):
                 found.setdefault(range_id(o["base"], o["head"]), dict(o))
             break
@@ -231,12 +236,30 @@ def read_record(repo: str, run_id: int) -> tuple[dict | None, str | None]:
     return rec, None
 
 
+def list_runs(repo: str, since: str, workflow: str, api=None) -> list[dict]:
+    """every schedule / dispatch run of the workflow created after `since`: each event is listed on its own (the
+    pull request runs do not take places on a page) and every page is followed; more than MAX_PAGES pages is an
+    error (the window would not be covered)"""
+    api = api or gh_json
+    out = []
+    for event in EVENTS:
+        for page in range(1, MAX_PAGES + 2):
+            if page > MAX_PAGES:
+                raise RuntimeError(f"more than {MAX_PAGES * 100} {event} runs of {workflow} since {since}: the "
+                                   "window is not covered")
+            got = api([f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=100&page={page}&event={event}"
+                       f"&created=%3E{since}"]).get("workflow_runs", [])
+            out += got
+            if len(got) < 100:
+                break
+    return out
+
+
 def fetch(repo: str, self_id: int, now: datetime, workflow: str = "quality-deep.yml") -> list[dict]:
     since = (now - timedelta(days=WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    listed = gh_json([f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=100&created=%3E{since}"])
     runs = []
-    for r in listed.get("workflow_runs", []):
-        if r["id"] == self_id or r.get("event") not in ("schedule", "workflow_dispatch"):
+    for r in list_runs(repo, since, workflow):
+        if r["id"] == self_id:
             continue
         jobs, page = [], 1
         while True:

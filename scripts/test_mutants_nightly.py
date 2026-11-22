@@ -165,6 +165,13 @@ class Open(unittest.TestCase):
         new = night(5, 25, C, D, carried=[])
         self.assertEqual(mn.open_ranges([old, new]), [])
 
+    def test_a_newer_pr_record_does_not_empty_the_carried_list(self):
+        over = night(2, 1, B, C, counts=BIG)
+        carrying = night(4, 20, C, D, carried=mn.open_ranges([over]))
+        pr = night(5, 21, C, D)
+        pr["record"]["kind"], pr["record"]["open"] = "pr", []
+        self.assertEqual([o["since"] for o in mn.open_ranges([carrying, pr])], ["2026-11-01T22:00:00Z"])
+
     def test_an_unreadable_record_is_an_error_for_the_base_and_for_the_open_ranges(self):
         bad = cancelled(3, 20, C)
         bad["record_error"] = "its record artifact has expired"
@@ -265,6 +272,50 @@ class Cli(unittest.TestCase):
         self.assertIn("open ranges 1, older than 8 days 1", out)
         code, out, _ = self.run_cli("age", "--record", str(self.d / "r.json"), "--now", "2026-11-15T18:00:00Z")
         self.assertEqual((code, out.strip()), (0, "compared: open ranges 1, older than 8 days 0"))
+
+
+class Listing(unittest.TestCase):
+    def pages(self, counts: dict[str, list[int]]):
+        """a fake of the runs listing: per event, the number of runs on each page"""
+        calls = []
+
+        def api(args):
+            url = args[0]
+            event = url.split("&event=")[1].split("&")[0]
+            page = int(url.split("&page=")[1].split("&")[0])
+            calls.append((event, page))
+            sizes = counts.get(event, [])
+            n = sizes[page - 1] if page <= len(sizes) else 0
+            return {"workflow_runs": [{"id": f"{event}-{page}-{k}"} for k in range(n)]}
+        return api, calls
+
+    def test_each_event_is_listed_on_its_own_and_every_page_is_followed(self):
+        api, calls = self.pages({"schedule": [100, 100, 7], "workflow_dispatch": [3]})
+        runs = mn.list_runs("o/r", "2026-11-01T00:00:00Z", "quality-deep.yml", api)
+        self.assertEqual(len(runs), 210)
+        self.assertEqual(calls, [("schedule", 1), ("schedule", 2), ("schedule", 3), ("workflow_dispatch", 1)])
+
+    def test_a_pull_request_run_is_never_listed(self):
+        api, calls = self.pages({"pull_request": [100]})
+        self.assertEqual(mn.list_runs("o/r", "2026-11-01T00:00:00Z", "quality-deep.yml", api), [])
+        self.assertEqual({e for e, _ in calls}, {"schedule", "workflow_dispatch"})
+
+    def test_a_window_that_does_not_fit_the_pages_is_an_error_not_a_cut(self):
+        api, _ = self.pages({"schedule": [100] * (mn.MAX_PAGES + 1)})
+        with self.assertRaises(RuntimeError) as e:
+            mn.list_runs("o/r", "2026-11-01T00:00:00Z", "quality-deep.yml", api)
+        self.assertIn("the window is not covered", str(e.exception))
+        api, _ = self.pages({"schedule": [100] * (mn.MAX_PAGES - 1) + [99]})
+        self.assertEqual(len(mn.list_runs("o/r", "2026-11-01T00:00:00Z", "quality-deep.yml", api)), 100 * mn.MAX_PAGES - 1)
+
+    def test_the_listing_asks_for_the_window(self):
+        seen = []
+
+        def api(args):
+            seen.append(args[0])
+            return {"workflow_runs": []}
+        mn.list_runs("o/r", "2026-11-01T00:00:00Z", "quality-deep.yml", api)
+        self.assertTrue(all("created=%3E2026-11-01T00:00:00Z" in u and "/workflows/quality-deep.yml/runs?" in u for u in seen), seen)
 
 
 class Workflow(unittest.TestCase):
