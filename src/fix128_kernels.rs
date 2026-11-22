@@ -174,6 +174,13 @@ fn from_i128(v: i128) -> Fix128 {
 // exp / ln
 // ---------------------------------------------------------------------------
 
+/// The `k` of the range reduction `a = k·ln2 + r` of [`exp_q120`]: the nearest
+/// multiple of `ln2` at Q120 (ties up), so that `|r| ≤ ½ ln2`, the bound the
+/// Taylor term count of `exp_q120` is chosen for.
+fn nearest_ln2_multiple(a: i128) -> i128 {
+    (a + LN2_Q120 / 2).div_euclid(LN2_Q120)
+}
+
 /// `e^a` for an argument with 120 fraction bits, as the nearest `Fix128`.
 /// Saturates at the representable maximum when the result reaches `2^63`, and
 /// returns `ZERO` when it is below half an ulp.
@@ -182,7 +189,7 @@ fn from_i128(v: i128) -> Fix128 {
 /// (Horner form, 28 terms: the first omitted term is below `0.35^28/28! < 2^-150`),
 /// then `2^k` by a shift.
 pub(crate) fn exp_q120(a: i128) -> Fix128 {
-    let k = (a + LN2_Q120 / 2).div_euclid(LN2_Q120);
+    let k = nearest_ln2_multiple(a);
     if k >= 64 {
         return Fix128::from_raw(i64::MAX, u64::MAX);
     }
@@ -545,3 +552,9 @@ pub(crate) fn cbrt_floor(x: Fix128) -> Fix128 {
 #[cfg(test)]
 #[path = "../tests/analytic_fix128_transcendentals.rs"]
 mod analytic_fix128_transcendentals_oracle;
+
+// Exact-integer oracles of the private kernel helpers (signs, word edges, the
+// ranges each branch of `ln_q120` and `exp_q120` covers), run with the lib tests.
+#[cfg(test)]
+#[path = "../tests/lib/fix128_kernel_oracles.rs"]
+mod fix128_kernel_oracles;

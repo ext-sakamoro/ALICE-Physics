@@ -1471,6 +1471,32 @@ mod tests {
     }
 
     #[test]
+    fn pow_pos_of_a_positive_base_is_rounded_once() {
+        // oracle: 2^62.5 = √2 · 2^62, raw √2 · 2^126 = round(isqrt(2^253)) (exact
+        // integer). The bound is the documented one, relative 2·2⁻⁶⁴; taking
+        // ln 2 rounded to 64 bits first, then e^(62.5·ln 2), is off by 13·2⁻⁶⁴
+        let got = pow_pos(Fix128::from_int(2), Fix128::from_ratio(125, 2));
+        let want: i128 = 120_307_984_584_002_255_772_516_886_238_812_528_464;
+        let raw = (i128::from(got.hi) << 64) | i128::from(got.lo);
+        let bound = 1 + 2 * (want >> 64) as u128;
+        assert!(
+            raw.abs_diff(want) <= bound,
+            "2^62.5: got {raw}, want {want}"
+        );
+    }
+
+    #[test]
+    fn pow_pos_reads_a_non_positive_base_as_the_smallest_positive_value() {
+        // ln_pos(x ≤ 0) = ln 2⁻⁶⁴, so x^½ = 2⁻³², raw 2^32 (within the one
+        // ulp of exp below 1), for zero and for a negative base
+        for x in [Fix128::ZERO, Fix128::from_int(-3)] {
+            let got = pow_pos(x, Fix128::from_ratio(1, 2));
+            let raw = (i128::from(got.hi) << 64) | i128::from(got.lo);
+            assert!(raw.abs_diff(1 << 32) <= 1, "{x:?}^0.5: got {raw}");
+        }
+    }
+
+    #[test]
     fn symmetric_helpers() {
         let a = Fix128::from_ratio(1, 3);
         let b = Fix128::from_ratio(1, 7);
