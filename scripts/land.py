@@ -1200,6 +1200,19 @@ def message_problems(message: str) -> list[str]:
     return out
 
 
+def cannot_change_preflight(path: str) -> bool:
+    """a path whose change cannot change what the full preflight builds, runs or compares: under docs/ (the
+    landing's own ledgers and the API snapshot among them) or a Markdown file. Everything else can (sources,
+    tests and their fixtures, examples, benches, fuzz, build scripts, manifests, the toolchain pin, .cargo/,
+    the preflight and the workflows it is compared with), so a receipt of a tree differing in it is not used.
+    No Rust source names a docs/ or .md path (scripts/test_land.py reads them all to keep this so).
+    The preflight's Python checks do read docs/ (the documents lint, the API snapshot compare), so a docs-only
+    difference can change a preflight result: that is accepted only because those checks do not depend on the
+    platform and the CI runs them on the landing tree. Do not widen this to a path on that reasoning unless the
+    same two things hold for every check that reads it; a path any platform-dependent step reads stays out"""
+    return path.startswith("docs/") or path.endswith(".md")
+
+
 class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
                  replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=say,
@@ -1355,10 +1368,30 @@ class Lander:
                         else "the local preflight"))
         return self.public
 
+    def macos_receipt_trees(self, tree: str, others: list[str]) -> list[str]:
+        """the trees whose macOS receipt covers `tree`, the tree this landing pushes: `tree` itself, and each of
+        `others` (the tree before the ledger commit, the author's tip before the rebase) whose every difference
+        from it is a path that cannot change the preflight (cannot_change_preflight); any other difference (a
+        rebase that brought in sources, tests, a toolchain or the preflight itself) means the Mac never ran it"""
+        kept = [tree]
+        for t in dict.fromkeys(others):
+            if t == tree:
+                continue
+            changed = [p for p in self.git("diff", "--name-only", "--no-renames", t, tree).splitlines() if p]
+            other = [p for p in changed if not cannot_change_preflight(p)]
+            if other:
+                line = (f"macOS receipt: tree {t[:12]} not used: it differs from {tree[:12]} in "
+                        f"{len(other)} path(s) the preflight can read ({', '.join(other[:3])})")
+                self.log(line)
+                self.record.append(line)
+            else:
+                kept.append(t)
+        return kept
+
     def check_macos_receipt(self, trees: list[str]) -> None:
         """the hosted macOS test legs run weekly, not on a push (docs/CI_TRIGGERS.md, the weekly class): a landing
-        asks instead for a receipt of a full preflight of one of `trees` (the change's tree, or the tree with this
-        landing's ledger commit) made on an arm64 Mac, whose parity check compared at least one ci.yml `cargo test`
+        asks instead for a receipt of a full preflight of one of `trees` (the tree this landing pushes, or one
+        macos_receipt_trees kept) made on an arm64 Mac, whose parity check compared at least one ci.yml `cargo test`
         command. The hooks checkout's scripts/receipt_verify.py reads it, from this machine or the remote receipt
         machine; none is a refusal, never a pass"""
         tool = hooks_tool("scripts/receipt_verify.py")
@@ -2065,10 +2098,11 @@ class Lander:
     def prepare(self, verify: str) -> str:
         """Rebase when needed, rebuild and commit the ledgers, run the checks, then
         `verify`: preflight / compile / none. Returns HEAD."""
+        # the author's tip: the full macOS preflight is usually run there, before this landing's rebase
+        author_tree = self.git("rev-parse", "HEAD^{tree}")
         if self.needs_rebase():
             self.rebase()
-        # the tree the change brings, before this landing's own ledger commit (a receipt made on the author's tip
-        # covers it: the ledgers are generated from it)
+        # the tree the change brings, before this landing's own ledger commit
         source_tree = self.git("rev-parse", "HEAD^{tree}")
         self.decide_scip()
         self.regenerate()
@@ -2081,7 +2115,7 @@ class Lander:
         if self.direct_reason is None and self.is_public():
             # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local; the hosted
             # macOS legs are weekly, so the arm64 macOS run is a full preflight made on an arm64 Mac (macOS receipt)
-            self.check_macos_receipt([source_tree, tree])
+            self.check_macos_receipt(self.macos_receipt_trees(tree, [source_tree, author_tree]))
             if tree != self.preflighted_tree:
                 self.run_cheap()
                 self.preflighted_tree = tree
