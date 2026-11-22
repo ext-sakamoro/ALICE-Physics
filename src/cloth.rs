@@ -8961,3 +8961,85 @@ mod near_cache_tests {
         assert!(total <= 49 * 1024, "the near lists hold {total} entries");
     }
 }
+
+#[cfg(test)]
+mod rollback_structure_tests {
+    use super::*;
+
+    fn plain() -> Cloth {
+        Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 3, 3, Fix128::ONE)
+    }
+
+    fn variants() -> [Cloth; 4] {
+        let p = plain();
+        let mut t = plain();
+        t.set_rest_tether(Fix128::from_int(4), Fix128::from_ratio(1, 2));
+        let mut a = plain();
+        a.set_area_constraint(Fix128::from_ratio(1, 100));
+        let mut b = plain();
+        b.set_rest_tether(Fix128::from_int(4), Fix128::from_ratio(1, 2));
+        b.set_area_constraint(Fix128::from_ratio(1, 100));
+        [p, t, a, b]
+    }
+
+    /// Each bad input to `restore_area_constraint` is refused on its own (a rest-area
+    /// list of the wrong length with a valid compliance, a negative compliance with the
+    /// right length), and a refusal leaves the cloth without an area constraint.
+    #[test]
+    fn restore_area_constraint_refuses_each_bad_input_alone() {
+        let mut c = plain();
+        let n = c.triangles.len();
+        assert!(n > 1, "the grid has no triangles: the case tests nothing");
+        let areas = vec![Fix128::from_ratio(1, 8); n];
+        assert_eq!(
+            c.restore_area_constraint(Fix128::ZERO, areas[..n - 1].to_vec()),
+            Err(())
+        );
+        assert_eq!(c.area_constraint(), None);
+        assert_eq!(
+            c.restore_area_constraint(-Fix128::ONE, areas.clone()),
+            Err(())
+        );
+        assert_eq!(c.area_constraint(), None);
+        assert_eq!(c.restore_area_constraint(Fix128::ZERO, areas), Ok(()));
+        assert_eq!(c.area_constraint(), Some(Fix128::ZERO));
+    }
+
+    /// A rollback section is read back only by a body of the same structure: a body that
+    /// differs only by a tether or an area constraint refuses it (the structure hash
+    /// differs), a body built the same way accepts it, and the four structures give four
+    /// different hashes.
+    #[test]
+    fn read_rollback_refuses_a_section_from_another_structure() {
+        let vs = variants();
+        let hashes: Vec<u64> = vs.iter().map(Cloth::structure_hash).collect();
+        for i in 0..4 {
+            for j in 0..4 {
+                if i != j {
+                    assert_ne!(hashes[i], hashes[j], "structures {i} and {j} share a hash");
+                }
+            }
+        }
+        for (i, src) in vs.iter().enumerate() {
+            let mut blob = Vec::new();
+            src.write_rollback(&mut blob);
+            for (j, dst) in variants().iter_mut().enumerate() {
+                let got = dst.read_rollback(&mut Cursor::new(&blob, 0), false);
+                assert_eq!(
+                    got.is_some(),
+                    i == j,
+                    "section of structure {i} read by {j}"
+                );
+            }
+        }
+    }
+
+    /// The structure hash travels inside rollback blobs, so its value is part of the blob
+    /// format: a blob written by one build or target must be readable by another. This
+    /// pins it for a cloth with both a tether and an area constraint (flags byte 3).
+    #[test]
+    fn structure_hash_with_tether_and_area_is_pinned() {
+        let [.., both] = variants();
+        assert_eq!(both.structure_hash(), 7517482493617706342);
+    }
+}

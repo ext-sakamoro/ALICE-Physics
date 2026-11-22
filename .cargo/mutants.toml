@@ -104,6 +104,14 @@
 #   fields packed into disjoint bit ranges, the 21-bit inputs `morton_code`
 #   clamps before `expand_bits` spreads them). For disjoint operands `a | b`
 #   and `a ^ b` are the same bits.
+
+# `replace | with ^ in Cloth::write_state` and `in Cloth::structure_hash`
+#   (src/cloth.rs): the single `|` in each builds the flags byte as
+#   `u8::from(tether) | (u8::from(area) << 1)`; `u8::from(bool)` is 0 or 1, so the
+#   left operand can only set bit 0 and the right one only bit 1, and `|` and `^`
+#   give the same byte for all four inputs. The other mutants of these lines
+#   (`| with &`, `<< with >>`) change the byte and are killed by the cloth
+#   `rollback_structure_tests`.
 #
 # `replace < with <= in Fix128::from_f64`: `f <= 0.0` differs from `f < 0.0`
 #   only at `f == 0.0`, where the fraction `lo` is 0, so `f <= 0.0 && lo != 0`
@@ -186,6 +194,7 @@ exclude_re = [
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
     "replace \\| with \\^ in (widening_mul_by_words|limbs_to_u128|divide_limbs|sqrt_step|isqrt_shifted)$",
     "replace \\| with \\^ in select_fix128$",
+    "replace \\| with \\^ in Cloth::(write_state|structure_hash)$",
     "replace \\| with \\^ in (expand_bits|morton_code|BvhNode::leaf)$",
     "bvh\\.rs:539:.*replace \\| with \\^ in LinearBvh::build_recursive",
     "replace < with <= in Fix128::(from_f64|from_ratio)$",
