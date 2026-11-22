@@ -685,6 +685,55 @@ class MacosReceipt(Isolated):
         with self.assertRaisesRegex(land.LandError, "no full preflight made on an arm64 Mac"):
             self.real([])
 
+    def rebased_on(self, upstream_files: dict[str, str]):
+        """the author's tip has a receipt; the upstream moved by `upstream_files` first, so the landing rebases"""
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        author_tree = git(self.r.work, "rev-parse", "HEAD^{tree}")
+        self.r.push_upstream(upstream_files, "upstream moved")
+        (self.cc / "macos-receipts.txt").write_text(author_tree)
+
+        class RealMac(PublicLander):
+            def check_macos_receipt(self, trees):
+                land.Lander.check_macos_receipt(self, trees)
+        return RealMac(self.r.work, "T-1"), author_tree
+
+    def test_a_rebase_that_brings_only_non_build_files_keeps_the_author_receipt(self):
+        lander, author_tree = self.rebased_on({"docs/notes.md": "n\n", "scripts/tool.py": "t\n"})
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertNotEqual(git(self.r.work, "rev-parse", f"{sha}^{{tree}}"), author_tree, "the landing rebased")
+        self.assertTrue(any(r.startswith("macOS receipt: tree " + author_tree[:12]) for r in lander.record),
+                        lander.record)
+
+    def test_a_rebase_that_brings_source_refuses_the_author_receipt(self):
+        for files in ({"src/other.rs": "o\n"}, {"Cargo.toml": "[package]\n"}, {"member/src/lib.rs": "m\n"}):
+            with self.subTest(files=files):
+                self.tearDown_repo()
+                lander, author_tree = self.rebased_on(files)
+                before = self.r.origin_head()
+                with self.assertRaisesRegex(land.LandError, "no full preflight made on an arm64 Mac"):
+                    lander.land()
+                self.assertEqual(self.r.origin_head(), before)
+                self.assertTrue(any(f"tree {author_tree[:12]} not used" in r for r in lander.record), lander.record)
+                asked = (self.cc / "receipt-verify.log").read_text().split()
+                self.assertNotIn(author_tree, asked, "a tree with other source is never asked for")
+
+    def tearDown_repo(self):
+        """a fresh repository and a fresh verifier log for each sub-case"""
+        self.r.close()
+        self.r = Repo()
+        assert_local_origin(self.r.work, self.r.dir)
+        log = self.cc / "receipt-verify.log"
+        if log.exists():
+            log.unlink()
+
+    def test_build_inputs(self):
+        for path, want in (("src/a.rs", True), ("member/src/lib.rs", True), ("Cargo.toml", True),
+                           ("Cargo.lock", True), ("fuzz/Cargo.toml", True), ("docs/src.md", False),
+                           ("src", False), ("scripts/land.py", False), ("tests/a.rs", False), ("CHANGELOG.md", False)):
+            with self.subTest(path=path):
+                self.assertEqual(land.is_build_input(path), want)
+
 
 class AllRunsVerdict(unittest.TestCase):
     def run_(self, i, name, status, conclusion=None):

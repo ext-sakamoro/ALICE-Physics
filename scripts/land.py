@@ -1200,6 +1200,13 @@ def message_problems(message: str) -> list[str]:
     return out
 
 
+def is_build_input(path: str) -> bool:
+    """a path a build of the crates reads: under a `src` directory (at any depth: workspace members, fuzz) or a
+    `Cargo.*` file (manifest, lock)"""
+    parts = path.split("/")
+    return "src" in parts[:-1] or parts[-1].startswith("Cargo.")
+
+
 class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
                  replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=say,
@@ -1355,10 +1362,30 @@ class Lander:
                         else "the local preflight"))
         return self.public
 
+    def macos_receipt_trees(self, tree: str, others: list[str]) -> list[str]:
+        """the trees whose macOS receipt covers `tree`, the tree this landing pushes: `tree` itself, and each of
+        `others` (the tree before the ledger commit, the author's tip before the rebase) that differs from it in no
+        build input, i.e. no path with a `src` directory and no `Cargo.*` file (a receipt of a tree the rebase
+        brought new source into has not built that source on the Mac)"""
+        kept = [tree]
+        for t in dict.fromkeys(others):
+            if t == tree:
+                continue
+            changed = [p for p in self.git("diff", "--name-only", "--no-renames", t, tree).splitlines() if p]
+            inputs = [p for p in changed if is_build_input(p)]
+            if inputs:
+                line = (f"macOS receipt: tree {t[:12]} not used: it differs from {tree[:12]} in "
+                        f"{len(inputs)} build input(s) ({', '.join(inputs[:3])})")
+                self.log(line)
+                self.record.append(line)
+            else:
+                kept.append(t)
+        return kept
+
     def check_macos_receipt(self, trees: list[str]) -> None:
         """the hosted macOS test legs run weekly, not on a push (docs/CI_TRIGGERS.md, the weekly class): a landing
-        asks instead for a receipt of a full preflight of one of `trees` (the change's tree, or the tree with this
-        landing's ledger commit) made on an arm64 Mac, whose parity check compared at least one ci.yml `cargo test`
+        asks instead for a receipt of a full preflight of one of `trees` (the tree this landing pushes, or one
+        macos_receipt_trees kept) made on an arm64 Mac, whose parity check compared at least one ci.yml `cargo test`
         command. The hooks checkout's scripts/receipt_verify.py reads it, from this machine or the remote receipt
         machine; none is a refusal, never a pass"""
         tool = hooks_tool("scripts/receipt_verify.py")
@@ -2065,10 +2092,11 @@ class Lander:
     def prepare(self, verify: str) -> str:
         """Rebase when needed, rebuild and commit the ledgers, run the checks, then
         `verify`: preflight / compile / none. Returns HEAD."""
+        # the author's tip: the full macOS preflight is usually run there, before this landing's rebase
+        author_tree = self.git("rev-parse", "HEAD^{tree}")
         if self.needs_rebase():
             self.rebase()
-        # the tree the change brings, before this landing's own ledger commit (a receipt made on the author's tip
-        # covers it: the ledgers are generated from it)
+        # the tree the change brings, before this landing's own ledger commit
         source_tree = self.git("rev-parse", "HEAD^{tree}")
         self.decide_scip()
         self.regenerate()
@@ -2081,7 +2109,7 @@ class Lander:
         if self.direct_reason is None and self.is_public():
             # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local; the hosted
             # macOS legs are weekly, so the arm64 macOS run is a full preflight made on an arm64 Mac (macOS receipt)
-            self.check_macos_receipt([source_tree, tree])
+            self.check_macos_receipt(self.macos_receipt_trees(tree, [source_tree, author_tree]))
             if tree != self.preflighted_tree:
                 self.run_cheap()
                 self.preflighted_tree = tree
