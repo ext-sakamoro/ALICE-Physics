@@ -299,6 +299,16 @@ class Workflow(unittest.TestCase):
         self.assertEqual(len(weekly_only), 8)
         self.assertTrue(all("inputs.diff_base == ''" in ln for ln in weekly_only), weekly_only)
 
+    def test_the_nightly_and_the_weekly_schedule_share_one_group_that_queues(self):
+        # both crons are in this one file, under one group for the whole workflow: a weekly run that is
+        # still going makes the nightly wait (cancel-in-progress false: the running one is never cut)
+        on, rest = self.TEXT.split("\non:\n", 1)[1].split("\nconcurrency:\n", 1)
+        self.assertEqual(on.count("    - cron: "), 2)
+        block = rest.split("\n\n", 1)[0]
+        self.assertEqual(block, "  group: ${{ github.workflow }}\n  cancel-in-progress: false")
+        self.assertEqual(self.TEXT.count("\nconcurrency:"), 1)
+        self.assertNotIn("    concurrency:", self.TEXT, "no job overrides the group")
+
     def test_the_feature_axes_of_the_plan_step_are_the_script_s(self):
         self.assertIn(f'for axis in "default=" "features={mn.AXES["features"]}"; do', self.TEXT)
 
