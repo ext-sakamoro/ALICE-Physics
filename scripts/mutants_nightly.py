@@ -2,8 +2,10 @@
 """The plan of the in-diff mutation runs of .github/workflows/quality-deep.yml: how many shards a night's diff
 takes, which commit the diff starts from, and which ranges were set aside for the weekly run.
 
-One job tests about 100 mutants of a diff in its time limit (measured 11-17 to 11-21: 115-180 outcomes in 270
-min at -j 2), so a night's plan is cut into shards of at most PER mutants per feature axis, at most CAP shards
+How many mutants one job gets through in its time limit depends on that night's tests (11-17 to 11-21: 115-180
+outcomes in 270 min at -j 2; 11-22, with a 155 s build and a 264 s test run unmutated: 73 of 96, the job was
+stopped). So the plan job runs the unmutated baseline of each axis first and a shard is given what fits in the
+limit at the slowest measured mutant (`per_from_baseline`); a night's plan is cut into such shards, at most CAP
 per axis. A night whose plan is larger than CAP shards is not run: it is recorded as `over-cap` with its range
 base..head and its counts, and the weekly run tests that range (without the cap). Every plan writes a record
 (`mutants-record.json`, uploaded as an artifact of the run); nothing is committed.
@@ -29,7 +31,9 @@ expired or unreadable is an error (exit 2), never "no open range".
     mutants_nightly.py fetch --repo OWNER/REPO --self RUN_ID --out runs.json
     mutants_nightly.py base  --runs runs.json                         # prints the base sha, or nothing
     mutants_nightly.py plan  --mode nightly|pr --runs runs.json --base B --head H \\
-        --count default=N --count features=M --out-record R --out-matrix M   # exit 5 = over the cap
+        --count default=N --count features=M --per default=P --per features=Q \\
+        --out-record R --out-matrix M                                 # exit 5 = over the cap
+    mutants_nightly.py per   --out mutants.out                        # the shard size from a baseline
     mutants_nightly.py weekly --runs runs.json --head H --now ISO --out-record R --out-matrix M
     mutants_nightly.py age   --record R --now ISO                     # exit 1 = a range open for too long
 
@@ -46,7 +50,15 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-PER = 100            # mutants one shard job is given
+STOP_S = 270 * 60    # the `timeout ... 270m` around cargo mutants in the shard step
+JOBS = 2             # its `-j 2`
+# a mutant against the unmutated baseline of its own run, the slowest measured: build 232 s on 155 s (run
+# 44989179739, 11-22), test 2.6x (nightlies 11-10 to 11-20, the spread in the shard step's comment)
+BUILD_SLOW = 1.5
+TEST_SLOW = 2.6
+# for a range recorded without its measure (a record written before 2026-11-23): what the 11-22 baseline
+# (155 s build + 264 s test) gives
+PER_UNMEASURED = 34
 CAP = 8              # shards per feature axis in one night
 MAX_AGE_DAYS = 8     # an over-cap range older than this fails the weekly age job
 WINDOW_DAYS = 21     # how far back the runs are read (the record artifacts are kept 30 days)
@@ -65,7 +77,41 @@ class RecordError(Exception):
     """a record that exists but cannot be read"""
 
 
-def shards_for(count: int, per: int = PER) -> int:
+def per_from_baseline(build_s: float, test_s: float) -> int:
+    """the mutants one shard job is given: what fits between the baseline and the stop when every mutant
+    builds and tests as slowly as the slowest measured one (a missed mutant runs the whole test set)"""
+    if build_s <= 0 or test_s <= 0:
+        raise ValueError(f"baseline build {build_s} s / test {test_s} s: not a measurement")
+    each = (BUILD_SLOW * build_s + TEST_SLOW * test_s) / JOBS
+    left = STOP_S - build_s - test_s
+    if left < each:
+        raise ValueError(f"the unmutated baseline takes {build_s:.0f} s build + {test_s:.0f} s test: not one mutant "
+                         f"({each:.0f} s) fits in the {STOP_S} s of a shard job")
+    return int(left // each)
+
+
+def read_baseline(out: Path) -> tuple[float, float]:
+    """(build seconds, test seconds) of the unmutated baseline of a cargo-mutants output directory"""
+    root = out / "mutants.out" if (out / "mutants.out").is_dir() else out
+    result = json.loads((root / "outcomes.json").read_text(encoding="utf-8"))
+    base = [o for o in result.get("outcomes", []) if o.get("scenario") == "Baseline"]
+    if len(base) != 1 or base[0].get("summary") != "Success":
+        raise ValueError(f"{root}: the unmutated baseline did not succeed "
+                         f"({[o.get('summary') for o in base] or 'no baseline outcome'})")
+    took = {p.get("phase"): float(p.get("duration", 0)) for p in base[0].get("phase_results", [])
+            if p.get("process_status") == "Success"}
+    if set(took) != {"Build", "Test"}:
+        raise ValueError(f"{root}: the baseline has phases {sorted(took)}, not Build and Test")
+    return took["Build"], took["Test"]
+
+
+def per_of(o: dict) -> dict[str, int]:
+    """the shard size per axis a recorded range was planned with"""
+    per = o.get("per") or {}
+    return {a: int(per.get(a, PER_UNMEASURED)) for a in AXES}
+
+
+def shards_for(count: int, per: int) -> int:
     """the number of shards a plan of `count` mutants takes (0 for an empty plan)"""
     if count < 0 or per <= 0:
         raise ValueError(f"count {count} / per {per}")
@@ -135,7 +181,8 @@ def open_ranges(runs: list[dict]) -> list[dict]:
         rec = r.get("record")
         if rec and rec.get("kind") == "nightly" and rec.get("state") == "over-cap":
             found.setdefault(range_id(rec["base"], rec["head"]),
-                             {"base": rec["base"], "head": rec["head"], "counts": rec["counts"], "since": r["created_at"]})
+                             {"base": rec["base"], "head": rec["head"], "counts": rec["counts"],
+                              **({"per": rec["per"]} if rec.get("per") else {}), "since": r["created_at"]})
     for r in ordered:
         rec = r.get("record")
         if not rec or rec.get("kind") != "weekly":
@@ -156,10 +203,10 @@ def stale(ranges: list[dict], now: str, max_age_days: int = MAX_AGE_DAYS) -> lis
     return [o for o in ranges if parse_time(o["since"]) < limit]
 
 
-def diff_entries(base: str, head: str, counts: dict[str, int], per: int = PER) -> list[dict]:
+def diff_entries(base: str, head: str, counts: dict[str, int], per: dict[str, int]) -> list[dict]:
     out = []
     for axis, features in AXES.items():
-        n = shards_for(counts.get(axis, 0), per)
+        n = shards_for(counts.get(axis, 0), per[axis])
         out += [{"kind": "diff", "shard": k, "of": n, "features": features, "base": base, "head": head,
                  "label": diff_job_label(base, head, k, n, axis),
                  "artifact": f"mutants-diff-{base[:12]}-{head[:12]}-{k}-{axis}"} for k in range(n)]
@@ -167,12 +214,17 @@ def diff_entries(base: str, head: str, counts: dict[str, int], per: int = PER) -
 
 
 def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carried: list[dict], why: str,
-                   per: int = PER, cap: int = CAP) -> tuple[dict, list[dict]]:
-    """(the record of a nightly / pr plan, its matrix entries)"""
+                   per: dict[str, int], cap: int = CAP) -> tuple[dict, list[dict]]:
+    """(the record of a nightly / pr plan, its matrix entries); `per` is the shard size of each axis that has
+    a mutant, from that axis' baseline of tonight"""
     unknown = sorted(set(counts) - set(AXES))
     if unknown or set(counts) != set(AXES):
         raise ValueError(f"counts must name exactly {sorted(AXES)}, got {sorted(counts)}")
-    shards = {a: shards_for(counts[a], per) for a in AXES}
+    unmeasured = sorted(a for a in AXES if counts[a] > 0 and a not in per)
+    if unmeasured or set(per) - set(AXES):
+        raise ValueError(f"an axis with mutants needs its shard size: missing {unmeasured}, got {sorted(per)}")
+    per = {a: int(per.get(a, PER_UNMEASURED)) for a in AXES}
+    shards = {a: shards_for(counts[a], per[a]) for a in AXES}
     if sum(counts.values()) == 0:
         state, entries = "empty", []
     elif max(shards.values()) > cap:
@@ -180,11 +232,11 @@ def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carr
     else:
         state, entries = "accepted", diff_entries(base, head, counts, per)
     rec = {"v": 1, "kind": mode, "state": state, "base": base, "head": head, "base_reason": why, "counts": counts,
-           "shards": shards, "jobs": len(entries), "open": carried}
+           "per": per, "shards": shards, "jobs": len(entries), "open": carried}
     return rec, entries
 
 
-def weekly_record(head: str, ranges: list[dict], now: str, per: int = PER) -> tuple[dict, list[dict]]:
+def weekly_record(head: str, ranges: list[dict], now: str) -> tuple[dict, list[dict]]:
     """(the record of a weekly plan, its matrix entries): the core shards and every open range"""
     entries = [{"kind": "core", "shard": k, "of": CORE_SHARDS, "features": f, "base": "", "head": head,
                 "label": f"core shard {k}/{CORE_SHARDS}, {a}",
@@ -192,7 +244,7 @@ def weekly_record(head: str, ranges: list[dict], now: str, per: int = PER) -> tu
                for k in range(CORE_SHARDS) for a, f in AXES.items()]
     taken = []
     for o in ranges:
-        mine = diff_entries(o["base"], o["head"], o["counts"], per)
+        mine = diff_entries(o["base"], o["head"], o["counts"], per_of(o))
         if not mine:
             raise ValueError(f"open range {range_id(o['base'], o['head'])} has no mutant to test (counts {o['counts']})")
         entries += mine
@@ -298,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--head", required=True)
     p.add_argument("--base-reason", default="")
     p.add_argument("--count", action="append", default=[], metavar="AXIS=N")
+    p.add_argument("--per", action="append", default=[], metavar="AXIS=N",
+                   help="the shard size of an axis (the `per` subcommand's output); needed for an axis with mutants")
     p.add_argument("--now", required=True)
     w = sub.add_parser("weekly")
     w.add_argument("--head", required=True)
@@ -306,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
         x.add_argument("--runs", required=True)
         x.add_argument("--out-record", required=True)
         x.add_argument("--out-matrix", required=True)
+    m = sub.add_parser("per")
+    m.add_argument("--out", required=True, help="a cargo-mutants output directory holding the baseline")
     a = sub.add_parser("age")
     a.add_argument("--record", required=True)
     a.add_argument("--now", required=True)
@@ -315,6 +371,11 @@ def main(argv: list[str] | None = None) -> int:
             runs = fetch(args.repo, args.self_id, datetime.now(timezone.utc))
             Path(args.out).write_text(json.dumps(runs), encoding="utf-8")
             print(f"read {len(runs)} run(s), {sum(1 for r in runs if r['record'])} with a record")
+            return 0
+        if args.cmd == "per":
+            build_s, test_s = read_baseline(Path(args.out))
+            print(per_from_baseline(build_s, test_s))
+            print(f"unmutated baseline {build_s:.0f} s build + {test_s:.0f} s test", file=sys.stderr)
             return 0
         if args.cmd == "age":
             rec = json.loads(Path(args.record).read_text(encoding="utf-8"))
@@ -337,16 +398,18 @@ def main(argv: list[str] | None = None) -> int:
                   f"than {MAX_AGE_DAYS} days")
             return 0
         counts = {k: int(v) for k, v in (c.split("=", 1) for c in args.count)}
+        per = {k: int(v) for k, v in (c.split("=", 1) for c in args.per)}
         rec, entries = nightly_record(args.mode, args.base, args.head, counts,
-                                      open_ranges(runs) if args.mode == "nightly" else [], args.base_reason)
+                                      open_ranges(runs) if args.mode == "nightly" else [], args.base_reason, per)
         if rec["state"] == "over-cap" and args.mode == "nightly":
             rec["open"] = rec["open"] + [{"base": args.base, "head": args.head, "counts": counts,
-                                          "since": args.now}]
+                                          "per": rec["per"], "since": args.now}]
         write_out(args, rec, entries)
-        print(f"{args.mode}: {rec['state']}, {range_id(args.base, args.head)}, mutants {counts}, shards {rec['shards']}")
+        print(f"{args.mode}: {rec['state']}, {range_id(args.base, args.head)}, mutants {counts}, "
+              f"per shard {rec['per']}, shards {rec['shards']}")
         if rec["state"] == "over-cap":
             print(f"error: the plan of {range_id(args.base, args.head)} takes {max(rec['shards'].values())} shards on "
-                  f"an axis, over the cap of {CAP} ({CAP * PER} mutants): not run tonight"
+                  f"an axis, over the cap of {CAP} ({' / '.join(f'{a} {CAP * n}' for a, n in rec['per'].items())} mutants): not run tonight"
                   + (", set aside for the weekly run" if args.mode == "nightly" else ""), file=sys.stderr)
             return OVER_CAP
         return 0
