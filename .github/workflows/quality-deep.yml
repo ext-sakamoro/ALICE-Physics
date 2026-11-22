@@ -77,9 +77,13 @@ jobs:
           tool: cargo-mutants@27.1.0
       - name: Mutants (scoped)
         run: |
-          # --build-timeout + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
+          # build deadline + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
           # send rustc const-eval into an unbounded loop that the test timeout never
           # reaches; the runner then dies of OOM (shard 7/8 twice, 2026-09-15).
+          # The build deadline is 3x this run's own unmutated build (--build-timeout-multiplier),
+          # not a fixed time: at a fixed 240 s the feature axis (unmutated build 157-168 s, two
+          # builds at once under -j 2) read build timeout for 129 of 171, 132 of 132 and 78 of
+          # 105 mutants on the nights of 11-17, 11-20 and 11-21, and tested none of them.
           # Exit codes: 0 all caught, 2 missed, 3 timeouts = measurement results;
           # anything else (4 = unmutated baseline red, 1 = usage) fails the job —
           # a red baseline measured nothing and used to be hidden by `|| true`.
@@ -98,7 +102,7 @@ jobs:
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           ulimit -v 6291456
           set +e
-          cargo mutants ${{ inputs.scope }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 -j 2 --output mutants.out \
+          cargo mutants ${{ inputs.scope }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
@@ -218,7 +222,7 @@ jobs:
           # Exit 4 = the unmutated baseline failed or timed out: nothing was measured, so the
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 -j 2 --output mutants.out \
+            cargo mutants --in-diff /tmp/planned.diff --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
             ${features:+--features "$features"} --cargo-arg=--lib $tests 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
@@ -285,7 +289,7 @@ jobs:
           ulimit -v 6291456
           set +e
           # test timeout derived from the run's own baseline (see the in-diff step for the numbers)
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout 240 --output mutants.out \
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \

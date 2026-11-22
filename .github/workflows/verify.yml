@@ -224,7 +224,7 @@ jobs:
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
             cargo mutants --in-diff /tmp/planned.diff --shard "$SHARD/$SHARDS" --timeout-multiplier 3 --minimum-test-timeout 60 \
-            --build-timeout 240 -j 2 --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests \
+            --build-timeout-multiplier 3 -j 2 --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests \
             2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
