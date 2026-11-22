@@ -8961,3 +8961,148 @@ mod near_cache_tests {
         assert!(total <= 49 * 1024, "the near lists hold {total} entries");
     }
 }
+
+#[cfg(test)]
+mod separation_stage_tests {
+    use super::*;
+
+    /// `k` square sheets (two triangles each) stacked `gap` apart, sheet `j` with corners
+    /// `(j, j)` and `(2w - j, 2w - j)` in eighths, so each vertex sits over the interior of
+    /// the sheet below; the bottom sheet (stored last, so the Gauss-Seidel order meets it
+    /// last) is pinned. No edge constraints: the near lists hold only each particle.
+    fn stack(k: i64, w: i64, gap: Fix128, thickness: Fix128) -> Cloth {
+        let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        c.positions.clear();
+        c.prev_positions.clear();
+        c.velocities.clear();
+        c.inv_masses.clear();
+        c.triangles.clear();
+        c.edge_constraints.clear();
+        c.bend_constraints.clear();
+        c.config.self_collision = true;
+        c.config.self_collision_distance = thickness;
+        for j in (0..k).rev() {
+            let y = gap * Fix128::from_int(j);
+            let inv = if j == 0 { Fix128::ZERO } else { Fix128::ONE };
+            let base = c.positions.len();
+            let (lo, hi) = (j, 2 * w - j);
+            for (x, z) in [(lo, lo), (hi, lo), (lo, hi), (hi, hi)] {
+                let p = Vec3Fix::new(Fix128::from_ratio(x, 8), y, Fix128::from_ratio(z, 8));
+                c.positions.push(p);
+                c.prev_positions.push(p);
+                c.velocities.push(Vec3Fix::ZERO);
+                c.inv_masses.push(inv);
+            }
+            c.triangles.push([base, base + 1, base + 2]);
+            c.triangles.push([base + 1, base + 3, base + 2]);
+        }
+        c
+    }
+
+    fn filtered(c: &mut Cloth, t: Fix128) -> (Vec<(u32, u32)>, Vec<[u32; 4]>) {
+        let margin = t.double();
+        c.refresh_near_cache(t);
+        let tris = c.triangles.clone();
+        let mut vf = c.collect_vertex_face_candidates(margin);
+        let mut ee = c.collect_edge_edge_candidates(margin);
+        let lists = &c.near_cache.lists;
+        let near = |a: usize, b: usize| lists[a].binary_search(&(b as u32)).is_ok();
+        vf.retain(|&(v, tt)| !tris[tt as usize].iter().any(|&k| near(v as usize, k)));
+        ee.retain(|e| {
+            ![(e[0], e[2]), (e[0], e[3]), (e[1], e[2]), (e[1], e[3])]
+                .iter()
+                .any(|&(a, b)| near(a as usize, b as usize))
+        });
+        vf.sort_unstable();
+        ee.sort_unstable();
+        (vf, ee)
+    }
+
+    fn inside(c: &Cloth, vf: &[(u32, u32)], ee: &[[u32; 4]], t: Fix128) -> u32 {
+        let n = c.particle_count();
+        let mut d = vec![Vec3Fix::ZERO; n];
+        let mut h = vec![0u32; n];
+        c.accumulate_vertex_face_contacts(vf, t, &mut d, &mut h);
+        c.accumulate_edge_edge_contacts(ee, t, &mut d, &mut h);
+        h.iter().sum()
+    }
+
+    /// The smallest stack that reaches the pass budget: three sheets a half thickness
+    /// apart, thickness 1/8, the bottom pinned.
+    fn capped_stack() -> (Cloth, Fix128) {
+        let t = Fix128::from_ratio(1, 8);
+        (stack(3, 12, t.half(), t), t)
+    }
+
+    /// On a stack that reaches the pass budget, the cluster stage takes every contact
+    /// touching a vertex still moving (the vertex or any corner of the face, either edge
+    /// end) and ends with no contact inside the thickness. Stopping at the budget leaves
+    /// contacts inside, and so does a cluster stage that takes only the contacts whose
+    /// vertex and face both still move.
+    #[test]
+    fn the_cluster_stage_takes_every_contact_touching_a_moving_vertex() {
+        let (mut c, t) = capped_stack();
+        let (vf, ee) = filtered(&mut c, t);
+        let edges = c.mesh_edges();
+        let mut budget_only = c.clone();
+        let (converged, _) = budget_only.separation_passes(
+            &vf,
+            &ee,
+            t,
+            &edges,
+            Cloth::SEPARATION_PASSES,
+            Fix128::ONE,
+        );
+        assert!(
+            !converged,
+            "the budget is not reached: the case tests nothing"
+        );
+        let left = inside(&budget_only, &vf, &ee, t);
+        assert!(
+            left > 0,
+            "the budget alone separates everything: the case tests nothing"
+        );
+
+        c.separate_contacts(t, Fix128::from_int(64));
+
+        assert_eq!(
+            inside(&c, &vf, &ee, t),
+            0,
+            "contacts left inside the thickness after the cluster stage ({left} at the budget)"
+        );
+        assert_ne!(
+            c.positions, budget_only.positions,
+            "the cluster stage moved nothing"
+        );
+    }
+
+    /// The counters of a call that reaches the budget and whose cluster stage converges,
+    /// then of a second call on the separated stack, exactly.
+    #[test]
+    fn the_counters_of_a_capped_call_are_exact() {
+        let (mut c, t) = capped_stack();
+        let inv_dt = Fix128::from_int(64);
+        assert_eq!(c.self_contact_stats(), SelfContactStats::default());
+        c.separate_contacts(t, inv_dt);
+        let first = c.self_contact_stats();
+        c.separate_contacts(t, inv_dt);
+        let second = c.self_contact_stats();
+        let capped = SelfContactStats {
+            separation_calls: 1,
+            capped_calls: 1,
+            cluster_solves: 1,
+            cluster_converged: 1,
+            clipped_corrections: 0,
+        };
+        assert_eq!(first, capped, "after the capped call");
+        // the separated stack converges within the budget: only the call is counted
+        assert_eq!(
+            second,
+            SelfContactStats {
+                separation_calls: 2,
+                ..capped
+            },
+            "after the second call"
+        );
+    }
+}
