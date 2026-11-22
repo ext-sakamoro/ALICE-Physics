@@ -685,6 +685,79 @@ class MacosReceipt(Isolated):
         with self.assertRaisesRegex(land.LandError, "no full preflight made on an arm64 Mac"):
             self.real([])
 
+    def rebased_on(self, upstream_files: dict[str, str]):
+        """the author's tip has a receipt; the upstream moved by `upstream_files` first, so the landing rebases"""
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        author_tree = git(self.r.work, "rev-parse", "HEAD^{tree}")
+        self.r.push_upstream(upstream_files, "upstream moved")
+        (self.cc / "macos-receipts.txt").write_text(author_tree)
+
+        class RealMac(PublicLander):
+            def check_macos_receipt(self, trees):
+                land.Lander.check_macos_receipt(self, trees)
+        return RealMac(self.r.work, "T-1"), author_tree
+
+    def test_a_rebase_that_brings_only_docs_keeps_the_author_receipt(self):
+        lander, author_tree = self.rebased_on({"docs/notes.md": "n\n", "docs/oracle-status.md": "o\n",
+                                               "README.md": "r\n", "crates/x/README.md": "x\n"})
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertNotEqual(git(self.r.work, "rev-parse", f"{sha}^{{tree}}"), author_tree, "the landing rebased")
+        self.assertTrue(any(r.startswith("macOS receipt: tree " + author_tree[:12]) for r in lander.record),
+                        lander.record)
+
+    def test_a_rebase_that_brings_anything_the_preflight_reads_refuses_the_author_receipt(self):
+        for files in ({"src/other.rs": "o\n"}, {"member/src/lib.rs": "m\n"}, {"Cargo.toml": "[package]\n"},
+                      {"tests/new.rs": "t\n"}, {"tests/fixtures/golden.bin": "g\n"}, {"examples/e.rs": "e\n"},
+                      {"benches/b.rs": "b\n"}, {"fuzz/fuzz_targets/f.rs": "f\n"}, {"build.rs": "fn main() {}\n"},
+                      {"rust-toolchain.toml": "[toolchain]\n"}, {".cargo/config.toml": "[build]\n"},
+                      {"scripts/preflight.sh": "#!/bin/sh\n"}, {".github/workflows/ci.yml": "on: push\n"},
+                      {"docs/notes.md": "n\n", "scripts/tool.py": "t\n"}):
+            with self.subTest(files=files):
+                self.tearDown_repo()
+                lander, author_tree = self.rebased_on(files)
+                before = self.r.origin_head()
+                with self.assertRaisesRegex(land.LandError, "no full preflight made on an arm64 Mac"):
+                    lander.land()
+                self.assertEqual(self.r.origin_head(), before)
+                self.assertTrue(any(f"tree {author_tree[:12]} not used" in r for r in lander.record), lander.record)
+                asked = (self.cc / "receipt-verify.log").read_text().split()
+                self.assertNotIn(author_tree, asked, "a tree the Mac did not run is never asked for")
+
+    def tearDown_repo(self):
+        """a fresh repository and a fresh verifier log for each sub-case"""
+        self.r.close()
+        self.r = Repo()
+        assert_local_origin(self.r.work, self.r.dir)
+        log = self.cc / "receipt-verify.log"
+        if log.exists():
+            log.unlink()
+
+    def test_what_cannot_change_the_preflight(self):
+        for path, want in (("docs/a.md", True), ("docs/PUBLIC_API_SNAPSHOT.txt", True), ("README.md", True),
+                           ("crates/x/README.md", True), ("CHANGELOG.md", True), ("src/a.rs", False),
+                           ("tests/fixtures/a.json", False), ("rust-toolchain.toml", False), (".cargo/config.toml", False),
+                           ("scripts/preflight.sh", False), (".github/workflows/ci.yml", False), ("Cargo.lock", False),
+                           ("docs", False), ("src/docs/a.rs", False), ("a.md.rs", False)):
+            with self.subTest(path=path):
+                self.assertEqual(land.cannot_change_preflight(path), want)
+
+    def test_no_rust_source_reads_a_path_the_rule_lets_through(self):
+        """the rule holds only while no Rust file (compiled or run by the preflight) names a docs/ or .md path"""
+        root = Path(land.__file__).resolve().parent.parent
+        files = subprocess.run(["git", "ls-files", "-z", "*.rs"], cwd=root, capture_output=True,
+                               check=True).stdout.decode("utf-8").split("\0")
+        files = [f for f in files if f]
+        self.assertGreater(len(files), 100, "the Rust sources were not listed")
+        literal = re.compile(r'"[^"\n]*(?:docs/|\.md\b)[^"\n]*"')
+        hits = []
+        for f in files:
+            for n, line in enumerate((root / f).read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                code = line.split("//", 1)[0]
+                if literal.search(code):
+                    hits.append(f"{f}:{n}")
+        self.assertEqual(hits, [], "a Rust file names a docs/ or .md path: narrow cannot_change_preflight")
+
 
 class AllRunsVerdict(unittest.TestCase):
     def run_(self, i, name, status, conclusion=None):
