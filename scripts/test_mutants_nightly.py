@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mutants_nightly as mn  # noqa: E402
 
 A, B, C, D = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
+P = {"default": 100, "features": 100}   # the shard size the plans of these cases were measured at
 OK = [{"name": "Set up job", "conclusion": "success"}, {"name": mn.MEASURED_STEP, "conclusion": "success"}]
 KILLED = [{"name": "Set up job", "conclusion": "success"}, {"name": mn.MEASURED_STEP, "conclusion": "failure"}]
 
@@ -29,9 +31,10 @@ def jobs_of(entries: list[dict], steps=None) -> list[dict]:
 def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, drop: int = 0, carried=None) -> dict:
     """a nightly run of 2026-11-<day> with its record and the jobs its plan asked for (`drop` of them missing)"""
     counts = counts or {"default": 150, "features": 150}
-    rec, entries = mn.nightly_record("nightly", base, head, counts, carried or [], "test")
+    rec, entries = mn.nightly_record("nightly", base, head, counts, carried or [], "test", P)
     if rec["state"] == "over-cap":
-        rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "since": f"2026-11-{day:02d}T22:00:00Z"}]
+        rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "per": rec["per"],
+                                     "since": f"2026-11-{day:02d}T22:00:00Z"}]
     return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": "success",
             "jobs": jobs_of(entries, steps)[drop:], "record": rec, "record_error": None}
 
@@ -53,20 +56,20 @@ BIG = {"default": 1634, "features": 1634}
 
 class Shards(unittest.TestCase):
     def test_a_shard_holds_at_most_per_mutants(self):
-        self.assertEqual([mn.shards_for(n) for n in (0, 1, 100, 101, 388, 800, 801, 1634)], [0, 1, 1, 2, 4, 8, 9, 17])
+        self.assertEqual([mn.shards_for(n, 100) for n in (0, 1, 100, 101, 388, 800, 801, 1634)], [0, 1, 1, 2, 4, 8, 9, 17])
 
     def test_the_cap_is_per_axis_and_an_over_cap_plan_has_no_job(self):
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 800, "features": 105}, [], "")
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 800, "features": 105}, [], "", P)
         self.assertEqual((rec["state"], rec["shards"], len(entries), rec["jobs"]), ("accepted", {"default": 8, "features": 2}, 10, 10))
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 105, "features": 801}, [], "")
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 105, "features": 801}, [], "", P)
         self.assertEqual((rec["state"], entries, rec["jobs"]), ("over-cap", [], 0))
 
     def test_an_empty_plan_is_empty_not_accepted(self):
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 0, "features": 0}, [], "")
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 0, "features": 0}, [], "", P)
         self.assertEqual((rec["state"], entries), ("empty", []))
 
     def test_every_entry_names_its_range_shard_and_axis(self):
-        _, entries = mn.nightly_record("nightly", A, B, {"default": 101, "features": 1}, [], "")
+        _, entries = mn.nightly_record("nightly", A, B, {"default": 101, "features": 1}, [], "", P)
         self.assertEqual([(e["shard"], e["of"], e["features"]) for e in entries],
                          [(0, 2, ""), (1, 2, ""), (0, 1, "parallel,gpu-solver-bridge,simd")])
         self.assertEqual(entries[0]["label"], f"in-diff {'a' * 12}..{'b' * 12} shard 0/2, default")
@@ -77,7 +80,7 @@ class Shards(unittest.TestCase):
     def test_counts_must_name_both_axes(self):
         for counts in ({"default": 1}, {"default": 1, "features": 1, "other": 1}):
             with self.assertRaises(ValueError):
-                mn.nightly_record("nightly", A, B, counts, [], "")
+                mn.nightly_record("nightly", A, B, counts, [], "", P)
 
 
 class Base(unittest.TestCase):
@@ -198,6 +201,94 @@ class Age(unittest.TestCase):
         self.assertEqual(rec["stale"], [f"{'b' * 12}..{'c' * 12}"])
 
 
+class Per(unittest.TestCase):
+    """The shard size comes from the unmutated baseline of the night, not from a constant."""
+
+    def out(self, outcomes: list[dict]) -> Path:
+        d = Path(tempfile.mkdtemp()) / "mutants.out"
+        (d / "mutants.out").mkdir(parents=True)
+        (d / "mutants.out" / "outcomes.json").write_text(json.dumps({"outcomes": outcomes}), encoding="utf-8")
+        return d
+
+    @staticmethod
+    def baseline(build=155.2, test=264.4, summary="Success", test_status="Success") -> dict:
+        return {"scenario": "Baseline", "summary": summary, "phase_results": [
+            {"phase": "Build", "duration": build, "process_status": "Success"},
+            {"phase": "Test", "duration": test, "process_status": test_status}]}
+
+    def test_the_night_of_11_22_gets_shards_its_slowest_job_would_have_finished(self):
+        # run 44989179739: 155 s build + 264 s test unmutated; the default 1/2 job was given 96 and stopped at 73
+        per = mn.per_from_baseline(155, 264)
+        self.assertEqual(per, 34)
+        self.assertLess(per, 73)
+        # every mutant as slow as the slowest measured one still ends before the stop
+        each = (mn.BUILD_SLOW * 155 + mn.TEST_SLOW * 264) / mn.JOBS
+        self.assertLessEqual(155 + 264 + per * each, mn.STOP_S)
+        self.assertGreater(155 + 264 + (per + 1) * each, mn.STOP_S)
+
+    def test_a_quick_baseline_gets_larger_shards_and_a_slow_one_smaller(self):
+        self.assertEqual([mn.per_from_baseline(b, t) for b, t in ((20, 30), (155, 264), (300, 900))], [299, 34, 10])
+
+    def test_a_baseline_no_mutant_fits_behind_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "not one mutant"):
+            mn.per_from_baseline(1800, 9000)
+        for b, t in ((0, 10), (10, 0), (-1, 5)):
+            with self.assertRaisesRegex(ValueError, "not a measurement"):
+                mn.per_from_baseline(b, t)
+
+    def test_the_baseline_is_read_from_the_outcomes_and_only_a_success_counts(self):
+        mutant = {"scenario": {"Mutant": {}}, "summary": "CaughtMutant", "phase_results": [
+            {"phase": "Build", "duration": 1.0, "process_status": "Success"},
+            {"phase": "Test", "duration": 2.0, "process_status": "Failure"}]}
+        self.assertEqual(mn.read_baseline(self.out([self.baseline(), mutant])), (155.2, 264.4))
+        for bad in ([mutant], [self.baseline(summary="Failure")], [self.baseline(test_status="Timeout")],
+                    [self.baseline(), self.baseline()]):
+            with self.assertRaises(ValueError):
+                mn.read_baseline(self.out(bad))
+
+    def test_the_stop_and_the_jobs_are_the_ones_of_the_shard_step(self):
+        text = Workflow.TEXT
+        step = text[text.index("- name: Mutants (in-diff shard, a missed mutant fails)"):]
+        step = step[:step.index("\n      - name: ", 10)]
+        run = re.search(r"timeout --signal=INT --kill-after=10m (\d+)m \\\n\s+cargo mutants --in-diff [^\n]* -j (\d+) ", step)
+        self.assertIsNotNone(run)
+        self.assertEqual((int(run.group(1)) * 60, int(run.group(2))), (mn.STOP_S, mn.JOBS))
+
+    def test_an_axis_with_mutants_and_no_shard_size_is_an_error(self):
+        with self.assertRaisesRegex(ValueError, "features"):
+            mn.nightly_record("nightly", A, B, {"default": 10, "features": 10}, [], "", {"default": 34})
+        with self.assertRaisesRegex(ValueError, "extra"):
+            mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34, "extra": 1})
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34})
+        self.assertEqual((rec["state"], len(entries), rec["per"]["default"]), ("accepted", 1, 34))
+
+    def test_each_axis_is_cut_by_its_own_shard_size(self):
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 193, "features": 193}, [], "",
+                                         {"default": 34, "features": 50})
+        self.assertEqual(rec["shards"], {"default": 6, "features": 4})
+        self.assertEqual(sorted({(e["features"] == "", e["of"]) for e in entries}), [(False, 4), (True, 6)])
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 273, "features": 10}, [], "",
+                                         {"default": 34, "features": 50})
+        self.assertEqual((rec["state"], rec["shards"]["default"], entries), ("over-cap", 9, []))
+
+    def test_a_range_set_aside_is_cut_in_the_weekly_run_by_the_size_it_was_measured_at(self):
+        o = {"base": A, "head": B, "counts": {"default": 300, "features": 0}, "per": {"default": 30, "features": 100},
+             "since": "2026-11-19T22:00:00Z"}
+        _, entries = mn.weekly_record(D, [o], "2026-11-22T18:00:00Z")
+        self.assertEqual(len([e for e in entries if e["kind"] == "diff"]), 10)
+        # a range recorded before the measure existed: the size of the 11-22 baseline
+        del o["per"]
+        _, entries = mn.weekly_record(D, [o], "2026-11-22T18:00:00Z")
+        self.assertEqual(len([e for e in entries if e["kind"] == "diff"]), -(-300 // mn.PER_UNMEASURED))
+        self.assertEqual(mn.PER_UNMEASURED, mn.per_from_baseline(155, 264))
+
+    def test_an_over_cap_night_is_read_back_with_its_shard_size(self):
+        n = night(1, 19, A, B, {"default": 900, "features": 10})
+        self.assertEqual(n["record"]["state"], "over-cap")
+        n["record"]["open"] = []          # as if only the record's own range were known
+        self.assertEqual(mn.open_ranges([n])[0]["per"], P)
+
+
 class Cli(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -217,14 +308,37 @@ class Cli(unittest.TestCase):
         p.write_text(json.dumps(runs), encoding="utf-8")
         return str(p)
 
-    def plan(self, runs: list[dict], default: int, features: int, mode: str = "nightly"):
+    def plan(self, runs: list[dict], default: int, features: int, mode: str = "nightly",
+             per=("--per", "default=100", "--per", "features=100")):
         code, out, err = self.run_cli("plan", "--mode", mode, "--runs", self.runs(runs), "--base", B, "--head", C,
                                       "--count", f"default={default}", "--count", f"features={features}",
+                                      *per,
                                       "--now", "2026-11-19T22:00:00Z",
                                       "--out-record", str(self.d / "r.json"), "--out-matrix", str(self.d / "m.json"))
         rec = json.loads((self.d / "r.json").read_text()) if (self.d / "r.json").exists() else None
         matrix = json.loads((self.d / "m.json").read_text()) if (self.d / "m.json").exists() else None
         return code, rec, matrix, err
+
+    def test_per_prints_the_shard_size_of_a_baseline_and_fails_without_one(self):
+        d = self.d / "mutants.out"
+        d.mkdir()
+        (d / "outcomes.json").write_text(json.dumps({"outcomes": [Per.baseline()]}), encoding="utf-8")
+        code, out, err = self.run_cli("per", "--out", str(d))
+        self.assertEqual((code, out), (0, "34\n"))
+        self.assertIn("155 s build + 264 s test", err)
+        (d / "outcomes.json").write_text(json.dumps({"outcomes": [Per.baseline(summary="Failure")]}), encoding="utf-8")
+        code, out, err = self.run_cli("per", "--out", str(d))
+        self.assertEqual((code, out), (mn.ERROR, ""))
+
+    def test_a_plan_without_the_shard_size_of_an_axis_with_mutants_is_an_error(self):
+        code, rec, matrix, err = self.plan([], 10, 10, per=("--per", "default=34"))
+        self.assertEqual(code, mn.ERROR)
+        self.assertIn("features", err)
+
+    def test_the_plan_cuts_by_the_given_size_and_records_it(self):
+        code, rec, matrix, err = self.plan([], 193, 193, per=("--per", "default=34", "--per", "features=50"))
+        self.assertEqual((code, rec["per"], rec["shards"]), (0, {"default": 34, "features": 50}, {"default": 6, "features": 4}))
+        self.assertEqual(len(matrix["include"]), 10)
 
     def test_base_prints_the_sha_or_an_empty_line(self):
         code, out, err = self.run_cli("base", "--runs", self.runs([night(1, 18, A, B)]))
@@ -240,8 +354,8 @@ class Cli(unittest.TestCase):
     def test_an_over_cap_night_exits_5_with_the_count_and_records_its_range_as_open(self):
         code, rec, matrix, err = self.plan([], 1634, 1634)
         self.assertEqual((code, rec["state"], matrix), (mn.OVER_CAP, "over-cap", {"include": []}))
-        self.assertIn("takes 17 shards on an axis, over the cap of 8 (800 mutants)", err)
-        self.assertEqual(rec["open"], [{"base": B, "head": C, "counts": BIG, "since": "2026-11-19T22:00:00Z"}])
+        self.assertIn("takes 17 shards on an axis, over the cap of 8 (default 800 / features 800 mutants)", err)
+        self.assertEqual(rec["open"], [{"base": B, "head": C, "counts": BIG, "per": P, "since": "2026-11-19T22:00:00Z"}])
 
     def test_a_nightly_record_carries_the_ranges_still_open_and_a_pr_record_none(self):
         earlier = night(1, 17, A, B, counts=BIG)

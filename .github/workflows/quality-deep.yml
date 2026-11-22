@@ -151,11 +151,15 @@ jobs:
 
   mutants-plan:
     # What the mutation jobs of this run are (scripts/mutants_nightly.py):
-    # - nightly / PR: the diff since the base, cut into shards of at most 100 mutants per feature
-    #   axis. One job gets through 115-180 mutants in its 270 min (nights of 11-17 to 11-21), and the
-    #   plans of those nights were 1022 / 690 / 1634 / 388 / 105: as one job per axis only the last
-    #   could finish. At most 8 shards per axis; a larger plan is not run, the job fails with the
-    #   count and the range is set aside for the weekly run.
+    # - nightly / PR: the diff since the base, cut into shards per feature axis. One job gets through
+    #   115-180 mutants in its 270 min (nights of 11-17 to 11-21), and the plans of those nights were
+    #   1022 / 690 / 1634 / 388 / 105: as one job per axis only the last could finish. How many fit
+    #   depends on the night's tests (11-22: shards of 97 took 3 h to 4 h 30, one was stopped at
+    #   73 of 96), so this job runs the unmutated baseline of each axis (one shard of one mutant,
+    #   about 10 min an axis) and the shard size is what fits behind that baseline at the slowest
+    #   measured mutant (`mutants_nightly.py per`). A baseline that fails stops the night here.
+    #   At most 8 shards per axis; a larger plan is not run, the job fails with the count and the
+    #   range is set aside for the weekly run.
     # - the nightly base is the head of the latest nightly run that measured every shard (or was
     #   set aside, or had no mutant), not a clock: the schedule starts 4.7-6.4 h late, and a night
     #   that was cancelled or did not finish must not drop its lines.
@@ -164,7 +168,7 @@ jobs:
     name: Mutation plan (shards of the diff, ranges set aside)
     if: github.event_name != 'workflow_dispatch' || inputs.scope == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     permissions:
       contents: read
       actions: read
@@ -176,6 +180,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
@@ -222,14 +227,37 @@ jobs:
             counts=()
             for axis in "default=" "features=parallel,gpu-solver-bridge,simd"; do
               n=0
+              name="${axis%%=*}"
               if [ -s /tmp/change.diff ]; then
-                python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "${axis#*=}" --out /tmp/planned.diff > /dev/null
+                plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "${axis#*=}" --out /tmp/planned.diff)
                 if [ -s /tmp/planned.diff ]; then
                   cargo mutants --list --in-diff /tmp/planned.diff > /tmp/listed.txt
                   n=$(grep -c . /tmp/listed.txt || true)
                 fi
               fi
-              counts+=(--count "${axis%%=*}=$n")
+              counts+=(--count "$name=$n")
+              if [ "$n" -gt 0 ]; then
+                # the unmutated baseline of this axis with the shard step's own build and tests: a
+                # shard of one mutant (n shards of n mutants). Exit 4 = the baseline failed.
+                features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
+                tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
+                skips=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--skip " + t for t in json.load(sys.stdin)["skip"]))')
+                set +e
+                # shellcheck disable=SC2086
+                timeout --signal=INT --kill-after=2m 30m \
+                  cargo mutants --in-diff /tmp/planned.diff --shard "0/$n" --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output "/tmp/baseline-$name" \
+                  ${features:+--features "$features"} --cargo-arg=--lib $tests ${skips:+-- -- --exact $skips} > "/tmp/baseline-$name.log" 2>&1
+                brc=$?
+                set -e
+                sed -E 's/\x1b\[[0-9;]*m//g' "/tmp/baseline-$name.log" | grep -m1 'Unmutated baseline' || true
+                per=$(python3 scripts/mutants_nightly.py per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {
+                  tail -20 "/tmp/baseline-$name.log"
+                  echo "::error::$name axis: no unmutated baseline to size the shards from (cargo-mutants exit $brc): $(sed 's/^error: //' /tmp/per.err)"
+                  exit 1
+                }
+                echo "$name axis: $(cat /tmp/per.err), $per mutants a shard" | tee -a "$GITHUB_STEP_SUMMARY"
+                counts+=(--per "$name=$per")
+              fi
             done
             set +e
             python3 scripts/mutants_nightly.py plan --mode "$mode" --runs /tmp/runs.json --base "$base" --head "$head" \

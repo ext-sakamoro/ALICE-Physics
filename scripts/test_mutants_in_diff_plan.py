@@ -517,14 +517,14 @@ class Wiring(unittest.TestCase):
             for d in diffs:
                 self.assertIn("tests", d.split(), f"{wf.name}: the diff given to the plan leaves tests/ out")
                 seen += 1
-            runs = re.findall(r"cargo mutants --in-diff /tmp/planned\.diff.*?tee /tmp/mutants\.log", text, re.S)
+            runs = re.findall(r"cargo mutants --in-diff /tmp/planned\.diff --shard.*?2>&1", text, re.S)
             self.assertTrue(runs, wf.name)
             for r in runs:
                 self.assertIn("${skips:+-- -- --exact $skips}", r, wf.name)
                 self.assertIn("$tests", r, wf.name)
                 seen += 1
             self.assertEqual(text.count('json.load(sys.stdin)["skip"]'), len(runs), wf.name)
-        self.assertGreaterEqual(seen, 5, "no workflow was compared")
+        self.assertGreaterEqual(seen, 6, "no workflow was compared")
 
 
 class Shapes(unittest.TestCase):
