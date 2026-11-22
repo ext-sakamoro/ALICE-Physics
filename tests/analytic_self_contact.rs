@@ -128,6 +128,8 @@
 //! bit 一致**します (同 `reduction_order_independence.rs`) 接触ペアの列挙順を sort で
 //! 救うのでなく、**構成上無関係にする**のが本 crate の既定の解法です
 //!
+//! `// mutants: fast` の印は、変異試験でこの file から走らせる速く厳密な試験 (単独で 7 秒以下、release) 印の無い試験は変異試験でだけ外れる (通常の試験では全部走る) 最も重い `a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_crossing` は単独で 20 分を超える
+//!
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
@@ -241,6 +243,7 @@ const fn shares_vertex(p: usize, tri: [usize; 3]) -> bool {
 // A. 頂点-面の交差 — 閉形式、厳密等値
 // ---------------------------------------------------------------------------
 
+// mutants: fast
 #[test]
 fn vertex_face_crossing_matches_the_closed_form_exactly() {
     let a = Vec3Fix::from_int(0, 0, 0);
@@ -302,6 +305,7 @@ fn vertex_face_crossing_matches_the_closed_form_exactly() {
 ///
 /// ⚠️ これは「自己接触が検証されている」の証拠ではありません 現在の実装が
 /// **なぜ** 何もしないのかを説明する量です
+// mutants: fast
 #[test]
 fn particle_distance_spring_cannot_see_the_closed_form_crossing() {
     // `ClothConfig::default()` の検出半径
@@ -330,6 +334,7 @@ fn particle_distance_spring_cannot_see_the_closed_form_crossing() {
 ///
 /// ⚠️ これが無いと `vertex_face_crossing_matches_the_closed_form_exactly` の green は
 /// 「述語が常に Some を返す」でも成立してしまう (正の control だけでは歯が無い)
+// mutants: fast
 #[test]
 fn the_predicate_rejects_segments_that_miss_the_triangle() {
     let a = Vec3Fix::from_int(0, 0, 0);
@@ -397,6 +402,7 @@ fn the_predicate_rejects_segments_that_miss_the_triangle() {
 // B. 辺-辺の最近接 — 閉形式、厳密等値
 // ---------------------------------------------------------------------------
 
+// mutants: fast
 #[test]
 fn edge_edge_closest_approach_matches_the_closed_form_exactly() {
     // 線分 A: (0,0,0) → (1,0,0)      線分 B: (1/2, 1/4, -1) → (1/2, 1/4, 1)
@@ -500,6 +506,7 @@ fn segment_segment_distance_squared(p1: Vec3Fix, q1: Vec3Fix, p2: Vec3Fix, q2: V
 /// | (e) 交差 | `(-1,0,0)→(1,0,0)` | `(0,0,-1)→(0,0,1)` | 原点 | `0` |
 ///
 /// (b)(c) は端点領域、(d) は実装が `None` で捨てる領域、(e) は距離 0 の退化です
+// mutants: fast
 #[test]
 fn the_segment_segment_metric_matches_the_closed_form() {
     let half = Fix128::from_ratio(1, 2);
@@ -577,6 +584,7 @@ fn the_segment_segment_metric_matches_the_closed_form() {
 ///
 /// `particle_distance_spring_cannot_see_the_closed_form_crossing` (粒子-粒子 ⊂ 頂点-面) の
 /// 1 段上の盲点で、どちらも実装が入った後も残します 辺-辺の段を外せば同じ盲点が戻ります
+// mutants: fast
 #[test]
 fn the_vertex_face_metric_cannot_see_the_closed_form_edge_edge_crossing() {
     let h = Fix128::from_ratio(1, 8);
@@ -641,6 +649,7 @@ fn coplanarity_det(t: Fix128) -> Fix128 {
     (p - a).dot((b - a).cross(c - a))
 }
 
+// mutants: fast
 #[test]
 fn ccd_coplanarity_cubic_is_constructed_exactly_and_its_root_is_bracketed() {
     // 手で導いた 3 次式との厳密一致 (2 進小数の試験点なので許容差なし)
@@ -863,6 +872,7 @@ fn point_triangle_distance_squared(p: Vec3Fix, a: Vec3Fix, b: Vec3Fix, c: Vec3Fi
 /// | 面 | `(1/4, 1/2, 1/4)` | `(1/4, 0, 1/4)` | `1/4` |
 /// | 辺 `bc` | `(1, 1/2, 1)` | `(1/2, 0, 1/2)` | `3/4` |
 /// | 頂点 `a` | `(-1/2, 1/2, -1/2)` | `(0, 0, 0)` | `3/4` |
+// mutants: fast
 #[test]
 fn the_point_triangle_metric_matches_the_closed_form() {
     let a = Vec3Fix::from_int(0, 0, 0);
@@ -1001,6 +1011,7 @@ fn a_crumpled_cloth_does_not_pass_through_itself() {
 ///
 /// ⚠️ **`assert_ne!(pos_on, pos_off)` にはしないこと** 失敗時に 81 粒子 x 2 side の
 /// `Debug` が 24 KB 出て message が埋まります (罠 `assert-eq-dumps-large-debug`)
+// mutants: fast
 #[test]
 fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
     let (_, _, pos_on) = run_crumple(true, CRUMPLE_STEPS, default_radius());
@@ -1097,6 +1108,7 @@ fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
 /// `(Σ_vf)/5 + (Σ_ee)/1` を受けて辺-辺が 5 倍過大評価される) **本 test がそれを捕まえた
 /// 唯一の test です** 目標 oracle の貫通数は 0 のままでした
 /// 詳細 `src/cloth.rs` の `solve_self_collision` の doc
+// mutants: fast
 #[test]
 fn self_collision_improves_the_vertex_face_separation_it_constrains() {
     let radius = default_radius();
@@ -1238,6 +1250,7 @@ fn a_thickness_far_above_the_local_edge_length_still_ends_every_frame_without_cr
 /// 5.5e-4〜9.5e-4、余裕は 1e-11 前後) 丸めだけの対がどれだけ出るかは積の丸めで変わる (最近接偶数
 /// の積では ON に `t² − 8` raw 単位の対が 4 件) ので、ここでは数えない (余裕がそれを吸うことは
 /// 歯 (2) が組み立てた対で見る) 対ごとの余裕と不足を印字する
+// mutants: fast
 #[test]
 fn noise_margin_holds_the_rounding_and_not_the_real_deficits() {
     let radius = default_radius();
@@ -1303,6 +1316,7 @@ fn noise_margin_holds_the_rounding_and_not_the_real_deficits() {
 /// 線分 A `(0,0,0)→(1,0,0)` と、その上 `1/16` の高さで直交する線分 B の距離² は閉形式で
 /// `1/256` = 閾値 `1/16` の 2 乗ちょうど (dyadic なので厳密) B を y 方向に 8 raw 単位だけ下げると
 /// 距離² は閾値の 2 乗を数 raw 単位下回る: 余裕を引けば違反ではなく、余裕 0 なら違反
+// mutants: fast
 #[test]
 fn the_noise_margin_absorbs_a_pair_a_few_units_under_the_threshold() {
     let t = Fix128::from_ratio(1, 16);
@@ -1741,6 +1755,7 @@ fn nonadjacent_separation(
 /// 入れた時に初めて効く hygiene として置いています
 ///
 /// **これを「自己接触が検証されている」の証拠に数えないでください**
+// mutants: fast
 #[test]
 fn translating_the_whole_scene_does_not_change_the_predicate() {
     let shift = Vec3Fix::new(
@@ -1952,6 +1967,7 @@ fn self_contact_leaves_no_free_edge_pair_inside_the_thickness_over_the_wide_ense
 /// the cluster stage: on start 0 of the ensemble the budget is reached (so the case tests
 /// the cluster stage), the cluster stage ran exactly once per capped call, and two calls
 /// at most run per frame.
+// mutants: fast
 #[test]
 fn the_separation_counts_every_stop_at_its_budget() {
     let (_, _, cloth) = crumple_lifted_cloth(true, SEPARATION_STEPS, default_radius(), 0);
@@ -1968,6 +1984,7 @@ fn the_separation_counts_every_stop_at_its_budget() {
 }
 
 /// The same start run twice gives the same bits (fixed contact order, no hashing).
+// mutants: fast
 #[test]
 fn the_crumple_with_self_contact_is_bit_identical_when_run_twice() {
     let a = run_crumple_lifted(true, SEPARATION_STEPS, default_radius(), 12 << 24);
@@ -1996,6 +2013,7 @@ fn positions_digest(ps: &[Vec3Fix]) -> u64 {
 /// The crumple with self-contact on start 12 ends at the same bits on every target (the
 /// test runs native and on wasm32): the separation uses no floating point and a fixed
 /// contact order.
+// mutants: fast
 #[test]
 fn the_crumple_with_self_contact_ends_at_the_pinned_bits() {
     let (_, _, ps) = run_crumple_lifted(true, SEPARATION_STEPS, default_radius(), 12 << 24);
@@ -2025,6 +2043,7 @@ fn the_frame_end_separation_holds_the_free_pairs_at_the_recorded_count() {
 /// stages fail and the shipped one does not: measured, the shipped stage (over-relaxation
 /// 3/2) 0 pairs here and 3 of 110 starts overall; the cluster stage off 2 pairs here and 10
 /// of 110; over-relaxation 1 2 pairs here and 12 of 110.
+// mutants: fast
 #[test]
 fn the_cluster_stage_separates_the_sentinel_start() {
     let rows = free_pairs_per_start(&[34 << 24]);
