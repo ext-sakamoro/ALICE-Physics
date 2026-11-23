@@ -29,6 +29,8 @@ on:
       - '.gitignore'
       - 'README.md'
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
+      - 'scripts/api_os_gate_check.py'
+      - 'scripts/test_api_os_gate_check.py'
       - 'scripts/semver_checked.py'
       - 'scripts/semver_baseline_has.py'
       - 'scripts/test_semver_baseline_has.py'
@@ -387,6 +389,11 @@ jobs:
 
       - name: Install cargo-public-api (version pin、上の comment 参照)
         run: cargo install cargo-public-api --locked --version 0.52.0
+
+      - name: No public item is gated on the OS (the snapshot is made on aarch64 Linux)
+        run: |
+          python3 scripts/test_api_os_gate_check.py
+          python3 scripts/api_os_gate_check.py
 
       - name: Generate current snapshot
         run: |

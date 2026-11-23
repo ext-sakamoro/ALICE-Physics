@@ -339,6 +339,8 @@ python3 scripts/test_binding_build_commands.py
 python3 scripts/binding_build_commands.py --check
 
 step "public API snapshot (the nightly and cargo-public-api that security-audit.yml pins)"
+python3 scripts/test_api_os_gate_check.py
+python3 scripts/api_os_gate_check.py
 # the pins are read from the workflow, so the two cannot drift apart; a missing tool is a
 # failure, not a skip: a landing reads this run's receipt in place of a hosted macOS run
 api_nightly=$(sed -n 's/^ *toolchain: \(nightly-[0-9][0-9-]*\)$/\1/p' .github/workflows/security-audit.yml)
