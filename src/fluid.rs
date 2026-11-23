@@ -1257,12 +1257,14 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn boxed_block_under_gravity_is_carried_by_the_floor() {
-        // oracle: a fluid at rest on a floor is carried by its weight M g
+    /// oracle: a fluid at rest on a floor is carried by its weight M g, after `frames` frames
+    /// of 1/60 s. Measured (the floor's reaction over the weight, every 20 frames of the
+    /// 240-frame run): 1.0099, 1.0198, 0.9953, 0.9999, then 1.0000 from frame 100 to 240, so
+    /// the block is at rest well before 120 frames and the 5 % bound holds with a wide margin.
+    fn boxed_block_is_carried_by_the_floor_after(frames: usize) {
         let config = FluidConfig::default();
         let mut f = small_boxed(config, 3);
-        for _ in 0..240 {
+        for _ in 0..frames {
             f.step(Fix128::from_ratio(1, 60));
         }
         let weight = f.particle_count() as f64 * config.particle_mass.to_f64() * 10.0;
@@ -1275,6 +1277,19 @@ mod tests {
             f.positions.iter().all(|p| p.y > Fix128::ZERO),
             "fell through the floor"
         );
+    }
+
+    #[test]
+    fn boxed_block_under_gravity_is_carried_by_the_floor() {
+        boxed_block_is_carried_by_the_floor_after(120);
+    }
+
+    /// The block of `boxed_block_under_gravity_is_carried_by_the_floor` held for 240 frames.
+    #[test]
+    #[ignore = "runtime: 240 fluid frames, about 19 s without optimisation; the lib test holds \
+                the block for 120; run by run_ignored.py"]
+    fn boxed_block_under_gravity_stays_carried_by_the_floor_for_four_seconds() {
+        boxed_block_is_carried_by_the_floor_after(240);
     }
 
     #[test]
