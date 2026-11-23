@@ -1151,10 +1151,9 @@ fn a_filling_groove_is_accepted_and_levels() {
 /// section, `Σ_columns g h_c³ S l / (3ν) = Q`, to the transfer rounding (flux error
 /// `ε = 2⁻³² l / (q Δt)`, depth `ε/3`), at 2 cm and at 1 cm cells. The continuous section is
 /// reported (the 2 cm grid samples the 11.8 cm floor as 10 cm).
-#[test]
-fn flow_along_a_stroke_has_the_lubrication_depth() {
+fn stroke_has_the_lubrication_depth(cells_cm: &[i64]) {
     let (w, wall, depth, slope, q_total) = (0.118_f64, 0.01_f64, 0.03_f64, 0.005_f64, 1.9e-6_f64);
-    for cm in [2i64, 1] {
+    for &cm in cells_cm {
         let l = cm as f64 / 100.0;
         let (nx, nz) = ((1.2 / l) as usize, (0.16 / l) as usize);
         let cell = Fix128::from_ratio(cm, 100);
@@ -1247,6 +1246,20 @@ fn flow_along_a_stroke_has_the_lubrication_depth() {
             "{cm} cm: depth {h:.5e} vs {h_closed:.5e} ({rel:+.3e}, bound {eps:.2e})"
         );
     }
+}
+
+/// [`stroke_has_the_lubrication_depth`] at 2 cm cells; at 1 cm (the same check, 4 times the
+/// cells) in `flow_along_a_stroke_has_the_lubrication_depth_at_one_centimetre`, run weekly.
+#[test]
+fn flow_along_a_stroke_has_the_lubrication_depth() {
+    stroke_has_the_lubrication_depth(&[2]);
+}
+
+#[test]
+#[ignore = "runtime: the 1 cm stroke, 120 x 16 cells over 40 s, about 28 s without \
+            optimisation; the 2 cm stroke is the lib test; run by run_ignored.py"]
+fn flow_along_a_stroke_has_the_lubrication_depth_at_one_centimetre() {
+    stroke_has_the_lubrication_depth(&[1]);
 }
 
 /// The sill scene: one row of 1 cm cells, closed: a left basin (10 cells, floor −30 mm), a
@@ -1477,14 +1490,8 @@ fn a_free_overfall_drains_at_the_weir_rate() {
 /// film, so its faces step at local substeps; at its middle the depth stays at `h` to the
 /// transfer rounding at the local substep, `ε = 2⁻³² l / (q Δt_local)` (depth `ε/3`), plus
 /// `10⁻⁴` for the drawdown from the brink, read 3 to 4.5 backwater lengths `h/S` away.
-#[test]
-fn flow_in_the_band_has_the_lubrication_depth() {
-    // the channel is long against the drawdown from the brink, which decays over h/S
-    // (0.5 m and 3 m); the depth is read 1.5 m and 9 m from it
-    for (s_num, s_den, h_um, nx, at) in [
-        (1i64, 200i64, 2_500i64, 151usize, 75usize),
-        (1, 1_000, 3_000, 601, 150),
-    ] {
+fn band_has_the_lubrication_depth(channels: &[(i64, i64, i64, usize, usize)]) {
+    for &(s_num, s_den, h_um, nx, at) in channels {
         let slope = s_num as f64 / s_den as f64;
         let mut beds = vec![mm(50)];
         beds.extend((1..nx).map(|i| -Fix128::from_ratio(s_num * 20 * i as i64, s_den * 1000)));
@@ -1527,6 +1534,23 @@ fn flow_in_the_band_has_the_lubrication_depth() {
             "S {slope}: depth {got:.6e} vs {h:.6e} ({rel:+.3e})"
         );
     }
+}
+
+/// [`band_has_the_lubrication_depth`] on the channel at slope 1/200 (151 cells, the depth read
+/// 1.5 m from the brink, 3 backwater lengths `h/S` of 0.5 m); the channel at 1/1000 (601
+/// cells, read 9 m from the brink, 3 lengths of 3 m) in
+/// `flow_in_the_band_has_the_lubrication_depth_on_the_gentle_slope`, run weekly. The channel
+/// is long against the drawdown from the brink, which decays over `h/S`.
+#[test]
+fn flow_in_the_band_has_the_lubrication_depth() {
+    band_has_the_lubrication_depth(&[(1, 200, 2_500, 151, 75)]);
+}
+
+#[test]
+#[ignore = "runtime: the 601-cell channel at slope 1/1000, about 10 s without optimisation; \
+            the 1/200 channel is the lib test; run by run_ignored.py"]
+fn flow_in_the_band_has_the_lubrication_depth_on_the_gentle_slope() {
+    band_has_the_lubrication_depth(&[(1, 1_000, 3_000, 601, 150)]);
 }
 
 /// oracle: a source inside a pool is inflow. A flat channel (40 cells of 1 cm, walled) fed
