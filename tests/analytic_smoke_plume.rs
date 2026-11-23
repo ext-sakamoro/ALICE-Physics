@@ -53,6 +53,18 @@ fn plume() -> SmokePlume {
     p
 }
 
+/// [`plume`] with its top open, after each of `windows` windows of 64 steps (half a second).
+fn open_plume_windows(windows: usize) -> Vec<SmokePlume> {
+    let mut p = plume();
+    p.set_open_top().unwrap();
+    (0..windows)
+        .map(|_| {
+            p.advance(step() * Fix128::from_int(64)).unwrap();
+            p.clone()
+        })
+        .collect()
+}
+
 fn state(p: &SmokePlume) -> Vec<u8> {
     let mut b = Vec::new();
     p.write_state(&mut b);
@@ -831,27 +843,52 @@ fn an_open_plume_state_round_trips_and_is_told_apart() {
     assert_eq!(plume().check_state(cut), Err(StateError::InvalidValue));
 }
 
+/// The heat that left through the top of the open plume over each half-second window from
+/// `first` (counted from 0) to `windows.len() - 1`, over what the source added in that window:
+/// the declared 50 K/s on 4 cells is `4 · 25 · 2²⁶` quanta per step exactly.
+fn outflow_ratios(windows: &[SmokePlume], first: usize) -> Vec<f64> {
+    let per_window = 64 * 4 * 25 * (1i64 << 26);
+    (first..windows.len())
+        .map(|w| {
+            let last = if w == 0 {
+                0
+            } else {
+                windows[w - 1].outflow().heat_left
+            };
+            (windows[w].outflow().heat_left - last) as f64 / per_window as f64
+        })
+        .collect()
+}
+
 /// The open plume of [`plume`] comes to a steady state in which the heat leaving through the
-/// top balances the source: the declared 50 K/s on 4 cells is `4 · 25 · 2²⁶` quanta per step
-/// exactly, and the outflow over each half second from 7 to 12 s is that within 2 %, their
-/// mean within 0.5 % (measured: each within 0.0093, the mean 1.000; the first outflow comes
-/// at 2.5 s and overshoots to 1.27 at 3.5 s; after about 15 s heat collects in the narrow box
-/// again and the ratio falls to 0.96 by 20 s, so the window is where the store is steady).
+/// top balances the source: over each half second from 6.5 to 7.5 s the outflow is the source
+/// within 2 %, their mean within 0.5 % (measured, with the run of
+/// `the_open_top_carries_the_source_away_from_seven_to_twelve_seconds`: 1.0060, 1.0025,
+/// 1.0006, mean 1.0030; the first outflow comes at 2.5 s and overshoots to 1.27 at 3.5 s,
+/// within 2 % from 6 s on). The same bounds over 7 to 12 s are that test's, run weekly.
 #[test]
 fn the_open_top_carries_the_source_away_at_steady_state() {
-    let mut p = plume();
-    p.set_open_top().unwrap();
-    let per_window = 64 * 4 * 25 * (1i64 << 26);
-    let mut ratios = Vec::new();
-    let mut last = 0;
-    for w in 0..24 {
-        p.advance(step() * Fix128::from_int(64)).unwrap();
-        let out = p.outflow().heat_left;
-        if w >= 14 {
-            ratios.push((out - last) as f64 / per_window as f64);
-        }
-        last = out;
-    }
+    let windows = open_plume_windows(15);
+    let ratios = outflow_ratios(&windows, 12);
+    assert_eq!(ratios.len(), 3);
+    assert!(ratios.iter().all(|r| (r - 1.0).abs() < 0.02), "{ratios:?}");
+    let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
+    assert!((mean - 1.0).abs() < 0.005, "mean {mean}, {ratios:?}");
+}
+
+/// The open plume of [`plume`] comes to a steady state in which the heat leaving through the
+/// top balances the source: the outflow over each half second from 7 to 12 s is that within
+/// 2 %, their mean within 0.5 % (measured: each within 0.0093, the mean 1.000; the first
+/// outflow comes at 2.5 s and overshoots to 1.27 at 3.5 s; after about 15 s heat collects in
+/// the narrow box again and the ratio falls to 0.96 by 20 s, so the window is where the store
+/// is steady).
+#[test]
+#[ignore = "runtime: 1536 plume steps, about 47 s without optimisation; the lib test checks \
+            6.5 to 7.5 s; run by run_ignored.py"]
+fn the_open_top_carries_the_source_away_from_seven_to_twelve_seconds() {
+    let windows = open_plume_windows(24);
+    let ratios = outflow_ratios(&windows, 14);
+    assert_eq!(ratios.len(), 10);
     assert!(ratios.iter().all(|r| (r - 1.0).abs() < 0.02), "{ratios:?}");
     let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
     assert!((mean - 1.0).abs() < 0.005, "mean {mean}, {ratios:?}");
