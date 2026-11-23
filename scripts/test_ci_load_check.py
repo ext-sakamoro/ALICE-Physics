@@ -134,6 +134,35 @@ class Load(unittest.TestCase):
         self.has(self.errors(**{"quality-deep.yml": QD.replace("      max-parallel: 4\n", "")}), "no max-parallel")
         self.has(self.errors(**{"quality-deep.yml": QD.replace("max-parallel: 4", "max-parallel: 32")}), "exceeds")
 
+    def test_the_dispatch_group_of_quality_deep_is_the_one_exact_form(self):
+        own = ("${{ github.workflow }}${{ github.event_name == 'workflow_dispatch' && inputs.diff_base != '' && "
+               "'-diff' || '' }}")
+        self.assertEqual(self.errors(**{"quality-deep.yml": QD.replace("${{ github.workflow }}", own)}), [])
+        for other in ("${{ github.workflow }}-${{ github.event_name }}", "${{ github.workflow }}${{ inputs.diff_base }}",
+                      own.replace("'-diff'", "inputs.diff_base"), "${{ github.run_id }}"):
+            with self.subTest(group=other):
+                self.has(self.errors(**{"quality-deep.yml": QD.replace("${{ github.workflow }}", other)}),
+                         "not the workflow's one group")
+        self.has(self.errors(**{"quality-deep.yml": QD.replace("${{ github.workflow }}", own.replace("'-diff'", "github.ref"))}),
+                 "per ref")
+
+    def test_a_cancelling_group_on_quality_deep_fails(self):
+        self.has(self.errors(**{"quality-deep.yml": QD.replace("cancel-in-progress: false", "cancel-in-progress: true")}),
+                 "never cut off")
+        self.has(self.errors(**{"quality-deep.yml": QD.replace("  cancel-in-progress: false\n", "")}), "never cut off")
+
+    def test_the_weekly_run_may_have_two_more_jobs_at_a_time_and_no_other_form_is_read(self):
+        def pair(weekly, other):
+            return QD.replace("max-parallel: 4", "max-parallel: ${{ needs.mutants-plan.outputs.mode == 'weekly' && "
+                              f"{weekly} || {other} }}}}")
+        self.assertEqual(self.errors(**{"quality-deep.yml": pair(cl.WEEKLY_MAX_PARALLEL, cl.MAX_PARALLEL)}), [])
+        self.has(self.errors(**{"quality-deep.yml": pair(cl.WEEKLY_MAX_PARALLEL + 1, cl.MAX_PARALLEL)}), "of the weekly run exceeds")
+        self.has(self.errors(**{"quality-deep.yml": pair(cl.WEEKLY_MAX_PARALLEL, cl.MAX_PARALLEL + 1)}), "exceeds")
+        self.has(self.errors(**{"quality-deep.yml": QD.replace("max-parallel: 4", "max-parallel: ${{ fromJSON(vars.N) }}")}),
+                 "not read")
+        self.has(self.errors(**{"quality-deep.yml": QD.replace("      max-parallel: 4\n", "      max-parallel: 4\n      # x\n"
+                                                               "    other:\n      max-parallel: ${{ inputs.n }}\n")}), "not read")
+
     # --- the two-class concurrency --------------------------------------------------------
 
     def test_a_per_ref_group_fails(self):

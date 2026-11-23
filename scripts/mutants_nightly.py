@@ -34,7 +34,9 @@ expired or unreadable is an error (exit 2), never "no open range".
         --count default=N --count features=M --per default=P --per features=Q \\
         --out-record R --out-matrix M                                 # exit 5 = over the cap
     mutants_nightly.py per   --out mutants.out                        # the shard size from a baseline
-    mutants_nightly.py weekly --runs runs.json --head H --now ISO --out-record R --out-matrix M
+    mutants_nightly.py weekly --runs runs.json --head H --now ISO --count default=N --count features=M \\
+        --per default=P --per features=Q --out-record R --out-matrix M   # exit 5 = the core plan is over the cap
+    mutants_nightly.py core-jobs --record R                           # the ratchet's count of output directories
     mutants_nightly.py age   --record R --now ISO                     # exit 1 = a range open for too long
 
 Author: Moroya Sakamoto
@@ -63,7 +65,18 @@ CAP = 8              # shards per feature axis in one night
 MAX_AGE_DAYS = 8     # an over-cap range older than this fails the weekly age job
 WINDOW_DAYS = 21     # how far back the runs are read (the record artifacts are kept 30 days)
 AXES = {"default": "", "features": "parallel,gpu-solver-bridge,simd"}
-CORE_SHARDS = 16
+# the weekly core shards are sized like a night's (`per_from_baseline`, from the weekly plan job's baseline of
+# the core files). Until 2026-11-23 they were 16 an axis whatever the baseline: with 25 s build + 4 s test
+# (11-08, 260 mutants a shard) every shard ended in 46-170 min; with 85 s + 13 s (11-15 and 11-22, 304 a shard,
+# after the mutants moved to the opt-level 2 profile) one shard of 32 ended, in 243 min, and the others were
+# stopped at the job limit. The cap is what WEEKLY_PARALLEL jobs at a time end in WEEKLY_BUDGET_H, the time
+# from the weekly start to the next nightly, when every job runs to JOB_MIN; a larger core plan is not run and
+# the weekly plan fails with the counts.
+WEEKLY_BUDGET_H = 48
+WEEKLY_PARALLEL = 6  # `max-parallel` of the shard matrix in a weekly run
+NIGHTLY_PARALLEL = 4  # and in any other run
+JOB_MIN = 280        # a shard job: the 270 min stop and the setup around it
+CORE_CAP = (WEEKLY_BUDGET_H * 60 // JOB_MIN) * WEEKLY_PARALLEL // len(AXES)
 RECORD_ARTIFACT = "mutants-record"
 RECORD_FILE = "mutants-record.json"
 MEASURED_STEP = "Measured (every planned mutant of this shard has an outcome)"
@@ -236,12 +249,27 @@ def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carr
     return rec, entries
 
 
-def weekly_record(head: str, ranges: list[dict], now: str) -> tuple[dict, list[dict]]:
-    """(the record of a weekly plan, its matrix entries): the core shards and every open range"""
-    entries = [{"kind": "core", "shard": k, "of": CORE_SHARDS, "features": f, "base": "", "head": head,
-                "label": f"core shard {k}/{CORE_SHARDS}, {a}",
-                "artifact": f"mutants-out-{k}-{'default' if a == 'default' else 'parallel'}"}
-               for k in range(CORE_SHARDS) for a, f in AXES.items()]
+def core_entries(head: str, shards: dict[str, int]) -> list[dict]:
+    return [{"kind": "core", "shard": k, "of": shards[a], "features": f, "base": "", "head": head,
+             "label": f"core shard {k}/{shards[a]}, {a}",
+             "artifact": f"mutants-out-{k}-{'default' if a == 'default' else 'parallel'}"}
+            for a, f in AXES.items() for k in range(shards[a])]
+
+
+def weekly_record(head: str, ranges: list[dict], now: str, counts: dict[str, int], per: dict[str, int],
+                  cap: int = CORE_CAP) -> tuple[dict, list[dict]]:
+    """(the record of a weekly plan, its matrix entries): the core shards, sized by `per` (each axis' baseline
+    of this run) for the `counts` core mutants of each axis, and every open range. A core plan over `cap`
+    shards on an axis has no core entry and the state `over-cap`; the open ranges are still taken."""
+    if set(counts) != set(AXES) or set(per) != set(AXES):
+        raise ValueError(f"the core counts and shard sizes must name exactly {sorted(AXES)}, "
+                         f"got {sorted(counts)} / {sorted(per)}")
+    if min(counts.values()) <= 0:
+        raise ValueError(f"an axis has no core mutant to test (counts {counts}): nothing would be compared")
+    shards = {a: shards_for(counts[a], per[a]) for a in AXES}
+    over = max(shards.values()) > cap
+    entries = [] if over else core_entries(head, shards)
+    core_jobs = len(entries)
     taken = []
     for o in ranges:
         mine = diff_entries(o["base"], o["head"], o["counts"], per_of(o))
@@ -249,8 +277,9 @@ def weekly_record(head: str, ranges: list[dict], now: str) -> tuple[dict, list[d
             raise ValueError(f"open range {range_id(o['base'], o['head'])} has no mutant to test (counts {o['counts']})")
         entries += mine
         taken.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
-    rec = {"v": 1, "kind": "weekly", "state": "accepted", "head": head, "taken": taken, "open": ranges,
-           "stale": [range_id(o["base"], o["head"]) for o in stale(ranges, now)]}
+    rec = {"v": 1, "kind": "weekly", "state": "over-cap" if over else "accepted", "head": head,
+           "core": {"counts": counts, "per": per, "shards": shards, "jobs": core_jobs}, "taken": taken,
+           "open": ranges, "stale": [range_id(o["base"], o["head"]) for o in stale(ranges, now)]}
     return rec, entries
 
 
@@ -349,19 +378,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base", required=True)
     p.add_argument("--head", required=True)
     p.add_argument("--base-reason", default="")
-    p.add_argument("--count", action="append", default=[], metavar="AXIS=N")
-    p.add_argument("--per", action="append", default=[], metavar="AXIS=N",
-                   help="the shard size of an axis (the `per` subcommand's output); needed for an axis with mutants")
     p.add_argument("--now", required=True)
     w = sub.add_parser("weekly")
     w.add_argument("--head", required=True)
     w.add_argument("--now", required=True)
     for x in (p, w):
+        x.add_argument("--count", action="append", default=[], metavar="AXIS=N")
+        x.add_argument("--per", action="append", default=[], metavar="AXIS=N",
+                       help="the shard size of an axis (the `per` subcommand's output); needed for an axis with mutants")
         x.add_argument("--runs", required=True)
         x.add_argument("--out-record", required=True)
         x.add_argument("--out-matrix", required=True)
     m = sub.add_parser("per")
     m.add_argument("--out", required=True, help="a cargo-mutants output directory holding the baseline")
+    c = sub.add_parser("core-jobs", help="the number of core shard jobs of a record (0 for a night's)")
+    c.add_argument("--record", required=True)
     a = sub.add_parser("age")
     a.add_argument("--record", required=True)
     a.add_argument("--now", required=True)
@@ -377,6 +408,15 @@ def main(argv: list[str] | None = None) -> int:
             print(per_from_baseline(build_s, test_s))
             print(f"unmutated baseline {build_s:.0f} s build + {test_s:.0f} s test", file=sys.stderr)
             return 0
+        if args.cmd == "core-jobs":
+            rec = json.loads(Path(args.record).read_text(encoding="utf-8"))
+            if rec.get("kind") == "weekly":
+                print(int(rec["core"]["jobs"]))
+            elif rec.get("kind") in ("nightly", "pr"):
+                print(0)
+            else:
+                raise ValueError(f"{args.record}: not a record (kind {rec.get('kind')!r})")
+            return 0
         if args.cmd == "age":
             rec = json.loads(Path(args.record).read_text(encoding="utf-8"))
             old = stale(rec.get("open", []), args.now)
@@ -391,14 +431,21 @@ def main(argv: list[str] | None = None) -> int:
             print(sha or "")
             print(why, file=sys.stderr)
             return 0
-        if args.cmd == "weekly":
-            rec, entries = weekly_record(args.head, open_ranges(runs), args.now)
-            write_out(args, rec, entries)
-            print(f"weekly: {len(entries)} job(s), {len(rec['taken'])} open range(s) taken, {len(rec['stale'])} older "
-                  f"than {MAX_AGE_DAYS} days")
-            return 0
         counts = {k: int(v) for k, v in (c.split("=", 1) for c in args.count)}
         per = {k: int(v) for k, v in (c.split("=", 1) for c in args.per)}
+        if args.cmd == "weekly":
+            rec, entries = weekly_record(args.head, open_ranges(runs), args.now, counts, per)
+            write_out(args, rec, entries)
+            core = rec["core"]
+            print(f"weekly: {rec['state']}, core mutants {core['counts']}, per shard {core['per']}, core shards "
+                  f"{core['shards']}, {len(entries)} job(s), {len(rec['taken'])} open range(s) taken, "
+                  f"{len(rec['stale'])} older than {MAX_AGE_DAYS} days")
+            if rec["state"] == "over-cap":
+                print(f"error: the core plan takes {max(core['shards'].values())} shards on an axis, over the cap of "
+                      f"{CORE_CAP} ({WEEKLY_PARALLEL} jobs at a time for {WEEKLY_BUDGET_H} h): no core shard is run "
+                      "this week", file=sys.stderr)
+                return OVER_CAP
+            return 0
         rec, entries = nightly_record(args.mode, args.base, args.head, counts,
                                       open_ranges(runs) if args.mode == "nightly" else [], args.base_reason, per)
         if rec["state"] == "over-cap" and args.mode == "nightly":
