@@ -896,7 +896,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # the macOS leg runs with the other macOS legs (weekly, or a manual run with
+        # macos=true); a push runs Linux and Windows, and a landing reads the full
+        # preflight of the landing tree made on an arm64 Mac, which runs the same script
+        os: ${{ fromJSON((github.event_name == 'schedule' || inputs.macos) && '["macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:

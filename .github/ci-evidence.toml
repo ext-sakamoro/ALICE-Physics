@@ -44,7 +44,7 @@
 #                       scripts/land.py)
 # event labels: "push main", "push ci/**", "pull_request", "workflow_dispatch", "schedule"
 # events_when_macos_input: the events whose run includes the leg when a manual run sets the
-# ci.yml input `macos` (inputs.macos, given on workflow_dispatch only)
+# workflow's input `macos` (inputs.macos, given on workflow_dispatch only)
 # the hosted macOS legs: Mac ARM (the golden hashes' platform) and Mac Intel, weekly
 [[legs]]
 workflow = "ci.yml"
@@ -65,6 +65,29 @@ events_when_macos_input = ["workflow_dispatch", "schedule"]
 [[legs]]
 workflow = "ci.yml"
 job = "determinism-release"
+matrix = "macos-latest"
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
+# the macOS legs of the C ABI artifacts, the line endings and the Python wheel: weekly; the
+# full preflight on an arm64 Mac runs the same scripts
+[[legs]]
+workflow = "ci.yml"
+job = "facade-artifacts"
+matrix = "macos-latest"
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
+[[legs]]
+workflow = "eol.yml"
+job = "eol"
+matrix = "macos-latest"
+class = "weekly"
+events = ["schedule"]
+events_when_macos_input = ["workflow_dispatch", "schedule"]
+[[legs]]
+workflow = "python-binding.yml"
+job = "wheel"
 matrix = "macos-latest"
 class = "weekly"
 events = ["schedule"]

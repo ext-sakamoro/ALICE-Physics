@@ -341,16 +341,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.run == 'true'
     name: cargo-public-api (surface snapshot verification)
-    # macos-latest (aarch64) を採用: SIMD items (`Fix128::sub_simd` /
-    # `Vec3Fix::cross_simd` / `dot_batch_4` / `Fix128::pack_pair` 等) は
-    # `#[cfg(target_arch = "x86_64")]` gate 経由で x86_64 のみに存在、
-    # Linux x86_64 CI runner で snapshot regenerate すると Mac aarch64
-    # 開発環境の baseline と乖離して drift 誤検知が発生する
-    # Mac aarch64 runner に統一することで開発者環境と snapshot 生成環境を
-    # 一致させ、SIMD platform-specific items は「x86_64-only feature」として
-    # snapshot 対象外にする (regression detection の目的には aarch64
-    # baseline で十分、x86_64 SIMD path の変更は独立の #[cfg] gate で管理)
-    runs-on: macos-latest
+    # an aarch64 runner: the SIMD items (`Fix128::sub_simd`, `Vec3Fix::cross_simd`,
+    # `dot_batch_4`, `Fix128::pack_pair`, ...) exist only under
+    # `#[cfg(target_arch = "x86_64")]`, so an x86_64 runner renders a different surface
+    # than the aarch64 snapshot. No public item is gated on the OS (the one
+    # `cfg!(target_os)` in src/ is inside a function body), so aarch64 Linux renders the
+    # same snapshot as an aarch64 Mac; the full preflight on an arm64 Mac that a landing
+    # reads runs the same command with the same pins (scripts/preflight.sh)
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
     # cargo public-api の出力を diff、乖離があれば fail
@@ -385,7 +383,7 @@ jobs:
           components: rustc-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: public-api-macos
+          shared-key: public-api-aarch64
 
       - name: Install cargo-public-api (version pin、上の comment 参照)
         run: cargo install cargo-public-api --locked --version 0.52.0

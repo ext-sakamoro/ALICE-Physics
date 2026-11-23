@@ -8,7 +8,17 @@ on:
     branches: [main, "ci/**"]
   pull_request:
     branches: [main]
+  # weekly: the macOS leg (no push runs it; the full preflight on an arm64 Mac that a
+  # landing reads runs the same two scripts)
+  schedule:
+    - cron: '45 16 * * 0'
+  # `-f macos=true` runs the macOS leg only, on demand
   workflow_dispatch:
+    inputs:
+      macos:
+        description: run the hosted macOS leg (and only that) instead of the push legs
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON((github.event_name == 'schedule' || inputs.macos) && '["macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
