@@ -759,6 +759,13 @@ overflow-checks = true
 # the ubuntu runner out of disk; panics still name the file and line
 debug = "line-tables-only"
 
+# the mutation runs (.cargo/mutants.toml): every mutant is one rebuild of the lib and one run of
+# the lib suite, so the rebuild counts as much as the suite. opt-level 1 rebuilds faster than
+# ci-test and keeps the suite far from the opt-level 0 times; the checks stay as in ci-test
+[profile.mutants]
+inherits = "ci-test"
+opt-level = 1
+
 [profile.bench]
 opt-level = 3
 lto = "thin"

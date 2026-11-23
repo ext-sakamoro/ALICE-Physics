@@ -88,7 +88,7 @@ jobs:
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
-          # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
+          # the version .cargo/mutants.toml (profile = "mutants") was verified with, as in ci.yml
           tool: cargo-mutants@27.1.0
       - name: Mutants (scoped)
         run: |
@@ -393,7 +393,7 @@ jobs:
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
-          # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
+          # the version .cargo/mutants.toml (profile = "mutants") was verified with, as in ci.yml
           tool: cargo-mutants@27.1.0
       - name: Mutants (in-diff shard, a missed mutant fails)
         if: matrix.kind == 'diff'
