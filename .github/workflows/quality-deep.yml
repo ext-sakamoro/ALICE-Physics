@@ -46,6 +46,20 @@ on:
         required: false
         default: ''
         type: string
+      test_filter:
+        # scoped only. A test name filter for each mutant's test run (e.g. `cloth::`): the tests
+        # that can see the scope, instead of the whole lib suite. The baseline runs the same filter
+        description: 'scoped 測定で走らせる試験の名前の絞り込み (空 = lib の全試験)'
+        required: false
+        default: ''
+        type: string
+      label:
+        # scoped only. Shown in job names and the summary in place of the scope (a scope that
+        # carries a long --re is unreadable there)
+        description: 'scoped 測定の表示名 (空 = scope をそのまま表示)'
+        required: false
+        default: ''
+        type: string
       shards:
         # scoped only. N > 1 cuts the scope into N shards (cargo mutants --shard k/N), one job per
         # shard and feature axis, at most 4 at a time; one job has 300 minutes
@@ -98,7 +112,7 @@ jobs:
           echo "shards: $n ([$list])"
 
   mutants-scoped:
-    name: Mutation testing (scoped, ${{ inputs.scope }}, shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }})
+    name: Mutation testing (scoped, ${{ inputs.label != '' && inputs.label || inputs.scope }}, shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }})
     needs: scoped-shards
     if: github.event_name == 'workflow_dispatch' && inputs.scope != ''
     runs-on: ubuntu-latest
@@ -154,7 +168,7 @@ jobs:
           ulimit -v 6291456
           set +e
           cargo mutants ${{ inputs.scope }} ${{ needs.scoped-shards.outputs.of != '1' && format('--shard {0}/{1}', matrix.shard, needs.scoped-shards.outputs.of) || '' }} ${{ inputs.test_tool == 'nextest' && '--test-tool nextest' || '' }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib ${{ inputs.test_tool == 'nextest' && '--max-fail 1:immediate' || '' }} 2>&1 | tee /tmp/mutants.log
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib ${{ inputs.test_tool == 'nextest' && format('--max-fail 1:immediate {0}', inputs.test_filter) || (inputs.test_filter != '' && format('-- {0}', inputs.test_filter) || '') }} 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -eq 4 ]; then
@@ -167,7 +181,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }} (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            echo "## cargo-mutants scoped: \`${{ inputs.label != '' && inputs.label || inputs.scope }}\` shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }} (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
             # cargo-mutants writes into mutants.out/mutants.out/ (--output names the parent)
             root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
             export MUTANTS_ROOT="$root"
