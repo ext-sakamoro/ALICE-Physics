@@ -294,8 +294,12 @@ REEXPORT_RE = re.compile(
     re.M)
 
 
-def reexports(lib_text: str) -> tuple[dict[str, set[str]], list[str]]:
-    """(`{name at the crate root: modules it comes from}`, modules re-exported with `*`) from the
+PUB_USE_RE = re.compile(r"^pub\s+use\b[^;]*;", re.M)
+
+
+def reexports(lib_text: str) -> tuple[dict[str, set[str]], list[str], list[str]]:
+    """(`{name at the crate root: modules it comes from}`, modules re-exported with `*`, the
+    column-0 `pub use` statements this cannot read) from the
     `pub use <module>::...;` lines at column 0 of src/lib.rs. Most test files reach a type through
     the root (`krate::Cloth`), not through its module. A `*` re-export gives no names to read: its
     module is returned so the plan says that users by a root name are not found for it."""
@@ -310,7 +314,14 @@ def reexports(lib_text: str) -> tuple[dict[str, set[str]], list[str]]:
             words = item.split()
             if words and "::" not in words[0]:
                 names.setdefault(words[-1], set()).add(module)
-    return names, sorted(set(globs))
+    read = {m.group(0) for m in REEXPORT_RE.finditer(lib_text)}
+    # a form the pattern does not cover (nested braces `m::{a::{B, C}}`, `self::`, a path item
+    # inside braces is dropped above): its names are not in the map, so the plan says how many
+    unread = [" ".join(s.split()) for s in (m.group(0) for m in PUB_USE_RE.finditer(lib_text)) if s not in read]
+    for m in REEXPORT_RE.finditer(lib_text):
+        if m.group(2).startswith("{") and any("::" in item for item in m.group(2).strip("{}").split(",")):
+            unread.append(" ".join(m.group(0).split()))
+    return names, sorted(set(globs)), unread
 
 
 def modules_used(text: str, crates: list[str], exports: dict[str, set[str]] | None = None) -> set[str]:
@@ -512,7 +523,7 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     why: dict[str, set[str]] = {}
     crates = crate_names(cargo)
     lib_rs = root / "src" / "lib.rs"
-    exports, globs = reexports(lib_rs.read_text(encoding="utf-8")) if lib_rs.is_file() else ({}, [])
+    exports, globs, unread = reexports(lib_rs.read_text(encoding="utf-8")) if lib_rs.is_file() else ({}, [], [])
     test_texts: dict[str, str] = {}
 
     def text_of(t: str) -> str:
@@ -594,6 +605,8 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
         else:
             for t in mine:
                 select(t, "uses")
+    if unread and seen_modules:
+        not_selected.append({"unread_reexports": len(unread), "example": unread[0][:80]})
     skip, fast = fast_subset({t: text_of(t) for t in tests})
     return {
         "features": sorted(f for f in features if f),
@@ -609,6 +622,9 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
 
 
 def not_selected_line(n: dict) -> str:
+    if "unread_reexports" in n:
+        return (f"{n['unread_reexports']} `pub use` statement(s) of src/lib.rs are in a form the plan does not read "
+                f"(e.g. `{n['example']}`): test files that reach those names through the crate root are not found by use")
     if n.get("glob"):
         return (f"module {n['module']} is re-exported from the crate root with `*`: test files that reach it "
                 "through a root name are not found by use")

@@ -423,6 +423,44 @@ class Selection(unittest.TestCase):
         self.assertEqual(self.plan("src/knot.rs")["not_selected"], [{"module": "knot", "glob": True}])
         self.assertEqual(self.plan("src/cloth.rs")["not_selected"], [])
 
+    def test_a_pub_use_the_plan_cannot_read_is_counted_and_reported(self):
+        lib = self.root / "src/lib.rs"
+        base = lib.read_text(encoding="utf-8")
+        for extra, n, example in (
+                ("pub use cloth::{inner::{Deep, Deeper}, Flat};\n", 1, "pub use cloth::{inner::{Deep, Deeper}, Flat};"),
+                ("pub use self::rope::Knot;\n", 1, "pub use self::rope::Knot;"),
+                ("pub use rope::{sub::Path, Other};\n", 1, "pub use rope::{sub::Path, Other};"),
+                ("pub use cloth::{\n    a::{B},\n};\npub use self::rope::Knot;\n", 2, "pub use cloth::{ a::{B}, };")):
+            with self.subTest(extra=extra):
+                lib.write_text(base + extra, encoding="utf-8")
+                got = [x for x in self.plan("src/math.rs")["not_selected"] if "unread_reexports" in x]
+                self.assertEqual(got, [{"unread_reexports": n, "example": example}])
+        lib.write_text(base, encoding="utf-8")
+        self.assertEqual([x for x in self.plan("src/math.rs")["not_selected"] if "unread_reexports" in x], [])
+        # a diff with no module of src/ plans no use selection: nothing to report
+        lib.write_text(base + "pub use self::rope::Knot;\n", encoding="utf-8")
+        self.assertEqual(self.plan("tests/rope_only.rs")["not_selected"], [])
+
+    def test_the_summary_says_how_many_pub_use_statements_were_not_read(self):
+        lib = self.root / "src/lib.rs"
+        lib.write_text(lib.read_text(encoding="utf-8") + "pub use self::rope::Knot;\n", encoding="utf-8")
+        d = self.root / "change.diff"
+        d.write_text(diff_of("src/math.rs"), encoding="utf-8")
+        s = self.root / "summary.md"
+        old = mp.ROOT
+        mp.ROOT = self.root
+        try:
+            self.assertEqual(mp.main([str(d), "--out", str(self.root / "o.diff"), "--summary", str(s)]), 0)
+        finally:
+            mp.ROOT = old
+        self.assertIn("- not run: 1 `pub use` statement(s) of src/lib.rs are in a form the plan does not read "
+                      "(e.g. `pub use self::rope::Knot;`)", s.read_text(encoding="utf-8"))
+
+    def test_the_real_lib_rs_has_no_pub_use_the_plan_cannot_read(self):
+        names, globs, unread = mp.reexports((mp.ROOT / "src" / "lib.rs").read_text(encoding="utf-8"))
+        self.assertEqual((globs, unread), ([], []))
+        self.assertGreater(len(names), 250)
+
     def test_the_test_file_the_diff_changes_runs_and_is_not_mutated(self):
         p = self.plan("src/math.rs", "tests/rope_only.rs")
         self.assertIn("rope_only", p["tests"])
