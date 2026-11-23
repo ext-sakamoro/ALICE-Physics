@@ -46,6 +46,13 @@ on:
         required: false
         default: ''
         type: string
+      shards:
+        # scoped only. N > 1 cuts the scope into N shards (cargo mutants --shard k/N), one job per
+        # shard and feature axis, at most 4 at a time; one job has 300 minutes
+        description: 'scoped 測定を分ける shard の数 (空 = 1、最大 32)'
+        required: false
+        default: ''
+        type: string
       diff_base:
         # 例: 40 桁の commit  その commit から HEAD までの差分を夜間と同じ形 (shard に分けた in-diff) で試す
         # 記録は夜間の起点には数えない (kind pr)、週次の項目 (core shard / Miri / bench 等) は走らない
@@ -69,14 +76,38 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  scoped-shards:
+    name: Shards of the scoped run
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.cut.outputs.list }}
+      of: ${{ steps.cut.outputs.of }}
+    steps:
+      - id: cut
+        env:
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          n=${SHARDS:-1}
+          case $n in ''|*[!0-9]*) echo "::error::shards must be a whole number (got '$n')"; exit 1;; esac
+          if [ "$n" -lt 1 ] || [ "$n" -gt 32 ]; then echo "::error::shards must be 1 to 32 (got $n)"; exit 1; fi
+          list=$(seq -s, 0 $((n - 1)))
+          echo "list=[$list]" >> "$GITHUB_OUTPUT"
+          echo "of=$n" >> "$GITHUB_OUTPUT"
+          echo "shards: $n ([$list])"
+
   mutants-scoped:
-    name: Mutation testing (scoped, ${{ inputs.scope }})
+    name: Mutation testing (scoped, ${{ inputs.scope }}, shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }})
+    needs: scoped-shards
     if: github.event_name == 'workflow_dispatch' && inputs.scope != ''
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
+        shard: ${{ fromJSON(needs.scoped-shards.outputs.list) }}
         # an explicit `features` input replaces the two default axes (an
         # `exclude` entry with an empty-string value does not match, so the
         # axis list is built with fromJSON instead; 2026-09-16)
@@ -122,7 +153,7 @@ jobs:
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           ulimit -v 6291456
           set +e
-          cargo mutants ${{ inputs.scope }} ${{ inputs.test_tool == 'nextest' && '--test-tool nextest' || '' }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
+          cargo mutants ${{ inputs.scope }} ${{ needs.scoped-shards.outputs.of != '1' && format('--shard {0}/{1}', matrix.shard, needs.scoped-shards.outputs.of) || '' }} ${{ inputs.test_tool == 'nextest' && '--test-tool nextest' || '' }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib ${{ inputs.test_tool == 'nextest' && '--max-fail 1:immediate' || '' }} 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
@@ -136,7 +167,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` shard ${{ matrix.shard }}/${{ needs.scoped-shards.outputs.of }} (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
             # cargo-mutants writes into mutants.out/mutants.out/ (--output names the parent)
             root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
             export MUTANTS_ROOT="$root"
@@ -158,7 +189,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: mutants-scoped-${{ matrix.features == '' && 'default' || matrix.features }}
+          name: mutants-scoped-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || matrix.features }}
           path: mutants.out
           if-no-files-found: ignore
 
@@ -548,7 +579,7 @@ jobs:
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
-    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && inputs.scope == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only; a scoped run is the scoped mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -567,7 +598,7 @@ jobs:
 
   miri:
     name: Miri (UB 検出、parallel feature)
-    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && inputs.scope == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only; a scoped run is the scoped mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -611,7 +642,7 @@ jobs:
     # PR では走らせない (本 file の他 job と同じ方針): `runtime:` の 1 本だけで
     # CI Test job に +154..+309 s かかる実測がある (armaly_backward_step.rs の理由文)
     name: Ignored tests (runtime = must pass / src gap = must fail)
-    if: inputs.diff_base == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
+    if: inputs.diff_base == '' && inputs.scope == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -641,7 +672,7 @@ jobs:
     # 見落とさないため、同じ 2 step を週に 1 回 opt-level 0 (test profile) で走らせる
     # 0 件の実行は red (test result の行が無い・passed が 0)
     name: Whole suite at opt-level 0 (the two ci-test steps of CI, unoptimised)
-    if: inputs.diff_base == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
+    if: inputs.diff_base == '' && inputs.scope == '' && (github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-5')
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -704,7 +735,7 @@ jobs:
 
   bench-regress:
     name: Bench regression (criterion, informational)
-    if: inputs.diff_base == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only
+    if: inputs.diff_base == '' && inputs.scope == '' && (github.event.schedule != '30 17 * * 1-5')  # the nightly run is the in-diff mutants only; a scoped run is the scoped mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
