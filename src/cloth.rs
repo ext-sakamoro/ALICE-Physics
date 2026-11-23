@@ -115,7 +115,8 @@
 //! translation, velocity and exact linear momentum),
 //! `a_zone_whose_translation_the_chord_test_flags_is_frozen`,
 //! `the_self_contact_stages_alone_reduce_the_edge_edge_violations` and
-//! `impact_zone_report_on_the_crumple_sweep` (the per-scene cost); the fold branch:
+//! `impact_zone_report_on_two_crumples` (the per-scene cost; the whole sweep is
+//! `impact_zone_report_on_the_crumple_sweep`, run weekly); the fold branch:
 //! `the_exact_fold_is_corrected_by_the_fold_branch`, `one_ulp_off_the_fold_is_corrected_by_the_fold_branch`,
 //! `a_sweep_of_hinge_angles_to_the_fold_never_gives_a_zero_correction`,
 //! `the_fold_branch_has_no_gap_and_no_overlap`,
@@ -6879,8 +6880,6 @@ mod impact_zone_tests {
 
     /// Positions and velocities after each frame.
     type Frames = Vec<(Vec<Vec3Fix>, Vec<Vec3Fix>)>;
-    /// A named scene and the frames it runs.
-    type Scene = (&'static str, fn() -> Frames);
 
     /// The 9x9 crumple of `tests/analytic_self_contact.rs` (`run_crumple`): the boundary is
     /// pinned and pulled toward the centre over `steps` frames, the centre lifted by 1/8 to
@@ -6976,55 +6975,72 @@ mod impact_zone_tests {
         (out, zone_probe::take())
     }
 
+    /// The hanging cloth run with and without the stage, frame by frame on positions and
+    /// velocities, asserting the stage never fired. `hanging` takes no parameter from its
+    /// frame count (the count only ends the loop), so a longer run checks every shorter one
+    /// as its prefix, bit for bit.
+    fn identity_on_the_hanging_cloth(frames: usize) {
+        let (on, fired) = with_zones(true, || hanging(frames));
+        assert!(
+            fired.is_empty(),
+            "hanging {frames}: the stage fired {} times",
+            fired.len()
+        );
+        let (off, _) = with_zones(false, || hanging(frames));
+        assert_eq!(on.len(), frames);
+        assert_eq!(off.len(), frames);
+        let mut compared = 0usize;
+        for (k, (a, b)) in on.iter().zip(&off).enumerate() {
+            assert!(
+                a == b,
+                "hanging {frames}: frame {k} differs with the stage on"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, frames, "compared {compared} frames");
+    }
+
     /// Where the repair passes converge the stage returns before touching anything, so
     /// every frame is bit-identical to a run without it and the existing goldens stand.
     /// Two forms, frame by frame on positions and velocities:
     /// - whole runs the stage never fires in (asserted: the log is empty): the hanging cloth
-    ///   at 120 and 240 frames;
-    /// - the crumple at 60 and 120 frames up to the first frame the stage fires: checked in
-    ///   `impact_zone_report_on_the_crumple_sweep`, which runs those scenes with and without
-    ///   the stage anyway (one run of each instead of two).
+    ///   at 120 frames here, at 240 in
+    ///   `impact_zones_are_the_identity_over_the_longer_hanging_run`;
+    /// - the crumple up to the first frame the stage fires: checked in
+    ///   `impact_zone_report_on_two_crumples` (60 frames) and
+    ///   `impact_zone_report_on_the_crumple_sweep` (60 and 120), which run those scenes with
+    ///   and without the stage anyway (one run of each instead of two).
     #[test]
     fn impact_zones_are_the_identity_where_the_repair_converges() {
-        let mut compared = 0usize;
-        let scenes: [Scene; 2] = [
-            ("hanging 120", || hanging(120)),
-            ("hanging 240", || hanging(240)),
-        ];
-        for (name, scene) in scenes {
-            let (on, fired) = with_zones(true, scene);
-            assert!(
-                fired.is_empty(),
-                "{name}: the stage fired {} times",
-                fired.len()
-            );
-            let (off, _) = with_zones(false, scene);
-            assert_eq!(on.len(), off.len());
-            for (k, (a, b)) in on.iter().zip(&off).enumerate() {
-                assert!(a == b, "{name}: frame {k} differs with the stage on");
-                compared += 1;
-            }
-        }
-        assert_eq!(compared, 360, "compared {compared} frames");
+        identity_on_the_hanging_cloth(120);
     }
 
-    /// Per crumple scene: how often the stage fires, its largest zone, and what it costs in
-    /// kinetic energy and angular momentum in the frames it fires (the stage's own change,
-    /// measured before and after it in that frame). A whole-cloth freeze would show as a zone
-    /// of every free particle. Also: with the stage the scenes end crossing-free, without it
-    /// they do not (the stage is what makes the invariant hold). At 60 and 120 frames, the
-    /// identity of `impact_zones_are_the_identity_where_the_repair_converges` on the frames
-    /// before the stage first fires.
+    /// The identity of `impact_zones_are_the_identity_where_the_repair_converges` over 240
+    /// frames of the hanging cloth (which contain the 120 of that test as their prefix).
     #[test]
-    fn impact_zone_report_on_the_crumple_sweep() {
+    #[ignore = "runtime: 480 cloth frames with self-contact, about 36 s without optimisation; \
+                the 120-frame run is the lib test; run by run_ignored.py"]
+    fn impact_zones_are_the_identity_over_the_longer_hanging_run() {
+        identity_on_the_hanging_cloth(240);
+    }
+
+    /// Per crumple scene of `step_counts` frames: how often the stage fires, its largest zone,
+    /// and what it costs in kinetic energy and angular momentum in the frames it fires (the
+    /// stage's own change, measured before and after it in that frame). A whole-cloth freeze
+    /// would show as a zone of every free particle. Also: with the stage the scenes end
+    /// crossing-free, without it they do not (the stage is what makes the invariant hold). At
+    /// the counts of `identity_at`, the identity of
+    /// `impact_zones_are_the_identity_where_the_repair_converges` on the frames before the
+    /// stage first fires.
+    fn crumple_report(step_counts: &[usize], identity_at: &[usize]) {
         const FREE: usize = 7 * 7;
         let mut fired_somewhere = 0usize;
         let mut left_without = 0usize;
-        for steps in [20usize, 40, 60, 80, 100, 120] {
+        for &steps in step_counts {
             let ((on, left), fired) = with_zones(true, || crumple(steps));
             let first = FIRST_FIRE.with(core::cell::Cell::get).unwrap_or(steps);
             let ((off, left_off), _) = with_zones(false, || crumple(steps));
-            if steps == 60 || steps == 120 {
+            if identity_at.contains(&steps) {
                 // the identity up to the first frame the stage fires (asserted to be after
                 // some frames of contact, so the prefix is not empty): the frames where
                 // self-contact works but converges
@@ -7092,6 +7108,25 @@ mod impact_zone_tests {
             left_without > 0,
             "without the stage the sweep is already clean"
         );
+    }
+
+    /// `crumple_report` on two crumples, 20 and 60 frames, the identity at 60. Measured
+    /// (`impact_zone_report_on_the_crumple_sweep` prints it): at 20 the stage fires in 4 of
+    /// the 20 frames with a zone of 19 of the 49 free particles and the run without it ends
+    /// with 60 crossings; at 60 it fires 9 times and the run without it ends with 1. So
+    /// both global checks (the stage fired somewhere, the scenes are not clean without it)
+    /// hold on these two alone.
+    #[test]
+    fn impact_zone_report_on_two_crumples() {
+        crumple_report(&[20, 60], &[60]);
+    }
+
+    /// `crumple_report` on the whole sweep, 20 to 120 frames, the identity at 60 and 120.
+    #[test]
+    #[ignore = "runtime: 840 cloth frames with self-contact, about 70 s without optimisation; \
+                the lib test runs the 20- and 60-frame crumples; run by run_ignored.py"]
+    fn impact_zone_report_on_the_crumple_sweep() {
+        crumple_report(&[20, 40, 60, 80, 100, 120], &[60, 120]);
     }
 
     /// Two separate patches (two squares, two triangles each) driven into each other: patch
