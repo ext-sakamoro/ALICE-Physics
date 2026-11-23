@@ -475,10 +475,13 @@ fn a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back() {
     let _ = through_the_pipe(0.027);
 }
 
+/// Two runs of the narrower pipe are the same to the bit, and the wider pipe differs from
+/// them (the first run is compared with both, so three runs instead of four).
 #[test]
 fn a_run_repeats_bit_for_bit() {
-    assert_eq!(through_the_pipe(0.027), through_the_pipe(0.027));
-    assert_ne!(through_the_pipe(0.027), through_the_pipe(0.065));
+    let narrow = through_the_pipe(0.027);
+    assert_eq!(narrow, through_the_pipe(0.027));
+    assert_ne!(narrow, through_the_pipe(0.065));
 }
 
 #[test]
