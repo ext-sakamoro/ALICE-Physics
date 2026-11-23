@@ -63,7 +63,7 @@ on:
       shards:
         # scoped only. N > 1 cuts the scope into N shards (cargo mutants --shard k/N), one job per
         # shard and feature axis, at most 4 at a time; one job has 300 minutes
-        description: 'scoped 測定を分ける shard の数 (空 = 1、最大 32)'
+        description: 'scoped 測定を分ける shard の数 (空 = 1、最大 64)'
         required: false
         default: ''
         type: string
@@ -83,7 +83,8 @@ on:
 
 # one run at a time (the weekly run waits for the nightly one instead of doubling the load)
 concurrency:
-  group: ${{ github.workflow }}
+  # a scoped run has a group of its own (per label): hours of shards neither hold back nor replace the nightly run
+  group: ${{ github.workflow }}${{ github.event_name == 'workflow_dispatch' && inputs.scope != '' && format('-scoped-{0}', inputs.label != '' && inputs.label || 'run') || '' }}
   cancel-in-progress: false
 
 env:
@@ -105,7 +106,7 @@ jobs:
         run: |
           n=${SHARDS:-1}
           case $n in ''|*[!0-9]*) echo "::error::shards must be a whole number (got '$n')"; exit 1;; esac
-          if [ "$n" -lt 1 ] || [ "$n" -gt 32 ]; then echo "::error::shards must be 1 to 32 (got $n)"; exit 1; fi
+          if [ "$n" -lt 1 ] || [ "$n" -gt 64 ]; then echo "::error::shards must be 1 to 64 (got $n)"; exit 1; fi
           list=$(seq -s, 0 $((n - 1)))
           echo "list=[$list]" >> "$GITHUB_OUTPUT"
           echo "of=$n" >> "$GITHUB_OUTPUT"
