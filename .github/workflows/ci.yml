@@ -271,6 +271,12 @@ jobs:
       - name: Heavy workflows stay off the landing path
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/ci_load_check.py
+      - name: Quality Deep runs the same jobs per trigger (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/test_quality_deep_conditions.py
+      - name: Quality Deep runs the same jobs per trigger
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/quality_deep_conditions.py
       # the changes jobs of the path-gated workflows, and the trigger table of
       # docs/CI_TRIGGERS.md against the workflows and .github/ci-evidence.toml
       - name: Changed-paths decider (tests and sync)
