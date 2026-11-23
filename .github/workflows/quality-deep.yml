@@ -38,6 +38,14 @@ on:
         required: false
         default: ''
         type: string
+      test_tool:
+        # scoped only. `nextest` stops a mutant's test run at its first failing test
+        # (--max-fail 1:immediate); the default runner keeps running every other test, so a
+        # mutant that fails a test in seconds can still read as a timeout behind long tests
+        description: 'scoped 測定の test runner (空 = cargo test、nextest = 最初の失敗で止める)'
+        required: false
+        default: ''
+        type: string
       diff_base:
         # 例: 40 桁の commit  その commit から HEAD までの差分を夜間と同じ形 (shard に分けた in-diff) で試す
         # 記録は夜間の起点には数えない (kind pr)、週次の項目 (core shard / Miri / bench 等) は走らない
@@ -82,6 +90,11 @@ jobs:
         with:
           # the version .cargo/mutants.toml (profile = "ci-test") was verified with, as in ci.yml
           tool: cargo-mutants@27.1.0
+      - name: Install cargo-nextest
+        if: inputs.test_tool == 'nextest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.148
       - name: Mutants (scoped)
         run: |
           # build deadline + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
@@ -109,8 +122,8 @@ jobs:
           # job fails with the baseline's measured time (never a quiet "0 mutants tested").
           ulimit -v 6291456
           set +e
-          cargo mutants ${{ inputs.scope }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib 2>&1 | tee /tmp/mutants.log
+          cargo mutants ${{ inputs.scope }} ${{ inputs.test_tool == 'nextest' && '--test-tool nextest' || '' }} --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib ${{ inputs.test_tool == 'nextest' && '--max-fail 1:immediate' || '' }} 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -eq 4 ]; then
