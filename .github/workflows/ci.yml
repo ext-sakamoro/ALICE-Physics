@@ -172,6 +172,9 @@ jobs:
       - name: Semver baseline package reader (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_semver_baseline_has.py
+      - name: No public item gated on the OS (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/test_api_os_gate_check.py
       - name: Baseline selector (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_ci_base.py
