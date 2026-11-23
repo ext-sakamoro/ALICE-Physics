@@ -2564,7 +2564,7 @@ impl Cloth {
         }
         for e in edges {
             let (e0, e1) = (e[0] as usize, e[1] as usize);
-            if !old.iter().any(|o| o.0 == e0 || o.0 == e1) {
+            if !edge_moved(old, e) {
                 continue;
             }
             let eb = padded_bounds(
@@ -2573,7 +2573,7 @@ impl Cloth {
             );
             for f in edges {
                 let (f0, f1) = (f[0] as usize, f[1] as usize);
-                if e0 == f0 || e0 == f1 || e1 == f0 || e1 == f1 {
+                if edges_share_a_vertex(e, f) {
                     continue;
                 }
                 if boxes_disjoint(
@@ -4167,6 +4167,18 @@ fn push_coplanarity_root_times(
     let (left, right) = bezier_split_half(c);
     push_coplanarity_root_times(left, lo, mid, depth - 1, out, n);
     push_coplanarity_root_times(right, mid, hi, depth - 1, out, n);
+}
+
+/// Whether edge `e` has an end among the vertices of `old` (index, previous position, -):
+/// the edges a clipped correction moved.
+fn edge_moved(old: &[(usize, Vec3Fix, Vec3Fix)], e: &[u32; 2]) -> bool {
+    old.iter()
+        .any(|o| o.0 == e[0] as usize || o.0 == e[1] as usize)
+}
+
+/// Whether edges `e` and `f` have an end in common (an edge shares its ends with itself).
+fn edges_share_a_vertex(e: &[u32; 2], f: &[u32; 2]) -> bool {
+    e[0] == f[0] || e[0] == f[1] || e[1] == f[0] || e[1] == f[1]
 }
 
 /// Contact data for an edge pair that met at some point inside the frame.
@@ -9104,5 +9116,258 @@ mod separation_stage_tests {
             },
             "after the second call"
         );
+    }
+}
+
+#[cfg(test)]
+mod separation_unit_tests {
+    use super::*;
+
+    /// A cloth of the points `(x, y, z)` in eighths with the given triangles, every
+    /// particle free, no edge or bend constraints.
+    fn bare(points: &[(i64, i64, i64)], triangles: &[[usize; 3]]) -> Cloth {
+        let mut c = Cloth::new_grid(Vec3Fix::ZERO, Fix128::ONE, Fix128::ONE, 2, 2, Fix128::ONE);
+        c.positions.clear();
+        c.prev_positions.clear();
+        c.velocities.clear();
+        c.inv_masses.clear();
+        c.edge_constraints.clear();
+        c.bend_constraints.clear();
+        c.triangles = triangles.to_vec();
+        for &(x, y, z) in points {
+            let p = eighths(x, y, z);
+            c.positions.push(p);
+            c.prev_positions.push(p);
+            c.velocities.push(Vec3Fix::ZERO);
+            c.inv_masses.push(Fix128::ONE);
+        }
+        c
+    }
+
+    fn eighths(x: i64, y: i64, z: i64) -> Vec3Fix {
+        Vec3Fix::new(
+            Fix128::from_ratio(x, 8),
+            Fix128::from_ratio(y, 8),
+            Fix128::from_ratio(z, 8),
+        )
+    }
+
+    /// `n` particles joined by edges `(i0, i1, rest length)`.
+    fn graph(n: usize, edges: &[(usize, usize, Fix128)]) -> Cloth {
+        let mut c = bare(&vec![(0, 0, 0); n], &[]);
+        for &(i0, i1, rest_length) in edges {
+            c.edge_constraints.push(EdgeConstraint {
+                i0,
+                i1,
+                rest_length,
+            });
+        }
+        c
+    }
+
+    /// The first refresh builds the lists even when the cache's empty inputs already
+    /// equal the cloth's (no particles, no edges, the default thickness); the second is
+    /// served from the cache; a new thickness rebuilds.
+    #[test]
+    fn the_first_near_refresh_builds_even_when_the_inputs_match_the_empty_cache() {
+        let mut c = bare(&[], &[]);
+        c.refresh_near_cache(Fix128::ZERO);
+        assert_eq!(c.near_cache.builds, 1, "the first refresh did not build");
+        c.refresh_near_cache(Fix128::ZERO);
+        assert_eq!(c.near_cache.builds, 1, "an unchanged refresh rebuilt");
+        c.refresh_near_cache(Fix128::ONE);
+        assert_eq!(c.near_cache.builds, 2, "a new thickness did not rebuild");
+    }
+
+    /// The depth-first search meets particle 3 first over the long way (0-2-3, length 4)
+    /// and later over the short way (0-1-3, length 2); only the shorter distance lets it
+    /// reach particle 4 (2 + 2 < 9/2 < 4 + 2). A search that keeps the first distance
+    /// leaves 4 out.
+    #[test]
+    fn a_shorter_way_found_later_replaces_the_first_distance() {
+        let l = Fix128::from_int;
+        let c = graph(
+            5,
+            &[
+                (0, 1, l(1)),
+                (0, 2, l(1)),
+                (2, 3, l(3)),
+                (1, 3, l(1)),
+                (3, 4, l(2)),
+            ],
+        );
+        let lists = c.rest_geodesic_lists(Fix128::from_ratio(9, 2));
+        assert_eq!(lists[0], vec![0, 1, 2, 3, 4]);
+    }
+
+    /// The search meets particle 3 first over the short way (0-3, length 1) and later
+    /// over a longer one (0-2-3, length 4); keeping the shorter distance reaches particle
+    /// 4 (1 + 2 < 9/2), a search that takes the later distance leaves it out. Particle 1
+    /// has no edge.
+    #[test]
+    fn a_longer_way_found_later_keeps_the_first_distance() {
+        let l = Fix128::from_int;
+        let c = graph(5, &[(0, 3, l(1)), (0, 2, l(1)), (2, 3, l(3)), (3, 4, l(2))]);
+        let lists = c.rest_geodesic_lists(Fix128::from_ratio(9, 2));
+        assert_eq!(lists[0], vec![0, 2, 3, 4]);
+        assert_eq!(lists[1], vec![1]);
+    }
+
+    /// Two coincident particles joined by a zero-length edge (a mesh with a repeated
+    /// vertex): each is at distance 0 from the other, and the search ends. A search that
+    /// also takes an equal distance as an improvement goes back and forth forever, so the
+    /// lists are built on a thread and waited for.
+    #[test]
+    fn a_zero_length_edge_ends_the_search() {
+        let c = graph(2, &[(0, 1, Fix128::ZERO)]);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(c.rest_geodesic_lists(Fix128::ONE));
+        });
+        let lists = rx
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("the near lists were not built within 20 s");
+        assert_eq!(lists, vec![vec![0, 1], vec![0, 1]]);
+    }
+
+    /// A triangle in `y = 0` and particle 3 a quarter above it (inside its outline).
+    fn over_a_triangle(height: i64) -> Cloth {
+        bare(
+            &[(0, 0, 0), (32, 0, 0), (0, 0, 32), (8, height, 8)],
+            &[[0, 1, 2]],
+        )
+    }
+
+    /// A correction that creates no crossing is applied whole: the accumulated `delta`
+    /// over the `hits` (two here), times `omega`; a pinned particle of the contact stays
+    /// out (not moved, not counted, not marked moving) and every touched entry is cleared.
+    #[test]
+    fn a_free_correction_is_applied_whole_and_the_pinned_particle_stays_out() {
+        let mut c = over_a_triangle(2);
+        c.inv_masses[0] = Fix128::ZERO;
+        let edges = c.mesh_edges();
+        let mut delta = vec![Vec3Fix::ZERO; 4];
+        let mut hits = vec![0u32; 4];
+        delta[3] = eighths(0, 16, 0);
+        hits[3] = 2;
+        delta[0] = eighths(0, 8, 0);
+        hits[0] = 1;
+        let mut moving = vec![false; 4];
+        let before = c.positions.clone();
+        let moved = c.apply_clipped(
+            &[3, 0],
+            &mut delta,
+            &mut hits,
+            Fix128::from_ratio(1, 8),
+            &edges,
+            Fix128::from_ratio(1, 2),
+            &mut moving,
+        );
+        assert_eq!(moved, 1, "moved vertices");
+        assert_eq!(
+            c.positions[3],
+            before[3] + eighths(0, 4, 0),
+            "delta / hits * omega"
+        );
+        assert_eq!(
+            c.positions[..3],
+            before[..3],
+            "the pinned particle or the face moved"
+        );
+        assert_eq!(moving, vec![false, false, false, true]);
+        assert_eq!(hits, vec![0; 4], "hits not cleared");
+        assert_eq!(delta, vec![Vec3Fix::ZERO; 4], "delta not cleared");
+        assert_eq!(c.self_contact_stats().clipped_corrections, 0);
+    }
+
+    /// A correction that pierces the face below even at a sixteenth (particle 1/32 above
+    /// it, moved 1 down) is dropped: the particle goes back, nothing is marked moving, the
+    /// drop is counted once and the entries are cleared.
+    #[test]
+    fn a_correction_that_pierces_at_every_halving_is_dropped_and_counted() {
+        let mut c = over_a_triangle(0);
+        c.positions[3] =
+            c.positions[3] + Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 32), Fix128::ZERO);
+        let edges = c.mesh_edges();
+        let mut delta = vec![Vec3Fix::ZERO; 4];
+        let mut hits = vec![0u32; 4];
+        delta[3] = eighths(0, -8, 0);
+        hits[3] = 1;
+        let mut moving = vec![false; 4];
+        let before = c.positions.clone();
+        let moved = c.apply_clipped(
+            &[3],
+            &mut delta,
+            &mut hits,
+            Fix128::from_ratio(1, 8),
+            &edges,
+            Fix128::ONE,
+            &mut moving,
+        );
+        assert_eq!(moved, 0, "moved vertices");
+        assert_eq!(c.positions, before, "a dropped correction moved the cloth");
+        assert_eq!(moving, vec![false; 4]);
+        assert_eq!(hits, vec![0; 4]);
+        assert_eq!(delta, vec![Vec3Fix::ZERO; 4]);
+        assert_eq!(c.self_contact_stats().clipped_corrections, 1);
+    }
+
+    /// Edge 0-1 along z over edge 2-3 along x, moved down from `y = 1` to `y = end / 8`
+    /// (the cloth holds the end positions, `old` the start of 0 and 1).
+    fn edge_over_edge(end: i64) -> (Cloth, Vec<(usize, Vec3Fix, Vec3Fix)>) {
+        let c = bare(&[(0, end, -16), (0, end, 16), (-16, 0, 0), (16, 0, 0)], &[]);
+        let old = vec![
+            (0, eighths(0, 8, -16), Vec3Fix::ZERO),
+            (1, eighths(0, 8, 16), Vec3Fix::ZERO),
+        ];
+        (c, old)
+    }
+
+    /// Moving an edge through another is a crossing; stopping exactly on it (gap 0) or
+    /// short of it is not.
+    #[test]
+    fn an_edge_moved_through_another_is_a_crossing_and_one_stopped_on_it_is_not() {
+        let t = Fix128::from_ratio(1, 8);
+        let edges = [[0u32, 1], [2, 3]];
+        for (end, crossing) in [(-8, true), (0, false), (4, false)] {
+            let (c, old) = edge_over_edge(end);
+            assert_eq!(
+                c.move_creates_crossing(&old, t, &edges),
+                crossing,
+                "end y = {end}/8"
+            );
+        }
+    }
+
+    #[test]
+    fn edges_share_a_vertex_exactly_when_an_end_is_common() {
+        let e = [3u32, 5];
+        for (f, shared) in [
+            ([3u32, 5], true),
+            ([3, 9], true),
+            ([9, 3], true),
+            ([5, 9], true),
+            ([9, 5], true),
+            ([5, 3], true),
+            ([7, 9], false),
+        ] {
+            assert_eq!(edges_share_a_vertex(&e, &f), shared, "{e:?} {f:?}");
+        }
+    }
+
+    #[test]
+    fn an_edge_moved_has_an_end_among_the_moved_vertices() {
+        let z = Vec3Fix::ZERO;
+        let old = [(3usize, z, z), (8, z, z)];
+        for (e, moved) in [
+            ([3u32, 4], true),
+            ([4, 3], true),
+            ([8, 1], true),
+            ([1, 8], true),
+            ([1, 4], false),
+        ] {
+            assert_eq!(edge_moved(&old, &e), moved, "{e:?}");
+        }
+        assert!(!edge_moved(&[], &[3, 4]), "nothing moved");
     }
 }
