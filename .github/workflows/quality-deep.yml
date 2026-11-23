@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        # 例: "--file src/solver.rs -F update_velocities -F raycast"  空 = 通常の core 16 shard × 2 feature
+        # 例: "--file src/solver.rs -F update_velocities -F raycast"  空 = 週次と同じ core shard × 2 feature
         # local では並行する cargo build と競合してメモリ不足 / timeout で測定が壊れる (2026-09-15)
         # ため、関数限定の measurement は GH runner で行う (mutants-scoped job 1 本、shard job は skip)
         description: 'cargo mutants の対象限定引数 (--file / -F)、空なら週次と同じ core shard'
@@ -52,13 +52,21 @@ on:
       - 'Cargo.toml'
       - '.github/workflows/quality-deep.yml'
 
-# one run at a time (the weekly run waits for the nightly one instead of doubling the load)
+# one scheduled run at a time (the weekly run waits for the nightly one instead of doubling the load).
+# A group holds one waiting run and a newer waiting run replaces it, so the diff_base dispatches have a
+# second group of their own (one for every ref: one such run at a time): a dispatch is never the run
+# that replaces a waiting nightly, and no schedule replaces it (11-23: a dispatch could only wait
+# behind the weekly run, where the 02:30 run would have replaced it).
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}${{ github.event_name == 'workflow_dispatch' && inputs.diff_base != '' && '-diff' || '' }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  # the weekly core: the plan job counts and times these, the shard jobs test them
+  CORE_FILES: >-
+    --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs
+    --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs
 
 jobs:
   mutants-scoped:
@@ -163,7 +171,10 @@ jobs:
     # - the nightly base is the head of the latest nightly run that measured every shard (or was
     #   set aside, or had no mutant), not a clock: the schedule starts 4.7-6.4 h late, and a night
     #   that was cancelled or did not finish must not drop its lines.
-    # - weekly: the 16 core shards x 2 axes, and every range set aside and not yet measured.
+    # - weekly: the core files (CORE_FILES) cut into shards per axis the same way, from the baseline of
+    #   the core's own build and lib tests (16 shards an axis whatever the baseline until 11-23: fine
+    #   at 25 s build + 4 s test, stopped at the job limit at 85 s + 13 s), and every range set aside
+    #   and not yet measured. A core plan over the cap is not run and the job fails with the counts.
     # Each plan is uploaded as a record (kept 30 days; the runs are read back 21 days).
     name: Mutation plan (shards of the diff, ranges set aside)
     if: github.event_name != 'workflow_dispatch' || inputs.scope == ''
@@ -175,6 +186,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       jobs: ${{ steps.plan.outputs.jobs }}
+      core: ${{ steps.plan.outputs.core }}
       mode: ${{ steps.plan.outputs.mode }}
     steps:
       - uses: actions/checkout@v5
@@ -202,8 +214,42 @@ jobs:
           python3 scripts/mutants_nightly.py fetch --repo "$GITHUB_REPOSITORY" --self "$GITHUB_RUN_ID" --out /tmp/runs.json
           over=false
           if [ "$mode" = weekly ]; then
-            python3 scripts/mutants_nightly.py weekly --runs /tmp/runs.json --head "$head" --now "$now" \
-              --out-record mutants-record.json --out-matrix /tmp/matrix.json | tee -a "$GITHUB_STEP_SUMMARY"
+            counts=()
+            for axis in "default=" "features=parallel,gpu-solver-bridge,simd"; do
+              name="${axis%%=*}"
+              features="${axis#*=}"
+              # shellcheck disable=SC2086
+              cargo mutants --list $CORE_FILES ${features:+--features "$features"} > /tmp/listed.txt
+              n=$(grep -c . /tmp/listed.txt || true)
+              if [ "$n" -eq 0 ]; then echo "::error::$name axis: cargo mutants lists no mutant in the core files"; exit 1; fi
+              # the unmutated baseline with the core shard step's own build and tests (one mutant)
+              set +e
+              # shellcheck disable=SC2086
+              timeout --signal=INT --kill-after=2m 30m \
+                cargo mutants --shard "0/$n" --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 -j 2 --output "/tmp/baseline-$name" \
+                ${features:+--features "$features"} $CORE_FILES --cargo-arg=--lib > "/tmp/baseline-$name.log" 2>&1
+              brc=$?
+              set -e
+              sed -E 's/\x1b\[[0-9;]*m//g' "/tmp/baseline-$name.log" | grep -m1 'Unmutated baseline' || true
+              per=$(python3 scripts/mutants_nightly.py per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {
+                tail -20 "/tmp/baseline-$name.log"
+                echo "::error::$name axis: no unmutated baseline to size the core shards from (cargo-mutants exit $brc): $(sed 's/^error: //' /tmp/per.err)"
+                exit 1
+              }
+              echo "$name axis: $n core mutants, $(cat /tmp/per.err), $per mutants a shard" | tee -a "$GITHUB_STEP_SUMMARY"
+              counts+=(--count "$name=$n" --per "$name=$per")
+            done
+            set +e
+            python3 scripts/mutants_nightly.py weekly --runs /tmp/runs.json --head "$head" --now "$now" "${counts[@]}" \
+              --out-record mutants-record.json --out-matrix /tmp/matrix.json 2> /tmp/plan.err | tee -a "$GITHUB_STEP_SUMMARY"
+            rc=${PIPESTATUS[0]}
+            set -e
+            cat /tmp/plan.err >&2
+            case $rc in
+              0) ;;
+              5) over=true; echo "::error::$(sed 's/^error: //' /tmp/plan.err)" ;;
+              *) exit "$rc" ;;
+            esac
           else
             if [ -n "$DIFF_BASE" ]; then
               base=$(git rev-parse --verify -q "$DIFF_BASE^{commit}") || { echo "::error::diff_base '$DIFF_BASE' is not a commit"; exit 1; }
@@ -277,6 +323,7 @@ jobs:
             echo "over=$over"
             echo "matrix=$(cat /tmp/matrix.json)"
             echo "jobs=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["include"]))' /tmp/matrix.json)"
+            echo "core=$(python3 scripts/mutants_nightly.py core-jobs --record mutants-record.json)"
           } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         if: always()
@@ -288,7 +335,7 @@ jobs:
       - name: The plan is within the cap
         if: steps.plan.outputs.over == 'true'
         run: |
-          echo "::error::the plan is over the cap: no mutant was tested tonight, the range is set aside for the weekly run"
+          echo "::error::the plan is over the cap: the shards over it were not run (a night's range is set aside for the weekly run; a weekly core over the cap is not measured this week)"
           exit 1
 
   mutants-accounted-age:
@@ -307,7 +354,10 @@ jobs:
 
   mutants:
     needs: mutants-plan
-    if: needs.mutants-plan.outputs.jobs != '0'
+    # the plan job fails when the plan is over the cap, after it has written its outputs: the jobs it
+    # did plan (in a weekly run over the core cap, the ranges set aside) still run. A plan job that
+    # stopped before its outputs (a failed baseline, an unreadable record) has no job to run
+    if: always() && needs.mutants-plan.result != 'cancelled' && needs.mutants-plan.outputs.jobs != '' && needs.mutants-plan.outputs.jobs != '0'
     # 2026-09-15 初回実測: 全 crate = 30,677 mutant × 6-9 s (毎回 1378 test) × -j 2 ≈ 30 h、
     # 300 min timeout で a* 5 file しか進まず cancelled (MISSED 290 = animation_blend 157 /
     # anisotropic 55 / aeroelasticity 46 / analytics_bridge 26 / acoustic_wave 6)
@@ -322,9 +372,10 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      # at most four mutation jobs at once: the weekly 32 jobs ran together and
-      # held the runners the landing CI needed for hours
-      max-parallel: 4
+      # a few mutation jobs at once: the weekly 32 jobs ran together and held the runners the
+      # landing CI needed for hours. The weekly run has two more than a night (its cap of core
+      # shards is computed for that number, scripts/mutants_nightly.py)
+      max-parallel: ${{ needs.mutants-plan.outputs.mode == 'weekly' && 6 || 4 }}
       # one entry per job, from the plan: kind (diff / core), shard, of, features, base, head,
       # label, artifact. The second feature axis also turns `simd` on: the x86_64 SIMD paths
       # (`cross_simd`, `dot_batch_4`, the `simd_width` lane count) are only compiled with it,
@@ -460,19 +511,25 @@ jobs:
       - name: Measured (every planned mutant of this shard has an outcome)
         if: always() && matrix.kind == 'diff'
         run: test -f /tmp/measured
-      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
+      - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/${{ matrix.of }}, lib test のみ)
         if: matrix.kind == 'core'
         run: |
           ulimit -v 6291456
           set +e
-          # test timeout derived from the run's own baseline (see the in-diff step for the numbers)
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 --output mutants.out \
+          # test timeout derived from the run's own baseline (see the in-diff step for the numbers);
+          # the shard is what the plan job's baseline says ends before the stop, and a shard that
+          # does not is stopped with its output written (the ratchet then names it as unfinished)
+          # shellcheck disable=SC2086
+          timeout --signal=INT --kill-after=10m 270m \
+            cargo mutants --shard "${{ matrix.shard }}/${{ matrix.of }}" -j 2 --timeout-multiplier 3 --minimum-test-timeout 60 --build-timeout-multiplier 3 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
-            --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
-            --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
-            --cargo-arg=--lib 2>&1 | tee /tmp/mutants.log
+            $CORE_FILES --cargo-arg=--lib 2>&1 | tee /tmp/mutants.log
           rc=${PIPESTATUS[0]}
           set -e
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "::error::core shard ${{ matrix.shard }}/${{ matrix.of }} was stopped at 270 min: $(python3 scripts/mutants_run_status.py mutants.out || true)"
+            exit 1
+          fi
           if [ "$rc" -eq 4 ]; then
             base=$(sed -E 's/\x1b\[[0-9;]*m//g' /tmp/mutants.log | grep -m1 'Unmutated baseline' || echo 'no baseline line in the log')
             echo "::error::cargo-mutants exit 4: the unmutated baseline failed or timed out, 0 mutants tested ($base)"
@@ -518,7 +575,7 @@ jobs:
     # entry this run caught (remove it); a shard that did not finish, or is
     # missing, fails the ratchet. Record a new baseline with `--write` after reviewing it.
     name: Mutation ratchet (weekly shards vs the missed baseline)
-    needs: mutants
+    needs: [mutants-plan, mutants]
     if: always() && inputs.diff_base == '' && (github.event.schedule == '30 17 * * 6' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -529,9 +586,14 @@ jobs:
           pattern: mutants-out-*
           path: mutants-runs
       - name: Compare the missed mutants with the baseline
-        # 16 shards x 2 feature axes: a shard that was cancelled, timed out or never
-        # uploaded fails the ratchet instead of leaving its mutants unchecked
-        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 32
+        # one output directory per core shard job of the plan: a shard that was cancelled, timed
+        # out or never uploaded fails the ratchet instead of leaving its mutants unchecked; a plan
+        # with no core shard (over the cap) compared nothing and fails here too
+        env:
+          CORE_JOBS: ${{ needs.mutants-plan.outputs.core }}
+        run: |
+          if [ "${CORE_JOBS:-0}" -lt 1 ]; then echo "::error::the plan has no core shard: nothing to compare with the baseline"; exit 1; fi
+          python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs "$CORE_JOBS"
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
