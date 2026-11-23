@@ -338,18 +338,22 @@ python3 scripts/no_std_consumer.py
 python3 scripts/test_binding_build_commands.py
 python3 scripts/binding_build_commands.py --check
 
-step "public API snapshot (needs nightly + cargo-public-api)"
-if cargo +nightly public-api --version >/dev/null 2>&1; then
-  tmp=$(mktemp)
-  cargo +nightly public-api --features "$NATIVE" --simplified > "$tmp" 2>/dev/null
-  if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
-    echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
-    exit 1
-  fi
-  rm -f "$tmp"
-else
-  echo "skip: cargo +nightly public-api not installed" >&2
+step "public API snapshot (the nightly and cargo-public-api that security-audit.yml pins)"
+# the pins are read from the workflow, so the two cannot drift apart; a missing tool is a
+# failure, not a skip: a landing reads this run's receipt in place of a hosted macOS run
+api_nightly=$(sed -n 's/^ *toolchain: \(nightly-[0-9][0-9-]*\)$/\1/p' .github/workflows/security-audit.yml)
+api_tool=$(sed -n 's/.*cargo install cargo-public-api --locked --version \([0-9][0-9.]*\).*/\1/p' .github/workflows/security-audit.yml)
+[ "$(printf '%s\n' "$api_nightly" | grep -c .)" = 1 ] && [ "$(printf '%s\n' "$api_tool" | grep -c .)" = 1 ] \
+  || { echo "security-audit.yml: expected one nightly pin and one cargo-public-api pin, read '$api_nightly' / '$api_tool'" >&2; exit 1; }
+[ "$(cargo +"$api_nightly" public-api --version 2>/dev/null)" = "cargo-public-api $api_tool" ] \
+  || { echo "needs cargo-public-api $api_tool on $api_nightly: rustup toolchain install $api_nightly --component rustc-dev && cargo install cargo-public-api --locked --version $api_tool" >&2; exit 1; }
+tmp=$(mktemp)
+cargo +"$api_nightly" public-api --features "$NATIVE" --simplified > "$tmp"
+if ! diff -u docs/PUBLIC_API_SNAPSHOT.txt "$tmp"; then
+  echo "public API drift: regenerate docs/PUBLIC_API_SNAPSHOT.txt (diff above)" >&2
+  exit 1
 fi
+rm -f "$tmp"
 
 # Cheap, failure-prone gates run first so a red shows up in minutes, not after
 # the whole test suite (2026-10-04: the L0 ratchet used to be the LAST step, so a

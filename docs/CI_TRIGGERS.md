@@ -74,7 +74,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
 | `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
 | `public-text.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
-| `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
+| `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `quality-deep.yml` | - | - | `main (paths)` | yes | yes | - | schedule-only |
 | `reexport_check.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `release.yml` | `tags v*` | - | - | - | - | - | tag-only |
@@ -88,7 +88,11 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 ## Legs of landing workflows not read before the landing
 
 The hosted macOS legs (`macos-latest`, the arm64 leg that holds the golden hashes, and
-`macos-15-intel`) take the longest, and no push runs them: they are class `weekly`.
+`macos-15-intel`) take the longest, and no push runs them: they are class `weekly`. The
+same holds for the `macos-latest` leg of the C ABI artifacts (`ci.yml` `facade-artifacts`)
+and the Python wheel (`python-binding.yml`), each run on its workflow's weekly schedule and on a manual run with `macos=true`. The public API snapshot
+(`security-audit.yml` `public-api-diff`) needs an aarch64 target, not macOS, and runs on
+`ubuntu-24.04-arm` on every push.
 
 - They run on the weekly schedule (the `test` legs, when `main`'s HEAD has no successful
   Intel job yet, and the `determinism-release` arm64 leg) and on a manual run with the
@@ -98,7 +102,9 @@ The hosted macOS legs (`macos-latest`, the arm64 leg that holds the golden hashe
   of the landing tree made on an arm64 Mac (`scripts/land.py`, the macOS receipt): a
   receipt of mode `full`, made on `Darwin arm64`, that compared at least one `cargo test`
   command of `ci.yml` (`scripts/preflight_ci_parity.py`, which shows that
-  `scripts/preflight.sh` runs every one of them). It may come from either of the
+  `scripts/preflight.sh` runs every one of them). The full preflight also runs the scripts
+  of the other weekly macOS legs (`scripts/facade_artifacts.py`, the wheel build and `python/tests/test_binding.py`), and fails, never skips, when a tool one
+  of them needs is missing. It may come from either of the
   account's arm64 Macs (the machine that lands, or the remote receipt machine).
 - The Mac Intel leg is weekly only: no landing reads an x86_64 macOS result.
 
@@ -117,6 +123,8 @@ not on a `ci/**` push is not declared.
 | `ci.yml` | `test` | `macos-latest` | weekly | schedule |
 | `ci.yml` | `test` | `macos-15-intel` | weekly | schedule |
 | `ci.yml` | `determinism-release` | `macos-latest` | weekly | schedule |
+| `ci.yml` | `facade-artifacts` | `macos-latest` | weekly | schedule |
+| `python-binding.yml` | `wheel` | `macos-latest` | weekly | schedule |
 <!-- ci-triggers:after-landing-legs:end -->
 
 ## What the landing waits on
