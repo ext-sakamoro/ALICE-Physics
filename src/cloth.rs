@@ -9280,6 +9280,38 @@ mod separation_unit_tests {
         assert_eq!(c.self_contact_stats().clipped_corrections, 0);
     }
 
+    /// Every free vertex of the contact gets its own correction: with two free vertices
+    /// (particle 3 and face corner 0, both moved up, the face staying below the particle)
+    /// both are applied and both are marked moving, not only the first one listed.
+    #[test]
+    fn each_free_vertex_of_a_contact_is_corrected() {
+        let mut c = over_a_triangle(2);
+        let edges = c.mesh_edges();
+        let mut delta = vec![Vec3Fix::ZERO; 4];
+        let mut hits = vec![0u32; 4];
+        delta[3] = eighths(0, 4, 0);
+        hits[3] = 1;
+        delta[0] = eighths(0, 1, 0);
+        hits[0] = 1;
+        let mut moving = vec![false; 4];
+        let before = c.positions.clone();
+        let moved = c.apply_clipped(
+            &[3, 0],
+            &mut delta,
+            &mut hits,
+            Fix128::from_ratio(1, 8),
+            &edges,
+            Fix128::ONE,
+            &mut moving,
+        );
+        assert_eq!(moved, 2, "moved vertices");
+        assert_eq!(c.positions[3], before[3] + eighths(0, 4, 0), "particle 3");
+        assert_eq!(c.positions[0], before[0] + eighths(0, 1, 0), "corner 0");
+        assert_eq!(c.positions[1..3], before[1..3], "corners 1 and 2 moved");
+        assert_eq!(moving, vec![true, false, false, true]);
+        assert_eq!(c.self_contact_stats().clipped_corrections, 0);
+    }
+
     /// A correction that pierces the face below even at a sixteenth (particle 1/32 above
     /// it, moved 1 down) is dropped: the particle goes back, nothing is marked moving, the
     /// drop is counted once and the entries are cleared.
