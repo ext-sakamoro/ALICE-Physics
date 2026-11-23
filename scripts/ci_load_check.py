@@ -6,8 +6,10 @@ together they held the runners for hours, and the CI of the ci/** branches that
 scripts/land.py waits on stayed queued. The rules:
 
   * quality-deep.yml (weekly mutants) never triggers on push (so never on ci/**),
-    has one concurrency group per workflow, and caps its mutation matrix with
-    `max-parallel` of at most MAX_PARALLEL;
+    has one concurrency group per workflow (and one more for its diff_base
+    dispatches, QD_GROUP; see the amendment of 2026-11-23), and caps its mutation
+    matrix with `max-parallel` of at most MAX_PARALLEL (WEEKLY_MAX_PARALLEL in the
+    weekly run);
   * bench-gate.yml and integration-status.yml use exactly
     the two-class concurrency of TWO_CLASS_GROUP with `cancel-in-progress: false`:
     at most one main run and one ci/** run at a time, a new run waits instead of
@@ -45,6 +47,17 @@ superseded), main runs wait instead of being cut off, and the number of parallel
 runs is bounded by the path gate (only a change of the unsafe / parallel code or
 its tests starts one), which stays required on ci/**.
 
+Amendment, 2026-11-23. Amended rule: quality-deep.yml had one group and at most
+MAX_PARALLEL mutation jobs at a time. Reason: a group holds one waiting run and a
+newer one replaces it, so a diff_base dispatch that waited behind a weekly run was
+replaced by the next nightly (or replaced it); and the weekly core, cut by the
+measured baseline, is 25 shards an axis where 16 no longer end in the job limit,
+which four jobs at a time do not finish in the 48 h before the next nightly. The
+rule now reads: the scheduled runs keep the one group; the diff_base dispatches
+have one group of their own, for every ref together (one running and one waiting,
+never a group per ref); the mutation matrix runs at most MAX_PARALLEL jobs at a
+time, WEEKLY_MAX_PARALLEL in the weekly run, written as QD_PARALLEL_RE.
+
 The workflows are read as text (no YAML library on the runners): the `on:`
 block, the top-level `concurrency:` block and the job headers are inspected.
 Fails when no heavy workflow was compared.
@@ -69,6 +82,11 @@ PER_REF = ("unsafe-and-parallel.yml",)
 PATH_GATED = ("unsafe-and-parallel.yml",)
 HEAVY = (QUALITY_DEEP,) + TWO_CLASS + PER_REF
 MAX_PARALLEL = 4
+WEEKLY_MAX_PARALLEL = 6
+QD_GROUPS = ("${{ github.workflow }}",
+             "${{ github.workflow }}${{ github.event_name == 'workflow_dispatch' && inputs.diff_base != '' && '-diff' || '' }}")
+# `max-parallel` of the mutation matrix: a number, or the weekly number and the number of the other runs
+QD_PARALLEL_RE = re.compile(r"^\s*max-parallel:\s*(?:(\d+)|\$\{\{ needs\.mutants-plan\.outputs\.mode == 'weekly' && (\d+) \|\| (\d+) \}\})\s*$", re.M)
 TWO_CLASS_GROUP = "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}"
 PER_REF_GROUP = "${{ github.workflow }}-${{ github.ref }}"
 PER_REF_CANCEL = "${{ github.ref != 'refs/heads/main' }}"
@@ -165,11 +183,24 @@ def check(root: Path) -> tuple[list[str], int]:
                 errors.append(f"{name}: triggers on push; it runs on a schedule or dispatch only")
             if group is not None and "github.ref" in group:
                 errors.append(f"{name}: concurrency group {group} is per ref; use one group per workflow")
-            mp = [int(x) for x in re.findall(r"^\s*max-parallel:\s*(\d+)", text, re.M)]
-            if not mp:
+            elif group is not None and group not in QD_GROUPS:
+                errors.append(f"{name}: concurrency group {group} is not the workflow's one group, nor that group "
+                              "with the one group of the diff_base dispatches")
+            if cancel != "false":
+                errors.append(f"{name}: cancel-in-progress is {cancel!r}; a running mutation run is never cut off")
+            lines = re.findall(r"^\s*max-parallel:.*$", text, re.M)
+            found = QD_PARALLEL_RE.findall(text)
+            if not lines:
                 errors.append(f"{name}: the mutation matrix has no max-parallel")
-            elif max(mp) > MAX_PARALLEL:
-                errors.append(f"{name}: max-parallel {max(mp)} exceeds {MAX_PARALLEL}")
+            elif len(found) != len(lines):
+                errors.append(f"{name}: a max-parallel is neither a number nor the weekly / other pair (not read)")
+            for plain, weekly, other in found:
+                if plain and int(plain) > MAX_PARALLEL:
+                    errors.append(f"{name}: max-parallel {plain} exceeds {MAX_PARALLEL}")
+                if weekly and int(weekly) > WEEKLY_MAX_PARALLEL:
+                    errors.append(f"{name}: max-parallel {weekly} of the weekly run exceeds {WEEKLY_MAX_PARALLEL}")
+                if other and int(other) > MAX_PARALLEL:
+                    errors.append(f"{name}: max-parallel {other} exceeds {MAX_PARALLEL}")
             continue
         if name in PER_REF:
             if group is not None and group != PER_REF_GROUP:
