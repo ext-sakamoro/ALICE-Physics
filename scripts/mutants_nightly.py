@@ -31,8 +31,8 @@ whose base was the head of such a record. A named run that has left the window i
 printed with the base says how many were passed over.
 
 A range can be set aside only from where the tested lines end: the `diff_base` of an aside dispatch must be
-the last trusted head (`anchor`: the base a night would take, or the head of the latest weekly record when
-no night gives one) or an ancestor of it; the plan step checks that with git and refuses a later one, since
+the last trusted head (`anchor`: the base a night would take, or, when no night gives one, the head of the
+latest weekly run whose every core shard ran to its end) or an ancestor of it; the plan step checks that with git and refuses a later one, since
 the lines between the two would be in no night's diff and in no range.
 
 An over-cap range stays open until a weekly run whose record lists it has every shard job of that range
@@ -102,6 +102,10 @@ CORE_CAP = (WEEKLY_BUDGET_H * 60 // JOB_MIN) * WEEKLY_PARALLEL // len(AXES)
 RECORD_ARTIFACT = "mutants-record"
 RECORD_FILE = "mutants-record.json"
 MEASURED_STEP = "Measured (every planned mutant of this shard has an outcome)"
+# how the name of a core shard job's mutants step starts (the rest names the shard): the step ends in success
+# when cargo-mutants ran the shard to its end (missed mutants are the ratchet's, not this step's), and fails
+# when the shard was stopped at the limit or the unmutated tree failed
+CORE_STEP = "Mutants (weekly = core "
 CARRYING = ("nightly", "weekly", "aside")   # the record kinds whose `open` list is the carried list
 # what the plan step is told about where the base came from, and the one each mode takes
 BASE_FROM = {"nightly": ("record",), "pr": ("pull-request", "dispatch"), "aside": ("dispatch",)}
@@ -179,6 +183,20 @@ def measured(run: dict, base: str, head: str, jobs: int) -> bool:
                for j in mine)
 
 
+def core_measured(run: dict) -> bool:
+    """whether a weekly run tested its core: the plan was accepted (not over the cap) and every core shard job
+    it planned ran its mutants step to the end"""
+    rec = run.get("record") or {}
+    if rec.get("kind") != "weekly" or rec.get("state") != "accepted":
+        return False
+    jobs = (rec.get("core") or {}).get("jobs", 0)
+    mine = [j for j in run.get("jobs", []) if "(core shard " in j.get("name", "")]
+    if jobs <= 0 or len(mine) != jobs:
+        return False
+    return all(any(s.get("name", "").startswith(CORE_STEP) and s.get("conclusion") == "success" for s in j.get("steps", []))
+               for j in mine)
+
+
 def check_records(runs: list[dict]) -> None:
     bad = [f"run {r.get('id')}: {r['record_error']}" for r in runs if r.get("record_error")]
     if bad:
@@ -228,16 +246,22 @@ def pick_base(runs: list[dict]) -> tuple[str | None, str]:
 
 
 def anchor(runs: list[dict]) -> tuple[str | None, str]:
-    """(the last trusted head, why): the base a night would take; with none, the head of the latest weekly
-    record. A range is set aside from here or from an ancestor of it"""
+    """(the last trusted head, why): the base a night would take; with none, the head of the latest weekly run
+    that tested its core (core_measured: one over the cap, cancelled or with a stopped shard tested nothing at
+    its head, and is passed over with a count). A range is set aside from here or from an ancestor of it"""
     sha, why, _ = pick(runs)
     if sha:
         return sha, why
+    passed = 0
     for r in by_time(runs):
         rec = r.get("record")
-        if rec and rec.get("kind") == "weekly":
-            return rec["head"], f"{why}; run {r['id']} is the latest weekly run"
-    return None, f"{why}, and no weekly record in the window"
+        if not rec or rec.get("kind") != "weekly":
+            continue
+        if core_measured(r):
+            return rec["head"], (f"{why}; run {r['id']} is the latest weekly run that measured its core"
+                                 + (f" ({passed} later weekly run(s) passed over: core not measured)" if passed else ""))
+        passed += 1
+    return None, f"{why}, and no weekly run in the window measured its core ({passed} weekly record(s) read)"
 
 
 def pick(runs: list[dict]) -> tuple[str | None, str, int | None]:

@@ -30,8 +30,15 @@ KILLED = [{"name": "Set up job", "conclusion": "success"}, {"name": mn.MEASURED_
 OUT = 9000   # run ids from here on are of runs outside the window of a case
 
 
+def core_steps(e: dict, conclusion: str = "success") -> list[dict]:
+    return [OK[0], {"name": f"{mn.CORE_STEP}8 module, shard {e['shard']}/{e['of']}, lib test のみ)", "conclusion": conclusion}]
+
+
 def jobs_of(entries: list[dict], steps=None) -> list[dict]:
-    return [{"name": f"Mutation testing ({e['label']})", "conclusion": "success", "steps": steps or OK} for e in entries]
+    """the jobs a plan's entries become: a range shard ends its Measured step, a core shard its mutants step
+    (`steps` replaces those of the range shards)"""
+    return [{"name": f"Mutation testing ({e['label']})", "conclusion": "success",
+             "steps": core_steps(e) if e["kind"] == "core" else (steps or OK)} for e in entries]
 
 
 def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, drop: int = 0, carried=None) -> dict:
@@ -96,6 +103,15 @@ def weekly(run_id: int, day: int, head: str, ranges: list[dict], steps=None, ski
 
 
 BIG = {"default": 1634, "features": 1634}
+
+
+def weekly_over(run_id: int, day: int, head: str) -> dict:
+    """a weekly run whose core plan is over the cap: no core job"""
+    n = {"default": 199 * (mn.CORE_CAP + 1), "features": 199}
+    rec, entries = mn.weekly_record(head, [], f"2026-11-{day:02d}T18:00:00Z", n, CORE_PER)
+    assert rec["state"] == "over-cap" and not entries
+    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T18:00:00Z", "conclusion": "failure",
+            "jobs": [], "record": rec, "record_error": None}
 
 
 class Shards(unittest.TestCase):
@@ -232,10 +248,58 @@ class Base(unittest.TestCase):
         only_clock = [by_the_clock(2, 19, C, D)]
         sha, why = mn.anchor(only_clock + [weekly(5, 14, A, []), weekly(6, 21, B, [])])
         self.assertEqual(sha, B)
-        self.assertIn("run 6 is the latest weekly run", why)
+        self.assertIn("run 6 is the latest weekly run that measured its core", why)
+        self.assertNotIn("passed over", why.split("; run 6")[1])
         sha, why = mn.anchor(only_clock)
         self.assertIsNone(sha)
-        self.assertIn("no weekly record in the window", why)
+        self.assertIn("no weekly run in the window measured its core (0 weekly record(s) read)", why)
+
+    def test_a_weekly_run_that_did_not_measure_its_core_is_not_an_anchor(self):
+        only_clock = [by_the_clock(2, 19, C, D)]
+        good = weekly(5, 14, A, [])
+        self.assertTrue(mn.core_measured(good))
+
+        def broken(how: str) -> dict:
+            w = weekly(6, 21, B, [])
+            if how == "a core shard stopped at the limit":
+                w["jobs"][3]["steps"] = core_steps({"shard": 3, "of": 25}, "failure")
+            elif how == "a core shard cancelled before its step":
+                w["jobs"][3]["steps"] = [OK[0]]
+            elif how == "a core shard job missing":
+                del w["jobs"][3]
+            elif how == "cancelled before any job":
+                w["jobs"] = []
+            elif how == "only the Measured step of a range shard":
+                w["jobs"][3]["steps"] = OK
+            elif how == "over the cap":
+                w = weekly_over(6, 21, B)
+            elif how == "a record that is not of an accepted plan":
+                w["record"]["state"] = "over-cap"       # (whatever its jobs say)
+            elif how == "a record that plans no core job":
+                w["record"]["core"]["jobs"] = 0
+                w["jobs"] = []
+            return w
+        for how in ("a core shard stopped at the limit", "a core shard cancelled before its step", "a core shard job missing",
+                    "cancelled before any job", "only the Measured step of a range shard", "over the cap",
+                    "a record that is not of an accepted plan",
+                    "a record that plans no core job"):
+            with self.subTest(how=how):
+                bad = broken(how)
+                self.assertFalse(mn.core_measured(bad))
+                sha, why = mn.anchor(only_clock + [good, bad])
+                self.assertEqual(sha, A, "the weekly run before it, which measured")
+                self.assertIn("run 5 is the latest weekly run that measured its core (1 later weekly run(s) passed over", why)
+                sha, why = mn.anchor(only_clock + [bad])
+                self.assertIsNone(sha)
+                self.assertIn("no weekly run in the window measured its core (1 weekly record(s) read)", why)
+        # a missed mutant fails the job, not the step: the core was still measured
+        missed = weekly(6, 21, B, [])
+        for j in missed["jobs"]:
+            j["conclusion"] = "failure"
+        self.assertEqual(mn.anchor(only_clock + [good, missed])[0], B)
+        # range shards of the same run do not count as core shards, in either direction
+        with_range = weekly(7, 21, B, [{"base": A, "head": B, "counts": BIG, "per": P, "since": "2026-11-19T22:00:00Z"}], steps=KILLED)
+        self.assertTrue(mn.core_measured(with_range), "its range shards were killed, its core ran")
 
     def test_a_record_that_says_its_base_came_from_elsewhere_is_never_a_base(self):
         run = night(2, 19, B, C)
@@ -820,6 +884,19 @@ class Workflow(unittest.TestCase):
     def test_the_shard_job_has_the_measured_step_under_the_name_the_plan_reads(self):
         self.assertEqual(self.TEXT.count(f"      - name: {mn.MEASURED_STEP}\n        if: always() && matrix.kind == 'diff'\n"), 1)
         self.assertEqual(self.TEXT.count("touch /tmp/measured"), 4)
+
+    def test_the_core_shard_step_has_the_name_the_anchor_reads(self):
+        named = [ln for ln in self.TEXT.splitlines() if ln.startswith(f"      - name: {mn.CORE_STEP}")]
+        self.assertEqual(len(named), 1, named)
+        at = self.TEXT.index(named[0])
+        self.assertTrue(self.TEXT[at + len(named[0]):].startswith("\n        if: matrix.kind == 'core'\n"))
+        label = mn.core_entries(D, {"default": 1, "features": 1})[0]["label"]
+        self.assertIn("    name: Mutation testing (${{ matrix.label }})\n", self.TEXT)
+        self.assertIn("(core shard ", f"Mutation testing ({label})", "what core_measured looks for in a job's name")
+        # the step fails when the shard was stopped or the unmutated tree failed, and not for a missed mutant
+        step = self.TEXT[at:self.TEXT.index("\n      - name: ", at + 10)]
+        self.assertIn('if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then', step)
+        self.assertIn("case $rc in 0|2|3) ;;", step)
 
     def test_the_job_name_is_the_plan_s_label_and_the_matrix_is_the_plan_s(self):
         self.assertIn("    name: Mutation testing (${{ matrix.label }})\n", self.TEXT)
