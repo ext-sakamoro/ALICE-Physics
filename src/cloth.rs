@@ -7263,6 +7263,17 @@ mod impact_zone_tests {
     /// A named scene and the frames it runs.
     type Scene = (&'static str, fn() -> Frames);
 
+    /// The stall counter adds one per stalled zone call and `take_stalls` returns the
+    /// count and resets it: two stalls read as 2, then 0.
+    #[test]
+    fn two_stalls_read_as_two_then_zero() {
+        zone_probe::take_stalls();
+        zone_probe::record_stall();
+        zone_probe::record_stall();
+        assert_eq!(zone_probe::take_stalls(), 2);
+        assert_eq!(zone_probe::take_stalls(), 0);
+    }
+
     /// The 9x9 crumple of `tests/analytic_self_contact.rs` (`run_crumple`): the boundary is
     /// pinned and pulled toward the centre over `steps` frames, the centre lifted by 1/8 to
     /// break the symmetry. Returns the per-frame state and the crossings left.
