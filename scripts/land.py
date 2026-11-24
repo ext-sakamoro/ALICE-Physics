@@ -1585,11 +1585,41 @@ class Lander:
             if "--scip" in cmd and skip:
                 continue   # (the CI's scip job runs it on the same SHA: ci_receipt requires that job)
             self.sh(*cmd)
-        # the cheap prepass does not build: every workflow step that can run here (lints, doc builds, checkers)
-        # has run on this code, all green (scripts/local_receipt.py; without the receipt a red one is found a CI
-        # round later); a series that changes src/ needs the receipt of the lib coverage ratchet too (`run --slow`)
-        self.sh(sys.executable, "scripts/local_receipt.py", "check", "--base", f"{self.remote}/{self.branch}")
         self.check_changelog()
+
+    def local_receipt_gap(self) -> str | None:
+        """the cheap prepass does not build: every workflow step that can run here (lints, doc builds, checkers)
+        has run on this code, all green (scripts/local_receipt.py; without the receipt a red one is found a CI
+        round later); a series that changes src/ needs the receipt of the lib coverage ratchet too (`run --slow`).
+        None when the receipts are held, else what the check said (it names every one that is missing)"""
+        cmd = [sys.executable, "scripts/local_receipt.py", "check", "--base", f"{self.remote}/{self.branch}"]
+        self.log("$ " + " ".join(cmd))
+        r = subprocess.run(cmd, cwd=self.root, env=self.child_env(), capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            self.log(line)
+        if r.returncode == 0:
+            return None
+        said = "\n".join(line for line in r.stderr.splitlines() if line.strip())
+        return said or f"`{' '.join(cmd)}` failed (exit {r.returncode}) and said nothing"
+
+    def check_receipts(self, tree: str, others: list[str]) -> None:
+        """the receipts a landing asks for that only a run of hours makes, asked together: the local receipt (and
+        the slow one), and for a public repository the full preflight made on an arm64 Mac. Each one that is
+        missing is named in the one refusal, so they can all be queued at once (2026-11-24: a landing learned of
+        three, one refusal at a time, hours apart)"""
+        gaps = []
+        said = self.local_receipt_gap()
+        if said:
+            gaps.append(said)
+        if self.direct_reason is None and self.is_public():
+            try:
+                self.check_macos_receipt(self.macos_receipt_trees(tree, others))
+            except LandError as e:
+                gaps.append(str(e))
+        if gaps:
+            raise LandError(f"{len(gaps)} of the receipts this landing asks for {'is' if len(gaps) == 1 else 'are'} "
+                            "missing or not green (every one is listed: make them all before the next attempt):\n"
+                            + "\n".join(f"  [{n}] " + g.replace("\n", "\n      ") for n, g in enumerate(gaps, 1)))
 
     def check_changelog(self) -> None:
         p = self.root / "CHANGELOG.md"
@@ -2112,10 +2142,10 @@ class Lander:
         # it): a rebase makes a new tree, so after one the preflight runs whatever `verify` chose (2026-10-29: a
         # documents-only or compile-only rebase used to push a tree no preflight had run on)
         tree = self.git("rev-parse", "HEAD^{tree}")
+        # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local; the hosted
+        # macOS legs are weekly, so the arm64 macOS run is a full preflight made on an arm64 Mac (macOS receipt)
+        self.check_receipts(tree, [source_tree, author_tree])
         if self.direct_reason is None and self.is_public():
-            # a public repository: the build and the tests are its CI's (ci_receipt), the prepass is local; the hosted
-            # macOS legs are weekly, so the arm64 macOS run is a full preflight made on an arm64 Mac (macOS receipt)
-            self.check_macos_receipt(self.macos_receipt_trees(tree, [source_tree, author_tree]))
             if tree != self.preflighted_tree:
                 self.run_cheap()
                 self.preflighted_tree = tree

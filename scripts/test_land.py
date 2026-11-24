@@ -494,6 +494,10 @@ class FakeLander(land.Lander):
         self.calls.append("checks")
         self.check_changelog()
 
+    def local_receipt_gap(self):
+        self.calls.append("local_receipt")
+        return getattr(self, "local_gap", None)
+
     def run_compile_check(self):
         self.calls.append("compile")
 
@@ -656,6 +660,72 @@ class MacosReceipt(Isolated):
                 land.Lander.check_macos_receipt(self, trees)
         with self.assertRaisesRegex(land.LandError, "arm64 Mac"):
             NoMac(self.r.work, "T-1").land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_every_missing_receipt_is_named_in_the_first_refusal(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        before = self.r.origin_head()
+        local = ("local_receipt: 2 receipts are missing or not green:\n  - no receipt for the code of HEAD (abc)\n"
+                 "  - no slow receipt for the code of HEAD (abc)")
+
+        class NoMac(PublicLander):
+            def check_macos_receipt(self, trees):
+                self.calls.append("macos_receipt")
+                land.Lander.check_macos_receipt(self, trees)
+        lander = NoMac(self.r.work, "T-1")
+        lander.local_gap = local
+        with self.assertRaises(land.LandError) as refused:
+            lander.land()
+        said = str(refused.exception)
+        self.assertRegex(said, r"^2 of the receipts this landing asks for are missing or not green")
+        self.assertIn("  [1] local_receipt: 2 receipts are missing or not green:\n        - no receipt for the code", said)
+        self.assertIn("      - no slow receipt for the code of HEAD", said)
+        self.assertIn("  [2] no full preflight made on an arm64 Mac for this landing", said)
+        self.assertLess(lander.calls.index("local_receipt"), lander.calls.index("macos_receipt"))
+        self.assertNotIn("cheap", lander.calls)
+        self.assertEqual(self.r.origin_head(), before)
+        # one missing: named alone, and the other was still asked
+        tree = git(self.r.work, "rev-parse", "HEAD^{tree}")
+        for gap, listed, want in ((local, [tree], r"^1 of the receipts this landing asks for is missing.*\n  \[1\] local_receipt: "),
+                                  (None, [], r"^1 of the receipts .* is missing.*\n  \[1\] no full preflight made on an arm64 Mac")):
+            with self.subTest(local=bool(gap)):
+                (self.cc / "macos-receipts.txt").write_text("\n".join(listed))
+                lander = NoMac(self.r.work, "T-1")
+                lander.local_gap = gap
+                with self.assertRaisesRegex(land.LandError, want) as refused:
+                    lander.land()
+                self.assertNotIn("[2]", str(refused.exception))
+                self.assertEqual(lander.calls.count("local_receipt"), 1)
+                self.assertEqual(lander.calls.count("macos_receipt"), 1)
+                self.assertEqual(self.r.origin_head(), before)
+
+    def test_the_local_receipt_is_asked_of_the_checkout_s_script_against_the_landing_branch(self):
+        lander = self.lander()
+        script = lander.root / "scripts" / "local_receipt.py"
+        script.parent.mkdir(exist_ok=True)
+        script.write_text("import sys\nprint(' '.join(sys.argv[1:]))\nsys.exit(0)\n", encoding="utf-8")
+        logged = []
+        lander.log = logged.append
+        self.assertIsNone(land.Lander.local_receipt_gap(lander))
+        self.assertIn("check --base origin/main", logged)
+        script.write_text("import sys\nprint('local_receipt: 2 receipts are missing or not green:', file=sys.stderr)\n"
+                          "print('  - no receipt', file=sys.stderr)\nprint('  - no slow receipt', file=sys.stderr)\nsys.exit(1)\n",
+                          encoding="utf-8")
+        self.assertEqual(land.Lander.local_receipt_gap(lander),
+                         "local_receipt: 2 receipts are missing or not green:\n  - no receipt\n  - no slow receipt")
+        script.write_text("import sys\nsys.exit(3)\n", encoding="utf-8")
+        self.assertRegex(land.Lander.local_receipt_gap(lander), r"local_receipt\.py check --base origin/main` failed \(exit 3\)")
+        script.unlink()
+        self.assertIsNotNone(land.Lander.local_receipt_gap(lander), "no script is not a pass")
+
+    def test_a_private_landing_asks_for_the_local_receipt_and_refuses_without_it(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": self.CL}, "feat: b")
+        before = self.r.origin_head()
+        lander = self.r.lander()
+        lander.local_gap = "local_receipt: no receipt for the code of HEAD (abc)"
+        with self.assertRaisesRegex(land.LandError, r"^1 of the receipts .*\n  \[1\] local_receipt: no receipt"):
+            lander.land()
+        self.assertNotIn("preflight", lander.calls)
         self.assertEqual(self.r.origin_head(), before)
 
     def test_a_private_landing_does_not_ask_for_it(self):
@@ -4760,7 +4830,7 @@ class ScipSkipSteps(unittest.TestCase):
 
     WRITERS_NO_INDEX = ["gen-oracle-status.py", "gen-wiring-status.py", "coverage_check.py --write-status"]
     CHECKS_NO_INDEX = ["readme_sync.py --check", "docs_lint.py --check", "gen-oracle-status.py --check",
-                       "wiring_guard.py", "coverage_check.py", "local_receipt.py check --base origin/main"]
+                       "wiring_guard.py", "coverage_check.py"]
 
     def test_skipped_runs_exactly_the_steps_that_do_not_read_the_index(self):
         lr = self.lander(True)
@@ -4776,8 +4846,7 @@ class ScipSkipSteps(unittest.TestCase):
             "scip_index", "integration_levels.py --write --scip S", "scip_reach.py --write docs/integration-status.md --scip S",
             *self.WRITERS_NO_INDEX, "public-api",
             "integration_levels.py --check --scip S", "readme_sync.py --check", "docs_lint.py --check",
-            "scip_reach.py --check-baseline --scip S", "gen-oracle-status.py --check", "wiring_guard.py", "coverage_check.py",
-            "local_receipt.py check --base origin/main"])
+            "scip_reach.py --check-baseline --scip S", "gen-oracle-status.py --check", "wiring_guard.py", "coverage_check.py"])
 
     def wf_run(self, i, name="CI", sha="s1", conclusion="success"):
         return {"databaseId": i, "workflowName": name, "status": "completed", "conclusion": conclusion, "headSha": sha}

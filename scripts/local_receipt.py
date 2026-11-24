@@ -405,12 +405,22 @@ def check_class(root: Path, cls: str) -> str:
 
 def check(root: Path, base: str | None = None) -> str:
     """the line land.py prints, or ReceiptError: no receipt, another set of steps, a red step,
-    nothing run; the `slow` receipt too when the series changes an input of the slow steps (needs_slow)"""
-    line = check_class(root, "local")
+    nothing run; the `slow` receipt too when the series changes an input of the slow steps (needs_slow).
+    When both are asked and both are missing, the one error names both (each is a run of its own)"""
     touched = needs_slow(root, base)
+    lines, missing = [], []
+    for cls in ("local", "slow") if touched else ("local",):   # (both are asked before either is reported)
+        try:
+            lines.append(check_class(root, cls))
+        except ReceiptError as e:
+            missing.append(str(e))
+    if len(missing) == 1:
+        raise ReceiptError(missing[0])
+    if missing:
+        raise ReceiptError(f"{len(missing)} receipts are missing or not green:\n" + "\n".join(f"  - {m}" for m in missing))
     if not touched:
-        return f"{line}; slow receipt not asked (no input of the lib coverage changed since {base or BASE})"
-    return f"{line}; {check_class(root, 'slow')} ({len(touched)} input(s) of the lib coverage changed: {touched[0]} ...)"
+        return f"{lines[0]}; slow receipt not asked (no input of the lib coverage changed since {base or BASE})"
+    return f"{lines[0]}; {lines[1]} ({len(touched)} input(s) of the lib coverage changed: {touched[0]} ...)"
 
 
 def main(argv: list[str] | None = None) -> int:

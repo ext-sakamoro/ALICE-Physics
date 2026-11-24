@@ -263,8 +263,18 @@ class Receipt(unittest.TestCase):
         self.assertEqual(len(self.run_all()), 4, "the slow steps are not among the local ones")
         self.assertIn("slow receipt not asked", c.check(self.root))
         self.slow_repo("src/lib.rs")
+        # neither run yet: the one refusal names both, so both can be queued
+        with self.assertRaises(c.ReceiptError) as both:
+            c.check(self.root)
+        said = str(both.exception)
+        self.assertRegex(said, r"^2 receipts are missing or not green:\n  - no receipt for the code of HEAD .*local_receipt\.py run` "
+                               r".*\n  - no slow receipt .*run --slow` ")
+        self.run_all(cls="slow")
+        with self.assertRaisesRegex(c.ReceiptError, r"^no receipt for the code of HEAD"):   # (the slow one is held)
+            c.check(self.root)
+        next(Path(os.environ["LOCAL_RECEIPT_DIR"]).glob("*.slow.json")).unlink()
         self.run_all()
-        with self.assertRaisesRegex(c.ReceiptError, r"no slow receipt.*run --slow.*2 slow steps"):
+        with self.assertRaisesRegex(c.ReceiptError, r"^no slow receipt.*run --slow.*2 slow steps"):
             c.check(self.root)
         seen = self.run_all(cls="slow")
         self.assertEqual([u["cmd"] for u in seen], ["cargo llvm-cov --lib", "python3 scripts/ratchet.py"],
