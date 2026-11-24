@@ -359,3 +359,8 @@ The rule now reads: a manual run has a group of its own (`dispatch-<run id>`); a
 has one group per commit on `main` and one per ref elsewhere (the `ci` group for the two
 heavy workflows); cancelling stays as it was (only an older run of the same branch, never
 on `main`; never for the two heavy workflows).
+
+Only the tip of a `ci/**` branch gets a receipt: a newer push to the branch cancels the
+older runs of the same branch, a cancelled run is not a success, and the landing evidence
+(`scripts/ci_evidence_receipt.py`) asks for a successful run of every expected workflow on
+the exact SHA. An earlier SHA of the branch is landed only by pushing it again.

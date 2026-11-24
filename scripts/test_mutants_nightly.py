@@ -27,6 +27,9 @@ OK = [{"name": "Set up job", "conclusion": "success"}, {"name": mn.MEASURED_STEP
 KILLED = [{"name": "Set up job", "conclusion": "success"}, {"name": mn.MEASURED_STEP, "conclusion": "failure"}]
 
 
+OUT = 9000   # run ids from here on are of runs outside the window of a case
+
+
 def jobs_of(entries: list[dict], steps=None) -> list[dict]:
     return [{"name": f"Mutation testing ({e['label']})", "conclusion": "success", "steps": steps or OK} for e in entries]
 
@@ -34,7 +37,9 @@ def jobs_of(entries: list[dict], steps=None) -> list[dict]:
 def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, drop: int = 0, carried=None) -> dict:
     """a nightly run of 2026-11-<day> with its record and the jobs its plan asked for (`drop` of them missing)"""
     counts = counts or {"default": 150, "features": 150}
-    rec, entries = mn.nightly_record("nightly", base, head, counts, carried or [], "test", P)
+    # (its base came from the record of a run that has left the window)
+    rec, entries = mn.nightly_record("nightly", base, head, counts, carried or [], f"run {OUT + run_id} measured every shard",
+                                     P, base_run=OUT + run_id)
     if rec["state"] == "over-cap":
         rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "per": rec["per"],
                                      "since": f"2026-11-{day:02d}T22:00:00Z"}]
@@ -45,7 +50,7 @@ def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, 
 def by_the_clock(run_id: int, day: int, base: str, head: str, counts=None) -> dict:
     """a night as they were planned until 2026-11-25 when no record gave a base: on the commit of 25 hours ago"""
     run = night(run_id, day, base, head, counts=counts or {"default": 0, "features": 0})
-    del run["record"]["base_from"]
+    del run["record"]["base_from"], run["record"]["base_run"]
     run["record"]["base_reason"] = ("no nightly run in the window measured (5 unmeasured, 21 run(s) read): "
                                     "falling back to the commit of 25 hours ago")
     return run
@@ -54,8 +59,9 @@ def by_the_clock(run_id: int, day: int, base: str, head: str, counts=None) -> di
 def after(run: dict, source: dict, old: bool = False) -> dict:
     """`run` with the base_reason of a night whose base was the head of `source`"""
     run["record"]["base_reason"] = f"run {source['id']} had no mutant in its diff"
+    run["record"]["base_run"] = source["id"]
     if old:
-        del run["record"]["base_from"]
+        del run["record"]["base_from"], run["record"]["base_run"]
     return run
 
 
@@ -97,17 +103,17 @@ class Shards(unittest.TestCase):
         self.assertEqual([mn.shards_for(n, 100) for n in (0, 1, 100, 101, 388, 800, 801, 1634)], [0, 1, 1, 2, 4, 8, 9, 17])
 
     def test_the_cap_is_per_axis_and_an_over_cap_plan_has_no_job(self):
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 800, "features": 105}, [], "", P)
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 800, "features": 105}, [], "", P, base_run=1)
         self.assertEqual((rec["state"], rec["shards"], len(entries), rec["jobs"]), ("accepted", {"default": 8, "features": 2}, 10, 10))
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 105, "features": 801}, [], "", P)
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 105, "features": 801}, [], "", P, base_run=1)
         self.assertEqual((rec["state"], entries, rec["jobs"]), ("over-cap", [], 0))
 
     def test_an_empty_plan_is_empty_not_accepted(self):
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 0, "features": 0}, [], "", P)
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 0, "features": 0}, [], "", P, base_run=1)
         self.assertEqual((rec["state"], entries), ("empty", []))
 
     def test_every_entry_names_its_range_shard_and_axis(self):
-        _, entries = mn.nightly_record("nightly", A, B, {"default": 101, "features": 1}, [], "", P)
+        _, entries = mn.nightly_record("nightly", A, B, {"default": 101, "features": 1}, [], "", P, base_run=1)
         self.assertEqual([(e["shard"], e["of"], e["features"]) for e in entries],
                          [(0, 2, ""), (1, 2, ""), (0, 1, "parallel,gpu-solver-bridge,simd")])
         self.assertEqual(entries[0]["label"], f"in-diff {'a' * 12}..{'b' * 12} shard 0/2, default")
@@ -180,6 +186,56 @@ class Base(unittest.TestCase):
                 self.assertIn("3 later night(s) passed over", why)
         # (a night whose base came from a run that has left the window is not judged by it)
         self.assertEqual(mn.pick_base([after(night(3, 20, C, D), {"id": 999})])[0], D)
+
+    def test_a_night_that_names_no_run_for_its_base_is_passed_over_and_one_whose_run_left_the_window_is_not(self):
+        # a record gave the base, it says, and names no run: nothing ties it to one (read as "left the window",
+        # it would be trusted on its word)
+        for field in (None, "", "12", 12.0, True):
+            with self.subTest(base_run=field):
+                run = night(2, 19, B, C)
+                run["record"]["base_run"] = field
+                sha, why = mn.pick_base([night(1, 18, A, B), run])
+                self.assertEqual(sha, B)
+                self.assertIn("1 later night(s) passed over", why)
+        run = night(2, 19, B, C)
+        del run["record"]["base_run"]          # (the field is read, not the prose, once the record has base_from)
+        self.assertEqual(mn.pick_base([night(1, 18, A, B), run])[0], B)
+        # a record from before the fields: its prose names the run, or it names none
+        old = after(night(2, 19, B, C), {"id": 999}, old=True)
+        self.assertEqual(mn.pick_base([night(1, 18, A, B), old])[0], C, "run 999 has left the window: not judged")
+        for prose in ("", "the run before", "run measured every shard", "Run 5 measured every shard"):
+            with self.subTest(prose=prose):
+                old["record"]["base_reason"] = prose
+                self.assertEqual(mn.pick_base([night(1, 18, A, B), old])[0], B)
+        # the id is the field's even when the prose names another run
+        run = night(3, 20, C, D)
+        run["record"]["base_run"] = 2
+        run["record"]["base_reason"] = "run 1 measured every shard"
+        self.assertEqual(mn.pick_base([night(1, 18, A, B), by_the_clock(2, 19, B, C), run])[0], B)
+
+    def test_a_plan_names_the_run_of_its_base_exactly_when_a_record_gave_it(self):
+        with self.assertRaisesRegex(ValueError, "names the run of that record"):
+            mn.nightly_record("nightly", A, B, {"default": 1, "features": 1}, [], "", P)
+        for mode in ("pr", "aside"):
+            with self.assertRaisesRegex(ValueError, "no other base names one"):
+                mn.nightly_record(mode, A, B, {"default": 1, "features": 1}, [], "", P, base_run=5)
+        rec, _ = mn.nightly_record("nightly", A, B, {"default": 1, "features": 1}, [], "", P, base_run=5)
+        self.assertEqual((rec["base_from"], rec["base_run"]), ("record", 5))
+        self.assertIsNone(mn.nightly_record("aside", A, B, {"default": 1, "features": 1}, [], "", P)[0]["base_run"])
+        self.assertEqual(mn.pick([night(1, 18, A, B), night(2, 19, B, C)])[2], 2, "the run whose record gave the base")
+        self.assertIsNone(mn.pick([])[2])
+
+    def test_the_anchor_is_the_base_a_night_would_take_and_else_the_latest_weekly_head(self):
+        runs = [night(1, 12, A, B), by_the_clock(2, 19, C, D)]
+        self.assertEqual(mn.anchor(runs)[0], B, "not the head of the night planned by the clock")
+        self.assertEqual(mn.anchor(runs + [aside(3, 20, B, D)])[0], D)
+        only_clock = [by_the_clock(2, 19, C, D)]
+        sha, why = mn.anchor(only_clock + [weekly(5, 14, A, []), weekly(6, 21, B, [])])
+        self.assertEqual(sha, B)
+        self.assertIn("run 6 is the latest weekly run", why)
+        sha, why = mn.anchor(only_clock)
+        self.assertIsNone(sha)
+        self.assertIn("no weekly record in the window", why)
 
     def test_a_record_that_says_its_base_came_from_elsewhere_is_never_a_base(self):
         run = night(2, 19, B, C)
@@ -269,6 +325,11 @@ class Open(unittest.TestCase):
         self.assertEqual([(o["base"], o["head"]) for o in left], [(B, C)])
         rec, entries = mn.weekly_record("f" * 40, left, "2026-11-21T18:00:00Z", CORE_N, CORE_PER)
         self.assertEqual((len(entries), rec["deferred"]), (50 + 120, []))
+        # a deferred range is in the next weekly's input as long as it is not measured, and the age job counts it
+        self.assertEqual(mn.open_ranges([w, weekly(6, 21, "f" * 40, left, skip=True)]), left)
+        old = mn.weekly_record("f" * 40, left, "2026-11-19T03:00:01Z", CORE_N, CORE_PER)[0]
+        self.assertEqual(old["stale"], [mn.range_id(B, C)], "open since 11-11: past the 8 days")
+        self.assertEqual(mn.weekly_record("f" * 40, left, "2026-11-19T03:00:00Z", CORE_N, CORE_PER)[0]["stale"], [])
         # exactly at the limit is taken, one job more is not
         fits = mn.weekly_record(D, [self.rng(A, B, 10300, 10)], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
         self.assertEqual((len(fits[1]), fits[0]["deferred"]), (256, []))
@@ -464,19 +525,19 @@ class Per(unittest.TestCase):
 
     def test_an_axis_with_mutants_and_no_shard_size_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "features"):
-            mn.nightly_record("nightly", A, B, {"default": 10, "features": 10}, [], "", {"default": 34})
+            mn.nightly_record("nightly", A, B, {"default": 10, "features": 10}, [], "", {"default": 34}, base_run=1)
         with self.assertRaisesRegex(ValueError, "extra"):
-            mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34, "extra": 1})
-        rec, entries = mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34})
+            mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34, "extra": 1}, base_run=1)
+        rec, entries = mn.nightly_record("nightly", A, B, {"default": 10, "features": 0}, [], "", {"default": 34}, base_run=1)
         self.assertEqual((rec["state"], len(entries), rec["per"]["default"]), ("accepted", 1, 34))
 
     def test_each_axis_is_cut_by_its_own_shard_size(self):
         rec, entries = mn.nightly_record("nightly", A, B, {"default": 193, "features": 193}, [], "",
-                                         {"default": 34, "features": 50})
+                                         {"default": 34, "features": 50}, base_run=1)
         self.assertEqual(rec["shards"], {"default": 6, "features": 4})
         self.assertEqual(sorted({(e["features"] == "", e["of"]) for e in entries}), [(False, 4), (True, 6)])
         rec, entries = mn.nightly_record("nightly", A, B, {"default": 273, "features": 10}, [], "",
-                                         {"default": 34, "features": 50})
+                                         {"default": 34, "features": 50}, base_run=1)
         self.assertEqual((rec["state"], rec["shards"]["default"], entries), ("over-cap", 9, []))
 
     def test_a_range_set_aside_is_cut_in_the_weekly_run_by_the_size_it_was_measured_at(self):
@@ -517,8 +578,11 @@ class Cli(unittest.TestCase):
         return str(p)
 
     def plan(self, runs: list[dict], default: int, features: int, mode: str = "nightly",
-             per=("--per", "default=100", "--per", "features=100"), base_from: str | None = None):
-        code, out, err = self.run_cli("plan", "--mode", mode, "--base-from", base_from or mn.BASE_FROM[mode][0],
+             per=("--per", "default=100", "--per", "features=100"), base_from: str | None = None,
+             base_run: bool = True):
+        base_from = base_from or mn.BASE_FROM[mode][0]
+        code, out, err = self.run_cli("plan", "--mode", mode, "--base-from", base_from,
+                                      *(("--base-run", "77") if base_from == "record" and base_run else ()),
                                       "--runs", self.runs(runs), "--base", B, "--head", C,
                                       "--count", f"default={default}", "--count", f"features={features}",
                                       *per,
@@ -551,12 +615,25 @@ class Cli(unittest.TestCase):
 
     def test_base_prints_the_sha_and_fails_with_the_reason_when_no_record_gives_one(self):
         code, out, err = self.run_cli("base", "--runs", self.runs([night(1, 18, A, B)]))
-        self.assertEqual((code, out), (0, B + "\n"))
+        self.assertEqual((code, out), (0, f"{B}\n1\n"), "the sha, then the run whose record gave it")
         for runs in ([cancelled(1, 18, B)], [by_the_clock(2, 19, C, D)], []):
             code, out, err = self.run_cli("base", "--runs", self.runs(runs))
             self.assertEqual((code, out), (mn.NO_BASE, "\n"))
             self.assertIn("error: no nightly run in the window measured", err)
         self.assertNotIn(mn.NO_BASE, (0, mn.ERROR, mn.OVER_CAP))
+
+    def test_anchor_prints_the_last_trusted_head_and_fails_without_one(self):
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([night(1, 12, A, B), by_the_clock(2, 19, C, D)]))
+        self.assertEqual((code, out), (0, B + "\n"))
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]))
+        self.assertEqual((code, out), (mn.NO_BASE, "\n"))
+        self.assertIn("error: no nightly run in the window measured", err)
+
+    def test_a_nightly_plan_that_names_no_run_for_its_base_is_refused(self):
+        code, rec, matrix, err = self.plan([], 10, 10, base_run=False)
+        self.assertEqual((code, rec, matrix), (mn.ERROR, None, None))
+        self.assertIn("names the run of that record", err)
+        self.assertEqual(self.plan([], 10, 10)[1]["base_run"], 77)
 
     def test_a_nightly_plan_on_a_base_no_record_gave_is_refused_and_writes_no_record(self):
         for other in ("dispatch", "pull-request"):
@@ -578,7 +655,7 @@ class Cli(unittest.TestCase):
         # the record is read back as the base of the next night and as an open range of the weekly plan
         run = {"id": 7, "head_sha": C, "created_at": "2026-11-19T22:00:00Z", "conclusion": "success", "jobs": [],
                "record": rec, "record_error": None}
-        self.assertEqual(self.run_cli("base", "--runs", self.runs([earlier, run]))[:2], (0, C + "\n"))
+        self.assertEqual(self.run_cli("base", "--runs", self.runs([earlier, run]))[:2], (0, f"{C}\n7\n"))
         code, out, err, wrec, wmatrix = self.weekly_cli(*CORE_ARGS, runs=[earlier, run])
         self.assertEqual(code, 0)
         self.assertEqual([(t["base"], t["head"]) for t in wrec["taken"]], [(A, B), (B, C)])
@@ -654,6 +731,10 @@ class Cli(unittest.TestCase):
         self.assertEqual(out.count("deferred: range "), 2)
         self.assertIn(f"deferred: range {mn.range_id(B, C)} (120 jobs) does not fit this week's matrix of 256 entries", out)
         self.assertEqual(len(rec["open"]), 3)
+        # a deferred range past the age limit turns the age job red, deferred or not
+        self.assertEqual(self.run_cli("age", "--record", str(self.d / "r.json"), "--now", "2026-11-22T18:00:00Z")[0], 1)
+        code, out, err = self.run_cli("age", "--record", str(self.d / "r.json"), "--now", "2026-11-20T18:00:00Z")
+        self.assertEqual((code, out), (0, "compared: open ranges 3, older than 8 days 0\n"))
         # an aside plan over the limit: exit 2, nothing written
         (self.d / "r.json").unlink()
         (self.d / "m.json").unlink()
@@ -770,7 +851,7 @@ class Workflow(unittest.TestCase):
 
     def test_a_night_without_a_base_from_a_record_stops_the_plan_and_no_base_is_taken_by_the_clock(self):
         step = self.plan_step()
-        got = step.split('base=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why) || {\n', 1)
+        got = step.split('picked=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why) || {\n', 1)
         self.assertEqual(len(got), 2, "the base of a night is the script's, and its failure is handled where it is read")
         handler = got[1].split("\n              }\n", 1)[0].splitlines()
         self.assertEqual(len(handler), 2, handler)
@@ -779,6 +860,10 @@ class Workflow(unittest.TestCase):
         after = got[1].split("\n            fi\n", 1)[0]
         self.assertIn('if ! git merge-base --is-ancestor "$base" HEAD; then\n', after)
         self.assertEqual(after.count("exit 1"), 2)   # (no base, and a base that is not an ancestor of HEAD)
+        # the sha and the run that gave it are the two lines the script printed, and nothing else sets them
+        self.assertIn('base=$(printf \'%s\\n\' "$picked" | sed -n 1p); base_run=$(printf \'%s\\n\' "$picked" | sed -n 2p)\n', after)
+        self.assertEqual(len(re.findall(r"(?<![\w-])base_run=", step)), 2, "emptied before the branches, set from the script")
+        self.assertIn("          over=false\n          base_run=\n", step)
         # no commit is picked by its date anywhere in the workflow, and `base` is assigned in three places only
         for clock in ("--before", "--since", "--until", "hours ago", "days ago", "falling back"):
             self.assertNotIn(clock, self.TEXT, clock)
@@ -787,11 +872,26 @@ class Workflow(unittest.TestCase):
 
     def test_the_plan_is_told_where_the_base_came_from_and_only_a_record_s_base_is_a_night_s(self):
         step = self.plan_step()
-        self.assertEqual(step.count('plan --mode "$mode" --base-from "$from" --runs /tmp/runs.json --base "$base"'), 1)
+        self.assertEqual(step.count('plan --mode "$mode" --base-from "$from" ${base_run:+--base-run "$base_run"} '
+                                    '--runs /tmp/runs.json --base "$base"'), 1)
         self.assertEqual(sorted(re.findall(r"(?<![\w-])from=([a-z-]+)", step)), ["dispatch", "pull-request", "record"])
         self.assertIn('why="the dispatch\'s diff_base"; from=dispatch\n', step)
         self.assertIn('why="the base of the pull request"; from=pull-request\n', step)
         self.assertIn("why=$(cat /tmp/why); from=record\n", step)
+
+    def test_a_range_is_set_aside_only_from_the_last_tested_head_or_before_it(self):
+        step = self.plan_step()
+        got = step.split('              if [ "$mode" = aside ]; then\n', 1)
+        self.assertEqual(len(got), 2)
+        self.assertTrue(got[0].endswith('why="the dispatch\'s diff_base"; from=dispatch\n'), "in the diff_base branch")
+        block = got[1].split("\n              fi\n", 1)[0]
+        self.assertIn('anchor=$(python3 scripts/mutants_nightly.py anchor --runs /tmp/runs.json 2> /tmp/why) || {\n', block)
+        self.assertIn('if ! git merge-base --is-ancestor "$base" "$anchor"; then\n', block)
+        self.assertIn("diff_base $base is neither the last tested head $anchor", block)
+        self.assertEqual(block.count("exit 1"), 2, "no anchor, and a diff_base after it: both stop the plan")
+        self.assertEqual(step.count("mutants_nightly.py anchor"), 1)
+        # (the refusals come before the plan is written: the record of an aside run is only ever of an accepted range)
+        self.assertLess(step.index("mutants_nightly.py anchor"), step.index('plan --mode "$mode"'))
 
     def test_set_aside_is_a_dispatch_input_that_needs_diff_base_and_makes_the_aside_plan(self):
         inputs = self.TEXT.split("  pull_request:\n", 1)[0]
