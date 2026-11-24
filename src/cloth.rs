@@ -9414,3 +9414,56 @@ mod separation_unit_tests {
         assert!(!edge_moved(&[], &[3, 4]), "nothing moved");
     }
 }
+
+/// [`damping_over`]: the retention per reference step raised to the number of reference
+/// steps, and a retention outside `(0, 1]` used as it is.
+#[cfg(test)]
+mod damping_unit_tests {
+    use super::*;
+
+    fn close(a: Fix128, b: f64) -> bool {
+        (a.to_f64() - b).abs() < 1e-12
+    }
+
+    /// oracle: 0.5 per 1/60 s over 1/30 s is 0.5^2 = 0.25; one reference step keeps 0.5
+    #[test]
+    fn half_retention_over_two_reference_steps_is_a_quarter() {
+        let half = Fix128::from_ratio(1, 2);
+        let two_steps = Fix128::from_ratio(1, 30);
+        assert!(
+            close(damping_over(half, two_steps), 0.25),
+            "{}",
+            damping_over(half, two_steps).to_f64()
+        );
+        assert_eq!(damping_over(half, damping_reference_dt()), half);
+    }
+
+    /// a retention at or below 0 is used per step as it is (no power of it is taken)
+    #[test]
+    fn a_non_positive_retention_is_used_as_it_is() {
+        let two_steps = Fix128::from_ratio(1, 30);
+        let neg = Fix128::from_ratio(-1, 2);
+        assert_eq!(damping_over(neg, two_steps), neg);
+        assert_eq!(damping_over(Fix128::ZERO, two_steps), Fix128::ZERO);
+    }
+
+    /// a retention above 1 is used per step as it is (1.5 over two steps stays 1.5, not 2.25)
+    #[test]
+    fn a_retention_above_one_is_used_as_it_is() {
+        let more = Fix128::from_ratio(3, 2);
+        assert_eq!(damping_over(more, Fix128::from_ratio(1, 30)), more);
+    }
+
+    /// a retention of exactly 1 stays 1 for any step width, whether taken as a power or as
+    /// it is: why `damping > ONE` and `damping >= ONE` give the same result
+    #[test]
+    fn a_retention_of_one_stays_one_for_any_step() {
+        for (n, d) in [(1, 30), (1, 120), (7, 60), (1, 7), (0, 1), (-1, 60)] {
+            assert_eq!(
+                damping_over(Fix128::ONE, Fix128::from_ratio(n, d)),
+                Fix128::ONE,
+                "{n}/{d}"
+            );
+        }
+    }
+}
