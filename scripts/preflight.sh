@@ -28,6 +28,12 @@ case "${1:-}" in
 esac
 NATIVE='std,simd,parallel,ffi,gpu-solver-bridge'
 
+# The full run builds a wheel hours from here (step "Python binding"): the interpreter that step will use,
+# and a PYO3_PYTHON in the environment that names another version, are checked now.
+if [[ $quick -eq 0 && $fast -eq 0 ]]; then
+  python3 scripts/binding_interpreter.py --venv "${CARGO_TARGET_DIR:-target}/python-binding-venv"
+fi
+
 step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 
 # A gate skipped for a missing local tool must stay visible: printing once to
@@ -224,6 +230,7 @@ python3 scripts/test_libm_dependency_guard.py
 python3 scripts/libm_dependency_guard.py
 python3 scripts/test_allow_reason_guard.py
 python3 scripts/allow_reason_guard.py
+python3 scripts/test_binding_interpreter.py
 python3 scripts/test_changelog_dup_check.py
 python3 scripts/changelog_dup_check.py
 
@@ -518,11 +525,13 @@ python3 scripts/facade_artifacts.py
 
 step "Python binding (maturin wheel + python/tests/test_binding.py; CI python-binding.yml)"
 # a venv under the target dir with maturin and numpy, made once
+# maturin is given the venv's interpreter: the wheel is for the Python it is installed into below
+# (scripts/binding_interpreter.py, at the top of this script, is the early check of the same thing)
 py_target="${CARGO_TARGET_DIR:-target}"
 py_venv="$py_target/python-binding-venv"
 [ -x "$py_venv/bin/maturin" ] || { python3 -m venv "$py_venv" && "$py_venv/bin/pip" install -q maturin numpy; }
 rm -rf "$py_target/python-wheels"
-"$py_venv/bin/maturin" build -m crates/alice-physics/Cargo.toml --features python --out "$py_target/python-wheels"
+"$py_venv/bin/maturin" build -i "$py_venv/bin/python" -m crates/alice-physics/Cargo.toml --features python --out "$py_target/python-wheels"
 "$py_venv/bin/pip" install -q --force-reinstall "$py_target"/python-wheels/*.whl
 "$py_venv/bin/python" python/tests/test_binding.py
 
