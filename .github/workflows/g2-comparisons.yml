@@ -26,7 +26,9 @@ permissions:
 concurrency:
   # on main one group per SHA (a main run is never cancelled or dropped by a later push);
   # on any other ref one group per ref, and a newer push cancels the older run of its branch
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  # a manual run has a group of its own (dispatch-<run id>): it never shares one with the push run of the
+  # same ref, so neither cancels the other (a cancelled push run reads as red to the landing evidence)
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || (github.ref == 'refs/heads/main' && github.sha || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

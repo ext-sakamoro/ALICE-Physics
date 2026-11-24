@@ -12,14 +12,16 @@ scripts/land.py waits on stayed queued. The rules:
     weekly run);
   * bench-gate.yml and integration-status.yml use exactly
     the two-class concurrency of TWO_CLASS_GROUP with `cancel-in-progress: false`:
-    at most one main run and one ci/** run at a time, a new run waits instead of
-    cancelling, so a ci/** push never cancels the main run (a group per ref would
-    let every branch start its own copy; a missing group or `cancel-in-progress:
-    true` lets a run be cut off or doubled);
-  * unsafe-and-parallel.yml uses one group per ref (PER_REF_GROUP) with
-    `cancel-in-progress` PER_REF_CANCEL: a newer push on the same ci/** branch
-    cancels that branch's older run, another branch's run is never cancelled or
-    replaced, and a main run is never cut off (see the amendment of 2026-11-09);
+    at most one ci/** run at a time and one run per main commit, a new run waits
+    instead of cancelling, so a ci/** push never cancels the main run (a group per
+    ref would let every branch start its own copy; a missing group or
+    `cancel-in-progress: true` lets a run be cut off or doubled; see the
+    amendment of 2026-11-25 for main and the manual runs);
+  * unsafe-and-parallel.yml uses one group per ref, per commit on main and per
+    run for a manual run (PER_REF_GROUP), with `cancel-in-progress`
+    PER_REF_CANCEL: a newer push on the same ci/** branch cancels that branch's
+    older run, another branch's run is never cancelled or replaced, and a main
+    run is never cut off (see the amendments of 2026-11-09 and 2026-11-25);
   * unsafe-and-parallel.yml (Miri and loom, 45-95 min) may run on ci/** only behind
     its path gate: the workflow passes `--patterns-file
     .github/paths/unsafe-and-parallel.txt` to scripts/changed_paths.py, every job
@@ -58,6 +60,22 @@ have one group of their own, for every ref together (one running and one waiting
 never a group per ref); the mutation matrix runs at most MAX_PARALLEL jobs at a
 time, WEEKLY_MAX_PARALLEL in the weekly run, written as QD_PARALLEL_RE.
 
+Amendment, 2026-11-25. Amended rule: unsafe-and-parallel.yml had one group per
+ref for every event. Reason: a manual run (workflow_dispatch) of a ref shared the
+group of the push run of the same ref, so on a ci/** branch one cancelled the
+other, and the landing evidence reads a cancelled push run as red. The rule now
+reads: a manual run has a group of its own (`dispatch-<run id>`); a push run has
+one group per ref off main, as before, and one group per commit on main (a main
+run is neither cut off nor replaced while it waits; how many run at once is
+bounded by the path gate, as on ci/**).
+The same day, for bench-gate.yml and integration-status.yml: the `main` class was
+one group for every main commit, so a third main push replaced the waiting run of
+the second and that commit had no run of its own; and a manual run waited in the
+class of its ref, where it could replace a waiting push run. The rule now reads:
+on main one group per commit (landings are one at a time, so the main runs are as
+many as the landings), off main the one `ci` group as before, and a manual run has
+a group of its own.
+
 The workflows are read as text (no YAML library on the runners): the `on:`
 block, the top-level `concurrency:` block and the job headers are inspected.
 Fails when no heavy workflow was compared.
@@ -87,8 +105,10 @@ QD_GROUPS = ("${{ github.workflow }}",
              "${{ github.workflow }}${{ github.event_name == 'workflow_dispatch' && inputs.diff_base != '' && '-diff' || '' }}")
 # `max-parallel` of the mutation matrix: a number, or the weekly number and the number of the other runs
 QD_PARALLEL_RE = re.compile(r"^\s*max-parallel:\s*(?:(\d+)|\$\{\{ needs\.mutants-plan\.outputs\.mode == 'weekly' && (\d+) \|\| (\d+) \}\})\s*$", re.M)
-TWO_CLASS_GROUP = "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}"
-PER_REF_GROUP = "${{ github.workflow }}-${{ github.ref }}"
+TWO_CLASS_GROUP = ("${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) "
+                   "|| (github.ref == 'refs/heads/main' && github.sha || 'ci') }}")
+PER_REF_GROUP = ("${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) "
+                 "|| (github.ref == 'refs/heads/main' && github.sha || github.ref) }}")
 PER_REF_CANCEL = "${{ github.ref != 'refs/heads/main' }}"
 RUN_IF = "needs.changes.outputs.run == 'true'"
 # a src file that is not unsafe or parallel code: the path gate must not select it
@@ -215,7 +235,7 @@ def check(root: Path) -> tuple[list[str], int]:
             continue
         if group is not None and group != TWO_CLASS_GROUP:
             errors.append(f"{name}: concurrency group {group} is not the two-class group "
-                          f"{TWO_CLASS_GROUP} (one main run and one ci/** run at a time)")
+                          f"{TWO_CLASS_GROUP} (one ci/** run at a time, one run per main commit)")
         if cancel != "false":
             errors.append(f"{name}: cancel-in-progress is {cancel!r}; it must be false (a ci/** push "
                           "must not cancel the main run, and a run must not be cut off)")

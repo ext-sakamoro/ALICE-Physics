@@ -31,9 +31,7 @@ on:
   push:
     branches: [main, 'ci/**']
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}
-  cancel-in-progress: false
-jobs:
+TWO_CONC_HEREjobs:
   changes:
     steps:
       - run: python3 scripts/changed_paths.py decide --patterns-file .github/paths/NAME.txt
@@ -54,14 +52,19 @@ jobs:
 GATE = "src/solver.rs\nCargo.toml\n.github/paths/unsafe-and-parallel.txt\n"
 
 
+PER_REF_GROUP = ("${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) "
+                 "|| (github.ref == 'refs/heads/main' && github.sha || github.ref) }}")
 PER_REF_CONC = (
-    "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+    f"  group: {PER_REF_GROUP}\n"
     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}\n"
 )
+TWO_GROUP = ("${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) "
+             "|| (github.ref == 'refs/heads/main' && github.sha || 'ci') }}")
 TWO_CONC = (
-    "  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}\n"
+    f"  group: {TWO_GROUP}\n"
     "  cancel-in-progress: false\n"
 )
+TWO = TWO.replace("TWO_CONC_HERE", TWO_CONC)
 
 
 def wf(name: str) -> str:
@@ -174,6 +177,20 @@ class Load(unittest.TestCase):
         body = wf("bench-gate").replace(cl.TWO_CLASS_GROUP, "${{ github.workflow }}")
         self.has(self.errors(**{"bench-gate.yml": body}), "not the two-class group")
 
+    def test_one_group_for_every_main_commit_or_a_group_a_manual_run_shares_fails(self):
+        # the shape before 2026-11-25: a third main push replaced the waiting run of the second, and a manual
+        # run waited in the class of its ref
+        self.assertEqual(cl.TWO_CLASS_GROUP, TWO_GROUP)
+        old = "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}"
+        no_dispatch = "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || 'ci' }}"
+        for name in cl.TWO_CLASS:
+            for shape in (old, no_dispatch):
+                body = wf(name.rsplit(".", 1)[0]).replace(TWO_GROUP, shape)
+                self.assertNotEqual(body, wf(name.rsplit(".", 1)[0]))
+                self.has(self.errors(**{name: body}), "not the two-class group")
+            real = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / name).read_text(encoding="utf-8")
+            self.assertEqual(real.count(f"  group: {TWO_GROUP}\n  cancel-in-progress: false\n"), 1, name)
+
     def test_a_missing_group_fails(self):
         for name in cl.TWO_CLASS:
             body = wf(name.rsplit(".", 1)[0]).replace(f"  group: {cl.TWO_CLASS_GROUP}\n", "")
@@ -209,8 +226,21 @@ class Load(unittest.TestCase):
         self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "not the per-ref group")
 
     def test_a_single_group_on_miri_fails(self):
-        body = wf("unsafe-and-parallel").replace("${{ github.workflow }}-${{ github.ref }}", "${{ github.workflow }}")
+        body = wf("unsafe-and-parallel").replace(PER_REF_GROUP, "${{ github.workflow }}")
         self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "not the per-ref group")
+
+    def test_a_group_a_manual_run_shares_with_the_push_run_of_its_ref_fails(self):
+        # the shapes before 2026-11-25: a dispatch of a ci/** ref cancelled that ref's push run, or was cancelled by it
+        self.assertEqual(cl.PER_REF_GROUP, PER_REF_GROUP)
+        for shared in ("${{ github.workflow }}-${{ github.ref }}",
+                       "${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}"):
+            body = wf("unsafe-and-parallel").replace(PER_REF_GROUP, shared)
+            self.assertNotEqual(body, wf("unsafe-and-parallel"))
+            self.has(self.errors(**{"unsafe-and-parallel.yml": body}), "not the per-ref group")
+
+    def test_the_workflow_of_this_repository_has_the_group_the_rule_names(self):
+        real = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "unsafe-and-parallel.yml").read_text(encoding="utf-8")
+        self.assertEqual(real.count(f"  group: {PER_REF_GROUP}\n"), 1)
 
     def test_miri_cancel_false_fails(self):
         # an older run of the same branch would keep a runner after a newer push superseded it

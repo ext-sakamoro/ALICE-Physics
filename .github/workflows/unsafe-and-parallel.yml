@@ -23,11 +23,14 @@ permissions:
   contents: read
 
 concurrency:
-  # one group per ref: a branch's run never replaces or cancels another branch's run; a newer
-  # push on the same ci/** branch cancels that branch's older run (its SHA is superseded), and
-  # a main run waits instead of being cut off. The path gate below bounds how many run at once.
+  # one group per ref off main: a branch's run never replaces or cancels another branch's run; a
+  # newer push on the same ci/** branch cancels that branch's older run (its SHA is superseded).
+  # On main one group per commit: a main run is never cut off, and never replaced while it waits.
+  # The path gate below bounds how many run at once.
   # (scripts/ci_load_check.py requires this shape)
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # a manual run has a group of its own (dispatch-<run id>): it never shares one with the push run of the
+  # same ref, so neither cancels the other (a cancelled push run reads as red to the landing evidence)
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || (github.ref == 'refs/heads/main' && github.sha || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

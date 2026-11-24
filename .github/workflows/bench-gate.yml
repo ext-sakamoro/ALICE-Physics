@@ -21,11 +21,13 @@ permissions:
   contents: read
 
 concurrency:
-  # two groups: at most one main run and one ci/** run at a time; a new run waits instead
-  # of cancelling the running one, so a ci/** push never cancels the main run (GitHub keeps
-  # one waiting run per group: a newer push replaces the older waiting one)
+  # off main one group for every ci/** branch: at most one ci/** run at a time, and a new run waits
+  # instead of cancelling the running one (GitHub keeps one waiting run per group: a newer push
+  # replaces the older waiting one). On main one group per commit: a main run is never replaced
+  # while it waits. A manual run has a group of its own (dispatch-<run id>): it is never the run
+  # that replaces a waiting push run, and no push replaces it
   # (scripts/ci_load_check.py requires this shape)
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || (github.ref == 'refs/heads/main' && github.sha || 'ci') }}
   cancel-in-progress: false
 
 env:
