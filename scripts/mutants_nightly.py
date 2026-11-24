@@ -98,6 +98,11 @@ CARRYING = ("nightly", "weekly", "aside")   # the record kinds whose `open` list
 BASE_FROM = {"nightly": ("record",), "pr": ("pull-request", "dispatch"), "aside": ("dispatch",)}
 BY_THE_CLOCK = "falling back to the commit of"   # in the base_reason of a record planned on a base by the clock
 EVENTS = ("schedule", "workflow_dispatch")   # the runs that are read back (a pull request's run is never a base)
+# the entries one matrix holds (GitHub's limit for a job matrix): a run whose matrix has more does not start,
+# and says nothing. No plan is written with more: a weekly plan leaves the ranges that do not fit this week
+# open (oldest first are taken, the others are named as deferred and stay in the open list), and a range that
+# is larger than a matrix by itself is refused where it would be recorded (it could run in no week)
+MATRIX_MAX = 256
 MAX_PAGES = 10       # of 100 runs per event: more than this in the window is an error, not a cut
 OVER_CAP, NO_BASE, ERROR = 5, 3, 2
 
@@ -297,6 +302,10 @@ def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carr
     if sum(counts.values()) == 0:
         state, entries = "empty", []
     elif mode == "aside":
+        jobs = len(diff_entries(base, head, counts, per))
+        if jobs > MATRIX_MAX:
+            raise ValueError(f"{range_id(base, head)} takes {jobs} jobs ({shards}), more than the {MATRIX_MAX} a matrix "
+                             "holds: no weekly run could take it. Record it in pieces (a nearer diff_base for each)")
         state, entries = "set-aside", []
     elif max(shards.values()) > cap:
         state, entries = "over-cap", []
@@ -329,15 +338,24 @@ def weekly_record(head: str, ranges: list[dict], now: str, counts: dict[str, int
     over = max(shards.values()) > cap
     entries = [] if over else core_entries(head, shards)
     core_jobs = len(entries)
-    taken = []
-    for o in ranges:
+    if core_jobs > MATRIX_MAX:
+        raise ValueError(f"the core plan takes {core_jobs} jobs, more than the {MATRIX_MAX} a matrix holds")
+    taken, deferred = [], []
+    for o in ranges:   # (oldest first)
         mine = diff_entries(o["base"], o["head"], o["counts"], per_of(o))
         if not mine:
             raise ValueError(f"open range {range_id(o['base'], o['head'])} has no mutant to test (counts {o['counts']})")
+        if len(mine) > MATRIX_MAX:
+            raise ValueError(f"open range {range_id(o['base'], o['head'])} takes {len(mine)} jobs, more than the "
+                             f"{MATRIX_MAX} a matrix holds: no weekly run can take it (it has to be recorded in pieces)")
+        if len(entries) + len(mine) > MATRIX_MAX:
+            deferred.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
+            continue
         entries += mine
         taken.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
     rec = {"v": 1, "kind": "weekly", "state": "over-cap" if over else "accepted", "head": head,
            "core": {"counts": counts, "per": per, "shards": shards, "jobs": core_jobs}, "taken": taken,
+           "deferred": deferred,
            "open": ranges, "stale": [range_id(o["base"], o["head"]) for o in stale(ranges, now)]}
     return rec, entries
 
@@ -419,6 +437,8 @@ def fetch(repo: str, self_id: int, now: datetime, workflow: str = "quality-deep.
 # --- command line ----------------------------------------------------------------------------------------------
 
 def write_out(args, rec: dict, entries: list[dict]) -> None:
+    if len(entries) > MATRIX_MAX:   # (no plan above makes one; a matrix over the limit starts no job and no error)
+        raise ValueError(f"the plan has {len(entries)} matrix entries, more than the {MATRIX_MAX} a matrix holds: not written")
     Path(args.out_record).write_text(json.dumps(rec, indent=1) + "\n", encoding="utf-8")
     Path(args.out_matrix).write_text(json.dumps({"include": entries}) + "\n", encoding="utf-8")
 
@@ -501,6 +521,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"weekly: {rec['state']}, core mutants {core['counts']}, per shard {core['per']}, core shards "
                   f"{core['shards']}, {len(entries)} job(s), {len(rec['taken'])} open range(s) taken, "
                   f"{len(rec['stale'])} older than {MAX_AGE_DAYS} days")
+            for d in rec["deferred"]:
+                print(f"deferred: range {range_id(d['base'], d['head'])} ({d['jobs']} jobs) does not fit this week's matrix "
+                      f"of {MATRIX_MAX} entries with what is taken before it: it stays open for a later weekly run")
             if rec["state"] == "over-cap":
                 print(f"error: the core plan takes {max(core['shards'].values())} shards on an axis, over the cap of "
                       f"{CORE_CAP} ({WEEKLY_PARALLEL} jobs at a time for {WEEKLY_BUDGET_H} h): no core shard is run "

@@ -248,6 +248,44 @@ class Open(unittest.TestCase):
         self.assertEqual([(o["base"], o["head"], o["per"], o["since"]) for o in mn.open_ranges([run])],
                          [(B, D, P, "2026-11-20T03:00:00Z")])
 
+    def rng(self, base: str, head: str, n: int, day: int) -> dict:
+        return {"base": base, "head": head, "counts": {"default": n, "features": n}, "per": P,
+                "since": f"2026-11-{day:02d}T03:00:00Z"}
+
+    def test_a_weekly_plan_never_has_more_entries_than_a_matrix_holds_and_what_does_not_fit_stays_open(self):
+        self.assertEqual(mn.MATRIX_MAX, 256)
+        # the core is 50 jobs; ranges of 100, 120 and 40 jobs, oldest first
+        ranges = [self.rng(A, B, 5000, 10), self.rng(B, C, 6000, 11), self.rng(C, D, 2000, 12)]
+        rec, entries = mn.weekly_record("e" * 40, ranges, "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+        self.assertLessEqual(len(entries), mn.MATRIX_MAX)
+        self.assertEqual(len(entries), 50 + 100 + 40)
+        self.assertEqual([(t["base"], t["jobs"]) for t in rec["taken"]], [(A, 100), (C, 40)],
+                         "the oldest first, and a later smaller one that still fits")
+        self.assertEqual(rec["deferred"], [{"base": B, "head": C, "jobs": 120}])
+        self.assertEqual(rec["open"], ranges, "nothing leaves the open list by not fitting")
+        # the week after, with the first and the third measured, the deferred one is taken
+        w = weekly(5, 14, "e" * 40, ranges)
+        left = mn.open_ranges([w])
+        self.assertEqual([(o["base"], o["head"]) for o in left], [(B, C)])
+        rec, entries = mn.weekly_record("f" * 40, left, "2026-11-21T18:00:00Z", CORE_N, CORE_PER)
+        self.assertEqual((len(entries), rec["deferred"]), (50 + 120, []))
+        # exactly at the limit is taken, one job more is not
+        fits = mn.weekly_record(D, [self.rng(A, B, 10300, 10)], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+        self.assertEqual((len(fits[1]), fits[0]["deferred"]), (256, []))
+        over = mn.weekly_record(D, [self.rng(A, B, 10301, 10)], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+        self.assertEqual((len(over[1]), [d["jobs"] for d in over[0]["deferred"]]), (50, [208]))
+
+    def test_a_range_larger_than_a_matrix_is_refused_where_it_is_recorded_and_by_the_weekly_plan(self):
+        with self.assertRaisesRegex(ValueError, "takes 258 jobs .*more than the 256 a matrix holds.*in pieces"):
+            mn.nightly_record("aside", A, B, {"default": 12900, "features": 12900}, [], "", P)
+        rec, _ = mn.nightly_record("aside", A, B, {"default": 12800, "features": 12800}, [], "", P)
+        self.assertEqual((rec["state"], sum(rec["shards"].values())), ("set-aside", 256))
+        # the range of 2026-11-25 (8824 mutants an axis at 34 a shard: 520 jobs) is such a one
+        with self.assertRaisesRegex(ValueError, "takes 520 jobs"):
+            mn.nightly_record("aside", A, B, {"default": 8824, "features": 8824}, [], "", {"default": 34, "features": 34})
+        with self.assertRaisesRegex(ValueError, "takes 258 jobs.*no weekly run can take it"):
+            mn.weekly_record(D, [self.rng(A, B, 12900, 10)], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+
     def test_a_dispatch_that_sets_aside_a_range_without_a_mutant_opens_nothing(self):
         run = aside(3, 20, B, D, counts={"default": 0, "features": 0})
         self.assertEqual(run["record"]["state"], "empty")
@@ -607,6 +645,29 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_cli("core-jobs", "--record", str(self.d / "r.json"))[0], mn.ERROR)
         (self.d / "r.json").write_text('{"kind": "weekly"}', encoding="utf-8")
         self.assertEqual(self.run_cli("core-jobs", "--record", str(self.d / "r.json"))[0], mn.ERROR)
+
+    def test_the_weekly_plan_says_which_range_it_deferred_and_a_plan_over_the_matrix_is_not_written(self):
+        big = {"default": 6000, "features": 6000}
+        runs = [night(1, 12, A, B, counts=big), night(2, 13, B, C, counts=big), night(3, 14, C, D, counts=big)]
+        code, out, err, rec, matrix = self.weekly_cli(*CORE_ARGS, runs=runs)
+        self.assertEqual((code, len(matrix)), (0, 50 + 120))
+        self.assertEqual(out.count("deferred: range "), 2)
+        self.assertIn(f"deferred: range {mn.range_id(B, C)} (120 jobs) does not fit this week's matrix of 256 entries", out)
+        self.assertEqual(len(rec["open"]), 3)
+        # an aside plan over the limit: exit 2, nothing written
+        (self.d / "r.json").unlink()
+        (self.d / "m.json").unlink()
+        code, rec, matrix, err = self.plan([], 12900, 12900, mode="aside")
+        self.assertEqual((code, rec, matrix), (mn.ERROR, None, None))
+        self.assertIn("more than the 256 a matrix holds", err)
+        # and the last guard, for a plan no rule above stopped
+        class Args:
+            out_record, out_matrix = str(self.d / "x.json"), str(self.d / "y.json")
+        with self.assertRaisesRegex(ValueError, "257 matrix entries.*not written"):
+            mn.write_out(Args, {}, [{}] * 257)
+        self.assertFalse((self.d / "x.json").exists() or (self.d / "y.json").exists())
+        mn.write_out(Args, {}, [{}] * 256)
+        self.assertEqual(len(json.loads((self.d / "y.json").read_text())["include"]), 256)
 
     def test_a_weekly_plan_without_the_core_counts_or_sizes_is_an_error(self):
         self.assertEqual(self.weekly_cli()[0], mn.ERROR)
