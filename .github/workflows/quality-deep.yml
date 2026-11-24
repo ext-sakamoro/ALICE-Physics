@@ -45,6 +45,13 @@ on:
         required: false
         default: ''
         type: string
+      set_aside:
+        # diff_base と併せて使う  その run は変異を試さず、diff_base..HEAD を週次が試す範囲として記録する (kind aside)
+        # 夜間の起点が無い夜 (記録から起点が決まらず plan が赤) の先へ進む手段: この記録の head が次の夜の起点になる
+        description: 'diff_base..HEAD を試さずに週次の範囲として記録する (diff_base が必要)'
+        required: false
+        default: false
+        type: boolean
   pull_request:
     branches: [main]
     paths:
@@ -205,9 +212,13 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           BASE_REF: ${{ github.base_ref }}
           DIFF_BASE: ${{ inputs.diff_base }}
+          SET_ASIDE: ${{ inputs.set_aside }}
         run: |
           now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          if [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr"
+          if [ "$SET_ASIDE" = true ]; then
+            if [ -z "$DIFF_BASE" ]; then echo "::error::set_aside needs diff_base (the range to record is diff_base..HEAD)"; exit 1; fi
+            mode="aside"
+          elif [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr"
           elif [ "$SCHEDULE" = '30 17 * * 1-5' ]; then mode="nightly"
           else mode="weekly"; fi
           head=$(git rev-parse HEAD)
@@ -254,18 +265,20 @@ jobs:
             if [ -n "$DIFF_BASE" ]; then
               base=$(git rev-parse --verify -q "$DIFF_BASE^{commit}") || { echo "::error::diff_base '$DIFF_BASE' is not a commit"; exit 1; }
               git merge-base --is-ancestor "$base" HEAD || { echo "::error::diff_base $base is not an ancestor of HEAD"; exit 1; }
-              why="the dispatch's diff_base"
+              why="the dispatch's diff_base"; from=dispatch
             elif [ "$mode" = pr ]; then
-              base=$(git rev-parse "origin/$BASE_REF"); why="the base of the pull request"
+              base=$(git rev-parse "origin/$BASE_REF"); why="the base of the pull request"; from=pull-request
             else
-              base=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why)
-              why=$(cat /tmp/why)
-              if [ -n "$base" ] && ! git merge-base --is-ancestor "$base" HEAD; then
-                why="$why, but $base is not an ancestor of HEAD"; base=
-              fi
-              if [ -z "$base" ]; then
-                base=$(git rev-list -1 --before="25 hours ago" HEAD)
-                why="$why: falling back to the commit of 25 hours ago"
+              # a night without a base a record gave tests nothing and is red: there is no base by the
+              # clock. The way on is a dispatch with diff_base and set_aside (scripts/mutants_nightly.py).
+              base=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why) || {
+                echo "::error::no base for tonight's diff: $(sed 's/^error: //' /tmp/why). Nothing is tested tonight: dispatch this workflow with diff_base (the last measured head) and set_aside to record the range for the weekly run"
+                exit 1
+              }
+              why=$(cat /tmp/why); from=record
+              if ! git merge-base --is-ancestor "$base" HEAD; then
+                echo "::error::no base for tonight's diff: $why, but $base is not an ancestor of HEAD. Nothing is tested tonight: dispatch this workflow with diff_base and set_aside"
+                exit 1
               fi
             fi
             echo "base $base ($why), head $head" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -306,7 +319,7 @@ jobs:
               fi
             done
             set +e
-            python3 scripts/mutants_nightly.py plan --mode "$mode" --runs /tmp/runs.json --base "$base" --head "$head" \
+            python3 scripts/mutants_nightly.py plan --mode "$mode" --base-from "$from" --runs /tmp/runs.json --base "$base" --head "$head" \
               --base-reason "$why" --now "$now" "${counts[@]}" \
               --out-record mutants-record.json --out-matrix /tmp/matrix.json 2> /tmp/plan.err | tee -a "$GITHUB_STEP_SUMMARY"
             rc=${PIPESTATUS[0]}

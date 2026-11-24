@@ -18,20 +18,27 @@ The base of a night's diff is the head of the latest earlier nightly run that is
   * over-cap: its range is carried to the weekly run.
 
 A run that was cancelled, whose unmutated tree failed, or that has a killed or unmeasured shard does not
-move the base: its lines are in the next night's diff again. With no such run in the window the base is the
-commit of 25 hours ago, and the summary says so.
+move the base: its lines are in the next night's diff again. With no such run in the window the night has no
+base: the plan fails with that reason and nothing is tested (there is no base by the clock: until 2026-11-25
+the base was then the commit of 25 hours ago, and the lines between the last measured head and that commit
+were tested by no run). The way on is a dispatch with `diff_base` and `set_aside`: it tests nothing, records
+base..head as an open range for the weekly run (kind `aside`), and its head is the base of the next night.
+
+A night's record is trusted as a base only when its own base came from a record (`base_from`): one planned
+on a base by the clock is passed over, and so is one whose base was the head of such a record (the run its
+`base_reason` names). The reason printed with the base says how many were passed over.
 
 An over-cap range stays open until a weekly run whose record lists it has every shard job of that range
 measured. Open ranges are carried in every nightly and weekly record (`open`), so one does not leave with the
-window; the carried list is read from the latest such record (a pull request's or a diff_base dispatch's record
-carries none and is passed over). A range
+window; the carried list is read from the latest such record (a pull request's or a plain diff_base dispatch's
+record carries none and is passed over). A range
 that has been open for more than MAX_AGE_DAYS fails the weekly run's age job. A record that is listed but
 expired or unreadable is an error (exit 2), never "no open range".
 
     mutants_nightly.py fetch --repo OWNER/REPO --self RUN_ID --out runs.json
-    mutants_nightly.py base  --runs runs.json                         # prints the base sha, or nothing
-    mutants_nightly.py plan  --mode nightly|pr --runs runs.json --base B --head H \\
-        --count default=N --count features=M --per default=P --per features=Q \\
+    mutants_nightly.py base  --runs runs.json                         # prints the base sha; exit 3 = no base
+    mutants_nightly.py plan  --mode nightly|pr|aside --base-from record|pull-request|dispatch \\
+        --runs runs.json --base B --head H --count default=N --count features=M --per default=P --per features=Q \\
         --out-record R --out-matrix M                                 # exit 5 = over the cap
     mutants_nightly.py per   --out mutants.out                        # the shard size from a baseline
     mutants_nightly.py weekly --runs runs.json --head H --now ISO --count default=N --count features=M \\
@@ -45,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -85,10 +93,13 @@ CORE_CAP = (WEEKLY_BUDGET_H * 60 // JOB_MIN) * WEEKLY_PARALLEL // len(AXES)
 RECORD_ARTIFACT = "mutants-record"
 RECORD_FILE = "mutants-record.json"
 MEASURED_STEP = "Measured (every planned mutant of this shard has an outcome)"
-CARRYING = ("nightly", "weekly")   # the record kinds whose `open` list is the carried list
+CARRYING = ("nightly", "weekly", "aside")   # the record kinds whose `open` list is the carried list
+# what the plan step is told about where the base came from, and the one each mode takes
+BASE_FROM = {"nightly": ("record",), "pr": ("pull-request", "dispatch"), "aside": ("dispatch",)}
+BY_THE_CLOCK = "falling back to the commit of"   # in the base_reason of a record planned on a base by the clock
 EVENTS = ("schedule", "workflow_dispatch")   # the runs that are read back (a pull request's run is never a base)
 MAX_PAGES = 10       # of 100 runs per event: more than this in the window is an error, not a cut
-OVER_CAP, ERROR = 5, 2
+OVER_CAP, NO_BASE, ERROR = 5, 3, 2
 
 
 class RecordError(Exception):
@@ -164,23 +175,59 @@ def by_time(runs: list[dict]) -> list[dict]:
     return sorted(runs, key=lambda r: r.get("created_at", ""), reverse=True)
 
 
+def source_run(rec: dict) -> int | None:
+    """the run whose record gave this record its base (the `run N ...` its base_reason starts with)"""
+    m = re.match(r"run (\d+) ", rec.get("base_reason") or "")
+    return int(m.group(1)) if m else None
+
+
+def trusted(run: dict, by_id: dict[int, dict]) -> bool:
+    """whether a night's record may be a base: its own base came from a record, and that record (when it is
+    still in the window) may be a base too. A record from before `base_from` is read by its base_reason."""
+    seen = set()
+    while True:
+        rec = run.get("record") or {}
+        if rec.get("kind") == "aside":
+            return True
+        if rec.get("kind") != "nightly" or run.get("id") in seen:
+            return False
+        seen.add(run.get("id"))
+        if BY_THE_CLOCK in (rec.get("base_reason") or "") or rec.get("base_from", "record") != "record":
+            return False
+        src = by_id.get(source_run(rec))
+        if src is None:   # (the base came from a run that has left the window)
+            return True
+        run = src
+
+
 def pick_base(runs: list[dict]) -> tuple[str | None, str]:
     """(the head of the latest nightly run that measured or was set aside, why); None = no such run"""
     check_records(runs)
-    skipped = 0
+    skipped = passed = 0
+    by_id = {r.get("id"): r for r in runs}
+
+    def said(why: str) -> str:
+        return why + (f" ({passed} later night(s) passed over: planned on a base no record gave)" if passed else "")
+
     for r in by_time(runs):
         rec = r.get("record")
-        if not rec or rec.get("kind") != "nightly":
+        if not rec or rec.get("kind") not in ("nightly", "aside"):
+            continue
+        if rec["kind"] == "aside":
+            return rec["head"], said(f"run {r['id']} set its range aside for the weekly run (a dispatch)")
+        if not trusted(r, by_id):
+            passed += 1
             continue
         state = rec.get("state")
         if state == "over-cap":
-            return rec["head"], f"run {r['id']} set its range aside for the weekly run (over the cap)"
+            return rec["head"], said(f"run {r['id']} set its range aside for the weekly run (over the cap)")
         if state == "empty":
-            return rec["head"], f"run {r['id']} had no mutant in its diff"
+            return rec["head"], said(f"run {r['id']} had no mutant in its diff")
         if state == "accepted" and measured(r, rec["base"], rec["head"], rec.get("jobs", 0)):
-            return rec["head"], f"run {r['id']} measured every shard"
+            return rec["head"], said(f"run {r['id']} measured every shard")
         skipped += 1
-    return None, f"no nightly run in the window measured ({skipped} unmeasured, {len(runs)} run(s) read)"
+    return None, (f"no nightly run in the window measured ({skipped} unmeasured, {passed} planned on a base no "
+                  f"record gave, {len(runs)} run(s) read)")
 
 
 def open_ranges(runs: list[dict]) -> list[dict]:
@@ -197,7 +244,7 @@ def open_ranges(runs: list[dict]) -> list[dict]:
             break
     for r in ordered:
         rec = r.get("record")
-        if rec and rec.get("kind") == "nightly" and rec.get("state") == "over-cap":
+        if rec and (rec.get("kind"), rec.get("state")) in (("nightly", "over-cap"), ("aside", "set-aside")):
             found.setdefault(range_id(rec["base"], rec["head"]),
                              {"base": rec["base"], "head": rec["head"], "counts": rec["counts"],
                               **({"per": rec["per"]} if rec.get("per") else {}), "since": r["created_at"]})
@@ -232,9 +279,13 @@ def diff_entries(base: str, head: str, counts: dict[str, int], per: dict[str, in
 
 
 def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carried: list[dict], why: str,
-                   per: dict[str, int], cap: int = CAP) -> tuple[dict, list[dict]]:
-    """(the record of a nightly / pr plan, its matrix entries); `per` is the shard size of each axis that has
-    a mutant, from that axis' baseline of tonight"""
+                   per: dict[str, int], cap: int = CAP, base_from: str | None = None) -> tuple[dict, list[dict]]:
+    """(the record of a nightly / pr / aside plan, its matrix entries); `per` is the shard size of each axis
+    that has a mutant, from that axis' baseline of tonight. An aside plan has no entry whatever its size: its
+    range is for the weekly run."""
+    base_from = base_from or BASE_FROM[mode][0]
+    if base_from not in BASE_FROM[mode]:
+        raise ValueError(f"a {mode} plan takes its base from {' or '.join(BASE_FROM[mode])}, not from {base_from}")
     unknown = sorted(set(counts) - set(AXES))
     if unknown or set(counts) != set(AXES):
         raise ValueError(f"counts must name exactly {sorted(AXES)}, got {sorted(counts)}")
@@ -245,11 +296,14 @@ def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carr
     shards = {a: shards_for(counts[a], per[a]) for a in AXES}
     if sum(counts.values()) == 0:
         state, entries = "empty", []
+    elif mode == "aside":
+        state, entries = "set-aside", []
     elif max(shards.values()) > cap:
         state, entries = "over-cap", []
     else:
         state, entries = "accepted", diff_entries(base, head, counts, per)
-    rec = {"v": 1, "kind": mode, "state": state, "base": base, "head": head, "base_reason": why, "counts": counts,
+    rec = {"v": 1, "kind": mode, "state": state, "base": base, "head": head, "base_from": base_from,
+           "base_reason": why, "counts": counts,
            "per": per, "shards": shards, "jobs": len(entries), "open": carried}
     return rec, entries
 
@@ -317,7 +371,7 @@ def read_record(repo: str, run_id: int) -> tuple[dict | None, str | None]:
                 rec = json.loads(zf.read(RECORD_FILE).decode("utf-8"))
         except (zipfile.BadZipFile, KeyError, ValueError) as e:
             return None, f"its record artifact is not readable ({e})"
-    if not isinstance(rec, dict) or rec.get("v") != 1 or rec.get("kind") not in ("nightly", "weekly", "pr"):
+    if not isinstance(rec, dict) or rec.get("v") != 1 or rec.get("kind") not in ("nightly", "weekly", "pr", "aside"):
         return None, "its record is not a version 1 record"
     return rec, None
 
@@ -379,7 +433,9 @@ def main(argv: list[str] | None = None) -> int:
     b = sub.add_parser("base")
     b.add_argument("--runs", required=True)
     p = sub.add_parser("plan")
-    p.add_argument("--mode", choices=("nightly", "pr"), required=True)
+    p.add_argument("--mode", choices=tuple(BASE_FROM), required=True)
+    p.add_argument("--base-from", choices=sorted({f for fs in BASE_FROM.values() for f in fs}), required=True,
+                   help="where the base came from: a nightly plan takes one a record gave and no other")
     p.add_argument("--base", required=True)
     p.add_argument("--head", required=True)
     p.add_argument("--base-reason", default="")
@@ -417,7 +473,7 @@ def main(argv: list[str] | None = None) -> int:
             rec = json.loads(Path(args.record).read_text(encoding="utf-8"))
             if rec.get("kind") == "weekly":
                 print(int(rec["core"]["jobs"]))
-            elif rec.get("kind") in ("nightly", "pr"):
+            elif rec.get("kind") in ("nightly", "pr", "aside"):
                 print(0)
             else:
                 raise ValueError(f"{args.record}: not a record (kind {rec.get('kind')!r})")
@@ -434,8 +490,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "base":
             sha, why = pick_base(runs)
             print(sha or "")
-            print(why, file=sys.stderr)
-            return 0
+            print(why if sha else f"error: {why}", file=sys.stderr)
+            return 0 if sha else NO_BASE
         counts = {k: int(v) for k, v in (c.split("=", 1) for c in args.count)}
         per = {k: int(v) for k, v in (c.split("=", 1) for c in args.per)}
         if args.cmd == "weekly":
@@ -452,13 +508,15 @@ def main(argv: list[str] | None = None) -> int:
                 return OVER_CAP
             return 0
         rec, entries = nightly_record(args.mode, args.base, args.head, counts,
-                                      open_ranges(runs) if args.mode == "nightly" else [], args.base_reason, per)
-        if rec["state"] == "over-cap" and args.mode == "nightly":
+                                      open_ranges(runs) if args.mode in CARRYING else [], args.base_reason, per,
+                                      base_from=args.base_from)
+        if (args.mode, rec["state"]) in (("nightly", "over-cap"), ("aside", "set-aside")):
             rec["open"] = rec["open"] + [{"base": args.base, "head": args.head, "counts": counts,
                                           "per": rec["per"], "since": args.now}]
         write_out(args, rec, entries)
         print(f"{args.mode}: {rec['state']}, {range_id(args.base, args.head)}, mutants {counts}, "
-              f"per shard {rec['per']}, shards {rec['shards']}")
+              f"per shard {rec['per']}, shards {rec['shards']}"
+              + (": not run here, set aside for the weekly run" if rec["state"] == "set-aside" else ""))
         if rec["state"] == "over-cap":
             print(f"error: the plan of {range_id(args.base, args.head)} takes {max(rec['shards'].values())} shards on "
                   f"an axis, over the cap of {CAP} ({' / '.join(f'{a} {CAP * n}' for a, n in rec['per'].items())} mutants): not run tonight"

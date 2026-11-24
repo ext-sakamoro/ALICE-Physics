@@ -42,6 +42,35 @@ def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, 
             "jobs": jobs_of(entries, steps)[drop:], "record": rec, "record_error": None}
 
 
+def by_the_clock(run_id: int, day: int, base: str, head: str, counts=None) -> dict:
+    """a night as they were planned until 2026-11-25 when no record gave a base: on the commit of 25 hours ago"""
+    run = night(run_id, day, base, head, counts=counts or {"default": 0, "features": 0})
+    del run["record"]["base_from"]
+    run["record"]["base_reason"] = ("no nightly run in the window measured (5 unmeasured, 21 run(s) read): "
+                                    "falling back to the commit of 25 hours ago")
+    return run
+
+
+def after(run: dict, source: dict, old: bool = False) -> dict:
+    """`run` with the base_reason of a night whose base was the head of `source`"""
+    run["record"]["base_reason"] = f"run {source['id']} had no mutant in its diff"
+    if old:
+        del run["record"]["base_from"]
+    return run
+
+
+def aside(run_id: int, day: int, base: str, head: str, counts=None, carried=None) -> dict:
+    """a dispatch with diff_base and set_aside of 2026-11-<day>: no job, its range recorded as open"""
+    counts = counts or BIG
+    rec, entries = mn.nightly_record("aside", base, head, counts, carried or [], "the dispatch's diff_base", P)
+    assert not entries
+    if rec["state"] == "set-aside":
+        rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "per": rec["per"],
+                                     "since": f"2026-11-{day:02d}T03:00:00Z"}]
+    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T03:00:00Z", "conclusion": "success",
+            "jobs": [], "record": rec, "record_error": None}
+
+
 def cancelled(run_id: int, day: int, head: str) -> dict:
     return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": "cancelled",
             "jobs": [], "record": None, "record_error": None}
@@ -126,8 +155,51 @@ class Base(unittest.TestCase):
     def test_no_measured_night_gives_no_base_and_says_how_many_were_read(self):
         sha, why = mn.pick_base([cancelled(1, 18, B), night(2, 19, B, C, steps=KILLED)])
         self.assertIsNone(sha)
-        self.assertIn("1 unmeasured, 2 run(s) read", why)
+        self.assertIn("1 unmeasured, 0 planned on a base no record gave, 2 run(s) read", why)
         self.assertIsNone(mn.pick_base([])[0])
+
+    def test_an_empty_night_planned_on_a_base_by_the_clock_is_passed_over_and_the_reason_says_so(self):
+        # the nights of 11-18 to 11-24: every one empty on the commit of 25 hours ago, so each moved the base
+        # and the lines between the last measured head and that commit were in no night's diff
+        sha, why = mn.pick_base([night(1, 18, A, B), by_the_clock(2, 19, C, D)])
+        self.assertEqual(sha, B)
+        self.assertIn("run 1 measured every shard", why)
+        self.assertIn("1 later night(s) passed over", why)
+        sha, why = mn.pick_base([by_the_clock(2, 19, C, D)])
+        self.assertIsNone(sha)
+        self.assertIn("0 unmeasured, 1 planned on a base no record gave, 1 run(s) read", why)
+
+    def test_a_night_whose_base_was_the_head_of_such_a_night_is_passed_over_too(self):
+        first = by_the_clock(2, 19, B, C)
+        for old in (True, False):
+            with self.subTest(old=old):
+                second = after(night(3, 20, C, D), first, old=old)
+                third = after(night(4, 21, D, "e" * 40), second, old=old)
+                sha, why = mn.pick_base([night(1, 18, A, B), first, second, third])
+                self.assertEqual(sha, B)
+                self.assertIn("3 later night(s) passed over", why)
+        # (a night whose base came from a run that has left the window is not judged by it)
+        self.assertEqual(mn.pick_base([after(night(3, 20, C, D), {"id": 999})])[0], D)
+
+    def test_a_record_that_says_its_base_came_from_elsewhere_is_never_a_base(self):
+        run = night(2, 19, B, C)
+        for other in ("dispatch", "pull-request", "clock", ""):
+            with self.subTest(base_from=other):
+                run["record"]["base_from"] = other
+                self.assertEqual(mn.pick_base([night(1, 18, A, B), run])[0], B)
+        with self.assertRaisesRegex(ValueError, "a nightly plan takes its base from record, not from dispatch"):
+            mn.nightly_record("nightly", A, B, {"default": 1, "features": 1}, [], "", P, base_from="dispatch")
+        with self.assertRaisesRegex(ValueError, "aside plan takes its base from dispatch, not from record"):
+            mn.nightly_record("aside", A, B, {"default": 1, "features": 1}, [], "", P, base_from="record")
+
+    def test_a_range_set_aside_by_a_dispatch_moves_the_base_past_the_nights_passed_over(self):
+        runs = [night(1, 12, A, B), by_the_clock(2, 19, C, D), aside(3, 20, B, D)]
+        sha, why = mn.pick_base(runs)
+        self.assertEqual(sha, D)
+        self.assertIn("run 3 set its range aside for the weekly run (a dispatch)", why)
+        nxt = night(4, 20, D, "e" * 40)
+        nxt["record"]["base_reason"] = why
+        self.assertEqual(mn.pick_base(runs + [nxt])[0], "e" * 40)
 
     def test_another_range_s_shard_jobs_do_not_count_for_this_one(self):
         run = night(2, 19, B, C)
@@ -151,6 +223,36 @@ class Open(unittest.TestCase):
         self.assertEqual(sorted(e["artifact"] for e in entries if e["kind"] == "core"),
                          sorted(f"mutants-out-{k}-{x}" for k in range(25) for x in ("default", "parallel")))
         self.assertEqual(len({e["artifact"] for e in entries}), 84)
+
+    def test_a_range_set_aside_by_a_dispatch_is_carried_to_the_weekly_plan_and_closed_by_its_measure(self):
+        runs = [night(1, 12, A, B), by_the_clock(2, 19, C, D), aside(3, 20, B, D)]
+        ranges = mn.open_ranges(runs)
+        self.assertEqual([(o["base"], o["head"], o["counts"], o["since"]) for o in ranges],
+                         [(B, D, BIG, "2026-11-20T03:00:00Z")])
+        rec, entries = mn.weekly_record("e" * 40, ranges, "2026-11-21T18:00:00Z", CORE_N, CORE_PER)
+        mine = [e for e in entries if e["kind"] == "diff"]
+        self.assertEqual(len(mine), 2 * 17)   # (1634 mutants at 100 a shard on each axis: no cap in the weekly run)
+        self.assertEqual(rec["taken"], [{"base": B, "head": D, "jobs": 34}])
+        # the nights after it carry it; a weekly run that measured it closes it, one that did not leaves it
+        later = night(4, 20, D, "e" * 40, carried=ranges)
+        self.assertEqual(len(mn.open_ranges(runs + [later])), 1)
+        self.assertEqual(mn.open_ranges(runs + [later, weekly(5, 21, "e" * 40, ranges)]), [])
+        self.assertEqual(len(mn.open_ranges(runs + [later, weekly(5, 21, "e" * 40, ranges, skip=True)])), 1)
+        # and the age job counts it from the day of the dispatch
+        self.assertEqual(len(mn.stale(ranges, "2026-11-28T03:00:01Z")), 1)
+        self.assertEqual(mn.stale(ranges, "2026-11-28T03:00:00Z"), [])
+
+    def test_a_range_set_aside_by_a_dispatch_is_read_from_its_record_when_no_list_carries_it(self):
+        run = aside(3, 20, B, D)
+        run["record"]["open"] = []        # as if only the record's own range were known
+        self.assertEqual([(o["base"], o["head"], o["per"], o["since"]) for o in mn.open_ranges([run])],
+                         [(B, D, P, "2026-11-20T03:00:00Z")])
+
+    def test_a_dispatch_that_sets_aside_a_range_without_a_mutant_opens_nothing(self):
+        run = aside(3, 20, B, D, counts={"default": 0, "features": 0})
+        self.assertEqual(run["record"]["state"], "empty")
+        self.assertEqual(mn.open_ranges([run]), [])
+        self.assertEqual(mn.pick_base([run])[0], D)
 
     def test_a_weekly_run_that_measured_the_range_closes_it(self):
         over = night(2, 19, B, C, counts=BIG)
@@ -377,8 +479,9 @@ class Cli(unittest.TestCase):
         return str(p)
 
     def plan(self, runs: list[dict], default: int, features: int, mode: str = "nightly",
-             per=("--per", "default=100", "--per", "features=100")):
-        code, out, err = self.run_cli("plan", "--mode", mode, "--runs", self.runs(runs), "--base", B, "--head", C,
+             per=("--per", "default=100", "--per", "features=100"), base_from: str | None = None):
+        code, out, err = self.run_cli("plan", "--mode", mode, "--base-from", base_from or mn.BASE_FROM[mode][0],
+                                      "--runs", self.runs(runs), "--base", B, "--head", C,
                                       "--count", f"default={default}", "--count", f"features={features}",
                                       *per,
                                       "--now", "2026-11-19T22:00:00Z",
@@ -408,12 +511,42 @@ class Cli(unittest.TestCase):
         self.assertEqual((code, rec["per"], rec["shards"]), (0, {"default": 34, "features": 50}, {"default": 6, "features": 4}))
         self.assertEqual(len(matrix["include"]), 10)
 
-    def test_base_prints_the_sha_or_an_empty_line(self):
+    def test_base_prints_the_sha_and_fails_with_the_reason_when_no_record_gives_one(self):
         code, out, err = self.run_cli("base", "--runs", self.runs([night(1, 18, A, B)]))
         self.assertEqual((code, out), (0, B + "\n"))
-        code, out, err = self.run_cli("base", "--runs", self.runs([cancelled(1, 18, B)]))
-        self.assertEqual((code, out), (0, "\n"))
-        self.assertIn("no nightly run in the window measured", err)
+        for runs in ([cancelled(1, 18, B)], [by_the_clock(2, 19, C, D)], []):
+            code, out, err = self.run_cli("base", "--runs", self.runs(runs))
+            self.assertEqual((code, out), (mn.NO_BASE, "\n"))
+            self.assertIn("error: no nightly run in the window measured", err)
+        self.assertNotIn(mn.NO_BASE, (0, mn.ERROR, mn.OVER_CAP))
+
+    def test_a_nightly_plan_on_a_base_no_record_gave_is_refused_and_writes_no_record(self):
+        for other in ("dispatch", "pull-request"):
+            code, rec, matrix, err = self.plan([], 10, 10, base_from=other)
+            self.assertEqual((code, rec, matrix), (mn.ERROR, None, None))
+            self.assertIn("a nightly plan takes its base from record", err)
+        self.assertEqual(self.plan([], 10, 10, mode="pr", base_from="record")[0], mn.ERROR)
+        self.assertEqual(self.plan([], 10, 10)[1]["base_from"], "record")
+
+    def test_a_dispatch_that_sets_a_range_aside_runs_no_job_and_records_the_range_as_open(self):
+        earlier = night(1, 17, A, B, counts=BIG)
+        for n in (1634, 10):   # (over a night's cap or under it: an aside plan runs neither)
+            code, rec, matrix, err = self.plan([earlier], n, 10, mode="aside")
+            self.assertEqual((code, rec["kind"], rec["state"], rec["base_from"], matrix), (0, "aside", "set-aside", "dispatch", {"include": []}))
+            self.assertEqual([(o["base"], o["head"]) for o in rec["open"]], [(A, B), (B, C)])
+            self.assertEqual(rec["open"][1], {"base": B, "head": C, "counts": {"default": n, "features": 10},
+                                              "per": {"default": 100, "features": 100}, "since": "2026-11-19T22:00:00Z"})
+            self.assertEqual(self.run_cli("core-jobs", "--record", str(self.d / "r.json"))[:2], (0, "0\n"))
+        # the record is read back as the base of the next night and as an open range of the weekly plan
+        run = {"id": 7, "head_sha": C, "created_at": "2026-11-19T22:00:00Z", "conclusion": "success", "jobs": [],
+               "record": rec, "record_error": None}
+        self.assertEqual(self.run_cli("base", "--runs", self.runs([earlier, run]))[:2], (0, C + "\n"))
+        code, out, err, wrec, wmatrix = self.weekly_cli(*CORE_ARGS, runs=[earlier, run])
+        self.assertEqual(code, 0)
+        self.assertEqual([(t["base"], t["head"]) for t in wrec["taken"]], [(A, B), (B, C)])
+        self.assertEqual(len([e for e in wmatrix if e["kind"] == "diff" and e["base"] == B]), 2)
+        code, rec, _, _ = self.plan([], 0, 0, mode="aside")
+        self.assertEqual((code, rec["state"], rec["open"]), (0, "empty", []))
 
     def test_an_accepted_plan_writes_its_record_and_matrix(self):
         code, rec, matrix, _ = self.plan([], 388, 388)
@@ -442,8 +575,8 @@ class Cli(unittest.TestCase):
         self.assertEqual(code, mn.ERROR)
         self.assertIn("run 3", err)
 
-    def weekly_cli(self, *core: str):
-        code, out, err = self.run_cli("weekly", "--runs", self.runs([]), "--head", D, "--now", "2026-11-22T18:00:00Z", *core,
+    def weekly_cli(self, *core: str, runs=()):
+        code, out, err = self.run_cli("weekly", "--runs", self.runs(list(runs)), "--head", D, "--now", "2026-11-22T18:00:00Z", *core,
                                       "--out-record", str(self.d / "r.json"), "--out-matrix", str(self.d / "m.json"))
         rec = json.loads((self.d / "r.json").read_text()) if (self.d / "r.json").exists() else None
         matrix = json.loads((self.d / "m.json").read_text())["include"] if (self.d / "m.json").exists() else None
@@ -565,10 +698,52 @@ class Workflow(unittest.TestCase):
         self.assertNotIn("1-6", self.TEXT)
 
     def test_a_diff_base_dispatch_is_never_a_nightly_record_and_runs_no_weekly_job(self):
-        self.assertIn("""if [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr\"""", self.TEXT)
+        self.assertIn("""          elif [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr\"""", self.TEXT)
         weekly_only = [ln for ln in self.TEXT.splitlines() if ln.startswith("    if:") and "github.event.schedule" in ln]
         self.assertEqual(len(weekly_only), 8)
         self.assertTrue(all("inputs.diff_base == ''" in ln for ln in weekly_only), weekly_only)
+
+    def plan_step(self) -> str:
+        step = self.TEXT[self.TEXT.index("      - name: Plan\n        id: plan\n"):]
+        return step[:step.index("\n      - uses: actions/upload-artifact")]
+
+    def test_a_night_without_a_base_from_a_record_stops_the_plan_and_no_base_is_taken_by_the_clock(self):
+        step = self.plan_step()
+        got = step.split('base=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why) || {\n', 1)
+        self.assertEqual(len(got), 2, "the base of a night is the script's, and its failure is handled where it is read")
+        handler = got[1].split("\n              }\n", 1)[0].splitlines()
+        self.assertEqual(len(handler), 2, handler)
+        self.assertIn('echo "::error::no base for tonight\'s diff: $(sed \'s/^error: //\' /tmp/why)', handler[0])
+        self.assertEqual(handler[1].strip(), "exit 1")
+        after = got[1].split("\n            fi\n", 1)[0]
+        self.assertIn('if ! git merge-base --is-ancestor "$base" HEAD; then\n', after)
+        self.assertEqual(after.count("exit 1"), 2)   # (no base, and a base that is not an ancestor of HEAD)
+        # no commit is picked by its date anywhere in the workflow, and `base` is assigned in three places only
+        for clock in ("--before", "--since", "--until", "hours ago", "days ago", "falling back"):
+            self.assertNotIn(clock, self.TEXT, clock)
+        self.assertEqual(len(re.findall(r"(?<![\w-])base=", step)), 3)
+        self.assertEqual(step.count("git rev-list"), 0)
+
+    def test_the_plan_is_told_where_the_base_came_from_and_only_a_record_s_base_is_a_night_s(self):
+        step = self.plan_step()
+        self.assertEqual(step.count('plan --mode "$mode" --base-from "$from" --runs /tmp/runs.json --base "$base"'), 1)
+        self.assertEqual(sorted(re.findall(r"(?<![\w-])from=([a-z-]+)", step)), ["dispatch", "pull-request", "record"])
+        self.assertIn('why="the dispatch\'s diff_base"; from=dispatch\n', step)
+        self.assertIn('why="the base of the pull request"; from=pull-request\n', step)
+        self.assertIn("why=$(cat /tmp/why); from=record\n", step)
+
+    def test_set_aside_is_a_dispatch_input_that_needs_diff_base_and_makes_the_aside_plan(self):
+        inputs = self.TEXT.split("  pull_request:\n", 1)[0]
+        self.assertIn("      set_aside:\n", inputs)
+        self.assertIn("        default: false\n        type: boolean\n", inputs.split("      set_aside:\n", 1)[1])
+        step = self.plan_step()
+        self.assertIn("          SET_ASIDE: ${{ inputs.set_aside }}\n", step)
+        self.assertIn('          if [ "$SET_ASIDE" = true ]; then\n'
+                      '            if [ -z "$DIFF_BASE" ]; then echo "::error::set_aside needs diff_base (the range to record is diff_base..HEAD)"; exit 1; fi\n'
+                      '            mode="aside"\n'
+                      '          elif [ "$EVENT" = pull_request ]', step)
+        # an aside run is a diff_base dispatch: its own group, no weekly job; and its plan has no shard job
+        self.assertIn("needs.mutants-plan.outputs.jobs != '0'", self.TEXT)
 
     def test_the_nightly_and_the_weekly_schedule_share_one_group_that_queues(self):
         # both crons are in this one file, under one group for the whole workflow: a weekly run that is
