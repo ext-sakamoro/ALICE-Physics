@@ -745,6 +745,23 @@ class Workflow(unittest.TestCase):
         # an aside run is a diff_base dispatch: its own group, no weekly job; and its plan has no shard job
         self.assertIn("needs.mutants-plan.outputs.jobs != '0'", self.TEXT)
 
+    def test_the_ranges_a_weekly_run_takes_run_in_the_one_matrix_whose_jobs_at_a_time_are_bounded(self):
+        # an open range has no cap on its shards (no mutant is dropped); what is bounded is how many of
+        # its jobs run at once: they are entries of the same matrix as the core shards, under its max-parallel
+        use = "      matrix: ${{ fromJSON(needs.mutants-plan.outputs.matrix) }}\n"
+        self.assertEqual(self.TEXT.count(use), 1)
+        self.assertEqual(self.TEXT.count("fromJSON(needs.mutants-plan.outputs.matrix)"), 1)
+        job = self.TEXT[:self.TEXT.index(use)].rsplit("\n    strategy:\n", 1)
+        self.assertEqual(len(job), 2)
+        bound = (f"      max-parallel: ${{{{ needs.mutants-plan.outputs.mode == 'weekly' && {mn.WEEKLY_PARALLEL} || "
+                 f"{mn.NIGHTLY_PARALLEL} }}}}\n")
+        self.assertEqual(job[1].count(bound), 1, "in the strategy block that takes the plan's matrix")
+        self.assertNotIn("\n  ", job[1].replace("\n      ", "\n"), "nothing but that strategy block in between")
+        rec, entries = mn.weekly_record(D, [{"base": A, "head": B, "counts": BIG, "per": P, "since": "2026-11-19T22:00:00Z"}],
+                                        "2026-11-22T18:00:00Z", CORE_N, CORE_PER)
+        self.assertEqual({e["kind"] for e in entries}, {"core", "diff"}, "one matrix carries both")
+        self.assertEqual(len([e for e in entries if e["kind"] == "diff"]), 34, "and the range is not cut to a cap")
+
     def test_the_nightly_and_the_weekly_schedule_share_one_group_that_queues(self):
         # both crons are in this one file, under one group for the whole workflow: a weekly run that is
         # still going makes the nightly wait (cancel-in-progress false: the running one is never cut).
