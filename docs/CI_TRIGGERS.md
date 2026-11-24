@@ -184,11 +184,11 @@ After the evidence, `land.py` fetches `main` again before pushing:
   for the **new SHA only** (the newest run of each workflow for that SHA). At most 3
   evidence rounds in all; when `main` gains code a third time the landing stops with
   `main is moving: wait for a quiet main or coordinate a landing slot`.
-- A re-evidence push follows the heavy-job rules: Bench gate, Miri and loom and
-  Integration Status use one `ci` concurrency group with `cancel-in-progress: false`, so a
-  new `ci/**` run waits for the running one, and GitHub keeps one pending run per group: the
-  pending run of the earlier attempt is replaced, and no extra heavy run starts in
-  parallel.
+- A re-evidence push follows the heavy-job rules: Bench gate and Integration Status use
+  one `ci` concurrency group with `cancel-in-progress: false`, so a new `ci/**` run waits
+  for the running one, and GitHub keeps one pending run per group: the pending run of the
+  earlier attempt is replaced, and no extra heavy run starts in parallel. Miri and loom
+  use a group per branch: the newer push cancels the older run of the same `ci/<id>`.
 
 ### Landing lock
 
@@ -301,23 +301,26 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 
 - A workflow that runs on `ci/**` never lets a `ci/**` push cancel a `main` run: its
   concurrency group includes the ref, or `cancel-in-progress` is false
-  (`scripts/ci_triggers_check.py`). The light workflows use a group per ref and cancel
-  an older run of the same branch only off `main`.
-- `bench-gate.yml` and `integration-status.yml` use two groups per workflow, `main` and
-  `ci`, with `cancel-in-progress: false`: at most one `main` run and one `ci/**` run at a
-  time, and a new run waits instead of cancelling the running one (GitHub keeps one
-  waiting run per group, so a newer push replaces an older waiting run).
+  (`scripts/ci_triggers_check.py`). The light workflows (`ci.yml` and
+  `reexport_check.yml` among them) use a group per ref off `main` and a group per commit
+  on `main`, and cancel an older run of the same branch only off `main`: a `main` run is
+  never cancelled, and is never dropped by the one-pending-run-per-group rule.
+- A manual run (`workflow_dispatch`) has a group of its own, `dispatch-<run id>`, in every
+  workflow that also runs on a branch push, except `eol.yml` and `public-text.yml` (files
+  shared byte for byte with the other crates, changed with the shared table): it never
+  shares a group with the push run of the same ref, so neither cancels or replaces the other.
+- `bench-gate.yml` and `integration-status.yml` use one `ci` group for every `ci/**`
+  branch and one group per commit on `main`, with `cancel-in-progress: false`: at most one
+  `ci/**` run at a time, and a new run waits instead of cancelling the running one (GitHub
+  keeps one waiting run per group, so a newer `ci/**` push replaces an older waiting run).
   `scripts/ci_load_check.py` requires exactly this shape.
-- `unsafe-and-parallel.yml` (Miri and loom, 45-95 min) uses a group per ref with
-  `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`: a branch's run never
-  replaces or cancels another branch's run, a newer push on the same `ci/**` branch
-  cancels that branch's older run, and a `main` run waits instead of being cut off. The
-  number of runs at once is bounded by its path gate (`.github/paths/unsafe-and-parallel.txt`),
-  which `scripts/ci_load_check.py` requires on `ci/**` together with this shape.
-- `g2-comparisons.yml` (four `cargo check` runs) uses a group per SHA on `main` and a
-  group per ref elsewhere: a `main` run is never cancelled, and is never dropped by the
-  one-pending-run-per-group rule; a newer push to a `ci/**` branch cancels the older run
-  of that branch.
+- `unsafe-and-parallel.yml` (Miri and loom, 45-95 min) uses a group per ref off `main` and
+  per commit on `main`, with `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}`:
+  a branch's run never replaces or cancels another branch's run, a newer push on the same
+  `ci/**` branch cancels that branch's older run, and a `main` run is neither cut off nor
+  replaced. The number of runs at once is bounded by its path gate
+  (`.github/paths/unsafe-and-parallel.txt`), which `scripts/ci_load_check.py` requires on
+  `ci/**` together with this shape.
 - `quality-deep.yml` (the weekly mutation testing) does not trigger on push.
 
 ## Amendment, 2026-10-12
@@ -342,3 +345,17 @@ lock about 9 hours while re-creating its run. The rule now reads: one group per 
 newer push cancels only its own branch's older run, `main` runs are not cut off, and the
 path gate (only a change of the unsafe / parallel code or its tests starts a run) bounds
 how many run at once.
+
+## Amendment, 2026-11-25
+
+The rule amended: a workflow had one group per ref for every event (`bench-gate.yml` and
+`integration-status.yml`: one `main` group and one `ci` group), and `ci.yml` and
+`reexport_check.yml` had none. Reason: a manual run of a ref shared the group of the push
+run of the same ref, so on a `ci/**` branch one cancelled the other, and the landing
+evidence reads a cancelled push run as red; with one `main` group, a third `main` push
+replaced the waiting run of the second, which then had no run of its own; without a
+group, every push to a `ci/<id>` branch kept its superseded runs on the shared runners.
+The rule now reads: a manual run has a group of its own (`dispatch-<run id>`); a push run
+has one group per commit on `main` and one per ref elsewhere (the `ci` group for the two
+heavy workflows); cancelling stays as it was (only an older run of the same branch, never
+on `main`; never for the two heavy workflows).
