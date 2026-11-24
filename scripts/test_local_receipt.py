@@ -4,11 +4,14 @@ them, what its key moves with, and each way `check` refuses."""
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -168,7 +171,7 @@ class Receipt(unittest.TestCase):
     def tearDown(self):
         c.BASE = self.base
         if self.old is None:
-            del os.environ["LOCAL_RECEIPT_DIR"]
+            os.environ.pop("LOCAL_RECEIPT_DIR", None)
         else:
             os.environ["LOCAL_RECEIPT_DIR"] = self.old
         self.tmp.cleanup()
@@ -188,6 +191,72 @@ class Receipt(unittest.TestCase):
         with open(self.root / change, "a", encoding="utf-8") as f:
             f.write("# changed\n" if change.endswith((".yml", ".toml", ".txt")) else "// changed\n")
         commit(self.root, "the series")
+
+    def at_home(self):
+        """the default directory, under a HOME of this test (no LOCAL_RECEIPT_DIR)"""
+        home = Path(self.tmp.name) / "home"
+        home.mkdir()
+        del os.environ["LOCAL_RECEIPT_DIR"]   # (tearDown puts back what setUp found)
+        self.home_is(home)
+        return home
+
+    def home_is(self, home: Path) -> None:
+        at = mock.patch.object(Path, "home", return_value=home)
+        at.start()
+        self.addCleanup(at.stop)
+
+    def test_the_default_place_is_a_state_directory_and_no_part_of_it_is_a_cache(self):
+        home = self.at_home()
+        d = c.receipt_dir()
+        self.assertEqual(d, home / ".local" / "state" / "alice" / "local-receipts")
+        self.assertFalse(any("cache" in part.lower() for part in d.relative_to(home).parts), d)
+        self.assertNotEqual(d, c.old_receipt_dir())
+        self.assertIn(".cache", c.old_receipt_dir().parts)
+        self.run_all()
+        self.assertEqual([p.parent for p in d.glob("*.json")], [d], "run writes the receipt in the default place")
+        self.assertFalse(c.old_receipt_dir().exists(), "and nothing in the old one")
+        self.assertIn("steps green", c.check(self.root))
+
+    def test_a_receipt_in_the_old_place_is_read_once_with_a_warning_and_then_from_the_new_place(self):
+        home = self.at_home()
+        self.run_all()
+        new = next(c.receipt_dir().glob("*.json"))
+        old = c.old_receipt_dir() / new.name
+        old.parent.mkdir(parents=True)
+        new.rename(old)
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt"):   # (another name in the old place is not this one)
+            (old.parent / "other.json").write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+            old.rename(old.parent / "kept.json")
+            c.check(self.root)
+        (old.parent / "kept.json").rename(old)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            line = c.check(self.root)
+        self.assertIn("steps green", line)
+        self.assertIn(f"warning: {new.name} was read from the old place {old.parent}", err.getvalue())
+        self.assertTrue(old.is_file() and new.is_file(), "copied, the old file is left")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(c.check(self.root), line)
+        self.assertEqual(err.getvalue(), "", "once: the second check reads the new place")
+        # a red receipt in the old place is as red after the copy
+        new.unlink()
+        data = json.loads(old.read_text(encoding="utf-8"))
+        data["steps"][0]["rc"] = 1
+        old.write_text(json.dumps(data), encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(c.ReceiptError, "not green"):
+            c.check(self.root)
+
+    def test_a_directory_given_by_the_environment_never_reads_the_old_place(self):
+        home = Path(self.tmp.name) / "home"
+        home.mkdir()
+        self.run_all()
+        new = next(c.receipt_dir().glob("*.json"))
+        self.home_is(home)
+        (c.old_receipt_dir()).mkdir(parents=True)
+        new.rename(c.old_receipt_dir() / new.name)
+        with self.assertRaisesRegex(c.ReceiptError, "no receipt"):
+            c.check(self.root)
 
     def test_a_series_that_changes_src_needs_the_slow_receipt_and_another_does_not(self):
         self.slow_repo("scripts/tool.py")

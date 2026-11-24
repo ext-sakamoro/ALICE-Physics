@@ -261,8 +261,31 @@ def code_key(root: Path) -> str:
 
 
 def receipt_dir() -> Path:
+    """where the receipts are kept: a state directory, not a cache one (a receipt is the evidence a landing
+    asks for, and what clears a cache directory would take it: on 2026-11-24 a receipt of 85 minutes left
+    with a cache sweep and the landing asked for the run again)"""
     base = os.environ.get("LOCAL_RECEIPT_DIR")
-    return Path(base) if base else Path.home() / ".cache" / "alice-siblings" / "local-receipts"
+    return Path(base) if base else Path.home() / ".local" / "state" / "alice" / "local-receipts"
+
+
+def old_receipt_dir() -> Path:
+    """where they were kept until 2026-11-25"""
+    return Path.home() / ".cache" / "alice-siblings" / "local-receipts"
+
+
+def adopt_old(path: Path) -> bool:
+    """a receipt that is still in the old place only is copied to the new one, once, with a line on stderr
+    (the old file is left as it is); False when there is none or the directory was given by the environment"""
+    if os.environ.get("LOCAL_RECEIPT_DIR") or path.exists():
+        return False
+    old = old_receipt_dir() / path.name
+    if not old.is_file():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(old, path)
+    print(f"local_receipt: warning: {path.name} was read from the old place {old.parent} (a cache directory) and "
+          f"copied to {path.parent}; receipts are written and read there from now on", file=sys.stderr)
+    return True
 
 
 def receipt_path(key: str, cls: str = "local") -> Path:
@@ -366,6 +389,7 @@ def check_class(root: Path, cls: str) -> str:
     key = code_key(root)
     path = receipt_path(key, cls)
     flag = "" if cls == "local" else f" --{cls}"
+    adopt_old(path)
     if not path.exists():
         raise ReceiptError(f"no {'' if cls == 'local' else cls + ' '}receipt for the code of HEAD ({key[:12]}): run `python3 scripts/local_receipt.py "
                            f"run{flag}` on this commit (the workflows' {len(units)} {cls} steps) before the landing")
