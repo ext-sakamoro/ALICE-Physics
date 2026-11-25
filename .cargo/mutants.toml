@@ -131,6 +131,14 @@
 #   at `start` instead of `start + 1`, and the first comparison
 #   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
 #
+# src/cloth.rs (`damping_over`, `damping > Fix128::ONE` -> `>=`): the two only
+#   differ at `damping == 1`, where the original takes the power and the mutant
+#   returns `damping`. Both give exactly 1: `powf_pos(1, y)` is 1 for an integer
+#   `y` (exact product) and for any other `y` (`e^(y * ln 1)` = `e^0`), and a
+#   step `dt <= 0` returns ONE in both. Pinned by
+#   `cloth::damping_unit_tests::a_retention_of_one_stays_one_for_any_step`
+#   (six step widths, fractional, zero and negative).
+#
 # NOT excluded despite looking like the upper-bound case below: `replace <
 # with <= in solve_hinge_joint` (src/joint.rs:933), `...in solve_slider_joint`
 # (src/joint.rs:1072), `...in solve_d6_joint` (src/joint.rs:1239,1309), the
@@ -195,4 +203,5 @@ exclude_re = [
     "bvh\\.rs:567:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:576:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:960:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
+    "replace > with >= in damping_over$",
 ]

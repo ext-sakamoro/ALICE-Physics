@@ -33,3 +33,4 @@
 1	bvh\.rs:567:.*replace >> with << in LinearBvh::find_split
 3	bvh\.rs:576:.*replace (\+ with \*|- with \+|- with /) in LinearBvh::find_split
 1	bvh\.rs:960:.*replace \+ with \* in BroadphaseHybrid::query_pairs
+1	replace > with >= in damping_over$
