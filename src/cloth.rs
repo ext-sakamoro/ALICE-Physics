@@ -9467,3 +9467,126 @@ mod damping_unit_tests {
         }
     }
 }
+
+/// Tests of the forces of the predict step and the compliance of the stretch solve: each case
+/// compares with a closed form a mutation of the step's arithmetic would change
+#[cfg(test)]
+mod predict_and_stretch_unit_tests {
+    use super::*;
+
+    fn close(a: Fix128, b: f64) -> bool {
+        (a.to_f64() - b).abs() < 1e-12
+    }
+
+    /// 2×2 sheet of side 1 with one substep per step, gravity off and no velocity damping: a
+    /// motion that is the same for every particle leaves every constraint exactly satisfied, so
+    /// the step is the predict step alone
+    fn sheet(mass_per_particle: Fix128) -> Cloth {
+        let mut c = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ONE,
+            2,
+            2,
+            mass_per_particle,
+        );
+        c.config.gravity = Vec3Fix::ZERO;
+        c.config.substeps = 1;
+        c.config.damping = Fix128::ONE;
+        c
+    }
+
+    /// oracle: a constant force F on a particle of mass m, from rest, moves it by (F/m)·h² in one
+    /// symplectic Euler step of width h (v = (F/m)·h, then x += v·h). The wind is a force:
+    /// F = (1, 0, 0) on m = 2 over h = 1/4 moves each particle by 0.5/16 along x
+    #[test]
+    fn wind_moves_a_particle_by_force_over_mass() {
+        let mut c = sheet(Fix128::from_int(2));
+        c.wind = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        let before = c.positions.clone();
+        c.step(Fix128::from_ratio(1, 4));
+        for (a, b) in before.iter().zip(&c.positions) {
+            let d = *b - *a;
+            assert!(close(d.x, 0.5 / 16.0), "x moved {}", d.x.to_f64());
+            assert!(close(d.y, 0.0) && close(d.z, 0.0), "moved off x");
+        }
+    }
+
+    /// oracle: an undamped spring of stiffness k on a particle of mass m oscillates at
+    /// ω = sqrt(k/m): from offset e0 at rest, e(h) = e0·cos(ω·h). A tether with stiffness 4 and no
+    /// damping on m = 1 over h = 1/4: e = 0.1·cos(0.5). A tether with only a stiffness is a tether
+    #[test]
+    fn a_tether_with_stiffness_alone_pulls_toward_rest() {
+        let mut c = sheet(Fix128::ONE);
+        c.set_rest_tether(Fix128::from_int(4), Fix128::ZERO);
+        let rest = c.positions.clone();
+        let e0 = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 10), Fix128::ZERO);
+        for p in &mut c.positions {
+            *p = *p + e0;
+        }
+        c.step(Fix128::from_ratio(1, 4));
+        // 0.1·cos(0.5), cos(0.5) = 0.877582561890372716… (the crate bans platform libm in tests)
+        let expect = 0.087_758_256_189_037_28;
+        for (r, p) in rest.iter().zip(&c.positions) {
+            let e = *p - *r;
+            assert!(
+                close(e.y, expect),
+                "offset {} (expected {expect})",
+                e.y.to_f64()
+            );
+        }
+    }
+
+    /// oracle: a damper of coefficient c alone on a particle of mass m slows it as
+    /// v(t) = v0·e^(−(c/m)·t), so it travels v0·(1 − e^(−(c/m)·h))/(c/m) in a step of width h.
+    /// Damping 2 on m = 1, v0 = 1, h = 1/4: (1 − e^(−0.5))/2 (an undamped particle travels 0.25).
+    /// A tether with only a damping is a tether
+    #[test]
+    fn a_tether_with_damping_alone_slows_the_particle() {
+        let mut c = sheet(Fix128::ONE);
+        c.set_rest_tether(Fix128::ZERO, Fix128::from_int(2));
+        let before = c.positions.clone();
+        for v in &mut c.velocities {
+            *v = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        }
+        c.step(Fix128::from_ratio(1, 4));
+        // (1 − e^(−0.5))/2, e^(−0.5) = 0.606530659712633423… (the crate bans platform libm in tests)
+        let expect = 0.196_734_670_143_683_3;
+        for (a, b) in before.iter().zip(&c.positions) {
+            let d = *b - *a;
+            assert!(
+                close(d.x, expect),
+                "travelled {} (expected {expect})",
+                d.x.to_f64()
+            );
+        }
+    }
+
+    /// oracle: one XPBD pass from λ = 0 (Macklin, Müller, Chentanez 2016, eq. 18) moves each end
+    /// of an edge of rest length L, stretched to d between particles of inverse mass w, by
+    /// w·(d − L)/(2w + α/h²) toward the other end. α = 1/4, h = 1/2 (α/h² = 1), w = 1, d − L = 1:
+    /// 1/3 per end
+    #[test]
+    fn a_compliant_edge_moves_each_end_by_the_xpbd_step() {
+        let mut c = sheet(Fix128::ONE);
+        c.config.stretch_compliance = Fix128::from_ratio(1, 4);
+        c.edge_constraints = vec![EdgeConstraint {
+            i0: 0,
+            i1: 1,
+            rest_length: Fix128::ONE,
+        }];
+        c.positions[0] = Vec3Fix::ZERO;
+        c.positions[1] = Vec3Fix::new(Fix128::from_int(2), Fix128::ZERO, Fix128::ZERO);
+        c.solve_edge_constraints(Fix128::from_ratio(1, 2));
+        assert!(
+            close(c.positions[0].x, 1.0 / 3.0),
+            "{}",
+            c.positions[0].x.to_f64()
+        );
+        assert!(
+            close(c.positions[1].x, 2.0 - 1.0 / 3.0),
+            "{}",
+            c.positions[1].x.to_f64()
+        );
+    }
+}
