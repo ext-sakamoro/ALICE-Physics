@@ -32,8 +32,17 @@ printed with the base says how many were passed over.
 
 A range can be set aside only from where the tested lines end: the `diff_base` of an aside dispatch must be
 the last trusted head (`anchor`: the base a night would take, or, when no night gives one, the head of the
-latest weekly run whose every core shard ran to its end) or an ancestor of it; the plan step checks that with git and refuses a later one, since
-the lines between the two would be in no night's diff and in no range.
+latest weekly run whose every core shard ran to its end) or an ancestor of it; the plan step checks that with
+git and refuses a later one, since the lines between the two would be in no night's diff and in no range.
+When the window gives neither, the anchor is the committed starting point, scripts/mutants-anchor.txt: one
+commit and the reason it was chosen, changed only by a reviewed landing. It is read last, never in place of
+a record of the window; without the file, or with one that does not hold exactly one commit, there is no
+anchor (exit 3 / an error).
+
+A range may end before HEAD: an aside dispatch with `diff_head` records diff_base..diff_head, so a range too
+large for one matrix is recorded in pieces, oldest first (each piece starts at the anchor the piece before
+it made). The head of the latest piece is the next night's base, so the pieces are recorded up to HEAD
+before the next night.
 
 An over-cap range stays open until a weekly run whose record lists it has every shard job of that range
 measured. Open ranges are carried in every nightly and weekly record (`open`), so one does not leave with the
@@ -45,7 +54,7 @@ expired or unreadable is an error (exit 2), never "no open range".
     mutants_nightly.py fetch --repo OWNER/REPO --self RUN_ID --out runs.json
     mutants_nightly.py base  --runs runs.json                         # prints the base sha, then the id of the
                                                                       # run that gave it; exit 3 = no base
-    mutants_nightly.py anchor --runs runs.json                        # the last trusted head; exit 3 = none
+    mutants_nightly.py anchor --runs runs.json [--start FILE]         # the last trusted head; exit 3 = none
     mutants_nightly.py plan  --mode nightly|pr|aside --base-from record|pull-request|dispatch \\
         --runs runs.json --base B --head H --count default=N --count features=M --per default=P --per features=Q \\
         --out-record R --out-matrix M                                 # exit 5 = over the cap
@@ -106,6 +115,7 @@ MEASURED_STEP = "Measured (every planned mutant of this shard has an outcome)"
 # when cargo-mutants ran the shard to its end (missed mutants are the ratchet's, not this step's), and fails
 # when the shard was stopped at the limit or the unmutated tree failed
 CORE_STEP = "Mutants (weekly = core "
+START_FILE = Path(__file__).resolve().parent / "mutants-anchor.txt"   # the committed starting point
 CARRYING = ("nightly", "weekly", "aside")   # the record kinds whose `open` list is the carried list
 # what the plan step is told about where the base came from, and the one each mode takes
 BASE_FROM = {"nightly": ("record",), "pr": ("pull-request", "dispatch"), "aside": ("dispatch",)}
@@ -245,10 +255,25 @@ def pick_base(runs: list[dict]) -> tuple[str | None, str]:
     return sha, why
 
 
-def anchor(runs: list[dict]) -> tuple[str | None, str]:
+def read_start(path: Path) -> tuple[str, str] | None:
+    """(commit, reason) of the committed starting point; None when there is no file. One line that is not a
+    comment: 40 hex digits, a tab, the reason. Anything else is an error, never "no starting point"."""
+    if not path.is_file():
+        return None
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip() and not ln.startswith("#")]
+    if len(lines) != 1:
+        raise RecordError(f"{path.name} holds {len(lines)} line(s) that are not comments: exactly one commit is the starting point")
+    sha, tab, reason = lines[0].partition("\t")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha) or not tab or len(reason.strip()) < 40:
+        raise RecordError(f"{path.name}: the line is not `<40 hex digits><TAB><the reason, 40 characters or more>`")
+    return sha, reason.strip()
+
+
+def anchor(runs: list[dict], start: Path | None = None) -> tuple[str | None, str]:
     """(the last trusted head, why): the base a night would take; with none, the head of the latest weekly run
     that tested its core (core_measured: one over the cap, cancelled or with a stopped shard tested nothing at
-    its head, and is passed over with a count). A range is set aside from here or from an ancestor of it"""
+    its head, and is passed over with a count); with none of those, the committed starting point of `start`.
+    A range is set aside from here or from an ancestor of it"""
     sha, why, _ = pick(runs)
     if sha:
         return sha, why
@@ -261,7 +286,11 @@ def anchor(runs: list[dict]) -> tuple[str | None, str]:
             return rec["head"], (f"{why}; run {r['id']} is the latest weekly run that measured its core"
                                  + (f" ({passed} later weekly run(s) passed over: core not measured)" if passed else ""))
         passed += 1
-    return None, f"{why}, and no weekly run in the window measured its core ({passed} weekly record(s) read)"
+    why = f"{why}, and no weekly run in the window measured its core ({passed} weekly record(s) read)"
+    began = read_start(start) if start is not None else None
+    if began:
+        return began[0], f"{why}; the committed starting point ({start.name}: {began[1]})"
+    return None, why + ("" if start is None else f", and {start.name} is not there")
 
 
 def pick(runs: list[dict]) -> tuple[str | None, str, int | None]:
@@ -371,6 +400,11 @@ def nightly_record(mode: str, base: str, head: str, counts: dict[str, int], carr
                              "holds: no weekly run could take it. Record it in pieces (a nearer diff_base for each)")
         state, entries = "set-aside", []
     elif max(shards.values()) > cap:
+        jobs = len(diff_entries(base, head, counts, per))
+        if mode == "nightly" and jobs > MATRIX_MAX:   # (set aside, no weekly run could take it: it is not recorded)
+            raise ValueError(f"{range_id(base, head)} takes {jobs} jobs ({shards}), over the cap of a night and more "
+                             f"than the {MATRIX_MAX} a matrix holds: it is not set aside as one range. Record it in "
+                             "pieces (dispatches with diff_base, diff_head and set_aside), oldest first")
         state, entries = "over-cap", []
     else:
         state, entries = "accepted", diff_entries(base, head, counts, per)
@@ -403,14 +437,16 @@ def weekly_record(head: str, ranges: list[dict], now: str, counts: dict[str, int
     core_jobs = len(entries)
     if core_jobs > MATRIX_MAX:
         raise ValueError(f"the core plan takes {core_jobs} jobs, more than the {MATRIX_MAX} a matrix holds")
-    taken, deferred = [], []
+    taken, deferred, oversize = [], [], []
     for o in ranges:   # (oldest first)
         mine = diff_entries(o["base"], o["head"], o["counts"], per_of(o))
         if not mine:
             raise ValueError(f"open range {range_id(o['base'], o['head'])} has no mutant to test (counts {o['counts']})")
         if len(mine) > MATRIX_MAX:
-            raise ValueError(f"open range {range_id(o['base'], o['head'])} takes {len(mine)} jobs, more than the "
-                             f"{MATRIX_MAX} a matrix holds: no weekly run can take it (it has to be recorded in pieces)")
+            # no weekly run can take it. The plan goes on without it (the core and the other ranges are
+            # tested) and ends red naming it; it stays open, so the age job counts it too
+            oversize.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
+            continue
         if len(entries) + len(mine) > MATRIX_MAX:
             deferred.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
             continue
@@ -418,7 +454,7 @@ def weekly_record(head: str, ranges: list[dict], now: str, counts: dict[str, int
         taken.append({"base": o["base"], "head": o["head"], "jobs": len(mine)})
     rec = {"v": 1, "kind": "weekly", "state": "over-cap" if over else "accepted", "head": head,
            "core": {"counts": counts, "per": per, "shards": shards, "jobs": core_jobs}, "taken": taken,
-           "deferred": deferred,
+           "deferred": deferred, "oversize": oversize,
            "open": ranges, "stale": [range_id(o["base"], o["head"]) for o in stale(ranges, now)]}
     return rec, entries
 
@@ -517,6 +553,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--runs", required=True)
     an = sub.add_parser("anchor", help="the last trusted head: where a range set aside may start (or before it)")
     an.add_argument("--runs", required=True)
+    an.add_argument("--start", default=str(START_FILE), help="the committed starting point, read when the window gives none")
     p = sub.add_parser("plan")
     p.add_argument("--mode", choices=tuple(BASE_FROM), required=True)
     p.add_argument("--base-from", choices=sorted({f for fs in BASE_FROM.values() for f in fs}), required=True,
@@ -581,7 +618,7 @@ def main(argv: list[str] | None = None) -> int:
             print(why if sha else f"error: {why}", file=sys.stderr)
             return 0 if sha else NO_BASE
         if args.cmd == "anchor":
-            sha, why = anchor(runs)
+            sha, why = anchor(runs, Path(args.start))
             print(sha or "")
             print(why if sha else f"error: {why}", file=sys.stderr)
             return 0 if sha else NO_BASE
@@ -597,10 +634,16 @@ def main(argv: list[str] | None = None) -> int:
             for d in rec["deferred"]:
                 print(f"deferred: range {range_id(d['base'], d['head'])} ({d['jobs']} jobs) does not fit this week's matrix "
                       f"of {MATRIX_MAX} entries with what is taken before it: it stays open for a later weekly run")
+            said = []
             if rec["state"] == "over-cap":
-                print(f"error: the core plan takes {max(core['shards'].values())} shards on an axis, over the cap of "
-                      f"{CORE_CAP} ({WEEKLY_PARALLEL} jobs at a time for {WEEKLY_BUDGET_H} h): no core shard is run "
-                      "this week", file=sys.stderr)
+                said.append(f"the core plan takes {max(core['shards'].values())} shards on an axis, over the cap of "
+                            f"{CORE_CAP} ({WEEKLY_PARALLEL} jobs at a time for {WEEKLY_BUDGET_H} h): no core shard is run "
+                            "this week")
+            for o in rec["oversize"]:
+                said.append(f"open range {range_id(o['base'], o['head'])} takes {o['jobs']} jobs, more than the "
+                            f"{MATRIX_MAX} a matrix holds: no weekly run can take it, it has to be recorded again in pieces")
+            if said:   # (the plan is written: what it holds runs, and the plan step ends red with these lines)
+                print("error: " + "; ".join(said), file=sys.stderr)
                 return OVER_CAP
             return 0
         rec, entries = nightly_record(args.mode, args.base, args.head, counts,

@@ -254,6 +254,60 @@ class Base(unittest.TestCase):
         self.assertIsNone(sha)
         self.assertIn("no weekly run in the window measured its core (0 weekly record(s) read)", why)
 
+    def start_file(self, text: str) -> Path:
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        p = d / "mutants-anchor.txt"
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    REASON = "the head of the weekly run 1 whose every planned core mutant has an outcome"
+
+    def test_the_committed_starting_point_is_the_anchor_only_when_the_window_gives_none(self):
+        start = self.start_file(f"# where the accounting starts\n\n{D}\t{self.REASON}\n")
+        only_clock = [by_the_clock(2, 19, B, C)]
+        sha, why = mn.anchor(only_clock, start)
+        self.assertEqual(sha, D)
+        self.assertIn(f"the committed starting point (mutants-anchor.txt: {self.REASON})", why)
+        self.assertIn("no weekly run in the window measured its core", why)
+        # never over a record of the window: a trusted night, an aside record, a weekly run that measured
+        self.assertEqual(mn.anchor(only_clock + [night(1, 18, A, B)], start)[0], B)
+        self.assertEqual(mn.anchor(only_clock + [aside(3, 20, A, B)], start)[0], B)
+        sha, why = mn.anchor(only_clock + [weekly(5, 14, A, [])], start)
+        self.assertEqual(sha, A)
+        self.assertNotIn("starting point", why)
+        # a weekly run that did not measure is passed over, and then the file is read
+        bad = weekly(6, 21, B, [])
+        bad["jobs"] = []
+        self.assertEqual(mn.anchor(only_clock + [bad], start)[0], D)
+        # the base of a night is never the file's: a night still needs a record
+        self.assertIsNone(mn.pick_base(only_clock)[0])
+
+    def test_without_the_file_there_is_no_anchor_and_a_file_that_is_not_one_commit_is_an_error(self):
+        only_clock = [by_the_clock(2, 19, B, C)]
+        gone = self.start_file("x") 
+        gone.unlink()
+        sha, why = mn.anchor(only_clock, gone)
+        self.assertIsNone(sha)
+        self.assertIn("mutants-anchor.txt is not there", why)
+        self.assertIsNone(mn.anchor(only_clock)[0], "no file asked for: as before")
+        for text, said in (("", "0 line"), ("# only a comment\n", "0 line"), (f"{D}\t{self.REASON}\n{C}\t{self.REASON}\n", "2 line"),
+                           (f"{D[:12]}\t{self.REASON}\n", "40 hex"), (f"{D.upper()}\t{self.REASON}\n", "40 hex"),
+                           (f"{D} {self.REASON}\n", "40 hex"), (f"{D}\tshort reason\n", "40 hex"), (f"{D}\n", "40 hex")):
+            with self.subTest(text=text[:30]):
+                with self.assertRaisesRegex(mn.RecordError, said):
+                    mn.anchor(only_clock, self.start_file(text))
+        # a broken file is not read (and not an error) while the window gives an anchor
+        self.assertEqual(mn.anchor([night(1, 18, A, B)], self.start_file("broken"))[0], B)
+
+    def test_the_file_of_this_repository_holds_one_commit_with_its_reason(self):
+        began = mn.read_start(mn.START_FILE)
+        self.assertIsNotNone(began)
+        sha, reason = began
+        self.assertRegex(sha, r"^[0-9a-f]{40}$")
+        for said in ("42525056789", "core", "missed", "43120898219", "43323279869", "43521617416"):
+            self.assertIn(said, reason)
+
     def test_a_weekly_run_that_did_not_measure_its_core_is_not_an_anchor(self):
         only_clock = [by_the_clock(2, 19, C, D)]
         good = weekly(5, 14, A, [])
@@ -408,8 +462,19 @@ class Open(unittest.TestCase):
         # the range of 2026-11-25 (8824 mutants an axis at 34 a shard: 520 jobs) is such a one
         with self.assertRaisesRegex(ValueError, "takes 520 jobs"):
             mn.nightly_record("aside", A, B, {"default": 8824, "features": 8824}, [], "", {"default": 34, "features": 34})
-        with self.assertRaisesRegex(ValueError, "takes 258 jobs.*no weekly run can take it"):
-            mn.weekly_record(D, [self.rng(A, B, 12900, 10)], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+        # a night's range that large is not set aside either: the base stays, the night is red
+        with self.assertRaisesRegex(ValueError, "takes 258 jobs .*not set aside as one range.*in pieces"):
+            mn.nightly_record("nightly", A, B, {"default": 12900, "features": 12900}, [], "", P, base_run=1)
+        rec, _ = mn.nightly_record("nightly", A, B, {"default": 12800, "features": 12800}, [], "", P, base_run=1)
+        self.assertEqual(rec["state"], "over-cap", "256 jobs: over a night's cap, and one matrix holds it")
+        # one that is open all the same (a record from before the guard) does not stop the weekly plan
+        big, small = self.rng(A, B, 12900, 10), self.rng(B, C, 2000, 11)
+        rec, entries = mn.weekly_record(D, [big, small], "2026-11-14T18:00:00Z", CORE_N, CORE_PER)
+        self.assertEqual(rec["oversize"], [{"base": A, "head": B, "jobs": 258}])
+        self.assertEqual(rec["deferred"], [], "not deferred: no later week can take it either")
+        self.assertEqual([t["base"] for t in rec["taken"]], [B], "the core and the other range are still planned")
+        self.assertEqual(len(entries), 50 + 40)
+        self.assertEqual(rec["open"], [big, small], "and it stays open: the age job counts it")
 
     def test_a_dispatch_that_sets_aside_a_range_without_a_mutant_opens_nothing(self):
         run = aside(3, 20, B, D, counts={"default": 0, "features": 0})
@@ -687,11 +752,24 @@ class Cli(unittest.TestCase):
         self.assertNotIn(mn.NO_BASE, (0, mn.ERROR, mn.OVER_CAP))
 
     def test_anchor_prints_the_last_trusted_head_and_fails_without_one(self):
-        code, out, err = self.run_cli("anchor", "--runs", self.runs([night(1, 12, A, B), by_the_clock(2, 19, C, D)]))
+        none = str(self.d / "no-such-file.txt")
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([night(1, 12, A, B), by_the_clock(2, 19, C, D)]), "--start", none)
         self.assertEqual((code, out), (0, B + "\n"))
-        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]))
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]), "--start", none)
         self.assertEqual((code, out), (mn.NO_BASE, "\n"))
         self.assertIn("error: no nightly run in the window measured", err)
+        self.assertIn("no-such-file.txt is not there", err)
+        start = self.d / "start.txt"
+        start.write_text(f"{A}\tthe head of the weekly run 1 whose every planned core mutant has an outcome\n", encoding="utf-8")
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]), "--start", str(start))
+        self.assertEqual((code, out), (0, A + "\n"))
+        self.assertIn("the committed starting point (start.txt: ", err)
+        start.write_text("not a commit\n", encoding="utf-8")
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]), "--start", str(start))
+        self.assertEqual((code, out), (mn.ERROR, ""))
+        # without --start the repository's own file is the one read
+        code, out, err = self.run_cli("anchor", "--runs", self.runs([by_the_clock(2, 19, C, D)]))
+        self.assertEqual((code, out), (0, mn.read_start(mn.START_FILE)[0] + "\n"))
 
     def test_a_nightly_plan_that_names_no_run_for_its_base_is_refused(self):
         code, rec, matrix, err = self.plan([], 10, 10, base_run=False)
@@ -799,6 +877,14 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_cli("age", "--record", str(self.d / "r.json"), "--now", "2026-11-22T18:00:00Z")[0], 1)
         code, out, err = self.run_cli("age", "--record", str(self.d / "r.json"), "--now", "2026-11-20T18:00:00Z")
         self.assertEqual((code, out), (0, "compared: open ranges 3, older than 8 days 0\n"))
+        # a weekly plan with an open range no matrix holds: written without it, exit 5 with the range named
+        huge = night(4, 15, D, "e" * 40, counts=big)
+        huge["record"]["open"][-1]["counts"] = {"default": 12900, "features": 12900}
+        huge["record"]["counts"] = {"default": 12900, "features": 12900}
+        code, out, err, rec, matrix = self.weekly_cli(*CORE_ARGS, runs=[huge])
+        self.assertEqual((code, len(matrix)), (mn.OVER_CAP, 50))
+        self.assertIn("takes 258 jobs, more than the 256 a matrix holds: no weekly run can take it", err)
+        self.assertEqual(rec["state"], "accepted", "the core itself is planned")
         # an aside plan over the limit: exit 2, nothing written
         (self.d / "r.json").unlink()
         (self.d / "m.json").unlink()
@@ -961,14 +1047,60 @@ class Workflow(unittest.TestCase):
         got = step.split('              if [ "$mode" = aside ]; then\n', 1)
         self.assertEqual(len(got), 2)
         self.assertTrue(got[0].endswith('why="the dispatch\'s diff_base"; from=dispatch\n'), "in the diff_base branch")
-        block = got[1].split("\n              fi\n", 1)[0]
+        block = got[1].split("\n              fi\n", 1)[0].split('                if [ -n "$DIFF_HEAD" ]; then\n', 1)[0]
         self.assertIn('anchor=$(python3 scripts/mutants_nightly.py anchor --runs /tmp/runs.json 2> /tmp/why) || {\n', block)
         self.assertIn('if ! git merge-base --is-ancestor "$base" "$anchor"; then\n', block)
         self.assertIn("diff_base $base is neither the last tested head $anchor", block)
-        self.assertEqual(block.count("exit 1"), 2, "no anchor, and a diff_base after it: both stop the plan")
+        self.assertIn('if ! git merge-base --is-ancestor "$anchor" HEAD; then\n', block)
+        self.assertLess(block.index('--is-ancestor "$anchor" HEAD'), block.index('--is-ancestor "$base" "$anchor"'))
+        self.assertEqual(block.count("exit 1"), 3,
+                         "no anchor, an anchor that is not in HEAD's history, and a diff_base after it: each stops the plan")
         self.assertEqual(step.count("mutants_nightly.py anchor"), 1)
         # (the refusals come before the plan is written: the record of an aside run is only ever of an accepted range)
         self.assertLess(step.index("mutants_nightly.py anchor"), step.index('plan --mode "$mode"'))
+
+    def test_a_piece_ends_at_diff_head_and_is_counted_on_that_commit_s_tree(self):
+        inputs = self.TEXT.split("  pull_request:\n", 1)[0]
+        self.assertIn("      diff_head:\n", inputs)
+        step = self.plan_step()
+        self.assertIn("          DIFF_HEAD: ${{ inputs.diff_head }}\n", step)
+        got = step.split('                if [ -n "$DIFF_HEAD" ]; then\n', 1)
+        self.assertEqual(len(got), 2)
+        self.assertIn('if [ "$mode" = aside ]; then\n', got[0].rsplit("            if [ -n \"$DIFF_BASE\" ]; then\n", 1)[1],
+                      "inside the aside block: after the anchor checks")
+        self.assertGreater(got[0].rindex('--is-ancestor "$base" "$anchor"'), got[0].rindex("mutants_nightly.py anchor"))
+        block = got[1].split("\n                fi\n", 1)[0]
+        for line in ('piece=$(git rev-parse --verify -q "$DIFF_HEAD^{commit}") || { echo "::error::diff_head \'$DIFF_HEAD\' is not a commit"; exit 1; }',
+                     'git merge-base --is-ancestor "$piece" HEAD || { echo "::error::diff_head $piece is not an ancestor of HEAD"; exit 1; }',
+                     'if [ "$piece" = "$base" ] || ! git merge-base --is-ancestor "$base" "$piece"; then',
+                     'cp scripts/mutants_nightly.py /tmp/mutants_nightly.py; mn=/tmp/mutants_nightly.py',
+                     'git checkout -q --detach "$piece"', 'head=$piece'):
+            self.assertIn("                  " + line + "\n", block + "\n", line)
+        self.assertEqual(block.count("exit 1"), 3)
+        self.assertLess(block.index("cp scripts/mutants_nightly.py"), block.index("git checkout -q --detach"),
+                        "this run's script is kept before the tree changes")
+        # the diff, the listing and the baseline read the checked-out range head; the plan is written by this
+        # run's own script on this run's own commit, with the piece's head as the record's head
+        self.assertIn('git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff', step)
+        self.assertIn('per=$(python3 "$mn" per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {\n', step)
+        back = 'if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q --detach "$run_head"; fi\n'
+        self.assertEqual(step.count(back), 1)
+        self.assertLess(step.index(back), step.index('plan --mode "$mode"'))
+        self.assertGreater(step.index(back), step.index('per=$(python3 "$mn" per'))
+        self.assertIn("          head=$(git rev-parse HEAD)\n          run_head=$head\n          mn=scripts/mutants_nightly.py\n", step)
+        self.assertIn('--base "$base" --head "$head"', step)
+        # the weekly shard job of a range checks out the range's head, which is what the piece was counted on
+        self.assertIn("          ref: ${{ matrix.head }}\n", self.TEXT)
+
+    def test_the_red_line_of_a_night_without_a_base_says_it_is_no_regression_and_names_the_way_on(self):
+        step = self.plan_step()
+        line = [ln for ln in step.splitlines() if "no base for tonight's diff" in ln and "sed" in ln]
+        self.assertEqual(len(line), 1)
+        for said in ("this is not a regression of the code", "diff_base and set_aside", "diff_head",
+                     "scripts/mutants-anchor.txt"):
+            self.assertIn(said, line[0])
+        self.assertTrue((Path(__file__).resolve().parent / "mutants-anchor.txt").is_file())
+        self.assertEqual(mn.START_FILE, Path(__file__).resolve().parent / "mutants-anchor.txt")
 
     def test_set_aside_is_a_dispatch_input_that_needs_diff_base_and_makes_the_aside_plan(self):
         inputs = self.TEXT.split("  pull_request:\n", 1)[0]
@@ -979,6 +1111,8 @@ class Workflow(unittest.TestCase):
         self.assertIn('          if [ "$SET_ASIDE" = true ]; then\n'
                       '            if [ -z "$DIFF_BASE" ]; then echo "::error::set_aside needs diff_base (the range to record is diff_base..HEAD)"; exit 1; fi\n'
                       '            mode="aside"\n'
+                      '          elif [ -n "$DIFF_HEAD" ]; then\n'
+                      '            echo "::error::diff_head is for set_aside (a range recorded for the weekly run): without set_aside the diff ends at HEAD"; exit 1\n'
                       '          elif [ "$EVENT" = pull_request ]', step)
         # an aside run is a diff_base dispatch: its own group, no weekly job; and its plan has no shard job
         self.assertIn("needs.mutants-plan.outputs.jobs != '0'", self.TEXT)

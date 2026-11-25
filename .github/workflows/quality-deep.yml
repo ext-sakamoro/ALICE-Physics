@@ -45,6 +45,13 @@ on:
         required: false
         default: ''
         type: string
+      diff_head:
+        # set_aside と併せて使う  範囲の終わりを HEAD より前の commit にする (diff_base..diff_head)
+        # 1 つの matrix に入りきらない範囲を、古い順に小分けで記録するための入力
+        description: 'set_aside の範囲の終わりの commit (空 = HEAD)'
+        required: false
+        default: ''
+        type: string
       set_aside:
         # diff_base と併せて使う  その run は変異を試さず、diff_base..HEAD を週次が試す範囲として記録する (kind aside)
         # 夜間の起点が無い夜 (記録から起点が決まらず plan が赤) の先へ進む手段: この記録の head が次の夜の起点になる
@@ -213,15 +220,20 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           DIFF_BASE: ${{ inputs.diff_base }}
           SET_ASIDE: ${{ inputs.set_aside }}
+          DIFF_HEAD: ${{ inputs.diff_head }}
         run: |
           now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           if [ "$SET_ASIDE" = true ]; then
             if [ -z "$DIFF_BASE" ]; then echo "::error::set_aside needs diff_base (the range to record is diff_base..HEAD)"; exit 1; fi
             mode="aside"
+          elif [ -n "$DIFF_HEAD" ]; then
+            echo "::error::diff_head is for set_aside (a range recorded for the weekly run): without set_aside the diff ends at HEAD"; exit 1
           elif [ "$EVENT" = pull_request ] || [ -n "$DIFF_BASE" ]; then mode="pr"
           elif [ "$SCHEDULE" = '30 17 * * 1-5' ]; then mode="nightly"
           else mode="weekly"; fi
           head=$(git rev-parse HEAD)
+          run_head=$head
+          mn=scripts/mutants_nightly.py
           python3 scripts/mutants_nightly.py fetch --repo "$GITHUB_REPOSITORY" --self "$GITHUB_RUN_ID" --out /tmp/runs.json
           over=false
           base_run=
@@ -274,9 +286,25 @@ jobs:
                   echo "::error::set_aside: the last tested head is not known ($(sed 's/^error: //' /tmp/why)): no range is recorded"
                   exit 1
                 }
+                if ! git merge-base --is-ancestor "$anchor" HEAD; then
+                  echo "::error::set_aside: the last tested head $anchor ($(cat /tmp/why)) is not an ancestor of HEAD: no range is recorded"
+                  exit 1
+                fi
                 if ! git merge-base --is-ancestor "$base" "$anchor"; then
                   echo "::error::set_aside: diff_base $base is neither the last tested head $anchor ($(cat /tmp/why)) nor an ancestor of it: the lines between them would be in no run. Dispatch with diff_base $anchor or an earlier commit"
                   exit 1
+                fi
+                if [ -n "$DIFF_HEAD" ]; then
+                  # a piece: the range ends at diff_head. It is counted and timed on that commit's own
+                  # tree, as the weekly shard jobs will test it (they check the range's head out)
+                  piece=$(git rev-parse --verify -q "$DIFF_HEAD^{commit}") || { echo "::error::diff_head '$DIFF_HEAD' is not a commit"; exit 1; }
+                  git merge-base --is-ancestor "$piece" HEAD || { echo "::error::diff_head $piece is not an ancestor of HEAD"; exit 1; }
+                  if [ "$piece" = "$base" ] || ! git merge-base --is-ancestor "$base" "$piece"; then
+                    echo "::error::diff_head $piece is not after diff_base $base: the range would be empty or backwards"; exit 1
+                  fi
+                  cp scripts/mutants_nightly.py /tmp/mutants_nightly.py; mn=/tmp/mutants_nightly.py
+                  git checkout -q --detach "$piece"
+                  head=$piece
                 fi
               fi
             elif [ "$mode" = pr ]; then
@@ -285,7 +313,7 @@ jobs:
               # a night without a base a record gave tests nothing and is red: there is no base by the
               # clock. The way on is a dispatch with diff_base and set_aside (scripts/mutants_nightly.py).
               picked=$(python3 scripts/mutants_nightly.py base --runs /tmp/runs.json 2> /tmp/why) || {
-                echo "::error::no base for tonight's diff: $(sed 's/^error: //' /tmp/why). Nothing is tested tonight: dispatch this workflow with diff_base (the last measured head) and set_aside to record the range for the weekly run"
+                echo "::error::no base for tonight's diff: $(sed 's/^error: //' /tmp/why). Nothing is tested tonight, and this is not a regression of the code: no record says where the tested lines end. The way on: dispatch this workflow with diff_base and set_aside (in pieces, with diff_head, when the range is large) from the last measured head, or, when no record names one, from the committed starting point scripts/mutants-anchor.txt"
                 exit 1
               }
               base=$(printf '%s\n' "$picked" | sed -n 1p); base_run=$(printf '%s\n' "$picked" | sed -n 2p)
@@ -296,7 +324,7 @@ jobs:
               fi
             fi
             echo "base $base ($why), head $head" | tee -a "$GITHUB_STEP_SUMMARY"
-            git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff
+            git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff   # (HEAD is the range's head: a piece is checked out)
             counts=()
             for axis in "default=" "features=parallel,gpu-solver-bridge,simd"; do
               n=0
@@ -323,7 +351,7 @@ jobs:
                 brc=$?
                 set -e
                 sed -E 's/\x1b\[[0-9;]*m//g' "/tmp/baseline-$name.log" | grep -m1 'Unmutated baseline' || true
-                per=$(python3 scripts/mutants_nightly.py per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {
+                per=$(python3 "$mn" per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {
                   tail -20 "/tmp/baseline-$name.log"
                   echo "::error::$name axis: no unmutated baseline to size the shards from (cargo-mutants exit $brc): $(sed 's/^error: //' /tmp/per.err)"
                   exit 1
@@ -332,6 +360,7 @@ jobs:
                 counts+=(--per "$name=$per")
               fi
             done
+            if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q --detach "$run_head"; fi
             set +e
             python3 scripts/mutants_nightly.py plan --mode "$mode" --base-from "$from" ${base_run:+--base-run "$base_run"} --runs /tmp/runs.json --base "$base" --head "$head" \
               --base-reason "$why" --now "$now" "${counts[@]}" \
