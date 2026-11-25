@@ -4666,6 +4666,38 @@ mod tests {
         );
     }
 
+    /// A hinge at exactly a right angle (d = 0, vertex 3 straight above the edge) whose rest is the
+    /// same right angle on the mirror side, one raw unit wider, is left as it is. The MODEL
+    /// (module doc, "Approximation: bending through a fold") solves the unsigned dihedral angle,
+    /// which cannot tell a hinge from its mirror: the unsigned error here is one raw unit, and at
+    /// d = 0 the unsigned gradient is at its largest (sin = 1), so a correction that rounds to
+    /// zero means the constraint is met to `Fix128` resolution, not the vanishing gradient the
+    /// fold branch repairs. The fold branch is scoped to hinges folded past a right angle
+    /// (`n̂₁ · n̂₂ > 0`); projecting a hinge outside that scope by the signed angle (error near π
+    /// here) is what the MODEL measured and rejected
+    #[test]
+    fn a_right_angle_hinge_met_to_resolution_is_not_projected() {
+        let half = Fix128::from_ratio(1, 2);
+        let mut c = hinge();
+        c.positions[3] = Vec3Fix::new(half, half, Fix128::ZERO);
+        let p = &c.positions;
+        let (theta, _) = hinge_signed_angle(p[2], p[3], p[0], p[1]).expect("a hinge");
+        assert_eq!(theta.abs(), Fix128::HALF_PI, "exactly a right angle");
+        let wider = Fix128::HALF_PI + Fix128::from_raw(0, 1);
+        let mirrored = if theta.is_negative() { wider } else { -wider };
+        c.bend_constraints[0].rest_angle = wider;
+        c.bend_constraints[0].rest_signed = mirrored;
+        let before = c.positions.clone();
+        let mut alone = c.clone();
+        alone.solve_bend(Fix128::from_ratio(1, 60), false);
+        assert_eq!(
+            alone.positions, before,
+            "the formula rounds the correction to zero"
+        );
+        c.solve_bend(Fix128::from_ratio(1, 60), true);
+        assert_eq!(c.positions, before, "a right-angle hinge is not projected");
+    }
+
     /// The face-normal gradients are the gradients of the signed angle: every vertex and axis
     /// against a central difference (f64), on hinges near flat, in between, past a right angle and
     /// near the fold

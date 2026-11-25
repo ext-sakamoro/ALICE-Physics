@@ -139,6 +139,29 @@
 #   `cloth::damping_unit_tests::a_retention_of_one_stays_one_for_any_step`
 #   (six step widths, fractional, zero and negative).
 #
+# src/cloth.rs (`Cloth::new_grid`, `res_x > 1` / `res_y > 1` -> `>=`, the two
+#   reciprocal guards): the two only differ at `res == 1`, where the mutant
+#   computes `Fix128::ONE / Fix128::from_int(0)`. `Fix128` division by zero
+#   returns `ZERO` (src/math.rs, `impl Div for Fix128`, the `rhs.is_zero()`
+#   early return), which is the original's else branch, so the grid is the same.
+#
+# src/cloth.rs (`Cloth::build_constraints`, `if a < b` -> `>` and -> `<=` in the
+#   edge dedup): `(lo, hi)` is used only as the dedup key; the constraint is
+#   pushed with `(a, b)` either way. `>` orders every pair the other way round,
+#   consistently, so the same set of keys is found; `<=` differs only at
+#   `a == b`, where both branches give `(a, a)`.
+#
+# src/cloth.rs (`Cloth::mesh_edges`, `if a < b` -> `<=`): differs only at
+#   `a == b`, where both branches give `[a, a]`.
+#
+# src/cloth.rs (`Cloth::solve_bend`, `len12.is_zero() || len13.is_zero()` ->
+#   `&&`): the two only differ when exactly one side of the hinge has zero
+#   length. The mutant then goes on with `ONE / 0 = ZERO` (see `new_grid`
+#   above), so that face normal is the zero vector: `d = 0` and `sin = 0`,
+#   every gradient is a zero vector, the scale is `0 * error / denom = 0` (or
+#   `denom` is zero and the loop continues), and the fold branch needs `d > 0`.
+#   No particle moves, as in the original's `continue`.
+#
 # NOT excluded despite looking like the upper-bound case below: `replace <
 # with <= in solve_hinge_joint` (src/joint.rs:933), `...in solve_slider_joint`
 # (src/joint.rs:1072), `...in solve_d6_joint` (src/joint.rs:1239,1309), the
@@ -204,4 +227,9 @@ exclude_re = [
     "bvh\\.rs:576:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:960:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
     "replace > with >= in damping_over$",
+    "replace > with >= in Cloth::new_grid$",
+    "replace < with > in Cloth::build_constraints$",
+    "replace < with <= in Cloth::build_constraints$",
+    "replace < with <= in Cloth::mesh_edges$",
+    "replace \\|\\| with && in Cloth::solve_bend$",
 ]

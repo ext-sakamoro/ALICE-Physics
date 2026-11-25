@@ -34,3 +34,8 @@
 3	bvh\.rs:576:.*replace (\+ with \*|- with \+|- with /) in LinearBvh::find_split
 1	bvh\.rs:960:.*replace \+ with \* in BroadphaseHybrid::query_pairs
 1	replace > with >= in damping_over$
+2	replace > with >= in Cloth::new_grid$
+1	replace < with > in Cloth::build_constraints$
+1	replace < with <= in Cloth::build_constraints$
+1	replace < with <= in Cloth::mesh_edges$
+1	replace \|\| with && in Cloth::solve_bend$
