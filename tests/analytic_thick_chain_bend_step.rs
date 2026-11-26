@@ -65,13 +65,22 @@ impl Cx {
         Self { re, im: 0.0 }
     }
     fn add(self, o: Self) -> Self {
-        Self { re: self.re + o.re, im: self.im + o.im }
+        Self {
+            re: self.re + o.re,
+            im: self.im + o.im,
+        }
     }
     fn sub(self, o: Self) -> Self {
-        Self { re: self.re - o.re, im: self.im - o.im }
+        Self {
+            re: self.re - o.re,
+            im: self.im - o.im,
+        }
     }
     fn mul(self, o: Self) -> Self {
-        Self { re: self.re * o.re - self.im * o.im, im: self.re * o.im + self.im * o.re }
+        Self {
+            re: self.re * o.re - self.im * o.im,
+            im: self.re * o.im + self.im * o.re,
+        }
     }
     fn div(self, o: Self) -> Self {
         let n = o.re * o.re + o.im * o.im;
@@ -81,15 +90,24 @@ impl Cx {
         }
     }
     fn scale(self, k: f64) -> Self {
-        Self { re: self.re * k, im: self.im * k }
+        Self {
+            re: self.re * k,
+            im: self.im * k,
+        }
     }
     fn sqrt(self) -> Self {
         let r = self.re.hypot(self.im);
         let re = ((r + self.re) / 2.0).sqrt();
-        Self { re, im: self.im / (2.0 * re) }
+        Self {
+            re,
+            im: self.im / (2.0 * re),
+        }
     }
     fn ln(self) -> Self {
-        Self { re: self.re.hypot(self.im).ln(), im: self.im.atan2(self.re) }
+        Self {
+            re: self.re.hypot(self.im).ln(),
+            im: self.im.atan2(self.re),
+        }
     }
 }
 
@@ -110,7 +128,10 @@ fn constraints(x: &[Cx]) -> Vec<Cx> {
     let d: Vec<[Cx; 2]> = (0..LINKS)
         .map(|k| [x[2 * k + 2].sub(x[2 * k]), x[2 * k + 3].sub(x[2 * k + 1])])
         .collect();
-    let len: Vec<Cx> = d.iter().map(|v| v[0].mul(v[0]).add(v[1].mul(v[1])).sqrt()).collect();
+    let len: Vec<Cx> = d
+        .iter()
+        .map(|v| v[0].mul(v[0]).add(v[1].mul(v[1])).sqrt())
+        .collect();
     let mut out = Vec::with_capacity(2 * LINKS - 1);
     for at in 0..2 * LINKS - 1 {
         if at % 2 == 0 {
@@ -128,7 +149,9 @@ fn constraints(x: &[Cx]) -> Vec<Cx> {
                 let back2 = back.mul(back);
                 let g = shape(kappa.mul(back).scale(RADIUS));
                 total = total.add(
-                    Cx::real(1.0).add(back2.mul(back2).mul(g)).scale(AREA / 2.0 * RADIUS * RADIUS),
+                    Cx::real(1.0)
+                        .add(back2.mul(back2).mul(g))
+                        .scale(AREA / 2.0 * RADIUS * RADIUS),
                 );
             }
             out.push(kappa.mul(total.sqrt()));
@@ -149,7 +172,9 @@ fn nearest_the_wall(x: &[f64]) -> f64 {
             return f64::INFINITY;
         }
         let kappa = 2.0 * (da[0] * db[1] - da[1] * db[0]) / open / ((la + lb) / 2.0);
-        worst = worst.max((kappa * RADIUS * LINK / la).abs()).max((kappa * RADIUS * LINK / lb).abs());
+        worst = worst
+            .max((kappa * RADIUS * LINK / la).abs())
+            .max((kappa * RADIUS * LINK / lb).abs());
     }
     worst
 }
@@ -287,7 +312,9 @@ fn solve(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
         })
         .collect();
     for c in 0..n {
-        let p = (c..n).max_by(|&i, &j| m[i][c].abs().total_cmp(&m[j][c].abs())).expect("a row");
+        let p = (c..n)
+            .max_by(|&i, &j| m[i][c].abs().total_cmp(&m[j][c].abs()))
+            .expect("a row");
         m.swap(c, p);
         for r in c + 1..n {
             let f = m[r][c] / m[c][c];
@@ -328,16 +355,27 @@ fn arc(radius: f64) -> Vec<f64> {
 /// start at rest
 fn after(problem: &Problem, per: i64, passes: u32) -> Result<Vec<f64>, String> {
     let chain = chain_after(problem, per, passes, 0)?;
-    Ok(chain.positions().iter().flat_map(|p| [p[0].to_f64(), p[1].to_f64()]).collect())
+    Ok(chain
+        .positions()
+        .iter()
+        .flat_map(|p| [p[0].to_f64(), p[1].to_f64()])
+        .collect())
 }
 
 /// the chain itself after that substep, allowed `splits` halvings of it
-fn chain_after(problem: &Problem, per: i64, passes: u32, splits: u32) -> Result<ThickChain, String> {
+fn chain_after(
+    problem: &Problem,
+    per: i64,
+    passes: u32,
+    splits: u32,
+) -> Result<ThickChain, String> {
     let config = ThickChainConfig {
         substeps: 1,
         iterations: passes,
         gravity: [Fix128::ZERO, Fix128::ZERO],
-        stretch: ThickChainStretch::NeoHookean { shear: fx(problem.shear) },
+        stretch: ThickChainStretch::NeoHookean {
+            shear: fx(problem.shear),
+        },
         drag: Fix128::ZERO,
         friction: Fix128::ZERO,
         min_radius: fx(0.01),
@@ -347,8 +385,9 @@ fn chain_after(problem: &Problem, per: i64, passes: u32, splits: u32) -> Result<
         fit: ThickChainFit::Disc,
         reach: Fix128::ONE,
     };
-    let rest: Vec<[Fix128; 2]> =
-        (0..=LINKS).map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO]).collect();
+    let rest: Vec<[Fix128; 2]> = (0..=LINKS)
+        .map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO])
+        .collect();
     let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(DENSITY))
         .map_err(|e| format!("{e:?}"))?
         .bending(ThickChainBend::Section)
@@ -358,7 +397,9 @@ fn chain_after(problem: &Problem, per: i64, passes: u32, splits: u32) -> Result<
     for i in 0..=LINKS {
         chain.set_position(i, [fx(problem.start[2 * i]), fx(problem.start[2 * i + 1])]);
     }
-    chain.step(Fix128::from_ratio(1, 240 * per)).map_err(|e| format!("{e:?}"))?;
+    chain
+        .step(Fix128::from_ratio(1, 240 * per))
+        .map_err(|e| format!("{e:?}"))?;
     Ok(chain)
 }
 
@@ -376,7 +417,12 @@ const SCENES: [(f64, f64, i64, f64, f64, f64); 8] = [
 ];
 
 fn problem(scene: &(f64, f64, i64, f64, f64, f64)) -> Problem {
-    Problem { shear: scene.1, h: 1.0 / 240.0 / scene.2 as f64, tau: scene.3, start: arc(scene.0) }
+    Problem {
+        shear: scene.1,
+        h: 1.0 / 240.0 / scene.2 as f64,
+        tau: scene.3,
+        start: arc(scene.0),
+    }
 }
 
 #[test]
@@ -395,8 +441,15 @@ fn the_reference_minimum_is_a_minimum_and_the_scenes_are_near_the_wall() {
             "{scene:?}: the gradient {first:e} is left at {left:e}, {within:e} m from the minimum"
         );
         assert!(p.psi(&x) < p.psi(&p.start), "{scene:?}: nothing gained");
-        let far = x.iter().zip(&p.start).map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
-        assert!(far > 1.0e-5, "{scene:?}: the minimum is {far:e} m from the start, nothing to close");
+        let far = x
+            .iter()
+            .zip(&p.start)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f64, f64::max);
+        assert!(
+            far > 1.0e-5,
+            "{scene:?}: the minimum is {far:e} m from the start, nothing to close"
+        );
     }
 }
 
@@ -417,12 +470,19 @@ fn near_the_wall_no_pass_of_a_substep_raises_its_potential() {
             let now = p.psi(&x);
             println!("potential {scene:?} passes {passes}: {now:.12e}");
             if now > before * (1.0 + 1.0e-12) {
-                raised.push(format!("{scene:?}: pass {passes} raised the potential from {before:e} to {now:e}"));
+                raised.push(format!(
+                    "{scene:?}: pass {passes} raised the potential from {before:e} to {now:e}"
+                ));
             }
             before = now;
         }
     }
-    assert!(raised.is_empty(), "{} rises:\n{}", raised.len(), raised.join("\n"));
+    assert!(
+        raised.is_empty(),
+        "{} rises:\n{}",
+        raised.len(),
+        raised.join("\n")
+    );
 }
 
 #[test]
@@ -439,10 +499,16 @@ fn near_the_wall_the_passes_of_a_substep_close_on_its_minimum() {
                     continue;
                 }
             };
-            let off = x.iter().zip(&want).map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
+            let off = x
+                .iter()
+                .zip(&want)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0f64, f64::max);
             println!("distance {scene:?} passes {passes}: {off:.3e} of {most:.1e}");
             if off.is_nan() || off > most {
-                far.push(format!("{scene:?}: {off:e} m from the minimum after {passes} passes, {most:e} asked"));
+                far.push(format!(
+                    "{scene:?}: {off:e} m from the minimum after {passes} passes, {most:e} asked"
+                ));
             }
         }
     }
@@ -457,7 +523,11 @@ fn the_counters_say_what_the_passes_and_the_substeps_did() {
     let chain = chain_after(&p, 4, 16, 0).expect("a substep");
     assert_eq!(chain.bend_halved(), 11, "the halvings taken");
     assert_eq!(chain.bend_stalled(), 0);
-    assert_eq!(chain.substep_retries(), 0, "not split: the setting allows none");
+    assert_eq!(
+        chain.substep_retries(),
+        0,
+        "not split: the setting allows none"
+    );
     // with a retardation time the passes are at the minimum from the sixth on (10⁻¹⁴ m), where
     // the potential no longer tells one part of a step from another: none of them is a pass
     // left without a part
@@ -482,8 +552,9 @@ fn the_counters_say_what_the_passes_and_the_substeps_did() {
         fit: ThickChainFit::Disc,
         reach: Fix128::ONE,
     };
-    let rest: Vec<[Fix128; 2]> =
-        (0..=LINKS).map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO]).collect();
+    let rest: Vec<[Fix128; 2]> = (0..=LINKS)
+        .map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO])
+        .collect();
     let thrown = |speed: f64| {
         let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(DENSITY))
             .expect("a chain")

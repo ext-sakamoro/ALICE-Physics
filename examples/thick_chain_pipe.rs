@@ -126,7 +126,9 @@ fn bent_and_let_go() {
         fit: ThickChainFit::Disc,
         reach: Fix128::ONE,
     };
-    let points: Vec<P2> = (0..=links).map(|i| [fx(l0 * f64::from(i)), Fix128::ZERO]).collect();
+    let points: Vec<P2> = (0..=links)
+        .map(|i| [fx(l0 * f64::from(i)), Fix128::ZERO])
+        .collect();
     let mut chain = ThickChain::new(config, &points, fx(r0), fx(1000.0))
         .expect("a valid chain")
         .bending(ThickChainBend::Section)
@@ -144,7 +146,9 @@ fn bent_and_let_go() {
     let first = chain.positions()[head][1].to_f64();
     let mut furthest_back = first;
     for _ in 0..120 {
-        chain.step(Fix128::from_ratio(1, 60)).expect("a step of the strip");
+        chain
+            .step(Fix128::from_ratio(1, 60))
+            .expect("a step of the strip");
         furthest_back = furthest_back.min(chain.positions()[head][1].to_f64());
     }
     println!(

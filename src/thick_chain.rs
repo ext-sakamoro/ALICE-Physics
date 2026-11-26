@@ -2697,7 +2697,9 @@ mod band_oracle {
             fit: ThickChainFit::Disc,
             reach: Fix128::ONE,
         };
-        let rest: Vec<P2> = (0..=links).map(|i| [fx(0.01 * i as f64), Fix128::ZERO]).collect();
+        let rest: Vec<P2> = (0..=links)
+            .map(|i| [fx(0.01 * i as f64), Fix128::ZERO])
+            .collect();
         let mut chain = ThickChain::new(cfg, &rest, fx(0.02), fx(1000.0))
             .expect("a chain")
             .bending(ThickChainBend::Section)
@@ -2726,12 +2728,20 @@ mod band_oracle {
         // outweigh the constraints, so the step is nearly the way to where the inertia points
         let h = fx(1.0 / 61440.0);
         let (mut chain, places) = arc(0.0214);
-        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        let first: Vec<Fix128> = chain
+            .rows(h)
+            .expect("rows")
+            .iter()
+            .map(|r| r.value)
+            .collect();
         // inertia towards an arc three times as curved: a sixteenth of the way is past the wall
         let (_, folded) = arc(0.0214 / 3.0);
         chain.together(h, &folded, &first).expect("a pass");
         assert_eq!((chain.bend_stalled, chain.bend_halved), (1, 0));
-        assert!(chain.x == places, "a pass that takes no part leaves the chain where it was");
+        assert!(
+            chain.x == places,
+            "a pass that takes no part leaves the chain where it was"
+        );
         // inertia towards an arc a little more curved (a = 0.97): the whole step is taken
         let (_, near) = arc(0.021);
         chain.together(h, &near, &first).expect("a pass");
@@ -2742,7 +2752,10 @@ mod band_oracle {
         let (_, past) = arc(0.0188);
         chain.together(h, &past, &first).expect("a pass");
         assert_eq!(chain.bend_stalled, 0);
-        assert!(chain.bend_halved >= 1, "a part shorter than the whole was taken");
+        assert!(
+            chain.bend_halved >= 1,
+            "a part shorter than the whole was taken"
+        );
         assert!(chain.x != places);
     }
 
@@ -2760,7 +2773,12 @@ mod band_oracle {
         let h = fx(h);
         let (per, rate) = (Fix128::ONE / h, chain.config.relaxation / h);
         let anchor = chain.x.clone();
-        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        let first: Vec<Fix128> = chain
+            .rows(h)
+            .expect("rows")
+            .iter()
+            .map(|r| r.value)
+            .collect();
         let mut took = Vec::new();
         for pass in 0..count {
             let rows = chain.rows(h).expect("rows");
@@ -2785,7 +2803,11 @@ mod band_oracle {
     #[test]
     fn the_search_that_ends_at_the_part_taken_takes_what_the_search_of_every_part_takes() {
         let (mut whole, mut halved, mut resolved) = (0, 0, 0);
-        for (shear, tau, h) in [(6667.0, 0.0, 1.0 / 960.0), (6667.0, 0.05, 1.0 / 960.0), (1000.0, 0.0, 1.0 / 1920.0)] {
+        for (shear, tau, h) in [
+            (6667.0, 0.0, 1.0 / 960.0),
+            (6667.0, 0.05, 1.0 / 960.0),
+            (1000.0, 0.0, 1.0 / 1920.0),
+        ] {
             let (mut chain, _) = arc_of(12, shear, tau, 0.0235);
             for got in passes(&mut chain, h, 40, |_, _, _, _| ()) {
                 match got {
@@ -2797,13 +2819,27 @@ mod band_oracle {
             }
         }
         // every kind of pass was among the 120 compared
-        assert!(whole > 0 && halved > 0 && resolved > 0, "{whole} whole, {halved} halved, {resolved} to the resolution");
+        assert!(
+            whole > 0 && halved > 0 && resolved > 0,
+            "{whole} whole, {halved} halved, {resolved} to the resolution"
+        );
     }
 
     /// the merit of [`ThickChain::merit`] from the particles' places in f64, by the law's
     /// statement (apart from the rows of the library)
-    fn merit_in_f64(chain: &ThickChain, anchor: &[P2], first: &[f64], h: f64, shear: f64, tau: f64) -> f64 {
-        let x: Vec<[f64; 2]> = chain.x.iter().map(|p| [p[0].to_f64(), p[1].to_f64()]).collect();
+    fn merit_in_f64(
+        chain: &ThickChain,
+        anchor: &[P2],
+        first: &[f64],
+        h: f64,
+        shear: f64,
+        tau: f64,
+    ) -> f64 {
+        let x: Vec<[f64; 2]> = chain
+            .x
+            .iter()
+            .map(|p| [p[0].to_f64(), p[1].to_f64()])
+            .collect();
         let (l0, r0) = (0.01f64, 0.02f64);
         let area = 2.0 * r0 * l0;
         let rate = tau / h;
@@ -2818,13 +2854,19 @@ mod band_oracle {
             }
         }
         let links = x.len() - 1;
-        let d: Vec<[f64; 2]> = (0..links).map(|k| [x[k + 1][0] - x[k][0], x[k + 1][1] - x[k][1]]).collect();
+        let d: Vec<[f64; 2]> = (0..links)
+            .map(|k| [x[k + 1][0] - x[k][0], x[k + 1][1] - x[k][1]])
+            .collect();
         let len: Vec<f64> = d.iter().map(|v| v[0].hypot(v[1])).collect();
         for at in 0..2 * links - 1 {
             let (value, stiff, free) = if at % 2 == 0 {
                 let k = at / 2;
                 let ratio = len[k] / l0;
-                (ratio - 1.0 / ratio, shear * area, !(chain.inv_mass[k].is_zero() && chain.inv_mass[k + 1].is_zero()))
+                (
+                    ratio - 1.0 / ratio,
+                    shear * area,
+                    !(chain.inv_mass[k].is_zero() && chain.inv_mass[k + 1].is_zero()),
+                )
             } else {
                 let j = at / 2 + 1;
                 let cross = d[j - 1][0] * d[j][1] - d[j - 1][1] * d[j][0];
@@ -2834,10 +2876,16 @@ mod band_oracle {
                 for l in [len[j - 1], len[j]] {
                     let back = l0 / l;
                     let a = kappa * r0 * back;
-                    let g = if a.abs() < 1.0e-3 { 1.0 / 3.0 + a * a / 5.0 } else { (a.atanh() / a - 1.0) / (a * a) };
+                    let g = if a.abs() < 1.0e-3 {
+                        1.0 / 3.0 + a * a / 5.0
+                    } else {
+                        (a.atanh() / a - 1.0) / (a * a)
+                    };
                     total += area / 2.0 * r0 * r0 * (1.0 + back.powi(4) * g);
                 }
-                let free = !(chain.inv_mass[j - 1].is_zero() && chain.inv_mass[j].is_zero() && chain.inv_mass[j + 1].is_zero());
+                let free = !(chain.inv_mass[j - 1].is_zero()
+                    && chain.inv_mass[j].is_zero()
+                    && chain.inv_mass[j + 1].is_zero());
                 (kappa * total.sqrt(), shear, free)
             };
             if free {
@@ -2848,7 +2896,8 @@ mod band_oracle {
     }
 
     #[test]
-    fn at_the_minimum_a_pass_takes_a_part_and_none_taken_to_the_resolution_raises_the_merit_beyond_it() {
+    fn at_the_minimum_a_pass_takes_a_part_and_none_taken_to_the_resolution_raises_the_merit_beyond_it(
+    ) {
         let mut resolved = 0;
         for links in [12usize, 48] {
             for shear in [1000.0f64, 10_000.0] {
@@ -2856,8 +2905,12 @@ mod band_oracle {
                     let h = 1.0 / 960.0;
                     let (mut chain, _) = arc_of(links, shear, tau, 0.0235);
                     let anchor = chain.x.clone();
-                    let first: Vec<f64> =
-                        chain.rows(fx(h)).expect("rows").iter().map(|r| r.value.to_f64()).collect();
+                    let first: Vec<f64> = chain
+                        .rows(fx(h))
+                        .expect("rows")
+                        .iter()
+                        .map(|r| r.value.to_f64())
+                        .collect();
                     let took = passes(&mut chain, h, 32, |before, after, got, fine| {
                         if let Some((_, true)) = got {
                             let rise = merit_in_f64(after, &anchor, &first, h, shear, tau)
@@ -2870,12 +2923,18 @@ mod band_oracle {
                             );
                         }
                     });
-                    assert!(took.iter().all(Option::is_some), "{links} links, {shear} Pa, tau {tau}: {took:?}");
+                    assert!(
+                        took.iter().all(Option::is_some),
+                        "{links} links, {shear} Pa, tau {tau}: {took:?}"
+                    );
                     resolved += took.iter().filter(|t| matches!(t, Some((_, true)))).count();
                 }
             }
         }
-        assert!(resolved > 0, "no pass was taken to the resolution: nothing compared");
+        assert!(
+            resolved > 0,
+            "no pass was taken to the resolution: nothing compared"
+        );
     }
 
     #[test]
@@ -2884,15 +2943,29 @@ mod band_oracle {
         let (per, rate) = (Fix128::ONE / h, Fix128::ZERO);
         let (mut chain, places) = arc_of(12, 6667.0, 0.0, 0.0235);
         let anchor = chain.x.clone();
-        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        let first: Vec<Fix128> = chain
+            .rows(h)
+            .expect("rows")
+            .iter()
+            .map(|r| r.value)
+            .collect();
         let rows = chain.rows(h).expect("rows");
         let (_, right) = chain.system(&rows, per, rate, &anchor, &first);
         let largest = right.iter().fold(0.0f64, |m, v| m.max(v.to_f64().abs()));
         // 1e-13 m at the most along the merit's slope: up it, then down it. Either way the
         // merit moves by less than its rounding (the slope is of the order of 100 per metre)
-        let up: Vec<Fix128> = right.iter().map(|v| fx(-v.to_f64() / largest * 1.0e-13)).collect();
-        let down: Vec<Fix128> = right.iter().map(|v| fx(v.to_f64() / largest * 1.0e-13)).collect();
-        assert_eq!(chain.take_part(h, &anchor, &first, &rows, &right, &up, false), None);
+        let up: Vec<Fix128> = right
+            .iter()
+            .map(|v| fx(-v.to_f64() / largest * 1.0e-13))
+            .collect();
+        let down: Vec<Fix128> = right
+            .iter()
+            .map(|v| fx(v.to_f64() / largest * 1.0e-13))
+            .collect();
+        assert_eq!(
+            chain.take_part(h, &anchor, &first, &rows, &right, &up, false),
+            None
+        );
         assert!(chain.x == places, "the chain is left where it was");
         let took = chain.take_part(h, &anchor, &first, &rows, &right, &down, false);
         assert!(took.is_some(), "the same step down the merit is taken");

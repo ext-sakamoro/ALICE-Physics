@@ -794,7 +794,10 @@ fn first_mode(links: usize) -> (Vec<f64>, f64) {
 /// swing is read (half a period in).
 fn window(omega2: f64) -> (usize, usize) {
     let period = 2.0 * std::f64::consts::PI / omega2.sqrt();
-    ((1.5 * period * 240.0) as usize, (0.5 * period * 240.0) as usize)
+    (
+        (1.5 * period * 240.0) as usize,
+        (0.5 * period * 240.0) as usize,
+    )
 }
 
 /// oracle: the substep's recurrence for a mode of frequency `ω` with the retardation time
@@ -920,7 +923,10 @@ fn dies_as_the_recurrence(
             }
         }
     }
-    assert!(off.is_empty(), "{name}: (substeps, passes, τ, left of the recurrence's, moved) {off:?}");
+    assert!(
+        off.is_empty(),
+        "{name}: (substeps, passes, τ, left of the recurrence's, moved) {off:?}"
+    );
 }
 
 #[test]
@@ -951,7 +957,6 @@ fn with_a_retardation_time_the_stretch_swing_dies_at_the_kelvin_voigt_rate_whate
         stretch_swing_left,
     );
 }
-
 
 // ---- 6 and 7. what the law is for ----
 
