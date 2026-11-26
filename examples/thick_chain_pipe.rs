@@ -5,6 +5,8 @@
 //! rise) that opens into free space at the top. Printed per sampled frame: where the chain's
 //! ends are, its thinnest and widest link, its length against its rest length and how near
 //! its outline came to a wall; at the end the digest (the same on every machine and run).
+//! Before it, the bending law in the open: a clamped strip bent to an arc and let go, with
+//! what its steps report (halved steps, passes without a step, substeps taken again).
 //!
 //! ```bash
 //! cargo run --release --example thick_chain_pipe
@@ -13,7 +15,7 @@
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::DistanceSdfQuery;
 use alice_physics_core::thick_chain::{
-    ThickChain, ThickChainConfig, ThickChainFit, ThickChainStretch, P2,
+    ThickChain, ThickChainBend, ThickChainConfig, ThickChainFit, ThickChainStretch, P2,
 };
 
 fn fx(v: f64) -> Fix128 {
@@ -106,7 +108,58 @@ fn conforming_at_rest() {
     );
 }
 
+/// The bending law in the open: a strip clamped at its root, bent to an arc and let go. With
+/// the law the strip has the bending stiffness of its section, so it swings back to its line;
+/// its retardation time lets the swing die.
+fn bent_and_let_go() {
+    let (l0, r0, links) = (0.01, 0.02, 12);
+    let config = ThickChainConfig {
+        substeps: 16,
+        iterations: 8,
+        gravity: [Fix128::ZERO; 2],
+        stretch: ThickChainStretch::NeoHookean { shear: fx(3000.0) },
+        drag: Fix128::ZERO,
+        friction: Fix128::ZERO,
+        min_radius: fx(0.01),
+        splits: 8,
+        relaxation: fx(0.05),
+        fit: ThickChainFit::Disc,
+        reach: Fix128::ONE,
+    };
+    let points: Vec<P2> = (0..=links).map(|i| [fx(l0 * f64::from(i)), Fix128::ZERO]).collect();
+    let mut chain = ThickChain::new(config, &points, fx(r0), fx(1000.0))
+        .expect("a valid chain")
+        .bending(ThickChainBend::Section)
+        .expect("neo-Hookean links take the law");
+    chain.pin(0);
+    chain.pin(1);
+    // an arc of 40 mm from the clamp on: half way to where the law has its wall
+    let (mut at, mut angle) = ([l0, 0.0], 0.0f64);
+    for i in 2..=links {
+        angle += l0 / 0.04;
+        at = [at[0] + l0 * angle.cos(), at[1] + l0 * angle.sin()];
+        chain.set_position(i as usize, [fx(at[0]), fx(at[1])]);
+    }
+    let head = links as usize;
+    let first = chain.positions()[head][1].to_f64();
+    let mut furthest_back = first;
+    for _ in 0..120 {
+        chain.step(Fix128::from_ratio(1, 60)).expect("a step of the strip");
+        furthest_back = furthest_back.min(chain.positions()[head][1].to_f64());
+    }
+    println!(
+        "bending law {:?}, {links} links let go from an arc: the head from {first:.4} m off the line to {:.4} m after 2 s (furthest the other way {furthest_back:.4} m); steps halved {}, passes without a step {}, substeps taken again {}, the last pass moved {:.1e} m",
+        chain.bend(),
+        chain.positions()[head][1].to_f64(),
+        chain.bend_halved(),
+        chain.bend_stalled(),
+        chain.substep_retries(),
+        chain.last_pass_move().to_f64()
+    );
+}
+
 fn main() {
+    bent_and_let_go();
     let (l0, r0) = (0.01, 0.05);
     let config = ThickChainConfig {
         substeps: 16,
