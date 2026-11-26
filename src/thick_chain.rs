@@ -123,8 +123,17 @@
 //!   the chain by the first of `d`, `d / 2`, `d / 4`, `d / 8` and `d / 16` that lowers `Ψ`
 //!   by a ten-thousandth of what its slope along `d` promises for that part (Armijo's
 //!   rule; all five are worked out whichever is taken, a part that would bend a joint past
-//!   the radius of a link's half-width lowers nothing, and two values of `Ψ / h²` within
-//!   `2⁻⁵⁶` are not told apart). So no pass raises `Ψ`: [`ThickChain::bend_halved`] counts
+//!   the radius of a link's half-width lowers nothing; the search ends at the part taken,
+//!   and the parts after it would not change the choice). Where none does and the step
+//!   does not point up `Ψ`, the first that does to what `Ψ / h²` resolves is taken: a
+//!   joint's constraint is built from products of two links' offsets, which the arithmetic
+//!   holds to one unit of `2⁻⁶⁴` whatever their size, and from the root of a sum of the
+//!   order of `r0⁴`, so `C` is held to about `2 |κ| / S` such units and a constraint's
+//!   energy to its stiffness times `|C| + γ |C − C_start|` times that; the bound is summed
+//!   over the constraints and the particles for the two values compared (links of 10 mm at
+//!   `a = 0.86`: `Ψ / h²` of 18 moved by up to 5·10⁻¹³ for moves of 10⁻¹⁴ m, the bound is
+//!   3·10⁻¹¹). So a pass at the minimum takes its whole step of nothing.
+//!   So no pass raises `Ψ` by more than that: [`ThickChain::bend_halved`] counts
 //!   the halvings taken, [`ThickChain::bend_stalled`] the passes in which no part lowered
 //!   it and the chain stayed. Without the constraints' second slopes the passes close on
 //!   the minimum at a linear rate that is slow where the law's shape is steep (measured,
@@ -332,6 +341,8 @@ fn bend_shape_log(a: Fix128) -> (Fix128, Fix128) {
 struct BendTerm {
     value: Fix128,
     slope: [P2; 3],
+    /// how many units of 2⁻⁶⁴ the value's rounding may be
+    fine: Fix128,
 }
 
 /// A constraint of a substep's solve with a bending law: a link's stretch (two particles
@@ -344,6 +355,9 @@ struct Row {
     slope: [P2; 3],
     value: Fix128,
     stiff: Fix128,
+    /// how many units of 2⁻⁶⁴ the value's rounding may be: the value is built from products
+    /// of the links' offsets, which the arithmetic holds to one unit whatever their size
+    fine: Fix128,
     live: bool,
 }
 
@@ -361,9 +375,13 @@ fn step_share() -> Fix128 {
     Fix128::from_ratio(1, 10_000)
 }
 
-/// The merit's sum of a few dozen products is settled to this (2⁻⁵⁶): two merits closer
-/// than it are not told apart.
-const MERIT_GRAIN: Fix128 = Fix128 { hi: 0, lo: 1 << 8 };
+/// A count of units of 2⁻⁶⁴ (the arithmetic's step) as the number it bounds, rounded up.
+fn units(count: Fix128) -> Fix128 {
+    Fix128 {
+        hi: 0,
+        lo: count.hi.unsigned_abs() + 1,
+    }
+}
 
 /// The solution of a symmetric system given in band (`band[i][b]` the entry of rows `i`
 /// and `i − b`, `b < W`), factored as `L D Lᵀ` in the rows' order: no square root, the
@@ -1211,9 +1229,20 @@ impl ThickChain {
             scale(perp(db), by_angle / (lb * lb)),
             scale(db, along_b / lb),
         );
+        // the rounding of the value, in units of 2⁻⁶⁴: S is the root of a sum of four products
+        // (2 / S and one), the curvature a quotient of the links' cross product (two products)
+        // by their lengths' product and their dot product (five) over the mean length, each
+        // length a root of two squares
+        let shorter = if la < lb { la } else { lb };
+        let one = Fix128::ONE;
+        let fine = kappa.abs() * ((one + one) / s + one)
+            + s * (Fix128::from_int(16) / (open * mean)
+                + (kappa.abs() + kappa.abs()) / (shorter * mean))
+            + one;
         Ok(BendTerm {
             value: kappa * s,
             slope: [scale(ga, -Fix128::ONE), sub(ga, gb), gb],
+            fine,
         })
     }
 
@@ -1240,6 +1269,7 @@ impl ThickChain {
                 slope: [ZERO2; 3],
                 value: Fix128::ZERO,
                 stiff: Fix128::ZERO,
+                fine: Fix128::ZERO,
                 live: false,
             };
             let mut free = Fix128::ZERO;
@@ -1263,11 +1293,15 @@ impl ThickChain {
                         ThickChainStretch::NeoHookean { shear } => shear * self.area[k],
                     };
                     row.slope = [scale(u, -slope), scale(u, slope), ZERO2];
+                    // the length is a root of a sum of two squares (a unit over l), the value
+                    // two quotients of it
+                    row.fine = slope / l + Fix128::from_int(2);
                 } else {
                     let term = self.bend_term(at / 2 + 1)?;
                     row.value = term.value;
                     row.stiff = self.bend_shear();
                     row.slope = term.slope;
+                    row.fine = term.fine;
                 }
             }
             rows.push(row);
@@ -1280,6 +1314,9 @@ impl ThickChain {
     /// `Σ m |x − x̃|² / (2 h²) + Σ [C² + γ (C − C_start)²] / (2 α)`: `per` is `1 / h`,
     /// `anchor` the particles after the velocity step (`x̃`, and what the walls have pushed
     /// them by since), `first` the rows' values where the substep started, `rate` is `γ`.
+    /// With it, what its rounding may be: each constraint's term moves by its stiffness
+    /// times `|C| + γ |C − C_start|` times the rounding of `C` (the row's `fine`) and by its
+    /// own products' units, each particle's by its two squares'.
     fn merit(
         &self,
         rows: &[Row],
@@ -1287,14 +1324,18 @@ impl ThickChain {
         rate: Fix128,
         anchor: &[P2],
         first: &[Fix128],
-    ) -> Fix128 {
+    ) -> (Fix128, Fix128) {
         let mut sum = Fix128::ZERO;
+        let mut fine = Fix128::ZERO;
         for (i, at) in anchor.iter().enumerate() {
             if self.inv_mass[i].is_zero() {
                 continue;
             }
             let off = scale(sub(self.x[i], *at), per);
             sum = sum + (dot(off, off) / self.inv_mass[i]).half();
+            fine = fine
+                + (off[0].abs() + off[1].abs() + Fix128::ONE).double() / self.inv_mass[i]
+                + Fix128::ONE;
         }
         for (row, &was) in rows.iter().zip(first) {
             if !row.live {
@@ -1303,8 +1344,12 @@ impl ThickChain {
             let change = row.value - was;
             sum = sum
                 + (row.stiff * row.value * row.value + rate * (row.stiff * change) * change).half();
+            fine = fine
+                + row.stiff * (row.value.abs() + rate * change.abs()) * row.fine
+                + rate
+                + Fix128::from_int(4);
         }
-        sum
+        (sum, units(fine))
     }
 
     /// The system of a step of the particles with a bending law, in band over their
@@ -1371,12 +1416,8 @@ impl ThickChain {
     }
 
     /// One step of all the particles together, with a bending law (see the MODEL section):
-    /// the step of [`Self::system`] where the chain is ([`solve_band`]), then the first of
-    /// the whole step, its half, quarter, eighth and sixteenth that lowers the merit by
-    /// [`step_share`] of what its slope along the step promises (to [`MERIT_GRAIN`]). All
-    /// five are worked out whichever is taken, so the work of a pass does not depend on the
-    /// chain; a part that carries a joint past the radius of a link's half-width lowers
-    /// nothing. With none of them the chain stays where it is ([`Self::bend_stalled`]).
+    /// the step of [`Self::system`] where the chain is ([`solve_band`]), and of it the part
+    /// [`Self::take_part`] takes; a pass that takes none is counted and leaves the chain.
     fn together(
         &mut self,
         h: Fix128,
@@ -1390,14 +1431,47 @@ impl ThickChain {
         let Some(step) = solve_band(&band, &right) else {
             return Err(ThickChainError::Degenerate { link: 0 });
         };
-        let here = self.merit(&rows, per, rate, anchor, first);
+        match self.take_part(h, anchor, first, &rows, &right, &step, false) {
+            Some((halvings, _)) => self.bend_halved += u64::from(halvings),
+            None => self.bend_stalled += 1,
+        }
+        Ok(())
+    }
+
+    /// Moves the chain by a part of `step` (the whole, its half, quarter, eighth or
+    /// sixteenth) and says which, by its halvings: the first that lowers the merit by
+    /// [`step_share`] of what the merit's slope along the step promises for that part; with
+    /// none, the first that does so to what the two merits' rounding may be, if the step
+    /// does not point up the merit (then true is returned with it). With neither the chain
+    /// is left where it is. A part that carries a joint past the radius of a link's
+    /// half-width is not taken. `rows` and `right` are those of where the chain is;
+    /// `exhaustive` works every part out even after one is taken (the same result: the
+    /// later parts are only looked at when none before them is taken).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the pass's own state, handed on from where it was worked out"
+    )]
+    fn take_part(
+        &mut self,
+        h: Fix128,
+        anchor: &[P2],
+        first: &[Fix128],
+        rows: &[Row],
+        right: &[Fix128],
+        step: &[Fix128],
+        exhaustive: bool,
+    ) -> Option<(u32, bool)> {
+        let per = Fix128::ONE / h;
+        let rate = self.config.relaxation / h;
+        let (here, fine_here) = self.merit(rows, per, rate, anchor, first);
         // the merit's slope along the step
         let mut along = Fix128::ZERO;
-        for (slope, moved) in right.iter().zip(&step) {
+        for (slope, moved) in right.iter().zip(step) {
             along = along - *slope * *moved;
         }
         let from = self.x.clone();
         let mut taken: Option<(u32, Vec<P2>)> = None;
+        let mut within: Option<(u32, Vec<P2>)> = None;
         let mut part = Fix128::ONE;
         for halvings in 0..STEP_PARTS {
             for (i, x) in self.x.iter_mut().enumerate() {
@@ -1406,26 +1480,29 @@ impl ThickChain {
                     from[i][1] + part * step[2 * i + 1],
                 ];
             }
-            let lowered = self.rows(h).ok().is_some_and(|rows| {
-                self.merit(&rows, per, rate, anchor, first)
-                    <= here + step_share() * part * along + MERIT_GRAIN
-            });
-            if lowered && taken.is_none() {
-                taken = Some((halvings, self.x.clone()));
+            if let Ok(rows) = self.rows(h) {
+                let (merit, fine) = self.merit(&rows, per, rate, anchor, first);
+                let over = merit - (here + step_share() * part * along);
+                if over <= Fix128::ZERO && taken.is_none() {
+                    taken = Some((halvings, self.x.clone()));
+                }
+                if over <= fine_here + fine && along <= Fix128::ZERO && within.is_none() {
+                    within = Some((halvings, self.x.clone()));
+                }
+            }
+            if taken.is_some() && !exhaustive {
+                break;
             }
             part = part.half();
         }
-        match taken {
-            Some((halvings, at)) => {
-                self.x = at;
-                self.bend_halved += u64::from(halvings);
-            }
-            None => {
-                self.x = from;
-                self.bend_stalled += 1;
-            }
+        let resolved = taken.is_none();
+        if let Some((halvings, at)) = taken.or(within) {
+            self.x = at;
+            Some((halvings, resolved))
+        } else {
+            self.x = from;
+            None
         }
-        Ok(())
     }
 
     /// The value of link `k`'s stretch constraint at the length `l`, its slope along the
@@ -2570,7 +2647,7 @@ mod band_oracle {
             let (_, right) = chain.system(&rows, per, rate, &anchor, &first);
             let merit = |chain: &ThickChain| {
                 let rows = chain.rows(fx(H)).expect("rows");
-                chain.merit(&rows, per, rate, &anchor, &first).to_f64()
+                chain.merit(&rows, per, rate, &anchor, &first).0.to_f64()
             };
             let largest = right.iter().fold(0.0f64, |m, v| m.max(v.to_f64().abs()));
             assert!(largest > 0.0);
@@ -2597,6 +2674,229 @@ mod band_oracle {
             }
         }
         assert_eq!(compared, 4 * 2 * (LINKS + 1 - 3));
+    }
+
+    /// a clamped chain of 12 links of 1000 Pa bent to an arc of `radius`
+    fn arc(radius: f64) -> (ThickChain, Vec<P2>) {
+        arc_of(12, 1000.0, 0.0, radius)
+    }
+
+    /// a clamped chain of `links` links of the shear modulus `shear` and the retardation
+    /// time `tau`, bent to an arc of `radius` over its first twelve links and straight on
+    fn arc_of(links: usize, shear: f64, tau: f64, radius: f64) -> (ThickChain, Vec<P2>) {
+        let cfg = ThickChainConfig {
+            substeps: 1,
+            iterations: 1,
+            gravity: [Fix128::ZERO, Fix128::ZERO],
+            stretch: ThickChainStretch::NeoHookean { shear: fx(shear) },
+            drag: Fix128::ZERO,
+            friction: Fix128::ZERO,
+            min_radius: fx(0.01),
+            splits: 0,
+            relaxation: fx(tau),
+            fit: ThickChainFit::Disc,
+            reach: Fix128::ONE,
+        };
+        let rest: Vec<P2> = (0..=links).map(|i| [fx(0.01 * i as f64), Fix128::ZERO]).collect();
+        let mut chain = ThickChain::new(cfg, &rest, fx(0.02), fx(1000.0))
+            .expect("a chain")
+            .bending(ThickChainBend::Section)
+            .expect("the law");
+        chain.pin(0);
+        chain.pin(1);
+        let mut at = vec![[0.0f64, 0.0], [0.01, 0.0]];
+        let mut angle = 0.0f64;
+        for i in 2..=links {
+            if i <= 12 {
+                angle += 0.01 / radius;
+            }
+            let last = at[at.len() - 1];
+            at.push([last[0] + 0.01 * angle.cos(), last[1] + 0.01 * angle.sin()]);
+        }
+        let places: Vec<P2> = at.iter().map(|p| [fx(p[0]), fx(p[1])]).collect();
+        for (i, p) in places.iter().enumerate() {
+            chain.set_position(i, *p);
+        }
+        (chain, places)
+    }
+
+    #[test]
+    fn a_step_none_of_whose_parts_lowers_the_merit_is_not_taken_and_is_counted() {
+        // a = κ r0 / λ is 0.95 on the arc of 21.4 mm; over a substep of 1/61440 s the masses
+        // outweigh the constraints, so the step is nearly the way to where the inertia points
+        let h = fx(1.0 / 61440.0);
+        let (mut chain, places) = arc(0.0214);
+        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        // inertia towards an arc three times as curved: a sixteenth of the way is past the wall
+        let (_, folded) = arc(0.0214 / 3.0);
+        chain.together(h, &folded, &first).expect("a pass");
+        assert_eq!((chain.bend_stalled, chain.bend_halved), (1, 0));
+        assert!(chain.x == places, "a pass that takes no part leaves the chain where it was");
+        // inertia towards an arc a little more curved (a = 0.97): the whole step is taken
+        let (_, near) = arc(0.021);
+        chain.together(h, &near, &first).expect("a pass");
+        assert_eq!((chain.bend_stalled, chain.bend_halved), (1, 0));
+        assert!(chain.x != places);
+        // towards an arc that the whole step would fold but its half would not (a to 1.08 and 1.01)
+        let (mut chain, places) = arc(0.0214);
+        let (_, past) = arc(0.0188);
+        chain.together(h, &past, &first).expect("a pass");
+        assert_eq!(chain.bend_stalled, 0);
+        assert!(chain.bend_halved >= 1, "a part shorter than the whole was taken");
+        assert!(chain.x != places);
+    }
+
+    /// the passes of one substep of `h` from `chain` at rest, each from where the last left
+    /// it: what each took (its halvings and whether only to the merit's resolution; None
+    /// for none), with the search of every part run beside the one that ends at the part
+    /// taken, and what `seen` is given of the pass (the chain before, the chain after, the
+    /// two merits' rounding)
+    fn passes(
+        chain: &mut ThickChain,
+        h: f64,
+        count: usize,
+        mut seen: impl FnMut(&ThickChain, &ThickChain, Option<(u32, bool)>, f64),
+    ) -> Vec<Option<(u32, bool)>> {
+        let h = fx(h);
+        let (per, rate) = (Fix128::ONE / h, chain.config.relaxation / h);
+        let anchor = chain.x.clone();
+        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        let mut took = Vec::new();
+        for pass in 0..count {
+            let rows = chain.rows(h).expect("rows");
+            let (band, right) = chain.system(&rows, per, rate, &anchor, &first);
+            let step = solve_band(&band, &right).expect("positive definite");
+            let before = chain.clone();
+            let mut every = chain.clone();
+            let got = chain.take_part(h, &anchor, &first, &rows, &right, &step, false);
+            let all = every.take_part(h, &anchor, &first, &rows, &right, &step, true);
+            assert_eq!(got, all, "pass {pass}: the part taken");
+            assert!(chain.x == every.x, "pass {pass}: the chain after it");
+            let fine = before.merit(&rows, per, rate, &anchor, &first).1
+                + chain
+                    .merit(&chain.rows(h).expect("rows"), per, rate, &anchor, &first)
+                    .1;
+            seen(&before, chain, got, fine.to_f64());
+            took.push(got);
+        }
+        took
+    }
+
+    #[test]
+    fn the_search_that_ends_at_the_part_taken_takes_what_the_search_of_every_part_takes() {
+        let (mut whole, mut halved, mut resolved) = (0, 0, 0);
+        for (shear, tau, h) in [(6667.0, 0.0, 1.0 / 960.0), (6667.0, 0.05, 1.0 / 960.0), (1000.0, 0.0, 1.0 / 1920.0)] {
+            let (mut chain, _) = arc_of(12, shear, tau, 0.0235);
+            for got in passes(&mut chain, h, 40, |_, _, _, _| ()) {
+                match got {
+                    Some((0, false)) => whole += 1,
+                    Some((_, false)) => halved += 1,
+                    Some((_, true)) => resolved += 1,
+                    None => panic!("a pass took no part"),
+                }
+            }
+        }
+        // every kind of pass was among the 120 compared
+        assert!(whole > 0 && halved > 0 && resolved > 0, "{whole} whole, {halved} halved, {resolved} to the resolution");
+    }
+
+    /// the merit of [`ThickChain::merit`] from the particles' places in f64, by the law's
+    /// statement (apart from the rows of the library)
+    fn merit_in_f64(chain: &ThickChain, anchor: &[P2], first: &[f64], h: f64, shear: f64, tau: f64) -> f64 {
+        let x: Vec<[f64; 2]> = chain.x.iter().map(|p| [p[0].to_f64(), p[1].to_f64()]).collect();
+        let (l0, r0) = (0.01f64, 0.02f64);
+        let area = 2.0 * r0 * l0;
+        let rate = tau / h;
+        let mut sum = 0.0;
+        for i in 0..x.len() {
+            if chain.inv_mass[i].is_zero() {
+                continue;
+            }
+            let mass = 1.0 / chain.inv_mass[i].to_f64();
+            for axis in 0..2 {
+                sum += mass * ((x[i][axis] - anchor[i][axis].to_f64()) / h).powi(2) / 2.0;
+            }
+        }
+        let links = x.len() - 1;
+        let d: Vec<[f64; 2]> = (0..links).map(|k| [x[k + 1][0] - x[k][0], x[k + 1][1] - x[k][1]]).collect();
+        let len: Vec<f64> = d.iter().map(|v| v[0].hypot(v[1])).collect();
+        for at in 0..2 * links - 1 {
+            let (value, stiff, free) = if at % 2 == 0 {
+                let k = at / 2;
+                let ratio = len[k] / l0;
+                (ratio - 1.0 / ratio, shear * area, !(chain.inv_mass[k].is_zero() && chain.inv_mass[k + 1].is_zero()))
+            } else {
+                let j = at / 2 + 1;
+                let cross = d[j - 1][0] * d[j][1] - d[j - 1][1] * d[j][0];
+                let open = len[j - 1] * len[j] + d[j - 1][0] * d[j][0] + d[j - 1][1] * d[j][1];
+                let kappa = 2.0 * (cross / open) / ((len[j - 1] + len[j]) / 2.0);
+                let mut total = 0.0;
+                for l in [len[j - 1], len[j]] {
+                    let back = l0 / l;
+                    let a = kappa * r0 * back;
+                    let g = if a.abs() < 1.0e-3 { 1.0 / 3.0 + a * a / 5.0 } else { (a.atanh() / a - 1.0) / (a * a) };
+                    total += area / 2.0 * r0 * r0 * (1.0 + back.powi(4) * g);
+                }
+                let free = !(chain.inv_mass[j - 1].is_zero() && chain.inv_mass[j].is_zero() && chain.inv_mass[j + 1].is_zero());
+                (kappa * total.sqrt(), shear, free)
+            };
+            if free {
+                sum += stiff * (value * value + rate * (value - first[at]).powi(2)) / 2.0;
+            }
+        }
+        sum
+    }
+
+    #[test]
+    fn at_the_minimum_a_pass_takes_a_part_and_none_taken_to_the_resolution_raises_the_merit_beyond_it() {
+        let mut resolved = 0;
+        for links in [12usize, 48] {
+            for shear in [1000.0f64, 10_000.0] {
+                for tau in [0.0f64, 0.05] {
+                    let h = 1.0 / 960.0;
+                    let (mut chain, _) = arc_of(links, shear, tau, 0.0235);
+                    let anchor = chain.x.clone();
+                    let first: Vec<f64> =
+                        chain.rows(fx(h)).expect("rows").iter().map(|r| r.value.to_f64()).collect();
+                    let took = passes(&mut chain, h, 32, |before, after, got, fine| {
+                        if let Some((_, true)) = got {
+                            let rise = merit_in_f64(after, &anchor, &first, h, shear, tau)
+                                - merit_in_f64(before, &anchor, &first, h, shear, tau);
+                            // (f64 holds the merit itself to 1e-15 of it)
+                            let merit = merit_in_f64(after, &anchor, &first, h, shear, tau);
+                            assert!(
+                                rise <= fine + 4.0e-15 * merit,
+                                "{links} links, {shear} Pa, tau {tau}: a part taken to the resolution raised the merit by {rise:e}, its rounding is {fine:e}"
+                            );
+                        }
+                    });
+                    assert!(took.iter().all(Option::is_some), "{links} links, {shear} Pa, tau {tau}: {took:?}");
+                    resolved += took.iter().filter(|t| matches!(t, Some((_, true)))).count();
+                }
+            }
+        }
+        assert!(resolved > 0, "no pass was taken to the resolution: nothing compared");
+    }
+
+    #[test]
+    fn a_step_up_the_merit_is_not_taken_to_the_resolution_however_small() {
+        let h = fx(1.0 / 960.0);
+        let (per, rate) = (Fix128::ONE / h, Fix128::ZERO);
+        let (mut chain, places) = arc_of(12, 6667.0, 0.0, 0.0235);
+        let anchor = chain.x.clone();
+        let first: Vec<Fix128> = chain.rows(h).expect("rows").iter().map(|r| r.value).collect();
+        let rows = chain.rows(h).expect("rows");
+        let (_, right) = chain.system(&rows, per, rate, &anchor, &first);
+        let largest = right.iter().fold(0.0f64, |m, v| m.max(v.to_f64().abs()));
+        // 1e-13 m at the most along the merit's slope: up it, then down it. Either way the
+        // merit moves by less than its rounding (the slope is of the order of 100 per metre)
+        let up: Vec<Fix128> = right.iter().map(|v| fx(-v.to_f64() / largest * 1.0e-13)).collect();
+        let down: Vec<Fix128> = right.iter().map(|v| fx(v.to_f64() / largest * 1.0e-13)).collect();
+        assert_eq!(chain.take_part(h, &anchor, &first, &rows, &right, &up, false), None);
+        assert!(chain.x == places, "the chain is left where it was");
+        let took = chain.take_part(h, &anchor, &first, &rows, &right, &down, false);
+        assert!(took.is_some(), "the same step down the merit is taken");
+        assert!(chain.x != places);
     }
 
     #[test]

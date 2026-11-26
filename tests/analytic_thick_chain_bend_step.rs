@@ -327,6 +327,12 @@ fn arc(radius: f64) -> Vec<f64> {
 /// where the library leaves the chain after one substep of `passes` passes from `problem`'s
 /// start at rest
 fn after(problem: &Problem, per: i64, passes: u32) -> Result<Vec<f64>, String> {
+    let chain = chain_after(problem, per, passes, 0)?;
+    Ok(chain.positions().iter().flat_map(|p| [p[0].to_f64(), p[1].to_f64()]).collect())
+}
+
+/// the chain itself after that substep, allowed `splits` halvings of it
+fn chain_after(problem: &Problem, per: i64, passes: u32, splits: u32) -> Result<ThickChain, String> {
     let config = ThickChainConfig {
         substeps: 1,
         iterations: passes,
@@ -335,8 +341,8 @@ fn after(problem: &Problem, per: i64, passes: u32) -> Result<Vec<f64>, String> {
         drag: Fix128::ZERO,
         friction: Fix128::ZERO,
         min_radius: fx(0.01),
-        // one substep, not its parts: a refused substep is reported, not split
-        splits: 0,
+        // 0: one substep, not its parts (a refused substep is reported, not split)
+        splits,
         relaxation: fx(problem.tau),
         fit: ThickChainFit::Disc,
         reach: Fix128::ONE,
@@ -353,7 +359,7 @@ fn after(problem: &Problem, per: i64, passes: u32) -> Result<Vec<f64>, String> {
         chain.set_position(i, [fx(problem.start[2 * i]), fx(problem.start[2 * i + 1])]);
     }
     chain.step(Fix128::from_ratio(1, 240 * per)).map_err(|e| format!("{e:?}"))?;
-    Ok(chain.positions().iter().flat_map(|p| [p[0].to_f64(), p[1].to_f64()]).collect())
+    Ok(chain)
 }
 
 /// (the arc's radius, the shear modulus, the substeps to 1/240 s, the retardation time,
@@ -441,4 +447,61 @@ fn near_the_wall_the_passes_of_a_substep_close_on_its_minimum() {
         }
     }
     assert!(far.is_empty(), "{} too far:\n{}", far.len(), far.join("\n"));
+}
+
+#[test]
+fn the_counters_say_what_the_passes_and_the_substeps_did() {
+    // the arc at a = 0.86, a substep of 1/960 s, 16 passes: the f64 step of the same kind takes
+    // the half of its step in 11 of them and the whole in 5, and is never left without a part
+    let p = problem(&SCENES[1]);
+    let chain = chain_after(&p, 4, 16, 0).expect("a substep");
+    assert_eq!(chain.bend_halved(), 11, "the halvings taken");
+    assert_eq!(chain.bend_stalled(), 0);
+    assert_eq!(chain.substep_retries(), 0, "not split: the setting allows none");
+    // with a retardation time the passes are at the minimum from the sixth on (10⁻¹⁴ m), where
+    // the potential no longer tells one part of a step from another: none of them is a pass
+    // left without a part
+    let damped = chain_after(&problem(&SCENES[6]), 4, 16, 0).expect("a substep");
+    assert_eq!(damped.bend_stalled(), 0);
+    // a substep of 1/240 s is too long for the links' stiffness and is taken in parts from the
+    // start (that is the setting's rule, not a refusal); no part is refused, so nothing is retried
+    let split = chain_after(&problem(&SCENES[0]), 1, 8, 8).expect("a step");
+    assert_eq!(split.substep_retries(), 0);
+    // a chain thrown faster than a part of a substep may carry it is refused and taken again in
+    // halves: each such try is counted
+    let config = ThickChainConfig {
+        substeps: 1,
+        iterations: 4,
+        gravity: [Fix128::ZERO, Fix128::ZERO],
+        stretch: ThickChainStretch::NeoHookean { shear: fx(1000.0) },
+        drag: Fix128::ZERO,
+        friction: Fix128::ZERO,
+        min_radius: fx(0.01),
+        splits: 8,
+        relaxation: Fix128::ZERO,
+        fit: ThickChainFit::Disc,
+        reach: Fix128::ONE,
+    };
+    let rest: Vec<[Fix128; 2]> =
+        (0..=LINKS).map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO]).collect();
+    let thrown = |speed: f64| {
+        let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(DENSITY))
+            .expect("a chain")
+            .bending(ThickChainBend::Section)
+            .expect("the law");
+        for i in 0..=LINKS {
+            chain.set_velocity(i, [Fix128::ZERO, fx(speed)]);
+        }
+        chain.step(Fix128::from_ratio(1, 240)).expect("a step");
+        chain.substep_retries()
+    };
+    // a part of a substep may carry a particle half the least radius, 5 mm. The stiffness of the
+    // links and joints has the substep of 1/240 s taken in quarters from the start, so a part
+    // carries a particle thrown at up to 4.8 m/s, and each doubling of the speed beyond that
+    // costs one more refused try
+    assert_eq!(thrown(0.6), 0);
+    assert_eq!(thrown(3.0), 0);
+    assert_eq!(thrown(6.0), 1);
+    assert_eq!(thrown(12.0), 2);
+    assert_eq!(thrown(24.0), 3);
 }
