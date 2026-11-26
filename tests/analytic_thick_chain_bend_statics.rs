@@ -14,18 +14,23 @@
 //!
 //! 1. Pure bending. A couple on the last link of a clamped chain bends the links between
 //!    into one arc: every inner joint turns by the `θ` and every inner link is as long as the
-//!    `λ` at which that energy less the couple's work is least — at three couples, up to
-//!    most of the way to the radius of the half-width, and under a pull that holds the
-//!    links at about 1.2 of their length.
+//!    `λ` at which that energy less the couple's work is least; and every joint, those
+//!    by the clamp and by the loaded link too, carries the couple, and no link a tension
+//!    (the slopes of the energy in each turn and each length) — at three couples, up to
+//!    most of the way to the radius of the half-width (bent, the links lengthen and thin of
+//!    themselves). A pull on the head does not leave an arc (its line misses the joints of a
+//!    bent chain), so the law under a pull is tested by 4. The arc is the same at 16, 32
+//!    and 64 substeps to a frame and at 4, 8 and 16 passes to a substep.
 //! 2. A clamped chain under its weight hangs where the discrete statics of small angles
 //!    put it (the moment at a joint over `B / l`, `B = (8/3) μ r0³`), and that is above the
 //!    beam's `q L⁴ / (8 B)` by a share that halves when the links are half as long.
 //! 3. Pushed along itself at the head and a little across, a clamped chain leans by the
 //!    beam-column's amplified deflection below the buckling load (the discrete statics
 //!    solved here), and leaves its line above it.
-//! 4. At rest under a dead load that bends and stretches it unevenly, the load on every
-//!    free particle is the slope of the energy there (central differences of [`energy`]):
-//!    the law's force has every term of the energy's slope, the links' lengths among them.
+//! 4. At rest under a dead load that bends it and stretches it unevenly, to 1.2 of its
+//!    length and more, the load on every free particle is the slope of the energy there
+//!    (central differences of [`energy`]): the law's force has every term of the energy's
+//!    slope, the links' lengths among them.
 //! 5. Let go bent and stretched, with no drag, the energy never grows; let go a hundredth of
 //!    its length off its line, the head swings with the period of the first mode of the
 //!    discrete chain.
@@ -228,19 +233,35 @@ fn arc(couple: f64, pull: f64) -> (f64, f64) {
         let lambda = stretch_at(theta, pull);
         cell(lambda, theta) - pull * lambda * LINK
     };
-    let theta = root(1.0e-4, 1.2, |theta| {
+    let theta = root(1.0e-4, 3.0, |theta| {
         (work(theta + d) - work(theta - d)) / (2.0 * d) - couple
     });
     (theta, stretch_at(theta, pull))
 }
 
 /// A clamped chain of ten links under a couple and a pull on its last link, both turning
-/// with the link, until it rests; its places.
-fn bent_by(couple: f64, pull: f64) -> Vec<[f64; 2]> {
+/// with the link, until it rests, at `substeps` substeps to a frame and `passes` passes a
+/// substep; its places.
+fn bent_at(couple: f64, pull: f64, substeps: u32, passes: u32) -> Vec<[f64; 2]> {
+    bent_for(couple, pull, substeps, passes, 480)
+}
+
+/// [`bent_at`] over `frames` frames. The load is set anew every substep (each substep is
+/// its own step): a couple that turns with its link does work by the link's angle alone,
+/// so it has an energy, and the chain comes to rest; set once a frame it is a pair of
+/// forces of fixed directions for 32 substeps, which near the fold keeps the chain moving
+/// (measured: 3.9e-3 J of motion left after 32 s, the joints 2 % from the arc and
+/// different at every substep count). The chain is at rest at the end, or this panics.
+fn bent_for(couple: f64, pull: f64, substeps: u32, passes: u32, frames: usize) -> Vec<[f64; 2]> {
     const LINKS: usize = 10;
-    let mut chain = clamped(config(20.0), LINKS);
+    let mut cfg = config(20.0);
+    cfg.substeps = 1;
+    cfg.iterations = passes;
+    let mut chain = clamped(cfg, LINKS);
     let walls = open();
-    for _ in 0..360 {
+    let substep = Fix128::from_ratio(1, 60 * i64::from(substeps));
+    let ramp = 120.0 * f64::from(substeps);
+    for step_no in 0..frames * substeps as usize {
         let x = places(&chain);
         let l = length(&x, LINKS - 1);
         let u = [
@@ -248,23 +269,122 @@ fn bent_by(couple: f64, pull: f64) -> Vec<[f64; 2]> {
             (x[LINKS][1] - x[LINKS - 1][1]) / l,
         ];
         let n = [-u[1], u[0]];
-        // the couple as a pair of forces across the link, the pull along it on the head
-        let pair = couple / l;
+        // the couple as a pair of forces across the link, the pull along it on the head;
+        // both come on over the first two seconds, so the chain is not thrown at the fold
+        let on = (step_no as f64 / ramp).min(1.0);
+        let (pair, pull) = (on * couple / l, on * pull);
         let mut accel = vec![ZERO2; LINKS + 1];
         accel[LINKS - 1] = [fx(-pair * n[0] / MASS), fx(-pair * n[1] / MASS)];
         accel[LINKS] = [
             fx((pair * n[0] + pull * u[0]) / (MASS / 2.0)),
             fx((pair * n[1] + pull * u[1]) / (MASS / 2.0)),
         ];
-        chain.step_in(frame(), &walls, &accel).expect("a step");
+        chain.step_in(substep, &walls, &accel).expect("a step");
     }
+    let (moving, unsettled) = (kinetic(&chain), f(chain.last_pass_move()));
+    println!(
+        "[thick chain bend] couple {couple:.4}, {substeps} substeps, {passes} passes, {frames} frames: kinetic energy {moving:.3e} J, the last pass moved {unsettled:.3e} m, steps halved {}",
+        chain.bend_halved()
+    );
+    assert!(
+        moving < 1.0e-12 * energy(&places(&chain)),
+        "not at rest: {moving} J of motion"
+    );
     places(&chain)
+}
+
+fn bent_by(couple: f64, pull: f64) -> Vec<[f64; 2]> {
+    bent_at(couple, pull, 32, 8)
+}
+
+/// the places of a chain from its joints' turns (`turns[i]` at particle `i`) and its links'
+/// lengths, the first link along `x`
+fn shape(turns: &[f64], lengths: &[f64]) -> Vec<[f64; 2]> {
+    let mut x = vec![[0.0, 0.0]];
+    let mut way = 0.0;
+    for (k, l) in lengths.iter().enumerate() {
+        way += turns[k];
+        let last = x[k];
+        x.push([last[0] + l * way.cos(), last[1] + l * way.sin()]);
+    }
+    x
+}
+
+/// The moment each joint carries and the tension each link carries in the chain through
+/// `x`: the slopes of [`energy`] in the joint's turn and in the link's length (central
+/// differences, the other turns and lengths held).
+fn carried(x: &[[f64; 2]]) -> (Vec<f64>, Vec<f64>) {
+    let links = x.len() - 1;
+    let mut turns = vec![0.0; links];
+    for (i, turned) in turns.iter_mut().enumerate().skip(1) {
+        *turned = turn(x, i);
+    }
+    let lengths: Vec<f64> = (0..links).map(|k| length(x, k)).collect();
+    let d = 1.0e-7;
+    let slope =
+        |turns: &mut Vec<f64>, lengths: &mut Vec<f64>, turned: bool, at: usize, step: f64| {
+            let value = if turned {
+                &mut turns[at]
+            } else {
+                &mut lengths[at]
+            };
+            let kept = *value;
+            *value = kept + step;
+            let up = energy(&shape(turns, lengths));
+            let value = if turned {
+                &mut turns[at]
+            } else {
+                &mut lengths[at]
+            };
+            *value = kept - step;
+            let down = energy(&shape(turns, lengths));
+            let value = if turned {
+                &mut turns[at]
+            } else {
+                &mut lengths[at]
+            };
+            *value = kept;
+            (up - down) / (2.0 * step)
+        };
+    let (mut t, mut l) = (turns.clone(), lengths.clone());
+    let moments = (1..links)
+        .map(|i| slope(&mut t, &mut l, true, i, d))
+        .collect();
+    let tensions = (1..links)
+        .map(|k| slope(&mut t, &mut l, false, k, d * LINK))
+        .collect();
+    (moments, tensions)
 }
 
 fn pure_bending(couple: f64, pull: f64) {
     let (theta, lambda) = arc(couple, pull);
     let x = bent_by(couple, pull);
-    // the joints and links away from the clamp and from the loaded link
+    println!(
+        "[thick chain bend] couple {couple:.4}: the arc turns {theta:.6} with links {lambda:.6}; joints 1..=9 turn {:?}; links 0..=9 are {:?} long",
+        (1..=9).map(|i| (turn(&x, i).abs() * 1e6).round() / 1e6).collect::<Vec<_>>(),
+        (0..=9).map(|k| (length(&x, k) / LINK * 1e6).round() / 1e6).collect::<Vec<_>>()
+    );
+    // at rest under a couple alone every joint carries the couple and no link a tension,
+    // the joints and links by the clamp and by the loaded link among them (there the chain
+    // is not the arc: the fixed link is not stretched, the last has a joint at one end only)
+    let (moments, tensions) = carried(&x);
+    for (i, moment) in moments.iter().enumerate() {
+        assert!(
+            (moment.abs() / couple - 1.0).abs() < 1.0e-3,
+            "couple {couple}: joint {} carries {moment}",
+            i + 1
+        );
+    }
+    // (a tension against the pull that alone would hold a link at 1.01 of its length)
+    let small = 1.0e-3 * SHEAR * 2.0 * RADIUS * (1.01 - 1.01f64.powi(-3));
+    for (k, tension) in tensions.iter().enumerate() {
+        assert!(
+            (tension - pull).abs() < small,
+            "couple {couple} pull {pull}: link {} carries {tension}",
+            k + 1
+        );
+    }
+    // away from the ends the chain is the arc of least energy
     for i in 4..=7 {
         let got = turn(&x, i).abs();
         assert!(
@@ -310,12 +430,25 @@ fn a_couple_bends_the_inner_links_to_the_arc_of_least_energy_near_the_fold() {
 }
 
 #[test]
-fn a_couple_bends_pulled_links_to_the_arc_of_least_energy() {
-    // the pull that alone holds a link at 1.2 of its length
-    let pull = SHEAR * 2.0 * RADIUS * (1.2 - 1.2f64.powi(-3));
-    let (_, lambda) = arc(couple_for(0.3), pull);
-    assert!(lambda > 1.2, "bent, a pulled link is longer still: {lambda}");
-    pure_bending(couple_for(0.3), pull);
+fn the_arc_under_a_couple_is_the_same_whatever_the_substep_and_the_passes() {
+    // a rest state is a property of the energy, not of the step that reaches it: halfway to
+    // the fold, with 16, 32 and 64 substeps to a frame and with 4 and 16 passes to a substep
+    let couple = couple_for(0.5);
+    let (theta, lambda) = arc(couple, 0.0);
+    let mut seen = Vec::new();
+    for (substeps, passes) in [(16, 8), (32, 8), (64, 8), (32, 4), (32, 16)] {
+        let x = bent_at(couple, 0.0, substeps, passes);
+        let (turned, long) = (turn(&x, 5).abs(), length(&x, 5) / LINK);
+        assert!(
+            (turned / theta - 1.0).abs() < 2.0e-3 && (long / lambda - 1.0).abs() < 2.0e-4,
+            "{substeps} substeps, {passes} passes: joint 5 turns {turned} (the arc {theta}), link 5 is {long} long (the arc {lambda})"
+        );
+        seen.push(turned);
+    }
+    let (least, most) = seen.iter().fold((f64::INFINITY, 0.0f64), |(lo, hi), &t| {
+        (lo.min(t), hi.max(t))
+    });
+    assert!(most / least - 1.0 < 5.0e-4, "{seen:?}");
 }
 
 // ---- 2 and 3. small angles: the discrete statics ----
@@ -438,7 +571,10 @@ fn pushed_along_below_the_buckling_load_a_clamped_chain_leans_by_the_beam_column
         let mut load = vec![0.0; LINKS + 1];
         load[LINKS] = across;
         let statics = deflections(LINKS, lambda * LINK, bend, &load, push)[LINKS];
-        let got = leaning(push, across, 4.0, 900).expect("on its line");
+        // the drag at which the softened first mode is critically damped
+        let beam = 3.516 * (BEND / (DENSITY * 2.0 * RADIUS * reach.powi(4))).sqrt();
+        let drag = 2.0 * beam * (1.0 - share).sqrt();
+        let got = leaning(push, across, drag, 900).expect("on its line");
         assert!(
             (got / statics - 1.0).abs() < 1.0e-2,
             "push {share} of the buckling load: leans {got}, the statics {statics}"
@@ -446,8 +582,14 @@ fn pushed_along_below_the_buckling_load_a_clamped_chain_leans_by_the_beam_column
         seen.push(got);
     }
     // the push along is what amplifies: about 2 and 5 times at a half and at four fifths
-    assert!(seen[1] / seen[0] > 1.7 && seen[1] / seen[0] < 2.3, "{seen:?}");
-    assert!(seen[2] / seen[0] > 4.0 && seen[2] / seen[0] < 6.0, "{seen:?}");
+    assert!(
+        seen[1] / seen[0] > 1.7 && seen[1] / seen[0] < 2.3,
+        "{seen:?}"
+    );
+    assert!(
+        seen[2] / seen[0] > 4.0 && seen[2] / seen[0] < 6.0,
+        "{seen:?}"
+    );
 }
 
 #[test]
@@ -471,8 +613,8 @@ fn at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_ener
     // across and along at the head, and against it in the middle: the links are bent and
     // stretched unevenly
     let mut force = vec![[0.0f64; 2]; LINKS + 1];
-    force[LINKS] = [6.0, 1.2];
-    force[5] = [-2.0, -0.6];
+    force[LINKS] = [30.0, 12.0];
+    force[5] = [-8.0, -22.0];
     let accel: Vec<P2> = force
         .iter()
         .enumerate()
@@ -490,6 +632,7 @@ fn at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_ener
     let longest = (0..LINKS).map(|k| length(&x, k)).fold(0.0, f64::max);
     let shortest = (0..LINKS).map(|k| length(&x, k)).fold(1.0, f64::min);
     assert!(longest / shortest > 1.03, "{shortest} to {longest}");
+    assert!(longest / LINK > 1.2, "the longest link {longest}");
     let d = 1.0e-8;
     for i in 2..=LINKS {
         for axis in 0..2 {
@@ -498,7 +641,7 @@ fn at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_ener
             down[i][axis] -= d;
             let slope = (energy(&up) - energy(&down)) / (2.0 * d);
             assert!(
-                (slope - force[i][axis]).abs() < 2.0e-3 * 6.0,
+                (slope - force[i][axis]).abs() < 1.0e-3 * 30.0,
                 "particle {i} axis {axis}: the energy's slope {slope}, the load {}",
                 force[i][axis]
             );
@@ -515,7 +658,11 @@ fn kinetic(chain: &ThickChain) -> f64 {
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            let mass = if i == 0 || i == last { MASS / 2.0 } else { MASS };
+            let mass = if i == 0 || i == last {
+                MASS / 2.0
+            } else {
+                MASS
+            };
             0.5 * mass * (f(v[0]).powi(2) + f(v[1]).powi(2))
         })
         .sum()
@@ -540,16 +687,22 @@ fn let_go_bent_and_stretched_the_energy_never_grows() {
     let mut before = energy(&places(&chain));
     let first = before;
     let mut least = before;
+    let mut grew = 0;
     for step in 0..180 {
         chain.step(frame()).expect("a step");
         let now = energy(&places(&chain)) + kinetic(&chain);
-        assert!(
-            now <= before + 1.0e-7 * first,
-            "frame {step}: the energy {now} after {before}"
-        );
+        if now > before + 1.0e-7 * first {
+            println!(
+                "[probe] frame {step}: +{:.3e} of {:.3e}",
+                now - before,
+                before
+            );
+            grew += 1;
+        }
         before = now;
         least = least.min(now);
     }
+    assert_eq!(grew, 0, "frames in which the energy grew");
     // it moved: the implicit step took a share of the energy
     assert!(least < 0.999 * first, "{least} of {first}");
 }

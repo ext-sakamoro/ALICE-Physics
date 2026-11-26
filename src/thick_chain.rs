@@ -77,6 +77,49 @@
 //!   links of 10 mm held from 100 to 54 mm wide: the excess length 8.6e-6, 3.0e-7 and 5.4e-9
 //!   of the length and the force 0.9919, 0.9978 and 0.9994 of `T l / c` at 8, 16 and 32
 //!   substeps of 1/60 s; more passes do not change it).
+//!   Bending ([`ThickChain::bending`], [`ThickChainBend::Section`]; a chain is made
+//!   without it, and then a joint turns freely). A link stretched to `λ` at the middle of
+//!   its width and bent to the curvature `κ` is Rivlin's flexure of an incompressible
+//!   neo-Hookean block in plane strain (1949: a fibre at `y` from the middle has the stretch
+//!   `λ (1 − κ y)` and the length `l (1 − κ y)`): its energy is
+//!   `(μ A / 2) [λ² (1 + a²) + λ⁻² artanh(a) / a − 2]`, `a = κ r`, `r = r0 / λ`. At `a = 0`
+//!   that is the stretch energy above; the rest, `(μ A / 2) κ² r0² [1 + λ⁻⁴ g(a)]` with
+//!   `g(a) = (artanh(a) / a − 1) / a²`, is the bending: `(B / 2) κ² l` at rest and for small
+//!   `κ`, `B = (8/3) μ r0³` (the plane strain modulus `4 μ` times `(2 r0)³ / 12`), and
+//!   without bound as `a → 1`, as `½ ln(2 / (1 − a))`: a link cannot be bent to the radius
+//!   of its half-width, where its inner side would have no length. The joint at particle
+//!   `i` has the curvature `κ = 2 tan(θ / 2) / l̄` (`θ` the angle its two links turn by,
+//!   `tan(θ / 2)` from their cross and dot products; `l̄` the mean of their lengths), and
+//!   each of the two links gives the joint half of its bending energy at that curvature,
+//!   with its own `λ` and `r`: the joint's energy is `(μ / 2) C²`, `C = κ S`,
+//!   `S² = Σ (A / 2) r0² (1 + λ⁻⁴ g(κ r0 / λ))` over the two links, a constraint of
+//!   compliance `1 / μ` solved as a link's stretch is (the Kelvin-Voigt term on it too),
+//!   after the stretches in each pass. `C` has the sign of the turn and no corner at a
+//!   straight joint. Its slope has every term: the angle's, and the lengths' through `l̄`,
+//!   `λ` and `a` (a bent link is pulled longer and thinner by its bending). `g` is summed
+//!   as `Σ a²ⁿ / (2n + 3)` to 18 terms with `a² < 1/16` (what is left out is below `2⁻⁸¹`;
+//!   there the closed form cancels) and taken from [`Fix128::ln`] from there on; the two
+//!   are within `2⁻⁵⁰` of each other where one hands over. A joint with `a ≥ 1 − 2⁻²⁰` for
+//!   either of its links, or folded flat, is [`ThickChainError::Folded`]: refused when the
+//!   law is set, and in a step after a joint's own step has been halved eight times and
+//!   the substep as often as the setting allows ([`ThickChain::bend_halved`] counts the
+//!   halved steps).
+//!   With the law the constraints of a substep are solved another way. Each link's stretch
+//!   and each joint keeps, for the substep, what it has moved its particles by; a visit
+//!   first puts its multiplier so far along its slope where the chain is now, in place of
+//!   that, and then takes its step. So when a pass changes nothing the chain is at
+//!   `x = x̃ + Σ w ∇C(x) λ` with `C + (α / h²) λ = 0` for every constraint: the backward
+//!   Euler step of the energy itself, and at rest the energy's stationary point whatever
+//!   the substep. Stepped as above instead (each step along the slope where the chain was
+//!   when it was taken) the sum of the steps is not the last slope times the multiplier,
+//!   and the rest state is off by a share that goes with `(ω h)²` and that more passes do
+//!   not remove (measured, a couple bending ten links of 10 mm, 20 mm in half-width, to
+//!   `a = 0.5`: the joints turned 5.1, 1.5 and 0.36 % too far at 16, 32 and 64 substeps of
+//!   1/60 s, the same at 16 and 64 passes; the energy of a chain let go grew in 7 of 180
+//!   frames at 32 substeps). A chain without the law is solved as before, bit for bit:
+//!   its links' slopes turn too little in a substep for the difference to show, and its
+//!   bits are those of the chains made before the law. The walls are solved as before in
+//!   either case (their projections are not kept).
 //! - **Units.** SI: m, s, kg, N; planar, so masses, forces and the compliance are per metre
 //!   of depth (kg/m, N/m, `α` in m²/N); `k` in 1/s.
 //! - **Conservation.** A link's area is `2 r l` by the definition of `r`, exactly, down to
@@ -86,7 +129,9 @@
 //!   swing by `1 / √(1 + (ω h)²)` a substep (`ω² = (w_i + w_j) / α`, linear law), the drag `k`
 //!   and the friction dissipate, and a wall projection takes the approach speed (the walls do not bounce a
 //!   particle; a body thrown at a wall is flattened and springs back by its own stretch).
-//! - **Range.** Planar. `α > 0`, `μ > 0` (a rigid link cannot be squeezed). A substep in
+//! - **Range.** Planar. `α > 0`, `μ > 0` (a rigid link cannot be squeezed). The bending law
+//!   needs neo-Hookean links and every joint inside `a < 1 − 2⁻²⁰`; the halvings of a
+//!   substep count the joints' `(ω h)²` as the links'. A substep in
 //!   which a particle would travel more than `r_min / 2`, or a link has `(ω h)² > 1/2`
 //!   (`(ω h)² = (w_i + w_j) |∇C|² h² / α` at its length then), is taken in halves, again as
 //!   needed up to `splits` times, and refused beyond that. Between walls the stretch and the
@@ -115,7 +160,12 @@
 //!   operations (`+ − × ÷ √`, comparisons), and not when it calls a platform's mathematical
 //!   library. Across machines this is stated, not yet tested.
 //! - **Approximations.** A link has one radius along its length (the outline steps between
-//!   links). The body has no bending stiffness and no shear; its thickness follows its
+//!   links). Without a bending law the body has no bending stiffness; with it the
+//!   curvature is taken as one value over a joint's share of the chain (exact for a chain
+//!   bent evenly; a clamped chain under its weight sags above the beam's
+//!   `q L⁴ / (8 B)` by about `2.1 / N` for `N` links), and what keeps links far apart along
+//!   the chain from overlapping is not part of it. The body has no shear and no rotary
+//!   inertia; its thickness follows its
 //!   length at once (no inertia across the link). Between samples the outline may be in a
 //!   wall by at most `r − √(r² − s² / 4)`, `s ≤ r_min / 2` the spacing. A link's one radius is
 //!   that of its narrowest sample, so where a passage narrows the squeeze is paid a link at a
@@ -136,7 +186,7 @@
 //!   4, 8 and 16 passes, flat from 8; for six links 0.94 to 0.97 with 4 passes and 0.94 to
 //!   0.98 with 16; the links up to 0.46 % short with 4 passes). The squeeze friction is low
 //!   by the same share.
-//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state::held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_under_less_than_the_walls_hold_is_the_walls_hold::the_reach_in_a_channel_under_more_than_the_walls_hold_is_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::a_chain_of_short_links_is_not_fed_below_the_push_of_its_squeeze_energy_and_is_fed_above_it::moved_slowly_the_push_works_no_less_than_the_links_take::fed_every_link_is_as_long_as_the_channel_makes_it::a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time::moved_slowly_a_conforming_chains_push_works_what_its_shares_take::at_rest_no_link_is_shorter_than_its_walls_make_it` `tests/analytic_thick_chain_shares.rs::a_chain_in_a_channel_is_as_long_under_either_rule::a_conforming_chain_held_thin_stops_after_the_squeeze_friction_distance::the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it::held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension::the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth::the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links::a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated::the_walls_of_these_tests_are_fields_the_chain_can_be_given::the_reach_is_part_of_the_state::walls_that_take_more_rounds_than_a_pass_has_are_counted::a_link_partly_held_presses_on_its_walls_with_what_its_held_shares_carry_above_its_tension` `tests/analytic_thick_chain_pocket.rs::let_go_at_the_open_end_a_squeezed_chain_leaves_with_no_more_than_the_squeezes_energy::between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls::the_walls_of_the_pocket_tests_are_fields_the_chain_can_be_given`
+//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state::held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_under_less_than_the_walls_hold_is_the_walls_hold::the_reach_in_a_channel_under_more_than_the_walls_hold_is_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::a_chain_of_short_links_is_not_fed_below_the_push_of_its_squeeze_energy_and_is_fed_above_it::moved_slowly_the_push_works_no_less_than_the_links_take::fed_every_link_is_as_long_as_the_channel_makes_it::a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time::moved_slowly_a_conforming_chains_push_works_what_its_shares_take::at_rest_no_link_is_shorter_than_its_walls_make_it` `tests/analytic_thick_chain_shares.rs::a_chain_in_a_channel_is_as_long_under_either_rule::a_conforming_chain_held_thin_stops_after_the_squeeze_friction_distance::the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it::held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension::the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth::the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links::a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated::the_walls_of_these_tests_are_fields_the_chain_can_be_given::the_reach_is_part_of_the_state::walls_that_take_more_rounds_than_a_pass_has_are_counted::a_link_partly_held_presses_on_its_walls_with_what_its_held_shares_carry_above_its_tension` `tests/analytic_thick_chain_pocket.rs::let_go_at_the_open_end_a_squeezed_chain_leaves_with_no_more_than_the_squeezes_energy::between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls::the_walls_of_the_pocket_tests_are_fields_the_chain_can_be_given` `tests/analytic_thick_chain_bend.rs::a_chain_is_made_without_the_law_and_its_bytes_are_those_before_the_law::with_the_law_the_bytes_say_so::given_the_law_after_steps_a_chain_is_the_chain_made_in_that_state_with_the_law::a_straight_chain_held_by_two_particles_does_not_move_by_a_bit::off_its_line_either_way_a_straight_chain_runs_mirrored_bit_for_bit::what_cannot_be_bent_is_refused_when_the_law_is_set::a_step_that_meets_a_fold_is_refused_and_writes_nothing::a_chain_of_one_link_has_no_joint_and_swings_as_without_the_law` `tests/analytic_thick_chain_bend_statics.rs::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_gently::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_halfway_to_the_fold::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_near_the_fold::the_arc_under_a_couple_is_the_same_whatever_the_substep_and_the_passes::a_clamped_chain_sags_by_the_discrete_statics_and_nears_the_beam_as_its_links_shorten::pushed_along_below_the_buckling_load_a_clamped_chain_leans_by_the_beam_columns_share::pushed_along_above_the_buckling_load_a_clamped_chain_leaves_its_line::at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_energy::let_go_bent_and_stretched_the_energy_never_grows::let_go_a_little_off_its_line_the_head_swings_with_the_first_modes_period::let_down_onto_a_floor_from_a_fixed_tail_no_link_turns_back::pushed_with_twenty_times_the_buckling_load_no_joint_reaches_the_radius_of_its_half_width::a_joint_whose_thicker_link_alone_is_past_the_radius_of_its_half_width_is_refused`
 //! - **Tiers.** L0 only.
 
 use crate::math::Fix128;
@@ -172,6 +222,73 @@ fn scale(a: P2, s: Fix128) -> P2 {
 
 fn dot(a: P2, b: P2) -> Fix128 {
     a[0] * b[0] + a[1] * b[1]
+}
+
+/// `(−v_y, v_x)`: `v` turned a quarter to the left.
+fn perp(v: P2) -> P2 {
+    [-v[1], v[0]]
+}
+
+/// Below this `a²` the bending law's shape is summed as a series, above it taken from the
+/// logarithm: 1/16.
+fn bend_switch() -> Fix128 {
+    Fix128::ONE.shr_bits(4)
+}
+
+/// The terms of the series of [`bend_shape`]: with `a² < 1/16` what is left out is below
+/// `16⁻¹⁹ / 41 < 2⁻⁸¹`.
+const BEND_TERMS: i64 = 18;
+
+/// A joint is folded from `a = 1 − 2⁻²⁰` on: the wall of the law is at `a = 1`, and the
+/// shape's slope `1 / (1 − a²)` stays below `2²⁰` on this side of it.
+fn bend_limit() -> Fix128 {
+    Fix128::ONE - Fix128::ONE.shr_bits(20)
+}
+
+/// The shape of the bending law and its slope: `g(a) = (artanh(a) / a − 1) / a²` and
+/// `g′(a) = (1 / (1 − a²) − 3 g) / a`, for `|a| < 1` (`g(0) = 1/3`, `g′(0) = 0`): by
+/// [`bend_shape_series`] with `a² < 1/16`, by [`bend_shape_log`] from there on.
+fn bend_shape(a: Fix128) -> (Fix128, Fix128) {
+    if a * a < bend_switch() {
+        bend_shape_series(a)
+    } else {
+        bend_shape_log(a)
+    }
+}
+
+/// [`bend_shape`] as the series `g = Σ a²ⁿ / (2n + 3)`, `g′ = Σ 2n a²ⁿ⁻¹ / (2n + 3)` to
+/// [`BEND_TERMS`]: for small `a`, where the closed form cancels (at `a = 10⁻⁵` half an ulp
+/// of the logarithm is 3·10⁻⁴ of `g − 1/3`).
+fn bend_shape_series(a: Fix128) -> (Fix128, Fix128) {
+    let a2 = a * a;
+    // Horner from the last term: g = 1/3 + a²(1/5 + a²(1/7 + …)); g′ likewise in a² with
+    // the weights 2n / (2n + 3), times a
+    let (mut g, mut slope) = (Fix128::ZERO, Fix128::ZERO);
+    for n in (0..=BEND_TERMS).rev() {
+        g = g * a2 + Fix128::from_ratio(1, 2 * n + 3);
+        if n > 0 {
+            slope = slope * a2 + Fix128::from_ratio(2 * n, 2 * n + 3);
+        }
+    }
+    (g, slope * a)
+}
+
+/// [`bend_shape`] in closed form, `artanh(a) = ln((1 + a) / (1 − a)) / 2` with
+/// [`Fix128::ln`]: for `a` away from 0 (and below 1).
+fn bend_shape_log(a: Fix128) -> (Fix128, Fix128) {
+    let a2 = a * a;
+    let size = a.abs();
+    let artanh = ((Fix128::ONE + size) / (Fix128::ONE - size)).ln().half();
+    let g = (artanh / size - Fix128::ONE) / a2;
+    let slope = (Fix128::ONE / (Fix128::ONE - a2) - (g + g + g)) / a;
+    (g, slope)
+}
+
+/// One joint's bending constraint where the chain is: its value, its slope on the three
+/// particles (the one before, the joint's, the one after).
+struct BendTerm {
+    value: Fix128,
+    slope: [P2; 3],
 }
 
 /// The settings of a [`ThickChain`]; [`ThickChain::new`] checks them.
@@ -478,6 +595,11 @@ pub struct ThickChain {
     /// the passes whose hard walls were not settled within their rounds (read out, not state)
     walls_unsettled: u64,
     bend: ThickChainBend,
+    /// the bending steps halved to stay short of a fold (read out, not state)
+    bend_halved: u64,
+    /// the furthest a particle was moved along an axis by the last pass of the last substep
+    /// taken (read out, not state)
+    last_pass_move: Fix128,
 }
 
 impl ThickChain {
@@ -577,6 +699,8 @@ impl ThickChain {
             wall_force: vec![zero; rest_length.len()],
             walls_unsettled: 0,
             bend: ThickChainBend::None,
+            bend_halved: 0,
+            last_pass_move: Fix128::ZERO,
             rest_length,
             area,
         })
@@ -603,6 +727,10 @@ impl ThickChain {
                     return Err(ThickChainError::Degenerate { link: k });
                 }
             }
+            self.bend = bend;
+            for joint in 1..self.rest_length.len() {
+                self.bend_term(joint)?;
+            }
         }
         self.bend = bend;
         Ok(self)
@@ -612,6 +740,24 @@ impl ThickChain {
     #[must_use]
     pub fn bend(&self) -> ThickChainBend {
         self.bend
+    }
+
+    /// How many bending steps, since the chain was made, were halved because the whole step
+    /// would have bent a joint to the radius of a link's half-width: a pass in which that
+    /// happened did not reach the rest of its solve. Read out of the steps, not part of the
+    /// state.
+    #[must_use]
+    pub fn bend_halved(&self) -> u64 {
+        self.bend_halved
+    }
+
+    /// The furthest a particle was moved along an axis by the last pass of the last substep
+    /// taken, m: what the passes of that substep left unsettled (a substep whose passes
+    /// settled moves nothing in its last one). 0 before the first step. Read out of the
+    /// step, not part of the state.
+    #[must_use]
+    pub fn last_pass_move(&self) -> Fix128 {
+        self.last_pass_move
     }
 
     /// The settings.
@@ -837,12 +983,179 @@ impl ThickChain {
                     *self = trial;
                     return Ok(());
                 }
-                Some(ThickChainError::TooFast { .. }) if halvings < self.config.splits => {
+                Some(ThickChainError::TooFast { .. } | ThickChainError::Folded { .. })
+                    if halvings < self.config.splits =>
+                {
                     halvings += 1;
                 }
                 Some(error) => return Err(error),
             }
         }
+    }
+
+    /// The bending constraint of the joint at particle `joint` (between links `joint − 1`
+    /// and `joint`) where the chain is. The joint's energy is `(μ / 2) C²`, `C = κ S`:
+    /// `κ = 2 tan(θ / 2) / l̄` its curvature (`θ` the angle the links turn by, its tangent
+    /// from the links' cross and dot products; `l̄` the mean of their lengths) and
+    /// `S² = Σ (A / 2) r0² (1 + λ⁻⁴ g(κ r0 / λ))` over the two links. The slope has every
+    /// term: the angle's, and the lengths' through `l̄`, `λ` and `a`.
+    fn bend_term(&self, joint: usize) -> Result<BendTerm, ThickChainError> {
+        let folded = ThickChainError::Folded { joint };
+        let (before, after) = (joint - 1, joint);
+        let da = sub(self.x[joint], self.x[joint - 1]);
+        let db = sub(self.x[joint + 1], self.x[joint]);
+        let (la, lb) = (dot(da, da).sqrt(), dot(db, db).sqrt());
+        if la.is_zero() {
+            return Err(ThickChainError::Degenerate { link: before });
+        }
+        if lb.is_zero() {
+            return Err(ThickChainError::Degenerate { link: after });
+        }
+        let cross = da[0] * db[1] - da[1] * db[0];
+        // 1 + cos θ, times the lengths: nothing left of it when the joint is folded flat
+        let open = la * lb + dot(da, db);
+        if open <= Fix128::ZERO {
+            return Err(folded);
+        }
+        let tan_half = cross / open;
+        let mean = (la + lb).half();
+        let kappa = (tan_half + tan_half) / mean;
+        // per link: its share of S², and that share's slopes in κ and in the link's length
+        let mut sum = Fix128::ZERO;
+        let mut sum_kappa = Fix128::ZERO;
+        let mut by_length = [Fix128::ZERO; 2];
+        for (side, (k, l)) in [(before, la), (after, lb)].into_iter().enumerate() {
+            let rest_radius = self.area[k] / (self.rest_length[k] + self.rest_length[k]);
+            let back = self.rest_length[k] / l;
+            let a = kappa * rest_radius * back;
+            if a.abs() >= bend_limit() {
+                return Err(folded);
+            }
+            let (g, g_slope) = bend_shape(a);
+            let back4 = (back * back) * (back * back);
+            let weight = self.area[k].half() * rest_radius * rest_radius;
+            sum = sum + weight * (Fix128::ONE + back4 * g);
+            sum_kappa = sum_kappa + weight * back4 * g_slope * rest_radius * back;
+            by_length[side] = -(weight * back4 * (g.double().double() + a * g_slope) / l);
+        }
+        let s = sum.sqrt();
+        if s.is_zero() {
+            return Err(ThickChainError::Invalid("bend"));
+        }
+        let two_s = s + s;
+        // dC = with_kappa dκ + κ (S_la dl_a + S_lb dl_b)
+        let with_kappa = s + kappa * sum_kappa / two_s;
+        // dκ = (1 + tan²) / l̄ dθ − κ / (2 l̄) (dl_a + dl_b)
+        let by_angle = with_kappa * (Fix128::ONE + tan_half * tan_half) / mean;
+        let shared = with_kappa * kappa / (mean + mean);
+        let along_a = kappa * by_length[0] / two_s - shared;
+        let along_b = kappa * by_length[1] / two_s - shared;
+        // ∂θ/∂d_a = −perp(d_a) / l_a², ∂θ/∂d_b = perp(d_b) / l_b²
+        let ga = add(
+            scale(perp(da), -(by_angle / (la * la))),
+            scale(da, along_a / la),
+        );
+        let gb = add(
+            scale(perp(db), by_angle / (lb * lb)),
+            scale(db, along_b / lb),
+        );
+        Ok(BendTerm {
+            value: kappa * s,
+            slope: [scale(ga, -Fix128::ONE), sub(ga, gb), gb],
+        })
+    }
+
+    /// The shear modulus of the bending law's links (the law is set on neo-Hookean links
+    /// only).
+    fn bend_shear(&self) -> Fix128 {
+        match self.config.stretch {
+            ThickChainStretch::NeoHookean { shear } => shear,
+            ThickChainStretch::Linear { .. } => Fix128::ZERO,
+        }
+    }
+
+    /// One pass of the bending constraints, joint after joint: the same solve as a link's
+    /// stretch, with the compliance `1 / μ`, the multipliers of the substep in `held`. A
+    /// step that would carry the joint past the radius of a link's half-width is halved, up
+    /// to eight times, and refused beyond.
+    fn bend_pass(
+        &mut self,
+        h: Fix128,
+        start: &[P2],
+        held: &mut [Fix128],
+        kept: &mut [[P2; 3]],
+    ) -> Result<(), ThickChainError> {
+        if self.bend != ThickChainBend::Section {
+            return Ok(());
+        }
+        let softness = Fix128::ONE / (self.bend_shear() * h * h);
+        let rate = self.config.relaxation / h;
+        for joint in 1..self.rest_length.len() {
+            let ids = [joint - 1, joint, joint + 1];
+            let w = [
+                self.inv_mass[ids[0]],
+                self.inv_mass[ids[1]],
+                self.inv_mass[ids[2]],
+            ];
+            if (w[0] + w[1] + w[2]).is_zero() {
+                continue;
+            }
+            // first the joint's multiplier so far along its slope here, in place of what the
+            // joint moved its particles by earlier in the substep; then the step from there
+            let aim = self.bend_term(joint)?;
+            let was = [self.x[ids[0]], self.x[ids[1]], self.x[ids[2]]];
+            let kept_was = kept[joint];
+            for n in 0..3 {
+                let now = scale(aim.slope[n], w[n] * held[joint]);
+                self.x[ids[n]] = add(was[n], sub(now, kept_was[n]));
+                kept[joint][n] = now;
+            }
+            let term = match self.bend_term(joint) {
+                Ok(term) => term,
+                Err(error) => {
+                    for n in 0..3 {
+                        self.x[ids[n]] = was[n];
+                    }
+                    kept[joint] = kept_was;
+                    return Err(error);
+                }
+            };
+            let mut steep = Fix128::ZERO;
+            let mut moved = Fix128::ZERO;
+            for n in 0..3 {
+                steep = steep + w[n] * dot(term.slope[n], term.slope[n]);
+                moved = moved + dot(term.slope[n], sub(self.x[ids[n]], start[ids[n]]));
+            }
+            let mut dl = (-term.value - softness * held[joint] - rate * moved)
+                / ((Fix128::ONE + rate) * steep + softness);
+            let from = [self.x[ids[0]], self.x[ids[1]], self.x[ids[2]]];
+            let mut tries = 0;
+            loop {
+                for n in 0..3 {
+                    self.x[ids[n]] = add(from[n], scale(term.slope[n], w[n] * dl));
+                }
+                match self.bend_term(joint) {
+                    Ok(_) => break,
+                    Err(ThickChainError::Folded { .. }) if tries < 8 => {
+                        tries += 1;
+                        dl = dl.half();
+                        self.bend_halved += 1;
+                    }
+                    Err(error) => {
+                        for n in 0..3 {
+                            self.x[ids[n]] = was[n];
+                        }
+                        kept[joint] = kept_was;
+                        return Err(error);
+                    }
+                }
+            }
+            for n in 0..3 {
+                kept[joint][n] = add(kept[joint][n], scale(term.slope[n], w[n] * dl));
+            }
+            held[joint] = held[joint] + dl;
+        }
+        Ok(())
     }
 
     /// The value of link `k`'s stretch constraint at the length `l`, its slope along the
@@ -889,6 +1202,28 @@ impl ThickChain {
                 halvings = needed;
             }
         }
+        if self.bend == ThickChainBend::Section {
+            let softness = Fix128::ONE / (self.bend_shear() * h * h);
+            for joint in 1..self.rest_length.len() {
+                let term = self.bend_term(joint)?;
+                let mut stiff = Fix128::ZERO;
+                for (n, slope) in term.slope.iter().enumerate() {
+                    stiff = stiff + self.inv_mass[joint - 1 + n] * dot(*slope, *slope);
+                }
+                stiff = stiff / softness;
+                let mut needed = 0;
+                while stiff > Fix128::ONE.half() {
+                    if needed == self.config.splits {
+                        return Err(ThickChainError::TooStiff { link: joint });
+                    }
+                    stiff = stiff.half().half();
+                    needed += 1;
+                }
+                if needed > halvings {
+                    halvings = needed;
+                }
+            }
+        }
         Ok(halvings)
     }
 
@@ -931,11 +1266,24 @@ impl ThickChain {
             }
         }
         let mut lambda = vec![Fix128::ZERO; links];
+        // per joint (by its particle), the bending multipliers of this substep
+        let mut bent = vec![Fix128::ZERO; links];
+        // with a bending law, what each link's stretch and each joint has moved its particles
+        // by in this substep (see the MODEL section: the multiplier along the slope where the
+        // chain is, not the sum of the steps along the slopes where it was)
+        let whole = self.bend == ThickChainBend::Section;
+        let mut stretched = vec![[ZERO2; 2]; if whole { links } else { 0 }];
+        let mut bent_by = vec![[ZERO2; 3]; if whole { links } else { 0 }];
         // per link, the walls' multipliers of this substep: their sum and their sum by slope
         let mut pressed = vec![Fix128::ZERO; links];
         let mut leaned = vec![ZERO2; links];
         let conforming = c.fit == ThickChainFit::Conforming;
-        for _ in 0..c.iterations {
+        let mut before_pass = self.x.clone();
+        for pass in 0..c.iterations {
+            if pass > 0 {
+                // what the pass before this one moved (after the last pass: read below)
+                before_pass.clone_from(&self.x);
+            }
             if let (true, Some(walls)) = (conforming, walls) {
                 // every link's energy, then every link's walls (as the disc rule: a pass
                 // ends with the links on the walls)
@@ -946,6 +1294,7 @@ impl ThickChain {
                     pressed[k] = pressed[k] + press;
                     leaned[k] = add(leaned[k], lean);
                 }
+                self.bend_pass(h, &start, &mut bent, &mut bent_by)?;
                 self.walls_together(&samples, walls, &mut pressed, &mut leaned)?;
                 for k in 0..links {
                     let (press, lean) =
@@ -959,6 +1308,24 @@ impl ThickChain {
                 let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
                 if (w0 + w1).is_zero() {
                     continue;
+                }
+                if whole {
+                    // the link's multiplier so far along the link as it lies now, in place
+                    // of what it moved its ends by earlier in the substep
+                    let d = sub(self.x[k + 1], self.x[k]);
+                    let l = dot(d, d).sqrt();
+                    if l.is_zero() {
+                        return Err(ThickChainError::Degenerate { link: k });
+                    }
+                    let u = scale(d, Fix128::ONE / l);
+                    let (_, slope, _) = self.stretch_terms(k, l, h);
+                    let now = [
+                        scale(u, -(w0 * slope * *held)),
+                        scale(u, w1 * slope * *held),
+                    ];
+                    self.x[k] = add(self.x[k], sub(now[0], stretched[k][0]));
+                    self.x[k + 1] = add(self.x[k + 1], sub(now[1], stretched[k][1]));
+                    stretched[k] = now;
                 }
                 let d = sub(self.x[k + 1], self.x[k]);
                 let l = dot(d, d).sqrt();
@@ -980,9 +1347,14 @@ impl ThickChain {
                         / ((Fix128::ONE + rate) * (w0 + w1) * slope * slope + softness)
                 };
                 *held = *held + dl;
-                self.x[k] = sub(self.x[k], scale(u, w0 * slope * dl));
-                self.x[k + 1] = add(self.x[k + 1], scale(u, w1 * slope * dl));
+                let step = [scale(u, -(w0 * slope * dl)), scale(u, w1 * slope * dl)];
+                self.x[k] = add(self.x[k], step[0]);
+                self.x[k + 1] = add(self.x[k + 1], step[1]);
+                if whole {
+                    stretched[k] = [add(stretched[k][0], step[0]), add(stretched[k][1], step[1])];
+                }
             }
+            self.bend_pass(h, &start, &mut bent, &mut bent_by)?;
             if let Some(walls) = walls {
                 for (k, &n) in samples.iter().enumerate() {
                     for j in 0..=n {
@@ -994,6 +1366,16 @@ impl ThickChain {
                 }
             }
         }
+        let mut furthest = Fix128::ZERO;
+        for (now, was) in self.x.iter().zip(&before_pass) {
+            for axis in 0..2 {
+                let moved = (now[axis] - was[axis]).abs();
+                if moved > furthest {
+                    furthest = moved;
+                }
+            }
+        }
+        self.last_pass_move = furthest;
         // a held share pulled by its link's tension may leave the walls' press below zero
         for press in &mut pressed {
             if *press < Fix128::ZERO {
@@ -1522,7 +1904,11 @@ impl ThickChain {
     pub fn snapshot(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&Self::SNAPSHOT_MAGIC);
-        out.extend_from_slice(&Self::SNAPSHOT_VERSION.to_le_bytes());
+        let version = match self.bend {
+            ThickChainBend::None => Self::SNAPSHOT_VERSION,
+            ThickChainBend::Section => Self::SNAPSHOT_VERSION_BEND,
+        };
+        out.extend_from_slice(&version.to_le_bytes());
         let c = &self.config;
         out.extend_from_slice(&c.substeps.to_le_bytes());
         out.extend_from_slice(&c.iterations.to_le_bytes());
@@ -1553,6 +1939,10 @@ impl ThickChain {
             c.reach,
         ] {
             put(x);
+        }
+        // a chain with a bending law: the law's tag (1: the strip's section)
+        if self.bend == ThickChainBend::Section {
+            put(Fix128::ONE);
         }
         for i in 0..self.x.len() {
             put(self.x[i][0]);
@@ -1598,6 +1988,123 @@ mod analytic_thick_chain_oracle;
 #[cfg(test)]
 #[path = "../tests/analytic_thick_chain_shares.rs"]
 mod analytic_thick_chain_shares_oracle;
+
+#[cfg(test)]
+mod bend_shape_oracle {
+    //! The shape of the bending law, `g(a) = (artanh(a) / a − 1) / a²`, against its series
+    //! and its closed form in f64, and the two ways of taking it against each other where
+    //! one hands over to the other.
+    #![allow(
+        clippy::float_arithmetic,
+        clippy::cast_precision_loss,
+        clippy::disallowed_methods,
+        reason = "the reference values are f64"
+    )]
+    use super::{bend_shape, bend_shape_log, bend_shape_series, bend_switch, Fix128};
+
+    /// oracle: the series, summed until the terms are below f64's resolution
+    fn series(a: f64) -> (f64, f64) {
+        let (mut g, mut slope) = (0.0, 0.0);
+        for n in (0..400i32).rev() {
+            g += a.powi(2 * n) / f64::from(2 * n + 3);
+            if n > 0 {
+                slope += f64::from(2 * n) * a.powi(2 * n - 1) / f64::from(2 * n + 3);
+            }
+        }
+        (g, slope)
+    }
+
+    #[test]
+    fn the_shape_is_the_series_of_the_law_on_both_sides_of_the_switch() {
+        // the series in f64 is good to its last digits below about 0.9
+        for a in [
+            1.0e-9, 1.0e-5, 1.0e-3, 0.03, 0.1, 0.2, 0.2499, 0.25, 0.2501, 0.3, 0.45, 0.6, 0.8,
+        ] {
+            let (want_g, want_slope) = series(a);
+            let at = Fix128::from_f64(a);
+            let (g, slope) = bend_shape(at);
+            assert!(
+                (g.to_f64() / want_g - 1.0).abs() < 4.0e-15,
+                "g({a}) = {}, the series {want_g}",
+                g.to_f64()
+            );
+            // (the value read is of `at`, which is `a` to 2⁻⁶⁴: a part in 10¹⁰ at 10⁻⁹)
+            assert!(
+                (slope.to_f64() / want_slope - 1.0).abs() < 4.0e-15 + 1.0e-19 / a,
+                "g'({a}) = {}, the series {want_slope}",
+                slope.to_f64()
+            );
+            // the shape is even and its slope odd, to the bit (so the other side is not read
+            // through a small negative number as f64)
+            assert_eq!(bend_shape(-at), (g, -slope));
+        }
+        // near the wall the closed form in f64: g grows as the logarithm, its slope as
+        // 1 / (1 − a²)
+        for a in [0.95f64, 0.999, 0.999_999] {
+            let want_g = (a.atanh() / a - 1.0) / (a * a);
+            let want_slope = (1.0 / (1.0 - a * a) - 3.0 * want_g) / a;
+            let (g, slope) = bend_shape(Fix128::from_f64(a));
+            assert!((g.to_f64() / want_g - 1.0).abs() < 1.0e-12);
+            assert!((slope.to_f64() / want_slope - 1.0).abs() < 1.0e-9);
+        }
+    }
+
+    #[test]
+    fn a_straight_joint_has_the_shape_a_third_and_no_slope_exactly() {
+        assert_eq!(
+            bend_shape(Fix128::ZERO),
+            (Fix128::from_ratio(1, 3), Fix128::ZERO)
+        );
+    }
+
+    #[test]
+    fn the_series_is_taken_below_a_quarter_and_the_logarithm_from_it_on() {
+        let quarter = Fix128::from_ratio(1, 4);
+        let ulp = Fix128::from_raw(0, 1);
+        // the switch is on a²: the last a whose square is below 1/16 as stored is four
+        // ulps under a quarter (one ulp under, the square rounds to 1/16)
+        let under = quarter - Fix128::from_raw(0, 4);
+        assert_eq!(quarter * quarter, bend_switch());
+        assert!(under * under < bend_switch());
+        assert_eq!((quarter - ulp) * (quarter - ulp), bend_switch());
+        for a in [
+            Fix128::from_ratio(1, 64),
+            Fix128::from_ratio(1, 8),
+            under,
+            -under,
+        ] {
+            assert_eq!(bend_shape(a), bend_shape_series(a));
+            // (and there the two differ: the comparison above is not of a thing with itself)
+            assert_ne!(bend_shape_series(a), bend_shape_log(a));
+        }
+        for a in [
+            quarter,
+            -quarter,
+            quarter - ulp,
+            quarter + ulp,
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(9, 10),
+        ] {
+            assert_eq!(bend_shape(a), bend_shape_log(a));
+        }
+    }
+
+    #[test]
+    fn where_one_hands_over_the_two_agree_to_the_logarithms_resolution() {
+        // at a = 1/4 half an ulp of the logarithm (2⁻⁶⁵) is 2⁻⁵⁸ of g − 1/3 and what the
+        // series leaves out is below 2⁻⁸¹: the two are within 2⁻⁵⁰ of each other, and the
+        // slopes (a further division by a and a difference of 0.03) within 2⁻⁴⁶
+        let quarter = Fix128::from_ratio(1, 4);
+        let (g_series, slope_series) = bend_shape_series(quarter);
+        let (g_log, slope_log) = bend_shape_log(quarter);
+        assert!((g_series - g_log).abs() < Fix128::ONE.shr_bits(50));
+        assert!((slope_series - slope_log).abs() < Fix128::ONE.shr_bits(46));
+        // far below the switch the closed form has lost its digits: the reason for the series
+        let small = Fix128::from_ratio(1, 4096);
+        let lost = (bend_shape_series(small).0 - bend_shape_log(small).0).abs();
+        assert!(lost > Fix128::ONE.shr_bits(40), "{}", lost.to_f64());
+    }
+}
 
 #[cfg(test)]
 mod wall_solve {

@@ -11,7 +11,8 @@
 //! 5. What cannot be bent is refused where it is asked for: the law on links that are not
 //!    neo-Hookean, a link of no length, a joint folded flat or bent past the radius of its
 //!    half-width, when the law is set and when a step meets it (the step then writes
-//!    nothing); a chain of one link has no joint and runs as without the law.
+//!    nothing); a chain of one link has no joint and swings as without the law (to a
+//!    tolerance: with the law a substep is solved another way, see the MODEL section).
 //!
 //! Integration test only: the chains of the files that follow this one settle over many
 //! frames.
@@ -98,7 +99,10 @@ fn a_chain_is_made_without_the_law_and_its_bytes_are_those_before_the_law() {
     assert_eq!(&bytes[4..8], &1u32.to_le_bytes());
     // the settings (two counts, the particles' count, eleven numbers), five numbers a
     // particle, two a link: nothing else
-    assert_eq!(bytes.len(), 8 + 4 + 4 + 8 + 11 * 16 + 5 * 5 * 16 + 4 * 2 * 16);
+    assert_eq!(
+        bytes.len(),
+        8 + 4 + 4 + 8 + 11 * 16 + 5 * 5 * 16 + 4 * 2 * 16
+    );
     // asked for no law, the same chain
     let asked = made(config(), &row(4))
         .bending(ThickChainBend::None)
@@ -289,16 +293,39 @@ fn a_step_that_meets_a_fold_is_refused_and_writes_nothing() {
 }
 
 #[test]
-fn a_chain_of_one_link_has_no_joint_and_runs_as_without_the_law() {
+fn a_chain_of_one_link_has_no_joint_and_swings_as_without_the_law() {
+    // one link hung by an end and let go level: no joint, so the law adds no force. The bits
+    // are not those of the chain without the law: with the law a substep's stretch is put
+    // along the link as it lies at each visit (the module's MODEL section), without it along
+    // the link as it lay at each step. What the two can differ by in a substep is the
+    // stretch's move times the angle the link turns in it: the move is at most the tension
+    // over the mass times h² (the tension of a link let go level is at most three times its
+    // weight, at the bottom of its swing), the turn at most the speed over the length times
+    // h (the speed at most √(2 g l)). Summed over the substeps, as if every substep's
+    // difference went the same way:
+    let (g, substeps) = (9.81f64, 30.0 * 32.0);
+    let h = 1.0 / (60.0 * 32.0);
+    let bound = substeps * (3.0 * g * h * h) * ((2.0 * g / LINK).sqrt() * h);
+    assert!(bound < 0.02 * LINK, "the bound {bound}");
     let mut cfg = config();
-    cfg.gravity = [Fix128::ZERO, fx(-9.81)];
+    cfg.gravity = [Fix128::ZERO, fx(-g)];
     let run = |law: ThickChainBend| {
         let mut chain = made(cfg, &row(1)).bending(law).expect("the law");
         chain.pin(0);
         for _ in 0..30 {
             chain.step(frame()).expect("a step");
         }
-        (chain.positions().to_vec(), chain.velocities().to_vec())
+        let head = chain.positions()[1];
+        [f(head[0]), f(head[1])]
     };
-    assert_eq!(run(ThickChainBend::Section), run(ThickChainBend::None));
+    let (with, without) = (run(ThickChainBend::Section), run(ThickChainBend::None));
+    let apart = (with[0] - without[0]).hypot(with[1] - without[1]);
+    assert!(
+        apart < bound,
+        "{with:?} with the law, {without:?} without: {apart} apart, the bound {bound}"
+    );
+    // (the two are different runs: the comparison is not of a thing with itself)
+    assert!(apart > 0.0);
+    // it swung: the head is well below where it was let go
+    assert!(without[1] < -0.5 * LINK, "{without:?}");
 }
