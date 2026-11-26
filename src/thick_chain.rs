@@ -235,6 +235,16 @@ pub enum ThickChainFit {
     Conforming,
 }
 
+/// How a chain answers being bent ([`ThickChain::bending`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThickChainBend {
+    /// No bending stiffness: a joint turns freely
+    None,
+    /// The strip's own section: at each joint the links' neo-Hookean energy over the width
+    /// of a strip bent to the joint's curvature (neo-Hookean links only)
+    Section,
+}
+
 /// Why a chain cannot be made or stepped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThickChainError {
@@ -264,6 +274,12 @@ pub enum ThickChainError {
     Field {
         /// The link index
         link: usize,
+    },
+    /// A joint bent to a radius of its half-width or less (the joint between links
+    /// `joint − 1` and `joint`): the inner side of the strip would have no length
+    Folded {
+        /// The joint: the index of the particle the two links share
+        joint: usize,
     },
 }
 
@@ -461,11 +477,14 @@ pub struct ThickChain {
     wall_force: Vec<Fix128>,
     /// the passes whose hard walls were not settled within their rounds (read out, not state)
     walls_unsettled: u64,
+    bend: ThickChainBend,
 }
 
 impl ThickChain {
     const SNAPSHOT_MAGIC: [u8; 4] = *b"TCHN";
     const SNAPSHOT_VERSION: u32 = 1;
+    /// the version of a chain with a bending law: the law's tag follows the settings
+    const SNAPSHOT_VERSION_BEND: u32 = 2;
 
     /// A chain through `points` at rest: each link's rest length is the distance between its
     /// ends, its area `2 · radius · length`, its mass `density` (kg/m³) times its area, half
@@ -557,9 +576,42 @@ impl ThickChain {
             inv_mass: mass.iter().map(|&m| Fix128::ONE / m).collect(),
             wall_force: vec![zero; rest_length.len()],
             walls_unsettled: 0,
+            bend: ThickChainBend::None,
             rest_length,
             area,
         })
+    }
+
+    /// The chain with the bending law `bend` from now on. A chain is made with
+    /// [`ThickChainBend::None`]; this is the only way to another law. It may be called at any
+    /// time: the particles, their velocities and the links are unchanged, and the steps taken
+    /// after it carry the law. The law is part of the state ([`Self::snapshot`]).
+    ///
+    /// # Errors
+    ///
+    /// [`ThickChainError::Invalid`] (`"bend"`) for [`ThickChainBend::Section`] on links that
+    /// are not neo-Hookean; [`ThickChainError::Degenerate`] for a link of no length and
+    /// [`ThickChainError::Folded`] for a joint already bent to a radius of its half-width or
+    /// less (a joint folded flat among them), under `Section`.
+    pub fn bending(mut self, bend: ThickChainBend) -> Result<Self, ThickChainError> {
+        if bend == ThickChainBend::Section {
+            if !matches!(self.config.stretch, ThickChainStretch::NeoHookean { .. }) {
+                return Err(ThickChainError::Invalid("bend"));
+            }
+            for k in 0..self.rest_length.len() {
+                if self.length(k).is_zero() {
+                    return Err(ThickChainError::Degenerate { link: k });
+                }
+            }
+        }
+        self.bend = bend;
+        Ok(self)
+    }
+
+    /// The bending law.
+    #[must_use]
+    pub fn bend(&self) -> ThickChainBend {
+        self.bend
     }
 
     /// The settings.
