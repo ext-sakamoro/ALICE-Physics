@@ -135,11 +135,16 @@ fn bent_and_let_go() {
         .expect("neo-Hookean links take the law");
     chain.pin(0);
     chain.pin(1);
-    // an arc of 40 mm from the clamp on: half way to where the law has its wall
-    let (mut at, mut angle) = ([l0, 0.0], 0.0f64);
+    // an arc from the clamp on, each link turned from the last by the angle whose cosine and
+    // sine are 24/25 and 7/25 (0.284 rad: a radius of 35 mm, 0.57 of the way to where the law
+    // has its wall)
+    let (mut at, mut dir) = ([l0, 0.0], [1.0f64, 0.0]);
     for i in 2..=links {
-        angle += l0 / 0.04;
-        at = [at[0] + l0 * angle.cos(), at[1] + l0 * angle.sin()];
+        dir = [
+            (24.0 * dir[0] - 7.0 * dir[1]) / 25.0,
+            (7.0 * dir[0] + 24.0 * dir[1]) / 25.0,
+        ];
+        at = [at[0] + l0 * dir[0], at[1] + l0 * dir[1]];
         chain.set_position(i as usize, [fx(at[0]), fx(at[1])]);
     }
     let head = links as usize;

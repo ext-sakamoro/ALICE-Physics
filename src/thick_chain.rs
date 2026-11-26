@@ -124,8 +124,9 @@
 //!   by a ten-thousandth of what its slope along `d` promises for that part (Armijo's
 //!   rule; all five are worked out whichever is taken, a part that would bend a joint past
 //!   the radius of a link's half-width lowers nothing; the search ends at the part taken,
-//!   and the parts after it would not change the choice). Where none does and the step
-//!   does not point up `Ψ`, the first that does to what `Ψ / h²` resolves is taken: a
+//!   and the parts after it would not change the choice). Where none does, or where the
+//!   whole step's promise is itself below what `Ψ / h²` resolves, and the step does not
+//!   point up `Ψ`, the first that does to that resolution is taken: a
 //!   joint's constraint is built from products of two links' offsets, which the arithmetic
 //!   holds to one unit of `2⁻⁶⁴` whatever their size, and from the root of a sum of the
 //!   order of `r0⁴`, so `C` is held to about `2 |κ| / S` such units and a constraint's
@@ -1441,8 +1442,9 @@ impl ThickChain {
     /// Moves the chain by a part of `step` (the whole, its half, quarter, eighth or
     /// sixteenth) and says which, by its halvings: the first that lowers the merit by
     /// [`step_share`] of what the merit's slope along the step promises for that part; with
-    /// none, the first that does so to what the two merits' rounding may be, if the step
-    /// does not point up the merit (then true is returned with it). With neither the chain
+    /// none, or where what the whole step promises is itself within the merit's rounding,
+    /// the first that does so to what the two merits' rounding may be, if the step does not
+    /// point up the merit (then true is returned with it). With neither the chain
     /// is left where it is. A part that carries a joint past the radius of a link's
     /// half-width is not taken. `rows` and `right` are those of where the chain is;
     /// `exhaustive` works every part out even after one is taken (the same result: the
@@ -1469,6 +1471,9 @@ impl ThickChain {
         for (slope, moved) in right.iter().zip(step) {
             along = along - *slope * *moved;
         }
+        // where the whole step's promise is itself below what the merit resolves, the merit
+        // cannot choose between the parts: the first within its rounding is taken
+        let faint = -along <= fine_here + fine_here;
         let from = self.x.clone();
         let mut taken: Option<(u32, Vec<P2>)> = None;
         let mut within: Option<(u32, Vec<P2>)> = None;
@@ -1483,14 +1488,14 @@ impl ThickChain {
             if let Ok(rows) = self.rows(h) {
                 let (merit, fine) = self.merit(&rows, per, rate, anchor, first);
                 let over = merit - (here + step_share() * part * along);
-                if over <= Fix128::ZERO && taken.is_none() {
+                if over <= Fix128::ZERO && !faint && taken.is_none() {
                     taken = Some((halvings, self.x.clone()));
                 }
                 if over <= fine_here + fine && along <= Fix128::ZERO && within.is_none() {
                     within = Some((halvings, self.x.clone()));
                 }
             }
-            if taken.is_some() && !exhaustive {
+            if (taken.is_some() || (faint && within.is_some())) && !exhaustive {
                 break;
             }
             part = part.half();
