@@ -101,22 +101,44 @@
 //!   there the closed form cancels) and taken from [`Fix128::ln`] from there on; the two
 //!   are within `2⁻⁵⁰` of each other where one hands over. A joint with `a ≥ 1 − 2⁻²⁰` for
 //!   either of its links, or folded flat, is [`ThickChainError::Folded`]: refused when the
-//!   law is set, and in a step after a joint's own step has been halved eight times and
+//!   law is set, and in a step after a pass's step has been halved eight times and
 //!   the substep as often as the setting allows ([`ThickChain::bend_halved`] counts the
 //!   halved steps).
-//!   With the law the constraints of a substep are solved another way. Each link's stretch
-//!   and each joint keeps, for the substep, what it has moved its particles by; a visit
-//!   first puts its multiplier so far along its slope where the chain is now, in place of
-//!   that, and then takes its step. So when a pass changes nothing the chain is at
-//!   `x = x̃ + Σ w ∇C(x) λ` with `C + (α / h²) λ = 0` for every constraint: the backward
-//!   Euler step of the energy itself, and at rest the energy's stationary point whatever
-//!   the substep. Stepped as above instead (each step along the slope where the chain was
-//!   when it was taken) the sum of the steps is not the last slope times the multiplier,
-//!   and the rest state is off by a share that goes with `(ω h)²` and that more passes do
-//!   not remove (measured, a couple bending ten links of 10 mm, 20 mm in half-width, to
-//!   `a = 0.5`: the joints turned 5.1, 1.5 and 0.36 % too far at 16, 32 and 64 substeps of
-//!   1/60 s, the same at 16 and 64 passes; the energy of a chain let go grew in 7 of 180
-//!   frames at 32 substeps). A chain without the law is solved as before, bit for bit:
+//!   With the law the constraints of a substep are solved another way: all the links'
+//!   stretches and all the joints together. Each keeps, for the substep, what it has moved
+//!   its particles by. A pass first puts every multiplier so far along its slope where the
+//!   chain is now, in place of that; then, there, it takes the step `d` of all the
+//!   multipliers at once, `[(1 + γ) G W Gᵀ + diag(α / h²)] d = −(C + (α / h²) λ +
+//!   γ G (x − x_start))` (`G` the constraints' slopes, `W` the inverse masses): the step of
+//!   one constraint above is this system's diagonal. In the constraints' order along the
+//!   chain (a link, the joint after it, the next link, …) the system has no entry further
+//!   than 4 from its diagonal, and it is positive definite (`α / h² > 0`); it is factored
+//!   as `L D Lᵀ` in that order, without a square root, the same operations whatever the
+//!   state. The second slopes of the constraints are not in the system (as in XPBD), so a
+//!   pass is not Newton's step; they are in its right side through the multipliers put
+//!   along the slopes of now. So when a pass changes nothing the chain is at
+//!   `x = x̃ + Σ w ∇C(x) λ` with `C + (α / h²) λ + γ ∇C · (x − x_start) = 0` for every
+//!   constraint: the backward Euler step of the energy itself (with the Kelvin-Voigt
+//!   stress), and at rest the energy's stationary point whatever the substep. A step that
+//!   would bend a joint past the radius of a link's half-width is halved, all of it.
+//!   Two things this is for. Stepped constraint by constraint along the slope where the
+//!   chain was when each step was taken, the sum of the steps is not the last slope times
+//!   the multiplier, and the rest state is off by a share that goes with `(ω h)²` and that
+//!   more passes do not remove (measured, a couple bending ten links of 10 mm, 20 mm in
+//!   half-width, to `a = 0.5`: the joints turned 5.1, 1.5 and 0.36 % too far at 16, 32 and
+//!   64 substeps of 1/60 s, the same at 16 and 64 passes; the energy of a chain let go grew
+//!   in 7 of 180 frames at 32 substeps). And solved joint after joint, even with the
+//!   multipliers put along the slopes of now, the passes of a substep do not reach its
+//!   solution when `γ` is large: with `τ = 0.05 s` (`γ = 96` at 32 substeps of 1/60 s) the
+//!   first bending swing of twelve links was left, a period on, 5.4 % above what the
+//!   recurrence of the Kelvin-Voigt mode leaves at 8 passes, 16 % at 16 substeps, and
+//!   0.003 % at 64 passes; solved together it is within 0.003 % at 1, 8, 16 and 64 passes
+//!   alike (`tests/analytic_thick_chain_bend_statics.rs`). The links' stretches alone did
+//!   not show it (a swing along a chain of twenty links: the same to four digits at 8, 16,
+//!   32 and 64 passes).
+//!   The law is refused with the conforming rule, which solves each link with its walls
+//!   inside the link's own step.
+//!   A chain without the law is solved as before, bit for bit:
 //!   its links' slopes turn too little in a substep for the difference to show, and its
 //!   bits are those of the chains made before the law. The walls are solved as before in
 //!   either case (their projections are not kept).
@@ -186,7 +208,7 @@
 //!   4, 8 and 16 passes, flat from 8; for six links 0.94 to 0.97 with 4 passes and 0.94 to
 //!   0.98 with 16; the links up to 0.46 % short with 4 passes). The squeeze friction is low
 //!   by the same share.
-//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state::held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_under_less_than_the_walls_hold_is_the_walls_hold::the_reach_in_a_channel_under_more_than_the_walls_hold_is_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::a_chain_of_short_links_is_not_fed_below_the_push_of_its_squeeze_energy_and_is_fed_above_it::moved_slowly_the_push_works_no_less_than_the_links_take::fed_every_link_is_as_long_as_the_channel_makes_it::a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time::moved_slowly_a_conforming_chains_push_works_what_its_shares_take::at_rest_no_link_is_shorter_than_its_walls_make_it` `tests/analytic_thick_chain_shares.rs::a_chain_in_a_channel_is_as_long_under_either_rule::a_conforming_chain_held_thin_stops_after_the_squeeze_friction_distance::the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it::held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension::the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth::the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links::a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated::the_walls_of_these_tests_are_fields_the_chain_can_be_given::the_reach_is_part_of_the_state::walls_that_take_more_rounds_than_a_pass_has_are_counted::a_link_partly_held_presses_on_its_walls_with_what_its_held_shares_carry_above_its_tension` `tests/analytic_thick_chain_pocket.rs::let_go_at_the_open_end_a_squeezed_chain_leaves_with_no_more_than_the_squeezes_energy::between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls::the_walls_of_the_pocket_tests_are_fields_the_chain_can_be_given` `tests/analytic_thick_chain_bend.rs::a_chain_is_made_without_the_law_and_its_bytes_are_those_before_the_law::with_the_law_the_bytes_say_so::given_the_law_after_steps_a_chain_is_the_chain_made_in_that_state_with_the_law::a_straight_chain_held_by_two_particles_does_not_move_by_a_bit::off_its_line_either_way_a_straight_chain_runs_mirrored_bit_for_bit::what_cannot_be_bent_is_refused_when_the_law_is_set::a_step_that_meets_a_fold_is_refused_and_writes_nothing::a_chain_of_one_link_has_no_joint_and_swings_as_without_the_law` `tests/analytic_thick_chain_bend_statics.rs::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_gently::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_halfway_to_the_fold::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_near_the_fold::the_arc_under_a_couple_is_the_same_whatever_the_substep_and_the_passes::a_clamped_chain_sags_by_the_discrete_statics_and_nears_the_beam_as_its_links_shorten::pushed_along_below_the_buckling_load_a_clamped_chain_leans_by_the_beam_columns_share::pushed_along_above_the_buckling_load_a_clamped_chain_leaves_its_line::at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_energy::let_go_bent_and_stretched_the_energy_never_grows::let_go_a_little_off_its_line_the_head_swings_with_the_first_modes_period::let_down_onto_a_floor_from_a_fixed_tail_no_link_turns_back::pushed_with_twenty_times_the_buckling_load_no_joint_reaches_the_radius_of_its_half_width::a_joint_whose_thicker_link_alone_is_past_the_radius_of_its_half_width_is_refused`
+//! - **Validation.** `tests/analytic_thick_chain.rs::a_link_of_fixed_area_is_thinner_when_longer::a_hanging_link_stretches_by_its_compliance_times_the_weight::a_free_link_swings_on_the_backward_euler_solution_whatever_the_iterations::a_chain_in_a_narrow_channel_is_longer_by_the_ratio_of_the_widths::a_chain_sliding_on_a_floor_stops_after_the_coulomb_distance::a_chain_held_thin_by_a_channel_stops_after_the_squeeze_friction_distance::a_chain_driven_through_a_wider_pipe_stays_out_of_the_walls::a_chain_driven_through_a_narrower_pipe_is_squeezed_and_comes_back::a_run_repeats_bit_for_bit::a_refused_chain_or_step_changes_nothing` `tests/analytic_thick_chain_neo_hookean.rs::a_hanging_link_settles_where_the_neo_hookean_tension_is_its_weight::a_small_stretch_meets_the_plane_strain_modulus::a_standing_link_is_shortened_to_where_the_tension_is_minus_its_weight::a_neo_hookean_chain_held_thin_stops_after_the_squeeze_friction_distance::the_stretch_law_is_part_of_the_state::held_by_a_channel_a_chain_comes_to_rest_and_the_walls_carry_most_of_its_tension` `tests/analytic_thick_chain_anchor.rs::a_fast_link_is_refused_without_split_substeps_and_flies_straight_with_them::a_run_that_needs_no_split_is_the_same_bits_with_and_without::a_link_thrown_at_a_floor_stops_on_it::a_link_too_stiff_for_its_substep_is_given_the_halvings_that_resolve_it::a_free_link_with_inner_friction_swings_on_the_recurrence_of_its_implicit_step::the_fixed_tail_keeps_its_bits_through_a_pull_between_walls::every_free_link_of_a_pulled_chain_is_where_its_tension_is_the_pull::the_reach_in_a_channel_under_less_than_the_walls_hold_is_the_walls_hold::the_reach_in_a_channel_under_more_than_the_walls_hold_is_the_pulls_stretch::let_go_the_free_part_swings_back_on_its_first_modes_recurrence::after_the_pull_ends_the_energy_never_grows` `tests/analytic_thick_chain_entry.rs::a_chain_of_short_links_is_not_fed_below_the_push_of_its_squeeze_energy_and_is_fed_above_it::moved_slowly_the_push_works_no_less_than_the_links_take::fed_every_link_is_as_long_as_the_channel_makes_it::a_conforming_chain_pays_the_squeeze_as_it_goes_not_a_link_at_a_time::moved_slowly_a_conforming_chains_push_works_what_its_shares_take::at_rest_no_link_is_shorter_than_its_walls_make_it` `tests/analytic_thick_chain_shares.rs::a_chain_in_a_channel_is_as_long_under_either_rule::a_conforming_chain_held_thin_stops_after_the_squeeze_friction_distance::the_walls_of_a_straight_channel_do_not_change_the_momentum_along_it::held_by_a_channel_a_conforming_chain_comes_to_rest_and_the_walls_carry_its_tension::the_free_stretch_is_the_shares_equation_and_has_no_jump_across_a_mouth::the_fit_rule_is_part_of_the_state_and_needs_neo_hookean_links::a_links_samples_are_laid_out_once_for_its_reach_and_counted_as_stated::the_walls_of_these_tests_are_fields_the_chain_can_be_given::the_reach_is_part_of_the_state::walls_that_take_more_rounds_than_a_pass_has_are_counted::a_link_partly_held_presses_on_its_walls_with_what_its_held_shares_carry_above_its_tension` `tests/analytic_thick_chain_pocket.rs::let_go_at_the_open_end_a_squeezed_chain_leaves_with_no_more_than_the_squeezes_energy::between_links_held_by_a_channel_the_links_in_a_pocket_are_off_their_walls::the_walls_of_the_pocket_tests_are_fields_the_chain_can_be_given` `tests/analytic_thick_chain_bend.rs::a_chain_is_made_without_the_law_and_its_bytes_are_those_before_the_law::with_the_law_the_bytes_say_so::given_the_law_after_steps_a_chain_is_the_chain_made_in_that_state_with_the_law::a_straight_chain_held_by_two_particles_does_not_move_by_a_bit::off_its_line_either_way_a_straight_chain_runs_mirrored_bit_for_bit::what_cannot_be_bent_is_refused_when_the_law_is_set::a_step_that_meets_a_fold_is_refused_and_writes_nothing::a_chain_of_one_link_has_no_joint_and_swings_as_without_the_law::the_law_is_refused_with_the_conforming_fit` `tests/analytic_thick_chain_bend_statics.rs::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_gently::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_halfway_to_the_fold::a_couple_bends_the_inner_links_to_the_arc_of_least_energy_near_the_fold::the_arc_under_a_couple_is_the_same_whatever_the_substep_and_the_passes::a_clamped_chain_sags_by_the_discrete_statics_and_nears_the_beam_as_its_links_shorten::pushed_along_below_the_buckling_load_a_clamped_chain_leans_by_the_beam_columns_share::pushed_along_above_the_buckling_load_a_clamped_chain_leaves_its_line::at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_energy::let_go_bent_and_stretched_the_energy_never_grows::let_go_a_little_off_its_line_the_head_swings_with_the_first_modes_period::with_a_retardation_time_the_bending_swing_dies_at_the_kelvin_voigt_rate_whatever_the_passes::with_a_retardation_time_the_stretch_swing_dies_at_the_kelvin_voigt_rate_whatever_the_passes::let_down_onto_a_floor_from_a_fixed_tail_no_link_turns_back::pushed_with_twenty_times_the_buckling_load_no_joint_reaches_the_radius_of_its_half_width::a_joint_whose_thicker_link_alone_is_past_the_radius_of_its_half_width_is_refused`
 //! - **Tiers.** L0 only.
 
 use crate::math::Fix128;
@@ -777,8 +799,9 @@ impl ThickChain {
     ///
     /// # Errors
     ///
-    /// [`ThickChainError::Invalid`] (`"bend"`) for [`ThickChainBend::Section`] on links that
-    /// are not neo-Hookean; [`ThickChainError::Degenerate`] for a link of no length and
+    /// [`ThickChainError::Invalid`] for [`ThickChainBend::Section`] on links that are not
+    /// neo-Hookean (`"bend"`) or with [`ThickChainFit::Conforming`] (`"bend with the
+    /// conforming fit"`); [`ThickChainError::Degenerate`] for a link of no length and
     /// [`ThickChainError::Folded`] for a joint already bent to a radius of its half-width or
     /// less (a joint folded flat among them), under `Section`.
     pub fn bending(mut self, bend: ThickChainBend) -> Result<Self, ThickChainError> {
@@ -1187,6 +1210,50 @@ impl ThickChain {
         Ok(rows)
     }
 
+    /// The system of a step of every link's stretch and every joint together, in band
+    /// (`band[at][back]` the entry of rows `at` and `at − back`) and its right side:
+    /// `(1 + γ) G W Gᵀ + diag(α / h²)` and `−(C + (α / h²) λ + γ G (x − x_start))`, `G` the
+    /// rows' slopes, `γ` the `rate`. A row that is not live stands alone with a step of 0.
+    fn system(
+        &self,
+        rows: &[Row],
+        rate: Fix128,
+        start: &[P2],
+        held: &[Fix128],
+    ) -> (Vec<[Fix128; BAND + 1]>, Vec<Fix128>) {
+        let mut band = vec![[Fix128::ZERO; BAND + 1]; rows.len()];
+        let mut right = vec![Fix128::ZERO; rows.len()];
+        for (at, row) in rows.iter().enumerate() {
+            if !row.live {
+                band[at][0] = Fix128::ONE;
+                continue;
+            }
+            let mut moved = Fix128::ZERO;
+            for n in 0..row.count {
+                let i = row.first + n;
+                moved = moved + dot(row.slope[n], sub(self.x[i], start[i]));
+            }
+            right[at] = -row.value - row.softness * held[at] - rate * moved;
+            for back in 0..=BAND.min(at) {
+                let other = &rows[at - back];
+                if !other.live {
+                    continue;
+                }
+                let mut shared = Fix128::ZERO;
+                for n in 0..row.count {
+                    let i = row.first + n;
+                    if i >= other.first && i < other.first + other.count {
+                        shared = shared
+                            + self.inv_mass[i] * dot(row.slope[n], other.slope[i - other.first]);
+                    }
+                }
+                band[at][back] = (Fix128::ONE + rate) * shared;
+            }
+            band[at][0] = band[at][0] + row.softness;
+        }
+        (band, right)
+    }
+
     /// One step of every link's stretch and every joint together, with a bending law (see
     /// the MODEL section): first every multiplier so far along its slope where the chain
     /// is, in place of what its constraint moved its particles by earlier in the substep
@@ -1227,37 +1294,7 @@ impl ThickChain {
             Ok(rows) => rows,
             Err(error) => return refuse(self, kept, error),
         };
-        // the system in band: `band[at][back]` is the entry of rows `at` and `at − back`
-        let mut band = vec![[Fix128::ZERO; BAND + 1]; rows.len()];
-        let mut right = vec![Fix128::ZERO; rows.len()];
-        for (at, row) in rows.iter().enumerate() {
-            if !row.live {
-                band[at][0] = Fix128::ONE;
-                continue;
-            }
-            let mut moved = Fix128::ZERO;
-            for n in 0..row.count {
-                let i = row.first + n;
-                moved = moved + dot(row.slope[n], sub(self.x[i], start[i]));
-            }
-            right[at] = -row.value - row.softness * held[at] - rate * moved;
-            for back in 0..=BAND.min(at) {
-                let other = &rows[at - back];
-                if !other.live {
-                    continue;
-                }
-                let mut shared = Fix128::ZERO;
-                for n in 0..row.count {
-                    let i = row.first + n;
-                    if i >= other.first && i < other.first + other.count {
-                        shared = shared
-                            + self.inv_mass[i] * dot(row.slope[n], other.slope[i - other.first]);
-                    }
-                }
-                band[at][back] = (Fix128::ONE + rate) * shared;
-            }
-            band[at][0] = band[at][0] + row.softness;
-        }
+        let (band, right) = self.system(&rows, rate, start, held);
         let mut step = match solve_band(&band, &right) {
             Some(step) => step,
             None => return refuse(self, kept, ThickChainError::Degenerate { link: 0 }),
@@ -2229,6 +2266,195 @@ mod bend_shape_oracle {
         let small = Fix128::from_ratio(1, 4096);
         let lost = (bend_shape_series(small).0 - bend_shape_log(small).0).abs();
         assert!(lost > Fix128::ONE.shr_bits(40), "{}", lost.to_f64());
+    }
+}
+
+#[cfg(test)]
+mod band_oracle {
+    //! The step of all the multipliers of a substep with a bending law, solved in band,
+    //! against the same system put together entry by entry over every pair of rows and
+    //! every particle, and solved by elimination with pivoting, in f64.
+    #![allow(
+        clippy::float_arithmetic,
+        clippy::cast_precision_loss,
+        clippy::needless_range_loop,
+        clippy::disallowed_methods,
+        reason = "the reference solve is f64 over a few dozen rows"
+    )]
+    use super::{
+        solve_band, Fix128, ThickChain, ThickChainBend, ThickChainConfig, ThickChainFit,
+        ThickChainStretch, BAND, P2,
+    };
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    /// a number in [−1, 1) from a counter (a linear congruence, the same on every run)
+    fn noise(seed: &mut u64) -> f64 {
+        *seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((*seed >> 11) as f64) / ((1u64 << 52) as f64) - 1.0
+    }
+
+    /// a chain of 20 links off its line and off its lengths, three of its particles held
+    /// (two together, one alone), where it started the substep, and multipliers so far
+    fn state(seed: u64) -> (ThickChain, Vec<P2>, Vec<Fix128>) {
+        const LINKS: usize = 20;
+        let mut seed = seed;
+        let cfg = ThickChainConfig {
+            substeps: 32,
+            iterations: 8,
+            gravity: [Fix128::ZERO, Fix128::ZERO],
+            stretch: ThickChainStretch::NeoHookean { shear: fx(1000.0) },
+            drag: Fix128::ZERO,
+            friction: Fix128::ZERO,
+            min_radius: fx(0.002),
+            splits: 0,
+            relaxation: fx(0.05),
+            fit: ThickChainFit::Disc,
+            reach: Fix128::ONE,
+        };
+        let points: Vec<P2> = (0..=LINKS)
+            .map(|i| [fx(0.01 * i as f64), Fix128::ZERO])
+            .collect();
+        let mut chain = ThickChain::new(cfg, &points, fx(0.02), fx(1000.0))
+            .expect("a chain")
+            .bending(ThickChainBend::Section)
+            .expect("the law");
+        chain.pin(0);
+        chain.pin(1);
+        chain.pin(9);
+        let mut start = Vec::new();
+        for i in 0..=LINKS {
+            let at = [
+                0.01 * i as f64 + 0.001 * noise(&mut seed),
+                0.0003 * noise(&mut seed),
+            ];
+            start.push([
+                fx(at[0] + 0.00005 * noise(&mut seed)),
+                fx(at[1] + 0.00005 * noise(&mut seed)),
+            ]);
+            chain.set_position(i, [fx(at[0]), fx(at[1])]);
+        }
+        let held = (0..2 * LINKS - 1)
+            .map(|_| fx(1e-6 * noise(&mut seed)))
+            .collect();
+        (chain, start, held)
+    }
+
+    /// oracle: the system entry by entry, `(1 + γ) Σ_i w_i g_r(i) · g_c(i) + δ α / h²` over
+    /// all particles `i` for every pair of rows, and Gaussian elimination with partial
+    /// pivoting
+    fn dense(chain: &ThickChain, start: &[P2], held: &[Fix128], h: f64) -> Vec<f64> {
+        let rows = chain.rows(fx(h)).expect("rows");
+        let n = rows.len();
+        let particles = chain.x.len();
+        let gamma = chain.config.relaxation.to_f64() / h;
+        // each row's slope at every particle
+        let mut g = vec![vec![[0.0f64; 2]; particles]; n];
+        for (r, row) in rows.iter().enumerate() {
+            if !row.live {
+                continue;
+            }
+            for k in 0..row.count {
+                g[r][row.first + k] = [row.slope[k][0].to_f64(), row.slope[k][1].to_f64()];
+            }
+        }
+        let mut a = vec![vec![0.0f64; n + 1]; n];
+        for r in 0..n {
+            if !rows[r].live {
+                a[r][r] = 1.0;
+                continue;
+            }
+            let mut moved = 0.0;
+            for i in 0..particles {
+                let w = chain.inv_mass[i].to_f64();
+                for c in 0..n {
+                    a[r][c] += (1.0 + gamma) * w * (g[r][i][0] * g[c][i][0] + g[r][i][1] * g[c][i][1]);
+                }
+                for axis in 0..2 {
+                    moved += g[r][i][axis] * (chain.x[i][axis] - start[i][axis]).to_f64();
+                }
+            }
+            let soft = rows[r].softness.to_f64();
+            a[r][r] += soft;
+            a[r][n] = -rows[r].value.to_f64() - soft * held[r].to_f64() - gamma * moved;
+        }
+        for col in 0..n {
+            let mut best = col;
+            for r in col + 1..n {
+                if a[r][col].abs() > a[best][col].abs() {
+                    best = r;
+                }
+            }
+            a.swap(col, best);
+            for r in col + 1..n {
+                let f = a[r][col] / a[col][col];
+                for c in col..=n {
+                    a[r][c] -= f * a[col][c];
+                }
+            }
+        }
+        let mut out = vec![0.0f64; n];
+        for r in (0..n).rev() {
+            let mut v = a[r][n];
+            for c in r + 1..n {
+                v -= a[r][c] * out[c];
+            }
+            out[r] = v / a[r][r];
+        }
+        out
+    }
+
+    #[test]
+    fn the_step_solved_in_band_is_the_step_of_the_whole_system_by_elimination() {
+        let h = 1.0 / 60.0 / 32.0;
+        let mut compared = 0;
+        let mut largest = 0.0f64;
+        for seed in 1..=8u64 {
+            let (chain, start, held) = state(seed);
+            let rows = chain.rows(fx(h)).expect("rows");
+            let rate = chain.config.relaxation / fx(h);
+            let (band, right) = chain.system(&rows, rate, &start, &held);
+            let got = solve_band(&band, &right).expect("positive definite");
+            let want = dense(&chain, &start, &held, h);
+            assert_eq!(got.len(), 39);
+            // rows of held particles alone are out of both solves
+            assert!(!rows[0].live && got[0].is_zero() && want[0] == 0.0);
+            let scale = want.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            assert!(scale > 0.0);
+            for (g, w) in got.iter().zip(&want) {
+                // f64 through an elimination of 39 rows: nine digits of the largest step
+                assert!(
+                    (g.to_f64() - w).abs() <= 1e-9 * scale,
+                    "seed {seed}: {} against {w} (largest {scale})",
+                    g.to_f64()
+                );
+                compared += 1;
+            }
+            largest = largest.max(scale);
+        }
+        assert_eq!(compared, 8 * 39);
+        assert!(largest > 0.0);
+    }
+
+    #[test]
+    fn a_system_that_is_not_positive_definite_is_refused() {
+        let one = Fix128::ONE;
+        let mut band = vec![[Fix128::ZERO; BAND + 1]; 3];
+        for row in &mut band {
+            row[0] = one;
+        }
+        let right = vec![one; 3];
+        assert!(solve_band(&band, &right).is_some());
+        // 1 2; 2 1 has a negative pivot
+        band[1][1] = one + one;
+        assert!(solve_band(&band, &right).is_none());
+        band[1][1] = Fix128::ZERO;
+        band[2][0] = Fix128::ZERO;
+        assert!(solve_band(&band, &right).is_none());
     }
 }
 
