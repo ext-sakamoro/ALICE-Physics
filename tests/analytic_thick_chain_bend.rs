@@ -12,7 +12,8 @@
 //!    neo-Hookean, a link of no length, a joint folded flat or bent past the radius of its
 //!    half-width, when the law is set and when a step meets it (the step then writes
 //!    nothing); a chain of one link has no joint and swings as without the law (to a
-//!    tolerance: with the law a substep is solved another way, see the MODEL section).
+//!    tolerance: with the law a substep is solved another way, see the MODEL section);
+//!    and the law with the conforming fit.
 //!
 //! Integration test only: the chains of the files that follow this one settle over many
 //! frames.
@@ -232,6 +233,22 @@ fn bent_once(turn: f64) -> Vec<P2> {
             fx(2.0 * LINK * turn.sin()),
         ],
     ]
+}
+
+/// The conforming fit solves each link with its walls inside the link's own step, which the
+/// law's solve of all links and joints together does not hold: the two are refused together
+/// (a chain with that fit and no law is made as before).
+#[test]
+fn the_law_is_refused_with_the_conforming_fit() {
+    let mut cfg = config();
+    cfg.fit = ThickChainFit::Conforming;
+    let chain = made(cfg, &row(4));
+    assert!(matches!(
+        chain.clone().bending(ThickChainBend::Section),
+        Err(ThickChainError::Invalid(_))
+    ));
+    let kept = chain.clone().bending(ThickChainBend::None).expect("no law");
+    assert_eq!(kept.snapshot(), chain.snapshot());
 }
 
 #[test]

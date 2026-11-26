@@ -33,7 +33,9 @@
 //!    slope, the links' lengths among them.
 //! 5. Let go bent and stretched, with no drag, the energy never grows; let go a hundredth of
 //!    its length off its line, the head swings with the period of the first mode of the
-//!    discrete chain.
+//!    discrete chain; with a retardation time that swing, and the first swing along the
+//!    chain, die as the substep's recurrence for a Kelvin-Voigt solid's mode does (the rate
+//!    `τ ω² / 2`), at 16, 32 and 64 substeps to a frame and at 1, 8, 16 and 64 passes.
 //! 6. Let down a centimetre onto a floor from a fixed tail, no link turns back; without the
 //!    law one does.
 //! 7. Pushed at the head with twenty times the buckling load, no joint is bent to the radius
@@ -768,6 +770,187 @@ fn let_go_a_little_off_its_line_the_head_swings_with_the_first_modes_period() {
     let (_, down) = swing(-1.0);
     assert!(up.iter().zip(&down).all(|(a, b)| *a == -*b));
 }
+
+/// The first mode's shape (the head at 1) and its `ω²`, of a clamped chain of `links` free
+/// links: the largest eigenvalue of (deflections under a unit load) × (masses) is `1 / ω²`.
+fn first_mode(links: usize) -> (Vec<f64>, f64) {
+    let mass: Vec<f64> = (0..=links)
+        .map(|i| if i == links { MASS / 2.0 } else { MASS })
+        .collect();
+    let mut shape = vec![1.0f64; links + 1];
+    let mut omega2 = 0.0;
+    for _ in 0..60 {
+        let load: Vec<f64> = shape.iter().zip(&mass).map(|(y, m)| y * m).collect();
+        let next = deflections(links, LINK, BEND, &load, 0.0);
+        omega2 = shape[links] / next[links];
+        let top = next[links];
+        shape = next.iter().map(|y| y / top).collect();
+    }
+    (shape, omega2)
+}
+
+/// The steps of 1/240 s in one and a half periods of `omega2`, and the step from which the
+/// swing is read (half a period in).
+fn window(omega2: f64) -> (usize, usize) {
+    let period = 2.0 * std::f64::consts::PI / omega2.sqrt();
+    ((1.5 * period * 240.0) as usize, (0.5 * period * 240.0) as usize)
+}
+
+/// oracle: the substep's recurrence for a mode of frequency `ω` with the retardation time
+/// `τ` (the MODEL section of the chain), `e₊ (1 + ω² h² + τ ω² h) = e (1 + τ ω² h) +
+/// (e − e₋)`, from rest at 1, stepped `per_step` substeps to each step of 1/240 s: the
+/// most it is in the window, the swing left a period on (`exp(−τ ω² T / 2)` nearly, as a
+/// Kelvin-Voigt solid's mode dies).
+fn recurrence_left(omega2: f64, tau: f64, per_step: u32) -> f64 {
+    let h = 1.0 / 240.0 / f64::from(per_step);
+    let (stiff, slow) = (omega2 * h * h, tau * omega2 * h);
+    let (steps, from) = window(omega2);
+    let (mut e, mut before) = (1.0f64, 1.0f64);
+    let mut top = f64::MIN;
+    for step in 0..steps {
+        for _ in 0..per_step {
+            let next = (e * (1.0 + slow) + (e - before)) / (1.0 + stiff + slow);
+            before = e;
+            e = next;
+        }
+        if step > from {
+            top = top.max(e);
+        }
+    }
+    top
+}
+
+const SWING_LINKS: usize = 12;
+
+/// The head's height a period after a clamped chain of [`SWING_LINKS`] free links is let
+/// go in its first bending mode (a hundredth of its length at the head), over its height
+/// when let go; and the most a particle moved in the last pass of the last substep.
+fn bend_swing_left(tau: f64, per_step: u32, passes: u32) -> (f64, f64) {
+    let (shape, omega2) = first_mode(SWING_LINKS);
+    let mut cfg = config(0.0);
+    cfg.relaxation = fx(tau);
+    cfg.substeps = per_step;
+    cfg.iterations = passes;
+    let mut chain = clamped(cfg, SWING_LINKS + 1);
+    let first = 0.01 * SWING_LINKS as f64 * LINK;
+    for i in 1..=SWING_LINKS {
+        chain.set_position(i + 1, [fx(LINK * (i + 1) as f64), fx(first * shape[i])]);
+    }
+    let (steps, from) = window(omega2);
+    let mut top = f64::MIN;
+    for step in 0..steps {
+        chain.step(Fix128::from_ratio(1, 240)).expect("a step");
+        if step > from {
+            top = top.max(f(chain.positions()[SWING_LINKS + 1][1]));
+        }
+    }
+    (top / first, f(chain.last_pass_move()))
+}
+
+/// The same of a chain held at its tail and let go stretched in its first mode along
+/// itself (a five-hundredth of its length at the head): masses `m` (the head `m / 2`) on
+/// springs `k = 4 μ w0 / l0`, `u_i = sin(i θ)`, `θ = π / (2 N)`, `ω = 2 √(k / m) sin(θ / 2)`.
+fn stretch_swing_left(tau: f64, per_step: u32, passes: u32) -> (f64, f64) {
+    let omega2 = stretch_mode();
+    let theta = std::f64::consts::PI / (2.0 * SWING_LINKS as f64);
+    let mut cfg = config(0.0);
+    cfg.relaxation = fx(tau);
+    cfg.substeps = per_step;
+    cfg.iterations = passes;
+    let mut chain = ThickChain::new(cfg, &row(SWING_LINKS), fx(RADIUS), fx(DENSITY))
+        .expect("a chain")
+        .bending(ThickChainBend::Section)
+        .expect("the law");
+    chain.pin(0);
+    let first = 0.002 * SWING_LINKS as f64 * LINK;
+    for i in 1..=SWING_LINKS {
+        let x = LINK * i as f64 + first * (i as f64 * theta).sin();
+        chain.set_position(i, [fx(x), Fix128::ZERO]);
+    }
+    let (steps, from) = window(omega2);
+    let mut top = f64::MIN;
+    for step in 0..steps {
+        chain.step(Fix128::from_ratio(1, 240)).expect("a step");
+        if step > from {
+            top = top.max(f(chain.positions()[SWING_LINKS][0]) - LINK * SWING_LINKS as f64);
+        }
+    }
+    (top / first, f(chain.last_pass_move()))
+}
+
+fn stretch_mode() -> f64 {
+    let k = 4.0 * SHEAR * 2.0 * RADIUS / LINK;
+    let theta = std::f64::consts::PI / (2.0 * SWING_LINKS as f64);
+    let omega = 2.0 * (k / MASS).sqrt() * (theta / 2.0).sin();
+    omega * omega
+}
+
+/// What is left of a swing may differ from the recurrence's by this share of itself,
+/// whatever the substep and the passes: both are read at the same instants, 1/240 s apart,
+/// so what differs is the mode itself, which is the small-angle one only to the square of
+/// the swing over the chain's length and which the recurrence takes as one frequency. (On
+/// the solve of joint after joint the shares were 5.4 % at 32 substeps to a frame and 8
+/// passes, 16 % at 16 substeps, and 0.003 % at 64 passes.) Where there is more than one
+/// pass the last one moved nothing that shows: under a millionth of the swing.
+const SWING_TOLERANCE: f64 = 2e-3;
+
+/// substeps to a step of 1/240 s (4, 8, 16: 16, 32, 64 to 1/60 s) and passes
+const SWING_GRID: [(u32, u32); 7] = [(8, 1), (8, 8), (8, 16), (8, 64), (4, 8), (16, 8), (16, 1)];
+
+fn dies_as_the_recurrence(
+    name: &str,
+    omega2: f64,
+    first: f64,
+    taus: [f64; 2],
+    swing: impl Fn(f64, u32, u32) -> (f64, f64),
+) {
+    let mut off = Vec::new();
+    for (per_step, passes) in SWING_GRID {
+        for tau in taus {
+            let want = recurrence_left(omega2, tau, per_step);
+            let (got, moved) = swing(tau, per_step, passes);
+            let ratio = got / want;
+            println!(
+                "{name} substeps {per_step} passes {passes} tau {tau}: left {got:.6}, the recurrence's {want:.6}, of it {ratio:.5}, last pass moved {moved:e}"
+            );
+            // (a single pass is all of the substep's step: what it moved says nothing)
+            if (ratio - 1.0).abs() > SWING_TOLERANCE || (passes > 1 && moved > 1e-6 * first) {
+                off.push((per_step, passes, tau, ratio, moved));
+            }
+        }
+    }
+    assert!(off.is_empty(), "{name}: (substeps, passes, τ, left of the recurrence's, moved) {off:?}");
+}
+
+#[test]
+fn with_a_retardation_time_the_bending_swing_dies_at_the_kelvin_voigt_rate_whatever_the_passes() {
+    let (_, omega2) = first_mode(SWING_LINKS);
+    // the case tells: with a twentieth of a second more than a quarter goes in a period,
+    // without it under a hundredth
+    assert!(recurrence_left(omega2, 0.0, 8) > 0.99);
+    assert!(recurrence_left(omega2, 0.05, 8) < 0.75);
+    dies_as_the_recurrence(
+        "bending",
+        omega2,
+        0.01 * SWING_LINKS as f64 * LINK,
+        [0.0, 0.05],
+        bend_swing_left,
+    );
+}
+
+#[test]
+fn with_a_retardation_time_the_stretch_swing_dies_at_the_kelvin_voigt_rate_whatever_the_passes() {
+    let omega2 = stretch_mode();
+    assert!(recurrence_left(omega2, 0.004, 8) < 0.75);
+    dies_as_the_recurrence(
+        "stretch",
+        omega2,
+        0.002 * SWING_LINKS as f64 * LINK,
+        [0.0, 0.004],
+        stretch_swing_left,
+    );
+}
+
 
 // ---- 6 and 7. what the law is for ----
 

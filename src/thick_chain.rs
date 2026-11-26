@@ -291,6 +291,70 @@ struct BendTerm {
     slope: [P2; 3],
 }
 
+/// A constraint of a substep's solve with a bending law: a link's stretch (two particles
+/// from `first`) or a joint (three), its value and slope where the chain is, and its
+/// compliance over `h²`.
+#[derive(Clone, Copy)]
+struct Row {
+    first: usize,
+    count: usize,
+    slope: [P2; 3],
+    value: Fix128,
+    softness: Fix128,
+    live: bool,
+}
+
+/// How far from the diagonal the system of a substep's constraints reaches, in their order
+/// along the chain: a joint and the next joint but one share a particle, nothing further
+/// apart does.
+const BAND: usize = 4;
+
+/// The solution of a symmetric system given in band (`band[i][b]` the entry of rows `i`
+/// and `i − b`, `b ≤ BAND`), factored as `L D Lᵀ` in the rows' order: no square root, the
+/// same operations in the same order whatever the entries. None when a pivot is not
+/// positive (the system is not positive definite to the arithmetic's resolution).
+fn solve_band(band: &[[Fix128; BAND + 1]], right: &[Fix128]) -> Option<Vec<Fix128>> {
+    let n = band.len();
+    let mut low = vec![[Fix128::ZERO; BAND + 1]; n];
+    let mut pivot = vec![Fix128::ZERO; n];
+    for i in 0..n {
+        for back in (1..=BAND.min(i)).rev() {
+            let j = i - back;
+            let mut entry = band[i][back];
+            for further in back + 1..=BAND.min(i) {
+                let k = i - further;
+                if j - k <= BAND {
+                    entry = entry - low[i][further] * pivot[k] * low[j][j - k];
+                }
+            }
+            low[i][back] = entry / pivot[j];
+        }
+        let mut entry = band[i][0];
+        for back in 1..=BAND.min(i) {
+            entry = entry - low[i][back] * low[i][back] * pivot[i - back];
+        }
+        if entry <= Fix128::ZERO {
+            return None;
+        }
+        pivot[i] = entry;
+    }
+    let mut out = right.to_vec();
+    for i in 0..n {
+        for back in 1..=BAND.min(i) {
+            out[i] = out[i] - low[i][back] * out[i - back];
+        }
+    }
+    for i in 0..n {
+        out[i] = out[i] / pivot[i];
+    }
+    for i in (0..n).rev() {
+        for back in 1..=BAND.min(n - 1 - i) {
+            out[i] = out[i] - low[i + back][back] * out[i + back];
+        }
+    }
+    Some(out)
+}
+
 /// The settings of a [`ThickChain`]; [`ThickChain::new`] checks them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ThickChainConfig {
@@ -722,6 +786,9 @@ impl ThickChain {
             if !matches!(self.config.stretch, ThickChainStretch::NeoHookean { .. }) {
                 return Err(ThickChainError::Invalid("bend"));
             }
+            if self.config.fit == ThickChainFit::Conforming {
+                return Err(ThickChainError::Invalid("bend with the conforming fit"));
+            }
             for k in 0..self.rest_length.len() {
                 if self.length(k).is_zero() {
                     return Err(ThickChainError::Degenerate { link: k });
@@ -1074,86 +1141,165 @@ impl ThickChain {
         }
     }
 
-    /// One pass of the bending constraints, joint after joint: the same solve as a link's
-    /// stretch, with the compliance `1 / μ`, the multipliers of the substep in `held`. A
-    /// step that would carry the joint past the radius of a link's half-width is halved, up
-    /// to eight times, and refused beyond.
-    fn bend_pass(
+    /// The rows of the substep's constraints where the chain is, in their order along it:
+    /// link 0's stretch, the joint at particle 1, link 1's stretch, the joint at particle 2,
+    /// and so on (`2 N − 1` for `N` links). A row none of whose particles is free is left
+    /// out of the solve (`live` false, nothing else read).
+    fn rows(&self, h: Fix128) -> Result<Vec<Row>, ThickChainError> {
+        let links = self.rest_length.len();
+        let mut rows = Vec::with_capacity(2 * links);
+        for at in 0..2 * links - 1 {
+            let mut row = Row {
+                first: at / 2,
+                count: 2 + at % 2,
+                slope: [ZERO2; 3],
+                value: Fix128::ZERO,
+                softness: Fix128::ONE,
+                live: false,
+            };
+            let mut free = Fix128::ZERO;
+            for n in 0..row.count {
+                free = free + self.inv_mass[row.first + n];
+            }
+            if !free.is_zero() {
+                row.live = true;
+                if at % 2 == 0 {
+                    let k = at / 2;
+                    let d = sub(self.x[k + 1], self.x[k]);
+                    let l = dot(d, d).sqrt();
+                    if l.is_zero() {
+                        return Err(ThickChainError::Degenerate { link: k });
+                    }
+                    let u = scale(d, Fix128::ONE / l);
+                    let (value, slope, softness) = self.stretch_terms(k, l, h);
+                    row.value = value;
+                    row.softness = softness;
+                    row.slope = [scale(u, -slope), scale(u, slope), ZERO2];
+                } else {
+                    let term = self.bend_term(at / 2 + 1)?;
+                    row.value = term.value;
+                    row.softness = Fix128::ONE / (self.bend_shear() * h * h);
+                    row.slope = term.slope;
+                }
+            }
+            rows.push(row);
+        }
+        Ok(rows)
+    }
+
+    /// One step of every link's stretch and every joint together, with a bending law (see
+    /// the MODEL section): first every multiplier so far along its slope where the chain
+    /// is, in place of what its constraint moved its particles by earlier in the substep
+    /// (`kept`); then, there, the step `d` of all the multipliers `held` at once,
+    /// `[(1 + γ) G W Gᵀ + diag(α / h²)] d = −(C + (α / h²) λ + γ G (x − x_start))`
+    /// ([`solve_band`]). A step that would carry a joint past the radius of a link's
+    /// half-width is halved, all of it, up to eight times, and refused beyond; a refused
+    /// step leaves the chain and `kept` as they were.
+    fn together(
         &mut self,
         h: Fix128,
         start: &[P2],
         held: &mut [Fix128],
         kept: &mut [[P2; 3]],
     ) -> Result<(), ThickChainError> {
-        if self.bend != ThickChainBend::Section {
-            return Ok(());
-        }
-        let softness = Fix128::ONE / (self.bend_shear() * h * h);
         let rate = self.config.relaxation / h;
-        for joint in 1..self.rest_length.len() {
-            let ids = [joint - 1, joint, joint + 1];
-            let w = [
-                self.inv_mass[ids[0]],
-                self.inv_mass[ids[1]],
-                self.inv_mass[ids[2]],
-            ];
-            if (w[0] + w[1] + w[2]).is_zero() {
+        let was = self.x.clone();
+        let kept_was = kept.to_vec();
+        let refuse = |chain: &mut Self, kept: &mut [[P2; 3]], error| {
+            chain.x.clone_from(&was);
+            kept.copy_from_slice(&kept_was);
+            Err(error)
+        };
+        // the multipliers so far along the slopes here
+        let aim = self.rows(h)?;
+        for (at, row) in aim.iter().enumerate() {
+            if !row.live {
                 continue;
             }
-            // first the joint's multiplier so far along its slope here, in place of what the
-            // joint moved its particles by earlier in the substep; then the step from there
-            let aim = self.bend_term(joint)?;
-            let was = [self.x[ids[0]], self.x[ids[1]], self.x[ids[2]]];
-            let kept_was = kept[joint];
-            for n in 0..3 {
-                let now = scale(aim.slope[n], w[n] * held[joint]);
-                self.x[ids[n]] = add(was[n], sub(now, kept_was[n]));
-                kept[joint][n] = now;
+            for n in 0..row.count {
+                let i = row.first + n;
+                let now = scale(row.slope[n], self.inv_mass[i] * held[at]);
+                self.x[i] = add(self.x[i], sub(now, kept[at][n]));
+                kept[at][n] = now;
             }
-            let term = match self.bend_term(joint) {
-                Ok(term) => term,
-                Err(error) => {
-                    for n in 0..3 {
-                        self.x[ids[n]] = was[n];
-                    }
-                    kept[joint] = kept_was;
-                    return Err(error);
-                }
-            };
-            let mut steep = Fix128::ZERO;
+        }
+        let rows = match self.rows(h) {
+            Ok(rows) => rows,
+            Err(error) => return refuse(self, kept, error),
+        };
+        // the system in band: `band[at][back]` is the entry of rows `at` and `at − back`
+        let mut band = vec![[Fix128::ZERO; BAND + 1]; rows.len()];
+        let mut right = vec![Fix128::ZERO; rows.len()];
+        for (at, row) in rows.iter().enumerate() {
+            if !row.live {
+                band[at][0] = Fix128::ONE;
+                continue;
+            }
             let mut moved = Fix128::ZERO;
-            for n in 0..3 {
-                steep = steep + w[n] * dot(term.slope[n], term.slope[n]);
-                moved = moved + dot(term.slope[n], sub(self.x[ids[n]], start[ids[n]]));
+            for n in 0..row.count {
+                let i = row.first + n;
+                moved = moved + dot(row.slope[n], sub(self.x[i], start[i]));
             }
-            let mut dl = (-term.value - softness * held[joint] - rate * moved)
-                / ((Fix128::ONE + rate) * steep + softness);
-            let from = [self.x[ids[0]], self.x[ids[1]], self.x[ids[2]]];
-            let mut tries = 0;
-            loop {
-                for n in 0..3 {
-                    self.x[ids[n]] = add(from[n], scale(term.slope[n], w[n] * dl));
+            right[at] = -row.value - row.softness * held[at] - rate * moved;
+            for back in 0..=BAND.min(at) {
+                let other = &rows[at - back];
+                if !other.live {
+                    continue;
                 }
-                match self.bend_term(joint) {
-                    Ok(_) => break,
-                    Err(ThickChainError::Folded { .. }) if tries < 8 => {
-                        tries += 1;
-                        dl = dl.half();
-                        self.bend_halved += 1;
-                    }
-                    Err(error) => {
-                        for n in 0..3 {
-                            self.x[ids[n]] = was[n];
-                        }
-                        kept[joint] = kept_was;
-                        return Err(error);
+                let mut shared = Fix128::ZERO;
+                for n in 0..row.count {
+                    let i = row.first + n;
+                    if i >= other.first && i < other.first + other.count {
+                        shared = shared
+                            + self.inv_mass[i] * dot(row.slope[n], other.slope[i - other.first]);
                     }
                 }
+                band[at][back] = (Fix128::ONE + rate) * shared;
             }
-            for n in 0..3 {
-                kept[joint][n] = add(kept[joint][n], scale(term.slope[n], w[n] * dl));
+            band[at][0] = band[at][0] + row.softness;
+        }
+        let mut step = match solve_band(&band, &right) {
+            Some(step) => step,
+            None => return refuse(self, kept, ThickChainError::Degenerate { link: 0 }),
+        };
+        let from = self.x.clone();
+        let mut tries = 0;
+        loop {
+            self.x.clone_from(&from);
+            for (at, row) in rows.iter().enumerate() {
+                for n in 0..row.count {
+                    let i = row.first + n;
+                    self.x[i] = add(self.x[i], scale(row.slope[n], self.inv_mass[i] * step[at]));
+                }
             }
-            held[joint] = held[joint] + dl;
+            let mut folded = None;
+            for joint in 1..self.rest_length.len() {
+                if !rows[2 * joint - 1].live {
+                    continue;
+                }
+                if let Err(error) = self.bend_term(joint) {
+                    folded = Some(error);
+                    break;
+                }
+            }
+            match folded {
+                None => break,
+                Some(ThickChainError::Folded { .. }) if tries < 8 => {
+                    tries += 1;
+                    for d in &mut step {
+                        *d = d.half();
+                    }
+                    self.bend_halved += 1;
+                }
+                Some(error) => return refuse(self, kept, error),
+            }
+        }
+        for (at, row) in rows.iter().enumerate() {
+            for n in 0..row.count {
+                let i = row.first + n;
+                kept[at][n] = add(kept[at][n], scale(row.slope[n], self.inv_mass[i] * step[at]));
+            }
+            held[at] = held[at] + step[at];
         }
         Ok(())
     }
@@ -1266,14 +1412,13 @@ impl ThickChain {
             }
         }
         let mut lambda = vec![Fix128::ZERO; links];
-        // per joint (by its particle), the bending multipliers of this substep
-        let mut bent = vec![Fix128::ZERO; links];
-        // with a bending law, what each link's stretch and each joint has moved its particles
-        // by in this substep (see the MODEL section: the multiplier along the slope where the
-        // chain is, not the sum of the steps along the slopes where it was)
+        // with a bending law, the multipliers of this substep of the links' stretches and
+        // the joints, in their order along the chain, and what each has moved its particles
+        // by (see the MODEL section: the multiplier along the slope where the chain is, not
+        // the sum of the steps along the slopes where it was)
         let whole = self.bend == ThickChainBend::Section;
-        let mut stretched = vec![[ZERO2; 2]; if whole { links } else { 0 }];
-        let mut bent_by = vec![[ZERO2; 3]; if whole { links } else { 0 }];
+        let mut held = vec![Fix128::ZERO; if whole { 2 * links - 1 } else { 0 }];
+        let mut kept = vec![[ZERO2; 3]; if whole { 2 * links - 1 } else { 0 }];
         // per link, the walls' multipliers of this substep: their sum and their sum by slope
         let mut pressed = vec![Fix128::ZERO; links];
         let mut leaned = vec![ZERO2; links];
@@ -1294,7 +1439,6 @@ impl ThickChain {
                     pressed[k] = pressed[k] + press;
                     leaned[k] = add(leaned[k], lean);
                 }
-                self.bend_pass(h, &start, &mut bent, &mut bent_by)?;
                 self.walls_together(&samples, walls, &mut pressed, &mut leaned)?;
                 for k in 0..links {
                     let (press, lean) =
@@ -1304,57 +1448,39 @@ impl ThickChain {
                 }
                 continue;
             }
-            for (k, held) in lambda.iter_mut().enumerate() {
-                let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
-                if (w0 + w1).is_zero() {
-                    continue;
-                }
-                if whole {
-                    // the link's multiplier so far along the link as it lies now, in place
-                    // of what it moved its ends by earlier in the substep
+            if whole {
+                self.together(h, &start, &mut held, &mut kept)?;
+            } else {
+                for (k, held) in lambda.iter_mut().enumerate() {
+                    let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
+                    if (w0 + w1).is_zero() {
+                        continue;
+                    }
                     let d = sub(self.x[k + 1], self.x[k]);
                     let l = dot(d, d).sqrt();
                     if l.is_zero() {
                         return Err(ThickChainError::Degenerate { link: k });
                     }
                     let u = scale(d, Fix128::ONE / l);
-                    let (_, slope, _) = self.stretch_terms(k, l, h);
-                    let now = [
-                        scale(u, -(w0 * slope * *held)),
-                        scale(u, w1 * slope * *held),
-                    ];
-                    self.x[k] = add(self.x[k], sub(now[0], stretched[k][0]));
-                    self.x[k + 1] = add(self.x[k + 1], sub(now[1], stretched[k][1]));
-                    stretched[k] = now;
-                }
-                let d = sub(self.x[k + 1], self.x[k]);
-                let l = dot(d, d).sqrt();
-                if l.is_zero() {
-                    return Err(ThickChainError::Degenerate { link: k });
-                }
-                let u = scale(d, Fix128::ONE / l);
-                let (value, slope, softness) = self.stretch_terms(k, l, h);
-                let dl = if c.relaxation.is_zero() {
-                    (-value - softness * *held) / ((w0 + w1) * slope * slope + softness)
-                } else {
-                    // the Kelvin-Voigt term: the constraint's change over the substep so far
-                    let rate = c.relaxation / h;
-                    let moved = dot(
-                        u,
-                        sub(sub(self.x[k + 1], start[k + 1]), sub(self.x[k], start[k])),
-                    ) * slope;
-                    (-value - softness * *held - rate * moved)
-                        / ((Fix128::ONE + rate) * (w0 + w1) * slope * slope + softness)
-                };
-                *held = *held + dl;
-                let step = [scale(u, -(w0 * slope * dl)), scale(u, w1 * slope * dl)];
-                self.x[k] = add(self.x[k], step[0]);
-                self.x[k + 1] = add(self.x[k + 1], step[1]);
-                if whole {
-                    stretched[k] = [add(stretched[k][0], step[0]), add(stretched[k][1], step[1])];
+                    let (value, slope, softness) = self.stretch_terms(k, l, h);
+                    let dl = if c.relaxation.is_zero() {
+                        (-value - softness * *held) / ((w0 + w1) * slope * slope + softness)
+                    } else {
+                        // the Kelvin-Voigt term: the constraint's change over the substep so far
+                        let rate = c.relaxation / h;
+                        let moved = dot(
+                            u,
+                            sub(sub(self.x[k + 1], start[k + 1]), sub(self.x[k], start[k])),
+                        ) * slope;
+                        (-value - softness * *held - rate * moved)
+                            / ((Fix128::ONE + rate) * (w0 + w1) * slope * slope + softness)
+                    };
+                    *held = *held + dl;
+                    let step = [scale(u, -(w0 * slope * dl)), scale(u, w1 * slope * dl)];
+                    self.x[k] = add(self.x[k], step[0]);
+                    self.x[k + 1] = add(self.x[k + 1], step[1]);
                 }
             }
-            self.bend_pass(h, &start, &mut bent, &mut bent_by)?;
             if let Some(walls) = walls {
                 for (k, &n) in samples.iter().enumerate() {
                     for j in 0..=n {
