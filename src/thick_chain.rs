@@ -2332,7 +2332,7 @@ mod bend_shape_oracle {
         clippy::float_arithmetic,
         clippy::cast_precision_loss,
         clippy::disallowed_methods,
-        reason = "the reference values are f64"
+        reason = "analytic reference: the series and the closed form are evaluated in f64"
     )]
     use super::{bend_shape, bend_shape_log, bend_shape_series, bend_switch, Fix128};
 
@@ -2451,7 +2451,7 @@ mod band_oracle {
         clippy::cast_precision_loss,
         clippy::needless_range_loop,
         clippy::disallowed_methods,
-        reason = "the reference solve is f64 over a few dozen rows"
+        reason = "independent reference: the dense solve and the merit are f64 over a few dozen rows"
     )]
     use super::{
         solve_band, Fix128, ThickChain, ThickChainBend, ThickChainConfig, ThickChainFit,
