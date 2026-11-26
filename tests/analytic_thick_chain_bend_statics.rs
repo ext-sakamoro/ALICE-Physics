@@ -45,7 +45,8 @@
 //! Integration test only: the chains settle over many frames.
 #![allow(
     clippy::disallowed_methods,
-    reason = "analytic reference: closed forms are evaluated in f64, never by the code under test"
+    clippy::needless_range_loop,
+    reason = "analytic reference: closed forms are evaluated in f64, never by the code under test; its solves index rows and columns as the algebra is written"
 )]
 
 use alice_physics_core::math::Fix128;
@@ -614,7 +615,7 @@ fn at_rest_under_a_dead_load_the_load_on_every_particle_is_the_slope_of_the_ener
     let walls = open();
     // across and along at the head, and against it in the middle: the links are bent and
     // stretched unevenly
-    let mut force = vec![[0.0f64; 2]; LINKS + 1];
+    let mut force = [[0.0f64; 2]; LINKS + 1];
     force[LINKS] = [30.0, 12.0];
     force[5] = [-8.0, -22.0];
     let accel: Vec<P2> = force

@@ -27,7 +27,15 @@
 //! matrix without the second slopes, the first of the step, its half, quarter, eighth and
 //! sixteenth that lowers `Ψ` by a ten-thousandth of what the slope promises): one scene
 //! (the softer chain at a sixteenth of the step) closes slowly with that matrix, 5·10⁻⁷ m
-//! left after 16 passes, and is asked that much.
+//! left after 16 passes, and is asked that much. With a retardation time of 0.05 s the
+//! damping's own stiffness (`γ` of 48 to 96 here) leaves the constraints' second slopes
+//! little to say: 10⁻⁹ m is asked after 8 passes.
+
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: the minimum is found in f64, never by the code under test; its solve indexes rows and columns as the algebra is written"
+)]
 
 use alice_physics_core::math::Fix128;
 use alice_physics_core::thick_chain::{
@@ -357,8 +365,8 @@ const SCENES: [(f64, f64, i64, f64, f64, f64); 8] = [
     (0.0235, 1000.0, 1, 0.0, 9.8e-6, 4.6e-8),
     (0.0235, 1000.0, 8, 0.0, 6.1e-6, 2.2e-6),
     (0.03, 6667.0, 1, 0.0, 1.7e-5, 2.1e-6),
-    (0.0235, 6667.0, 4, 0.05, 7.0e-6, 1.7e-8),
-    (0.0235, 1000.0, 8, 0.05, 6.1e-6, 2.2e-6),
+    (0.0235, 6667.0, 4, 0.05, 1.0e-9, 1.0e-9),
+    (0.0235, 1000.0, 8, 0.05, 1.0e-9, 1.0e-9),
 ];
 
 fn problem(scene: &(f64, f64, i64, f64, f64, f64)) -> Problem {
@@ -427,7 +435,7 @@ fn near_the_wall_the_passes_of_a_substep_close_on_its_minimum() {
             };
             let off = x.iter().zip(&want).map(|(a, b)| (a - b).abs()).fold(0.0f64, f64::max);
             println!("distance {scene:?} passes {passes}: {off:.3e} of {most:.1e}");
-            if !(off <= most) {
+            if off.is_nan() || off > most {
                 far.push(format!("{scene:?}: {off:e} m from the minimum after {passes} passes, {most:e} asked"));
             }
         }
