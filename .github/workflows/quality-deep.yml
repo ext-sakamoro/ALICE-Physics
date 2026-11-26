@@ -233,6 +233,8 @@ jobs:
           else mode="weekly"; fi
           head=$(git rev-parse HEAD)
           run_head=$head
+          # the scripts the mutants are planned with: this run's own (taken out below for a piece)
+          tools=scripts
           mn=scripts/mutants_nightly.py
           python3 scripts/mutants_nightly.py fetch --repo "$GITHUB_REPOSITORY" --self "$GITHUB_RUN_ID" --out /tmp/runs.json
           over=false
@@ -295,15 +297,21 @@ jobs:
                   exit 1
                 fi
                 if [ -n "$DIFF_HEAD" ]; then
-                  # a piece: the range ends at diff_head. It is counted and timed on that commit's own
-                  # tree, as the weekly shard jobs will test it (they check the range's head out)
+                  # a piece: the range ends at diff_head. Its mutants are those of that commit's tree (the
+                  # weekly shard jobs check the range's head out), but it is planned, listed and timed with
+                  # this run's scripts and exclusion table, taken out before the piece is checked out: a
+                  # head from before a script changed is not planned by that older script (until 2026-11-27
+                  # it was, and run 45895175104 died reading a name a head of 11-13 did not print)
                   piece=$(git rev-parse --verify -q "$DIFF_HEAD^{commit}") || { echo "::error::diff_head '$DIFF_HEAD' is not a commit"; exit 1; }
                   git merge-base --is-ancestor "$piece" HEAD || { echo "::error::diff_head $piece is not an ancestor of HEAD"; exit 1; }
                   if [ "$piece" = "$base" ] || ! git merge-base --is-ancestor "$base" "$piece"; then
                     echo "::error::diff_head $piece is not after diff_base $base: the range would be empty or backwards"; exit 1
                   fi
-                  cp scripts/mutants_nightly.py /tmp/mutants_nightly.py; mn=/tmp/mutants_nightly.py
+                  rm -rf /tmp/mutants-tools; mkdir -p /tmp/mutants-tools
+                  git archive "$run_head" scripts .cargo/mutants.toml | tar -x -C /tmp/mutants-tools
+                  tools=/tmp/mutants-tools/scripts; mn=$tools/mutants_nightly.py
                   git checkout -q --detach "$piece"
+                  cp /tmp/mutants-tools/.cargo/mutants.toml .cargo/mutants.toml
                   head=$piece
                 fi
               fi
@@ -330,7 +338,12 @@ jobs:
               n=0
               name="${axis%%=*}"
               if [ -s /tmp/change.diff ]; then
-                plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "${axis#*=}" --out /tmp/planned.diff)
+                # the features, the test targets and the tests left out, by this run's plan script on the
+                # tree checked out; a plan that does not name them all is an error naming the range
+                python3 "$mn" select --tools "$tools" --root "$PWD" --range "$base..$head" --diff /tmp/change.diff \
+                  --features "${axis#*=}" --out /tmp/planned.diff --env-out /tmp/select.env \
+                  || { echo "::error::$name axis: no test run could be selected for $base..$head (the error above): nothing is recorded"; exit 1; }
+                . /tmp/select.env
                 if [ -s /tmp/planned.diff ]; then
                   cargo mutants --list --in-diff /tmp/planned.diff > /tmp/listed.txt
                   n=$(grep -c . /tmp/listed.txt || true)
@@ -340,9 +353,6 @@ jobs:
               if [ "$n" -gt 0 ]; then
                 # the unmutated baseline of this axis with the shard step's own build and tests: a
                 # shard of one mutant (n shards of n mutants). Exit 4 = the baseline failed.
-                features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
-                tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
-                skips=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--skip " + t for t in json.load(sys.stdin)["skip"]))')
                 set +e
                 # shellcheck disable=SC2086
                 timeout --signal=INT --kill-after=2m 30m \
@@ -360,7 +370,7 @@ jobs:
                 counts+=(--per "$name=$per")
               fi
             done
-            if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q --detach "$run_head"; fi
+            if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q -- .cargo/mutants.toml; git checkout -q --detach "$run_head"; fi
             set +e
             python3 scripts/mutants_nightly.py plan --mode "$mode" --base-from "$from" ${base_run:+--base-run "$base_run"} --runs /tmp/runs.json --base "$base" --head "$head" \
               --base-reason "$why" --now "$now" "${counts[@]}" \
@@ -469,12 +479,23 @@ jobs:
           # (`skip`); the summary lists each target with its reason and what was not run
           # changed lines under a cfg the host test run cannot build (a wasm / python-only item) are not
           # mutated: the plan reports them by count in the summary as not exercised, never as missed
-          plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff \
-            --features "${{ matrix.features }}" --out /tmp/planned.diff --summary "$GITHUB_STEP_SUMMARY")
-          echo "plan: $plan"
-          features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
-          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
-          skips=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--skip " + t for t in json.load(sys.stdin)["skip"]))')
+          # a range set aside is tested at its own head, with this run's scripts and exclusion table:
+          # the tree checked out gives the source and the tests, the run's head the plan, the status,
+          # the equivalents and the ratchet (a head from before a script changed is not judged by that
+          # older script; the equivalents are keyed by position, so those of another tree match none of
+          # this one's and its mutants are reported, never hidden)
+          tools=scripts
+          if [ "$(git rev-parse HEAD)" != "${{ github.sha }}" ]; then
+            git cat-file -e "${{ github.sha }}^{commit}" || { echo "::error::the run's head ${{ github.sha }} is not in this checkout: its scripts cannot be taken for the range $base..$(git rev-parse HEAD)"; exit 1; }
+            rm -rf /tmp/mutants-tools; mkdir -p /tmp/mutants-tools
+            git archive "${{ github.sha }}" scripts .cargo/mutants.toml | tar -x -C /tmp/mutants-tools
+            cp /tmp/mutants-tools/.cargo/mutants.toml .cargo/mutants.toml
+            tools=/tmp/mutants-tools/scripts
+          fi
+          python3 "$tools"/mutants_nightly.py select --tools "$tools" --root "$PWD" --range "$base..$(git rev-parse HEAD)" --diff /tmp/change.diff \
+            --features "${{ matrix.features }}" --out /tmp/planned.diff --summary "$GITHUB_STEP_SUMMARY" --env-out /tmp/select.env \
+            || { echo "::error::no test run could be selected for $base..$(git rev-parse HEAD) (the error above)"; exit 1; }
+          . /tmp/select.env
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; touch /tmp/measured; exit 0; fi
           ulimit -v 6291456
           set +e
@@ -522,13 +543,13 @@ jobs:
           root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
           if [ ! -f "$root/missed.txt" ]; then
             # a killed run writes no missed.txt: the status below says so; a complete one must have it
-            if python3 scripts/mutants_run_status.py mutants.out > /dev/null; then
+            if python3 "$tools"/mutants_run_status.py mutants.out > /dev/null; then
               echo "::error::the run is complete but $root/missed.txt does not exist (nothing was compared)"
               exit 1
             fi
             : > mutants.out/missed-real.txt
           else
-            python3 scripts/mutants_equivalent.py --filter "$root/missed.txt" > mutants.out/missed-real.txt
+            python3 "$tools"/mutants_equivalent.py --filter "$root/missed.txt" > mutants.out/missed-real.txt
           fi
           missed=$(grep -c . mutants.out/missed-real.txt || true)
           if [ "${missed:-0}" -gt 0 ]; then
@@ -539,7 +560,7 @@ jobs:
           # build timeouts: the run measured its build deadline) are not results: the step fails
           # with the line, never reads as green or as "missed"
           set +e
-          line=$(python3 scripts/mutants_run_status.py mutants.out)
+          line=$(python3 "$tools"/mutants_run_status.py mutants.out)
           verdict=$?
           set -e
           if [ "$verdict" -ne 0 ]; then
@@ -549,7 +570,7 @@ jobs:
           # every planned mutant of this shard has an outcome: the night counts as measured for
           # this shard whether or not a mutant was missed (the step below reports it)
           touch /tmp/measured
-          if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
+          if ! python3 "$tools"/mutants_ratchet.py --out mutants.out --complete-only; then
             echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
             exit 1
           fi

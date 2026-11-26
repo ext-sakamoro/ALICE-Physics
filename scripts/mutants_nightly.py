@@ -71,6 +71,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -461,6 +462,40 @@ def weekly_record(head: str, ranges: list[dict], now: str, counts: dict[str, int
 
 # --- reading the runs (the only part that talks to GitHub) -----------------------------------------------------
 
+SELECT_NAMES = ("features", "tests", "skip")   # what a plan must name for a test run to be selected
+
+
+def select(tools: Path, root: Path, diff: Path, features: str, out: Path, label: str, summary: str | None = None) -> dict[str, str]:
+    """The test run of the diff of the tree `root`: the features, the test targets and the tests left out, as the
+    words the mutants step passes on, from the plan script in `tools` (the run's own scripts: a range tested at
+    another head is not planned by that head's script, which may name less). A plan that fails, is not a plan, or
+    leaves one of the names out is an error that says which range, which script and what is missing: an empty
+    selection would test the range with fewer tests and say nothing."""
+    script = tools / "mutants_in_diff_plan.py"
+    cmd = [sys.executable, str(script), str(diff), "--features", features, "--out", str(out), "--root", str(root)]
+    if summary:
+        cmd += ["--summary", summary]
+    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    sys.stderr.write(r.stderr)
+    if r.returncode != 0:
+        raise ValueError(f"{label}: the plan script {script} exited {r.returncode}: no test run is selected")
+    try:
+        plan = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        plan = None
+    if not isinstance(plan, dict):
+        raise ValueError(f"{label}: the plan script {script} printed no plan ({r.stdout.strip()[:80]!r}): no test run is selected")
+    missing = [k for k in SELECT_NAMES
+               if not isinstance(plan.get(k), list) or not all(isinstance(v, str) for v in plan[k])]
+    if missing:
+        raise ValueError(f"{label}: the plan of {script} does not name its {', '.join(missing)} (a list of names "
+                         f"each): no test run is selected")
+    return {"plan": r.stdout.strip(),
+            "features": ",".join(plan["features"]),
+            "tests": " ".join("--cargo-arg=--test=" + t for t in plan["tests"]),
+            "skips": " ".join("--skip " + t for t in plan["skip"])}
+
+
 def gh_json(args: list[str]):
     out = subprocess.run(["gh", "api", *args], capture_output=True, text=True)
     if out.returncode != 0:
@@ -580,8 +615,22 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("age")
     a.add_argument("--record", required=True)
     a.add_argument("--now", required=True)
+    se = sub.add_parser("select", help="the features, test targets and skips of a diff's test run, from the plan script in --tools")
+    se.add_argument("--tools", required=True, help="the directory of the run's scripts")
+    se.add_argument("--root", required=True, help="the tree the diff is of")
+    se.add_argument("--range", required=True, help="the range, for the error's words")
+    se.add_argument("--diff", required=True)
+    se.add_argument("--features", default="")
+    se.add_argument("--out", required=True, help="where the plan script writes the planned diff")
+    se.add_argument("--summary")
+    se.add_argument("--env-out", required=True, help="written as features= tests= skips= for the step to read; not written on an error")
     args = ap.parse_args(argv)
     try:
+        if args.cmd == "select":
+            got = select(Path(args.tools), Path(args.root), Path(args.diff), args.features, Path(args.out), args.range, args.summary)
+            Path(args.env_out).write_text("".join(f"{k}={shlex.quote(got[k])}\n" for k in ("features", "tests", "skips")), encoding="utf-8")
+            print(f"plan: {got['plan']}")
+            return 0
         if args.cmd == "fetch":
             runs = fetch(args.repo, args.self_id, datetime.now(timezone.utc))
             Path(args.out).write_text(json.dumps(runs), encoding="utf-8")

@@ -638,9 +638,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--features", default="", help="comma-separated features of the matrix entry")
     ap.add_argument("--out", required=True, help="where to write the diff with unbuildable files removed")
     ap.add_argument("--summary", help="append the not-exercised lines (by file and in total) to this file")
+    ap.add_argument("--root", default=str(ROOT),
+                    help="the tree the diff is of (default: the one this script is in); a range tested at another "
+                         "head than the run's is planned by the run's script on that head's tree")
     args = ap.parse_args(argv)
     base = [f for f in args.features.split(",") if f.strip()]
-    p = plan(Path(args.diff).read_text(encoding="utf-8"), base, ROOT)
+    p = plan(Path(args.diff).read_text(encoding="utf-8"), base, Path(args.root).resolve())
     Path(args.out).write_text(p.pop("diff"), encoding="utf-8")
     print(json.dumps(p))
     for f in p["skipped"]:

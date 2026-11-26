@@ -963,6 +963,85 @@ class Listing(unittest.TestCase):
         self.assertTrue(all("created=%3E2026-11-01T00:00:00Z" in u and "/workflows/quality-deep.yml/runs?" in u for u in seen), seen)
 
 
+# what a plan script prints: today's, and the one of a tree from before it named the tests to leave out
+PLAN_NOW = """import json, sys
+a = sys.argv[1:]
+open(a[a.index("--out") + 1], "w", encoding="utf-8").write("the planned diff of " + a[a.index("--root") + 1])
+print(json.dumps({"features": ["simd", "parallel"], "tests": ["analytic_a", "b"], "skip": ["m::slow_one"], "skipped": []}))
+"""
+PLAN_BEFORE_THE_KEYS = """import json, sys
+a = sys.argv[1:]
+open(a[a.index("--out") + 1], "w", encoding="utf-8").write("the planned diff")
+print(json.dumps({"features": ["simd"], "skipped": []}))
+"""
+
+
+class Select(unittest.TestCase):
+    """the test run of a range is selected by the tools it is given, never by the scripts of the tree under test: a
+    range set aside is tested at its own head, and a head from before 2026-11-23 has a plan script that names no
+    tests to leave out (run 45895175104 died reading `skip` from one)"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / "tools").mkdir()
+        (self.tmp / "tree" / "scripts").mkdir(parents=True)
+        (self.tmp / "change.diff").write_text("a diff", encoding="utf-8")
+
+    def lay(self, tools: str, tree: str):
+        (self.tmp / "tools" / "mutants_in_diff_plan.py").write_text(tools, encoding="utf-8")
+        (self.tmp / "tree" / "scripts" / "mutants_in_diff_plan.py").write_text(tree, encoding="utf-8")
+
+    def select(self):
+        with redirect_stderr(io.StringIO()):
+            return mn.select(self.tmp / "tools", self.tmp / "tree", self.tmp / "change.diff", "simd",
+                             self.tmp / "planned.diff", f"{A[:8]}..{B[:8]}")
+
+    def test_a_range_whose_own_plan_script_names_no_tests_to_leave_out_is_selected_by_the_tools(self):
+        self.lay(PLAN_NOW, PLAN_BEFORE_THE_KEYS)
+        got = self.select()
+        self.assertEqual((got["features"], got["tests"], got["skips"]),
+                         ("simd,parallel", "--cargo-arg=--test=analytic_a --cargo-arg=--test=b", "--skip m::slow_one"))
+        # the tools read the tree under test, not their own
+        self.assertEqual((self.tmp / "planned.diff").read_text(encoding="utf-8"), f"the planned diff of {self.tmp / 'tree'}")
+
+    def test_a_plan_that_leaves_a_name_out_fails_naming_the_range_the_script_and_what_is_missing(self):
+        self.lay(PLAN_BEFORE_THE_KEYS, PLAN_NOW)
+        with self.assertRaises(ValueError) as e:
+            self.select()
+        said = str(e.exception)
+        self.assertIn(f"{A[:8]}..{B[:8]}", said)
+        self.assertIn(str(self.tmp / "tools" / "mutants_in_diff_plan.py"), said)
+        self.assertIn("tests, skip", said)
+        self.assertNotIn("features,", said, "the name it does give is not reported missing")
+
+    def test_a_plan_script_that_fails_or_prints_no_plan_is_an_error_not_an_empty_selection(self):
+        for body, word in (("import sys\nsys.exit(3)\n", "exited 3"), ("print('not a plan')\n", "no plan")):
+            self.lay(body, PLAN_NOW)
+            with self.assertRaises(ValueError) as e:
+                self.select()
+            self.assertIn(word, str(e.exception))
+
+    def test_the_command_writes_the_three_values_for_the_step_and_fails_without_writing_them(self):
+        self.lay(PLAN_NOW, PLAN_BEFORE_THE_KEYS)
+        env = self.tmp / "select.env"
+        args = ["select", "--tools", str(self.tmp / "tools"), "--root", str(self.tmp / "tree"), "--range", "a..b",
+                "--diff", str(self.tmp / "change.diff"), "--features", "simd", "--out", str(self.tmp / "planned.diff"),
+                "--env-out", str(env)]
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(mn.main(args), 0)
+        sh = subprocess.run(["bash", "-c", f'. "{env}"; printf "%s|%s|%s" "$features" "$tests" "$skips"'],
+                            capture_output=True, text=True, check=True).stdout
+        self.assertEqual(sh, "simd,parallel|--cargo-arg=--test=analytic_a --cargo-arg=--test=b|--skip m::slow_one")
+        env.unlink()
+        self.lay(PLAN_BEFORE_THE_KEYS, PLAN_NOW)
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            self.assertNotEqual(mn.main(args), 0)
+        self.assertFalse(env.exists())
+        self.assertIn("error: a..b", err.getvalue())
+
+
 class Workflow(unittest.TestCase):
     """the names the plan reads back are the ones quality-deep.yml writes"""
     TEXT = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "quality-deep.yml").read_text(encoding="utf-8")
@@ -1059,7 +1138,7 @@ class Workflow(unittest.TestCase):
         # (the refusals come before the plan is written: the record of an aside run is only ever of an accepted range)
         self.assertLess(step.index("mutants_nightly.py anchor"), step.index('plan --mode "$mode"'))
 
-    def test_a_piece_ends_at_diff_head_and_is_counted_on_that_commit_s_tree(self):
+    def test_a_piece_ends_at_diff_head_and_is_counted_on_that_commit_s_tree_with_this_run_s_scripts(self):
         inputs = self.TEXT.split("  pull_request:\n", 1)[0]
         self.assertIn("      diff_head:\n", inputs)
         step = self.plan_step()
@@ -1073,21 +1152,27 @@ class Workflow(unittest.TestCase):
         for line in ('piece=$(git rev-parse --verify -q "$DIFF_HEAD^{commit}") || { echo "::error::diff_head \'$DIFF_HEAD\' is not a commit"; exit 1; }',
                      'git merge-base --is-ancestor "$piece" HEAD || { echo "::error::diff_head $piece is not an ancestor of HEAD"; exit 1; }',
                      'if [ "$piece" = "$base" ] || ! git merge-base --is-ancestor "$base" "$piece"; then',
-                     'cp scripts/mutants_nightly.py /tmp/mutants_nightly.py; mn=/tmp/mutants_nightly.py',
-                     'git checkout -q --detach "$piece"', 'head=$piece'):
+                     'rm -rf /tmp/mutants-tools; mkdir -p /tmp/mutants-tools',
+                     'git archive "$run_head" scripts .cargo/mutants.toml | tar -x -C /tmp/mutants-tools',
+                     'tools=/tmp/mutants-tools/scripts; mn=$tools/mutants_nightly.py',
+                     'git checkout -q --detach "$piece"',
+                     'cp /tmp/mutants-tools/.cargo/mutants.toml .cargo/mutants.toml', 'head=$piece'):
             self.assertIn("                  " + line + "\n", block + "\n", line)
         self.assertEqual(block.count("exit 1"), 3)
-        self.assertLess(block.index("cp scripts/mutants_nightly.py"), block.index("git checkout -q --detach"),
-                        "this run's script is kept before the tree changes")
-        # the diff, the listing and the baseline read the checked-out range head; the plan is written by this
-        # run's own script on this run's own commit, with the piece's head as the record's head
+        self.assertLess(block.index('git archive "$run_head"'), block.index("git checkout -q --detach"),
+                        "this run's scripts and exclusion table are taken out before the tree changes")
+        self.assertLess(block.index("git checkout -q --detach"), block.index("cp /tmp/mutants-tools/.cargo/mutants.toml"),
+                        "and the exclusion table is laid over the piece's once it is checked out")
+        # the diff, the listing and the baseline read the checked-out range head with this run's scripts; the plan
+        # is written by this run's own script on this run's own commit, with the piece's head as the record's head
         self.assertIn('git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff', step)
         self.assertIn('per=$(python3 "$mn" per --out "/tmp/baseline-$name" 2> /tmp/per.err) || {\n', step)
-        back = 'if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q --detach "$run_head"; fi\n'
+        back = 'if [ "$(git rev-parse HEAD)" != "$run_head" ]; then git checkout -q -- .cargo/mutants.toml; git checkout -q --detach "$run_head"; fi\n'
         self.assertEqual(step.count(back), 1)
         self.assertLess(step.index(back), step.index('plan --mode "$mode"'))
         self.assertGreater(step.index(back), step.index('per=$(python3 "$mn" per'))
-        self.assertIn("          head=$(git rev-parse HEAD)\n          run_head=$head\n          mn=scripts/mutants_nightly.py\n", step)
+        self.assertIn("          head=$(git rev-parse HEAD)\n          run_head=$head\n", step)
+        self.assertIn("          tools=scripts\n          mn=scripts/mutants_nightly.py\n", step)
         self.assertIn('--base "$base" --head "$head"', step)
         # the weekly shard job of a range checks out the range's head, which is what the piece was counted on
         self.assertIn("          ref: ${{ matrix.head }}\n", self.TEXT)
@@ -1147,6 +1232,24 @@ class Workflow(unittest.TestCase):
                                 "inputs.diff_base != '' && '-diff' || '' }}\n  cancel-in-progress: false")
         self.assertEqual(self.TEXT.count("\nconcurrency:"), 1)
         self.assertNotIn("    concurrency:", self.TEXT, "no job overrides the group")
+
+    def test_the_mutants_steps_take_their_scripts_and_exclusions_from_the_run_s_head_for_a_range_at_another(self):
+        # no step runs the plan script of the tree it has checked out, or reads the plan's names itself
+        self.assertNotIn("python3 scripts/mutants_in_diff_plan.py", self.TEXT)
+        self.assertNotIn('json.load(sys.stdin)["skip"]', self.TEXT)
+        self.assertEqual(self.TEXT.count('select --tools "$tools" --root "$PWD"'), 2, "the plan step and the shard step")
+        self.assertEqual(self.TEXT.count(". /tmp/select.env"), 2)
+        # both take the run's scripts and exclusion table out for a range tested at another head
+        self.assertEqual(self.TEXT.count("scripts .cargo/mutants.toml | tar -x -C /tmp/mutants-tools"), 2)
+        self.assertEqual(self.TEXT.count("cp /tmp/mutants-tools/.cargo/mutants.toml .cargo/mutants.toml"), 2)
+        self.assertEqual(self.TEXT.count("tools=/tmp/mutants-tools/scripts"), 2)
+        # the in-diff shard step runs nothing from the checked-out tree's scripts
+        step = self.TEXT.split("      - name: Mutants (in-diff shard, a missed mutant fails)\n", 1)[1].split("\n      - name: ", 1)[0]
+        self.assertNotIn("python3 scripts/", step)
+        self.assertEqual(step.count('python3 "$tools"/'), 5, "the selection, the run's status twice, the equivalents, the ratchet")
+        # the plan step leaves the piece's tree as it found it before it goes back
+        plan = self.TEXT.split("      - name: Plan\n", 1)[1].split("\n      - name: ", 1)[0]
+        self.assertIn('git checkout -q -- .cargo/mutants.toml; git checkout -q --detach "$run_head"', plan)
 
     def test_the_feature_axes_of_the_plan_step_are_the_script_s(self):
         self.assertEqual(self.TEXT.count(f'for axis in "default=" "features={mn.AXES["features"]}"; do'), 2,
