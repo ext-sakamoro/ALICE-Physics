@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2924 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2931 |
 | live | reached without examples (crate-internal roots or a binding) | 924 |
-| | **total** | **3879** |
+| | **total** | **3886** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2924)
+## L1 — example-only (2931)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -278,7 +278,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/surface_tension_csf.rs`: `SIGMA_MERCURY_AIR`, `SIGMA_PLA_AIR`, `SIGMA_STEEL_ARGON`, `SIGMA_WATER_AIR`, `compute_csf_field`, `csf_body_force`, `interface_normal`, `smeared_delta`
 - `src/thermal.rs`: `HeatSource`, `ThermalConfig`, `ThermalModifier`, `ThermalModifier::PARTICIPANT_KIND`, `ThermalModifier::add_heat_point`, `ThermalModifier::apply_heat_at`, `ThermalModifier::new`, `ThermalModifier::temperature_at`
 - `src/thermal_stress.rs`: `ThermalStressReport`, `analyze_thermal_stress`, `yield_temperature_c`
-- `src/thick_chain.rs`: `P2`, `ThickChain`, `ThickChain::area`, `ThickChain::config`, `ThickChain::free_stretch`, `ThickChain::length`, `ThickChain::link_count`, `ThickChain::new`, `ThickChain::particle_count`, `ThickChain::pin`, `ThickChain::positions`, `ThickChain::radius`, `ThickChain::rest_length`, `ThickChain::set_position`, `ThickChain::set_velocity`, `ThickChain::snapshot`, `ThickChain::spans`, `ThickChain::state_digest`, `ThickChain::step`, `ThickChain::step_in`, `ThickChain::velocities`, `ThickChain::wall_force`, `ThickChain::walls_unsettled`, `ThickChainConfig`, `ThickChainError`, `ThickChainFit`, `ThickChainStretch`
+- `src/thick_chain.rs`: `P2`, `ThickChain`, `ThickChain::area`, `ThickChain::bend`, `ThickChain::bend_halved`, `ThickChain::bend_stalled`, `ThickChain::bending`, `ThickChain::config`, `ThickChain::free_stretch`, `ThickChain::last_pass_move`, `ThickChain::length`, `ThickChain::link_count`, `ThickChain::new`, `ThickChain::particle_count`, `ThickChain::pin`, `ThickChain::positions`, `ThickChain::radius`, `ThickChain::rest_length`, `ThickChain::set_position`, `ThickChain::set_velocity`, `ThickChain::snapshot`, `ThickChain::spans`, `ThickChain::state_digest`, `ThickChain::step`, `ThickChain::step_in`, `ThickChain::substep_retries`, `ThickChain::velocities`, `ThickChain::wall_force`, `ThickChain::walls_unsettled`, `ThickChainBend`, `ThickChainConfig`, `ThickChainError`, `ThickChainFit`, `ThickChainStretch`
 - `src/thin_wall.rs`: `ThinRegion`, `ThinWallConfig`, `ThinWallConfig::for_nozzle`, `ThinWallReport`, `ThinWallReport::has_thin_walls`, `ThinWallReport::thin_fraction`, `analyze_thickness`, `analyze_thickness_grid`, `measure_thickness_at`, `sample_surface_points`
 - `src/torus.rs`: `Torus::surface_area`
 - `src/touch.rs`: `Grabbable`, `Grip`, `Hand`, `Hand::apply`, `Hand::held`, `Hand::new`, `Hand::pull`, `Hand::state_bytes`, `Hand::with_grip`, `Hand::would_take`, `Touch`, `Touch::drag`, `Touch::grab`
