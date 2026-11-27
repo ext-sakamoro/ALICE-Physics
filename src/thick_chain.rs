@@ -152,20 +152,35 @@
 //!   near the wall of the law; and the slow case above is slow because the matrix leaves
 //!   out the constraints' second slopes (Newton's step with them takes 4 passes there in
 //!   `f64`); that matrix is not in the library.
-//!   Known limit between walls: with a bending law, what the walls push the particles by in
-//!   a pass is carried into where their inertia would leave them, and a push once made is
-//!   not taken back within the substep. The passes end with the chain out of the walls (to
-//!   what the field resolves) and the walls' press no longer growing (16 and 64 passes agree
-//!   to 10⁻⁴: `between_walls_a_substep_leaves_the_chain_out_of_them_…` in the same file),
-//!   but the chain there is not shown to be at the minimum of `Ψ` among the positions the
-//!   walls allow: of the slope of `Ψ` there, the walls' constraints at zero alone account
-//!   for all but 18 % in the mildest case measured and for almost none in the others (an
-//!   arc of radius 0.1 and 0.05 m at rest, a flat wall 0.2 and 1 mm into its end's disc,
-//!   1/960 s, 64 passes); with the constraints up to 3 mm off the wall counted, all but 2 %.
-//!   That last number is the evidence for the cause, which is inferred and not shown: a
-//!   push made in an early pass at a point that ends off the wall stays in the substep.
-//!   The test that asks the minimum is kept and not run
-//!   (`between_walls_a_substep_ends_at_the_minimum_the_walls_allow`).
+//!   Between walls, with a bending law: each sample of a link keeps the multiplier `λ ≥ 0` of
+//!   its wall constraint for the substep. After a pass's step down `Ψ` a sample short of its
+//!   radius raises its multiplier and one that an earlier push has left off its wall lowers
+//!   it, to zero at most (a wall does not pull), and the particles move by `W ∇C δλ`. Where
+//!   the particles' inertia would leave them is then put together again from the multipliers
+//!   as they are, along the constraints' slopes where the chain is now:
+//!   `x̃ + Σ W ∇C(x) λ`. So where the passes no longer move the chain, `∇Ψ = Σ λ ∇C` with
+//!   every `λ ≥ 0` and `λ C = 0`: the first-order conditions of the minimum of `Ψ` among
+//!   the positions the walls allow. (Summing the moves themselves, as until 2026-11-28,
+//!   keeps every push along the slope it was made on; a constraint's slope has the term of
+//!   the link thinning as it stretches, `r / l` along the link, 2 for the links measured, and
+//!   turns as the chain moves. With multipliers kept that way the passes settled 5·10⁻⁶ to
+//!   5·10⁻⁵ m from the minimum, 2 to 6 % of the slope of `Ψ` left; without lowering them,
+//!   18 % to all of it.) Measured, an arc of radius 0.1 and 0.05 m at rest, a flat wall 0.2
+//!   and 1 mm into its end's disc, 1/960 s, 64 passes: nothing of the slope left to four
+//!   places, and the chain 5.8·10⁻¹⁰ to 1.1·10⁻⁹ m from the minimum found apart in `f64`
+//!   (the first-order conditions solved by Newton's method on the constraints at zero, and
+//!   checked on what it finds); the wall's field is an `f32`'s, 7.5·10⁻⁹ m there
+//!   (`between_walls_a_substep_ends_where_the_reference_minimum_is` and
+//!   `between_walls_a_substep_ends_at_the_minimum_the_walls_allow` in the same file).
+//!   A substep ends with sweeps that only push, until one pushes nothing (8 at most): the
+//!   chain is out of the walls to what the field resolves whatever the passes (measured
+//!   3.7·10⁻⁹ m at most after 8, 16, 64 and 256).
+//!   Known limit between walls: the walls' multipliers and the step down `Ψ` take turns, and
+//!   the passes close on that minimum at a linear rate. After 16 passes the two scenes 1 mm
+//!   in the wall are 9.3·10⁻⁶ and 2.4·10⁻⁵ m from it and the wall's press is 1.0 % and 0.7 %
+//!   above its value after 64 (201.70 against 199.68 N, 229.43 against 227.78 N); the test
+//!   that asks 16 and 64 passes to agree to 10⁻⁴ is kept and not run
+//!   (`between_walls_the_wall_s_press_is_the_same_after_more_passes`).
 //!   The step of the multipliers of all the constraints at once that this replaces (the
 //!   matrix `(1 + γ) G W Gᵀ + diag(α / h²)`, each multiplier put along its slope of now
 //!   before the step) is the same matrix seen from the constraints, taken whole: near the
@@ -582,6 +597,9 @@ struct Shares {
     asked: Vec<Fix128>,
     need: Fix128,
 }
+
+/// The most sweeps that only push a substep with a bending law ends with.
+const LAST_SWEEPS: usize = 8;
 
 /// The pushes of the walls on a row of links, each condition made linear: link `k` is short
 /// of its walls' length by `lack[k]` (not short when that is not above 0), its own push
@@ -1654,12 +1672,24 @@ impl ThickChain {
         }
         let mut lambda = vec![Fix128::ZERO; links];
         // with a bending law, where the particles' inertia would leave them: after the
-        // velocity step, and on by what the walls push them in each pass
+        // velocity step, and on by the walls' multipliers along their slopes of now
         let mut anchor = if whole { self.x.clone() } else { Vec::new() };
+        // (and where it left them before any wall pushed)
+        let unpushed = anchor.clone();
         // per link, the walls' multipliers of this substep: their sum and their sum by slope
         let mut pressed = vec![Fix128::ZERO; links];
         let mut leaned = vec![ZERO2; links];
         let conforming = c.fit == ThickChainFit::Conforming;
+        // with a bending law, per link and sample, the wall's multiplier of this substep so
+        // far: never below zero, and lowered by a later pass that finds the sample off its wall
+        let mut held: Vec<Vec<Fix128>> = if whole {
+            samples
+                .iter()
+                .map(|&n| vec![Fix128::ZERO; usize::try_from(n + 1).unwrap_or(0)])
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut before_pass = self.x.clone();
         for pass in 0..c.iterations {
             if pass > 0 {
@@ -1719,17 +1749,57 @@ impl ThickChain {
                 }
             }
             if let Some(walls) = walls {
-                let before_walls = if whole { self.x.clone() } else { Vec::new() };
                 for (k, &n) in samples.iter().enumerate() {
                     for j in 0..=n {
-                        if let Some((push, slope)) = self.fit(k, Fix128::from_ratio(j, n), walls)? {
+                        let t = Fix128::from_ratio(j, n);
+                        let got = if whole {
+                            let at = usize::try_from(j).unwrap_or(0);
+                            self.fit_held(k, t, walls, &mut held[k][at])?
+                        } else {
+                            self.fit(k, t, walls)?
+                        };
+                        if let Some((push, slope)) = got {
                             pressed[k] = pressed[k] + push;
                             leaned[k] = add(leaned[k], scale(slope, push));
                         }
                     }
                 }
-                for (i, was) in before_walls.iter().enumerate() {
-                    anchor[i] = add(anchor[i], sub(self.x[i], *was));
+                if whole {
+                    // the walls' pushes as they point now: each kept multiplier along its
+                    // constraint's slope where the chain is, not where it was when pushed
+                    anchor.clone_from(&unpushed);
+                    for (k, &n) in samples.iter().enumerate() {
+                        for j in 0..=n {
+                            let kept = held[k][usize::try_from(j).unwrap_or(0)];
+                            if kept.is_zero() {
+                                continue;
+                            }
+                            let (g0, g1) = self.wall_slopes(k, Fix128::from_ratio(j, n), walls)?;
+                            anchor[k] = add(anchor[k], scale(g0, self.inv_mass[k] * kept));
+                            anchor[k + 1] =
+                                add(anchor[k + 1], scale(g1, self.inv_mass[k + 1] * kept));
+                        }
+                    }
+                }
+            }
+        }
+        if let (true, Some(walls)) = (whole, walls) {
+            // the walls have the last word: a multiplier lowered in the last pass may have
+            // left its sample short, so the substep ends with sweeps that only push, until
+            // one pushes nothing (the chain is out of the walls whatever the passes)
+            for _ in 0..LAST_SWEEPS {
+                let mut pushed = false;
+                for (k, &n) in samples.iter().enumerate() {
+                    for j in 0..=n {
+                        if let Some((push, slope)) = self.fit(k, Fix128::from_ratio(j, n), walls)? {
+                            pressed[k] = pressed[k] + push;
+                            leaned[k] = add(leaned[k], scale(slope, push));
+                            pushed = true;
+                        }
+                    }
+                }
+                if !pushed {
+                    break;
                 }
             }
         }
@@ -2260,6 +2330,105 @@ impl ThickChain {
             return Ok(None);
         }
         let push = -short / denom;
+        self.x[k] = add(self.x[k], scale(g0, w0 * push));
+        self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
+        Ok(Some((push, slope)))
+    }
+
+    /// The slopes of the wall constraint of link `k` at its sample `t` in the link's two
+    /// particles, where the chain is now.
+    fn wall_slopes(
+        &self,
+        k: usize,
+        t: Fix128,
+        walls: &dyn SdfQuery,
+    ) -> Result<(P2, P2), ThickChainError> {
+        let field = |p: P2| -> Result<Fix128, ThickChainError> {
+            let d = walls.query_distance(p[0].to_f32(), p[1].to_f32(), 0.0);
+            if d.is_finite() {
+                Ok(Fix128::from_f32(d))
+            } else {
+                Err(ThickChainError::Field { link: k })
+            }
+        };
+        let (a, b) = (Fix128::ONE - t, t);
+        let d = sub(self.x[k + 1], self.x[k]);
+        let l = dot(d, d).sqrt();
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let u = scale(d, Fix128::ONE / l);
+        let (r, by_area) = self.radius_at(k, l);
+        let p = add(scale(self.x[k], a), scale(self.x[k + 1], b));
+        let e = self.config.min_radius.shr_bits(3);
+        let over = Fix128::ONE / (e + e);
+        let slope = [
+            (field([p[0] + e, p[1]])? - field([p[0] - e, p[1]])?) * over,
+            (field([p[0], p[1] + e])? - field([p[0], p[1] - e])?) * over,
+        ];
+        let thin = if by_area { r / l } else { Fix128::ZERO };
+        Ok((
+            sub(scale(slope, a), scale(u, thin)),
+            add(scale(slope, b), scale(u, thin)),
+        ))
+    }
+
+    /// The wall constraint of link `k` at its sample `t` as a multiplier that is kept: `held`
+    /// is what the wall has pushed this sample by in the substep so far. A sample short of its
+    /// radius raises it; one that an earlier push has left off its wall lowers it, to zero at
+    /// most (a wall does not pull), and the sample comes back by that much. Returns the change
+    /// of the multiplier and the wall's slope when there was one.
+    fn fit_held(
+        &mut self,
+        k: usize,
+        t: Fix128,
+        walls: &dyn SdfQuery,
+        held: &mut Fix128,
+    ) -> Result<Option<(Fix128, P2)>, ThickChainError> {
+        let field = |p: P2| -> Result<Fix128, ThickChainError> {
+            let d = walls.query_distance(p[0].to_f32(), p[1].to_f32(), 0.0);
+            if d.is_finite() {
+                Ok(Fix128::from_f32(d))
+            } else {
+                Err(ThickChainError::Field { link: k })
+            }
+        };
+        let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
+        let (a, b) = (Fix128::ONE - t, t);
+        let d = sub(self.x[k + 1], self.x[k]);
+        let l = dot(d, d).sqrt();
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let u = scale(d, Fix128::ONE / l);
+        let (r, by_area) = self.radius_at(k, l);
+        let p = add(scale(self.x[k], a), scale(self.x[k + 1], b));
+        let short = field(p)? - r;
+        if short >= Fix128::ZERO && held.is_zero() {
+            return Ok(None);
+        }
+        // the wall's slope over ±e
+        let e = self.config.min_radius.shr_bits(3);
+        let over = Fix128::ONE / (e + e);
+        let slope = [
+            (field([p[0] + e, p[1]])? - field([p[0] - e, p[1]])?) * over,
+            (field([p[0], p[1] + e])? - field([p[0], p[1] - e])?) * over,
+        ];
+        let thin = if by_area { r / l } else { Fix128::ZERO };
+        let g0 = sub(scale(slope, a), scale(u, thin));
+        let g1 = add(scale(slope, b), scale(u, thin));
+        let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
+        if denom.is_zero() {
+            return Ok(None);
+        }
+        let mut push = -short / denom;
+        if *held + push < Fix128::ZERO {
+            push = -*held;
+        }
+        if push.is_zero() {
+            return Ok(None);
+        }
+        *held = *held + push;
         self.x[k] = add(self.x[k], scale(g0, w0 * push));
         self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
         Ok(Some((push, slope)))
