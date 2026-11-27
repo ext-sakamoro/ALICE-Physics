@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1030,9 +1031,16 @@ class Select(unittest.TestCase):
                 "--env-out", str(env)]
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             self.assertEqual(mn.main(args), 0)
-        sh = subprocess.run(["bash", "-c", f'. "{env}"; printf "%s|%s|%s" "$features" "$tests" "$skips"'],
-                            capture_output=True, text=True, check=True).stdout
-        self.assertEqual(sh, "simd,parallel|--cargo-arg=--test=analytic_a --cargo-arg=--test=b|--skip m::slow_one")
+        if os.name == "posix" and shutil.which("bash"):
+            # the step sources the file, so the shell is the reader here
+            sh = subprocess.run(["bash", "-c", f'. "{env}"; printf "%s|%s|%s" "$features" "$tests" "$skips"'],
+                                capture_output=True, text=True, check=True).stdout
+        else:
+            # no shell that reads this path: the same words by the shell's quoting rules
+            read = dict(line.split("=", 1) for line in env.read_text(encoding="utf-8").splitlines())
+            self.assertEqual(list(read), ["features", "tests", "skips"])
+            sh = "|".join("".join(shlex.split(read[k])) for k in ("features", "tests", "skips"))
+        self.assertEqual(sh,"simd,parallel|--cargo-arg=--test=analytic_a --cargo-arg=--test=b|--skip m::slow_one")
         env.unlink()
         self.lay(PLAN_BEFORE_THE_KEYS, PLAN_NOW)
         err = io.StringIO()
