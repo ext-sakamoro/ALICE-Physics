@@ -548,8 +548,13 @@ class Wiring(unittest.TestCase):
         seen = 0
         for wf in sorted((mp.ROOT / ".github/workflows").glob("*.yml")):
             text = wf.read_text(encoding="utf-8")
-            if "python3 scripts/mutants_in_diff_plan.py" not in text:
+            # a workflow runs the plan itself, or through `mutants_nightly.py select` (which hands the
+            # three values on in a file the step sources)
+            direct = "python3 scripts/mutants_in_diff_plan.py" in text
+            selected = 'select --tools "$tools"' in text
+            if not (direct or selected):
                 continue
+            self.assertFalse(direct and selected, f"{wf.name}: one way of running the plan in a workflow")
             diffs = re.findall(r"git diff \S+ HEAD -- ([^>\n]*)> /tmp/change\.diff", text)
             self.assertTrue(diffs, wf.name)
             for d in diffs:
@@ -561,7 +566,8 @@ class Wiring(unittest.TestCase):
                 self.assertIn("${skips:+-- -- --exact $skips}", r, wf.name)
                 self.assertIn("$tests", r, wf.name)
                 seen += 1
-            self.assertEqual(text.count('json.load(sys.stdin)["skip"]'), len(runs), wf.name)
+            read = '. /tmp/select.env' if selected else 'json.load(sys.stdin)["skip"]'
+            self.assertEqual(text.count(read), len(runs), wf.name)
         self.assertGreaterEqual(seen, 6, "no workflow was compared")
 
 
