@@ -41,6 +41,7 @@
 )]
 
 use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::thick_chain::{
     ThickChain, ThickChainBend, ThickChainConfig, ThickChainFit, ThickChainStretch,
 };
@@ -578,4 +579,264 @@ fn the_counters_say_what_the_passes_and_the_substeps_did() {
     assert_eq!(thrown(6.0), 1);
     assert_eq!(thrown(12.0), 2);
     assert_eq!(thrown(24.0), 3);
+}
+
+/// a flat wall: the half-plane `n · (p − q) ≥ 0` is free
+struct FlatWall {
+    n: [f32; 2],
+    q: [f32; 2],
+}
+
+impl SdfField for FlatWall {
+    fn distance(&self, x: f32, y: f32, _z: f32) -> f32 {
+        self.n[0] * (x - self.q[0]) + self.n[1] * (y - self.q[1])
+    }
+
+    fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+        (self.n[0], self.n[1], 0.0)
+    }
+}
+
+/// the arc of `radius` at rest with a flat wall on the outer side of its far end, the end's
+/// disc `into` metres into it; the chain after one substep of 1/960 s of `passes` passes
+/// between the walls, and the wall
+fn against_a_wall(radius: f64, into: f64, passes: u32) -> (Problem, ThickChain, FlatWall) {
+    let p = Problem {
+        shear: 6667.0,
+        h: 1.0 / 960.0,
+        tau: 0.0,
+        start: arc(radius),
+    };
+    let turned = (LINKS - 1) as f64 * LINK / radius;
+    // towards the arc's centre at its end
+    let n = [(-turned.sin()) as f32, turned.cos() as f32];
+    let end = [p.start[2 * LINKS], p.start[2 * LINKS + 1]];
+    let wall = FlatWall {
+        n,
+        q: [
+            (end[0] - f64::from(n[0]) * (RADIUS - into)) as f32,
+            (end[1] - f64::from(n[1]) * (RADIUS - into)) as f32,
+        ],
+    };
+    let config = ThickChainConfig {
+        substeps: 1,
+        iterations: passes,
+        gravity: [Fix128::ZERO, Fix128::ZERO],
+        stretch: ThickChainStretch::NeoHookean { shear: fx(p.shear) },
+        drag: Fix128::ZERO,
+        friction: Fix128::ZERO,
+        min_radius: fx(0.01),
+        splits: 0,
+        relaxation: Fix128::ZERO,
+        fit: ThickChainFit::Disc,
+        reach: Fix128::ONE,
+    };
+    let rest: Vec<[Fix128; 2]> = (0..=LINKS)
+        .map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO])
+        .collect();
+    let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(DENSITY))
+        .expect("a chain")
+        .bending(ThickChainBend::Section)
+        .expect("the law");
+    chain.pin(0);
+    chain.pin(1);
+    for i in 0..=LINKS {
+        chain.set_position(i, [fx(p.start[2 * i]), fx(p.start[2 * i + 1])]);
+    }
+    chain
+        .step_in(Fix128::from_ratio(1, 960), &wall, &[])
+        .expect("a substep between the walls");
+    (p, chain, wall)
+}
+
+/// What the stationarity of the substep's minimum between the walls leaves of `∇Ψ` at `x`:
+/// the walls' constraints are `d(p) − r(l) ≥ 0` at the points of each link (`r = r₀ l₀ / l`),
+/// linear along a link at a flat wall, so those at a link's two ends span them all. Returns
+/// `|∇Ψ|`, the part of it no combination of the slopes of the constraints within `near` of
+/// zero accounts for, the smallest weight of that combination over the largest, how many
+/// constraints those are, and the deepest any constraint is below zero.
+fn left_of_the_slope(
+    p: &Problem,
+    x: &[f64],
+    wall: &FlatWall,
+    near: f64,
+) -> (f64, f64, f64, usize, f64) {
+    let n = [f64::from(wall.n[0]), f64::from(wall.n[1])];
+    let q = [f64::from(wall.q[0]), f64::from(wall.q[1])];
+    let g = p.gradient(x);
+    let mut columns: Vec<Vec<f64>> = Vec::new();
+    let mut deepest = 0.0f64;
+    for k in 1..LINKS {
+        let (a, b) = ([x[2 * k], x[2 * k + 1]], [x[2 * k + 2], x[2 * k + 3]]);
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let l = d[0].hypot(d[1]);
+        let u = [d[0] / l, d[1] / l];
+        let r = RADIUS * LINK / l;
+        for (end, at) in [(0.0f64, a), (1.0f64, b)] {
+            let c = n[0] * (at[0] - q[0]) + n[1] * (at[1] - q[1]) - r;
+            deepest = deepest.min(c);
+            if c > near {
+                continue;
+            }
+            // the slope of the constraint in the link's two particles
+            let mut column = vec![0.0f64; g.len()];
+            for axis in 0..2 {
+                let first = n[axis] * (1.0 - end) - u[axis] * r / l;
+                let second = n[axis] * end + u[axis] * r / l;
+                if k >= 2 {
+                    column[2 * (k - 2) + axis] = first;
+                }
+                column[2 * (k - 1) + axis] = second;
+            }
+            columns.push(column);
+        }
+    }
+    let m = columns.len();
+    if m == 0 {
+        return (norm(&g), norm(&g), 0.0, 0, deepest);
+    }
+    let normal: Vec<Vec<f64>> = (0..m)
+        .map(|i| {
+            (0..m)
+                .map(|j| columns[i].iter().zip(&columns[j]).map(|(a, b)| a * b).sum())
+                .collect()
+        })
+        .collect();
+    let right: Vec<f64> = (0..m)
+        .map(|i| columns[i].iter().zip(&g).map(|(a, b)| a * b).sum())
+        .collect();
+    let weights = solve(&normal, &right);
+    let mut left = g.clone();
+    for (column, w) in columns.iter().zip(&weights) {
+        for (v, c) in left.iter_mut().zip(column) {
+            *v -= w * c;
+        }
+    }
+    let largest = weights.iter().fold(0.0f64, |m, w| m.max(w.abs()));
+    let smallest = weights.iter().fold(f64::INFINITY, |m, &w| m.min(w));
+    (norm(&g), norm(&left), smallest / largest, m, deepest)
+}
+
+/// the chain's coordinates
+fn coordinates(chain: &ThickChain) -> Vec<f64> {
+    chain
+        .positions()
+        .iter()
+        .flat_map(|p| [p[0].to_f64(), p[1].to_f64()])
+        .collect()
+}
+
+/// (the arc's radius, how far its end's disc starts in the wall, m)
+const AGAINST: [(f64, f64); 4] = [(0.1, 2.0e-4), (0.1, 1.0e-3), (0.05, 2.0e-4), (0.05, 1.0e-3)];
+
+#[test]
+fn between_walls_a_substep_leaves_the_chain_out_of_them_and_its_press_is_the_same_after_more_passes(
+) {
+    // the walls' pushes of a pass are carried into where the particles' inertia would leave
+    // them, so the next pass's step does not undo them: the passes end with every point of
+    // the chain out of the wall (to the distance an f32 field tells at 0.1 m, 7.5e-9 m), and
+    // the wall's press on the end link, summed over the passes, has stopped growing by the
+    // sixteenth to 10⁻⁴ of it (a press that grows with the passes is a push taken back and made again)
+    for (radius, into) in AGAINST {
+        let mut press = [0.0f64; 2];
+        for (slot, passes) in [16u32, 64].into_iter().enumerate() {
+            let (p, chain, wall) = against_a_wall(radius, into, passes);
+            let got = left_of_the_slope(&p, &coordinates(&chain), &wall, 1.0e-6);
+            assert!(
+                got.4 >= -1.0e-8,
+                "arc {radius} m, {into} m in, {passes} passes: {:e} m in the wall",
+                -got.4
+            );
+            press[slot] =
+                chain.wall_force(LINKS - 1).to_f64() + chain.wall_force(LINKS - 2).to_f64();
+            assert_eq!(chain.bend_stalled(), 0);
+        }
+        assert!(
+            press[0] > 10.0,
+            "arc {radius} m, {into} m in: the wall is pressed ({} N)",
+            press[0]
+        );
+        assert!(
+            (press[1] - press[0]).abs() <= 1.0e-4 * press[0],
+            "arc {radius} m, {into} m in: the press {} N after 16 passes, {} N after 64",
+            press[0],
+            press[1]
+        );
+    }
+}
+
+#[test]
+#[ignore = "known defect: with walls the passes end where the potential's slope is a combination of the walls' slopes, but part of it on points that ended off the wall (a push made in an early pass is not taken back): 18 % to 100 % of the slope is left by the points on the wall alone"]
+fn between_walls_a_substep_ends_at_the_minimum_the_walls_allow() {
+    // at the minimum of the substep's potential among the positions the walls allow, its
+    // slope is a combination, with weights of one sign, of the slopes of the walls'
+    // constraints that are at zero there, and of no other
+    for (radius, into) in AGAINST {
+        let (p, chain, wall) = against_a_wall(radius, into, 64);
+        let (whole, left, sign, count, _) =
+            left_of_the_slope(&p, &coordinates(&chain), &wall, 1.0e-6);
+        assert!(
+            count > 0,
+            "arc {radius} m, {into} m in: no point on the wall"
+        );
+        assert!(
+            left <= 2.0e-2 * whole,
+            "arc {radius} m, {into} m in: {left:e} of a slope of {whole:e} is not the walls'"
+        );
+        assert!(
+            sign >= -1.0e-3,
+            "arc {radius} m, {into} m in: a wall that pulls ({sign})"
+        );
+    }
+}
+
+#[test]
+fn let_go_from_an_arc_a_chain_comes_to_rest_without_a_step_halved() {
+    // the arc of the example (each link turned 0.284 rad from the last), a retardation time
+    // of 0.05 s, 4 s: the swing dies out and the passes go on at rest, where what a step
+    // promises is below what the potential resolves. Such a step is taken whole when it does
+    // not raise the potential to that resolution; judged as a larger one it would be halved
+    // pass after pass
+    let config = ThickChainConfig {
+        substeps: 16,
+        iterations: 8,
+        gravity: [Fix128::ZERO; 2],
+        stretch: ThickChainStretch::NeoHookean { shear: fx(3000.0) },
+        drag: Fix128::ZERO,
+        friction: Fix128::ZERO,
+        min_radius: fx(0.01),
+        splits: 8,
+        relaxation: fx(0.05),
+        fit: ThickChainFit::Disc,
+        reach: Fix128::ONE,
+    };
+    let rest: Vec<[Fix128; 2]> = (0..=LINKS)
+        .map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO])
+        .collect();
+    let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(DENSITY))
+        .expect("a chain")
+        .bending(ThickChainBend::Section)
+        .expect("the law");
+    chain.pin(0);
+    chain.pin(1);
+    let (mut at, mut dir) = ([LINK, 0.0], [1.0f64, 0.0]);
+    for i in 2..=LINKS {
+        dir = [
+            (24.0 * dir[0] - 7.0 * dir[1]) / 25.0,
+            (7.0 * dir[0] + 24.0 * dir[1]) / 25.0,
+        ];
+        at = [at[0] + LINK * dir[0], at[1] + LINK * dir[1]];
+        chain.set_position(i, [fx(at[0]), fx(at[1])]);
+    }
+    for _ in 0..240 {
+        chain.step(Fix128::from_ratio(1, 60)).expect("a step");
+    }
+    let head = chain.positions()[LINKS][1].to_f64();
+    assert!(
+        head.abs() < 1.0e-4,
+        "at rest on its line: the head {head:e} m off it"
+    );
+    assert_eq!(chain.bend_halved(), 0, "the steps halved");
+    assert_eq!(chain.bend_stalled(), 0);
+    assert_eq!(chain.substep_retries(), 0);
 }

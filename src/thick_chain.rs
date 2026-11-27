@@ -152,6 +152,18 @@
 //!   near the wall of the law; and the slow case above is slow because the matrix leaves
 //!   out the constraints' second slopes (Newton's step with them takes 4 passes there in
 //!   `f64`); that matrix is not in the library.
+//!   Known limit between walls: with a bending law, what the walls push the particles by in
+//!   a pass is carried into where their inertia would leave them, and a push once made is
+//!   not taken back within the substep. The passes end with the chain out of the walls (to
+//!   what the field resolves) and the walls' press no longer growing (16 and 64 passes agree
+//!   to 10⁻⁴: `between_walls_a_substep_leaves_the_chain_out_of_them_…` in the same file),
+//!   but the chain there is not shown to be at the minimum of `Ψ` among the positions the
+//!   walls allow: of the slope of `Ψ` there, the walls' constraints at zero alone account
+//!   for all but 18 % in the mildest case measured and for almost none in the others (an
+//!   arc of radius 0.1 and 0.05 m at rest, a flat wall 0.2 and 1 mm into its end's disc,
+//!   1/960 s, 64 passes); with the constraints up to 3 mm off the wall counted, all but 2 %.
+//!   The test that asks the minimum is kept and not run
+//!   (`between_walls_a_substep_ends_at_the_minimum_the_walls_allow`).
 //!   The step of the multipliers of all the constraints at once that this replaces (the
 //!   matrix `(1 + γ) G W Gᵀ + diag(α / h²)`, each multiplier put along its slope of now
 //!   before the step) is the same matrix seen from the constraints, taken whole: near the
@@ -1087,6 +1099,11 @@ impl ThickChain {
     /// One step of `dt` seconds between the walls of `walls` (the distance to the nearest
     /// wall, positive in the free space, read at `z = 0`), each particle driven by its
     /// acceleration in `accel` (m/s², one per particle, or none at all).
+    ///
+    /// With a bending law ([`Self::bending`]) the chain ends each substep out of the walls,
+    /// but not, as far as is shown, where its potential is least among the positions the
+    /// walls allow: see "Known limit between walls" in the module's MODEL section before
+    /// relying on the contact forces of a bent chain.
     ///
     /// # Errors
     ///
@@ -2614,6 +2631,19 @@ mod band_oracle {
             out[r] = v / a[r][r];
         }
         out
+    }
+
+    #[test]
+    fn a_row_none_of_whose_particles_is_free_is_left_out_of_the_solve() {
+        // particles 0 and 1 are held: link 0's stretch has nothing to move and is not a row
+        // of the solve (nothing of it is read); the joint at particle 1 moves particle 2
+        let (chain, _, _) = state(11);
+        let rows = chain.rows(fx(H)).expect("the rows");
+        assert_eq!(rows.len(), 2 * LINKS - 1);
+        assert!(!rows[0].live, "link 0 lies between two held particles");
+        assert!(rows[0].stiff.is_zero() && rows[0].value.is_zero());
+        assert!(rows[1].live && rows[2].live);
+        assert_eq!(rows.iter().filter(|row| !row.live).count(), 1);
     }
 
     #[test]
