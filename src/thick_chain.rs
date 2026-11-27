@@ -133,7 +133,11 @@
 //!   energy to its stiffness times `|C| + γ |C − C_start|` times that; the bound is summed
 //!   over the constraints and the particles for the two values compared (links of 10 mm at
 //!   `a = 0.86`: `Ψ / h²` of 18 moved by up to 5·10⁻¹³ for moves of 10⁻¹⁴ m, the bound is
-//!   3·10⁻¹¹). So a pass at the minimum takes its whole step of nothing.
+//!   3·10⁻¹¹). A step whose whole promise, `−∇Ψ · d / h²`, is within twice that bound for
+//!   the merit where the chain is, is not compared at all (the comparison would be decided
+//!   by the rounding): the first of its parts within the bound is taken, so a pass at the
+//!   minimum takes its whole step of nothing (a strip at rest for 2 s: no step halved; with
+//!   the comparison kept, 22 568).
 //!   So no pass raises `Ψ` by more than that: [`ThickChain::bend_halved`] counts
 //!   the halvings taken, [`ThickChain::bend_stalled`] the passes in which no part lowered
 //!   it and the chain stayed. Without the constraints' second slopes the passes close on
@@ -142,7 +146,12 @@
 //!   of one substep after 8 and after 16 passes: 7.4e-6 and 1.3e-8 m with `μ` 6667 Pa and
 //!   a substep of 1/240 s, 4.6e-8 and 3.4e-11 m at 1/3840 s; 1.5e-6 and 5.4e-7 m with `μ`
 //!   1000 Pa at 1/1920 s, the slowest found; with `τ = 0.05 s` 1.5e-11 m or less after 8:
-//!   `tests/analytic_thick_chain_bend_step.rs`, against the minimum found apart in `f64`).
+//!   `tests/analytic_thick_chain_bend_step.rs`, against the minimum found apart in `f64`;
+//!   the test asks these distances with a quarter over, so a slower step is refused).
+//!   Known limits of this step: the passes settle to what `Ψ / h²` resolves, about 10⁻⁹ m
+//!   near the wall of the law; and the slow case above is slow because the matrix leaves
+//!   out the constraints' second slopes (Newton's step with them takes 4 passes there in
+//!   `f64`); that matrix is not in the library.
 //!   The step of the multipliers of all the constraints at once that this replaces (the
 //!   matrix `(1 + γ) G W Gᵀ + diag(α / h²)`, each multiplier put along its slope of now
 //!   before the step) is the same matrix seen from the constraints, taken whole: near the

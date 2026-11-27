@@ -23,13 +23,16 @@
 //!
 //! The scenes are arcs of constant curvature let go from rest with the root clamped:
 //! `a = κ r0 / λ` is 0.86 and 0.67 of the wall at 1, where the law's shape steepens. The
-//! distances asked for are four times what a step of the same kind takes in `f64` (the
+//! distances asked for are a quarter over what the step leaves (measured; a step of the
+//! same kind in `f64`, written before the library's, leaves the same to three digits: the
 //! matrix without the second slopes, the first of the step, its half, quarter, eighth and
-//! sixteenth that lowers `Ψ` by a ten-thousandth of what the slope promises): one scene
-//! (the softer chain at a sixteenth of the step) closes slowly with that matrix, 5·10⁻⁷ m
-//! left after 16 passes, and is asked that much. With a retardation time of 0.05 s the
-//! damping's own stiffness (`γ` of 48 to 96 here) leaves the constraints' second slopes
-//! little to say: 10⁻⁹ m is asked after 8 passes.
+//! sixteenth that lowers `Ψ` by a ten-thousandth of what the slope promises), so a step
+//! that closes more slowly is refused, and one that closes faster has these to beat: 7.4e-6
+//! and 1.3e-8 m after 8 and 16 passes for the stiffer chain at a substep of 1/240 s, and
+//! for the slowest scene (the softer chain at a substep of 1/1920 s) 1.5e-6 and 5.4e-7 m: there the matrix without the constraints' second slopes closes by a
+//! twentieth of a decade a pass. With a retardation time of 0.05 s the damping's own
+//! stiffness (`γ` of 48 to 96 here) leaves the constraints' second slopes little to say:
+//! 10⁻⁹ m is asked after 8 passes (the step leaves 4·10⁻¹⁶).
 
 #![allow(
     clippy::disallowed_methods,
@@ -406,12 +409,12 @@ fn chain_after(
 /// (the arc's radius, the shear modulus, the substeps to 1/240 s, the retardation time,
 /// the distance from the minimum asked after 8 passes and after 16, m)
 const SCENES: [(f64, f64, i64, f64, f64, f64); 8] = [
-    (0.0235, 6667.0, 1, 0.0, 3.0e-5, 5.2e-8),
-    (0.0235, 6667.0, 4, 0.0, 7.0e-6, 1.7e-8),
-    (0.0235, 6667.0, 16, 0.0, 1.9e-7, 2.3e-10),
-    (0.0235, 1000.0, 1, 0.0, 9.8e-6, 4.6e-8),
-    (0.0235, 1000.0, 8, 0.0, 6.1e-6, 2.2e-6),
-    (0.03, 6667.0, 1, 0.0, 1.7e-5, 2.1e-6),
+    (0.0235, 6667.0, 1, 0.0, 9.3e-6, 1.6e-8),
+    (0.0235, 6667.0, 4, 0.0, 2.2e-6, 5.3e-9),
+    (0.0235, 6667.0, 16, 0.0, 5.8e-8, 7.0e-11),
+    (0.0235, 1000.0, 1, 0.0, 3.1e-6, 1.5e-8),
+    (0.0235, 1000.0, 8, 0.0, 1.9e-6, 6.8e-7),
+    (0.03, 6667.0, 1, 0.0, 5.1e-6, 6.3e-7),
     (0.0235, 6667.0, 4, 0.05, 1.0e-9, 1.0e-9),
     (0.0235, 1000.0, 8, 0.05, 1.0e-9, 1.0e-9),
 ];

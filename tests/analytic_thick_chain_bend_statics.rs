@@ -286,8 +286,10 @@ fn bent_for(couple: f64, pull: f64, substeps: u32, passes: u32, frames: usize) -
     }
     let (moving, unsettled) = (kinetic(&chain), f(chain.last_pass_move()));
     println!(
-        "[thick chain bend] couple {couple:.4}, {substeps} substeps, {passes} passes, {frames} frames: kinetic energy {moving:.3e} J, the last pass moved {unsettled:.3e} m, steps halved {}",
-        chain.bend_halved()
+        "[thick chain bend] couple {couple:.4}, {substeps} substeps, {passes} passes, {frames} frames: kinetic energy {moving:.3e} J, the last pass moved {unsettled:.3e} m, steps halved {}, passes without a step {}, substeps taken again {}",
+        chain.bend_halved(),
+        chain.bend_stalled(),
+        chain.substep_retries()
     );
     assert!(
         moving < 1.0e-12 * energy(&places(&chain)),
