@@ -1562,6 +1562,7 @@ use alice_physics::thermal_stress::yield_temperature_c as _;
 use alice_physics::thermal_stress::ThermalStressReport as _;
 use alice_physics::thick_chain as _;
 use alice_physics::thick_chain::ThickChain as _;
+use alice_physics::thick_chain::ThickChainBend as _;
 use alice_physics::thick_chain::ThickChainConfig as _;
 use alice_physics::thick_chain::ThickChainError as _;
 use alice_physics::thick_chain::ThickChainFit as _;
@@ -2023,7 +2024,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 2005 paths, checked at compile time
+    // 2006 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
