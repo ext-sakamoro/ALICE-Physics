@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 6554 |
-| 🔴 Red by design | 77 |
+| 🟢 Not ignored (run by CI) | 6556 |
+| 🔴 Red by design | 78 |
 | ⏱ Gated (runtime / diagnostic / manual) | 42 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6673** |
+| **Total** | **6676** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (77)
+## 🔴 Red by design (78)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -30,6 +30,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
+- `between_walls_a_substep_ends_at_the_minimum_the_walls_allow` (analytic_thick_chain_bend_step.rs) — known defect: with walls the passes end where the potential's slope is a combination of the walls' slopes, but…
 - `buoyancy_field_holds_a_body_at_its_equilibrium_depth` (analytic_external_force_substep.rs) — src gap: the buoyancy field is a frame-head impulse while gravity is per substep, so a floating body at equili…
 - `capsule_bottom_does_not_sink_into_a_static_body_it_lands_on` (audit_character.rs) — known defect: AUD-A-S3W3-009: sweep_against_bodies casts a point-sphere from the capsule centre, so landing on…
 - `capsule_plane_toi_behind_the_plane_uses_the_nearer_endpoint` (audit_ccd.rs) — known defect: AUD-A-S2W2-010: capsule_plane_toi always takes the endpoint with the smaller signed distance, co…
@@ -116,7 +117,7 @@ remains.
 
 - (none)
 
-## ⚠️ Known defects without an id (12)
+## ⚠️ Known defects without an id (13)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
@@ -130,6 +131,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `a_face_one_cell_wide_is_still_a_face` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets reduces the bottom of a one-cell-wide column to a single vertex (0.0125 ×…
 - `a_flat_face_keeps_its_area_to_within_a_half_cell_chamfer` (analytic_sdf_fem_mesh_flat_face.rs) — known defect: generate_marching_tets chamfers a full cell ring off a flat face (a 0.2 m cube at 0.04 m cells k…
 - `a_domino_falls_over_only_past_atan_w_over_h` (analytic_static_contact_response.rs) — known defect: under TGS the 9° domino on a static body and on an SDF floor rebounds above Housner's plastic bo…
+- `between_walls_a_substep_ends_at_the_minimum_the_walls_allow` (analytic_thick_chain_bend_step.rs) — known defect: with walls the passes end where the potential's slope is a combination of the walls' slopes, but…
 - `a_ball_jointed_pendulum_keeps_its_length_and_does_not_gain_energy_under_tgs` (tgs_joints_static_colliders.rs) — known defect: AUD-A-P1A-001: the TGS ball joint lets the pendulum anchor drift more than the scheme explains: …
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
@@ -182,7 +184,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `what_a_step_costs_on_a_logo_sized_block` (deformable_step_cost.rs) — a measurement, not a check
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (6554)
+## 🟢 Not ignored (6556)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -577,6 +579,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_support_volume_wiring.rs` | 6 |
 | `analytic_thermoelastic.rs` | 6 |
 | `analytic_thermoelastic_channel.rs` | 6 |
+| `analytic_thick_chain_bend_step.rs` | 6 |
 | `analytic_thick_chain_entry.rs` | 6 |
 | `analytic_thick_chain_neo_hookean.rs` | 6 |
 | `analytic_warp_risk_wiring.rs` | 6 |
@@ -640,7 +643,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_shaped_static_contact.rs` | 4 |
 | `analytic_slider_reaction_limit.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
-| `analytic_thick_chain_bend_step.rs` | 4 |
 | `analytic_vec_small_length.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
 | `analytic_world_query_cylinder_sphere.rs` | 4 |
