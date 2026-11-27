@@ -237,6 +237,7 @@ jobs:
           tools=scripts
           mn=scripts/mutants_nightly.py
           python3 scripts/mutants_nightly.py fetch --repo "$GITHUB_REPOSITORY" --self "$GITHUB_RUN_ID" --out /tmp/runs.json
+          gap=false
           over=false
           base_run=
           if [ "$mode" = weekly ]; then
@@ -330,6 +331,17 @@ jobs:
                 echo "::error::no base for tonight's diff: $why, but $base is not an ancestor of HEAD. Nothing is tested tonight: dispatch this workflow with diff_base and set_aside"
                 exit 1
               fi
+              # a scheduled run since that record that left no record is named, each with its range. The
+              # night goes on (its diff holds those lines) and ends red in the step after the upload
+              set +e
+              python3 scripts/mutants_nightly.py gaps --runs /tmp/runs.json 2> /tmp/gaps.err | tee -a "$GITHUB_STEP_SUMMARY"
+              grc=${PIPESTATUS[0]}
+              set -e
+              case $grc in
+                0) ;;
+                6) gap=true; while IFS= read -r line; do echo "::error::${line#error: }"; done < /tmp/gaps.err ;;
+                *) cat /tmp/gaps.err >&2; exit "$grc" ;;
+              esac
             fi
             echo "base $base ($why), head $head" | tee -a "$GITHUB_STEP_SUMMARY"
             git diff "$base" HEAD -- src tests Cargo.toml > /tmp/change.diff   # (HEAD is the range's head: a piece is checked out)
@@ -387,6 +399,7 @@ jobs:
           {
             echo "mode=$mode"
             echo "over=$over"
+            echo "gap=$gap"
             echo "matrix=$(cat /tmp/matrix.json)"
             echo "jobs=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["include"]))' /tmp/matrix.json)"
             echo "core=$(python3 scripts/mutants_nightly.py core-jobs --record mutants-record.json)"
@@ -402,6 +415,11 @@ jobs:
         if: steps.plan.outputs.over == 'true'
         run: |
           echo "::error::the plan is over the cap: the shards over it were not run (a night's range is set aside for the weekly run; a weekly core over the cap is not measured this week)"
+          exit 1
+      - name: No scheduled run since the base left no record
+        if: steps.plan.outputs.gap == 'true'
+        run: |
+          echo "::error::a scheduled run since tonight's base left no record (named in the plan step's errors, each with its range). Tonight's diff starts at that base, so it holds those lines and its shards run; this step is red so that the night without a record is seen the night after, not when the base leaves the window"
           exit 1
 
   mutants-accounted-age:

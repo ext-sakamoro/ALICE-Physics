@@ -51,7 +51,7 @@ def night(run_id: int, day: int, base: str, head: str, counts=None, steps=None, 
     if rec["state"] == "over-cap":
         rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "per": rec["per"],
                                      "since": f"2026-11-{day:02d}T22:00:00Z"}]
-    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": "success",
+    return {"id": run_id, "event": "schedule", "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": "success",
             "jobs": jobs_of(entries, steps)[drop:], "record": rec, "record_error": None}
 
 
@@ -81,12 +81,13 @@ def aside(run_id: int, day: int, base: str, head: str, counts=None, carried=None
     if rec["state"] == "set-aside":
         rec["open"] = rec["open"] + [{"base": base, "head": head, "counts": counts, "per": rec["per"],
                                      "since": f"2026-11-{day:02d}T03:00:00Z"}]
-    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T03:00:00Z", "conclusion": "success",
+    return {"id": run_id, "event": "workflow_dispatch", "head_sha": head, "created_at": f"2026-11-{day:02d}T03:00:00Z", "conclusion": "success",
             "jobs": [], "record": rec, "record_error": None}
 
 
-def cancelled(run_id: int, day: int, head: str) -> dict:
-    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": "cancelled",
+def cancelled(run_id: int, day: int, head: str, conclusion: str | None = "cancelled", event: str = "schedule") -> dict:
+    """a run that left no record (`conclusion` None: it has not ended)"""
+    return {"id": run_id, "event": event, "head_sha": head, "created_at": f"2026-11-{day:02d}T22:00:00Z", "conclusion": conclusion,
             "jobs": [], "record": None, "record_error": None}
 
 
@@ -99,7 +100,7 @@ CORE_ARGS = ("--count", "default=4864", "--count", "features=4864", "--per", "de
 def weekly(run_id: int, day: int, head: str, ranges: list[dict], steps=None, skip: bool = False) -> dict:
     rec, entries = mn.weekly_record(head, ranges, f"2026-11-{day:02d}T18:00:00Z", CORE_N, CORE_PER)
     jobs = jobs_of([e for e in entries if e["kind"] == "core" or not skip], steps)
-    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T18:00:00Z", "conclusion": "success",
+    return {"id": run_id, "event": "schedule", "head_sha": head, "created_at": f"2026-11-{day:02d}T18:00:00Z", "conclusion": "success",
             "jobs": jobs, "record": rec, "record_error": None}
 
 
@@ -111,7 +112,7 @@ def weekly_over(run_id: int, day: int, head: str) -> dict:
     n = {"default": 199 * (mn.CORE_CAP + 1), "features": 199}
     rec, entries = mn.weekly_record(head, [], f"2026-11-{day:02d}T18:00:00Z", n, CORE_PER)
     assert rec["state"] == "over-cap" and not entries
-    return {"id": run_id, "head_sha": head, "created_at": f"2026-11-{day:02d}T18:00:00Z", "conclusion": "failure",
+    return {"id": run_id, "event": "schedule", "head_sha": head, "created_at": f"2026-11-{day:02d}T18:00:00Z", "conclusion": "failure",
             "jobs": [], "record": rec, "record_error": None}
 
 
@@ -381,6 +382,72 @@ class Base(unittest.TestCase):
         other = night(9, 19, A, D)
         run["jobs"] = other["jobs"]
         self.assertEqual(mn.pick_base([night(1, 18, A, B), run])[0], B)
+
+
+class Gap(unittest.TestCase):
+    """a scheduled run that left no record after the run tonight's base comes from is named, the first night
+    after it (until 2026-11-28 the plan went on for as long as the window held a base: run 45733166591 of 11-26
+    read 29 runs, 7 of them with a record, and was the first to say anything)"""
+
+    def test_no_scheduled_run_after_the_base_is_no_gap_and_the_line_says_what_was_read(self):
+        found, line = mn.gaps([night(1, 18, A, B), night(2, 19, B, C)])
+        self.assertEqual(found, [])
+        self.assertEqual(line, "compared: scheduled runs since run 2: 0, not ended: 0, without a record: 0")
+
+    def test_a_scheduled_run_without_a_record_after_the_base_is_named_with_its_range(self):
+        found, line = mn.gaps([night(1, 18, A, B), cancelled(2, 19, C)])
+        self.assertEqual([(g["id"], g["base"], g["head"], g["conclusion"], g["created_at"]) for g in found],
+                         [(2, B, C, "cancelled", "2026-11-19T22:00:00Z")])
+        self.assertEqual(line, "compared: scheduled runs since run 1: 1, not ended: 0, without a record: 1")
+        said = mn.gap_line(found[0])
+        for part in ("run 2 ", "2026-11-19T22:00:00Z", "cancelled", f"{'b' * 12}..{'c' * 12}", "left no record"):
+            self.assertIn(part, said)
+
+    def test_every_gap_is_listed_oldest_first_whatever_its_conclusion(self):
+        runs = [night(1, 17, A, B), cancelled(3, 19, D, "failure"), cancelled(2, 18, C, "success"), cancelled(4, 20, D, "cancelled")]
+        self.assertEqual([g["id"] for g in mn.gaps(runs)[0]], [2, 3, 4])
+
+    def test_a_run_before_the_base_or_with_a_record_is_not_a_gap(self):
+        killed = night(3, 20, C, D, steps=KILLED)   # (unmeasured: it does not move the base, but it left a record)
+        found, line = mn.gaps([cancelled(1, 17, A), night(2, 18, A, B), killed])
+        self.assertEqual(found, [])
+        self.assertEqual(line, "compared: scheduled runs since run 2: 1, not ended: 0, without a record: 0")
+
+    def test_a_dispatch_without_a_record_is_not_a_night(self):
+        # (a scoped dispatch plans nothing and writes no record)
+        self.assertEqual(mn.gaps([night(1, 18, A, B), cancelled(2, 19, C, "success", event="workflow_dispatch")])[0], [])
+
+    def test_a_scheduled_run_that_has_not_ended_is_counted_and_not_judged(self):
+        found, line = mn.gaps([night(1, 18, A, B), cancelled(2, 19, C, None)])
+        self.assertEqual(found, [])
+        self.assertEqual(line, "compared: scheduled runs since run 1: 1, not ended: 1, without a record: 0")
+
+    def test_the_base_may_be_a_range_set_aside_and_runs_after_it_are_judged(self):
+        runs = [cancelled(1, 18, B), aside(2, 19, A, C), cancelled(3, 19, D)]
+        self.assertEqual([(g["id"], g["base"]) for g in mn.gaps(runs)[0]], [(3, C)])
+
+    def test_without_a_base_every_scheduled_run_of_the_window_without_a_record_is_a_gap_with_no_range(self):
+        found, line = mn.gaps([cancelled(1, 18, B), cancelled(2, 19, C, "failure")])
+        self.assertEqual([(g["id"], g["base"]) for g in found], [(1, None), (2, None)])
+        self.assertEqual(line, "compared: scheduled runs in the window (no base): 2, not ended: 0, without a record: 2")
+        self.assertIn("no record gives a base", mn.gap_line(found[0]))
+        self.assertIn("b" * 12, mn.gap_line(found[0]))
+
+    def test_a_run_read_without_its_event_is_an_error_not_no_gap(self):
+        run = cancelled(2, 19, C)
+        del run["event"]
+        with self.assertRaises(mn.RecordError) as e:
+            mn.gaps([night(1, 18, A, B), run])
+        self.assertIn("run 2", str(e.exception))
+        other = cancelled(2, 19, C, event="pull_request")
+        with self.assertRaises(mn.RecordError):
+            mn.gaps([night(1, 18, A, B), other])
+
+    def test_an_unreadable_record_is_an_error_not_a_gap(self):
+        bad = cancelled(2, 19, C)
+        bad["record_error"] = "its record artifact has expired"
+        with self.assertRaises(mn.RecordError):
+            mn.gaps([night(1, 18, A, B), bad])
 
 
 class Open(unittest.TestCase):
@@ -721,6 +788,37 @@ class Cli(unittest.TestCase):
         rec = json.loads((self.d / "r.json").read_text()) if (self.d / "r.json").exists() else None
         matrix = json.loads((self.d / "m.json").read_text()) if (self.d / "m.json").exists() else None
         return code, rec, matrix, err
+
+    def test_gaps_names_each_run_and_ends_with_its_own_exit_code(self):
+        code, out, err = self.run_cli("gaps", "--runs", self.runs([night(1, 18, A, B), night(2, 19, B, C)]))
+        self.assertEqual((code, out, err), (0, "compared: scheduled runs since run 2: 0, not ended: 0, without a record: 0\n", ""))
+        code, out, err = self.run_cli("gaps", "--runs", self.runs([night(1, 17, A, B), cancelled(2, 18, C), cancelled(3, 19, D, "failure")]))
+        self.assertEqual(code, mn.GAP)
+        self.assertNotIn(mn.GAP, (0, mn.OVER_CAP, mn.NO_BASE, mn.ERROR))
+        self.assertEqual(out, "compared: scheduled runs since run 1: 2, not ended: 0, without a record: 2\n")
+        lines = err.splitlines()
+        self.assertEqual(len(lines), 2, err)
+        self.assertTrue(lines[0].startswith("error: run 2 ") and lines[1].startswith("error: run 3 "), err)
+        run = cancelled(2, 19, C)
+        del run["event"]
+        code, out, err = self.run_cli("gaps", "--runs", self.runs([night(1, 18, A, B), run]))
+        self.assertEqual((code, out), (mn.ERROR, ""))
+
+    def test_fetch_keeps_the_event_of_each_run(self):
+        listed = [{"id": 5, "event": "schedule", "head_sha": A, "created_at": "2026-11-19T22:00:00Z", "conclusion": "cancelled"},
+                  {"id": 6, "event": "workflow_dispatch", "head_sha": B, "created_at": "2026-11-20T03:00:00Z", "conclusion": "success"},
+                  {"id": 7, "event": "schedule", "head_sha": C, "created_at": "2026-11-20T22:00:00Z", "conclusion": None}]
+        old = mn.list_runs, mn.gh_json, mn.read_record
+        mn.list_runs = lambda repo, since, workflow: listed
+        mn.gh_json = lambda args: {"jobs": []}
+        mn.read_record = lambda repo, run_id: (None, None)
+        try:
+            from datetime import datetime, timezone
+            runs = mn.fetch("o/r", 7, datetime(2026, 11, 21, tzinfo=timezone.utc))
+        finally:
+            mn.list_runs, mn.gh_json, mn.read_record = old
+        self.assertEqual([(r["id"], r["event"]) for r in runs], [(5, "schedule"), (6, "workflow_dispatch")])
+        self.assertEqual([g["id"] for g in mn.gaps(runs)[0]], [5])
 
     def test_per_prints_the_shard_size_of_a_baseline_and_fails_without_one(self):
         d = self.d / "mutants.out"
@@ -1094,6 +1192,32 @@ class Workflow(unittest.TestCase):
         weekly_only = [ln for ln in self.TEXT.splitlines() if ln.startswith("    if:") and "github.event.schedule" in ln]
         self.assertEqual(len(weekly_only), 8)
         self.assertTrue(all("inputs.diff_base == ''" in ln for ln in weekly_only), weekly_only)
+
+    def test_a_night_reads_the_gaps_after_its_base_goes_on_and_ends_red(self):
+        step = self.plan_step()
+        at = step.index("why=$(cat /tmp/why); from=record")
+        call = 'python3 scripts/mutants_nightly.py gaps --runs /tmp/runs.json 2> /tmp/gaps.err | tee -a "$GITHUB_STEP_SUMMARY"\n'
+        self.assertEqual(step.count(call), 1)
+        self.assertGreater(step.index(call), at, "read in the night's branch, after its base is known")
+        block = step[step.index(call):]
+        block = block[:block.index("\n              esac\n")]
+        self.assertIn("grc=${PIPESTATUS[0]}", block)
+        self.assertIn(f"{mn.GAP}) gap=true;", block)
+        self.assertIn('*) cat /tmp/gaps.err >&2; exit "$grc" ;;', block)
+        self.assertIn("0) ;;", block)
+        self.assertIn('echo "::error::${line#error: }"', block)
+        self.assertEqual(step.count("gap=false\n"), 1)
+        self.assertEqual(step.count('echo "gap=$gap"\n'), 1)
+        # the red is a step of its own after the record is uploaded: the night's plan is written and its shards run
+        tail = self.TEXT[self.TEXT.index("          if-no-files-found: error\n"):]
+        name = "      - name: No scheduled run since the base left no record\n        if: steps.plan.outputs.gap == 'true'\n"
+        self.assertEqual(self.TEXT.count(name), 1)
+        self.assertIn(name, tail)
+        body = tail[tail.index(name):]
+        body = body[:body.index("\n\n")]
+        self.assertIn("exit 1", body)
+        # (the shard jobs start on the plan's outputs under `!cancelled()`, as they do after the cap step)
+        self.assertIn("    if: ${{ !cancelled() && needs.mutants-plan.outputs.jobs != '' && needs.mutants-plan.outputs.jobs != '0' }}\n", self.TEXT)
 
     def plan_step(self) -> str:
         step = self.TEXT[self.TEXT.index("      - name: Plan\n        id: plan\n"):]

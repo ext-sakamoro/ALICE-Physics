@@ -24,6 +24,14 @@ the base was then the commit of 25 hours ago, and the lines between the last mea
 were tested by no run). The way on is a dispatch with `diff_base` and `set_aside`: it tests nothing, records
 base..head as an open range for the weekly run (kind `aside`), and its head is the base of the next night.
 
+A scheduled run that left no record does not move the base either, and it is named: the plan of a night reads
+the scheduled runs created after the run its base comes from (`gaps`), and each one that has ended without a
+record is an error line with its range (tonight's base .. that run's head). The night goes on, since its diff
+holds those lines, and ends red (exit 6 of `gaps`, a step of its own after the record is uploaded). Until
+2026-11-28 nothing said so for as long as the window held a base: the first word was "no base" when the last
+record left the window (run 45733166591 of 11-26: 29 runs read, 7 with a record). The red ends by itself the
+night a later record becomes the base. A run read without its event is an error, never "no gap".
+
 A night's record is trusted as a base only when its own base came from a record (`base_from`) and it names
 the run that gave it (`base_run`; a record from before that field is read by the `run N` its `base_reason`
 starts with): one planned on a base by the clock is passed over, so is one that names no run, and so is one
@@ -55,6 +63,8 @@ expired or unreadable is an error (exit 2), never "no open range".
     mutants_nightly.py base  --runs runs.json                         # prints the base sha, then the id of the
                                                                       # run that gave it; exit 3 = no base
     mutants_nightly.py anchor --runs runs.json [--start FILE]         # the last trusted head; exit 3 = none
+    mutants_nightly.py gaps  --runs runs.json                         # exit 6 = a scheduled run since the base
+                                                                      # left no record (one error line each)
     mutants_nightly.py plan  --mode nightly|pr|aside --base-from record|pull-request|dispatch \\
         --runs runs.json --base B --head H --count default=N --count features=M --per default=P --per features=Q \\
         --out-record R --out-matrix M                                 # exit 5 = over the cap
@@ -128,7 +138,7 @@ EVENTS = ("schedule", "workflow_dispatch")   # the runs that are read back (a pu
 # is larger than a matrix by itself is refused where it would be recorded (it could run in no week)
 MATRIX_MAX = 256
 MAX_PAGES = 10       # of 100 runs per event: more than this in the window is an error, not a cut
-OVER_CAP, NO_BASE, ERROR = 5, 3, 2
+OVER_CAP, NO_BASE, ERROR, GAP = 5, 3, 2, 6
 
 
 class RecordError(Exception):
@@ -322,6 +332,34 @@ def pick(runs: list[dict]) -> tuple[str | None, str, int | None]:
         skipped += 1
     return None, (f"no nightly run in the window measured ({skipped} unmeasured, {passed} planned on a base no "
                   f"record gave, {len(runs)} run(s) read)"), None
+
+
+def gaps(runs: list[dict]) -> tuple[list[dict], str]:
+    """(the scheduled runs that ended without a record after the run tonight's base comes from, oldest first;
+    the line of what was compared). Each is {id, created_at, conclusion, head, base}: `base` is tonight's base,
+    so base..head are the lines that run was to test. With no base, every such run of the window, `base` None.
+    A run that has not ended is counted and not judged; a run read without its event is an error"""
+    sha, _, src = pick(runs)
+    odd = [r.get("id") for r in runs if r.get("event") not in EVENTS]
+    if odd:
+        raise RecordError(f"{len(odd)} run(s) were read without a known event (the first: run {odd[0]}): which of "
+                          "them were scheduled is not known")
+    since = next(r["created_at"] for r in runs if r.get("id") == src) if sha else None
+    later = sorted((r for r in runs if r["event"] == "schedule" and (since is None or r["created_at"] > since)),
+                   key=lambda r: r["created_at"])
+    running = [r for r in later if r.get("conclusion") is None]
+    found = [{"id": r["id"], "created_at": r["created_at"], "conclusion": r["conclusion"], "head": r["head_sha"], "base": sha}
+             for r in later if r.get("conclusion") is not None and not r.get("record")]
+    where = f"since run {src}" if sha else "in the window (no base)"
+    return found, f"compared: scheduled runs {where}: {len(later)}, not ended: {len(running)}, without a record: {len(found)}"
+
+
+def gap_line(g: dict) -> str:
+    said = f"run {g['id']} (scheduled, created {g['created_at']}, ended {g['conclusion']}) left no record: "
+    if g["base"]:
+        return said + (f"the lines of {range_id(g['base'], g['head'])} were its to test and no record of that night "
+                       "says what became of them")
+    return said + f"its head was {g['head'][:12]}, and no record gives a base its range could start from"
 
 
 def open_ranges(runs: list[dict]) -> list[dict]:
@@ -563,7 +601,7 @@ def fetch(repo: str, self_id: int, now: datetime, workflow: str = "quality-deep.
                 break
             page += 1
         rec, err = read_record(repo, r["id"])
-        runs.append({"id": r["id"], "head_sha": r["head_sha"], "created_at": r["created_at"],
+        runs.append({"id": r["id"], "event": r["event"], "head_sha": r["head_sha"], "created_at": r["created_at"],
                      "conclusion": r.get("conclusion"), "jobs": jobs, "record": rec, "record_error": err})
     return runs
 
@@ -589,6 +627,8 @@ def main(argv: list[str] | None = None) -> int:
     an = sub.add_parser("anchor", help="the last trusted head: where a range set aside may start (or before it)")
     an.add_argument("--runs", required=True)
     an.add_argument("--start", default=str(START_FILE), help="the committed starting point, read when the window gives none")
+    g = sub.add_parser("gaps", help="the scheduled runs since tonight's base that left no record")
+    g.add_argument("--runs", required=True)
     p = sub.add_parser("plan")
     p.add_argument("--mode", choices=tuple(BASE_FROM), required=True)
     p.add_argument("--base-from", choices=sorted({f for fs in BASE_FROM.values() for f in fs}), required=True,
@@ -671,6 +711,12 @@ def main(argv: list[str] | None = None) -> int:
             print(sha or "")
             print(why if sha else f"error: {why}", file=sys.stderr)
             return 0 if sha else NO_BASE
+        if args.cmd == "gaps":
+            found, line = gaps(runs)
+            for one in found:
+                print(f"error: {gap_line(one)}", file=sys.stderr)
+            print(line)
+            return GAP if found else 0
         counts = {k: int(v) for k, v in (c.split("=", 1) for c in args.count)}
         per = {k: int(v) for k, v in (c.split("=", 1) for c in args.per)}
         if args.cmd == "weekly":
