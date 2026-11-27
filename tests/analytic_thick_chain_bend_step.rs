@@ -766,7 +766,7 @@ fn between_walls_a_substep_leaves_the_chain_out_of_them_and_its_press_is_the_sam
 }
 
 #[test]
-#[ignore = "known defect: with walls the passes end where the potential's slope is a combination of the walls' slopes, but part of it on points that ended off the wall (a push made in an early pass is not taken back): 18 % to 100 % of the slope is left by the points on the wall alone"]
+#[ignore = "known defect: with walls the chain is not shown to end a substep at the minimum the walls allow: 18 % to 100 % of the potential's slope is left by the walls' constraints at zero alone, 2 % or less with those up to 3 mm off the wall counted (inferred from that, not shown: a push made in an early pass is not taken back)"]
 fn between_walls_a_substep_ends_at_the_minimum_the_walls_allow() {
     // at the minimum of the substep's potential among the positions the walls allow, its
     // slope is a combination, with weights of one sign, of the slopes of the walls'

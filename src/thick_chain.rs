@@ -162,6 +162,8 @@
 //!   for all but 18 % in the mildest case measured and for almost none in the others (an
 //!   arc of radius 0.1 and 0.05 m at rest, a flat wall 0.2 and 1 mm into its end's disc,
 //!   1/960 s, 64 passes); with the constraints up to 3 mm off the wall counted, all but 2 %.
+//!   That last number is the evidence for the cause, which is inferred and not shown: a
+//!   push made in an early pass at a point that ends off the wall stays in the substep.
 //!   The test that asks the minimum is kept and not run
 //!   (`between_walls_a_substep_ends_at_the_minimum_the_walls_allow`).
 //!   The step of the multipliers of all the constraints at once that this replaces (the
