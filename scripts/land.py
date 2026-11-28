@@ -98,7 +98,11 @@ workflow, the run id and conclusion the landing relied on.
 After the land, `--wait` / `--wait-only SHA` read the after-landing set on main
 (after_landing_items): the after-landing legs (macos-latest), the legs that run on
 main only (macos-15-intel, also re-run by the nightly safety net) and the
-after-landing workflows when they ran (Miri and loom). Exit codes: 0 all green,
+after-landing workflows when they ran (Miri and loom). That set is what the result
+is of: the commit's other runs on main are not read (their evidence was the ci/
+branch), and the report says so in a line before its verdict (after_read_line): the
+items read and their states, and the commit's runs on main with those not completed
+and those that ended other than success by name. Exit codes: 0 all green,
 EXIT_RED (4) a red result ("REVERT OR FIX NOW"), EXIT_PENDING (3) not finished
 within the bound, EXIT_CHECKOUT (5) landed (and green when waited for) but the checkout
 could not be moved to the landed SHA (`reset --keep` refused: changes made there during the
@@ -958,6 +962,38 @@ def after_landing_items(root: Path) -> list[dict]:
     return out
 
 
+def after_read_line(states: dict[str, tuple[str, str]], runs: list[dict], sha: str, branch: str) -> str:
+    """One line of what a reading of the after-landing set covered: how many items it read and
+    their states, and the commit's own runs on `branch` (how many, how many completed, the names
+    of those not completed and of those that ended other than success). The set is the items of
+    after_landing_items alone; the commit's other runs were the evidence on its ci/ branch and
+    are not read here, so the line says how many of them are not done when it is printed
+    (2026-11-28: the green line was printed with 5 of a commit's 15 runs on main not finished)."""
+    def count(word: str, n: int) -> str:
+        return f"{n} {word}" + ("" if n == 1 else "s")
+    tally = {s: sum(1 for st, _ in states.values() if st == s) for s in ("ok", "pending", "red")}
+    mine = [r for r in runs if r.get("headSha") == sha]
+    done = [r for r in mine if r.get("status") == "completed"]
+    waiting = sorted(str(r.get("workflowName")) for r in mine if r.get("status") != "completed")
+    bad = sorted(f"{r.get('workflowName')} {r.get('conclusion')}" for r in done
+                 if r.get("conclusion") not in ("success", "skipped"))
+    items = count("item", len(states))
+    read = (f"read {len(states)} after-landing {'item' if len(states) == 1 else 'items'} "
+            f"({tally['ok']} ok, {tally['pending']} pending, {tally['red']} red)")
+    if not mine:
+        detail = "none listed for the commit yet"
+    else:
+        detail = f"{len(done)} completed, {len(waiting)} not completed"
+        if waiting:
+            detail += ": " + ", ".join(waiting)
+        if bad:
+            detail += "; ended other than success: " + ", ".join(bad)
+    line = f"{read}; the commit's runs on {branch}: {len(mine)} ({detail}); the result above is of the {items} only"
+    if waiting:
+        line += f", the {len(waiting)} not completed are not counted in it"
+    return line
+
+
 def after_item_label(item: dict) -> str:
     return f"{item['file']}: {item['job']}" if item["kind"] == "leg" else item["file"]
 
@@ -1796,6 +1832,7 @@ class Lander:
         states: dict[str, tuple[str, str]] = {}
         # a run's jobs are read again only when the run itself changed (status, conclusion or update time)
         cache: dict[int, tuple[tuple, list[dict]]] = {}
+        runs: list[dict] = []
         for _ in range(self.after_max_polls):
             runs = self.list_branch_runs(slug, self.branch)
             keys = {r.get("databaseId"): (r.get("status"), r.get("conclusion"), r.get("updatedAt")) for r in runs}
@@ -1810,6 +1847,8 @@ class Lander:
             if any(s == "red" for s, _ in states.values()) or all(s == "ok" for s, _ in states.values()):
                 break
             time.sleep(self.poll_interval())
+        # what this reading covered, for the line report_after prints before its verdict
+        self.after_read = after_read_line(states, runs, sha, self.branch)
         lines = []
         for label, (s, why) in states.items():
             if s == "red":
@@ -2769,6 +2808,7 @@ def report_after(lander: "Lander", sha: str) -> int:
     code, lines = lander.wait_after(sha)
     for line in lines:
         print(line, file=sys.stderr if code else sys.stdout, flush=True)
+    print(lander.after_read, file=sys.stderr if code else sys.stdout, flush=True)
     if code == EXIT_RED:
         print(f"error: an after-landing result on {lander.branch} is red for {sha[:7]}: REVERT OR FIX NOW",
               file=sys.stderr, flush=True)
