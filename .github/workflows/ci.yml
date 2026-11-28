@@ -252,6 +252,9 @@ jobs:
       - name: Mutation in-diff plan (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_in_diff_plan.py
+      - name: Mutation test selection by coverage (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/test_mutants_select_groups.py
       - name: Nightly Mac Intel gate (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_intel_nightly_gate.py

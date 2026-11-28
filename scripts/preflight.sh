@@ -244,6 +244,7 @@ python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_equivalent.py
 python3 scripts/mutants_equivalent.py --check
 python3 scripts/test_mutants_in_diff_plan.py
+python3 scripts/test_mutants_select_groups.py
 python3 scripts/test_intel_nightly_gate.py
 python3 scripts/test_run_ignored.py
 python3 scripts/run_ignored.py --list > /dev/null
