@@ -43,7 +43,7 @@
 use alice_physics_core::math::Fix128;
 use alice_physics_core::sdf_collider::SdfField;
 use alice_physics_core::thick_chain::{
-    ThickChain, ThickChainBend, ThickChainConfig, ThickChainFit, ThickChainStretch,
+    ThickChain, ThickChainBend, ThickChainConfig, ThickChainError, ThickChainFit, ThickChainStretch,
 };
 
 const LINKS: usize = 12;
@@ -601,9 +601,33 @@ impl SdfField for FlatWall {
 /// disc `into` metres into it; the chain after one substep of 1/960 s of `passes` passes
 /// between the walls, and the wall
 fn against_a_wall(radius: f64, into: f64, passes: u32) -> (Problem, ThickChain, FlatWall) {
+    against_a_wall_over(radius, into, passes, 960)
+}
+
+/// [`against_a_wall`] with a substep of `1 / per` s
+fn against_a_wall_over(
+    radius: f64,
+    into: f64,
+    passes: u32,
+    per: i64,
+) -> (Problem, ThickChain, FlatWall) {
+    let (p, mut chain, wall) = laid_against_a_wall(radius, into, passes, per);
+    chain
+        .step_in(Fix128::from_ratio(1, per), &wall, &[])
+        .expect("a substep between the walls");
+    (p, chain, wall)
+}
+
+/// the scene of [`against_a_wall_over`] before its substep
+fn laid_against_a_wall(
+    radius: f64,
+    into: f64,
+    passes: u32,
+    per: i64,
+) -> (Problem, ThickChain, FlatWall) {
     let p = Problem {
         shear: 6667.0,
-        h: 1.0 / 960.0,
+        h: 1.0 / per as f64,
         tau: 0.0,
         start: arc(radius),
     };
@@ -643,9 +667,6 @@ fn against_a_wall(radius: f64, into: f64, passes: u32) -> (Problem, ThickChain, 
     for i in 0..=LINKS {
         chain.set_position(i, [fx(p.start[2 * i]), fx(p.start[2 * i + 1])]);
     }
-    chain
-        .step_in(Fix128::from_ratio(1, 960), &wall, &[])
-        .expect("a substep between the walls");
     (p, chain, wall)
 }
 
@@ -749,12 +770,16 @@ fn between_walls_a_substep_leaves_the_chain_out_of_them_whatever_the_passes() {
                 "arc {radius} m, {into} m in, {passes} passes: the wall is pressed ({press} N)"
             );
             assert_eq!(chain.bend_stalled(), 0);
+            println!(
+                "depth arc {radius} in {into} passes {passes}: {:.3e} m, halved {}",
+                -got.4,
+                chain.bend_halved()
+            );
         }
     }
 }
 
 #[test]
-#[ignore = "known defect: restored by the next commit: walls enter the Newton step. The walls' multipliers and the step down the potential take turns, so the press closes on its value at a linear rate: 201.70 N after 16 passes against 199.68 N after 64 (1.0 %) and 229.43 against 227.78 N (0.7 %) in the scenes 1 mm in the wall, 1e-4 asked"]
 fn between_walls_the_wall_s_press_is_the_same_after_more_passes() {
     // the wall's press on the end link after 16 passes is its press after 64 to 10⁻⁴ of it
     for (radius, into) in AGAINST {
@@ -764,6 +789,10 @@ fn between_walls_the_wall_s_press_is_the_same_after_more_passes() {
             press[slot] =
                 chain.wall_force(LINKS - 1).to_f64() + chain.wall_force(LINKS - 2).to_f64();
         }
+        println!(
+            "press arc {radius} in {into}: {} N after 16 passes, {} N after 64",
+            press[0], press[1]
+        );
         assert!(
             (press[1] - press[0]).abs() <= 1.0e-4 * press[0],
             "arc {radius} m, {into} m in: the press {} N after 16 passes, {} N after 64",
@@ -996,10 +1025,11 @@ fn the_reference_between_walls_is_a_minimum_the_wall_allows_and_the_wall_matters
 
 #[test]
 fn between_walls_a_substep_ends_where_the_reference_minimum_is() {
-    // the chain after 64 passes against the reference above, in metres: the walls' field is
-    // an f32's (7.5e-9 m at 0.1 m), and the chain is within 1e-8 m of the reference in every
-    // coordinate (measured 5.8e-10 to 1.1e-9 m; 5e-6 to 5e-5 m with the pushes kept along the
-    // slopes they were made on)
+    // the chain after 64 and after 16 passes against the reference above, in metres: the
+    // walls' field is an f32's (7.5e-9 m at 0.1 m), and the chain is within 1e-8 m of the
+    // reference in every coordinate (measured 5.8e-10 to 1.2e-9 m; 5e-6 to 5e-5 m with the
+    // pushes kept along the slopes they were made on, 9.3e-6 and 2.4e-5 m after 16 passes
+    // with the walls' multipliers and the step taking turns)
     for (radius, into) in AGAINST {
         let (p, chain, wall) = against_a_wall(radius, into, 64);
         let x = coordinates(&chain);
@@ -1010,9 +1040,270 @@ fn between_walls_a_substep_ends_where_the_reference_minimum_is() {
             .zip(&best)
             .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
         println!("distance arc {radius} in {into}: {far:.3e} m");
+        let sooner = coordinates(&against_a_wall(radius, into, 16).1);
+        let far_sooner = sooner
+            .iter()
+            .zip(&best)
+            .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+        println!("distance arc {radius} in {into} after 16 passes: {far_sooner:.3e} m");
+        assert!(
+            far_sooner <= 1.0e-8,
+            "arc {radius} m, {into} m in: {far_sooner:e} m from that minimum after 16 passes"
+        );
         assert!(
             far <= 1.0e-8,
             "arc {radius} m, {into} m in: {far:e} m from the minimum the wall allows"
         );
     }
+}
+
+/// the reference minimum between the walls with its own check passed, and whether it was
+/// found from the minimum without the wall (a start that owes nothing to the chain). Where
+/// Newton's method does not close from there it is started from `near`, the chain's own
+/// positions: the check it passes is the same, but its place is then the chain's to within
+/// the method's reach, and the distance to it says that the chain is at a point that passes
+/// the check, not where an independent solve ends
+fn checked_minimum_between(p: &Problem, near: &[f64], wall: &FlatWall) -> (Vec<f64>, bool) {
+    for (apart, from) in [(true, p.minimum()), (false, near.to_vec())] {
+        let (best, left, least, weight) = minimum_between(p, &from, wall);
+        if left <= 1.0e-9 && least >= -1.0e-12 && weight >= 0.0 {
+            return (best, apart);
+        }
+    }
+    panic!("no reference minimum between the walls passed its own check");
+}
+
+#[test]
+fn between_walls_a_substep_ends_at_the_minimum_whatever_the_depth_and_the_substep() {
+    // the wall 1, 4 and 5 mm into the end's disc (5 mm is as far as a substep moves a
+    // particle of these chains: half the least radius), a substep of 1/960
+    // and of 1/240 s: no pass takes no step, the wall is pressed, the chain is out of the
+    // wall, 16 and 64 passes give the same press, and the chain after 64 is where the
+    // reference minimum is, to 2e-8 m: the wall's field tells a distance as an f32 at a
+    // point given as f32s, 7.5e-9 m in the last place at 0.11 m, and the deeper scenes sit
+    // on two or three of them (the four scenes above are held to 1e-8 m).
+    // (A wall held by a stiffness passed this at one depth and one
+    // substep, and at four times the stiffness took no step in 54 passes of 64 and pressed
+    // nothing: this sweep is what tells a tuned number from a method.)
+    let mut failed = Vec::new();
+    let (mut scenes, mut independent) = (0usize, 0usize);
+    for radius in [0.1f64, 0.05] {
+        for depth in [1.0e-3f64, 4.0e-3, 5.0e-3] {
+            for per in [960i64, 240] {
+                let mut press = [0.0f64; 2];
+                let mut at_64 = Vec::new();
+                let mut problem = None;
+                for (slot, passes) in [16u32, 64].into_iter().enumerate() {
+                    let (p, chain, wall) = against_a_wall_over(radius, depth, passes, per);
+                    let x = coordinates(&chain);
+                    let in_wall = -wall_constraints(&x, &wall)
+                        .iter()
+                        .fold(f64::INFINITY, |m, c| m.min(c.0));
+                    press[slot] =
+                        chain.wall_force(LINKS - 1).to_f64() + chain.wall_force(LINKS - 2).to_f64();
+                    println!(
+                        "sweep arc {radius} depth {depth} per {per} passes {passes}: stalled {} halved {} retries {} in the wall {in_wall:.3e} m press {} N",
+                        chain.bend_stalled(),
+                        chain.bend_halved(),
+                        chain.substep_retries(),
+                        press[slot]
+                    );
+                    if chain.walls_unsettled() != 0 {
+                        failed.push(format!(
+                            "arc {radius} depth {depth} per {per} passes {passes}: {} passes without the walls' rows settled",
+                            chain.walls_unsettled()
+                        ));
+                    }
+                    if chain.bend_stalled() != 0 {
+                        failed.push(format!(
+                            "arc {radius} depth {depth} per {per} passes {passes}: {} passes took no step",
+                            chain.bend_stalled()
+                        ));
+                    }
+                    if in_wall > 1.0e-8 {
+                        failed.push(format!(
+                            "arc {radius} depth {depth} per {per} passes {passes}: {in_wall:e} m in the wall"
+                        ));
+                    }
+                    if press[slot] <= 10.0 {
+                        failed.push(format!(
+                            "arc {radius} depth {depth} per {per} passes {passes}: the wall is pressed by {} N",
+                            press[slot]
+                        ));
+                    }
+                    if passes == 64 {
+                        at_64 = x;
+                        problem = Some((p, wall));
+                    }
+                }
+                if (press[1] - press[0]).abs() > 1.0e-4 * press[0].abs() {
+                    failed.push(format!(
+                        "arc {radius} depth {depth} per {per}: the press {} N after 16 passes, {} N after 64",
+                        press[0], press[1]
+                    ));
+                }
+                let (p, wall) = problem.expect("the 64 passes ran");
+                let (best, apart) = checked_minimum_between(&p, &at_64, &wall);
+                independent += usize::from(apart);
+                scenes += 1;
+                let far = at_64
+                    .iter()
+                    .zip(&best)
+                    .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+                println!(
+                    "sweep arc {radius} depth {depth} per {per}: {far:.3e} m from the reference (found from the minimum without the wall: {apart})"
+                );
+                if far > 2.0e-8 {
+                    failed.push(format!(
+                        "arc {radius} depth {depth} per {per}: {far:e} m from the minimum the wall allows"
+                    ));
+                }
+            }
+        }
+    }
+    println!("sweep: {independent} of {scenes} references found from the minimum without the wall");
+    // every reference of this sweep is found from the minimum without the wall: none leans
+    // on the chain's own positions, so the distances are to a solve that owes it nothing
+    assert_eq!(
+        (independent, scenes),
+        (12, 12),
+        "a reference found only from the chain's own positions"
+    );
+    assert!(
+        failed.is_empty(),
+        "{} failed:\n{}",
+        failed.len(),
+        failed.join("\n")
+    );
+}
+
+#[test]
+fn a_wall_the_chain_does_not_reach_changes_nothing() {
+    // the wall 5 mm off the end's disc: no sample is short and none has a multiplier, so the
+    // substep is the substep without walls to the last bit, and the wall is not pressed
+    for radius in [0.1f64, 0.05] {
+        for passes in [8u32, 16] {
+            let (p, chain, _) = against_a_wall(radius, -5.0e-3, passes);
+            let without = after(&p, 4, passes).expect("the substep without walls");
+            assert_eq!(
+                coordinates(&chain),
+                without,
+                "arc {radius} m, {passes} passes: a wall out of reach moved the chain"
+            );
+            for k in 0..LINKS {
+                assert_eq!(
+                    chain.wall_force(k).to_f64(),
+                    0.0,
+                    "arc {radius} m: link {k} pressed"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_wall_at_or_just_off_the_chain_is_met_as_the_reference_minimum_says() {
+    // the wall 0.2 mm off the end's disc, 0.05 mm off it and touching it: whether the chain
+    // comes onto it within the substep is the reference's to say (its constraints at zero
+    // with a weight above zero), and the chain is where the reference is either way
+    for radius in [0.1f64, 0.05] {
+        for into in [-2.0e-4f64, -5.0e-5, 0.0] {
+            let (p, chain, wall) = against_a_wall(radius, into, 64);
+            let x = coordinates(&chain);
+            let (best, apart) = checked_minimum_between(&p, &x, &wall);
+            let on = wall_constraints(&best, &wall)
+                .iter()
+                .filter(|c| c.0 <= 1.0e-9)
+                .count();
+            let far = x
+                .iter()
+                .zip(&best)
+                .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+            let press = chain.wall_force(LINKS - 1).to_f64() + chain.wall_force(LINKS - 2).to_f64();
+            println!(
+                "edge arc {radius} in {into}: {on} constraint(s) at zero in the reference, {far:.3e} m from it, press {press} N (reference found from the minimum without the wall: {apart})"
+            );
+            assert!(
+                far <= 1.0e-8,
+                "arc {radius} m, {into} m in: {far:e} m from the reference minimum"
+            );
+            assert_eq!(chain.bend_stalled(), 0);
+            if on == 0 {
+                assert_eq!(
+                    press, 0.0,
+                    "arc {radius} m, {into} m in: pressed off the wall"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_chain_put_deeper_in_a_wall_than_a_substep_reaches_is_refused_and_left_as_it_was() {
+    // a substep moves no particle further than half the least radius (5 mm here), so the
+    // walls' constraints are held from within that depth, and a chain that starts a
+    // substep with a sample deeper in a wall was put there: the substep is refused
+    // (`Invalid("walls")`) and the chain is as it was, to the last bit. At the reach itself
+    // it is taken
+    for radius in [0.1f64, 0.05] {
+        for per in [960i64, 240] {
+            for depth in [8.0e-3f64, 16.0e-3] {
+                let (_, mut chain, wall) = laid_against_a_wall(radius, depth, 16, per);
+                let before = chain.state_digest();
+                let refused = chain.step_in(Fix128::from_ratio(1, per), &wall, &[]);
+                assert_eq!(
+                    refused,
+                    Err(ThickChainError::Invalid("walls")),
+                    "arc {radius} m, {depth} m in, 1/{per} s"
+                );
+                assert_eq!(
+                    chain.state_digest(),
+                    before,
+                    "a refused substep moved the chain"
+                );
+            }
+            let (_, mut chain, wall) = laid_against_a_wall(radius, 5.0e-3, 16, per);
+            chain
+                .step_in(Fix128::from_ratio(1, per), &wall, &[])
+                .expect("a wall as deep as a substep reaches");
+        }
+    }
+}
+
+#[test]
+#[ignore = "known defect: thick-chain-walls-past-reach: a chain put deeper in a wall than a substep reaches is refused. With that refusal off, the wall 16 mm into the end's disc of the arc of radius 0.05 m at 1/960 s (a press of 6 kN) does not settle: 58 passes of 64 take no step, the chain 5.7e-8 m in the wall and its press 6097.7 N against about 6164 N; the same wall at the arc of radius 0.1 m settles by 64 passes (1.5e-8 m from the reference) with its press after 16 passes 2.6e-3 off; 8 mm settles in every case (8.8e-9 m or less, 0 halvings)"]
+fn a_chain_put_deeper_in_a_wall_than_a_substep_reaches_settles_at_the_minimum() {
+    // what the refusal above stands in for: the deepest scene measured, to the bounds the
+    // scenes within the reach meet
+    let (p, chain, wall) = against_a_wall_over(0.05, 16.0e-3, 64, 960);
+    let x = coordinates(&chain);
+    let (best, _) = checked_minimum_between(&p, &x, &wall);
+    let far = x
+        .iter()
+        .zip(&best)
+        .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+    let (whole, left, sign, count, deepest) = left_of_the_slope(&p, &x, &wall, 1.0e-6);
+    let moved = chain.last_pass_move().to_f64();
+    println!(
+        "deep: {far:.3e} m from the reference, last pass {moved:.3e} m, slope left {:.3e}, weights' sign {sign:.3}, {count} at zero, deepest {deepest:.3e} m, halved {} stalled {} unsettled {}",
+        left / whole,
+        chain.bend_halved(),
+        chain.bend_stalled(),
+        chain.walls_unsettled()
+    );
+    assert!(far <= 2.0e-8, "{far:e} m from the minimum the wall allows");
+    assert!(moved <= 1.0e-7, "the last pass moved the chain {moved:e} m");
+    assert!(
+        left <= 1.0e-4 * whole,
+        "{:e} of the slope left",
+        left / whole
+    );
+    assert!(sign >= -1.0e-3, "a wall that pulls ({sign})");
+    assert!(
+        chain.bend_halved() < 64,
+        "{} halvings in 64 passes",
+        chain.bend_halved()
+    );
+    assert_eq!(chain.bend_stalled(), 0);
+    assert_eq!(chain.walls_unsettled(), 0);
 }
