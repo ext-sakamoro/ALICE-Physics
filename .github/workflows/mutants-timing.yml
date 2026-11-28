@@ -5,7 +5,7 @@
 # `cargo test --profile ci-test` で走らせて時間を取る (build の時間は含まない) 結果は runner の種類を
 # 先頭の行に書いた tsv の artifact で、coverage の桶分け (scripts/mutants_covmap.py buckets) が読む
 #
-# 手動か ci/mutant-timing-* への push だけで動く (push ごとには動かない: 全 target で 1 時間ほど)
+# 手動 (workflow_dispatch) だけで動く (push では動かない: 全 target で 1 時間ほど)
 name: Mutants timing
 
 on:
@@ -14,8 +14,6 @@ on:
       features:
         description: 'build の features (変異試験の features 軸と同じもの)'
         default: 'ffi,gpu-solver-bridge,mpm2d,neural,parallel,simd'
-  push:
-    branches: ['ci/mutant-timing-*']
 
 permissions:
   contents: read

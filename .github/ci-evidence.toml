@@ -20,6 +20,7 @@
 "fuzz.yml" = "landing"
 "g2-comparisons.yml" = "landing"
 "integration-status.yml" = "landing"
+"mutants-timing.yml" = "schedule-only"
 "oracle-status.yml" = "landing"
 "public-text.yml" = "landing"
 "python-binding.yml" = "landing"
