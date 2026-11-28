@@ -26,7 +26,7 @@ SUMMARY = {"data": [{"files": [
 
 class ReadTimes(unittest.TestCase):
     def test_reads_target_and_seconds_and_skips_bad_lines(self):
-        t = cm.read_times("a\t1.5\t0\nb\t2\nbroken\nc\tnot-a-number\n")
+        t = cm.read_times("# runner: x\na\t1.5\t0\nb\t2\nbroken\nc\tnot-a-number\n")
         self.assertEqual(t, {"a": 1.5, "b": 2.0})
 
 
@@ -84,6 +84,65 @@ class RunTarget(unittest.TestCase):
         self.assertIn("parallel", calls[1])
 
 
+class ListTargets(unittest.TestCase):
+    def make(self, d: Path) -> Path:
+        (d / "tests" / "dirtest").mkdir(parents=True)
+        (d / "tests" / "dirtest" / "main.rs").write_text("", encoding="utf-8")
+        for n in ("a", "needs_gpu", "needs_wasm", "plain"):
+            (d / "tests" / f"{n}.rs").write_text("", encoding="utf-8")
+        (d / "Cargo.toml").write_text('[package]\nname = "x"\n\n[[test]]\nname = "needs_gpu"\nrequired-features = ["std", "gpu"]\n\n'
+                                      '[[test]]\nname = "needs_wasm"\nrequired-features = ["wasm"]\n', encoding="utf-8")
+        return d
+
+    def test_targets_with_their_features_on_and_lib_last(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = cm.list_targets(self.make(Path(d)), ["gpu"])
+            self.assertEqual(got, ["a", "dirtest", "needs_gpu", "plain", cm.LIB])
+
+    def test_a_target_whose_feature_is_off_is_left_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertNotIn("needs_gpu", cm.list_targets(self.make(Path(d)), []))
+
+    def test_a_host_unbuildable_target_is_left_out_even_when_asked(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertNotIn("needs_wasm", cm.list_targets(self.make(Path(d)), ["wasm"]))
+
+
+class TimeTargets(unittest.TestCase):
+    def test_build_once_then_time_each_target(self):
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        ticks = iter([0.0, 2.5, 10.0, 10.4])
+        with mock.patch.object(cm.subprocess, "run", side_effect=run):
+            rows = cm.time_targets(["a", cm.LIB], "simd", Path(ROOT), clock=lambda: next(ticks))
+        self.assertEqual(rows, [("a", 2.5, 0), (cm.LIB, 0.4, 0)])
+        self.assertIn("--no-run", calls[0])
+        self.assertEqual(sum("--no-run" in c for c in calls), 1)
+
+    def test_a_failed_build_is_an_error(self):
+        def run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 101 if "--no-run" in cmd else 0, "", "boom")
+        with mock.patch.object(cm.subprocess, "run", side_effect=run):
+            with self.assertRaises(RuntimeError):
+                cm.time_targets(["a"], "", Path(ROOT))
+
+    def test_times_writes_the_runner_and_fails_on_a_failed_target(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d)
+            (p / "t.txt").write_text("a\nb\n", encoding="utf-8")
+            def run(cmd, **kw):
+                return subprocess.CompletedProcess(cmd, 101 if "b" in cmd and "--test" in cmd else 0, "", "")
+            with mock.patch.object(cm.subprocess, "run", side_effect=run):
+                rc = cm.main(["times", "--targets", str(p / "t.txt"), "--root", ROOT, "--runner", "ubuntu-24.04 4 cpu",
+                              "--out", str(p / "o.tsv")])
+            self.assertEqual(rc, 1)
+            text = (p / "o.tsv").read_text()
+            self.assertTrue(text.startswith("# runner: ubuntu-24.04 4 cpu"))
+            self.assertEqual(set(cm.read_times(text)), {"a", "b"})
+
+
 class Main(unittest.TestCase):
     def test_buckets_then_join_round_trip(self):
         with tempfile.TemporaryDirectory() as d:
@@ -134,7 +193,7 @@ class Main(unittest.TestCase):
 if __name__ == "__main__":
     result = unittest.main(exit=False, verbosity=1).result
     n = result.testsRun
-    if n < 14:
-        print(f"error: only {n} test(s) ran (expected at least 14)", file=sys.stderr)
+    if n < 20:
+        print(f"error: only {n} test(s) ran (expected at least 20)", file=sys.stderr)
         sys.exit(1)
     sys.exit(0 if result.wasSuccessful() else 1)

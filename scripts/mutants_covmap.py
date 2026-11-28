@@ -10,6 +10,9 @@ time, in K coverage jobs that run side by side:
            and read the per-file summary; writes that bucket's part of the map
   join     merge the parts into one map; a target in two parts, a union target in none, or a target
            whose own test run failed is an error (a lost job never shrinks the selection silently)
+  targets  list the integration test targets (plus `__lib__`) a build with the given features compiles
+  times    the plain (uninstrumented) test time of each target after one warm build: the per-mutant test
+           cost the shards are sized with, measured on the runner the mutants run on
 
   python3 scripts/mutants_covmap.py buckets --union tests.txt --times times.tsv --k 8 --out buckets.json
   python3 scripts/mutants_covmap.py run --buckets buckets.json --bucket 3 --features parallel --out part-3.json
@@ -29,14 +32,17 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import mutants_select_groups as sg  # noqa: E402
+import mutants_in_diff_plan as mp  # noqa: E402
 
 LIB = "__lib__"
 
 
 def read_times(text: str) -> dict[str, float]:
-    """A tab-separated table `target<TAB>seconds[<TAB>...]`; lines that do not parse are skipped."""
+    """A tab-separated table `target<TAB>seconds[<TAB>...]`; `#` lines and lines that do not parse are skipped."""
     out: dict[str, float] = {}
     for line in text.splitlines():
+        if line.startswith("#"):
+            continue
         cols = line.split("\t")
         if len(cols) >= 2:
             try:
@@ -82,6 +88,37 @@ def run_target(target: str, features: str, root: Path) -> dict:
     return files_of(json.loads(report.stdout), str(root))
 
 
+def list_targets(root: Path, features: list[str]) -> list[str]:
+    """The test targets of tests/ (`a.rs`, `a/main.rs`) whose required features are all on and buildable on
+    the host, sorted, then `__lib__`."""
+    req = mp.required_features((root / "Cargo.toml").read_text(encoding="utf-8"))
+    on = set(features) | {"std"}
+    names = sorted(p.stem for p in (root / "tests").glob("*.rs"))
+    names += sorted(d.name for d in (root / "tests").iterdir() if d.is_dir() and (d / "main.rs").is_file())
+    keep = [n for n in sorted(set(names))
+            if not any(f in mp.HOST_UNBUILDABLE for f in req.get(n, [])) and set(req.get(n, [])) <= on]
+    return keep + [LIB]
+
+
+def time_targets(targets: list[str], features: str, root: Path, clock=None) -> list[tuple[str, float, int]]:
+    """Build every target once, then run each and time it; (target, seconds, exit code)."""
+    import time
+    clock = clock or time.monotonic
+    feat = ["--features", features] if features else []
+    build = subprocess.run(["cargo", "test", "--locked", "--no-run", "--profile", "ci-test", *feat, "--tests", "--lib"],
+                           cwd=root, capture_output=True, text=True)
+    if build.returncode != 0:
+        tail = "\n".join((build.stdout + build.stderr).splitlines()[-20:])
+        raise RuntimeError(f"the warm build failed (exit {build.returncode}):\n{tail}")
+    out = []
+    for t in targets:
+        a = clock()
+        r = subprocess.run(["cargo", "test", "--locked", "--profile", "ci-test", *feat, *target_args(t)],
+                           cwd=root, capture_output=True, text=True)
+        out.append((t, round(clock() - a, 1), r.returncode))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -100,7 +137,46 @@ def main(argv: list[str] | None = None) -> int:
     j.add_argument("--union", required=True)
     j.add_argument("--parts", required=True, help="directory of the parts (*.json)")
     j.add_argument("--out", required=True)
+    tg = sub.add_parser("targets")
+    tg.add_argument("--features", default="")
+    tg.add_argument("--root", default=str(HERE.parent))
+    tg.add_argument("--out", required=True)
+    tm = sub.add_parser("times")
+    tm.add_argument("--targets", required=True)
+    tm.add_argument("--features", default="")
+    tm.add_argument("--root", default=str(HERE.parent))
+    tm.add_argument("--runner", default="", help="a line naming the runner class, written as a # comment")
+    tm.add_argument("--out", required=True)
     args = ap.parse_args(argv)
+
+    if args.cmd == "targets":
+        ts = list_targets(Path(args.root), [f for f in args.features.split(",") if f])
+        if len(ts) < 2:
+            print("error: no integration test target", file=sys.stderr)
+            return 1
+        Path(args.out).write_text("\n".join(ts) + "\n", encoding="utf-8")
+        print(f"note: {len(ts)} target(s) (with {LIB})", file=sys.stderr)
+        return 0
+
+    if args.cmd == "times":
+        ts = Path(args.targets).read_text(encoding="utf-8").split()
+        if not ts:
+            print("error: no target to time", file=sys.stderr)
+            return 1
+        try:
+            rows = time_targets(ts, args.features, Path(args.root))
+        except RuntimeError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        lines = ([f"# runner: {args.runner}"] if args.runner else []) + [f"# features: {args.features}"]
+        lines += [f"{t}\t{s}\t{rc}" for t, s, rc in rows]
+        Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        bad = [t for t, _, rc in rows if rc != 0]
+        print(f"note: {len(rows)} target(s) timed, {sum(s for _, s, _ in rows):.0f} s in all, {len(bad)} failed", file=sys.stderr)
+        if bad:
+            print(f"error: {len(bad)} target(s) failed (first: {bad[0]}): the baseline of the mutation run fails too", file=sys.stderr)
+            return 1
+        return 0
 
     if args.cmd == "buckets":
         union = Path(args.union).read_text(encoding="utf-8").split()

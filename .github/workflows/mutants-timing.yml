@@ -1,0 +1,62 @@
+# mutants-timing — 変異試験の shard を見積もる元の、統合試験 target ごとの計測なしの試験時間
+#
+# 変異 1 つの費用は、その変異の群が走らせる試験の時間 (scripts/mutants_select_groups.py) なので、
+# 変異が走るのと同じ GitHub-hosted runner で target ごとに測る: 1 回の build の後、target を 1 つずつ
+# `cargo test --profile ci-test` で走らせて時間を取る (build の時間は含まない) 結果は runner の種類を
+# 先頭の行に書いた tsv の artifact で、coverage の桶分け (scripts/mutants_covmap.py buckets) が読む
+#
+# 手動か ci/mutant-timing-* への push だけで動く (push ごとには動かない: 全 target で 1 時間ほど)
+name: Mutants timing
+
+on:
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 'build の features (変異試験の features 軸と同じもの)'
+        default: 'ffi,gpu-solver-bridge,mpm2d,neural,parallel,simd'
+  push:
+    branches: ['ci/mutant-timing-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutants-timing-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  times:
+    name: Test time per target (plain, ci-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      FEATURES: ${{ inputs.features || 'ffi,gpu-solver-bridge,mpm2d,neural,parallel,simd' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          ch=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml 2>/dev/null)
+          [ -n "$ch" ] || { echo "rust-toolchain.toml に channel が無い (読めない): 既定の toolchain は入れない" >&2; exit 1; }
+          rustup toolchain install "$ch" --profile minimal --no-self-update
+          rustup default "$ch"
+      - name: Targets the build compiles
+        run: python3 scripts/mutants_covmap.py targets --features "$FEATURES" --out /tmp/targets.txt
+      - name: Time each target after one build
+        run: |
+          runner="$(. /etc/os-release && echo "$ID-$VERSION_ID") $(nproc) cpu $(free -g | awk '/^Mem:/{print $2}') GiB $(uname -m)"
+          python3 scripts/mutants_covmap.py times --targets /tmp/targets.txt --features "$FEATURES" --runner "$runner" --out mutants-times.tsv
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f mutants-times.tsv ]; then
+            head -2 mutants-times.tsv
+            awk -F'\t' '!/^#/{n++; s+=$2} END{printf "%d target(s), %.0f s in all\n", n, s}' mutants-times.tsv
+            sort -t$'\t' -k2 -nr mutants-times.tsv | grep -v '^#' | head -10
+          fi | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mutants-times
+          path: mutants-times.tsv
+          if-no-files-found: error
+          retention-days: 30
