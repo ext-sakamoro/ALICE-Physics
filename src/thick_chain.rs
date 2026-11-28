@@ -152,35 +152,77 @@
 //!   near the wall of the law; and the slow case above is slow because the matrix leaves
 //!   out the constraints' second slopes (Newton's step with them takes 4 passes there in
 //!   `f64`); that matrix is not in the library.
-//!   Between walls, with a bending law: each sample of a link keeps the multiplier `λ ≥ 0` of
-//!   its wall constraint for the substep. After a pass's step down `Ψ` a sample short of its
-//!   radius raises its multiplier and one that an earlier push has left off its wall lowers
-//!   it, to zero at most (a wall does not pull), and the particles move by `W ∇C δλ`. Where
-//!   the particles' inertia would leave them is then put together again from the multipliers
-//!   as they are, along the constraints' slopes where the chain is now:
-//!   `x̃ + Σ W ∇C(x) λ`. So where the passes no longer move the chain, `∇Ψ = Σ λ ∇C` with
-//!   every `λ ≥ 0` and `λ C = 0`: the first-order conditions of the minimum of `Ψ` among
-//!   the positions the walls allow. (Summing the moves themselves, as until 2026-11-28,
-//!   keeps every push along the slope it was made on; a constraint's slope has the term of
-//!   the link thinning as it stretches, `r / l` along the link, 2 for the links measured, and
-//!   turns as the chain moves. With multipliers kept that way the passes settled 5·10⁻⁶ to
-//!   5·10⁻⁵ m from the minimum, 2 to 6 % of the slope of `Ψ` left; without lowering them,
-//!   18 % to all of it.) Measured, an arc of radius 0.1 and 0.05 m at rest, a flat wall 0.2
-//!   and 1 mm into its end's disc, 1/960 s, 64 passes: nothing of the slope left to four
-//!   places, and the chain 5.8·10⁻¹⁰ to 1.1·10⁻⁹ m from the minimum found apart in `f64`
-//!   (the first-order conditions solved by Newton's method on the constraints at zero, and
-//!   checked on what it finds); the wall's field is an `f32`'s, 7.5·10⁻⁹ m there
-//!   (`between_walls_a_substep_ends_where_the_reference_minimum_is` and
-//!   `between_walls_a_substep_ends_at_the_minimum_the_walls_allow` in the same file).
+//!   Between walls, with a bending law, the walls are in that step. Each sample of a link
+//!   has the wall constraint `C = d(p) − r(l) ≥ 0`. A pass holds the constraints of the
+//!   samples short of their radius and of those with a multiplier from the pass before, and
+//!   its step `d` and their multipliers `μ` (forces) solve `K d − ∇Cᵀ μ = −∇Ψ / h²` with
+//!   `C + ∇C d = 0` (`K` the matrix above): the step to the minimum of the pass's model of
+//!   `Ψ` among the positions the walls' constraints, taken to the first order, allow. It is
+//!   solved by the walls' own system `(∇C K⁻¹ ∇Cᵀ) μ = −C − ∇C K⁻¹ r`, one solve in band
+//!   per constraint held and then a system as large as their number, with no stiffness of
+//!   the walls anywhere. The multipliers are the `μ ≥ 0` that leave no held constraint
+//!   short to the first order and press only where one ends at zero
+//!   (`w = (∇C K⁻¹ ∇Cᵀ) μ + C + ∇C K⁻¹ r ≥ 0`, `μ w = 0`): a constraint whose multiplier
+//!   comes out negative is let go (a wall does not pull), the most negative first, and the
+//!   rest solved again; one let go that the step would then leave short is held again, the
+//!   shortest first (without this two samples at a deep wall were held in one pass and let
+//!   go in the next, and the passes did not settle); one the others already hold (two
+//!   samples of a link at a flat wall with a third between them: a pivot below 2⁻²⁴ of its
+//!   entry) is passed over. The turns are bounded (four a constraint and four more), and a
+//!   pass that meets the bound takes the step of its last set and is counted
+//!   ([`ThickChain::walls_unsettled`]). The part of the step taken is judged on
+//!   `Ψ / h²` plus a price on the samples' shortfall, `ν Σ max(0, −C)` with `ν` twice the
+//!   largest multiplier (the exact penalty: any factor above one prices a shortfall above
+//!   what closing it saves, and where the passes end does not depend on it); the
+//!   constraint's rounding in that sum's bound is the field's, an `f32` distance at a point
+//!   given as `f32`s. Where the passes no longer move the chain, `∇Ψ = Σ μ ∇C` with every
+//!   `μ ≥ 0` and `μ C = 0`: the first-order conditions of the minimum of `Ψ` among the
+//!   positions the walls allow.
+//!   The step's matrix also takes the one second slope of the walls' constraints that is
+//!   positive: a sample held with the multiplier `μ` presses its link thinner as it
+//!   stretches, `2 μ r / l²` along the link (at a press of 6 kN on a link of 10 mm,
+//!   2.4·10⁶ N/m against the masses' 3.7·10⁵; without it the step overshot along the link).
 //!   A substep ends with sweeps that only push, until one pushes nothing (8 at most): the
-//!   chain is out of the walls to what the field resolves whatever the passes (measured
-//!   3.7·10⁻⁹ m at most after 8, 16, 64 and 256).
-//!   Known limit between walls: the walls' multipliers and the step down `Ψ` take turns, and
-//!   the passes close on that minimum at a linear rate. After 16 passes the two scenes 1 mm
-//!   in the wall are 9.3·10⁻⁶ and 2.4·10⁻⁵ m from it and the wall's press is 1.0 % and 0.7 %
-//!   above its value after 64 (201.70 against 199.68 N, 229.43 against 227.78 N); the test
-//!   that asks 16 and 64 passes to agree to 10⁻⁴ is kept and not run
-//!   (`between_walls_the_wall_s_press_is_the_same_after_more_passes`).
+//!   chain is out of the walls to what the field resolves whatever the passes.
+//!   Measured, an arc of radius 0.1 and 0.05 m at rest, a flat wall into its end's disc
+//!   (`tests/analytic_thick_chain_bend_step.rs`, against the minimum found apart in `f64`
+//!   by Newton's method on the first-order conditions and checked on what it finds; the
+//!   wall's field is an `f32`'s, 7.5·10⁻⁹ m there): the wall 0.2 and 1 mm in at 1/960 s,
+//!   the chain 5.8·10⁻¹⁰ to 1.2·10⁻⁹ m from that minimum after 16 and after 64 passes,
+//!   nothing of the slope of `Ψ` left by the constraints at zero to four places, and the
+//!   wall's press after 16 passes its press after 64 to 10⁻¹¹ of it; the wall 1, 4 and 5 mm
+//!   in at 1/960 and 1/240 s, 5.8·10⁻¹⁰ to 4.4·10⁻⁹ m from the minimum after 64 passes, no
+//!   pass without a step, the press after 16 passes within 10⁻⁴ of that after 64; a wall
+//!   5 mm out of reach changes no bit of the substep, and one 0.2 mm off, 0.05 mm off or
+//!   touching is met where that minimum says.
+//!   What a substep between walls asks of the chain: no sample deeper in a wall than a
+//!   substep moves a particle, half the least radius (the bound `TooFast` holds the
+//!   particles to). The walls' constraints are held from within that depth, and a chain
+//!   that starts a substep with a sample deeper was put there, not brought there: it is
+//!   refused ([`ThickChainError::Invalid`] of `"walls"`), as is a substep one of whose
+//!   passes cannot settle the walls ([`ThickChainError::TooStiff`]: no part of the pass's
+//!   step could be taken with a constraint held, or the set of constraints was not found
+//!   in its turns); a refused substep leaves the chain as it was.
+//!   Known limit: past that depth the passes are not shown to settle. Measured with the
+//!   refusal off: 8 mm in settles in every case (8.8·10⁻⁹ m or less from the minimum, no
+//!   step halved); 16 mm in settles for the arc of radius 0.1 m (1.5·10⁻⁸ m after 64
+//!   passes, the press after 16 passes 2.6·10⁻³ off) and at 1/240 s, and for the arc of
+//!   radius 0.05 m at 1/960 s (a press of 6 kN) 58 passes of 64 take no step. The test
+//!   that asks that scene to settle is kept and not run
+//!   (`a_chain_put_deeper_in_a_wall_than_a_substep_reaches_settles_at_the_minimum`).
+//!   What this replaced: until 2026-11-28 the walls pushed the particles after each pass's
+//!   step and the pushes were summed into where the particles' inertia would leave them,
+//!   never taken back and each along the slope it was made on. A constraint's slope has the
+//!   term of the link thinning as it stretches (`r / l` along the link, 2 for the links
+//!   measured) and turns as the chain moves: 18 % to all of the slope of `Ψ` was left. With
+//!   multipliers kept, lowered, and put along the slopes of now, but still taking turns with
+//!   the step, the same minimum was reached at a linear rate in the passes (after 16, the
+//!   scenes 1 mm in the wall 9.3·10⁻⁶ and 2.4·10⁻⁵ m from it, the press 1 % off). With the
+//!   walls as rows of the step held by a stiffness (the augmented Lagrangian, 64 times what
+//!   the masses give a constraint) the four scenes measured agreed with the minimum to
+//!   1.8·10⁻⁹ m at 16 passes and the same at a quarter of the stiffness, and at four times
+//!   it 54 passes of 64 took no step and the walls' press came out zero: a stiffness that
+//!   works is a tuned number, so the walls are held exactly.
 //!   The step of the multipliers of all the constraints at once that this replaces (the
 //!   matrix `(1 + γ) G W Gᵀ + diag(α / h²)`, each multiplier put along its slope of now
 //!   before the step) is the same matrix seen from the constraints, taken whole: near the
@@ -400,6 +442,39 @@ struct Row {
     live: bool,
 }
 
+/// A sample of a link at its wall in a substep with a bending law: the link, where along it
+/// (0 at its first particle, 1 at its second) and the wall's multiplier there after the last
+/// pass (a force, never below zero).
+#[derive(Clone, Copy)]
+struct Lean {
+    link: usize,
+    t: Fix128,
+    held: Fix128,
+}
+
+/// A wall's constraint where the chain is: the sample (its place among the substep's
+/// samples), its link, the constraint's value `C = d(p) − r(l)`, how many units of 2⁻⁶⁴ the
+/// value's rounding may be (the field is an `f32`'s), and its slope in its link's two
+/// particles (zero where it was not asked for).
+#[derive(Clone, Copy)]
+struct WallRow {
+    sample: usize,
+    link: usize,
+    value: Fix128,
+    fine: Fix128,
+    slope: [P2; 2],
+}
+
+/// What a metre of a sample's shortfall costs in the merit a step between walls is judged
+/// on, over the largest of the walls' multipliers (the exact penalty of the constraints:
+/// any factor above one prices a shortfall above what closing it saves).
+const WALL_PRICE: i64 = 2;
+
+/// A pivot of the walls' own system below this share of its diagonal entry (2⁻²⁴) is a
+/// constraint the others already hold (two samples of one link at a flat wall with a third
+/// between them): it is left out of that pass's step.
+const WALL_PIVOT_BITS: u32 = 24;
+
 /// How far from the diagonal the matrix of a substep's step reaches, in the coordinates'
 /// order along the chain (two to a particle): a joint ties a particle to the next but one,
 /// so a coordinate to the fifth after it, nothing further.
@@ -467,6 +542,121 @@ fn solve_band<const W: usize>(band: &[[Fix128; W]], right: &[Fix128]) -> Option<
         }
     }
     Some(out)
+}
+
+/// The solution of the walls' own system of a pass, `matrix` symmetric and not negative,
+/// over the rows `kept` (the others' unknowns are zero): elimination in the rows' order,
+/// the same operations whatever the entries. A kept row whose pivot is not above
+/// [`WALL_PIVOT_BITS`] of its diagonal entry is a constraint the rows before it already
+/// hold: it is passed over, its unknown zero.
+fn solve_walls(matrix: &[Vec<Fix128>], wanted: &[Fix128], kept: &[bool]) -> Vec<Fix128> {
+    let m = wanted.len();
+    let mut a: Vec<Vec<Fix128>> = matrix.to_vec();
+    let mut b = wanted.to_vec();
+    let mut used = kept.to_vec();
+    for k in 0..m {
+        if !used[k] {
+            continue;
+        }
+        if a[k][k] <= matrix[k][k].shr_bits(WALL_PIVOT_BITS) {
+            used[k] = false;
+            continue;
+        }
+        for i in k + 1..m {
+            if !used[i] {
+                continue;
+            }
+            let share = a[i][k] / a[k][k];
+            let (above, below) = a.split_at_mut(i);
+            for (entry, pivot_row) in below[0][k..].iter_mut().zip(&above[k][k..]) {
+                *entry = *entry - share * *pivot_row;
+            }
+            b[i] = b[i] - share * b[k];
+        }
+    }
+    let mut out = vec![Fix128::ZERO; m];
+    for k in (0..m).rev() {
+        if !used[k] {
+            continue;
+        }
+        let mut sum = b[k];
+        for j in k + 1..m {
+            if used[j] {
+                sum = sum - a[k][j] * out[j];
+            }
+        }
+        out[k] = sum / a[k][k];
+    }
+    out
+}
+
+/// The walls' multipliers of a pass: the `μ ≥ 0` with `w = matrix μ − wanted ≥ 0` and
+/// `μ w = 0` row by row (`w` is what the step leaves of each constraint to the first order:
+/// a held row ends at zero with a multiplier that does not pull, a row let go ends not
+/// short). Found by [`solve_walls`] over a set of rows that starts as all of them: a kept
+/// row whose multiplier comes out negative is let go, the most negative first; when none
+/// is, a row let go that the step would leave short by more than its `slack` (what the
+/// constraint's value is known to: the field's rounding) is held again, the shortest
+/// first. The
+/// set is the one such set for a matrix that is positive (the answer does not depend on
+/// the order). At most `turns` sets are tried: with none found by then, false is returned
+/// with the multipliers of the last set, the negative ones at zero (the caller counts it;
+/// the next pass starts from where that step leaves the chain).
+fn hold_walls(
+    matrix: &[Vec<Fix128>],
+    wanted: &[Fix128],
+    slack: &[Fix128],
+    turns: usize,
+) -> (Vec<Fix128>, bool) {
+    let m = wanted.len();
+    let mut kept = vec![true; m];
+    let mut weights = vec![Fix128::ZERO; m];
+    for _ in 0..turns {
+        weights = solve_walls(matrix, wanted, &kept);
+        let mut least: Option<usize> = None;
+        for i in 0..m {
+            if kept[i] && weights[i] < Fix128::ZERO && least.is_none_or(|l| weights[i] < weights[l])
+            {
+                least = Some(i);
+            }
+        }
+        if let Some(i) = least {
+            kept[i] = false;
+            continue;
+        }
+        // what the step leaves of the rows let go
+        let mut shortest: Option<(usize, Fix128)> = None;
+        for i in 0..m {
+            if kept[i] {
+                continue;
+            }
+            let mut left = -wanted[i];
+            for (entry, weight) in matrix[i].iter().zip(&weights) {
+                left = left + *entry * *weight;
+            }
+            // (short by more than the constraint's value is known to: its `slack`)
+            if left < -slack[i] && shortest.is_none_or(|(_, s)| left < s) {
+                shortest = Some((i, left));
+            }
+        }
+        match shortest {
+            Some((i, _)) => kept[i] = true,
+            None => return (weights, true),
+        }
+    }
+    for weight in &mut weights {
+        if *weight < Fix128::ZERO {
+            *weight = Fix128::ZERO;
+        }
+    }
+    (weights, m == 0)
+}
+
+/// The sets of rows [`hold_walls`] may try for `rows` rows: each turn lets one row go or
+/// holds one again, and four turns a row and four more is some ten times what the cases
+/// of its oracle take.
+fn wall_turns(rows: usize) -> usize {
+    4 * rows + 4
 }
 
 /// The settings of a [`ThickChain`]; [`ThickChain::new`] checks them.
@@ -560,7 +750,10 @@ pub enum ThickChainError {
         /// The particle index
         particle: usize,
     },
-    /// A link is too stiff for the substep at its most halvings
+    /// A link is too stiff for the substep at its most halvings; or, with a bending law
+    /// between walls, the passes did not settle the walls on it: no part of a pass's step
+    /// could be taken with a wall's constraint held, or no set of the walls' constraints
+    /// without a pull and without one left short was found
     TooStiff {
         /// The link index
         link: usize,
@@ -781,6 +974,10 @@ pub struct ThickChain {
     /// the passes with the bending law in which no part of the step was taken (read out,
     /// not state)
     bend_stalled: u64,
+    /// The shortfall's price over the largest multiplier ([`WALL_PRICE`]).
+    wall_price: i64,
+    /// The most sets of the walls' rows a pass may try (no bound of its own: [`wall_turns`]).
+    wall_turns_most: usize,
     /// the tries of a substep that were refused and taken again in halves (read out, not
     /// state)
     substep_retries: u64,
@@ -888,6 +1085,8 @@ impl ThickChain {
             bend: ThickChainBend::None,
             bend_halved: 0,
             bend_stalled: 0,
+            wall_price: WALL_PRICE,
+            wall_turns_most: usize::MAX,
             substep_retries: 0,
             last_pass_move: Fix128::ZERO,
             rest_length,
@@ -1061,11 +1260,13 @@ impl ThickChain {
         self.wall_force[k]
     }
 
-    /// How many passes of the conforming rule, since the chain was made, ended their rounds
-    /// with the hard walls not settled: a link still pulling on its wall, or one left
-    /// shorter than its walls allow by the others' pushes (see `walls_together`). 0 in a run
-    /// whose walls were solved as stated; anything else says the bound on the rounds was
-    /// met. Read out of the steps, not part of the state.
+    /// How many passes, since the chain was made, ended with the hard walls not settled.
+    /// Of the conforming rule: a link still pulling on its wall, or one left shorter than
+    /// its walls allow by the others' pushes (see `walls_together`). Of a chain with a
+    /// bending law: no set of the walls' constraints with no pull and none left short was
+    /// found in the turns a pass may take (see the MODEL section). 0 in a run whose walls
+    /// were solved as stated; anything else says a bound was met. Read out of the steps, not
+    /// part of the state.
     #[must_use]
     pub fn walls_unsettled(&self) -> u64 {
         self.walls_unsettled
@@ -1363,7 +1564,13 @@ impl ThickChain {
     /// them by since), `first` the rows' values where the substep started, `rate` is `γ`.
     /// With it, what its rounding may be: each constraint's term moves by its stiffness
     /// times `|C| + γ |C − C_start|` times the rounding of `C` (the row's `fine`) and by its
-    /// own products' units, each particle's by its two squares'.
+    /// own products' units, each particle's by its two squares'. Between walls `leaning`
+    /// are the samples' constraints and `price` what a metre of shortfall costs: each
+    /// sample short of its radius adds its shortfall at that price.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the pass's own state, handed on from where it was worked out"
+    )]
     fn merit(
         &self,
         rows: &[Row],
@@ -1371,6 +1578,8 @@ impl ThickChain {
         rate: Fix128,
         anchor: &[P2],
         first: &[Fix128],
+        leaning: &[WallRow],
+        price: Fix128,
     ) -> (Fix128, Fix128) {
         let mut sum = Fix128::ZERO;
         let mut fine = Fix128::ZERO;
@@ -1395,6 +1604,15 @@ impl ThickChain {
                 + row.stiff * (row.value.abs() + rate * change.abs()) * row.fine
                 + rate
                 + Fix128::from_int(4);
+        }
+        // (with no multiplier there is no price, and the walls change nothing of the merit)
+        if !price.is_zero() {
+            for wall in leaning {
+                if wall.value < Fix128::ZERO {
+                    sum = sum - price * wall.value;
+                }
+                fine = fine + price * wall.fine + Fix128::ONE;
+            }
         }
         (sum, units(fine))
     }
@@ -1462,6 +1680,197 @@ impl ThickChain {
         (band, right)
     }
 
+    /// The wall constraint of a sample where the chain is, `d(p) − r(l)`, and how many units
+    /// of 2⁻⁶⁴ its rounding may be: the field tells the distance as an `f32` at a point given
+    /// as `f32`s, so the value is held to a few of the last place of the largest of them.
+    fn wall_gap(
+        &self,
+        lean: &Lean,
+        walls: &dyn SdfQuery,
+    ) -> Result<(Fix128, Fix128), ThickChainError> {
+        let k = lean.link;
+        let d = sub(self.x[k + 1], self.x[k]);
+        let l = dot(d, d).sqrt();
+        if l.is_zero() {
+            return Err(ThickChainError::Degenerate { link: k });
+        }
+        let (r, _) = self.radius_at(k, l);
+        let p = add(
+            scale(self.x[k], Fix128::ONE - lean.t),
+            scale(self.x[k + 1], lean.t),
+        );
+        let (px, py) = (p[0].to_f32(), p[1].to_f32());
+        let far = walls.query_distance(px, py, 0.0);
+        if !far.is_finite() {
+            return Err(ThickChainError::Field { link: k });
+        }
+        // the last place of the largest of the three, in units of 2⁻⁶⁴ (2^(e − 23 + 64)),
+        // four of them: the two coordinates, the distance and its product with the normal
+        let most = crate::det_math::max(crate::det_math::max(far.abs(), px.abs()), py.abs());
+        let exponent = i64::from((most.to_bits() >> 23) & 0xff) - 127;
+        let shift = (exponent + 41 + 2).clamp(0, 62);
+        Ok((Fix128::from_f32(far) - r, Fix128::from_int(1i64 << shift)))
+    }
+
+    /// The walls' constraints of every sample where the chain is. `slopes` asks for the slopes
+    /// of those a step holds: the samples short of their radius and those with a multiplier
+    /// (false leaves every slope zero: the merit reads the values only).
+    fn wall_rows(
+        &self,
+        leans: &[Lean],
+        walls: &dyn SdfQuery,
+        slopes: bool,
+    ) -> Result<Vec<WallRow>, ThickChainError> {
+        let mut rows = Vec::with_capacity(leans.len());
+        for (sample, lean) in leans.iter().enumerate() {
+            let (value, fine) = self.wall_gap(lean, walls)?;
+            let held = value < Fix128::ZERO || lean.held > Fix128::ZERO;
+            let slope = if slopes && held {
+                let (g0, g1) = self.wall_slopes(lean.link, lean.t, walls)?;
+                [g0, g1]
+            } else {
+                [ZERO2; 2]
+            };
+            rows.push(WallRow {
+                sample,
+                link: lean.link,
+                value,
+                fine,
+                slope,
+            });
+        }
+        Ok(rows)
+    }
+
+    /// The second slopes of the walls' constraints that the step's matrix takes: a sample
+    /// held with the multiplier `μ` presses its link thinner as it stretches
+    /// (`r = A / (2 l)`), and `−μ C` has along the link the second slope `μ r″ = 2 μ r / l²`
+    /// in the link's stretch (positive: the matrix stays positive). The part across the
+    /// link, `−μ r / l²`, is negative and is left out, as the second slopes of the stretch
+    /// and joint constraints are. Without this term a wall pressed hard is stepped as if
+    /// stretching the link cost nothing more: at 6 kN on a link of 10 mm it is 2.4·10⁶ N/m
+    /// against the masses' 3.7·10⁵, the step overshot, and the passes took half a step
+    /// forward and back.
+    fn wall_curve(
+        &self,
+        band: &mut [[Fix128; BAND + 1]],
+        leans: &[Lean],
+    ) -> Result<(), ThickChainError> {
+        for lean in leans {
+            if lean.held.is_zero() {
+                continue;
+            }
+            let k = lean.link;
+            let d = sub(self.x[k + 1], self.x[k]);
+            let l = dot(d, d).sqrt();
+            if l.is_zero() {
+                return Err(ThickChainError::Degenerate { link: k });
+            }
+            let (r, by_area) = self.radius_at(k, l);
+            if !by_area {
+                continue;
+            }
+            let u = scale(d, Fix128::ONE / l);
+            let stiff = (lean.held * r).double() / (l * l);
+            let free = [!self.inv_mass[k].is_zero(), !self.inv_mass[k + 1].is_zero()];
+            for axis in 0..2 {
+                for other in 0..2 {
+                    let entry = stiff * u[axis] * u[other];
+                    // each particle with itself, at or before the diagonal
+                    for (n, is_free) in free.iter().enumerate() {
+                        let (at, to) = (2 * (k + n) + axis, 2 * (k + n) + other);
+                        if *is_free && to <= at {
+                            band[at][at - to] = band[at][at - to] + entry;
+                        }
+                    }
+                    // the second particle with the first
+                    if free[0] && free[1] {
+                        let (at, to) = (2 * (k + 1) + axis, 2 * k + other);
+                        band[at][at - to] = band[at][at - to] - entry;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The step of a pass between walls and the walls' multipliers with it. `free` is the
+    /// step without walls (`K d = r`). The constraints held are those of the samples short
+    /// of their radius or with a multiplier: the step `d` and their multipliers `μ` solve
+    /// `K d − ∇Cᵀ μ = r`, `C + ∇C d = 0`, by the walls' own system
+    /// `(∇C K⁻¹ ∇Cᵀ) μ = −C − ∇C K⁻¹ r` (one solve in band per constraint held, then a
+    /// system as large as their number). A constraint whose multiplier comes out negative
+    /// is let go (a wall does not pull), the most negative first, and the rest solved
+    /// again; one the others already hold (a pivot below [`WALL_PIVOT_BITS`] of its entry)
+    /// is left out. Returns the step, per sample its multiplier (zero when not held), and
+    /// whether the set of rows held was found ([`hold_walls`]).
+    fn step_between(
+        &self,
+        band: &[[Fix128; BAND + 1]],
+        right: &[Fix128],
+        free: &[Fix128],
+        leaning: &[WallRow],
+        leans: &[Lean],
+    ) -> Option<(Vec<Fix128>, Vec<Fix128>, bool)> {
+        let mut multipliers = vec![Fix128::ZERO; leans.len()];
+        let held: Vec<&WallRow> = leaning
+            .iter()
+            .filter(|w| w.value < Fix128::ZERO || leans[w.sample].held > Fix128::ZERO)
+            .filter(|w| !(self.inv_mass[w.link].is_zero() && self.inv_mass[w.link + 1].is_zero()))
+            .collect();
+        if held.is_empty() {
+            return Some((free.to_vec(), multipliers, true));
+        }
+        // each held constraint's slope over the coordinates, and K⁻¹ of it
+        let mut slopes: Vec<Vec<Fix128>> = Vec::with_capacity(held.len());
+        let mut moved: Vec<Vec<Fix128>> = Vec::with_capacity(held.len());
+        for wall in &held {
+            let mut column = vec![Fix128::ZERO; right.len()];
+            for n in 0..2 {
+                let i = wall.link + n;
+                if self.inv_mass[i].is_zero() {
+                    continue;
+                }
+                column[2 * i] = wall.slope[n][0];
+                column[2 * i + 1] = wall.slope[n][1];
+            }
+            moved.push(solve_band(band, &column)?);
+            slopes.push(column);
+        }
+        let along = |a: &[Fix128], b: &[Fix128]| -> Fix128 {
+            let mut sum = Fix128::ZERO;
+            for (x, y) in a.iter().zip(b) {
+                sum = sum + *x * *y;
+            }
+            sum
+        };
+        let m = held.len();
+        let mut matrix = vec![vec![Fix128::ZERO; m]; m];
+        let mut wanted = vec![Fix128::ZERO; m];
+        for i in 0..m {
+            for j in 0..=i {
+                let entry = along(&slopes[i], &moved[j]);
+                matrix[i][j] = entry;
+                matrix[j][i] = entry;
+            }
+            wanted[i] = -held[i].value - along(&slopes[i], free);
+        }
+        let slack: Vec<Fix128> = held.iter().map(|w| units(w.fine)).collect();
+        let turns = wall_turns(m).min(self.wall_turns_most);
+        let (weights, settled) = hold_walls(&matrix, &wanted, &slack, turns);
+        let mut step = free.to_vec();
+        for i in 0..m {
+            if weights[i].is_zero() {
+                continue;
+            }
+            multipliers[held[i].sample] = weights[i];
+            for (d, y) in step.iter_mut().zip(&moved[i]) {
+                *d = *d + weights[i] * *y;
+            }
+        }
+        Some((step, multipliers, settled))
+    }
+
     /// One step of all the particles together, with a bending law (see the MODEL section):
     /// the step of [`Self::system`] where the chain is ([`solve_band`]), and of it the part
     /// [`Self::take_part`] takes; a pass that takes none is counted and leaves the chain.
@@ -1470,17 +1879,72 @@ impl ThickChain {
         h: Fix128,
         anchor: &[P2],
         first: &[Fix128],
+        walls: Option<(&dyn SdfQuery, &mut [Lean])>,
     ) -> Result<(), ThickChainError> {
         let per = Fix128::ONE / h;
         let rate = self.config.relaxation / h;
         let rows = self.rows(h)?;
         let (band, right) = self.system(&rows, per, rate, anchor, first);
-        let Some(step) = solve_band(&band, &right) else {
+        let Some(free) = solve_band(&band, &right) else {
             return Err(ThickChainError::Degenerate { link: 0 });
         };
-        match self.take_part(h, anchor, first, &rows, &right, &step, false) {
+        let Some((field, leans)) = walls else {
+            match self.take_part(h, anchor, first, &rows, &[], None, &right, &free, false) {
+                Some((halvings, _)) => self.bend_halved += u64::from(halvings),
+                None => self.bend_stalled += 1,
+            }
+            return Ok(());
+        };
+        let mut band = band;
+        self.wall_curve(&mut band, leans)?;
+        let Some(free) = solve_band(&band, &right) else {
+            return Err(ThickChainError::Degenerate { link: 0 });
+        };
+        let leaning = self.wall_rows(leans, field, true)?;
+        let Some((step, multipliers, settled)) =
+            self.step_between(&band, &right, &free, &leaning, leans)
+        else {
+            return Err(ThickChainError::Degenerate { link: 0 });
+        };
+        // the first link a wall's constraint is held on (for what a refusal names)
+        let held_on = leaning
+            .iter()
+            .find(|w| w.value < Fix128::ZERO || leans[w.sample].held > Fix128::ZERO)
+            .map(|w| w.link);
+        if !settled {
+            // no set of rows without a pull and without a row left short was found in the
+            // turns allowed: the substep is refused
+            self.walls_unsettled += 1;
+            return Err(ThickChainError::TooStiff {
+                link: held_on.unwrap_or(0),
+            });
+        }
+        // the shortfall's price: above the largest multiplier, of this pass or the last
+        let mut most = Fix128::ZERO;
+        for (lean, now) in leans.iter().zip(&multipliers) {
+            for one in [lean.held, *now] {
+                if one > most {
+                    most = one;
+                }
+            }
+        }
+        let price = Fix128::from_int(self.wall_price) * most;
+        for (lean, now) in leans.iter_mut().zip(&multipliers) {
+            lean.held = *now;
+        }
+        let judged = Some((field, &*leans, price));
+        match self.take_part(
+            h, anchor, first, &rows, &leaning, judged, &right, &step, false,
+        ) {
             Some((halvings, _)) => self.bend_halved += u64::from(halvings),
-            None => self.bend_stalled += 1,
+            None => {
+                self.bend_stalled += 1;
+                // with a wall's constraint held, a pass that can take no part of its step
+                // leaves the chain short of the minimum the walls allow: refused, not kept
+                if let Some(link) = held_on {
+                    return Err(ThickChainError::TooStiff { link });
+                }
+            }
         }
         Ok(())
     }
@@ -1505,21 +1969,38 @@ impl ThickChain {
         anchor: &[P2],
         first: &[Fix128],
         rows: &[Row],
+        leaning: &[WallRow],
+        walls: Option<(&dyn SdfQuery, &[Lean], Fix128)>,
         right: &[Fix128],
         step: &[Fix128],
         exhaustive: bool,
     ) -> Option<(u32, bool)> {
         let per = Fix128::ONE / h;
         let rate = self.config.relaxation / h;
-        let (here, fine_here) = self.merit(rows, per, rate, anchor, first);
-        // the merit's slope along the step
+        let price = walls.map_or(Fix128::ZERO, |w| w.2);
+        let (here, fine_here) = self.merit(rows, per, rate, anchor, first, leaning, price);
+        // the merit's slope along the step: the potential's, and between walls the price of
+        // the shortfall the step closes (a held constraint ends the whole step at zero)
         let mut along = Fix128::ZERO;
         for (slope, moved) in right.iter().zip(step) {
             along = along - *slope * *moved;
         }
+        for wall in leaning {
+            if wall.value < Fix128::ZERO {
+                along = along + price * wall.value;
+            }
+        }
         // where the whole step's promise is itself below what the merit resolves, the merit
         // cannot choose between the parts: the first within its rounding is taken
         let faint = -along <= fine_here + fine_here;
+        // what "not up the merit" is held to: between walls a step that puts a sample back
+        // on its wall from the field's last place off it climbs by that much, which is
+        // within the merit's rounding there; without walls a step never points up
+        let level = if walls.is_some() {
+            fine_here + fine_here
+        } else {
+            Fix128::ZERO
+        };
         let from = self.x.clone();
         let mut taken: Option<(u32, Vec<P2>)> = None;
         let mut within: Option<(u32, Vec<P2>)> = None;
@@ -1531,13 +2012,17 @@ impl ThickChain {
                     from[i][1] + part * step[2 * i + 1],
                 ];
             }
-            if let Ok(rows) = self.rows(h) {
-                let (merit, fine) = self.merit(&rows, per, rate, anchor, first);
+            let leaning = match walls {
+                Some((field, leans, _)) => self.wall_rows(leans, field, false),
+                None => Ok(Vec::new()),
+            };
+            if let (Ok(rows), Ok(leaning)) = (self.rows(h), leaning) {
+                let (merit, fine) = self.merit(&rows, per, rate, anchor, first, &leaning, price);
                 let over = merit - (here + step_share() * part * along);
                 if over <= Fix128::ZERO && !faint && taken.is_none() {
                     taken = Some((halvings, self.x.clone()));
                 }
-                if over <= fine_here + fine && along <= Fix128::ZERO && within.is_none() {
+                if over <= fine_here + fine && along <= level && within.is_none() {
                     within = Some((halvings, self.x.clone()));
                 }
             }
@@ -1641,6 +2126,30 @@ impl ThickChain {
             Vec::new()
         };
         let reach = c.min_radius.half();
+        if let (true, Some(walls)) = (whole, walls) {
+            // a substep moves no particle further than `reach` (half the least radius), so a
+            // sample deeper than that in a wall as the substep starts was put there, not
+            // brought there: the chain is refused (the walls' constraints are held from
+            // within that depth)
+            for k in 0..self.rest_length.len() {
+                if self.inv_mass[k].is_zero() && self.inv_mass[k + 1].is_zero() {
+                    continue;
+                }
+                let n = self.spans(k)?;
+                for j in 0..=n {
+                    let sample = Lean {
+                        link: k,
+                        t: Fix128::from_ratio(j, n),
+                        held: Fix128::ZERO,
+                    };
+                    // (deeper by more than the field's rounding of the value)
+                    let (value, fine) = self.wall_gap(&sample, walls)?;
+                    if value + units(fine) < -reach {
+                        return Err(ThickChainError::Invalid("walls"));
+                    }
+                }
+            }
+        }
         let keep = {
             let k = Fix128::ONE - c.drag * h;
             if k > Fix128::ZERO {
@@ -1672,24 +2181,26 @@ impl ThickChain {
         }
         let mut lambda = vec![Fix128::ZERO; links];
         // with a bending law, where the particles' inertia would leave them: after the
-        // velocity step, and on by the walls' multipliers along their slopes of now
-        let mut anchor = if whole { self.x.clone() } else { Vec::new() };
-        // (and where it left them before any wall pushed)
-        let unpushed = anchor.clone();
+        // velocity step
+        let anchor = if whole { self.x.clone() } else { Vec::new() };
         // per link, the walls' multipliers of this substep: their sum and their sum by slope
         let mut pressed = vec![Fix128::ZERO; links];
         let mut leaned = vec![ZERO2; links];
         let conforming = c.fit == ThickChainFit::Conforming;
-        // with a bending law, per link and sample, the wall's multiplier of this substep so
-        // far: never below zero, and lowered by a later pass that finds the sample off its wall
-        let mut held: Vec<Vec<Fix128>> = if whole {
-            samples
-                .iter()
-                .map(|&n| vec![Fix128::ZERO; usize::try_from(n + 1).unwrap_or(0)])
-                .collect()
-        } else {
-            Vec::new()
-        };
+        // with a bending law, every sample of every link with its wall's multiplier of this
+        // substep so far
+        let mut leans: Vec<Lean> = Vec::new();
+        if whole {
+            for (k, &n) in samples.iter().enumerate() {
+                for j in 0..=n {
+                    leans.push(Lean {
+                        link: k,
+                        t: Fix128::from_ratio(j, n),
+                        held: Fix128::ZERO,
+                    });
+                }
+            }
+        }
         let mut before_pass = self.x.clone();
         for pass in 0..c.iterations {
             if pass > 0 {
@@ -1716,76 +2227,71 @@ impl ThickChain {
                 continue;
             }
             if whole {
-                self.together(h, &anchor, &first)?;
-            } else {
-                for (k, held) in lambda.iter_mut().enumerate() {
-                    let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
-                    if (w0 + w1).is_zero() {
-                        continue;
-                    }
-                    let d = sub(self.x[k + 1], self.x[k]);
-                    let l = dot(d, d).sqrt();
-                    if l.is_zero() {
-                        return Err(ThickChainError::Degenerate { link: k });
-                    }
-                    let u = scale(d, Fix128::ONE / l);
-                    let (value, slope, softness) = self.stretch_terms(k, l, h);
-                    let dl = if c.relaxation.is_zero() {
-                        (-value - softness * *held) / ((w0 + w1) * slope * slope + softness)
-                    } else {
-                        // the Kelvin-Voigt term: the constraint's change over the substep so far
-                        let rate = c.relaxation / h;
-                        let moved = dot(
-                            u,
-                            sub(sub(self.x[k + 1], start[k + 1]), sub(self.x[k], start[k])),
-                        ) * slope;
-                        (-value - softness * *held - rate * moved)
-                            / ((Fix128::ONE + rate) * (w0 + w1) * slope * slope + softness)
-                    };
-                    *held = *held + dl;
-                    let step = [scale(u, -(w0 * slope * dl)), scale(u, w1 * slope * dl)];
-                    self.x[k] = add(self.x[k], step[0]);
-                    self.x[k + 1] = add(self.x[k + 1], step[1]);
+                // the walls' constraints are rows of the step, with their multipliers
+                self.together(h, &anchor, &first, walls.map(|w| (w, leans.as_mut_slice())))?;
+                continue;
+            }
+            for (k, held) in lambda.iter_mut().enumerate() {
+                let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
+                if (w0 + w1).is_zero() {
+                    continue;
                 }
+                let d = sub(self.x[k + 1], self.x[k]);
+                let l = dot(d, d).sqrt();
+                if l.is_zero() {
+                    return Err(ThickChainError::Degenerate { link: k });
+                }
+                let u = scale(d, Fix128::ONE / l);
+                let (value, slope, softness) = self.stretch_terms(k, l, h);
+                let dl = if c.relaxation.is_zero() {
+                    (-value - softness * *held) / ((w0 + w1) * slope * slope + softness)
+                } else {
+                    // the Kelvin-Voigt term: the constraint's change over the substep so far
+                    let rate = c.relaxation / h;
+                    let moved = dot(
+                        u,
+                        sub(sub(self.x[k + 1], start[k + 1]), sub(self.x[k], start[k])),
+                    ) * slope;
+                    (-value - softness * *held - rate * moved)
+                        / ((Fix128::ONE + rate) * (w0 + w1) * slope * slope + softness)
+                };
+                *held = *held + dl;
+                let step = [scale(u, -(w0 * slope * dl)), scale(u, w1 * slope * dl)];
+                self.x[k] = add(self.x[k], step[0]);
+                self.x[k + 1] = add(self.x[k + 1], step[1]);
             }
             if let Some(walls) = walls {
                 for (k, &n) in samples.iter().enumerate() {
                     for j in 0..=n {
-                        let t = Fix128::from_ratio(j, n);
-                        let got = if whole {
-                            let at = usize::try_from(j).unwrap_or(0);
-                            self.fit_held(k, t, walls, &mut held[k][at])?
-                        } else {
-                            self.fit(k, t, walls)?
-                        };
-                        if let Some((push, slope)) = got {
+                        if let Some((push, slope)) = self.fit(k, Fix128::from_ratio(j, n), walls)? {
                             pressed[k] = pressed[k] + push;
                             leaned[k] = add(leaned[k], scale(slope, push));
-                        }
-                    }
-                }
-                if whole {
-                    // the walls' pushes as they point now: each kept multiplier along its
-                    // constraint's slope where the chain is, not where it was when pushed
-                    anchor.clone_from(&unpushed);
-                    for (k, &n) in samples.iter().enumerate() {
-                        for j in 0..=n {
-                            let kept = held[k][usize::try_from(j).unwrap_or(0)];
-                            if kept.is_zero() {
-                                continue;
-                            }
-                            let (g0, g1) = self.wall_slopes(k, Fix128::from_ratio(j, n), walls)?;
-                            anchor[k] = add(anchor[k], scale(g0, self.inv_mass[k] * kept));
-                            anchor[k + 1] =
-                                add(anchor[k + 1], scale(g1, self.inv_mass[k + 1] * kept));
                         }
                     }
                 }
             }
         }
         if let (true, Some(walls)) = (whole, walls) {
-            // the walls have the last word: a multiplier lowered in the last pass may have
-            // left its sample short, so the substep ends with sweeps that only push, until
+            // the walls' press of the passes: a multiplier is a force, the press a force
+            // times h²
+            for lean in &leans {
+                if lean.held.is_zero() {
+                    continue;
+                }
+                let press = lean.held * h * h;
+                pressed[lean.link] = pressed[lean.link] + press;
+                let slope = self.slope_of(
+                    lean.link,
+                    add(
+                        scale(self.x[lean.link], Fix128::ONE - lean.t),
+                        scale(self.x[lean.link + 1], lean.t),
+                    ),
+                    walls,
+                )?;
+                leaned[lean.link] = add(leaned[lean.link], scale(slope, press));
+            }
+            // the walls have the last word: the passes leave a sample short by what its
+            // multiplier has yet to close, so the substep ends with sweeps that only push, until
             // one pushes nothing (the chain is out of the walls whatever the passes)
             for _ in 0..LAST_SWEEPS {
                 let mut pushed = false;
@@ -2373,67 +2879,6 @@ impl ThickChain {
         ))
     }
 
-    /// The wall constraint of link `k` at its sample `t` as a multiplier that is kept: `held`
-    /// is what the wall has pushed this sample by in the substep so far. A sample short of its
-    /// radius raises it; one that an earlier push has left off its wall lowers it, to zero at
-    /// most (a wall does not pull), and the sample comes back by that much. Returns the change
-    /// of the multiplier and the wall's slope when there was one.
-    fn fit_held(
-        &mut self,
-        k: usize,
-        t: Fix128,
-        walls: &dyn SdfQuery,
-        held: &mut Fix128,
-    ) -> Result<Option<(Fix128, P2)>, ThickChainError> {
-        let field = |p: P2| -> Result<Fix128, ThickChainError> {
-            let d = walls.query_distance(p[0].to_f32(), p[1].to_f32(), 0.0);
-            if d.is_finite() {
-                Ok(Fix128::from_f32(d))
-            } else {
-                Err(ThickChainError::Field { link: k })
-            }
-        };
-        let (w0, w1) = (self.inv_mass[k], self.inv_mass[k + 1]);
-        let (a, b) = (Fix128::ONE - t, t);
-        let d = sub(self.x[k + 1], self.x[k]);
-        let l = dot(d, d).sqrt();
-        if l.is_zero() {
-            return Err(ThickChainError::Degenerate { link: k });
-        }
-        let u = scale(d, Fix128::ONE / l);
-        let (r, by_area) = self.radius_at(k, l);
-        let p = add(scale(self.x[k], a), scale(self.x[k + 1], b));
-        let short = field(p)? - r;
-        if short >= Fix128::ZERO && held.is_zero() {
-            return Ok(None);
-        }
-        // the wall's slope over ±e
-        let e = self.config.min_radius.shr_bits(3);
-        let over = Fix128::ONE / (e + e);
-        let slope = [
-            (field([p[0] + e, p[1]])? - field([p[0] - e, p[1]])?) * over,
-            (field([p[0], p[1] + e])? - field([p[0], p[1] - e])?) * over,
-        ];
-        let thin = if by_area { r / l } else { Fix128::ZERO };
-        let g0 = sub(scale(slope, a), scale(u, thin));
-        let g1 = add(scale(slope, b), scale(u, thin));
-        let denom = w0 * dot(g0, g0) + w1 * dot(g1, g1);
-        if denom.is_zero() {
-            return Ok(None);
-        }
-        let mut push = -short / denom;
-        if *held + push < Fix128::ZERO {
-            push = -*held;
-        }
-        if push.is_zero() {
-            return Ok(None);
-        }
-        *held = *held + push;
-        self.x[k] = add(self.x[k], scale(g0, w0 * push));
-        self.x[k + 1] = add(self.x[k + 1], scale(g1, w1 * push));
-        Ok(Some((push, slope)))
-    }
-
     /// The chain's state as bytes: the settings, then per particle its position, velocity and
     /// inverse mass, then per link its rest length and area (`Q64.64`, little endian).
     #[must_use]
@@ -2862,7 +3307,10 @@ mod band_oracle {
             let (_, right) = chain.system(&rows, per, rate, &anchor, &first);
             let merit = |chain: &ThickChain| {
                 let rows = chain.rows(fx(H)).expect("rows");
-                chain.merit(&rows, per, rate, &anchor, &first).0.to_f64()
+                chain
+                    .merit(&rows, per, rate, &anchor, &first, &[], Fix128::ZERO)
+                    .0
+                    .to_f64()
             };
             let largest = right.iter().fold(0.0f64, |m, v| m.max(v.to_f64().abs()));
             assert!(largest > 0.0);
@@ -2951,7 +3399,7 @@ mod band_oracle {
             .collect();
         // inertia towards an arc three times as curved: a sixteenth of the way is past the wall
         let (_, folded) = arc(0.0214 / 3.0);
-        chain.together(h, &folded, &first).expect("a pass");
+        chain.together(h, &folded, &first, None).expect("a pass");
         assert_eq!((chain.bend_stalled, chain.bend_halved), (1, 0));
         assert!(
             chain.x == places,
@@ -2959,13 +3407,13 @@ mod band_oracle {
         );
         // inertia towards an arc a little more curved (a = 0.97): the whole step is taken
         let (_, near) = arc(0.021);
-        chain.together(h, &near, &first).expect("a pass");
+        chain.together(h, &near, &first, None).expect("a pass");
         assert_eq!((chain.bend_stalled, chain.bend_halved), (1, 0));
         assert!(chain.x != places);
         // towards an arc that the whole step would fold but its half would not (a to 1.08 and 1.01)
         let (mut chain, places) = arc(0.0214);
         let (_, past) = arc(0.0188);
-        chain.together(h, &past, &first).expect("a pass");
+        chain.together(h, &past, &first, None).expect("a pass");
         assert_eq!(chain.bend_stalled, 0);
         assert!(
             chain.bend_halved >= 1,
@@ -3001,13 +3449,23 @@ mod band_oracle {
             let step = solve_band(&band, &right).expect("positive definite");
             let before = chain.clone();
             let mut every = chain.clone();
-            let got = chain.take_part(h, &anchor, &first, &rows, &right, &step, false);
-            let all = every.take_part(h, &anchor, &first, &rows, &right, &step, true);
+            let got = chain.take_part(h, &anchor, &first, &rows, &[], None, &right, &step, false);
+            let all = every.take_part(h, &anchor, &first, &rows, &[], None, &right, &step, true);
             assert_eq!(got, all, "pass {pass}: the part taken");
             assert!(chain.x == every.x, "pass {pass}: the chain after it");
-            let fine = before.merit(&rows, per, rate, &anchor, &first).1
+            let fine = before
+                .merit(&rows, per, rate, &anchor, &first, &[], Fix128::ZERO)
+                .1
                 + chain
-                    .merit(&chain.rows(h).expect("rows"), per, rate, &anchor, &first)
+                    .merit(
+                        &chain.rows(h).expect("rows"),
+                        per,
+                        rate,
+                        &anchor,
+                        &first,
+                        &[],
+                        Fix128::ZERO,
+                    )
                     .1;
             seen(&before, chain, got, fine.to_f64());
             took.push(got);
@@ -3178,11 +3636,11 @@ mod band_oracle {
             .map(|v| fx(v.to_f64() / largest * 1.0e-13))
             .collect();
         assert_eq!(
-            chain.take_part(h, &anchor, &first, &rows, &right, &up, false),
+            chain.take_part(h, &anchor, &first, &rows, &[], None, &right, &up, false),
             None
         );
         assert!(chain.x == places, "the chain is left where it was");
-        let took = chain.take_part(h, &anchor, &first, &rows, &right, &down, false);
+        let took = chain.take_part(h, &anchor, &first, &rows, &[], None, &right, &down, false);
         assert!(took.is_some(), "the same step down the merit is taken");
         assert!(chain.x != places);
     }
@@ -3202,6 +3660,604 @@ mod band_oracle {
         band[1][1] = Fix128::ZERO;
         band[2][0] = Fix128::ZERO;
         assert!(solve_band(&band, &right).is_none());
+    }
+}
+
+#[cfg(test)]
+mod wall_rows_oracle {
+    //! The walls' own system of a pass against elimination in f64, its edge cases (a row the
+    //! others hold, a wall that would pull, a multiplier of exactly zero), and where a
+    //! substep between walls ends against the price the merit puts on a shortfall: the
+    //! price only judges the parts of a step, so the end does not depend on it.
+    #![allow(
+        clippy::float_arithmetic,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::needless_range_loop,
+        reason = "the scene is laid out and the results compared in f64"
+    )]
+    use super::{
+        hold_walls, solve_walls, wall_turns, Fix128, Lean, ThickChain, ThickChainBend,
+        ThickChainConfig, ThickChainError, ThickChainFit, ThickChainStretch, BAND, WALL_PRICE,
+    };
+    use crate::sdf_collider::SdfField;
+
+    const LINKS: usize = 12;
+    const LINK: f64 = 0.01;
+    const RADIUS: f64 = 0.02;
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    /// no slack on any of up to five rows
+    const NONE: [Fix128; 5] = [Fix128::ZERO; 5];
+
+    fn to(rows: &[Vec<f64>]) -> Vec<Vec<Fix128>> {
+        rows.iter()
+            .map(|r| r.iter().map(|&v| fx(v)).collect())
+            .collect()
+    }
+
+    fn of(values: &[Fix128]) -> Vec<f64> {
+        values.iter().map(|v| v.to_f64()).collect()
+    }
+
+    #[test]
+    fn the_walls_system_is_solved_over_the_rows_kept() {
+        // oracle: the system multiplied back. S = [[4, 1, 0.5], [1, 3, 0.25], [0.5, 0.25, 2]],
+        // weights (0.5, 1.25, 2) give b = (4.25, 4.75, 4.5625); over rows 0 and 2 only,
+        // (0.5, ·, 2) give b = (3, ·, 4.25)
+        let s = to(&[
+            vec![4.0, 1.0, 0.5],
+            vec![1.0, 3.0, 0.25],
+            vec![0.5, 0.25, 2.0],
+        ]);
+        let all = of(&solve_walls(
+            &s,
+            &[fx(4.25), fx(4.75), fx(4.5625)],
+            &[true, true, true],
+        ));
+        for (got, want) in all.iter().zip([0.5, 1.25, 2.0]) {
+            assert!((got - want).abs() < 1.0e-15, "{all:?}");
+        }
+        let two = of(&solve_walls(
+            &s,
+            &[fx(3.0), fx(99.0), fx(4.25)],
+            &[true, false, true],
+        ));
+        assert!(
+            (two[0] - 0.5).abs() < 1.0e-15 && (two[2] - 2.0).abs() < 1.0e-15,
+            "{two:?}"
+        );
+        assert_eq!(two[1], 0.0, "a row not kept has no weight");
+    }
+
+    #[test]
+    fn a_row_the_others_already_hold_is_passed_over() {
+        // two samples of one link at a flat wall with a third between them: the third row is
+        // half the sum of the other two. Its weight is zero and the others solve the system
+        let s = to(&[
+            vec![2.0, 0.0, 1.0],
+            vec![0.0, 2.0, 1.0],
+            vec![1.0, 1.0, 1.0],
+        ]);
+        let got = of(&solve_walls(
+            &s,
+            &[fx(1.0), fx(3.0), fx(2.0)],
+            &[true, true, true],
+        ));
+        assert!(
+            (got[0] - 0.5).abs() < 1.0e-15 && (got[1] - 1.5).abs() < 1.0e-15,
+            "{got:?}"
+        );
+        assert_eq!(got[2], 0.0);
+        // the same constraint twice to all but a little: S = [[2, 2], [2, 2 + e]],
+        // b = (2, 2 + e / 2), so the second row's pivot is e. Solved in full the two share the
+        // press, (1/2, 1/2); with the second passed over the first takes it, (1, 0). The rule
+        // is a pivot at or below 2⁻²⁴ of its entry: at 2⁻²⁰ of it (e = 2⁻¹⁹) the row is
+        // kept, at 2⁻³⁰ (e = 2⁻²⁹) and at the arithmetic's rounding (what a third sample of
+        // a link at a flat wall is, e = 2⁻⁴⁰) it is passed over
+        for (bits, want) in [(19u32, [0.5, 0.5]), (29, [1.0, 0.0]), (40, [1.0, 0.0])] {
+            let e = 1.0 / (1u64 << bits) as f64;
+            let s = to(&[vec![2.0, 2.0], vec![2.0, 2.0 + e]]);
+            let got = of(&solve_walls(
+                &s,
+                &[fx(2.0), fx(2.0 + e / 2.0)],
+                &[true, true],
+            ));
+            assert_eq!(got, want.to_vec(), "e = 2^-{bits}");
+        }
+    }
+
+    #[test]
+    fn a_wall_that_would_pull_is_let_go_and_the_rest_solved_again() {
+        // S = [[2, 1], [1, 2]], b = (3, 0): held together the weights are (2, −1), the second
+        // pulls; let go, the first alone is 3 / 2
+        let s = to(&[vec![2.0, 1.0], vec![1.0, 2.0]]);
+        let wanted = [fx(3.0), fx(0.0)];
+        let together = of(&solve_walls(&s, &wanted, &[true, true]));
+        assert!((together[0] - 2.0).abs() < 1.0e-15 && (together[1] + 1.0).abs() < 1.0e-15);
+        let (held, settled) = hold_walls(&s, &wanted, &NONE, wall_turns(2));
+        let got = of(&held);
+        assert!(settled);
+        assert!((got[0] - 1.5).abs() < 1.0e-15, "{got:?}");
+        assert_eq!(got[1], 0.0);
+        // of two that would pull the more negative goes first, and the other may then stay:
+        // S = [[2, −1], [−1, 2]], b = (−3, 1): together (−5/3, −1/3); without the first, 1/2
+        let s = to(&[vec![2.0, -1.0], vec![-1.0, 2.0]]);
+        let got = of(&hold_walls(&s, &[fx(-3.0), fx(1.0)], &NONE, wall_turns(2)).0);
+        assert_eq!(got[0], 0.0);
+        assert!((got[1] - 0.5).abs() < 1.0e-15, "{got:?}");
+    }
+
+    #[test]
+    fn the_rows_held_are_the_one_set_with_no_pull_and_no_row_left_short() {
+        // oracle: every subset of rows tried in f64 by elimination; for a positive matrix one
+        // subset alone has no negative multiplier on it and no row left short off it.
+        // Matrices AᵀA + 1 of 2 to 5 rows from a fixed sequence of small integers over 8
+        let mut seed = 12_345u64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((seed >> 33) % 33) as f64 / 8.0 - 2.0
+        };
+        let mut let_go = 0;
+        let mut held_again_cases = 0;
+        for case in 0..60 {
+            let m = 2 + case % 4;
+            let a: Vec<Vec<f64>> = (0..m).map(|_| (0..m).map(|_| next()).collect()).collect();
+            let mut s = vec![vec![0.0f64; m]; m];
+            for i in 0..m {
+                for j in 0..m {
+                    s[i][j] = (0..m).map(|k| a[k][i] * a[k][j]).sum::<f64>()
+                        + f64::from(u8::from(i == j));
+                }
+            }
+            let b: Vec<f64> = (0..m).map(|_| next()).collect();
+            // the reference: the subset that passes
+            let mut want: Option<Vec<f64>> = None;
+            for mask in 0u32..(1 << m) {
+                let rows: Vec<usize> = (0..m).filter(|i| mask >> i & 1 == 1).collect();
+                let mut aug: Vec<Vec<f64>> = rows
+                    .iter()
+                    .map(|&i| {
+                        let mut row: Vec<f64> = rows.iter().map(|&j| s[i][j]).collect();
+                        row.push(b[i]);
+                        row
+                    })
+                    .collect();
+                let n = rows.len();
+                for k in 0..n {
+                    for i in k + 1..n {
+                        let share = aug[i][k] / aug[k][k];
+                        for j in k..=n {
+                            aug[i][j] -= share * aug[k][j];
+                        }
+                    }
+                }
+                let mut part = vec![0.0f64; n];
+                for k in (0..n).rev() {
+                    let mut sum = aug[k][n];
+                    for j in k + 1..n {
+                        sum -= aug[k][j] * part[j];
+                    }
+                    part[k] = sum / aug[k][k];
+                }
+                let mut mu = vec![0.0f64; m];
+                for (&i, &v) in rows.iter().zip(&part) {
+                    mu[i] = v;
+                }
+                let fits = (0..m).all(|i| {
+                    let left: f64 = (0..m).map(|j| s[i][j] * mu[j]).sum::<f64>() - b[i];
+                    mu[i] >= -1.0e-12 && left >= -1.0e-9
+                });
+                if fits {
+                    // (a multiplier of exactly zero passes held and let go: the same answer)
+                    if let Some(first) = &want {
+                        for (a, b) in first.iter().zip(&mu) {
+                            assert!((a - b).abs() < 1.0e-9, "case {case}: two answers pass");
+                        }
+                    }
+                    want = Some(mu);
+                }
+            }
+            let want = want.expect("one set passes");
+            let wanted: Vec<Fix128> = b.iter().map(|&v| fx(v)).collect();
+            let (held, settled) = hold_walls(&to(&s), &wanted, &NONE, wall_turns(m));
+            assert!(
+                settled,
+                "case {case}: no set found in {} turns",
+                wall_turns(m)
+            );
+            let got = of(&held);
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g - w).abs() < 1.0e-9,
+                    "case {case}: {got:?} against {want:?}"
+                );
+            }
+            let_go += usize::from(want.contains(&0.0));
+            // (a set the first letting-go alone does not reach: taken without holding again)
+            let first = of(&solve_walls(&to(&s), &wanted, &vec![true; m]));
+            held_again_cases += usize::from(
+                first
+                    .iter()
+                    .zip(&want)
+                    .any(|(f, w)| *f < 0.0 && *w > 1.0e-9),
+            );
+        }
+        assert!(let_go >= 20, "{let_go} cases with a row let go");
+        assert!(
+            held_again_cases >= 3,
+            "{held_again_cases} cases where a row that first pulls is held in the end"
+        );
+    }
+
+    #[test]
+    fn a_multiplier_of_exactly_zero_stays_held_at_zero() {
+        // a sample on its wall with nothing pressing it: b = 0 for it, and its weight is
+        // exactly zero (not negative: it is not let go, and the other row is unchanged)
+        let s = to(&[vec![2.0, 0.0], vec![0.0, 4.0]]);
+        let (got, settled) = hold_walls(&s, &[fx(0.0), fx(2.0)], &NONE, wall_turns(2));
+        assert!(settled && got[0].is_zero());
+        assert_eq!(got[1].to_f64(), 0.5);
+        let (none, settled) = hold_walls(&s, &[fx(0.0), fx(0.0)], &NONE, wall_turns(2));
+        assert!(settled && none.iter().all(|w| w.is_zero()));
+        assert_eq!(
+            hold_walls(&[], &[], &NONE, wall_turns(0)),
+            (Vec::new(), true)
+        );
+    }
+
+    #[test]
+    fn a_row_with_no_multiplier_and_nothing_left_at_once_is_settled_either_way() {
+        // S = [[2, 1], [1, 2]], b = (2, 1): the first row alone gives the multiplier 1 and
+        // leaves the second at 1·1 − 1 = 0 exactly: the second is on its wall with no press.
+        // Held or let go it has the multiplier zero, and the set is found
+        let s = to(&[vec![2.0, 1.0], vec![1.0, 2.0]]);
+        let (got, settled) = hold_walls(&s, &[fx(2.0), fx(1.0)], &NONE, wall_turns(2));
+        assert!(settled);
+        assert_eq!(of(&got), vec![1.0, 0.0]);
+    }
+
+    #[test]
+    fn two_rows_that_are_one_constraint_share_one_multiplier() {
+        // the same constraint twice (two samples at one point of a flat wall): the matrix has
+        // no inverse and the multipliers are only fixed in their sum, 2 μ = 2. One row takes
+        // it, the other is passed over; and where the constraint would pull both are zero
+        let s = to(&[vec![2.0, 2.0], vec![2.0, 2.0]]);
+        let (got, settled) = hold_walls(&s, &[fx(2.0), fx(2.0)], &NONE, wall_turns(2));
+        assert!(settled);
+        let got = of(&got);
+        assert!(
+            got.iter().all(|w| *w >= 0.0) && (got[0] + got[1] - 1.0).abs() < 1.0e-15,
+            "{got:?}"
+        );
+        let (pulled, settled) = hold_walls(&s, &[fx(-1.0), fx(-1.0)], &NONE, wall_turns(2));
+        assert!(
+            settled && pulled.iter().all(|w| w.is_zero()),
+            "{:?}",
+            of(&pulled)
+        );
+        // three rows, the third the first again, with a second that presses too:
+        // 2 a + b = 3, a + 3 b = 4 with a the first and third together: a = 1, b = 1
+        let s = to(&[
+            vec![2.0, 1.0, 2.0],
+            vec![1.0, 3.0, 1.0],
+            vec![2.0, 1.0, 2.0],
+        ]);
+        let (got, settled) = hold_walls(&s, &[fx(3.0), fx(4.0), fx(3.0)], &NONE, wall_turns(3));
+        assert!(settled);
+        let got = of(&got);
+        assert!(
+            (got[0] + got[2] - 1.0).abs() < 1.0e-15 && (got[1] - 1.0).abs() < 1.0e-15,
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn a_row_let_go_is_held_again_when_the_step_would_leave_it_short() {
+        // S = [[10, 2, 2], [2, 13, −2], [2, −2, 2]], b = (4, −3, 1). All held: the third pulls
+        // most and is let go; then the second pulls and is let go; the first alone,
+        // 4 / 10, leaves the third at 2 · 0.4 − 1 = −1/5: short. Held again, the first and
+        // the third are (3/8, 1/8), which leave the second at 3/4 − 1/4 + 3 > 0: the set
+        // (worked in fractions apart; of 200 000 such matrices 359 need a row held again)
+        let s = to(&[
+            vec![10.0, 2.0, 2.0],
+            vec![2.0, 13.0, -2.0],
+            vec![2.0, -2.0, 2.0],
+        ]);
+        let wanted = [fx(4.0), fx(-3.0), fx(1.0)];
+        let (got, settled) = hold_walls(&s, &wanted, &NONE, wall_turns(3));
+        assert!(settled);
+        assert_eq!(of(&got), vec![0.375, 0.0, 0.125]);
+        // short by less than the constraint's value is known to, the row stays let go: with a
+        // slack of 1/4 on the third the answer is the first alone, and with 1/8 it is held
+        let (loose, settled) = hold_walls(
+            &s,
+            &wanted,
+            &[Fix128::ZERO, Fix128::ZERO, fx(0.25)],
+            wall_turns(3),
+        );
+        assert!(settled);
+        let loose = of(&loose);
+        assert!(
+            (loose[0] - 0.4).abs() < 1.0e-15 && loose[1] == 0.0 && loose[2] == 0.0,
+            "{loose:?}"
+        );
+        let (tight, _) = hold_walls(
+            &s,
+            &wanted,
+            &[Fix128::ZERO, Fix128::ZERO, fx(0.125)],
+            wall_turns(3),
+        );
+        assert_eq!(of(&tight), vec![0.375, 0.0, 0.125]);
+    }
+
+    #[test]
+    fn a_set_not_found_in_the_turns_allowed_is_said_not_taken_for_found() {
+        // the case above that lets the first row go and then finds the second alone: two
+        // sets tried. With fewer turns the answer says so, and its multipliers do not pull
+        let s = to(&[vec![2.0, -1.0], vec![-1.0, 2.0]]);
+        let wanted = [fx(-3.0), fx(1.0)];
+        for turns in 0..2 {
+            let (got, settled) = hold_walls(&s, &wanted, &NONE, turns);
+            assert!(!settled, "{turns} turn(s)");
+            assert!(got.iter().all(|w| *w >= Fix128::ZERO));
+        }
+        assert!(hold_walls(&s, &wanted, &NONE, 2).1);
+        assert!(wall_turns(2) >= 2 && wall_turns(5) >= 5);
+    }
+
+    /// the half-plane `n · (p − q) ≥ 0` is free
+    struct FlatWall {
+        n: [f32; 2],
+        q: [f32; 2],
+    }
+
+    impl SdfField for FlatWall {
+        fn distance(&self, x: f32, y: f32, _z: f32) -> f32 {
+            self.n[0] * (x - self.q[0]) + self.n[1] * (y - self.q[1])
+        }
+
+        fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+            (self.n[0], self.n[1], 0.0)
+        }
+    }
+
+    /// an arc of twelve links at rest with a flat wall 1 mm into its end's disc, `passes`
+    /// passes a substep; each link is turned from the last by the angle whose cosine and
+    /// sine are `turn` (a rational cosine: no library function lays the scene out)
+    fn laid(turn: (f64, f64), passes: u32) -> (ThickChain, FlatWall) {
+        let mut at = vec![[0.0f64, 0.0], [LINK, 0.0]];
+        let mut dir = [1.0f64, 0.0];
+        for _ in 2..=LINKS {
+            dir = [
+                turn.0 * dir[0] - turn.1 * dir[1],
+                turn.1 * dir[0] + turn.0 * dir[1],
+            ];
+            let last = at[at.len() - 1];
+            at.push([last[0] + LINK * dir[0], last[1] + LINK * dir[1]]);
+        }
+        // towards the arc's centre at its end: the last link's direction turned a quarter
+        let n = [(-dir[1]) as f32, dir[0] as f32];
+        let end = at[LINKS];
+        let wall = FlatWall {
+            n,
+            q: [
+                (end[0] - f64::from(n[0]) * (RADIUS - 1.0e-3)) as f32,
+                (end[1] - f64::from(n[1]) * (RADIUS - 1.0e-3)) as f32,
+            ],
+        };
+        let config = ThickChainConfig {
+            substeps: 1,
+            iterations: passes,
+            gravity: [Fix128::ZERO, Fix128::ZERO],
+            stretch: ThickChainStretch::NeoHookean { shear: fx(6667.0) },
+            drag: Fix128::ZERO,
+            friction: Fix128::ZERO,
+            min_radius: fx(0.01),
+            splits: 0,
+            relaxation: Fix128::ZERO,
+            fit: ThickChainFit::Disc,
+            reach: Fix128::ONE,
+        };
+        let rest: Vec<[Fix128; 2]> = (0..=LINKS)
+            .map(|i| [Fix128::from_ratio(i as i64, 100), Fix128::ZERO])
+            .collect();
+        let mut chain = ThickChain::new(config, &rest, fx(RADIUS), fx(1000.0))
+            .expect("a chain")
+            .bending(ThickChainBend::Section)
+            .expect("the law");
+        chain.pin(0);
+        chain.pin(1);
+        for (i, p) in at.iter().enumerate() {
+            chain.set_position(i, [fx(p[0]), fx(p[1])]);
+        }
+        (chain, wall)
+    }
+
+    /// (the particles' coordinates, the wall's press on the last two links, the passes
+    /// stalled) after one substep of 1/960 s of [`laid`], the shortfall priced at `price`
+    /// times the largest multiplier
+    fn after(turn: (f64, f64), price: i64, passes: u32) -> (Vec<f64>, f64, u64) {
+        let (mut chain, wall) = laid(turn, passes);
+        chain.wall_price = price;
+        chain
+            .step_in(Fix128::from_ratio(1, 960), &wall, &[])
+            .expect("a substep between the walls");
+        let press = chain.wall_force(LINKS - 1).to_f64() + chain.wall_force(LINKS - 2).to_f64();
+        let x = chain
+            .positions()
+            .iter()
+            .flat_map(|p| [p[0].to_f64(), p[1].to_f64()])
+            .collect();
+        (x, press, chain.bend_stalled())
+    }
+
+    #[test]
+    fn a_substep_whose_walls_are_not_settled_is_refused_and_leaves_the_chain() {
+        // with no turn allowed to find the set of the walls' rows, the first pass that holds
+        // a wall's constraint is not settled: the substep is refused naming a link the wall
+        // is held on, and the chain is as it was, to the last bit. With the turns the
+        // library allows the same substep is taken
+        let turn = (199.0f64 / 200.0, 0.099_874_921_777_190_9);
+        let (mut chain, wall) = laid(turn, 16);
+        let before = chain.state_digest();
+        chain.wall_turns_most = 0;
+        let refused = chain.step_in(Fix128::from_ratio(1, 960), &wall, &[]);
+        assert!(
+            matches!(refused, Err(ThickChainError::TooStiff { link }) if link >= LINKS - 3),
+            "{refused:?}"
+        );
+        assert_eq!(
+            chain.state_digest(),
+            before,
+            "a refused substep moved the chain"
+        );
+        assert_eq!(
+            chain.walls_unsettled(),
+            0,
+            "the refused copy's count is not the chain's"
+        );
+        chain.wall_turns_most = usize::MAX;
+        chain
+            .step_in(Fix128::from_ratio(1, 960), &wall, &[])
+            .expect("the substep with the turns the library allows");
+        assert_ne!(chain.state_digest(), before);
+        assert_eq!(chain.walls_unsettled(), 0);
+    }
+
+    #[test]
+    fn a_pass_that_can_take_no_part_of_its_step_with_a_wall_held_is_refused() {
+        // a price below zero pays for a shortfall, so no part of a step that closes one
+        // lowers the merit: the pass takes no step with a wall's constraint held, and the
+        // substep is refused naming a link the wall is held on, the chain as it was
+        let turn = (199.0f64 / 200.0, 0.099_874_921_777_190_9);
+        let (mut chain, wall) = laid(turn, 16);
+        let before = chain.state_digest();
+        chain.wall_price = -1;
+        let refused = chain.step_in(Fix128::from_ratio(1, 960), &wall, &[]);
+        assert!(
+            matches!(refused, Err(ThickChainError::TooStiff { link }) if link >= LINKS - 3),
+            "{refused:?}"
+        );
+        assert_eq!(
+            chain.state_digest(),
+            before,
+            "a refused substep moved the chain"
+        );
+    }
+
+    #[test]
+    fn the_second_slope_the_matrix_takes_of_a_wall_is_the_link_thinning_as_it_stretches() {
+        // oracle: r = A / (2 l), so −μ C = μ r + … has in the link's length the second slope
+        // μ r″ = μ A / l³ = 2 μ r / l² (checked here by differences of r over l), and the
+        // length's slopes in the link's two particles are −u and u. The matrix gains
+        // 2 μ r / l² · u uᵀ on each particle and its negative between them, and nothing else
+        let turn = (199.0f64 / 200.0, 0.099_874_921_777_190_9);
+        let (chain, _) = laid(turn, 16);
+        let k = LINKS - 1;
+        let mu = 250.0f64;
+        let leans = [Lean {
+            link: k,
+            t: Fix128::ONE,
+            held: fx(mu),
+        }];
+        let mut band = vec![[Fix128::ZERO; BAND + 1]; 2 * (LINKS + 1)];
+        chain
+            .wall_curve(&mut band, &leans)
+            .expect("the link has a length");
+        let (a, b) = (chain.positions()[k], chain.positions()[k + 1]);
+        let d = [(b[0] - a[0]).to_f64(), (b[1] - a[1]).to_f64()];
+        let l = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        let u = [d[0] / l, d[1] / l];
+        let area = 2.0 * RADIUS * LINK;
+        let r = |l: f64| area / (2.0 * l);
+        let second = (r(l + 1.0e-5) - 2.0 * r(l) + r(l - 1.0e-5)) / 1.0e-10;
+        assert!(
+            (second - 2.0 * r(l) / (l * l)).abs() < 1.0e-3 * second,
+            "{second}"
+        );
+        let stiff = mu * 2.0 * r(l) / (l * l);
+        let entry = |at: usize, to: usize| band[at][at - to].to_f64();
+        let mut read = 0;
+        for at in 0..band.len() {
+            for back in 0..=BAND.min(at) {
+                let to = at - back;
+                let (i, j) = (at / 2, to / 2);
+                let want = if i == j && (i == k || i == k + 1) {
+                    stiff * u[at % 2] * u[to % 2]
+                } else if i == k + 1 && j == k {
+                    -stiff * u[at % 2] * u[to % 2]
+                } else {
+                    0.0
+                };
+                assert!(
+                    (entry(at, to) - want).abs() <= 1.0e-9 * stiff,
+                    "entry {at}, {to}: {} against {want}",
+                    entry(at, to)
+                );
+                read += usize::from(want != 0.0);
+            }
+        }
+        assert_eq!(read, 10, "three entries a particle and four between them");
+        // a sample with no multiplier adds nothing
+        let none = [Lean {
+            link: k,
+            t: Fix128::ONE,
+            held: Fix128::ZERO,
+        }];
+        let mut empty = vec![[Fix128::ZERO; BAND + 1]; 2 * (LINKS + 1)];
+        chain.wall_curve(&mut empty, &none).expect("no link read");
+        assert!(empty.iter().flatten().all(|e| e.is_zero()));
+    }
+
+    #[test]
+    fn where_a_substep_between_walls_ends_does_not_depend_on_the_shortfalls_price() {
+        assert_eq!(
+            WALL_PRICE, 2,
+            "the price the library runs with is the least of the three"
+        );
+        let mut worst = (0.0f64, 0.0f64);
+        // a turn of 0.100 rad a link (an arc of radius 0.1 m) and of 0.199 rad (0.05 m)
+        for turn in [
+            (199.0f64 / 200.0, 0.099_874_921_777_190_9),
+            (49.0 / 50.0, 0.198_997_487_421_324),
+        ] {
+            for passes in [16u32, 64] {
+                let (x, press, stalled) = after(turn, WALL_PRICE, passes);
+                assert!(
+                    press > 100.0,
+                    "turn {turn:?}: the wall is pressed ({press} N)"
+                );
+                assert_eq!(stalled, 0);
+                for price in [WALL_PRICE * 4, WALL_PRICE * 16] {
+                    let (other, other_press, other_stalled) = after(turn, price, passes);
+                    assert_eq!(other_stalled, 0, "price {price}, {passes} passes");
+                    let far = x
+                        .iter()
+                        .zip(&other)
+                        .fold(0.0f64, |m, (a, b)| m.max((a - b).abs()));
+                    let off = (other_press - press).abs() / press;
+                    println!(
+                        "price turn {:.3} passes {passes} at {price}: {far:.3e} m from that at {WALL_PRICE}, press {other_press} against {press} N ({off:.2e})",
+                        turn.1
+                    );
+                    worst = (worst.0.max(far), worst.1.max(off));
+                }
+            }
+        }
+        println!("price worst: {:.3e} m, press {:.3e}", worst.0, worst.1);
+        // (the wall's field is an f32's, 7.5e-9 m here)
+        assert!(worst.0 <= 1.0e-8, "{:e} m between the prices", worst.0);
+        assert!(
+            worst.1 <= 1.0e-5,
+            "the press differs by {:e} of it",
+            worst.1
+        );
     }
 }
 
