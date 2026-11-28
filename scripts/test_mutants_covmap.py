@@ -26,7 +26,7 @@ SUMMARY = {"data": [{"files": [
 
 class ReadTimes(unittest.TestCase):
     def test_reads_target_and_seconds_and_skips_bad_lines(self):
-        t = cm.read_times("# runner: x\na\t1.5\t0\nb\t2\nbroken\nc\tnot-a-number\n")
+        t = cm.read_times("# runner: x\n# total\t99\na\t1.5\t0\nb\t2\nbroken\nc\tnot-a-number\n")
         self.assertEqual(t, {"a": 1.5, "b": 2.0})
 
 
