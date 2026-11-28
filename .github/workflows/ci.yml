@@ -255,6 +255,9 @@ jobs:
       - name: Mutation test selection by coverage (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_mutants_select_groups.py
+      - name: Coverage map for test selection (tests)
+        if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
+        run: python scripts/test_mutants_covmap.py
       - name: Nightly Mac Intel gate (tests)
         if: ${{ !contains(matrix.os, ', ') || endsWith(matrix.os, ', checks') }}
         run: python scripts/test_intel_nightly_gate.py
