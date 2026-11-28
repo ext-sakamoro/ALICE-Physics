@@ -9,6 +9,8 @@ regeneration, checks, CI wait) are recorded instead of run. One rule per case.
 from __future__ import annotations
 
 import atexit
+import contextlib
+import io
 import json
 import os
 import re
@@ -3052,6 +3054,7 @@ class WaitAfter(Isolated):
         lnd.gh_cmd = [sys.executable, str(self.gh)]
         lnd.poll_seconds = 0
         lnd.after_max_polls = polls
+        self.lander = lnd
         return lnd.wait_after(SHA)
 
     def test_the_items_are_derived(self):
@@ -3169,12 +3172,67 @@ class WaitAfter(Isolated):
         self.assertEqual(code, land.EXIT_RED)
         self.assertTrue(any("heavy jobs partly skipped" in l for l in lines), lines)
 
+    def test_the_read_line_counts_the_items_and_names_the_commit_s_runs_that_are_not_done(self):
+        # 2026-11-28: `after-landing set on main green` was printed with 5 of the commit's 15 runs
+        # on main not finished; the set is 1 item here, and the line did not say so
+        states = {"unsafe-and-parallel.yml": ("ok", "run 2: heavy jobs success")}
+        runs = [ok_run("CI", 1, status="queued", conclusion=None), ok_run("Miri and loom", 2),
+                ok_run("Fuzz", 3, status="in_progress", conclusion=None), ok_run("Web viewer", 4),
+                ok_run("Downstream", 5, status="queued", conclusion=None),
+                ok_run("Bench gate", 6, headSha="0" * 40, status="queued", conclusion=None)]
+        line = land.after_read_line(states, runs, SHA, "main")
+        self.assertEqual(line, "read 1 after-landing item (1 ok, 0 pending, 0 red); the commit's runs on main: 5 "
+                               "(2 completed, 3 not completed: CI, Downstream, Fuzz); the result above is of the "
+                               "1 item only, the 3 not completed are not counted in it")
+
+    def test_the_read_line_with_every_run_done_and_with_one_that_failed(self):
+        states = {"a.yml": ("ok", "x"), "b.yml: Test (macos-latest)": ("pending", "y"), "c.yml": ("red", "z")}
+        # (a run that was skipped did not fail: it is completed and not named)
+        runs = [ok_run("CI", 1), ok_run("Fuzz", 2, conclusion="failure"), ok_run("Docs", 3, conclusion="cancelled"),
+                ok_run("Gate", 4, conclusion="skipped")]
+        line = land.after_read_line(states, runs, SHA, "main")
+        self.assertEqual(line, "read 3 after-landing items (1 ok, 1 pending, 1 red); the commit's runs on main: 4 "
+                               "(4 completed, 0 not completed; ended other than success: Docs cancelled, Fuzz failure); "
+                               "the result above is of the 3 items only")
+
+    def test_the_read_line_says_so_when_no_run_of_the_commit_is_listed(self):
+        line = land.after_read_line({"a.yml": ("pending", "no run for the SHA yet")},
+                                    [ok_run("CI", 1, headSha="0" * 40)], SHA, "main")
+        self.assertEqual(line, "read 1 after-landing item (0 ok, 1 pending, 0 red); the commit's runs on main: 0 "
+                               "(none listed for the commit yet); the result above is of the 1 item only")
+
+    def test_the_wait_keeps_the_read_line_of_its_last_reading(self):
+        runs = [ok_run("CI", 1), ok_run("Miri and loom (changed unsafe or parallel code)", 2),
+                ok_run("Fuzz", 3, status="in_progress", conclusion=None)]
+        code, _ = self.go(runs=runs, extra_jobs={"3": []})
+        self.assertEqual(code, 0)
+        self.assertIn("read 4 after-landing items (4 ok, 0 pending, 0 red)", self.lander.after_read)
+        self.assertIn("3 (2 completed, 1 not completed: Fuzz)", self.lander.after_read)
+
+    def test_the_report_prints_the_read_line_before_its_verdict(self):
+        class L(land.Lander):
+            def __init__(s, code):
+                s.code, s.id, s.branch = code, "T", "main"
+
+            def wait_after(s, sha):
+                s.after_read = "read 1 after-landing item (THE LINE)"
+                return s.code, ["x"]
+        for code, word in ((0, "green"), (land.EXIT_PENDING, "pending"), (land.EXIT_RED, "red")):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                land.report_after(L(code), SHA)
+            said = (out.getvalue() + err.getvalue()).splitlines()
+            at = [i for i, l in enumerate(said) if "THE LINE" in l]
+            self.assertEqual(len(at), 1, said)
+            self.assertTrue(any(word in l for l in said[at[0] + 1:]), said)
+
     def test_the_cli_exit_codes(self):
         class L(land.Lander):
             def __init__(s, code):
                 s.code, s.id, s.branch = code, "T", "main"
 
             def wait_after(s, sha):
+                s.after_read = "read 1 after-landing item"
                 return s.code, ["x"]
         self.assertEqual(land.report_after(L(0), SHA), 0)
         self.assertEqual(land.report_after(L(land.EXIT_RED), SHA), land.EXIT_RED)
