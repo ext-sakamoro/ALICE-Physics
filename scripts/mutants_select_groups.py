@@ -43,6 +43,40 @@ class MapError(ValueError):
     """The coverage map cannot be used for this union (a fallback would hide a lost job)."""
 
 
+def buckets(union: list[str], seconds: dict[str, float], k: int) -> list[list[str]]:
+    """Split the union targets into k coverage jobs of about equal time (longest first, each
+    target to the lightest bucket). A target with no measured time counts as the median of the
+    measured ones, so a new test file is still placed; every target is in exactly one bucket."""
+    if k < 1:
+        raise ValueError("k must be at least 1")
+    known = sorted(seconds[t] for t in union if t in seconds)
+    default = known[len(known) // 2] if known else 1.0
+    cost = {t: seconds.get(t, default) for t in union}
+    bins: list[tuple[float, int, list[str]]] = [(0.0, i, []) for i in range(min(k, len(union)) or 1)]
+    for t in sorted(set(union), key=lambda t: (-cost[t], t)):
+        load, i, members = min(bins)
+        bins.remove((load, i, members))
+        members.append(t)
+        bins.append((load + cost[t], i, members))
+    return [sorted(m) for _, _, m in sorted(bins, key=lambda b: b[1]) if m]
+
+
+def merge(parts: list[dict], union: list[str]) -> dict:
+    """Join the maps of the coverage jobs into one. A target in two parts, or a union target in
+    none, is an error: a lost or doubled job must not change which tests run."""
+    merged: dict[str, dict] = {}
+    for part in parts:
+        for t, entry in part.get("targets", {}).items():
+            if t in merged:
+                raise MapError(f"target {t} is in two coverage parts")
+            merged[t] = entry
+    missing = sorted(set(union) - set(merged))
+    if not merged or missing:
+        raise MapError(f"{len(missing)} of {len(set(union))} union targets have no coverage part"
+                       + (f" (first: {missing[0]})" if missing else ""))
+    return {"targets": merged}
+
+
 def groups(files: list[str], union: list[str], cmap: dict) -> list[dict]:
     targets = cmap.get("targets")
     if not isinstance(targets, dict) or not targets:

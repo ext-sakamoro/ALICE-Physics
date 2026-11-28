@@ -88,6 +88,55 @@ class Groups(unittest.TestCase):
                     sg.groups(["src/cloth.rs"], union, cmap)
 
 
+class Buckets(unittest.TestCase):
+    def test_every_target_is_in_exactly_one_bucket(self):
+        union = [f"t{i}" for i in range(23)]
+        bs = sg.buckets(union, {t: float(i) for i, t in enumerate(union)}, 4)
+        flat = [t for b in bs for t in b]
+        self.assertEqual(sorted(flat), sorted(union))
+        self.assertEqual(len(bs), 4)
+
+    def test_a_slow_target_gets_its_own_bucket(self):
+        times = {"slow": 1800.0, "a": 2.0, "b": 3.0, "c": 4.0, "d": 1.0}
+        bs = sg.buckets(list(times), times, 2)
+        self.assertIn(["slow"], bs)
+
+    def test_buckets_are_balanced_by_time(self):
+        times = {f"t{i}": float(10 + i) for i in range(16)}
+        bs = sg.buckets(list(times), times, 4)
+        loads = [sum(times[t] for t in b) for b in bs]
+        self.assertLessEqual(max(loads) - min(loads), max(times.values()))
+
+    def test_an_unmeasured_target_is_still_placed(self):
+        bs = sg.buckets(["new", "old"], {"old": 5.0}, 2)
+        self.assertEqual(sorted(t for b in bs for t in b), ["new", "old"])
+
+    def test_k_below_one_is_refused(self):
+        with self.assertRaises(ValueError):
+            sg.buckets(["a"], {}, 0)
+
+
+class Merge(unittest.TestCase):
+    def test_parts_join_into_one_map(self):
+        a = {"targets": {"analytic_cloth": MAP["targets"]["analytic_cloth"]}}
+        b = {"targets": {k: MAP["targets"][k] for k in ("analytic_joint", "audit_solver")}}
+        self.assertEqual(sorted(sg.merge([a, b], UNION)["targets"]), sorted(UNION))
+
+    def test_a_lost_part_is_an_error(self):
+        a = {"targets": {"analytic_cloth": MAP["targets"]["analytic_cloth"]}}
+        with self.assertRaises(sg.MapError):
+            sg.merge([a], UNION)
+
+    def test_a_target_in_two_parts_is_an_error(self):
+        a = {"targets": {"analytic_cloth": MAP["targets"]["analytic_cloth"]}}
+        with self.assertRaises(sg.MapError):
+            sg.merge([MAP, a], UNION)
+
+    def test_no_part_is_an_error(self):
+        with self.assertRaises(sg.MapError):
+            sg.merge([], [])
+
+
 class Main(unittest.TestCase):
     def run_main(self, files: list[str], union: list[str], cmap: dict) -> int:
         with tempfile.TemporaryDirectory() as d:
@@ -111,7 +160,7 @@ class Main(unittest.TestCase):
 if __name__ == "__main__":
     result = unittest.main(exit=False, verbosity=1).result
     n = result.testsRun
-    if n < 14:
-        print(f"error: only {n} test(s) ran (expected at least 14)", file=sys.stderr)
+    if n < 23:
+        print(f"error: only {n} test(s) ran (expected at least 23)", file=sys.stderr)
         sys.exit(1)
     sys.exit(0 if result.wasSuccessful() else 1)
