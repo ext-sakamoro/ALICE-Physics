@@ -259,10 +259,12 @@ src/structural_solver.rs	creep_increment	expr	long_term_creep_strain > self . st
 src/thick_chain.rs	bend_term	expr	la < lb	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thick_chain.rs	halvings_for_stiffness	assign	needed > halvings	integer	operands are u32 (integer, no signed zero or NaN)
 src/thick_chain.rs	held_shares	assign	mu < least	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/thick_chain.rs	hold_walls	assign	weight < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thick_chain.rs	substep	assign	moved > furthest	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thick_chain.rs	substep	assign	press < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thick_chain.rs	substep	expr	k > Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thick_chain.rs	substep	expr	speed < most	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/thick_chain.rs	together	assign	one > most	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thin_wall.rs	analyze_thickness	assign	thickness < report . min_thickness_seen	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/thin_wall.rs	analyze_thickness	assign	thickness > report . max_thickness_seen	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/transient_thermal.rs	conductivity_at	expr	k > 0.0	equivalent	f32 `k > 0 ? k : 0` is maximumNumber(k, +0) for every k: -0, +0 and NaN all give the +0 literal
